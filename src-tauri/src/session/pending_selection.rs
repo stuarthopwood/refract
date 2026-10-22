@@ -6,8 +6,13 @@
 // next idle (`session::model::on_frame`'s settle hook, `SessionAgent::send` just before a prompt
 // goes out) and right after the agent starts (`launch()`), role/model first, then reasoning.
 //
-// - One slot for the role/model choice (a role to apply, a concrete model to pin, or a
-//   `cycle_model` step) and one for the reasoning level. The last choice wins.
+// - One slot for the role/model choice (a role to apply or a concrete model to pin) and one for
+//   the reasoning level. The last choice wins. `cycleModel` is never queued (it refuses
+//   `not-idle` while not idle).
+// - A per-Session async drain guard (`State.drain_guard`) is held across take()+RPC by every drain
+//   and every idle-path apply, and `SessionAgent::send` drains (so awaits it) before a prompt,
+//   so a prompt never overtakes an in-flight apply. The idle-vs-queue decision and the store
+//   happen under one `state` lock (`store_pending_unless_idle`).
 // - Choosing the value that is already applied while not idle clears the slot ("Keep current").
 // - Pending state is in memory only: an app restart drops it (same as `State.pinned`'s own
 //   non-persisted reads before #741).
@@ -15,6 +20,7 @@
 //   the value and posts an Error notice in the transcript; a busy/not-running failure keeps it.
 
 use serde_json::{json, Value};
+use tokio::sync::OwnedMutexGuard;
 
 use crate::omp::transcript::NoticeLevel;
 
@@ -29,12 +35,7 @@ const MAX_MODEL_FIELD_LEN: usize = 256;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Target {
     Role(String),
-    Model {
-        provider: String,
-        model_id: String,
-    },
-    /// A queued `cycleModel` step: its resulting model is only known when it is applied.
-    Cycle,
+    Model { provider: String, model_id: String },
 }
 
 #[derive(Default)]
@@ -59,7 +60,7 @@ impl PendingSelection {
     }
 
     /// `SessionSummary.pendingSelection` (`src/shared/ipc.ts`): `None` when nothing is pending.
-    /// Both `role` and `model` are `null` only while a `cycleModel` step is queued.
+    /// A pending role/model choice has exactly one of `role`/`model` non-null.
     fn to_wire(&self) -> Option<Value> {
         if self.target.is_none() && self.thinking.is_none() {
             return None;
@@ -132,22 +133,54 @@ async fn set_target(agent: &SessionAgent, target: Option<Target>) {
     changed(agent);
 }
 
-/// Queue-or-clear for a role/model/cycle choice made while the Session is not idle.
-/// `is_current` is true when the choice equals what is applied now (cancels any pending value).
-async fn queue_target(
-    agent: &SessionAgent,
-    target: Target,
-    is_current: bool,
-    result: Value,
-) -> Result<Value, AgentError> {
-    if is_current {
-        set_target(agent, None).await;
-        return Ok(result);
+async fn set_thinking(agent: &SessionAgent, level: Option<String>) {
+    agent.with_model_state(|s| s.pending.thinking = level).await;
+    changed(agent);
+}
+
+async fn lock_drain(agent: &SessionAgent) -> OwnedMutexGuard<()> {
+    let guard = agent.with_model_state(|s| s.drain_guard.clone()).await;
+    guard.lock_owned().await
+}
+
+/// One slot's new value, applied atomically with the not-idle check.
+#[derive(Clone)]
+enum Slot {
+    Target(Option<Target>),
+    Thinking(Option<String>),
+}
+
+/// Stores `slot` only while the Session is not idle (one `state` lock, no gap a settle could land
+/// in). `false`: idle, the caller applies the choice now.
+async fn store_unless_idle(agent: &SessionAgent, slot: Slot) -> bool {
+    let stored = agent
+        .store_pending_unless_idle(|s| match slot {
+            Slot::Target(target) => s.pending.target = target,
+            Slot::Thinking(level) => s.pending.thinking = level,
+        })
+        .await;
+    if stored {
+        changed(agent);
     }
-    set_target(agent, Some(target)).await;
-    let mut result = result;
-    result["queued"] = Value::Bool(true);
-    Ok(result)
+    stored
+}
+
+/// The Session turned non-idle between the idle check and the apply (retryable failure): store
+/// the choice and drain, so it never sits pending on a Session that is actually idle.
+async fn store_and_drain(agent: &SessionAgent, slot: Slot, guard: OwnedMutexGuard<()>) {
+    match slot {
+        Slot::Target(target) => set_target(agent, target).await,
+        Slot::Thinking(level) => set_thinking(agent, level).await,
+    }
+    drop(guard);
+    drain(agent).await;
+}
+
+fn queued(mut result: Value, is_current: bool) -> Value {
+    if !is_current {
+        result["queued"] = Value::Bool(true);
+    }
+    result
 }
 
 /// `model.setModel`. Idle: applied now (pins the Session). Otherwise queued, or a no-op that
@@ -168,16 +201,7 @@ pub async fn choose_model(
             "A model needs a provider and a model id.",
         ));
     }
-    if is_idle(agent).await {
-        match model::set_model(agent, provider, model_id).await {
-            Ok(value) => {
-                set_target(agent, None).await;
-                return Ok(value);
-            }
-            Err(err) if !retryable(&err) => return Err(err),
-            Err(_) => {}
-        }
-    }
+    let guard = lock_drain(agent).await;
     let (pinned, _) = model::current_selection(agent).await;
     let current = current_model(agent).await;
     let is_current = pinned
@@ -189,28 +213,35 @@ pub async fn choose_model(
     } else {
         json!({ "model": { "provider": provider, "id": model_id } })
     };
-    let target = Target::Model {
-        provider: provider.to_string(),
-        model_id: model_id.to_string(),
-    };
-    queue_target(agent, target, is_current, result).await
-}
-
-/// `model.cycleModel`. Idle: applied now. Otherwise one `cycle_model` step is queued; `model`
-/// is the model known to be applied now (`null` if never read), since the target is not known.
-pub async fn choose_cycle(agent: &SessionAgent) -> Result<Value, AgentError> {
-    if is_idle(agent).await {
-        match model::cycle_model(agent).await {
-            Ok(value) => {
-                set_target(agent, None).await;
-                return Ok(value);
-            }
-            Err(err) if !retryable(&err) => return Err(err),
-            Err(_) => {}
+    let slot = Slot::Target(if is_current {
+        None
+    } else {
+        Some(Target::Model {
+            provider: provider.to_string(),
+            model_id: model_id.to_string(),
+        })
+    });
+    if store_unless_idle(agent, slot.clone()).await {
+        return Ok(queued(result, is_current));
+    }
+    match model::set_model(agent, provider, model_id).await {
+        Ok(value) => {
+            set_target(agent, None).await;
+            Ok(value)
+        }
+        Err(err) if !retryable(&err) => Err(err),
+        Err(_) => {
+            store_and_drain(agent, slot, guard).await;
+            Ok(queued(result, is_current))
         }
     }
-    let result = json!({ "model": model_json(current_model(agent).await.as_ref()) });
-    queue_target(agent, Target::Cycle, false, result).await
+}
+
+/// `model.cycleModel`. Never queued (its target is only known once applied): applied now when
+/// idle, otherwise refuses `not-idle`. Takes the drain guard so it cannot interleave with a drain.
+pub async fn choose_cycle(agent: &SessionAgent) -> Result<Value, AgentError> {
+    let _guard = lock_drain(agent).await;
+    model::cycle_model(agent).await
 }
 
 /// `model.applyRole`. Idle: applied now (un-pins). Otherwise queued, or a no-op that clears the
@@ -222,61 +253,72 @@ pub async fn choose_role(
     known_roles: &[String],
 ) -> Result<Value, AgentError> {
     validate_known_role(role, known_roles)?;
-    if is_idle(agent).await {
-        match model::apply_role(agent, role, known_roles).await {
-            Ok(value) => {
-                set_target(agent, None).await;
-                return Ok(value);
-            }
-            Err(err) if !retryable(&err) => return Err(err),
-            Err(_) => {}
-        }
-    }
+    let guard = lock_drain(agent).await;
     let (pinned, current_role) = model::current_selection(agent).await;
     let is_current = !pinned && current_role.as_deref() == Some(role);
     let result = json!({
         "model": model_json(current_model(agent).await.as_ref()),
         "role": role,
     });
-    queue_target(agent, Target::Role(role.to_string()), is_current, result).await
+    let slot = Slot::Target(if is_current {
+        None
+    } else {
+        Some(Target::Role(role.to_string()))
+    });
+    if store_unless_idle(agent, slot.clone()).await {
+        return Ok(queued(result, is_current));
+    }
+    match model::apply_role(agent, role, known_roles).await {
+        Ok(value) => {
+            set_target(agent, None).await;
+            Ok(value)
+        }
+        Err(err) if !retryable(&err) => Err(err),
+        Err(_) => {
+            store_and_drain(agent, slot, guard).await;
+            Ok(queued(result, is_current))
+        }
+    }
 }
 
 /// `model.setThinkingLevel`. Idle: applied now. Otherwise queued (`thinkingLevel` is the
 /// requested level), or a no-op that clears the slot when it is already the stored level.
 pub async fn choose_thinking_level(agent: &SessionAgent, level: &str) -> Result<Value, AgentError> {
     thinking_level::validate_level(level)?;
-    if is_idle(agent).await {
-        match thinking_level::set_thinking_level(agent, level).await {
-            Ok(value) => {
-                set_thinking(agent, None).await;
-                return Ok(value);
-            }
-            Err(err) if !retryable(&err) => return Err(err),
-            Err(_) => {}
-        }
-    }
+    let guard = lock_drain(agent).await;
     let stored = agent
         .registry()
         .lock()
         .await
         .get_session(agent.session_id())
         .and_then(|s| s.last_thinking_level.clone());
-    if stored.as_deref() == Some(level) {
-        set_thinking(agent, None).await;
-        return Ok(json!({ "thinkingLevel": level }));
+    let is_current = stored.as_deref() == Some(level);
+    let slot = Slot::Thinking(if is_current {
+        None
+    } else {
+        Some(level.to_string())
+    });
+    let result = json!({ "thinkingLevel": level });
+    if store_unless_idle(agent, slot.clone()).await {
+        return Ok(queued(result, is_current));
     }
-    set_thinking(agent, Some(level.to_string())).await;
-    Ok(json!({ "thinkingLevel": level, "queued": true }))
-}
-
-async fn set_thinking(agent: &SessionAgent, level: Option<String>) {
-    agent.with_model_state(|s| s.pending.thinking = level).await;
-    changed(agent);
+    match thinking_level::set_thinking_level(agent, level).await {
+        Ok(value) => {
+            set_thinking(agent, None).await;
+            Ok(value)
+        }
+        Err(err) if !retryable(&err) => Err(err),
+        Err(_) => {
+            store_and_drain(agent, slot, guard).await;
+            Ok(queued(result, is_current))
+        }
+    }
 }
 
 /// Applies the pending role/model, then the pending reasoning level, if the Session is idle.
 /// Never sends anything while it is not. Run at settle, after agent start, and before a prompt.
 pub(super) async fn drain(agent: &SessionAgent) {
+    let _guard = lock_drain(agent).await;
     if !is_idle(agent).await {
         return;
     }
@@ -295,7 +337,6 @@ pub(super) async fn drain(agent: &SessionAgent) {
                 format!("model change to {provider}/{model_id}"),
                 model::set_model(agent, provider, model_id).await,
             ),
-            Target::Cycle => ("model change".to_string(), model::cycle_model(agent).await),
         };
         if let Err(err) = outcome {
             if retryable(&err) {

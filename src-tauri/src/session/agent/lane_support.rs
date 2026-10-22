@@ -149,6 +149,21 @@ impl SessionAgent {
         }
     }
 
+    /// #766 part A: runs `store` on the model state only while the Session is NOT idle, under the
+    /// same lock acquisition as the status read (no gap a settle could land in). `false` means
+    /// the Session is idle and the caller must apply the choice now.
+    pub(in crate::session) async fn store_pending_unless_idle(
+        &self,
+        store: impl FnOnce(&mut crate::session::model::State),
+    ) -> bool {
+        let mut state = self.state.lock().await;
+        if state.status == SessionStatus::Idle {
+            return false;
+        }
+        store(&mut state.model);
+        true
+    }
+
     /// The Session's own current Conversation file path, if any (registry lookup; #741: reading
     /// its latest `model_change` role needs this). `None` for a brand-new Session that has
     /// never sent its first message.

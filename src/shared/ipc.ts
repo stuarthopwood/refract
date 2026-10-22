@@ -158,8 +158,7 @@ export interface SessionSummary extends Session {
    * stopped, held in Rust and applied at the next idle (before the next prompt) or right after
    * the agent starts. `null`/absent: nothing pending. When a role/model change is pending,
    * exactly one of `role`/`model` is non-null (`role`: a role to apply; `model`: a concrete model
-   * to pin); both are `null` only for a queued `cycleModel` step (its target is unknown until it
-   * is applied). `thinkingLevel` is independent of them. Refreshed through the existing
+   * to pin). `thinkingLevel` is independent of them. Refreshed through the existing
    * `session:list-changed` push (`onSessionListChanged`, the one `pinned`/`currentRole` ride on). */
   pendingSelection?: {
     role: string | null;

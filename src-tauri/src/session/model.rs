@@ -91,6 +91,8 @@ pub(super) struct State {
     pub(super) pending_role_reapply: Option<String>,
     /// #766 part A: role/model and reasoning choices made while not idle (`pending_selection`).
     pub(super) pending: super::pending_selection::PendingSelection,
+    /// Held across take()+RPC by every drain and every idle-path apply (`pending_selection`).
+    pub(super) drain_guard: std::sync::Arc<tokio::sync::Mutex<()>>,
     /// Gate-fix (HIGH, perf): the Conversation file path `current_selection` already probed and
     /// found NO `model_change` entry in, so a Session nobody has ever changed the model/role on
     /// is not re-read and re-parsed on every later `sessions.list()` poll. Distinct from
@@ -186,8 +188,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
                 }
             }
         }
-        // #766 part A: the user's queued role/model/reasoning choice lands after any
-        // Settings-triggered reapply, so the user's last choice wins.
+        // Order is deliberate: Settings reapply first, then the user's queued choice (last wins).
         super::pending_selection::drain(&agent).await;
     });
 }

@@ -47,12 +47,15 @@ export type ThinkingLevel = 'off' | 'inherit' | 'minimal' | 'low' | 'medium' | '
 /** Per-Session model/role/reasoning actions over the live RPC connection (never OMP's config --
  * see `RefractApi.modelRoles` for that): the composer picker's `setModel`/`cycleModel`, the
  * Reasoning picker's `setThinkingLevel` (#564), and the role selector (`/role`, Ctrl+R)'s
- * `applyRole`/`listRoles`. `setModel`/`cycleModel`/`applyRole`/`setThinkingLevel` apply at once
+ * `applyRole`/`listRoles`. `setModel`/`applyRole`/`setThinkingLevel` apply at once
  * while the Session is idle. While it is working or stopped they do not refuse (#766 part A):
  * the choice is held in Rust (one pending slot for role/model, one for reasoning; last choice
  * wins) and the result carries `queued: true`. It is applied at the next idle, before the next
  * prompt, or right after the agent starts -- never sent to OMP mid-turn (FINDINGS "RM0 probe"
  * item 57's own closing entry: mid-turn `set_model` is not provably safe on `omp` 18.10.1).
+ * A follow-up sent while the Session is working runs in the same OMP loop before the pending
+ * choice applies (part B surfaces that). `cycleModel` is not queued: it still refuses
+ * `not-idle`.
  * Choosing the value that is already applied while a choice is pending clears the pending slot
  * (`queued` absent). The pending state is `SessionSummary.pendingSelection`. A queued choice
  * that fails to apply is dropped with an Error transcript notice. #740's own Settings-triggered
@@ -66,10 +69,10 @@ export interface ModelApi {
   setModel(sessionId: string, provider: string, modelId: string): Promise<Result<{ model: Model; queued?: boolean }>>;
   /** `cycle_model`: steps through catalog models, NOT roles (FINDINGS item 54 corrects
    * `omp://settings.md`'s own `cycleOrder` description for this specific RPC command) -- pins
-   * the Session exactly like `setModel` (a concrete model was just chosen, not a role). When
-   * `queued`, the target is unknown until it is applied, so `model` is the model known to be
-   * applied now (`null` if never read) and `pendingSelection` has `role` and `model` both null. */
-  cycleModel(sessionId: string): Promise<Result<{ model: Model | null; queued?: boolean }>>;
+   * the Session exactly like `setModel` (a concrete model was just chosen, not a role). Never
+   * queued: it still refuses `not-idle` while the Session is not idle (its target is only known
+   * once applied, so there is no value to hold). */
+  cycleModel(sessionId: string): Promise<Result<{ model: Model | null }>>;
   /** Forwards OMP's own native `/switch @<role>` (FINDINGS item 54: proven to resolve the role
    * alias correctly; constitution I: Refract does not reimplement `modelRoles`/`cycleOrder`
    * resolution OMP already does). Un-pins the Session and records `role` as its own tracked

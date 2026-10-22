@@ -43,18 +43,6 @@ fn a_model_serialises_with_a_null_role_and_independent_thinking() {
 }
 
 #[test]
-fn a_cycle_step_has_neither_role_nor_model() {
-    let pending = PendingSelection {
-        target: Some(Target::Cycle),
-        thinking: None,
-    };
-    assert_eq!(
-        pending.to_wire().unwrap(),
-        json!({ "role": null, "model": null, "thinkingLevel": null })
-    );
-}
-
-#[test]
 fn take_empties_both_slots_in_one_step() {
     let mut pending = PendingSelection {
         target: Some(Target::Role("smol".into())),
