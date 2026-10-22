@@ -73,7 +73,7 @@ async function main() {
         await cdp.send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
       }
     };
-    const onDetails = document.activeElement?.matches?.('[data-sonner-toast] [data-button]') && document.activeElement.innerText.trim() === 'Details';
+    const onDetails = `!!document.activeElement?.matches?.('[data-sonner-toast] [data-button]') && document.activeElement.innerText.trim() === 'Details'`;
     await cdp.evaluate('document.activeElement?.blur?.()');
     let reached = false;
     for (let i = 0; i < 80 && !reached; i++) {
@@ -81,7 +81,7 @@ async function main() {
       reached = await cdp.evaluate(onDetails);
     }
     check('Tab reaches the toast Details button', reached);
-    const ring = await cdp.evaluate((() => { const s = getComputedStyle(document.activeElement); return { style: s.outlineStyle, width: parseFloat(s.outlineWidth), color: s.outlineColor }; })());
+    const ring = await cdp.evaluate(`(() => { const s = getComputedStyle(document.activeElement); return { style: s.outlineStyle, width: parseFloat(s.outlineWidth), color: s.outlineColor }; })()`);
     check('focused Details button paints a visible outline', ring.style === 'solid' && ring.width >= 2 && ring.color !== 'rgba(0, 0, 0, 0)', JSON.stringify(ring));
     await cdp.screenshot(path.join(SHOTS, '03-details-keyboard-focus.png'));
 

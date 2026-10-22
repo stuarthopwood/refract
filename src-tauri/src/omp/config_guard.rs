@@ -362,7 +362,10 @@ pub async fn run(project_dir: Option<&Path>) -> Option<GuardNotice> {
     let list = match &state.cache {
         Some((at, list)) if at.elapsed() < CACHE_TTL => list.clone(),
         _ => {
-            if state.failed_at.is_some_and(|at| at.elapsed() < FAILURE_BACKOFF) {
+            if state
+                .failed_at
+                .is_some_and(|at| at.elapsed() < FAILURE_BACKOFF)
+            {
                 return None;
             }
             match run_json(&["config", "list", "--json"], "Could not read omp config.").await {
