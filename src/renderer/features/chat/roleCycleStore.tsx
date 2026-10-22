@@ -66,7 +66,7 @@ async function flush(sessionId: string) {
   if (unchanged) return setCycling(sessionId, undefined)
   const result = await window.refract.model.applyRole(sessionId, role)
   if (!result.ok) {
-    setCycling(sessionId, undefined)
+    if (useRoleCycleStore.getState().cycling[sessionId] === role) setCycling(sessionId, undefined)
     notify(result.error, sessionId)
     return
   }
@@ -89,7 +89,15 @@ export async function cycleRole(sessionId: string, direction: 1 | -1): Promise<v
   const next = index < 0 ? (direction > 0 ? 0 : roles.length - 1) : (index + direction + roles.length) % roles.length
   const role = roles[next]!.role
   setCycling(sessionId, role)
-  toast(`Role: ${roleText(sessionId, role)}`, { id: `role-cycle-${sessionId}`, duration: 2500 })
+  // Visual only: the debounced chat-area announcer is the one spoken result.
+  toast.custom(
+    () => (
+      <div aria-hidden className="rounded-lg border border-border bg-popover px-4 py-3 text-sm font-semibold text-popover-foreground shadow-lg">
+        Role: {roleText(sessionId, role)}
+      </div>
+    ),
+    { id: `role-cycle-${sessionId}`, duration: 2500 }
+  )
   window.clearTimeout(timers.get(sessionId))
   timers.set(
     sessionId,

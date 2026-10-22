@@ -86,7 +86,10 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
             <shown.Icon aria-hidden className="size-3 shrink-0" />
             <span className="shrink-0">{shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')}</span>
             {shown.roleLabel && shown.model && (
-              <span className="min-w-0 truncate @max-[400px]:hidden">· {shortModelName(shown.model)}</span>
+              <span className="flex min-w-0 gap-1 @max-[400px]:hidden">
+                <span aria-hidden>·</span>
+                <span className="truncate">{shortModelName(shown.model)}</span>
+              </span>
             )}
             {queued && <ClockIcon aria-hidden data-pending-glyph className="size-3 shrink-0 text-foreground" />}
           </button>

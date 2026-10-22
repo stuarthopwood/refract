@@ -3,9 +3,9 @@
 // 427 lines, past the single-responsibility threshold).
 //
 // Reasoning picker: a labelled trigger naming the Session's current value (the same last-known
-// `lastThinkingLevel` value the old read-only line read, T062/T063). Disabled states match the
-// Model picker (`pickerShared.tsx`'s `usePickerDisabled`/`usePickerOpenState`): refuses to open
-// while working/needs-you, and also while stopped (showing the last-known value). A
+// `lastThinkingLevel` value the old read-only line read, T062/T063). It stays enabled while the
+// Session is working or stopped (#766 part B): a change is queued by Rust and shows the "next
+// turn" clock glyph until applied. A
 // `DropdownMenuRadioGroup`/`RadioItem` (gate round 1 fix, code-reviewer HIGH) exposes the current
 // level as `aria-checked`/`role="menuitemradio"`, never a plain item with a decorative check
 // icon. Gate round 2 (LOW): the disabled reason is now ALSO a visible Tooltip, not only the

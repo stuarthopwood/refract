@@ -44,6 +44,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   const filterInputRef = useRef<HTMLInputElement>(null)
   const roleRowRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const outsideCloseRef = useRef(false)
   const listRef = useRef<HTMLDivElement>(null)
   const listboxId = useId()
   const modelsHeadingId = useId()
@@ -228,14 +229,20 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
       <PopoverContent
         align="start"
         aria-label="Choose role or model"
-        className="flex h-[min(30rem,var(--radix-popover-content-available-height))] w-80 flex-col overflow-hidden p-0"
+        className="flex max-h-[min(30rem,var(--radix-popover-content-available-height))] w-80 flex-col overflow-hidden p-0"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
+          outsideCloseRef.current = false
           roleRowRef.current?.focus()
+        }}
+        onInteractOutside={() => {
+          outsideCloseRef.current = true
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault()
-          triggerRef.current?.focus()
+          // An outside click leaves focus where the user clicked.
+          if (!outsideCloseRef.current) triggerRef.current?.focus()
+          outsideCloseRef.current = false
         }}
       >
         <div
@@ -246,7 +253,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
           aria-orientation="horizontal"
           aria-activedescendant={activeRoleItem ? roleOptionId(activeRoleItem.role) : undefined}
           onKeyDown={handleRoleKeyDown}
-          className="flex shrink-0 gap-1 overflow-x-auto p-1 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-composer-focus"
+          className="flex shrink-0 flex-wrap gap-1 p-1 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-composer-focus"
         >
           {roleItems.length === 0 && (
             <span className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">

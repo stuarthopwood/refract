@@ -121,7 +121,7 @@ async function main() {
     // 1. Pill at rest.
     await cdp.waitFor(`(${PILL}.textContent || '').includes('Default')`, { timeoutMs: 20_000, label: 'pill shows the role' }).catch(async () => console.log('session snapshot:', JSON.stringify((await cdp.evaluate('window.refract.sessions.list()')).value[0])));
     const rest = await pillState(cdp);
-    check('pill text is "<Role> · <Model>"', /^\S+\s*· .*Fable 5/.test(rest.text), rest.text);
+    check('pill text is "<Role> · <Model>"', /^\S+\s*·\s*.*Fable 5/.test(rest.text), rest.text);
     const axName = await getAccessibleName(cdp, PILL);
     check('pill accessible name (AX tree) is "<Role> role, Claude Fable 5 model"', /^(Default|Pinned)(?: role)?, Claude Fable 5 model$/.test(axName ?? ''), axName);
     check('exactly one tab stop for role+model', await cdp.evaluate(`document.querySelectorAll('[data-role-model-pill]').length === 1`));
@@ -142,6 +142,8 @@ async function main() {
     const roleRow = `document.querySelector('[role="listbox"][aria-orientation="horizontal"]')`;
     const activeRole = () => cdp.evaluate(`(() => { const r = ${roleRow}; const id = r && r.getAttribute('aria-activedescendant'); const el = id && document.getElementById(id); return el ? el.textContent.trim() : null })()`);
     await sleep(200);
+    const chipBoxes = await cdp.evaluate(`(() => { const pop = document.querySelector('[aria-label="Choose role or model"]').getBoundingClientRect(); return Array.from(document.querySelectorAll('[aria-label="Roles"] [role="option"]')).map((o) => { const r = o.getBoundingClientRect(); return { name: o.textContent.trim().slice(0, 12), inside: r.left >= pop.left - 0.5 && r.right <= pop.right + 0.5 && r.top >= pop.top - 0.5 && r.bottom <= pop.bottom + 0.5 && r.width > 0 } }) })()`);
+    check('all four role chips (incl. Plan) sit fully inside the popover', chipBoxes.length === 4 && chipBoxes.every((c) => c.inside) && chipBoxes.some((c) => /^Plan/.test(c.name)), chipBoxes);
     check('role chips row exists and has focus on open', await cdp.evaluate(`document.activeElement === ${roleRow}`), roleOptionCount);
     await shot('02-switcher-open.png');
     const r0 = await activeRole();
