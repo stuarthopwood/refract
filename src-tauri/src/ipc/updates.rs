@@ -11,7 +11,7 @@ use tauri::Manager;
 
 use crate::updates::checker;
 use crate::updates::installer::{self, UpdateErrorCode};
-use crate::updates::state::{SharedUpdateState, UpdateState};
+use crate::updates::state::{SharedUpdateState, UpdatePhase, UpdateState};
 
 use super::{AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -19,6 +19,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("updates.check", updates_check);
     d.register("updates.getState", updates_get_state);
     d.register("updates.install", updates_install);
+    d.register("updates.installNow", updates_install_now);
 }
 
 fn store_handle(state: &AppState) -> Result<SharedUpdateState, IpcError> {
@@ -60,6 +61,30 @@ fn current_version(state: &AppState) -> Result<String, IpcError> {
         return Err(IpcError::new("unsupported", "No window yet"));
     };
     Ok(app_handle.package_info().version.to_string())
+}
+
+/// Issue #883: the whole background lifecycle -- the startup check (FR-020), then the 4-hour
+/// periodic check (FR-028), both broadcasting each transition to the renderer. Kept out of
+/// `lib.rs` (`AGENTS.md` "No god files").
+pub async fn run_update_lifecycle(
+    session_manager: std::sync::Arc<crate::session::SessionManager>,
+    update_state: SharedUpdateState,
+    data_dir: std::path::PathBuf,
+    current_version: String,
+) {
+    let on_state = move |state: &UpdateState| {
+        session_manager.emit_updates_state_changed(&to_value(state));
+    };
+    crate::updates::run_startup_update_check(&update_state, &data_dir, &current_version, &on_state)
+        .await;
+    crate::updates::run_periodic_update_checks(
+        update_state,
+        data_dir,
+        current_version,
+        crate::updates::check_interval(),
+        on_state,
+    )
+    .await;
 }
 
 /// Builds the `on_state` broadcaster `checker`/`installer` call at each persisted transition,
@@ -108,5 +133,33 @@ fn updates_install(state: AppState, _args: Vec<Value>) -> HandlerFuture {
                 Err(IpcError::new(code, err.message))
             }
         }
+    })
+}
+
+/// Issue #883 (FR-031): "Update now". Requires a verified installer (`Downloaded`), flags a
+/// relaunch, then quits through the normal exit path, so `lib.rs`'s own `ExitRequested` hook stops
+/// every agent, re-verifies the installer, hands the install off, and relaunches Refract. The
+/// renderer has already asked the developer to confirm when agents are running.
+fn updates_install_now(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let store_handle = store_handle(&state)?;
+        let phase = store_handle.lock().await.get().phase;
+        if phase != UpdatePhase::Downloaded {
+            return Err(IpcError::new(
+                "update-unavailable",
+                "No downloaded update is ready to install.",
+            ));
+        }
+        let app_handle = state
+            .app_handle
+            .lock()
+            .expect("app_handle mutex poisoned")
+            .clone();
+        let Some(app_handle) = app_handle else {
+            return Err(IpcError::new("unsupported", "No window yet"));
+        };
+        crate::updates::request_restart_after_install();
+        app_handle.exit(0);
+        Ok(Value::Null)
     })
 }

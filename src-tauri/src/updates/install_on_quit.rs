@@ -34,6 +34,7 @@ use std::time::Duration;
 
 use tokio::process::Command;
 
+use super::checker::compare_versions;
 use super::checksum::{checksum_matches, hex_digest_file};
 use super::signature::{verify_installer_signature, SIGNATURE_REJECTED_MESSAGE};
 use super::state::{UpdatePhase, UpdateState, UpdateStateStore};
@@ -121,6 +122,7 @@ pub async fn verify_installer_before_quit(
 pub async fn schedule_install_on_quit(
     installer_path: &Path,
     refract_pid: u32,
+    relaunch_path: Option<&Path>,
 ) -> Result<(), String> {
     let pwsh = resolve_powershell();
     let pwsh_str = pwsh.to_string_lossy();
@@ -139,9 +141,17 @@ pub async fn schedule_install_on_quit(
     // upgrade over an existing install (`installer.nsi`'s own `PageLeaveReinstall`/`UpdateMode`
     // handling) -- without it, every update silently re-creates the Desktop/Start-menu shortcuts
     // and re-runs the WebView2 bootstrapper step on each quit-then-install cycle.
-    let inner_command = format!(
-        "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE'"
-    );
+    // Issue #883 ("Update now"): when `relaunch_path` is set, the installer is awaited and the
+    // new Refract started from the same literal env-var mechanism as the installer path above.
+    let inner_command = if relaunch_path.is_some() {
+        format!(
+            "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE' -Wait; Start-Process -FilePath $env:REFRACT_RELAUNCH_PATH"
+        )
+    } else {
+        format!(
+            "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE'"
+        )
+    };
     let inner_command_line =
         format!("\"{pwsh_str}\" -NoProfile -NonInteractive -WindowStyle Hidden -Command \"{inner_command}\"");
     let outer_script = [
@@ -172,6 +182,9 @@ pub async fn schedule_install_on_quit(
         .creation_flags(CREATE_NO_WINDOW)
         .kill_on_drop(true)
         .env("REFRACT_INSTALLER_PATH", installer_path);
+    if let Some(relaunch_path) = relaunch_path {
+        command.env("REFRACT_RELAUNCH_PATH", relaunch_path);
+    }
 
     let output = command.output().await.map_err(|err| err.to_string())?;
     if output.status.success() {
@@ -266,6 +279,29 @@ pub async fn resolve_startup_state(
                 })
                 .await
         }
+        UpdatePhase::Downloaded => {
+            // Issue #883: a verified installer for a version that is already installed (installed
+            // by hand since) must not keep prompting "Update now".
+            let stale = state
+                .available_version
+                .as_deref()
+                .is_some_and(|available| compare_versions(available, installed_version) <= 0);
+            if !stale {
+                return state;
+            }
+            if let Some(installer_path) = state.installer_path.as_deref() {
+                let _ = tokio::fs::remove_file(installer_path).await;
+                let _ = tokio::fs::remove_file(sha256_sibling(Path::new(installer_path))).await;
+            }
+            store
+                .update(|s| {
+                    s.phase = UpdatePhase::Idle;
+                    s.installer_path = None;
+                    s.available_version = None;
+                    s.notes_url = None;
+                })
+                .await
+        }
         _ => state,
     }
 }
@@ -347,6 +383,29 @@ mod tests {
         let (mut store, dir) = store_with_phase(UpdatePhase::Checking).await;
         let resolved = resolve_startup_state(&mut store, "1.0.0").await;
         assert_eq!(resolved.phase, UpdatePhase::Idle);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn resolve_startup_state_clears_a_downloaded_phase_whose_version_is_installed() {
+        let (mut store, dir) = store_with_phase(UpdatePhase::Downloaded).await;
+        store
+            .update(|s| s.available_version = Some("1.0.0".to_string()))
+            .await;
+        let resolved = resolve_startup_state(&mut store, "1.0.0").await;
+        assert_eq!(resolved.phase, UpdatePhase::Idle);
+        assert_eq!(resolved.available_version, None);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn resolve_startup_state_keeps_a_downloaded_phase_for_a_newer_version() {
+        let (mut store, dir) = store_with_phase(UpdatePhase::Downloaded).await;
+        store
+            .update(|s| s.available_version = Some("1.1.0".to_string()))
+            .await;
+        let resolved = resolve_startup_state(&mut store, "1.0.0").await;
+        assert_eq!(resolved.phase, UpdatePhase::Downloaded);
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 

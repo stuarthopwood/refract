@@ -53,6 +53,7 @@ use state::{SharedUpdateState, UpdateState};
 /// automatic check ever runs.
 pub async fn run_startup_update_check(
     store: &SharedUpdateState,
+    data_dir: &Path,
     current_version: &str,
     on_state: &(dyn Fn(&UpdateState) + Send + Sync),
 ) -> UpdateState {
@@ -61,7 +62,94 @@ pub async fn run_startup_update_check(
         install_on_quit::resolve_startup_state(&mut guard, current_version).await
     };
     on_state(&resolved);
-    checker::check_for_updates(store, true, current_version, on_state).await
+    run_update_cycle(store, data_dir, current_version, on_state).await
+}
+
+/// FR-028: how often Refract re-checks for a newer release while it stays open.
+pub const PERIODIC_CHECK_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(4 * 60 * 60);
+
+/// Debug-only override of `PERIODIC_CHECK_INTERVAL` (FR-028) so a live check need not wait hours.
+const INTERVAL_OVERRIDE_ENV: &str = "REFRACT_UPDATE_CHECK_INTERVAL_SECS";
+
+/// Pure so it can be tested for both build kinds: release builds (`debug == false`) always use
+/// `PERIODIC_CHECK_INTERVAL`; a debug build uses a positive whole-seconds override when given.
+fn resolve_check_interval(debug: bool, raw_override: Option<&str>) -> std::time::Duration {
+    if !debug {
+        return PERIODIC_CHECK_INTERVAL;
+    }
+    raw_override
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .map(std::time::Duration::from_secs)
+        .unwrap_or(PERIODIC_CHECK_INTERVAL)
+}
+
+pub fn check_interval() -> std::time::Duration {
+    resolve_check_interval(
+        cfg!(debug_assertions),
+        std::env::var(INTERVAL_OVERRIDE_ENV).ok().as_deref(),
+    )
+}
+
+/// FR-028: a tick is skipped while a check, download, or install is in progress, and while a
+/// verified installer already waits (nothing left to find).
+fn should_run_cycle(phase: state::UpdatePhase) -> bool {
+    !matches!(
+        phase,
+        state::UpdatePhase::Checking
+            | state::UpdatePhase::Downloading
+            | state::UpdatePhase::Downloaded
+            | state::UpdatePhase::Installing
+    )
+}
+
+/// One automatic cycle (FR-028, FR-029): check, and download at once when a newer release is
+/// found, through the same checksum and signature path as the manual install. A download failure
+/// is already persisted and broadcast as `Failed` by `download_update`.
+pub async fn run_update_cycle(
+    store: &SharedUpdateState,
+    data_dir: &Path,
+    current_version: &str,
+    on_state: &(dyn Fn(&UpdateState) + Send + Sync),
+) -> UpdateState {
+    let phase = store.lock().await.get().phase;
+    if !should_run_cycle(phase) {
+        return store.lock().await.get();
+    }
+    let checked = checker::check_for_updates(store, true, current_version, on_state).await;
+    if checked.phase != state::UpdatePhase::Available {
+        return checked;
+    }
+    if let Err(err) = installer::download_update(store, data_dir, on_state).await {
+        log::warn!("automatic update download failed: {err}");
+    }
+    store.lock().await.get()
+}
+
+/// FR-028: re-checks every `interval` while the app runs; the first one a full interval after
+/// the startup check. Never returns.
+pub async fn run_periodic_update_checks(
+    store: SharedUpdateState,
+    data_dir: std::path::PathBuf,
+    current_version: String,
+    interval: std::time::Duration,
+    on_state: impl Fn(&UpdateState) + Send + Sync + 'static,
+) {
+    loop {
+        tokio::time::sleep(interval).await;
+        run_update_cycle(&store, &data_dir, &current_version, &on_state).await;
+    }
+}
+
+/// FR-031: set by `updates.installNow` just before it quits Refract, so the install-on-quit hook
+/// relaunches Refract after the installer finishes. Process-global because the quit hook runs
+/// from `lib.rs`'s own `ExitRequested` handler, with no channel back to the IPC call.
+static RESTART_AFTER_INSTALL: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn request_restart_after_install() {
+    RESTART_AFTER_INSTALL.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// `lib.rs`'s own `ExitRequested` hook (FR-015/FR-016): runs after every live agent has already
@@ -109,9 +197,13 @@ pub async fn run_install_on_quit_hook(store: &SharedUpdateState, updates_dir: &P
         std::path::PathBuf::from(installer_path)
     };
 
+    let relaunch = RESTART_AFTER_INSTALL
+        .load(std::sync::atomic::Ordering::SeqCst)
+        .then(std::env::current_exe)
+        .and_then(Result::ok);
     let timeout_result = tokio::time::timeout(
         VERIFY_AND_SCHEDULE_TIMEOUT,
-        verify_and_schedule(&installer_path, updates_dir),
+        verify_and_schedule(&installer_path, updates_dir, relaunch),
     )
     .await;
 
@@ -162,7 +254,65 @@ pub async fn run_install_on_quit_hook(store: &SharedUpdateState, updates_dir: &P
     }
 }
 
-async fn verify_and_schedule(installer_path: &Path, updates_dir: &Path) -> Result<(), String> {
+async fn verify_and_schedule(
+    installer_path: &Path,
+    updates_dir: &Path,
+    relaunch: Option<std::path::PathBuf>,
+) -> Result<(), String> {
     install_on_quit::verify_installer_before_quit(installer_path, updates_dir).await?;
-    install_on_quit::schedule_install_on_quit(installer_path, std::process::id()).await
+    install_on_quit::schedule_install_on_quit(
+        installer_path,
+        std::process::id(),
+        relaunch.as_deref(),
+    )
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use state::UpdatePhase;
+
+    #[test]
+    fn release_builds_ignore_the_interval_override() {
+        assert_eq!(
+            resolve_check_interval(false, Some("5")),
+            PERIODIC_CHECK_INTERVAL
+        );
+    }
+
+    #[test]
+    fn debug_builds_accept_a_positive_override_only() {
+        assert_eq!(
+            resolve_check_interval(true, Some(" 7 ")),
+            std::time::Duration::from_secs(7)
+        );
+        for bad in [Some("0"), Some("-3"), Some("soon"), Some(""), None] {
+            assert_eq!(resolve_check_interval(true, bad), PERIODIC_CHECK_INTERVAL);
+        }
+    }
+
+    #[test]
+    fn the_default_interval_is_four_hours() {
+        assert_eq!(PERIODIC_CHECK_INTERVAL.as_secs(), 14_400);
+    }
+
+    #[test]
+    fn a_tick_is_skipped_while_work_is_in_flight() {
+        for busy in [
+            UpdatePhase::Checking,
+            UpdatePhase::Downloading,
+            UpdatePhase::Downloaded,
+            UpdatePhase::Installing,
+        ] {
+            assert!(!should_run_cycle(busy), "{busy:?} should skip the tick");
+        }
+        for open in [
+            UpdatePhase::Idle,
+            UpdatePhase::Available,
+            UpdatePhase::Failed,
+        ] {
+            assert!(should_run_cycle(open), "{open:?} should run the tick");
+        }
+    }
 }

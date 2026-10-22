@@ -341,7 +341,8 @@ const refract: RefractApi = {
   updates: {
     check: () => request<UpdateState>(IPC_REQUESTS.UPDATES_CHECK),
     getState: () => request<UpdateState>(IPC_REQUESTS.UPDATES_GET_STATE),
-    install: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL)
+    install: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL),
+    installNow: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL_NOW)
   },
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
