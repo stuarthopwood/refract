@@ -58,6 +58,12 @@ app. Requirement and story numbers refer to [spec.md](spec.md); data and protoco
    behaviour (spec 001 FR-031) runs as before; the update never forces or skips that.
 6. Sign the GitHub CLI out (`gh auth logout`), then select Check for updates. Expect: a plain-words
    message, no error toast, and the rest of the app keeps working.
+7. Leave Refract open while a newer Release is published (FR-028 to FR-031). Expect: with no
+   clicks, within 4 hours the update downloads in the background, a "Refract <version> is ready"
+   row with Update now appears in the sidebar, and the footer badge reads "Update ready".
+8. Start an agent turn, then select Update now. Expect: a confirmation names the running-agent
+   count; Cancel keeps everything running; Restart and update stops the agents, installs, and
+   relaunches Refract. With no agent running, Update now proceeds directly.
 
 **Story 4: uninstall (FR-021 to FR-024, SC-009)**
 
