@@ -5172,6 +5172,6 @@ entry): seven findings, all appended below; nothing else in scope was found unme
 - [X] T368 Amend `docs/design/foundations-icons.md`'s colour rule (agent-to-agent message
   identity) and add the agent-message token and a reserved-hue table to
   `docs/design/foundations-tokens-theming.md` per FR-101 (missing)
-- [ ] T369 Verify: `pnpm ci:local` and a live scratch-instance check
+- [x] T369 Verify: `pnpm ci:local` and a live scratch-instance check
   (`scripts/verify-p1-agentmsg.mjs`: glyph, colour and accessible name per direction in Dark,
   Obsidian and Dark (high contrast); `/models` opens Model roles) per FR-100/FR-101 (partial)
