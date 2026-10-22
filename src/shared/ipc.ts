@@ -415,6 +415,7 @@ export const IPC_REQUESTS = {
   UPDATES_CHECK: 'updates.check',
   UPDATES_GET_STATE: 'updates.getState',
   UPDATES_INSTALL: 'updates.install',
+  UPDATES_INSTALL_NOW: 'updates.installNow',
   APP_GET_VERSION: 'app.getVersion',
 } as const;
 

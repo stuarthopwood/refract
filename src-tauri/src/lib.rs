@@ -429,27 +429,21 @@ pub fn run() {
             window.show()?;
 
             // contracts/ipc.md "Startup behaviour" (FR-020, SC-010): kicked off after the
-            // window is shown, never awaited before `window.show()` above -- the same
-            // fire-and-forget stance `shell::memory`'s own sampler timer already takes rather
-            // than blocking startup on it. Logic lives in `updates::run_startup_update_check`
-            // (`AGENTS.md` "No god files").
+            // window is shown, never awaited before `window.show()` above.
             {
                 let update_state = update_state_for_setup.clone();
                 let session_manager = session_manager_for_updates_startup.clone();
                 let app_handle = app.handle().clone();
+                let data_dir = data_dir_for_setup.clone();
                 tauri::async_runtime::spawn(async move {
                     let current_version = app_handle.package_info().version.to_string();
-                    let on_state = {
-                        let session_manager = session_manager.clone();
-                        move |state: &updates::state::UpdateState| {
-                            let payload =
-                                serde_json::to_value(ipc::updates::to_renderer_state(state))
-                                    .expect("UpdateState is always JSON-serialisable");
-                            session_manager.emit_updates_state_changed(&payload);
-                        }
-                    };
-                    updates::run_startup_update_check(&update_state, &current_version, &on_state)
-                        .await;
+                    ipc::updates::run_update_lifecycle(
+                        session_manager,
+                        update_state,
+                        data_dir,
+                        current_version,
+                    )
+                    .await;
                 });
             }
             Ok(())
