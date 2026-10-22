@@ -863,3 +863,9 @@ head (see the PR body's own Gates section for the exact run). `check:theme-contr
   overflow now shows a visible toast, not only the sr-only region; a pasted image's own magic-byte
   read failure no longer aborts the rest of a multi-file paste; a plain clipboard-image paste
   respects the shared per-message cap too.
+
+## Phase 9: Convergence
+
+- [ ] T104 Add one shared `hasSendableContent` predicate (non-blank text or at least one pending image) and use it in `handleSend`, the Send button's `aria-disabled` and its `onClick` guard in `src/renderer/features/chat/MessageInput.tsx`, sending `message: ""` with the images for an image-only draft, per FR-041 (missing)
+- [ ] T105 Limit a working Session to one queued image-only follow-up: record the image names when an image-only send queues, label its chip "Image (<filename>)", and refuse a second image-only follow-up with a visible, announced reason, per FR-042 (missing)
+- [ ] T106 Carry an optional display `name` on `PendingImageAttachment` (the pasted `File.name` or the path's basename) so the FR-042 chip label can name the image, per FR-042 (missing)

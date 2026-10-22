@@ -818,3 +818,10 @@ driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
 (`scripts/verify-700-pill-cards.mjs`, not yet written) -- left for the build-slot pass.
 
 
+
+## Phase 40: Convergence
+
+- [ ] T147 Add per-theme `--context-usage-0/-30/-70/-100` tokens to every built-in theme and colour the Context usage figures and the word "high" from an OKLCH blend of them (`contextUsageColor`), muted icon and "Not available" unchanged, per FR-033 (missing)
+- [ ] T148 Extend `check:theme-contrast` to sample the context-usage blend at every 10% step against the composer background in every theme at 4.5:1, tuning the stops until it passes, per FR-033 (missing)
+- [ ] T149 Add the 2px decorative context usage bar under the figures and the `showContextUsageBar` setting (Rust settings store, default on) with a "Show context usage bar" switch in Settings > Chat, per FR-034 (missing)
+- [ ] T150 Move `ContextUsageChip` out of `ReadoutChips.tsx` (at the 600-line cap) into its own module so the new code does not grow it, per Constitution (file-size rule, issue #806) (missing)
