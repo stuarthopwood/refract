@@ -7,7 +7,10 @@
 // #1082 chip never renders without it) or lists a queued image-only follow-up as `[Image]` (the
 // #744 queue chip), and the prototyping rule forbids new fixtures. AGENTS.md allows a real `omp`
 // for a flow the fixtures do not cover. Prompts are short; the one long-ish turn exists only so
-// an image-only follow-up genuinely queues.
+// an image-only follow-up genuinely queues. The scratch instance reaches the real `omp` through
+// the existing PATH shim (`verify-tauri-omp-shim.rs`) and a pass-through script written at run
+// time that adds `--no-tools --no-extensions --no-skills --no-rules --model haiku`: without it the
+// real profile's own agent rules start tool calls that wait on approval, and no turn runs plainly.
 //
 // Checks (each fails when its target is missing):
 // - #724: the story-only marker `[data-composer-branch]` exists, sits after the Reasoning picker,
@@ -33,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, computeDirty, buildLauncher, makeScratchRepo, citeScreenshots, sha256OfFile, assertExeUnchanged, switchTheme, getAccessibleNameAndRole, axText } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
+import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
 import { measuredContrastRatio, parseComputedColorToEntry } from './contrast-math.mjs';
 import { contextUsageLinear } from './context-usage-contrast.mjs';
@@ -150,13 +154,14 @@ async function checkBranch(cdp, worktree, failures, findings) {
   if (!opened) failures.push('#724: clicking the label did not open the Git changes panel.');
   else findings.push('#724: click opened the Git changes panel ([data-git-changes-session] mounted).');
 
-  const t0 = Date.now();
+  const tSwitch = Date.now();
   git(worktree, ['switch', '-q', '-c', LONG_BRANCH]);
+  const t0 = Date.now();
   const seen = await cdp.waitFor(`${BRANCH}?.textContent.trim() === ${JSON.stringify(LONG_BRANCH)}`, { timeoutMs: 5_000, intervalMs: 50, label: '#724 label follows git switch' }).catch(() => false);
   const ms = Date.now() - t0;
   if (!seen) failures.push('#724: a git switch made outside a turn never reached the label within 5 s.');
-  else if (ms > 2000) failures.push(`#724: label followed the switch in ${ms} ms (> 2000 ms).`);
-  else findings.push(`#724: outside-turn \`git switch -c\` (${LONG_BRANCH.length} chars) shown in ${ms} ms (HEAD watch).`);
+  else if (ms > 1500) failures.push(`#724: label followed the switch ${ms} ms after git returned (> 1500 ms).`);
+  else findings.push(`#724: outside-turn \`git switch -c\` (${LONG_BRANCH.length} chars; git itself took ${t0 - tSwitch} ms) shown ${ms} ms after git returned (HEAD watch).`);
 
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(500);
@@ -342,12 +347,25 @@ async function main() {
   const exeHash = sha256OfFile(exePath);
   console.log(`${LOG}: exe sha256 ${exeHash}`);
   const png = redPngBase64();
+  const realOmp = spawnSync('where.exe', ['omp'], { encoding: 'utf8', windowsHide: true }).stdout.split(/\r?\n/).find((l) => l.toLowerCase().endsWith('.exe'));
+  if (!realOmp) throw new Error(`${LOG}: real omp.exe not found on PATH`);
+  const shimDir = dir('shim');
+  buildOmpShim(shimDir);
+  const passthrough = path.join(shimDir, 'omp-passthrough.mjs');
+  writeFileSync(passthrough, [
+    "import { spawn } from 'node:child_process';",
+    "const args = process.argv.slice(2);",
+    "const extra = ['--no-tools', '--no-extensions', '--no-skills', '--no-rules', '--no-title', '--model', 'haiku', '--thinking', 'off'];",
+    `const child = spawn(${JSON.stringify(realOmp)}, args.includes('--mode') ? [...args, ...extra] : args, { stdio: 'inherit', windowsHide: true });`,
+    "child.on('exit', (code) => process.exit(code ?? 1));"
+  ].join('\n'));
+  findings.push(`Real omp ${realOmp} via the PATH shim, extra flags: --no-tools --no-extensions --no-skills --no-rules --no-title --model haiku --thinking off.`);
   let child;
   let cdp;
   try {
     const launcherExe = buildLauncher(dir('launcher'));
     const port = await getFreePort();
-    const launched = await launchBuiltExe(launcherExe, exePath, { port, dataDir, logFile: path.join(exeDir, 'app.log'), extraEnv: { REFRACT_IMPORT_SOURCE_DIR: importDir } });
+    const launched = await launchBuiltExe(launcherExe, exePath, { port, dataDir, logFile: path.join(exeDir, 'app.log'), pathPrepend: shimDir, extraEnv: { REFRACT_IMPORT_SOURCE_DIR: importDir, REFRACT_FAKE_OMP_SCRIPT: passthrough, REFRACT_FAKE_OMP_NODE: process.execPath } });
     child = launched.child;
     cdp = await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 }));
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error(`${LOG}: CDP port ${port} not owned by pid ${launched.targetPid}`);
