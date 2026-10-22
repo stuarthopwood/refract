@@ -9,7 +9,7 @@ import { useDraftStore } from './draft-store'
 import { useMemoryStore } from './memory-store'
 import { useModelRolesStore } from './model-roles-store'
 import { usePendingRequestsStore } from './pending-requests-store'
-import { EMPTY_QUEUE, useQueueStore } from './queue-store'
+import { EMPTY_QUEUE, IMAGE_ONLY_QUEUE_TEXT, useQueueStore } from './queue-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useHolidayStore } from './holiday-store'
@@ -45,7 +45,7 @@ export { useDraftStore }
 export { useMemoryStore }
 export { useModelRolesStore }
 export { usePendingRequestsStore }
-export { EMPTY_QUEUE, useQueueStore }
+export { EMPTY_QUEUE, IMAGE_ONLY_QUEUE_TEXT, useQueueStore }
 export { useRepositoriesStore }
 export { DEFAULT_SETTINGS, useSettingsStore }
 export { useHolidayStore } from './holiday-store'
