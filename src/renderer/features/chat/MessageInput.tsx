@@ -17,7 +17,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
+import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
@@ -479,6 +479,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
     // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
     clearGhostState()
+    // Issue #762: bare `/models` opens Settings > Model roles, never reaches OMP (its hub writes roles).
+    const modelsInvocation = parseSlashCommand(draftText)
+    if (modelsInvocation?.name === 'models' && modelsInvocation.rest === '' && attachments.images.length === 0 && attachments.files.length === 0) {
+      useDraftStore.getState().clear(sessionId)
+      useViewStore.getState().openSettings('model-roles')
+      return
+    }
     if (notStarted) {
       // Spec 005 (research.md Decision 4): sending the first message to a just-restored,
       // not-yet-opened pane is itself the "real action" that clears its pristine flag. Cleared
@@ -486,14 +493,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // (triggered by this exact state change) be the SOLE place that calls `applySnapshot` for
       // this open.
       //
-      // Quality-gate remediation (code-reviewer, Medium): this branch used to call
-      // `applySnapshot` itself too, AFTER its own `open()` resolved -- `markOpened` then flipped
-      // `isPristine`, which re-ran ChatPane's effect, which called `open()` again (joining the
-      // same already-in-flight/dedup'd promise, harmless) and `applySnapshot` a SECOND time with
-      // the SAME pre-send snapshot, racing the real message's own `transcript:patch` events and
-      // risking a visible flash back to the pre-send transcript right after sending. Now this
-      // branch only awaits `open()` for its own completion signal (to know the agent has
-      // actually started before calling `chat.send` below) and never applies the snapshot itself.
+      // Quality-gate remediation (code-reviewer, Medium): this branch no longer calls
+      // `applySnapshot` itself (a second apply raced `transcript:patch` and could flash the
+      // pre-send transcript); it only awaits `open()` to know the agent has started.
       useSplitStore.getState().markOpened(sessionId)
       let snapshot
       try {
@@ -545,16 +547,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // itself) and, when `.rest` is non-empty, issues the side question itself through
     // `useSideChatStore`, bypassing `chat.send` entirely.
     if (slashInvocation?.name === 'btw') {
-      // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field at all
-      // (contracts/ipc.md) -- refusing instead of silently dropping the attachments avoids a
-      // developer discovering, after the fact, that a pasted screenshot never reached the model.
+      // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field (contracts/ipc.md);
+      // refuse rather than silently drop a pasted screenshot.
       if (attachments.images.length > 0 || attachments.files.length > 0) {
         toast.error("Side questions don't support attachments. Remove them and try again.")
         return
       }
-      // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) instead of sending a
-      // second `btw` while one is still running -- spec Assumption 7's single-flight rule applies
-      // here exactly as it does to the panel's own Send button.
+      // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) while a `btw` is still
+      // running -- spec Assumption 7's single-flight rule, as on the panel's own Send button.
       if (useSideChatStore.getState().bySession[sessionId]?.running) {
         toast.error('A side question is already running for this Session.')
         return

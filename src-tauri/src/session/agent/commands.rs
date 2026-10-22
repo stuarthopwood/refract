@@ -95,11 +95,10 @@ pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
 const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
     ("new", "Start a new Conversation in this Session"),
     ("btw", "Ask the agent a side question"),
-    // Gate-fix (HIGH): `role`/`models` are NOT listed here -- the renderer has no handler for
-    // either yet (`MessageInput.tsx` only intercepts `btw`), so listing them would offer two
-    // commands that always fail `unknown-command`, which contradicts this list's own "working
-    // implementation" rule. They stay reserved (`NATIVE_RESERVED_COMMANDS` above) so a custom
-    // command can never claim either name; add them here once the renderer half lands.
+    // Issue #762: handled in the renderer (`MessageInput.tsx` opens Settings > Model roles); still
+    // reserved above so `chat.send` refuses it if it ever arrives. `role` stays unlisted (no
+    // renderer handler yet), reserved for the same reason.
+    ("models", "Open model role settings"),
 ];
 
 /// Port of `slash-commands.ts`'s own `filterSupportedCommands`, extended per issue #760: a
