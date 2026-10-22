@@ -4,6 +4,7 @@
 
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
 import type { LowMemoryWarning } from './lowMemoryWarning';
+import type { OmpGuardNotice } from './ompGuardNotice';
 
 import type {
   ApprovalMode,
@@ -235,6 +236,7 @@ export type SlashCommand = SlashCommandDescriptor;
 export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
 
 export type { LowMemoryWarning } from './lowMemoryWarning';
+export type { OmpGuardNotice } from './ompGuardNotice';
 
 export interface SessionStatusEvent {
   sessionId: string;
@@ -441,6 +443,7 @@ export const IPC_EVENTS = {
   SETTINGS_CHANGED: 'settings:changed',
   UI_OPEN_SESSION: 'ui:open-session',
   MEMORY_WARNING: 'memory:warning',
+  OMP_GUARD_RESET: 'omp-guard:reset',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   ADVISOR_UPDATE: 'advisor:update',
@@ -803,6 +806,7 @@ export interface RefractApi extends UpdatesApi {
   onSettingsChanged(handler: (payload: Settings) => void): Unsubscribe;
   onUiOpenSession(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
+  onOmpGuardReset(handler: (payload: OmpGuardNotice) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;

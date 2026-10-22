@@ -1715,3 +1715,13 @@
 .pr-tabs-fade[data-fade-left][data-fade-right] {
   --pr-tabs-fade-mask: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
+
+/* #1184 gate: sonner paints a near-black box-shadow (outline:none) on a focused action/close button,
+ * invisible on the dark toast. One shared ring for every toast; the extra [data-sonner-toaster]
+ * level out-ranks sonner's own rule regardless of stylesheet order. */
+[data-sonner-toaster] [data-sonner-toast] [data-button]:focus-visible,
+[data-sonner-toaster] [data-sonner-toast] [data-close-button]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: none;
+}

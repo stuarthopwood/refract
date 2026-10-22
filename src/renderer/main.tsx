@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from './components/ui/sonner'
+import { OmpGuardDetailsDialog } from './components/OmpGuardDetailsDialog'
 import { initStores, initThemeStore } from './state'
 
 // Spec 007 (FR-012/SC-003, research.md decision 4): synchronous bootstrap read before React
@@ -32,6 +33,7 @@ createRoot(container).render(
     <TooltipProvider>
       <App />
       <Toaster />
+      <OmpGuardDetailsDialog />
     </TooltipProvider>
   </StrictMode>
 )

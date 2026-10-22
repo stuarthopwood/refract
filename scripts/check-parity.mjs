@@ -377,6 +377,7 @@ const EVENT_LANES = {
   SETTINGS_CHANGED: 'R8', // #791
   UI_OPEN_SESSION: 'R10b', // #793, window shell/chrome
   MEMORY_WARNING: 'R5', // #788, "memory warning" in R5's own work description
+  OMP_GUARD_RESET: 'R5', // #1184, OMP settings guard notice
   READOUT_UPDATE: 'R5',
   SUBAGENTS_UPDATE: 'R5',
   SUBAGENT_PATCH: 'R5',
