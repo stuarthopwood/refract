@@ -31,6 +31,10 @@ pub const SIDE_CHAT_INTERRUPTED: &str = "side-chat:interrupted";
 pub const SIDE_CHAT_CONVERSATION_CHANGED: &str = "side-chat:conversation-changed";
 pub const FILE_EXPLORER_PATCH: &str = "file-explorer:patch";
 pub const FILE_EXPLORER_RESET: &str = "file-explorer:reset";
+// Spec 018 (issue #464): the Git changes panel's own watcher-driven refresh ping (FR-015b) --
+// no diff content, matching `FILE_EXPLORER_RESET`'s own minimal payload; the renderer always
+// calls `gitChanges.list` again itself rather than applying a patch.
+pub const GIT_CHANGES_REFRESH: &str = "git-changes:refresh";
 pub const ACCOUNTS_GITHUB_CHANGED: &str = "accounts:github-changed";
 pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
 // Lane R11b (issue #794, spec 006 "Installer and updates").

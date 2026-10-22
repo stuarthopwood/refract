@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useClearedAnnouncement } from '../../lib/use-cleared-announcement'
 import type { StageGroup } from './groupSubagentStages'
-import { stageSettleSummary } from './SubagentChainRow'
+import { stageSettleSummary } from './subagentChainStatus'
 
 interface TurnWithStages {
   stages: StageGroup[]

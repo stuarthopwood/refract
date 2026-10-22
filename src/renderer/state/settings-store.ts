@@ -11,9 +11,11 @@ interface SettingsState {
   setApprovalMode(mode: ApprovalMode): Promise<void>
   setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<void>
   setWatermarkEnabled(enabled: boolean): Promise<void>
+  setHolidayTouches(value: Settings['holidayTouches']): Promise<void>
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
+  setShowContextUsageBar(enabled: boolean): Promise<void>
   setWordPredictionEnabled(enabled: boolean): Promise<void>
 }
 
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   watermarkEnabled: true,
   chatWidth: 'full',
+  holidayTouches: 'full',
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
   detectImagePathsOnPaste: true,
@@ -66,6 +69,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       notify(result.error)
     }
   },
+  setHolidayTouches: async (value) => {
+    const result = await window.refract.settings.setHolidayTouches(value)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
   setTranscriptDisplay: async (field, visible) => {
     const result = await window.refract.settings.setTranscriptDisplay(field, visible)
     if (result.ok) {
@@ -90,6 +101,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setDetectImagePathsOnPaste: async (enabled) => {
     const result = await window.refract.settings.setDetectImagePathsOnPaste(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setShowContextUsageBar: async (enabled) => {
+    const result = await window.refract.settings.setShowContextUsageBar(enabled)
     if (result.ok) {
       set({ settings: result.value })
     } else {

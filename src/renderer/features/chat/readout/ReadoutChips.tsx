@@ -5,101 +5,61 @@
 // `useReadoutStore()`'s entry for that id, seeded from `SessionSnapshot.readout` and kept live
 // by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
+// `ContextUsageChip` (#1082: gradient and bar) lives in its own module, `ContextUsageChip.tsx`.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent, RefObject } from 'react'
 import {
   ClockIcon,
   EyeIcon,
   FileDiffIcon,
-  GaugeIcon,
   GitPullRequestIcon,
   ListTodoIcon,
   Loader2Icon,
-  TriangleAlertIcon,
+  PinIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
-import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { DiffStatLine } from '@/features/sessions/sessionDisplay'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { DiffStatLine, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
 import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
+import { AgentsCard } from './AgentsCard'
 import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
-
-// Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
-// 4, #437 LOW): the visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a
-// screen-reader user hearing "seven point five k" loses precision a sighted user reading "7.5k"
-// at least sees spelled out in full on hover/zoom; the full locale-formatted figure (`7,500`) is
-// unambiguous read aloud either way. `ChangesChip` below shares its own equivalent,
-// `formatDiffStatAccessible` (gate round 5, DRY: extracted to `sessionDisplay.tsx` so the status
-// line and the Session details card's diff line can both use it, never phrasing the same stat
-// two different ways).
-const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
+import { TodoCard } from './TodoCard'
+import { deriveSubagentPhrase } from './subagentDerive'
+import { deriveTodoTotals, hasTodoPlan } from './todoDerive'
+import { useReadoutCard } from './useReadoutCard'
 
 /** FR-002: "N files, +A -D" (each figure abbreviated past 1,000 by the shared `compactNumber`
  * formatter, issue #437), matching the Session details card's own diff line exactly -- both now
- * render through the shared `DiffStatLine` (`sessionDisplay.tsx`), so neither can show or colour
- * the figure a different way; "Not available" for the `'not-available'` literal; hidden (`null`)
- * otherwise. Issue #925: `+A`/`-D` take the diff view's own green/red hue when positive, muted
- * when zero (never a red "-0"); `DiffStatLine` itself pairs the aria-hidden coloured visual text
- * with a real `sr-only` span (gate round 4, #437 LOW), the same pairing `ContextUsageChip` below
- * already uses. */
+ * render through the shared `DiffStatLine`, so neither can show or colour the figure a different
+ * way; "Not available" for the `'not-available'` literal; hidden (`null`) otherwise. Spec 018
+ * slice 1 (FR-021): activating it opens the Git changes panel for this pane's Session, the same
+ * explicit-activation pattern `SubagentsChip` below already uses -- this chip's own figure is
+ * read-only (`useReadoutStore`'s diff stat), the Git changes panel is the live, mutable view of
+ * the same worktree. */
 export function ChangesChip({ sessionId }: { sessionId: string }) {
   const changes = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.changes)
+  const onActivate = (event: MouseEvent<HTMLButtonElement>) =>
+    openHostedPanel('git-changes', sessionId, { opener: event.currentTarget })
   if (changes === null) return null
   if (changes === 'not-available') {
     return (
-      <ReadoutChip icon={FileDiffIcon}>
+      <ReadoutChip icon={FileDiffIcon} onActivate={onActivate} accessibleName="Open Git changes panel (Not available)">
         <span>Not available</span>
       </ReadoutChip>
     )
   }
   return (
-    <ReadoutChip icon={FileDiffIcon}>
+    <ReadoutChip
+      icon={FileDiffIcon}
+      onActivate={onActivate}
+      accessibleName={`Open Git changes panel (${formatDiffStatAccessible(changes)})`}
+    >
       <DiffStatLine stat={changes} />
-    </ReadoutChip>
-  )
-}
-
-/** FR-003: "N/M (P%)" (each figure abbreviated by the shared `compactNumber` formatter, the word
- * "tokens" dropped from the visible text, issue #437, 2026-10-15 grill), hidden when `null`,
- * "Not available" for the `'not-available'` literal, a visible warning (icon + the word "high",
- * never colour alone) once `percent >= 90`. The full wording, including the high-usage warning
- * and the full (un-abbreviated) token figures, reaches assistive technology through a real
- * `sr-only` span next to the `aria-hidden` visual text -- the same pattern
- * `CurrentTimeChip`/`TodoProgressChip` already use -- rather than this chip's own former
- * `accessibleName` prop, which `ReadoutChip`'s role-less `<span>` fallback (no
- * `onActivate`/`href` here) exposes as a bare `aria-label` that several real screen readers
- * (NVDA in browse mode, often Narrator and JAWS) ignore on a non-interactive element. */
-export function ContextUsageChip({ sessionId }: { sessionId: string }) {
-  const contextUsage = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.contextUsage)
-  if (contextUsage === null) return null
-  if (contextUsage === 'not-available') {
-    return (
-      <ReadoutChip icon={GaugeIcon}>
-        <span>Not available</span>
-      </ReadoutChip>
-    )
-  }
-  // Gate round 5 fix (Flow LOW): the rounded, DISPLAYED percent is what the warning must agree
-  // with -- testing the raw value let 89.5 to 89.99 show "90%" with no warning at all, since the
-  // raw value itself was still under 90 even though the rounded figure the developer reads was
-  // already at the threshold.
-  const percent = Math.round(contextUsage.percent)
-  const high = percent >= 90
-  const used = compactNumber(contextUsage.usedTokens)
-  const windowSize = compactNumber(contextUsage.windowTokens)
-  const usedFull = FULL_NUMBER_FORMAT.format(contextUsage.usedTokens)
-  const windowFull = FULL_NUMBER_FORMAT.format(contextUsage.windowTokens)
-  return (
-    <ReadoutChip icon={high ? TriangleAlertIcon : GaugeIcon}>
-      <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${usedFull} of ${windowFull} tokens used, ${percent} percent`}</span>
-      <span aria-hidden>
-        {used}/{windowSize} ({percent}%)
-        {high && <span className="font-medium text-destructive"> high</span>}
-      </span>
     </ReadoutChip>
   )
 }
@@ -211,54 +171,152 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
  * apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
+  const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
+  // Issue #700/#701 slice (b): the Agents hover-focus card, same `useReadoutCard` controller
+  // the Todo pill below uses -- never a Radix `Tooltip`/`HoverCard` (decision item 1). Gate
+  // round 1 fix 2: disabled whenever no subagent is currently running this turn (AC: "No card
+  // appears when there is no todo list or no running agent") -- a finished/failed/cancelled-only
+  // turn still shows its quiet settled phrase on the pill itself, just never opens the card.
+  const card = useReadoutCard({ disabled: (subagentCount?.running ?? 0) === 0 })
   // Issue #563, FR-027: records the chip itself as the opener when it is the control that
   // opened the panel this time, so closing it returns focus here instead of always falling back
   // to the generic rail/launcher fallback `hosted-panel-actions.ts`'s `closeHostedPanel` applies.
-  const onActivate = (event: MouseEvent<HTMLButtonElement>) => openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
+  // Gate round 1 fix 10: also cancels any still-pending hover-open timer first, so a click that
+  // opens (or re-focuses) the Subagents panel can never have the card pop up over it a moment later.
+  const onActivate = (event: MouseEvent<HTMLButtonElement>) => {
+    card.close()
+    openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
+  }
+  // Gate round 1 fix 4: the card's own "Open subagents panel" link is pointer-only (a keyboard
+  // user's own route is the pill itself, already open-panel on Enter/Space via `onActivate`
+  // above) -- closes the card and returns focus to the pill it came from BEFORE opening the
+  // panel, so a click here never strands focus on `<body>` while the panel is already open.
+  const onOpenPanelFromCard = () => {
+    card.close()
+    card.anchorRef.current?.focus({ preventScroll: true })
+    openHostedPanel('subagents', sessionId, { opener: card.anchorRef.current })
+  }
   if (subagentCount === null) return null
-  const { running, finished, exited, failed, cancelled } = subagentCount
-  const phrase = (() => {
-    if (running > 0) return `${running} subagent${running === 1 ? '' : 's'} running`
-    const parts: string[] = []
-    if (finished > 0) parts.push(`${finished} finished`)
-    if (exited > 0) parts.push(`${exited} exited`)
-    if (failed > 0) parts.push(`${failed} failed`)
-    if (cancelled > 0) parts.push(`${cancelled} cancelled`)
-    return parts.join(', ')
-  })()
+  const phrase = deriveSubagentPhrase(subagentCount)
   return (
-    <ReadoutChip
-      icon={UsersIcon}
-      // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
-      // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
-      // focus-move retarget (research.md Decision 10).
-      onActivate={onActivate}
-      accessibleName={`Open subagents panel (${phrase})`}
-      // Gate round 5 fix (Layout/Visual Medium): `ReadoutChip`'s own base class already carries
-      // `text-muted-foreground` -- the old `running === 0 ? 'text-muted-foreground' : undefined`
-      // was a no-op in the finished-only case and never actually emphasised the running state,
-      // which FR-007's "quiet" wording for the finished total assumes exists. Flipped so the
-      // RUNNING state is the one that stands out instead.
-      className={running > 0 ? 'text-foreground' : undefined}
+    <Popover
+      open={card.open}
+      onOpenChange={(next) => {
+        if (!next) card.close()
+      }}
     >
-      <span aria-hidden>{phrase}</span>
-    </ReadoutChip>
+      <PopoverAnchor asChild>
+        <ReadoutChip
+          ref={card.anchorRef}
+          icon={UsersIcon}
+          // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
+          // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
+          // focus-move retarget (research.md Decision 10).
+          onActivate={onActivate}
+          accessibleName={`Open subagents panel (${phrase})`}
+          // Gate round 5 fix (Layout/Visual Medium): `ReadoutChip`'s own base class already carries
+          // `text-muted-foreground` -- the old `running === 0 ? 'text-muted-foreground' : undefined`
+          // was a no-op in the finished-only case and never actually emphasised the running state,
+          // which FR-007's "quiet" wording for the finished total assumes exists. Flipped so the
+          // RUNNING state is the one that stands out instead.
+          className={subagentCount.running > 0 ? 'text-foreground' : undefined}
+          onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerLeave={card.anchorHandlers.onPointerLeave}
+          onFocus={card.anchorHandlers.onFocus}
+          onBlur={card.anchorHandlers.onBlur}
+        >
+          <span aria-hidden>{phrase}</span>
+        </ReadoutChip>
+      </PopoverAnchor>
+      {/* Decision item 1: content is inert text, nothing inside is ever focused -- both
+          auto-focus hooks are suppressed so keyboard focus stays on the pill the whole time. */}
+      <PopoverContent
+        data-slot="agents-card"
+        side="top"
+        align="start"
+        collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
+        className="w-auto p-3"
+        onPointerEnter={card.contentHandlers.onPointerEnter}
+        onPointerLeave={card.contentHandlers.onPointerLeave}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <AgentsCard subagents={subagents} counts={subagentCount} onOpenPanel={onOpenPanelFromCard} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
-/** FR-021: "Todo N/M", hidden when the agent has no task list at all. */
+/** FR-021, amended by issue #700/#701 slice (a), decision record item 1: "Todo N/M" is now the
+ * pin-TOGGLE pill -- a native `<button>` (`ReadoutChip`'s own `onActivate` branch), so a click
+ * or keyboard Enter/Space both toggle `useTodoPinStore`'s per-Session `pinned` flag, which
+ * mounts/unmounts `PinnedTodoPanel.tsx` in `ChatPane.tsx`. Hidden when there is no task list at
+ * all (`deriveTodoTotals` returns `null`, the one shared derive also used by the panel). The
+ * accessible name is FIXED regardless of pinned state (decision item 1: "clicking to pin...
+ * keeps focus on the pill" with no name change -- the panel's own header carries the separate
+ * Unpin control, so this pill never needs to say "Unpin"); the pinned LOOK is a pin glyph plus a
+ * rendered border (`aria-pressed:border`), never the hover/open-card background every other
+ * interactive chip already gets from `READOUT_CHIP_INTERACTIVE_ADDITIONS`. */
 export function TodoProgressChip({ sessionId }: { sessionId: string }) {
-  const todoProgress = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoProgress)
-  if (todoProgress === null) return null
+  const todoTree = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoTree)
+  const pinned = useTodoPinStore((s) => s.pinnedBySession[sessionId] ?? false)
+  const togglePinned = useTodoPinStore((s) => s.togglePinned)
+  // Decision item 1: "The card never opens while pinned" -- `disabled` forces `card.open` false
+  // and ignores every hover/focus trigger regardless of what the task list looks like.
+  const card = useReadoutCard({ disabled: pinned })
+  // Gate round 1 fix 10: cancels any still-pending hover-open timer before toggling the pin, so
+  // the card can never pop up over the pinned panel the click just mounted.
+  const onActivate = () => {
+    card.close()
+    togglePinned(sessionId)
+  }
+  if (!hasTodoPlan(todoTree)) return null
+  const totals = deriveTodoTotals(todoTree)
+  if (!totals) return null // unreachable given hasTodoPlan above; keeps TS narrowed without a cast
   return (
-    <ReadoutChip icon={ListTodoIcon}>
-      {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
-          sr-only fix. */}
-      <span className="sr-only">{`Todo: ${todoProgress.done} of ${todoProgress.total} tasks done`}</span>
-      <span aria-hidden>
-        Todo {todoProgress.done}/{todoProgress.total}
-      </span>
-    </ReadoutChip>
+    <Popover
+      open={card.open}
+      onOpenChange={(next) => {
+        if (!next) card.close()
+      }}
+    >
+      <PopoverAnchor asChild>
+        <ReadoutChip
+          ref={card.anchorRef}
+          icon={pinned ? PinIcon : ListTodoIcon}
+          onActivate={onActivate}
+          accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
+          pressed={pinned}
+          controls={`todo-panel-${sessionId}`}
+          pinHookId={sessionId}
+          className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
+          onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerLeave={card.anchorHandlers.onPointerLeave}
+          onFocus={card.anchorHandlers.onFocus}
+          onBlur={card.anchorHandlers.onBlur}
+        >
+          {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
+              sr-only fix. */}
+          <span className="sr-only">{`Todo: ${totals.done} of ${totals.total} tasks done`}</span>
+          <span aria-hidden>
+            Todo {totals.done}/{totals.total}
+          </span>
+        </ReadoutChip>
+      </PopoverAnchor>
+      <PopoverContent
+        data-slot="todo-card"
+        side="top"
+        align="start"
+        collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
+        className="w-auto p-3"
+        onPointerEnter={card.contentHandlers.onPointerEnter}
+        onPointerLeave={card.contentHandlers.onPointerLeave}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <TodoCard todoTree={todoTree} />
+      </PopoverContent>
+    </Popover>
   )
 }
 

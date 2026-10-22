@@ -49,6 +49,26 @@ export function isSubagentSuccessStatus(status: SubagentRowStatus): boolean {
  * `--severity-success` token, so the two never read as two different greens. */
 export const SUBAGENT_SUCCESS_TEXT_CLASS = 'text-severity-success'
 
+/** The Tailwind class issue #1008's "failed Stage label" fix applies to a failed Stage's own
+ * label, the same `--severity-error` token `ToolRow.tsx`'s own failed-call label already uses. */
+export const SUBAGENT_ERROR_TEXT_CLASS = 'text-severity-error'
+
+/** Issue #1008 item 1 (gate round 1 fix): the Stage label's own text-colour half (`StageGroupRow`'s
+ * label, `ChainStageLine`'s jump button -- `SubagentChainRow.tsx`), FR-089: red the instant ANY
+ * member has settled `failed` -- even while a sibling member is still running (`counts.failed`
+ * alone, never derived from `overallStatus`, whose own priority order reads the WHOLE Stage as
+ * `'running'` for as long as any member is unsettled, which would otherwise delay the red label
+ * until the whole Stage finally settles); green only once every member has genuinely finished
+ * (no running/cancelled/exited either); `undefined` (neutral) for every other state. Takes the
+ * roll-up `counts` directly, not a single derived `status`, so the "any member failed" rule
+ * needs no `SubagentRowStatus` of its own -- the one call both sites share so the two text
+ * colours can never drift apart. */
+export function subagentStatusTextClass(counts: Record<SubagentRowStatus, number>): string | undefined {
+  if (counts.failed > 0) return SUBAGENT_ERROR_TEXT_CLASS
+  if (counts.running === 0 && counts.cancelled === 0 && counts.exited === 0) return SUBAGENT_SUCCESS_TEXT_CLASS
+  return undefined
+}
+
 /** The icon-only markup shared by `SubagentStatusIcon` and `SubagentStatusGlyph` below: a
  * distinct icon per state, never colour alone (WCAG 2.1 AA): spinner, check, cross, stop
  * (cancelled), unplug (exited). */

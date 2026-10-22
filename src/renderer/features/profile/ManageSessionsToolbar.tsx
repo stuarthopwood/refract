@@ -5,7 +5,7 @@ import type { KeyboardEvent, RefObject } from 'react'
 import { SearchIcon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { Repository } from '../../../shared/model'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import type { ArchiveFilter, SessionFilters, SortKey } from '@/state/view-store'
@@ -31,14 +31,6 @@ const SORT_LABELS: Record<SortKey, string> = {
   repo: 'Repository, A to Z',
   status: 'Status'
 }
-
-// Post-build review fix (Phase7PostBuild, Medium): every selected segment of this ToggleGroup
-// shares the one `--active-indicator` treatment DESIGN.md's own "Active/selected indicator" rule
-// requires for every current/selected surface in the app (a 2px left-edge bar), overriding
-// toggle.tsx's own default `data-[state=on]:bg-primary` fill -- the brightest thing on the
-// screen otherwise, and the only control in the renderer using that fill for a filter state.
-const SELECTED_SEGMENT_CLASS =
-  'data-[state=on]:bg-muted data-[state=on]:text-foreground data-[state=on]:hover:bg-muted data-[state=on]:shadow-[inset_2px_0_0_0_var(--color-active-indicator)]'
 
 export function ManageSessionsToolbar({
   filters,

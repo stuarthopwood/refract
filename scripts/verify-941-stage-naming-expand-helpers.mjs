@@ -35,13 +35,18 @@ export async function expandRow(cdp, titleText) {
  * Issue #991 final-delta fix (test-reviewer): `'false'` no longer applies to any Stage -- the
  * disclosure is upward-only (research.md decision 19), so an observed-running Stage STAYS open
  * forever after. Stage 1's own additive `{"__delay__": 1500}` makes it deterministically
- * observed running, so `'true'`; Stage 2/7 carry no delay (unpaced, inside the renderer's own
- * 50ms patch-batching window) so whether either was ever observably open first is not reliably
- * reproducible -- both stay `undefined`. The chain row keeps its own `'true'` (Stage 5's
- * `failed` agent keeps it permanently unsettled, so its own upward-only open state is equally
- * deterministic). Left `undefined` on every later pass, and for any row this fixture cannot
- * make an unambiguous claim about -- the old "a known boolean, either value" check then runs
- * unchanged. */
+ * observed running, so `'true'`. Gate round 1 fix (issue #1000, item 9): Stage 2 is NO LONGER
+ * "no delay" either -- it gained its own additive `{"__delay__": 1500}` (issue #1000), and
+ * under FR-087's multi-Stage defer rule it is now deterministically CLOSED while running
+ * (`'false'`), not open -- but its own call site (`assertDependencies`,
+ * `verify-941-stage-naming-panel-helpers.mjs`) still conservatively passes `undefined` here,
+ * unchanged by this fix. Stage 7 alone remains genuinely unpaced (inside the renderer's own
+ * 50ms patch-batching window), so whether it was ever observably open first is still not
+ * reliably reproducible -- it stays `undefined`. The chain row keeps its own `'true'` (Stage
+ * 5's `failed` agent keeps it permanently unsettled, so its own upward-only open state is
+ * equally deterministic). Left `undefined` on every later pass, and for any row this fixture
+ * cannot make an unambiguous claim about -- the old "a known boolean, either value" check then
+ * runs unchanged. */
 export async function assertExpandCycleByFinder(cdp, triggerFinderExpr, findings, failures, themeName, label, firstPassExpectedBefore) {
   const before = await cdp.evaluate(`(${triggerFinderExpr})?.getAttribute('aria-expanded') ?? null`);
   if (firstPassExpectedBefore !== undefined) {

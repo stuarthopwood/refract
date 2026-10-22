@@ -26,9 +26,9 @@
 // ported. Issue #724 (folded in): `branch` is a brand-new, Rust-only field (constitution/epic
 // rule 5), computed fresh every readout tick via `git symbolic-ref`/`git rev-parse` against the
 // Session's own worktree (never retained across a transient git failure, same stance `changes`
-// already takes). The issue's own suggested dedicated worktree-HEAD-file watcher is NOT
-// implemented (still disclosed): this recomputes on every tool-call end, turn start/end, and
-// attach instead, the floor the issue's own text accepts when the watcher isn't built.
+// already takes). Spec 019 adds the issue's worktree-HEAD watch (`readout_head_watch.rs`,
+// started by `on_launch`, stopped by `on_exit`) on top of the existing refresh points: every
+// tool-call end, turn start/end, and attach.
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
 // decoded frame, `on_exit` for process exit, and `on_start_progress` for the ready-wait banner
@@ -60,7 +60,7 @@ use super::agent::SessionAgent;
 
 #[path = "readout_todo.rs"]
 mod readout_todo;
-use readout_todo::{compute_up_next, parse_todo_phases, TodoPhaseState};
+use readout_todo::{build_todo_tree, compute_up_next, parse_todo_phases, TodoPhaseState};
 
 /// Issue #788's own acceptance criterion: "the readout push does not exceed one event per 100 ms
 /// per Session under streaming" -- test-review/perf gate round 1 finding: the PREVIOUS 50 ms value
@@ -164,6 +164,24 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
             }
         }
         "tool_execution_end" => {
+            // Issue #700/#701 slice (a), FINDINGS item 62: the `todo` tool's own call-end frame
+            // already carries the FULL, up-to-date `phases` tree (never a delta) -- replacing
+            // `todo_phases` with it here lets the pinned panel update live, mid-turn, rather
+            // than waiting for the next `sync_from_state` (launch, Conversation switch, command
+            // refresh, or settle). A malformed/absent `details.phases` leaves the retained tree
+            // untouched (stale-but-present beats a flicker to empty on a transient shape miss).
+            if frame.get("toolName").and_then(Value::as_str) == Some("todo") {
+                if let Some(phases) = frame
+                    .get("result")
+                    .and_then(|r| r.get("details"))
+                    .and_then(|d| d.get("phases"))
+                    .and_then(parse_todo_phases)
+                {
+                    agent
+                        .with_readout_state(|s| s.todo_phases = Some(phases))
+                        .await;
+                }
+            }
             schedule_readout_update(agent).await;
         }
         _ => {}
@@ -171,6 +189,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
 }
 
 pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
+    super::readout_head_watch::stop(agent.session_id());
     // A process exit mid-turn must not leave a phantom "turn running" reading behind forever
     // (the chip otherwise never clears once `agent_start` set it, since no `session_settled`
     // frame is coming from a process that has already exited). Also stops the PR-poll timer
@@ -229,6 +248,7 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
                 agent
                     .with_readout_state(|s| s.pull_request_branch = Some(session.branch.clone()))
                     .await;
+                super::readout_head_watch::start(&agent, &session.worktree_path).await;
             }
             refresh_pull_request(&agent, &session.worktree_path, &session.branch).await;
             schedule_readout_update(&agent).await;
@@ -305,7 +325,7 @@ fn empty_readout() -> Value {
         "turnTime": Value::Null,
         "pullRequest": Value::Null,
         "subagentCount": Value::Null,
-        "todoProgress": Value::Null,
+        "todoTree": Value::Null,
         "todoPhases": Value::Null,
         "branch": Value::Null,
     })
@@ -321,8 +341,10 @@ fn parse_context_usage(value: &Value) -> Option<ContextUsageState> {
 
 /// Debounced to `READOUT_COALESCE_MS`, then single-flight (a trigger arriving while a
 /// computation is already in progress joins the next run instead of starting a second
-/// overlapping one) -- port of `scheduleReadoutUpdate`/`runReadoutUpdate`. `pub(super)` (not
-/// private): `session::subagents`'s own `on_frame` calls this too, the same way
+/// overlapping one) -- port of `scheduleReadoutUpdate`/`runReadoutUpdate`. `pub(crate)` (gate
+/// round 1 item 13, issue #464: widened from `pub(super)` so `ipc::git_changes`/
+/// `fs::git_changes_watch_state` can call it too, same signature/behaviour, unchanged for every
+/// existing caller): `session::subagents`'s own `on_frame` calls this too, the same way
 /// `handleTaskStart`/`handleTaskUpdate` call `this.scheduleReadoutUpdate()` directly in TS.
 ///
 /// A plain `fn` returning an explicitly boxed future, NOT `async fn` (gate-fix, round 2): this
@@ -333,7 +355,7 @@ fn parse_context_usage(value: &Value) -> Option<ContextUsageState> {
 /// already resolved. Declaring THIS one's return type concretely up front (not inferred from its
 /// body) breaks the cycle; every call site still just calls it and `.await`s the result exactly
 /// as before.
-pub(super) fn schedule_readout_update(
+pub(crate) fn schedule_readout_update(
     agent: &SessionAgent,
 ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
     let agent = agent.arc();
@@ -493,7 +515,7 @@ async fn refresh_pull_request(agent: &SessionAgent, worktree_path: &str, branch:
 /// `Value::Null` for an unreadable worktree (missing, not a git repo, or no commits yet) -- never
 /// retained across a transient failure (unlike `pull_request`): a worktree that is readable one
 /// tick and not the next has genuinely changed state, not merely hit a momentary blip.
-async fn compute_branch(worktree_path: &str) -> Value {
+pub(super) async fn compute_branch(worktree_path: &str) -> Value {
     let path = Path::new(worktree_path);
     let symbolic = git_raw(
         path,
@@ -537,18 +559,11 @@ fn build_readout_value(
         None if s.state_synced => Value::String("not-available".to_string()),
         None => Value::Null,
     };
-    let todo_progress = s.todo_phases.as_ref().and_then(|phases| {
-        let total = phases.iter().map(|p| p.tasks.len()).sum::<usize>();
-        if total == 0 {
-            return None;
-        }
-        let done = phases
-            .iter()
-            .flat_map(|p| p.tasks.iter())
-            .filter(|t| t.status == "completed")
-            .count();
-        Some(json!({ "done": done, "total": total }))
-    });
+    // Issue #700/#701 slice (a): the full retained tree (every phase, every task's own
+    // `content`/`status`/`blocker`) -- `todoProgress`'s own done/total counting moved OUT of
+    // Rust entirely (decision record item 4: "the pill, card and panel all take these from the
+    // ONE derive", `todoDerive.ts`, shared with #687/#526, never duplicated here).
+    let todo_tree = build_todo_tree(s.todo_phases.as_ref());
     // Issue #941 "Up next" (`readout_todo.rs`): the agent's own pending Todo phases, shown
     // after a turn's Stages; `null` when there is no todo list, or every phase is finished.
     let todo_phases_up_next = compute_up_next(s.todo_phases.as_ref());
@@ -565,7 +580,7 @@ fn build_readout_value(
         "turnTime": turn_time,
         "pullRequest": pull_request,
         "subagentCount": subagent_count,
-        "todoProgress": todo_progress,
+        "todoTree": todo_tree,
         "todoPhases": todo_phases_up_next,
         "branch": branch,
     })

@@ -15,6 +15,9 @@ interface AlertDismissState {
   // above for why these moved out of component-local `useRef`s.
   memoryWasShown: boolean
   ompVersionWasShown: boolean
+  // Issue #883: the downloaded-update notice is dismissed per version.
+  updateDismissedVersion: string | null
+  dismissUpdate(version: string): void
   dismissMemory(): void
   dismissOmpVersion(): void
   setMemoryWasShown(shown: boolean): void
@@ -26,6 +29,8 @@ export const useAlertDismissStore = create<AlertDismissState>((set) => ({
   ompVersionDismissed: false,
   memoryWasShown: false,
   ompVersionWasShown: false,
+  updateDismissedVersion: null,
+  dismissUpdate: (version) => set({ updateDismissedVersion: version }),
   dismissMemory: () => set({ memoryDismissed: true }),
   dismissOmpVersion: () => set({ ompVersionDismissed: true }),
   setMemoryWasShown: (shown) => set({ memoryWasShown: shown }),

@@ -5,23 +5,11 @@
 import { useEffect, useState } from 'react'
 import { badgeVariants } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { useSessionsStore } from '@/state'
 
-/** `notIdle`: the Session is working or needs-you -- the API's own mid-turn refusal rule.
- * `stopped`: no agent is running at all; a picker still shows the last-known value but cannot
- * change it either (decision 3). Either state disables the trigger, with its own reason text. */
-export function usePickerDisabled(sessionId: string) {
-  const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
-  const notIdle = status === 'working' || status === 'needs-you'
-  const stopped = status === 'stopped'
-  return { disabled: notIdle || stopped, notIdle, stopped }
-}
-
-/** Shared by both pickers (gate round 1 fix, code-reviewer HIGH): blocks only an attempt to
- * OPEN while disabled -- Escape, an outside click, and selecting an item all still close an
- * already-open menu even if `disabled` flipped true in the meantime -- and force-closes an
- * already-open menu the instant `disabled` itself becomes true (the Session starts a turn, or
- * stops, while the menu is sitting open). */
+/** Shared by both pickers: blocks only an attempt to OPEN while `disabled`, and force-closes an
+ * already-open menu the instant `disabled` becomes true. The pickers are no longer disabled by
+ * Session status (#766 part B: changes queue for the next turn), so callers pass `false` unless
+ * they have their own reason. */
 export function usePickerOpenState(disabled: boolean) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -115,3 +103,25 @@ export const PICKER_TRIGGER_CLASS = cn(
  * already relied on elsewhere for exactly this purpose) when active. */
 export const PICKER_OPTION_CLASS = 'flex cursor-default items-center gap-2 border-l-2 border-transparent px-2 py-1.5 text-sm'
 export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-accent text-accent-foreground'
+
+/** #1101 (Git changes panel commit box, ADR 0003): the composer's own surface/border/focus
+ * treatment (`MessageInput.tsx`'s outer wrapper div -- `border-composer-border`/
+ * `bg-composer-background`/`border-composer-focus`/`ring-composer-ring`), applied directly to a
+ * standalone `Input`/`Textarea` element instead. The real composer draws this on a WRAPPING div
+ * and keys its focus state off a descendant textarea (`has-[textarea:focus-visible]`) because a
+ * pill row and ghost-text overlay share that same box; the commit box has no such siblings, so
+ * the identical tokens are applied straight to each field's own `focus-visible` state, replacing
+ * `Input`/`Textarea`'s generic `border-input`/`--ring` defaults with the composer's instead of
+ * re-deriving a third set of tokens.
+ * Live-check fix (verify-1101, 2026-10-20): `Input`/`Textarea`'s own `dark:bg-input/30` is a
+ * DIFFERENT variant group from a bare `bg-composer-background` (no `dark:` prefix), so `cn`
+ * cannot recognise them as conflicting and never drops the stale one -- in Dark/Obsidian/Dark
+ * high contrast the real DOM ends up carrying BOTH classes, and `dark:bg-input/30` wins the CSS
+ * cascade (declared later in the generated stylesheet), confirmed live via a real computed-style
+ * read (`oklab(1 0 0 / 0.108)`, exactly `--input`'s 36% alpha times Tailwind's own `/30` modifier
+ * -- never `--composer-background` at all). An explicit `dark:bg-composer-background` gives
+ * `cn` a same-variant competitor to actually dedupe against, the same fix this file's own
+ * `text-readout` precedent (`src/renderer/lib/utils.ts`) already documents for an unrelated
+ * custom-token collision. */
+export const COMPOSER_INPUT_SURFACE_CLASS =
+  'border-composer-border bg-composer-background dark:bg-composer-background focus-visible:border-composer-focus focus-visible:ring-3 focus-visible:ring-composer-ring'

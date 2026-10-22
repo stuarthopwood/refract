@@ -112,8 +112,10 @@ pnpm build        # must pass before a change lands on main
    unreachable host), open the profile menu and select "Fix sign-in…"/"Check GitHub
    connection…". Expect: Manage accounts opens and focus lands on that account's own recovery
    button (Sign in again, or Check again) -- no sign-in flow starts on its own.
-3. Open the Theme submenu. Expect: every built-in dark preset with its real swatch colour, the
-   active one marked by a check icon and the word "Current". Choose a different preset. Expect:
+3. Open the Theme submenu. Expect: a real radio list (`menuitemradio`/`aria-checked`), every
+   built-in dark preset with its name first and a small two-colour chip after it, the active one
+   marked by a filled leading ring-and-dot radio mark -- never a trailing check or the word
+   "Current". Choose a different preset. Expect:
    it applies and persists immediately (no Save/Cancel step, unlike Settings' Appearance
    section), the menu closes, focus returns to the profile item, and a screen reader announces
    "Applied theme <name>". Reopen the menu and the Theme submenu: the newly chosen preset is now

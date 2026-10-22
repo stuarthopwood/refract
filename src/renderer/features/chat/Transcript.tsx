@@ -9,34 +9,28 @@ import {
 } from '@/components/ui/message-scroller'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Message, MessageContent } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
-import { type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
+import { type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
-import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
-import { LinkContext, Markdown } from './Markdown'
-import { AgentMessageRow } from './AgentMessageRow'
-import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
+import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
+import { LinkContext } from './Markdown'
 import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
-import { groupToolItems, isToolGroup, isThoughtRun } from './groupToolItems'
+import { groupToolItems, isToolGroup } from './groupToolItems'
 import { groupThoughtItems } from './groupThoughtItems'
-import { ThoughtRunRow } from './ThoughtRunRow'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
-import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
+import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
-import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
-import { UserMessageRow, type UserItem } from './UserMessageRow'
-import { NoticeRow } from './NoticeRow'
-import { SkillPromptRow } from './SkillPromptRow'
+import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
+import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
+import { JUMP_SCROLL_TOP_MARGIN_PX, JumpToStageContext, stageRowDomId } from './stageJump'
 
-type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
 // Cached per repository id for the renderer's lifetime (T072, FR-045): every AskQuestionRow in
 // every Session of the same repository shares one `repositories.userName` round trip.
@@ -99,97 +93,6 @@ function splitIntoTurns(items: TranscriptItem[]): Turn[] {
   }
   turns.push(current)
   return turns
-}
-
-interface TranscriptRowProps {
-  item: AdvisoryGroupedTranscriptItem
-  sessionId: string | null
-  pending: PendingRequest[]
-  userName: string | undefined; hideTime?: boolean // #555 amendment: hides a user row's own time under a directly-above TimeGapDivider (see UserMessageRowProps)
-  resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
-  /** Both reuse EXISTING Transcript mechanisms (gate round 2/3): reveal -> suppressLogAnnouncements; queued -> revealedAnnouncement. */
-  onAdvisoryReveal: () => void
-  onQueuedAnnounce: (text: string) => void
-}
-
-// Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
-// docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
-// pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
-// tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
-  if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
-  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
-  if (isToolGroup(item)) return <ToolGroupRow group={item} />
-  if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
-
-  switch (item.kind) {
-    case 'user':
-      // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow` (split out to keep this file within its `check:file-size` baseline).
-      return <UserMessageRow item={item} userName={userName} hideTime={hideTime} />
-
-    case 'assistant-text':
-      return (
-        <Message>
-          <MessageContent className="w-full">
-            <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
-            {item.streaming && (
-              <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
-            )}
-          </MessageContent>
-        </Message>
-      )
-
-    case 'thinking':
-      // Defensive fallback for a non-empty `thinking` item that reaches here ungrouped (should
-      // not normally occur: `groupThoughtItems` wraps every run, including a run of one, into a
-      // `ThoughtRun` before this renders -- see `groupToolItems.ts`'s own comment for why every
-      // consumer downstream must never switch React element type between a lone item and a run).
-      // `!item.text` matches `groupThoughtItems`'s own "dropped from grouping" rule for an empty
-      // thought (defensive; Rust never actually sends one).
-      if (!item.text) return null
-      return <ThoughtRunRow group={{ kind: 'thought-run', id: item.id, items: [item] }} />
-
-    case 'tool':
-      if (item.tool === 'ask') {
-        if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
-        return <AskQuestionRow item={item} userName={userName} requestId={[...resolvedAskByRequestId].find(([, v]) => v?.id === item.id)?.[0]} sessionId={sessionId ?? undefined} />
-      }
-      // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
-      // normally occur: `groupToolItems` wraps every run, including a run of one, in a
-      // `ToolGroup` before this renders). Wrapped as a one-item group so this still renders
-      // through the same `ToolGroupRow` component type as the grouped path above.
-      return <ToolGroupRow group={{ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] }} />
-
-    case 'agent-message':
-      return <AgentMessageRow item={item} />
-
-    case 'advisory':
-      return <AdvisoryRow item={item} sessionId={sessionId ?? undefined} onQueuedAnnounce={onQueuedAnnounce} />
-
-    case 'request': {
-      const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined
-      if (live && !item.resolved) {
-        return <RequestCard sessionId={sessionId as string} request={live} />
-      }
-      if (item.resolved === 'answered' || item.resolved === 'cancelled') {
-        // Superseded by the matching `ask` tool item once it resolves (T072); until then (a brief
-        // race between the answer landing and that item's own `tool_execution_end`), fall back to
-        // the plain one-line summary so the question is never shown as still pending.
-        const askItem = resolvedAskByRequestId.get(item.requestId)
-        if (askItem && askItem.status !== 'running') return null
-      }
-      return <ResolvedRequestSummary resolved={item.resolved} requestId={item.requestId} sessionId={sessionId ?? undefined} />
-    }
-
-    case 'notice':
-      return <NoticeRow level={item.level} text={item.text} />
-
-    case 'skill-prompt':
-      return <SkillPromptRow item={item} />
-
-    default:
-      return null
-  }
 }
 
 interface TurnTotalLineProps {
@@ -320,7 +223,7 @@ export function Transcript({
   // Issue #672: the history (if any) behind the notice dims to ~40% opacity while a start runs; a genuinely empty Session has nothing to dim.
   const dimTranscript = Boolean(startNotice) && (hasHistory || hasConversationStarted)
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
-  const pending = pendingBySession[sessionId] ?? []
+  const pending = pendingBySession[sessionId] ?? NO_PENDING
 
   const session = sessions.find((s) => s.id === sessionId)
   const userName = useRepositoryUserName(session?.repositoryId ?? null)
@@ -336,13 +239,19 @@ export function Transcript({
     return () => clearInterval(interval)
   }, [isTurnRunning])
 
-  const resolvedAskByRequestId = React.useMemo(() => {
-    const map = new Map<string, ToolItem | undefined>()
+  // Rows receive only their own link (never the whole map), so a patch re-renders only the row it changed.
+  const askLinks = React.useMemo(() => {
+    const askByRequestId = new Map<string, ToolItem | undefined>()
+    const requestIdByAskItemId = new Map<string, string>()
     items.forEach((item, index) => {
-      if (item.kind === 'request') map.set(item.requestId, findPrecedingAskItem(items, index))
+      if (item.kind !== 'request') return
+      const ask = findPrecedingAskItem(items, index)
+      askByRequestId.set(item.requestId, ask)
+      if (ask && !requestIdByAskItemId.has(ask.id)) requestIdByAskItemId.set(ask.id, item.requestId)
     })
-    return map
+    return { askByRequestId, requestIdByAskItemId }
   }, [items])
+  const handleAdvisoryReveal = React.useCallback(() => setSuppressLogAnnouncements(true), [])
 
   const turns = React.useMemo(() => splitIntoTurns(items), [items])
 
@@ -424,17 +333,24 @@ export function Transcript({
   // Finding 6 (gate fixes 4): ref to the scrollable content so the ResizeObserver below can
   // recompute `isAtEnd` when content reflow changes `scrollHeight` without a `scroll` event.
   const contentRef = React.useRef<HTMLDivElement>(null)
-
+  const { isRecentGesture, resetGesture, gestureProps } = useScrollGestureTracking()
+  const lastScrollTopRef = React.useRef(0)
   // True from the moment a Session/Conversation switch's landing effect (below) starts until it
-  // has applied its own `scrollTop` -- while content-visibility rows are still being promoted
-  // from their placeholder size, the browser can clamp/adjust `scrollTop` on its own (the
-  // just-mounted content's placeholder-sized `scrollHeight` is smaller than the real one, so a
-  // leftover `scrollTop` from the PREVIOUS Session gets silently clamped down), firing a genuine
-  // `scroll` event that `handleViewportScroll` would otherwise misrecord as "the developer's
-  // position" -- corrupting the very memory the landing effect is about to read. Suppressing
-  // recording for this one settle window (never for real scrolling once it is over) was the
-  // fix for issue #485's restore-on-return silently losing the detached position every time.
+  // applies its own `scrollTop` -- while placeholder rows are still settling, the browser can
+  // clamp `scrollTop` on its own, firing a genuine `scroll` event that `handleViewportScroll`
+  // would otherwise misrecord as the developer's position, corrupting the memory the landing
+  // effect is about to read. Suppressing recording for this one window was the fix for #485's
+  // restore-on-return silently losing the detached position every time.
   const landingInProgressRef = React.useRef(false)
+
+  // Gate round 4 fix (M1): the in-flight JUMP's own `runScrollSettleLoop` cancel() (never the
+  // landing effect's own, kept in its own closure) -- a NEW landing, a NEW jump, a real
+  // "Scroll to end" click, or unmount each calls this first so only one settle loop ever
+  // touches `scrollTop` at a time.
+  const jumpCancelRef = React.useRef<(() => void) | null>(null)
+  // Bumped on every landing/jump start (gate round 4, M1): a jump's own `onAborted` no-ops if a
+  // newer landing/jump already took over -- defence in depth alongside `jumpCancelRef`.
+  const jumpTokenRef = React.useRef(0)
 
   // Mirrors `landingInProgressRef` into a real render value so `MessageScrollerProvider`'s own
   // `autoScroll` prop (below) can be turned off for the same settle window: the vendored
@@ -505,7 +421,7 @@ export function Transcript({
   const [prevLandingKey, setPrevLandingKey] = React.useState(landingKey)
   if (prevLandingKey !== landingKey) {
     setPrevLandingKey(landingKey)
-    landingInProgressRef.current = true
+    landingInProgressRef.current = true; resetGesture()
     if (!autoScrollSuppressed) setAutoScrollSuppressed(true)
     // Finding 6 (gate fixes 4): resets `isAtEnd` to match the NEW Session/Conversation's own
     // stored memory immediately, in this same render-phase block -- previously it kept
@@ -546,7 +462,8 @@ export function Transcript({
       clientHeight: viewport.clientHeight
     })
     useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-    if (atEnd && autoScrollSuppressed) setAutoScrollSuppressed(false)
+    const movedUp = viewport.scrollTop < lastScrollTopRef.current; lastScrollTopRef.current = viewport.scrollTop
+    if (atEnd !== !autoScrollSuppressed && (atEnd || (movedUp && isRecentGesture()))) setAutoScrollSuppressed(!atEnd)
     setIsAtEnd(atEnd)
   }
 
@@ -559,6 +476,10 @@ export function Transcript({
   function handleScrollToEnd() {
     const viewport = viewportRef.current
     if (!viewport) return
+    // Gate round 4 fix (M1): a real click always wins over a still-running jump -- this direct
+    // write bypasses the settle loop's own input listeners (not every activation method reaches them).
+    jumpCancelRef.current?.()
+    landingInProgressRef.current = false
     const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
     viewport.scrollTop = target
     useChatScrollStore.getState().record(sessionId, { atEnd: true, scrollTop: target })
@@ -647,33 +568,13 @@ export function Transcript({
   // Lands the viewport at the end, or restores the remembered detached position, whenever this
   // Session's transcript is wholesale-replaced (`transcript.generation`, transcript-store.ts) --
   // a Session switch, a Conversation switch, or this pane's very first mount -- never on an
-  // ordinary streamed `items` update. Polls via `requestAnimationFrame`, re-applying the target
-  // `scrollTop` on EVERY frame (not just once at the end): a `content-visibility:auto` row above
-  // the target can keep growing `scrollHeight` after a single assignment would have landed, and
-  // Chromium's own scroll-anchoring can independently nudge `scrollTop` while that growth is in
-  // flight (#459's same root cause) -- a one-shot assignment loses the race either way. A long
-  // transcript's settling is NOT purely a `scrollHeight`-stability question either: scroll
-  // anchoring (and, while it is still catching up, `MessageScrollerProvider`'s own `autoScroll`,
-  // suppressed above for this exact window) can silently overwrite `scrollTop` again in the gap
-  // between two of this loop's own frames, leaving `scrollHeight` reading "stable" while the
-  // position itself keeps drifting toward the bottom -- so each frame also checks whether the
-  // PREVIOUS frame's own assignment actually stuck (`viewport.scrollTop` still reads what was
-  // last written) and resets the counter if not, the same as a genuine height change would.
-  // Bounded by `SCROLL_LANDING_MAX_FRAMES` so a layout that never truly settles cannot poll
-  // forever. `useLayoutEffect` (not `useEffect`) so the first re-assertion lands before paint, in
-  // the same commit as the DOM update. Gate-fix (quality-gate cycle 2, finding 1):
-  // `resolveLandingScrollTop` now clamps its result to `scrollHeight - clientHeight`, matching
-  // the clamp the browser itself applies to `scrollTop` -- an unclamped "land at end" target
-  // could never equal the browser-clamped `viewport.scrollTop` read back afterwards, so
-  // `notPerturbed` was never true and every at-end landing silently spent all
-  // `SCROLL_LANDING_MAX_FRAMES` fighting a gap that was never there. The loop now also stops the
-  // instant it sees real user input (wheel, keydown, pointerdown, touchstart) anywhere inside the
-  // `MessageScroller` root -- the viewport itself, or the app-owned sibling "Scroll to end" button
-  // (gate fixes 2, finding 2: that button lives outside `viewportRef`'s own subtree, so listeners
-  // scoped to just the viewport never saw a click/Enter/Space on it, and a developer using it to
-  // jump to the end mid-settle had to fight the loop's own re-assertion for up to
-  // `SCROLL_LANDING_MAX_FRAMES` frames) -- a developer taking over mid-settle must not keep
-  // fighting the loop's own re-assertion either way.
+  // ordinary streamed `items` update. `useLayoutEffect` (not `useEffect`) so the first
+  // re-assertion lands before paint, in the same commit as the DOM update. Gate round 2 (issue
+  // #1008): the actual poll-and-fight engine now lives in `runScrollSettleLoop`
+  // (`scrollLanding.ts`), shared with `jumpToStageRow` below -- this effect only supplies ITS OWN
+  // target (`resolveLandingScrollTop`, reading the scroll-memory store) and the React-state side
+  // effects (`landingInProgressRef`, `autoScrollSuppressed`, `isAtEnd`, the scroll-memory record
+  // on a real-input interrupt) the shared engine has no business knowing about.
   React.useLayoutEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) {
@@ -684,117 +585,118 @@ export function Transcript({
     // Falls back to the viewport itself only if the root ref somehow is not attached yet (it is
     // always rendered as the viewport's own parent below, so this is defensive, not expected).
     const root = scrollerRootRef.current ?? viewport
-    landingInProgressRef.current = true
-    let cancelled = false
-    let frame = 0
-    let stableFrames = 0
-    let lastHeight = -1
-    let lastAssignedScrollTop = -1
-
-    function removeInputListeners() {
-      root.removeEventListener('wheel', handleViewportPointerOrWheel)
-      root.removeEventListener('keydown', handleKeyInput)
-      root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
-      root.removeEventListener('touchstart', handleViewportPointerOrWheel)
-      root.removeEventListener('focusin', handleFocusInput)
-    }
-
-    // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
-    // over mid-settle: stop re-asserting, clear the in-progress flag, and record wherever they
-    // are now. `autoScroll` only resumes if that position is actually at the end (quality-gate
-    // cycle 2, finding 1): unconditionally clearing it let the vendored scroller's own
-    // `autoScroll` re-engage mid-collapse, overwriting a genuine upward wheel scroll.
-    function handleUserInput() {
-      if (cancelled || !viewport) return
-      cancelled = true
-      removeInputListeners()
-      const atEnd = isAtScrollEnd({
-        scrollTop: viewport.scrollTop,
-        scrollHeight: viewport.scrollHeight,
-        clientHeight: viewport.clientHeight
-      })
-      useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-      landingInProgressRef.current = false
-      setAutoScrollSuppressed(!atEnd)
-      setIsAtEnd(atEnd)
-    }
-
-    // Quality-gate remediation (round 2, 2026-10-07, a11y): the vendored scroller only reacts to
-    // a handful of navigation keys itself (ArrowUp/ArrowDown/Home/End/PageUp/PageDown/Space); a
-    // bare `keydown` listener here used to treat EVERY key -- Shift, Ctrl, even Ctrl+C -- as "the
-    // developer took over", cancelling the landing settle loop on keystrokes that never move the
-    // viewport at all. Filtered to exactly the keys the library itself moves on.
-    const SCROLL_NAVIGATION_KEYS: Record<string, true> = {
-      ArrowUp: true, ArrowDown: true, Home: true, End: true, PageUp: true, PageDown: true, ' ': true
-    }
-    function handleKeyInput(event: KeyboardEvent) {
-      if (!SCROLL_NAVIGATION_KEYS[event.key]) return
-      handleUserInput()
-    }
-
-    // Finding 5 (gate fixes 4, a11y): focus moving INTO the viewport mid-settle (Tab reaching a
-    // focusable row, or a screen reader's virtual cursor driving `scrollIntoView`) is just as
-    // much "the developer took over" as a wheel/key/pointer event -- previously only those were
-    // watched, so an assistive-tech user navigating into the transcript had their own focus
-    // target fought by the loop's own re-assertion for up to `SCROLL_LANDING_MAX_FRAMES` frames.
-    // `focusin` bubbles (unlike `focus`), so one listener on `root` catches it from any
-    // descendant; scoped to `viewport.contains(target)` so focus landing on the sibling button
-    // (handled by its own click path, and by finding 1's focus-restoration effect) doesn't
-    // double-trigger this.
-    function handleFocusInput(event: FocusEvent) {
-      if (!viewport || !viewport.contains(event.target as Node)) return
-      handleUserInput()
-    }
-
-    // Gate-fix (#672, UI round 1; touchstart round 2): a wheel/pointerdown/touch on the notice's own buttons used to bubble to `root` and cancel this loop -- scoped like `handleFocusInput`.
-    function handleViewportPointerOrWheel(event: Event) {
-      if (!viewport || !(event.target instanceof Node) || !viewport.contains(event.target)) return
-      handleUserInput()
-    }
-
-    root.addEventListener('wheel', handleViewportPointerOrWheel, { passive: true })
-    root.addEventListener('keydown', handleKeyInput, { passive: true })
-    root.addEventListener('pointerdown', handleViewportPointerOrWheel, { passive: true })
-    root.addEventListener('touchstart', handleViewportPointerOrWheel, { passive: true })
-    root.addEventListener('focusin', handleFocusInput, { passive: true })
-
-    function step() {
-      if (cancelled || !viewport) return
-      const { scrollHeight, clientHeight } = viewport
-      const heightStable = scrollHeight === lastHeight
-      const notPerturbed = lastAssignedScrollTop === -1 || Math.abs(viewport.scrollTop - lastAssignedScrollTop) < SCROLL_PERTURBATION_TOLERANCE_PX
-      stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
-      lastHeight = scrollHeight
-      frame += 1
-      const memory = useChatScrollStore.getState().bySession[sessionId]
-      const target = resolveLandingScrollTop(memory, scrollHeight, clientHeight)
-      viewport.scrollTop = target
-      lastAssignedScrollTop = target
-      if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
-        cancelled = true
-        removeInputListeners()
+    // Gate round 4 fix (M1): a landing always wins over a still-running jump -- cancel it and
+    // bump the token so a stale `onAborted` cannot stomp this landing's own fresh state.
+    jumpCancelRef.current?.()
+    jumpTokenRef.current += 1
+    landingInProgressRef.current = true; resetGesture()
+    const cancel = runScrollSettleLoop(root, viewport, {
+      computeTarget: ({ scrollHeight, clientHeight }) => {
+        const memory = useChatScrollStore.getState().bySession[sessionId]
+        return resolveLandingScrollTop(memory, scrollHeight, clientHeight)
+      },
+      onSettled: (landedAtEnd) => {
         landingInProgressRef.current = false
-        // Quality-gate finding (code review, High): decided from where the viewport ACTUALLY
-        // landed (the same `isAtScrollEnd` check `handleViewportScroll`/`handleUserInput` use),
-        // not from `memory` directly -- a stale/incorrect memory entry (e.g. a scroll race the
-        // `inFlight` guard above did not fully close, or any future call site that forgets to
-        // set it) can then never leave auto-follow permanently suppressed for a Conversation
-        // that is actually sitting at its end.
-        const landedAtEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
         setAutoScrollSuppressed(!landedAtEnd)
         setIsAtEnd(landedAtEnd)
-        return
-      }
-      requestAnimationFrame(step)
-    }
-
-    requestAnimationFrame(step)
+      },
+      // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
+      // over mid-settle: record wherever they are now. `autoScroll` only resumes if that position
+      // is actually at the end (quality-gate cycle 2, finding 1): unconditionally clearing it let
+      // the vendored scroller's own `autoScroll` re-engage mid-collapse, overwriting a genuine
+      // upward wheel scroll.
+      onInterrupted: (atEnd) => {
+        useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
+        landingInProgressRef.current = false
+        setAutoScrollSuppressed(!atEnd)
+        setIsAtEnd(atEnd)
+      },
+      // Never fires here (no `shouldAbort` supplied); required by the interface (gate round 4, M1).
+      onAborted: () => {}
+    })
     return () => {
-      cancelled = true
-      removeInputListeners()
+      cancel()
       landingInProgressRef.current = false
     }
   }, [sessionId, transcript.generation])
+
+  // "Go to Stage N" (issue #1008 item 2; gate round 2, Main 2026-10-18, Decided -- falsified
+  // live): `ChainStageLine` is a SIBLING of the Stage row it targets, never its parent, so there
+  // is no React ref to use -- this callback, reached via `JumpToStageContext` (provided below),
+  // is the lever instead. The scroll/settle logic lives HERE (not `stageJump.ts`, whose own jsdoc
+  // has the full gate-round-2 history of why) because only this component holds
+  // `autoScrollSuppressed`: it goes true the instant the jump starts, and
+  // `runScrollSettleLoop`'s `onSettled`/`onInterrupted` only clear it once the viewport is
+  // ACTUALLY at the end again, or `handleViewportScroll` records a real user scroll back to the
+  // end -- the flag stays suppressed through every later streamed chunk, but on a turn that is
+  // STILL ACTIVELY STREAMING a jump made mid-stream can still be pulled back toward the end by a
+  // LATER Stage's own content regardless (issue #1021, jump-specific, filed not fixed here --
+  // `MessageScrollerProvider`'s own content-mutation-observer re-anchors to each newly-streamed
+  // item regardless of `autoScroll`; a genuine user wheel/touch/key action suppresses it, traced
+  // live, but this jump's own programmatic `scrollTop` writes do not replicate whatever internal
+  // signal that trips; several synthetic-dispatch fix attempts produced no measurable change, not
+  // something this PR's own scope stretches to debugging further in third-party, minified vendor
+  // internals -- the two settled-turn jump proofs this issue's own acceptance criteria actually
+  // ask for, Stage 3/Stage 4 below, are unaffected and hold correctly). No
+  // `prefers-reduced-motion` branch: `runScrollSettleLoop` never animates -- every frame is a
+  // plain instant `scrollTop =` assignment, the same as the landing effect above already uses.
+  const jumpToStageRow = React.useCallback(
+    (stageId: string) => {
+      const row = document.getElementById(stageRowDomId(sessionId, stageId))
+      if (!row) return
+      if (sessionId != null) useStageToggleStore.getState().setManualOpen(sessionId, stageId, true)
+      row.focus({ preventScroll: true })
+      const viewport = viewportRef.current
+      const root = scrollerRootRef.current ?? viewport
+      if (!viewport || !root) return
+      // Gate round 4 fix (M1): a new jump always wins over a still-running previous one -- cancel
+      // it first, then claim a fresh token this jump's own `onAborted` checks before touching
+      // shared state, so a stale abort can never stomp a landing or newer jump that took over.
+      jumpCancelRef.current?.()
+      const myToken = ++jumpTokenRef.current
+      landingInProgressRef.current = true; resetGesture()
+      setAutoScrollSuppressed(true)
+      const cancel = runScrollSettleLoop(root, viewport, {
+        // Gate round 2 fix (item 3, Medium): a Session/Conversation switch mid-loop can remove
+        // `row` from the DOM before the loop settles -- stop touching `scrollTop` for a gone
+        // target, and release this jump's claim via `onAborted` below (gate round 4, M1).
+        shouldAbort: () => !row.isConnected || !viewport.contains(row),
+        computeTarget: ({ scrollTop, scrollHeight, clientHeight }) => {
+          const rowRect = row.getBoundingClientRect()
+          const viewportRect = viewport.getBoundingClientRect()
+          const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
+          const raw = scrollTop + (rowRect.top - viewportRect.top) - JUMP_SCROLL_TOP_MARGIN_PX
+          return Math.max(0, Math.min(raw, maxScrollTop))
+        },
+        onSettled: (landedAtEnd) => {
+          landingInProgressRef.current = false
+          // Gate round 4 fix (M2): save position on settle too, like `onInterrupted` below --
+          // previously a jump that settled on its own left the scroll-memory store stale.
+          useChatScrollStore.getState().record(sessionId, { atEnd: landedAtEnd, scrollTop: viewport.scrollTop })
+          setAutoScrollSuppressed(!landedAtEnd)
+          setIsAtEnd(landedAtEnd)
+        },
+        onInterrupted: (atEnd) => {
+          useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
+          landingInProgressRef.current = false
+          setAutoScrollSuppressed(!atEnd)
+          setIsAtEnd(atEnd)
+        },
+        // Gate round 4 fix (M1, falsified live): previously `shouldAbort` stopped the loop
+        // silently, stuck `landingInProgressRef`/`autoScrollSuppressed` dead. Re-measures fresh
+        // and releases this jump's claim, guarded by the token in case a newer one took over.
+        onAborted: () => {
+          if (jumpTokenRef.current !== myToken) return
+          landingInProgressRef.current = false
+          const atEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight })
+          setAutoScrollSuppressed(!atEnd)
+          setIsAtEnd(atEnd)
+        }
+      })
+      jumpCancelRef.current = cancel
+    },
+    [sessionId]
+  )
 
   // Finding 6 (gate fixes 4): `isAtEnd` otherwise only updates from a real `scroll` event, the
   // render-phase reset above, or the settle loop's own completion -- a pane resize (e.g.
@@ -820,7 +722,11 @@ export function Transcript({
     })
     observer.observe(viewport)
     if (contentRef.current) observer.observe(contentRef.current)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      // Gate round 4 fix (M1): stop any still-running jump on unmount.
+      jumpCancelRef.current?.()
+    }
   }, [])
 
   return (
@@ -828,12 +734,14 @@ export function Transcript({
     // (`Markdown.tsx`'s `a`/inline-`code`/`FileLinkButton`, `ToolRow.tsx`, `DiffView.tsx`) via
     // `LinkContext` instead of a prop threaded through that whole call chain -- set here, not in
     // `ChatPane.tsx`, so this stays clear of #621's own changes to that file.
+    <JumpToStageContext.Provider value={jumpToStageRow}>
     <LinkContext.Provider value={sessionId}>
     <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
       <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
         <MessageScrollerViewport
           ref={viewportRef}
           onScroll={handleViewportScroll}
+          {...gestureProps}
           role="region"
           tabIndex={0}
           aria-label="Transcript"
@@ -979,8 +887,9 @@ export function Transcript({
                             sessionId={sessionId}
                             pending={pending}
                             userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
-                            resolvedAskByRequestId={resolvedAskByRequestId}
-                            onAdvisoryReveal={() => setSuppressLogAnnouncements(true)} onQueuedAnnounce={setRevealedAnnouncement}
+                            resolvedAsk={row.kind === 'request' ? askLinks.askByRequestId.get(row.requestId) : undefined}
+                            askRequestId={row.kind === 'tool' ? askLinks.requestIdByAskItemId.get(row.id) : undefined}
+                            onAdvisoryReveal={handleAdvisoryReveal} onQueuedAnnounce={setRevealedAnnouncement}
                           />
                         </MessageScrollerItem>
                       )
@@ -1054,5 +963,6 @@ export function Transcript({
       </MessageScroller>
     </MessageScrollerProvider>
     </LinkContext.Provider>
+    </JumpToStageContext.Provider>
   )
 }

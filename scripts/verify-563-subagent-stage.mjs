@@ -293,10 +293,15 @@ async function main() {
     }
 
     // Select the first row, then roving-tabindex Down to the second, verifying selection moves.
+    // Issue #1022: since #993 (Stage grouping) the first `[role="treeitem"]` in the tree is the
+    // Stage group row, which by design carries no `aria-selected` attribute at all (never even
+    // "false" -- SubagentPanel.tsx:356, `row.node.isStage ? undefined : ...`) because a Stage
+    // header has no single subagent id to select. Target the first treeitem that DOES carry an
+    // `aria-selected` attribute (a real, selectable agent row) instead of the first treeitem.
     const firstRowId = await cdp.evaluate(
-      `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"]')?.getAttribute('aria-posinset')`,
+      `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected]')?.getAttribute('aria-posinset')`,
     );
-    await cdp.click(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"]')`);
+    await cdp.click(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected]')`);
     await cdp.waitFor(
       `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]') != null`,
       { timeoutMs: 10_000, label: 'First tree row selected' },

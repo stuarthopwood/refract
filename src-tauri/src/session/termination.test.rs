@@ -418,6 +418,7 @@ fn make_session(
         current_turn_subagents: None,
         stopped_on_request_conversation: marker_conversation.map(str::to_string),
         stopped_on_request_at_size: marker_size,
+        pinned_model: false,
     }
 }
 

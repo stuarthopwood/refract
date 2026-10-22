@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 import { updateUnavailableReasonText } from '@/lib/updateStatus'
 import { notify, useUpdateStore } from '@/state'
+import { useUpdateNow } from '@/features/updates/useUpdateNow'
 import type { UpdateState } from '../../../shared/updates'
 
 /** Gate finding (round 2, Medium): the footer's own badge TEXT must stay short -- `lastError`
@@ -21,13 +22,14 @@ function updateBadgeShortLabel(state: UpdateState, unavailable: boolean): string
   if (state.phase === 'failed') return 'Update failed'
   if (unavailable) return 'Update check unavailable'
   if (state.phase === 'downloading') return 'Downloading update'
-  if (state.phase === 'downloaded') return 'Update ready: installs on quit'
+  if (state.phase === 'downloaded') return 'Update ready'
   return `Update available: v${state.availableVersion}`
 }
 
 export function StatusBar() {
   const updateState = useUpdateStore((state) => state.state)
   const [updateOpen, setUpdateOpen] = useState(false)
+  const { requestUpdateNow, confirmDialog } = useUpdateNow(() => undefined)
   // Shared by the Download button (available phase) and the Retry button (failed phase) --
   // mutually exclusive phases, so one busy flag never collides between the two actions.
   const [actionBusy, setActionBusy] = useState(false)
@@ -82,12 +84,24 @@ export function StatusBar() {
                     : updateUnavailable
                       ? updateUnavailableReasonText(updateState.unavailableReason!)
                       : updateState.phase === 'downloaded'
-                        ? 'Installs automatically the next time you quit Refract; a running agent is never interrupted.'
+                        ? 'Restart now to install it, or it installs automatically the next time you quit Refract.'
                         : updateState.phase === 'downloading'
-                          ? 'Downloading the update now; it installs the next time you quit, never interrupting a running agent.'
-                          : 'Downloads and verifies the installer now; it installs the next time you quit, never interrupting a running agent.'}
+                          ? 'Downloading the update now; it installs the next time you quit.'
+                          : 'Refract downloads and verifies the installer in the background.'}
                 </p>
                 <div className="mt-3 flex items-center gap-2">
+                  {updateState.phase === 'downloaded' && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => {
+                        setUpdateOpen(false)
+                        requestUpdateNow()
+                      }}
+                    >
+                      Update now
+                    </Button>
+                  )}
                   {updateState.phase === 'available' && (
                     <Button
                       size="xs"
@@ -134,6 +148,7 @@ export function StatusBar() {
               </PopoverContent>
             </Popover>
           )}
+        {confirmDialog}
       </div>
     </footer>
   )

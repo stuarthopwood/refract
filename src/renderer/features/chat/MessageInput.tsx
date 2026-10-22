@@ -9,24 +9,26 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
+import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
 import { useSlashMenuCompletion } from './useSlashMenuCompletion'
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
-import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
+import { AttachButton, ReasoningPicker } from './ComposerPickers'
+import { ModelPicker } from './ModelPicker'
+import { openRoleSwitcher } from './useRoleCycleShortcut'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
+import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, COMPOSER_SELECTION_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
@@ -44,11 +46,15 @@ import {
   toImageContent
 } from './attachments'
 import { useComposerClearanceCallbackRef } from './composerHeightVar'
-import { appendFileAttachmentText, FILE_ATTACHMENTS_MARKER, stripFileAttachmentsMarkerForDisplay } from './anyFileAttachments'
+import { appendFileAttachmentText, FILE_ATTACHMENTS_MARKER } from './anyFileAttachments'
+import { hasSendableContent, imageDisplayNames, isImageOnlyDraft, isImageOnlyQueued, queuedChipRpcText, SECOND_IMAGE_ONLY_REFUSAL } from './imageOnlySend'
+import { QueuedChipList } from './QueuedChipList'
+import { ComposerBranchLabel } from './ComposerBranchLabel'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
+import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
 import { parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -105,6 +111,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // `aria-disabled` reflects an in-flight path/drop read, same guard as `handleSend` (draft-store.ts).
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
+  const imageOnlyNames = useQueueStore((s) => s.imageOnlyBySession[sessionId])
   // Issue #540 (#591 cycle 3, full architectural replacement): chip identity/text/queue come
   // ONLY from the real `followUp`/`steering` arrays above via `deriveQueuedChips`
   // (queuedChips.ts) -- there is no more client-tracked "reserved"/"confirmed"/"pending" chip
@@ -206,6 +213,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // overlay: an inert sibling matching the textarea's box model so each chip's clickable overlay
   // lands exactly over its label's rendered position (research.md Decision 10).
   const chipOverlayRef = useRef<HTMLDivElement>(null)
+  const { commandToken, commandPillOverlayRef } = useCommandPillOverlay(text, commands, textareaRef) // FR-092, #1050
   // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
   // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
   // predictWord response against a newer edit superseding it before it resolves (same guard as
@@ -307,6 +315,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   useLayoutEffect(() => {
     chipPoolRef.current = deriveQueuedChips(followUp, steering, chipPoolRef.current).nextPool
   }, [followUp, steering])
+  // Issue #1067: steer the oldest queued follow-up on a plain Enter against a blank composer.
+  const enterQueuedFollowUp = computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost, disabled)
 
   // Tracks the previous commit's `chips` (Issue #540/#598 High): when the tracked chip's key
   // disappears from the real arrays entirely (the server delivered it, e.g. a steering chip was
@@ -469,11 +479,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // on the NEXT draft instead), the same race class `disabled`/`starting` already guard against.
     if (disabled || starting || pendingAttachmentReads > 0) return
     const draftText = overrideText ?? text
-    if (!draftText.trim()) return
+    if (!hasSendableContent(draftText, attachments)) return
+    // #744 (spec 009 FR-042): OMP's queue cannot tell two image-only follow-ups apart.
+    const imageOnly = isImageOnlyDraft(draftText, attachments)
+    if (imageOnly && isImageOnlyQueued(followUp, steering)) return void toast.error(SECOND_IMAGE_ONLY_REFUSAL)
     // Enter-send and the Send button both clear the draft via `clear(sessionId)` below, bypassing
     // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
     // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
     clearGhostState()
+    // Issue #762: bare `/models` opens Settings > Model roles; bare `/role` (#766) opens the switcher.
+    const modelsInvocation = parseSlashCommand(draftText)
+    const bareCommand = attachments.images.length === 0 && attachments.files.length === 0 && modelsInvocation?.rest === ''
+    if (bareCommand && (modelsInvocation?.name === 'models' || modelsInvocation?.name === 'role')) {
+      useDraftStore.getState().clear(sessionId)
+      if (modelsInvocation.name === 'models') useViewStore.getState().openSettings('model-roles')
+      else openRoleSwitcher(sessionId)
+      return
+    }
     if (notStarted) {
       // Spec 005 (research.md Decision 4): sending the first message to a just-restored,
       // not-yet-opened pane is itself the "real action" that clears its pristine flag. Cleared
@@ -481,14 +503,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // (triggered by this exact state change) be the SOLE place that calls `applySnapshot` for
       // this open.
       //
-      // Quality-gate remediation (code-reviewer, Medium): this branch used to call
-      // `applySnapshot` itself too, AFTER its own `open()` resolved -- `markOpened` then flipped
-      // `isPristine`, which re-ran ChatPane's effect, which called `open()` again (joining the
-      // same already-in-flight/dedup'd promise, harmless) and `applySnapshot` a SECOND time with
-      // the SAME pre-send snapshot, racing the real message's own `transcript:patch` events and
-      // risking a visible flash back to the pre-send transcript right after sending. Now this
-      // branch only awaits `open()` for its own completion signal (to know the agent has
-      // actually started before calling `chat.send` below) and never applies the snapshot itself.
+      // Quality-gate remediation (code-reviewer, Medium): this branch no longer calls
+      // `applySnapshot` itself (a second apply raced `transcript:patch` and could flash the
+      // pre-send transcript); it only awaits `open()` to know the agent has started.
       useSplitStore.getState().markOpened(sessionId)
       let snapshot
       try {
@@ -504,7 +521,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // FR-013: every pending text chip's full original text is substituted back into the draft at
     // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
     // sees is exactly what the developer would have gotten pasting the whole block directly.
-    const message = substituteChips(draftText, attachments.textChips)
+    const message = substituteChips(imageOnly ? '' : draftText, attachments.textChips)
     // #926 (D1 HIGH): typed text carrying the literal marker is refused, draft stays intact.
     if (message.includes(FILE_ATTACHMENTS_MARKER)) {
       toast.error(`The message contains the reserved "${FILE_ATTACHMENTS_MARKER}" marker line used internally for file attachments. Remove it and try again.`)
@@ -540,16 +557,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // itself) and, when `.rest` is non-empty, issues the side question itself through
     // `useSideChatStore`, bypassing `chat.send` entirely.
     if (slashInvocation?.name === 'btw') {
-      // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field at all
-      // (contracts/ipc.md) -- refusing instead of silently dropping the attachments avoids a
-      // developer discovering, after the fact, that a pasted screenshot never reached the model.
+      // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field (contracts/ipc.md);
+      // refuse rather than silently drop a pasted screenshot.
       if (attachments.images.length > 0 || attachments.files.length > 0) {
         toast.error("Side questions don't support attachments. Remove them and try again.")
         return
       }
-      // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) instead of sending a
-      // second `btw` while one is still running -- spec Assumption 7's single-flight rule applies
-      // here exactly as it does to the panel's own Send button.
+      // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) while a `btw` is still
+      // running -- spec Assumption 7's single-flight rule, as on the panel's own Send button.
       if (useSideChatStore.getState().bySession[sessionId]?.running) {
         toast.error('A side question is already running for this Session.')
         return
@@ -646,9 +661,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (isNewConversationCommand) {
         useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
       }
-      notify(result.error)
+      notify(result.error, sessionId)
       return
     }
+    dismissSlashCommandRefusalToast(sessionId)
+    if (imageOnly) useQueueStore.getState().setImageOnly(sessionId, result.value.queued ? imageDisplayNames(attachments.images) : null)
     // Spec 010 FR-005: one atomic clear for both text and attachments (replacing the former
     // separate `setText('')`/`setAttachments(EMPTY_ATTACHMENTS)` calls) -- FR-007: pending image
     // attachments clear once the send is accepted, not once the agent's turn finishes; pending
@@ -851,17 +868,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      void handleSend()
+      void (enterQueuedFollowUp.applies ? handleSendNow(enterQueuedFollowUp.chip) : handleSend())
       return
     }
     if (event.key === 'Escape') {
+      // Gate round 1 fix 3 (#700/#701 slice b): belt to `useReadoutCard.ts`'s own capture-phase Escape handler, which already calls `preventDefault`/`stopPropagation` on this exact keypress when a hover-focus card is open -- without this, a `defaultPrevented` Escape that somehow still reached this far would wipe the whole draft instead of only closing the card.
+      if (event.defaultPrevented) return
       event.preventDefault()
       clearGhostState()
       useDraftStore.getState().setText(sessionId, '')
-      // Medium remediation (test-reviewer): same bypass as `completeSlashCommand` above --
-      // plain Esc-clear calls `setText` directly too, skipping onChange's own
-      // `pruneDanglingChips`. Every chip's label is gone from the (now-empty) draft, so this
-      // simply drops them all, with the same silent-removal announcement any other drop gets.
+      // Medium remediation (test-reviewer): same bypass as `completeSlashCommand` above -- plain Esc-clear calls `setText` directly too, skipping onChange's own `pruneDanglingChips`.
+      // Every chip's label is gone from the (now-empty) draft, so this simply drops them all, with the same silent-removal announcement any other drop gets.
       const prunedChips = pruneDanglingChips('', attachments.textChips)
       if (prunedChips.length !== attachments.textChips.length) {
         announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
@@ -883,7 +900,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   async function handleRemoveQueued(chip: DerivedChip) {
     if (inFlightChips.has(chip.key)) return
     setInFlightChips((prev) => new Map(prev).set(chip.key, 'remove'))
-    const result = await window.refract.chat.removeQueued(sessionId, chip.text, chip.queue)
+    const result = await window.refract.chat.removeQueued(sessionId, queuedChipRpcText(chip), chip.queue)
     setInFlightChips((prev) => {
       const next = new Map(prev)
       next.delete(chip.key)
@@ -927,7 +944,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // `chat.sendNow` takes no `images` argument: OMP's `promote_queued_message` moves the queued
     // message (attachments included) rather than reprocessing it, so this call site must never
     // touch, forward, or clear the composer's own current pending images.
-    const result = await window.refract.chat.sendNow(sessionId, chip.text)
+    const result = await window.refract.chat.sendNow(sessionId, queuedChipRpcText(chip))
     setInFlightChips((prev) => {
       const next = new Map(prev)
       next.delete(chip.key)
@@ -1211,82 +1228,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   return (
     <div ref={composerClearanceRef} className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
       {chips.length > 0 && (
-        <ul
-          ref={chipListRef}
-          aria-label="Queued messages"
-          className="m-0 flex list-none flex-wrap gap-1.5 p-0"
-          onFocus={handleChipListFocus}
-          onBlur={handleChipListBlur}
-        >
-          {chips.map((chip) => {
-            const busyAction = inFlightChips.get(chip.key)
-            const sendBusy = busyAction === 'send'
-            const removeBusy = busyAction === 'remove'
-            const anyBusy = busyAction != null
-            const displayText = stripFileAttachmentsMarkerForDisplay(chip.text)
-            const removeLabel = removeBusy ? `Removing queued message: ${displayText}` : `Remove queued message: ${displayText}`
-            return (
-              <li key={chip.key} data-chip-key={chip.key}>
-                <Badge
-                  variant="secondary"
-                  className="h-auto max-w-full gap-1.5 overflow-visible py-0.5 pr-0.5"
-                >
-                  <span className="max-w-64 truncate" title={displayText}>
-                    {displayText}
-                  </span>
-                  {/* Issue #540 (#591 cycle 3): Send now is offered only for a real follow-up
-                   * chip -- OMP's `promote_queued_message` only ever matches a queued
-                   * follow-up, so a steering chip's "Send now" could never succeed. A steering
-                   * chip instead shows a quiet status: it is already on its way to the agent's
-                   * next step. The control stays a `Button` throughout its busy state (never
-                   * swapped for inert text) so focus is never lost to the busy transition
-                   * itself. */}
-                  {chip.queue === 'followUp' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      data-chip-action="send"
-                      aria-label={sendBusy ? `Sending now: ${displayText}` : `Send now: ${displayText}`}
-                      aria-busy={sendBusy}
-                      aria-disabled={anyBusy}
-                      className="rounded-full px-2 text-[0.7rem] font-medium aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-                      onClick={() => {
-                        if (anyBusy) return
-                        void handleSendNow(chip)
-                      }}
-                    >
-                      {sendBusy ? 'Sending now…' : 'Send now'}
-                    </Button>
-                  ) : (
-                    <span className="px-1 text-[0.7rem] text-muted-foreground">Sending at the next step</span>
-                  )}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        data-chip-action="remove"
-                        aria-label={removeLabel}
-                        aria-busy={removeBusy}
-                        aria-disabled={anyBusy}
-                        className="rounded-full text-muted-foreground hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-                        onClick={() => {
-                          if (anyBusy) return
-                          void handleRemoveQueued(chip)
-                        }}
-                      >
-                        <XIcon className="size-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{removeLabel}</TooltipContent>
-                  </Tooltip>
-                </Badge>
-              </li>
-            )
-          })}
-        </ul>
+        <QueuedChipList chips={chips} inFlightChips={inFlightChips} imageOnlyNames={imageOnlyNames} listRef={chipListRef} onFocus={handleChipListFocus} onBlur={handleChipListBlur} onSendNow={(chip) => void handleSendNow(chip)} onRemove={(chip) => void handleRemoveQueued(chip)} />
       )}
       {disabled && (
         <span id={stopReasonId} className="sr-only">
@@ -1313,7 +1255,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           is not shown (disabled, or the draft has text), same pattern as `ghostHintId`/
           `attachmentsSummaryId` above. */}
       <span id={composerHintId} className="sr-only">
-        {!disabled && text === '' ? 'Markdown is supported. Type slash for commands.' : ''}
+        {!disabled && text === '' ? (enterQueuedFollowUp.applies ? 'Enter sends the next queued message. Markdown is supported. Type slash for commands.' : 'Markdown is supported. Type slash for commands.') : ''}
       </span>
       {/* Status line (docs/design/product-chat.md "Status line"; spec 004 FR-023, #564,
           2026-10-15): the old chip row, minus the Approval mode pill -- it now lives in the box's
@@ -1384,6 +1326,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               onActiveIndexChange={setSlashActiveIndex}
             />
           )}
+          <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} />
           <Textarea
             ref={textareaRef}
             role="combobox"
@@ -1395,6 +1338,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashRowKey(slashMatches[clampedSlashActiveIndex]!)) : undefined
             }
             aria-describedby={describedByIds}
+            spellCheck={!commandToken} // FR-092, #1050: off while the draft starts with a recognised command
             value={text}
             onChange={(event) => {
               const value = event.target.value
@@ -1402,11 +1346,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               useDraftStore.getState().setText(sessionId, value)
               setSlashDismissed(false)
               scheduleGhostCheck(value, cursor)
-              // FR-014, Edge Cases: every edit re-checks every pending chip's label against the
-              // new value -- an explicit delete and an edit that merely breaks the label both
-              // drop it from pending state the same way. Accessibility remediation (High):
-              // whatever got dropped is announced via the live region below, since this was
-              // previously completely silent to a screen-reader user.
+              // FR-014, Edge Cases: every edit re-checks every pending chip's label (an explicit
+              // delete, or an edit that merely breaks the label, both drop it); the drop is now
+              // announced via the live region below (previously silent to a screen reader).
               const prunedChips = pruneDanglingChips(value, attachments.textChips)
               if (prunedChips.length !== attachments.textChips.length) {
                 announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
@@ -1420,6 +1362,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               const scrollTop = (event.target as HTMLTextAreaElement).scrollTop
               if (overlayRef.current) overlayRef.current.scrollTop = scrollTop
               if (chipOverlayRef.current) chipOverlayRef.current.scrollTop = scrollTop
+              if (commandPillOverlayRef.current) commandPillOverlayRef.current.scrollTop = scrollTop // FR-092, #1050
             }}
             onKeyDown={handleKeyDown}
             disabled={disabled}
@@ -1428,7 +1371,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
             // read the stop reason it carries -- `disabled:placeholder:text-foreground`
             // brightens the placeholder itself so the dim lands it back near readable.
-            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent"
+            // Gate round 3 fix (#1050, Medium, flicker): the shared `Textarea` primitive's own `transition-colors` fades a 150ms colour change on ANY toggle, including this textarea's own fill-colour swap the instant a pill mounts/unmounts -- while the mirror underneath mounts instantly, visibly desyncing the two for ~150ms. `transition-[border-color,box-shadow]` (merged over `transition-colors` by `cn`'s tailwind-merge, same class group) narrows this textarea to border/ring-only transitions, without touching the shared primitive.
+            className={cn(
+              COMPOSER_SELECTION_CLASS,
+              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
+              commandToken && COMMAND_PILL_TEXTAREA_CLASS
+            )}
           />
           {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
               icons, so this inert sibling (same technique as the ghost-text overlay below) shows
@@ -1467,18 +1415,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               share under one sub-pixel layout step (1/64px) until the groups are fully at their
               floor, so it stays visually whole the entire time the labels are still truncating.
               Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
-              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis
-              from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the
-              native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same
-              pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High
-              Contrast, where `text-muted-foreground` would otherwise resolve to the same
-              `CanvasText` as the real draft. */}
+              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High Contrast, where `text-muted-foreground` would otherwise resolve to the same `CanvasText` as the real draft. */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
-              <span className="min-w-0 truncate">Message the agent</span>
+              <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
                 <SlashIcon aria-hidden="true" className="size-3.5 shrink-0" />
                 <span className="min-w-0 truncate">for commands</span>
@@ -1497,11 +1440,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               that's since changed outside the normal onChange path must never render (#358
               remediation). */}
           {ghost && ghost.text === text && (
-            <div
-              ref={overlayRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
-            >
+            <div ref={overlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <span className="invisible">{text.slice(0, ghost.cursor)}</span>
               <span className="text-muted-foreground/60">{ghost.suffix}</span>
             </div>
@@ -1511,11 +1450,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               each pending chip's clickable, chip-styled label lands exactly over its own rendered
               position in the draft. Independent of `ghost`: both overlays can render at once. */}
           {attachments.textChips.length > 0 && (
-            <div
-              ref={chipOverlayRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
-            >
+            <div ref={chipOverlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <ChipOverlaySegments
                 text={text}
                 occurrences={findChipOccurrences(text, attachments.textChips)}
@@ -1544,8 +1479,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               it is not destructive, and red is reserved for destructive and error states". The
               two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
               FR-011), a documented exception to "one filled button per surface": the two fills
-              are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). */}
-          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-2">
+          are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). Gate round 3 CRITICAL fix (#1050): `z-[3]`, above the `relative z-[1]` the composer textarea gains ONLY while a pill shows (`CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`, full stacking order there) and the mirrors' `z-[2]` -- this container had NO z-index before, so the textarea painted over it (`elementFromPoint` at Send's centre resolved to the textarea), making Send/Stop unclickable. */}
+          <div className="absolute right-1.5 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1599,10 +1534,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                     COMPOSER_BUTTON_FOCUS_CLASS
                   )}
                   aria-label="Send message"
-                  aria-keyshortcuts="Enter"
-                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}
+                  aria-keyshortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
+                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
                   onClick={() => {
-                    if (disabled || starting || pendingAttachmentReads > 0 || !text.trim()) return
+                    if (disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)) return
                     void handleSend()
                   }}
                 >
@@ -1610,20 +1545,18 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <Kbd>Enter</Kbd>
+                {enterQueuedFollowUp.applies ? 'Send' /* gate round 2: aria-disabled while the rule applies (blank text) -- wired into aria-describedby by Radix, must not describe an action the button can't perform */ : <Kbd>Enter</Kbd>}
               </TooltipContent>
             </Tooltip>
           </div>
         </div>
-        {/* Composer bottom row (#564, spec 001 FR-065): Approval pill, then Model/Reasoning
-            pickers (FR-064, replacing the old read-only CpuIcon/GaugeIcon line), then Attach.
-            Gate round 5 (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus
-            outline off the box's own bottom border; `px-2.5`/`py-1.5` stay a wider off-grid debt
-            (round 6 fixed the triggers' own `gap-1.5` to `gap-2`, dropping a fictional "exception" claim). */}
-        <div className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
+        {/* Composer bottom row (#564): Approval pill, combined Role.Model pill (#766), Reasoning
+            picker, then Attach. `@container` lets the pill hide its model text when narrow. */}
+        <div data-composer-row className="@container flex flex-wrap items-center gap-2 px-2.5 pb-2">
           <ApprovalModePill sessionId={sessionId} />
           <ModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />
+          <ComposerBranchLabel sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
         </div>
       </div>

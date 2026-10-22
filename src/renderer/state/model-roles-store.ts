@@ -124,7 +124,17 @@ export const useModelRolesStore = create<ModelRolesState>((set, get) => {
         const notes = { ...get().overrideNotes }
         if (result.value.overriddenBy) notes[role] = result.value.overriddenBy
         else delete notes[role]
-        set({ roles: result.value.roles, pendingRoles: next, saveErrors: errors, overrideNotes: notes })
+        // Gate round 1 fix (#1114, Medium #6, pre-existing): replacing the WHOLE `roles` map
+        // with THIS call's own reply can revert a DIFFERENT role's own newer value if that
+        // role's own `setRole` call started later but its own reply (no live Session to sweep)
+        // arrived first -- this call's own `result.value.roles` was read by the backend BEFORE
+        // that happened. Merge only the ONE role this call actually changed, from the CURRENT
+        // state (which may already hold that other role's newer value), never the whole map.
+        const roles = { ...get().roles }
+        const savedValue = result.value.roles[role]
+        if (savedValue === undefined) delete roles[role]
+        else roles[role] = savedValue
+        set({ roles, pendingRoles: next, saveErrors: errors, overrideNotes: notes })
         return { ok: true }
       }
       set({ pendingRoles: next, saveErrors: { ...get().saveErrors, [role]: result.error.message } })

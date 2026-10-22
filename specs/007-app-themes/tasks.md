@@ -823,3 +823,518 @@ contrast.mjs` re-running their other pairs unchanged inside the new 726-pair tot
   every existing caller (`ipc/theme.rs`, `settings.rs` itself) is unaffected.
   `check:file-size`: 0 cap violations (398 files scanned, `settings.rs` back under cap,
   `theme_id.rs` far under it). Code-only, no cargo run.
+
+---
+
+## Phase 9: Convergence — #1039 Cyber Amber retune and softer text (append-only, `/speckit.converge`)
+
+Amends spec.md with a new Clarifications session (2026-10-20) and FR-020 (accent-vs-warning
+hue distinctness), per the #1039 grill (2026-10-19, Stuart, "not what I was expecting, needs to
+be more like the default dark but with orange/amber accents; main font colour should be less
+of a bright white, and a bit more grey"). FR-021 (softer text) was added, then dropped entirely
+once text softening moved to the separate, app-wide #1074 (T043) -- see that task's own entry,
+not restated here. Same additive rule as Phase 8 for every OTHER theme: `dark-high-contrast`,
+`obsidian` and `nordic-frost` stay byte-identical; only `.theme-dark` (text tokens, later
+reverted) and `.theme-cyber-amber` (every token) are retuned.
+
+- [X] T034 Add spec.md Clarifications session 2026-10-20 and FR-020 (accent-vs-warning hue
+  distinctness)/FR-021 (softer text in Dark and Cyber Amber) (depends on nothing).
+  **Done**: `specs/007-app-themes/spec.md`.
+- [X] T035 Soften `.theme-dark`'s `--foreground` (0.985 -> `oklch(0.90 0 0)`) and
+  `--chat-foreground` (0.90 -> `oklch(0.86 0 0)`); update every literal (not `var()`-aliased)
+  copy of the old `--foreground` value in the same block: `--card-foreground`,
+  `--popover-foreground`, `--secondary-foreground`, `--accent-foreground`,
+  `--sidebar-foreground`, `--sidebar-accent-foreground` (depends on T034).
+  **Done**: `src/renderer/styles/globals.css` `.theme-dark`. `--sidebar-primary-foreground` and
+  every `--state-*-foreground`/`--pr-*-foreground` token left untouched (text on a *coloured*
+  fill, not a general UI-text role, so out of FR-021's scope).
+- [X] T036 Retune `.theme-cyber-amber` in full: surfaces onto Default Dark's own lightness
+  ladder plus a barely-visible warm tint (chroma 0.005, hue 50); accent to vivid orange
+  (`--accent-text`/`--active-indicator` `#fb923c`, `--primary`/`--send` `#c2410c` with white
+  text); `--severity-warning` retuned from hue 75 to hue 88 (FR-020: the new accent's real hue,
+  55.9, sits closer to the OLD warning hue, 73.8, than the old accent's did, 39.9 -- retuning
+  warning restores the margin); `--muted-foreground` de-browned (hue 60/chroma 0.06 ->
+  chroma 0.01/hue 50); `--foreground`/`--chat-foreground` per FR-021 (depends on T035).
+  **Done**: `src/renderer/styles/globals.css` `.theme-cyber-amber`, full header comment with
+  every measured ratio. `--sidebar-primary` (shared indigo, never carried the peach/orange)
+  left unchanged.
+- [X] T037 Update `src/shared/themes.ts`: Cyber Amber's `swatch`/`swatchPrimary`/
+  `titleBarOverlay` to match the retuned `--background`/`--primary`; Dark's
+  `titleBarOverlay.symbolColor` to match its own retuned `--foreground` (established
+  exact-match-to-foreground convention, confirmed from the pre-#1039 literals) (depends on T036).
+  **Done**: `src/shared/themes.ts`. `node scripts/check-theme-contrast.mjs`: **839/839 pairs
+  across 5 themes PASS** (`swatchMetadataDriftCheck`'s own cross-check included).
+- [X] T038 Amend `docs/design/product-look-and-feel.md`'s #1039 placeholder bullet (left by the
+  2026-10-19 grill) with the final shipped values and measured ratios; update
+  `docs/design/foundations-tokens-theming.md`'s surface-ladder/border/divider tables for Cyber
+  Amber's new numbers (depends on T036).
+  **Done**: both docs.
+- [X] T039 Write `scripts/verify-1039-amber-retune.mjs` (live Tauri CDP check: switch to Cyber
+  Amber and Default Dark via the real Profile-menu Theme submenu, reusing the existing
+  `997-notice-severity.jsonl` fixture for a deterministic real warning NoticeRow and chat-prose
+  element -- no new fixture, per AGENTS.md; reads real computed colours for background/sidebar/
+  card/foreground/chat prose/muted text/accent-text (probe)/Send/warning and asserts each
+  against its own CSS custom property; asserts accent-vs-warning real OKLab hue distance
+  (floor 25 degrees, below the measured ~30.7); screenshots chat+warning/Manage sessions
+  (Session list)/Settings Appearance in both themes) (depends on T036, T037). (#1039)
+  **Done, NOT run**: this is a no-build prep lane (held for the build slot); syntax-checked only
+  (`node --check`, clean, 383 lines). Live run and its evidence are this story's own remaining
+  step once the build slot opens.
+- [X] T041 Amend #1039 per Stuart's 2026-10-20 issue comment: Cyber Amber's surfaces
+  (`--background`, `--sidebar`, `--card`/`--popover`/`--surface-1`/`--surface-2`,
+  `--surface-3`/`--muted`/`--accent`/`--secondary`, `--border`) become PURE neutral (chroma 0,
+  byte-identical to `.theme-dark`'s own tokens), dropping the first #1039 cut's barely-visible
+  warm tint (chroma 0.005, hue 50) from every surface; the orange accent, the warning-hue move,
+  and the softer text (`--foreground`/`--chat-foreground`/`--muted-foreground`, TEXT tokens,
+  unaffected) stay as T034–T038 built them. Adds spec.md FR-022 and a follow-up Clarifications
+  session; adds a real OKLCH chroma (<=0.002) assertion per Cyber Amber surface token to
+  `scripts/verify-1039-amber-retune.mjs` (depends on T036, T039).
+  **Done**: `src/renderer/styles/globals.css` `.theme-cyber-amber` (surface tokens + header
+  comment), `src/shared/themes.ts` (swatch `#0c0a08` -> `#0a0a0a`, now byte-identical to Dark's
+  own swatch), `specs/007-app-themes/spec.md` (FR-022, follow-up Clarifications session),
+  `docs/design/product-look-and-feel.md`/`foundations-tokens-theming.md` (surface-ladder/border/
+  divider numbers), `scripts/verify-1039-amber-retune.mjs` (chroma assertion, `node --check`
+  clean, 418 lines). `node scripts/check-theme-contrast.mjs`: **839/839 pairs across 5 themes
+  PASS** (unchanged total -- no new PAIRS entries, only Cyber Amber's own literal values
+  changed); `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/
+  `check:drag-regions`/`vitest run` (148/148) all green.
+- [X] T042 Correct T041: Stuart's round-1 2026-10-20 amendment only pure-neutralled Cyber
+  Amber's SURFACES; the original grill item 3 set `--foreground`/`--chat-foreground` to
+  chroma 0 in BOTH themes, so a same-day correction pure-neutrals Cyber Amber's TEXT tokens
+  too (`--foreground`, `--chat-foreground`, `--muted-foreground`, and every token that aliases
+  `--foreground`): byte-identical to `.theme-dark`'s own literals. Only the accent family
+  (`--accent-text`, `--primary`/`--send`, `--ring`, markdown links), the warning hue, and
+  `themes.ts`'s own `swatchPrimary` still differ from Default Dark. Amends spec.md FR-022 and
+  adds a further Clarifications session; extends the chroma assertion in
+  `scripts/verify-1039-amber-retune.mjs` to the three text tokens (depends on T041).
+  **Done**: `src/renderer/styles/globals.css` `.theme-cyber-amber` (`--foreground`
+  `oklch(0.90 0.005 50)` -> `oklch(0.90 0 0)`, `--chat-foreground` `oklch(0.86 0.005 50)` ->
+  `oklch(0.86 0 0)`, `--muted-foreground` `oklch(0.708 0.01 50)` -> `oklch(0.708 0 0)`, header
+  comment rewritten), `src/shared/themes.ts` (`symbolColor` `#e1dddb` -> `#dedede`, now
+  byte-identical to Dark's own), `specs/007-app-themes/spec.md` (FR-022 widened, new
+  Clarifications session), `docs/design/product-look-and-feel.md`/
+  `foundations-tokens-theming.md` (both amendment bullets rewritten; also fixed a pre-existing
+  stale #551-era Cyber Amber accent hex mention in the "Accent and primary fill colour"
+  section, never updated for #1039's own retune), `scripts/verify-1039-amber-retune.mjs`
+  (`CYBER_AMBER_TEXT_VARS` added to the chroma loop, 418 -> 438 lines, `node --check` clean).
+  `node scripts/check-theme-contrast.mjs`: **839/839 pairs across 5 themes PASS** (unchanged
+  total); `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/
+  `check:drag-regions`/`vitest run` (148/148) all green.
+- [X] T043 Revert #1039's own text softening entirely (Stuart, 2026-10-20, issue comment):
+  text softening moves to a NEW, separate, app-wide issue instead (white at opacity 0.9 for
+  headers/UI, 0.78 for body/chat, 0.6 for muted, in every built-in preset except Dark (high
+  contrast)) -- out of this spec's scope. `--foreground`/`--chat-foreground`/
+  `--muted-foreground` in BOTH `.theme-dark` and `.theme-cyber-amber` revert to Default Dark's
+  CURRENT `origin/main` values; Cyber Amber's stay byte-identical to Dark's, as they already
+  were pre-#1039. Drops spec.md FR-021 and narrows FR-022 to surfaces only; adds a final
+  Clarifications session. Keeps the chroma-0 assertions (T039/T041/T042) -- they still hold,
+  trivially, since Dark's own text tokens were always chroma 0 (depends on T042).
+  **Done**: `src/renderer/styles/globals.css` `.theme-dark` (`--foreground` 0.90 -> 0.985,
+  `--chat-foreground` 0.86 -> 0.90, and every literal copy -- `--card-foreground`/
+  `--popover-foreground`/`--secondary-foreground`/`--accent-foreground`/`--sidebar-foreground`/
+  `--sidebar-accent-foreground` -- back to 0.985) and `.theme-cyber-amber` (`--foreground`
+  0.90 -> 0.985, `--chat-foreground` 0.86 -> 0.90, `--muted-foreground` already 0.708 0 0,
+  unchanged); both header comments rewritten. `src/shared/themes.ts` (`symbolColor` `#dedede`
+  -> `#fafafa` for both `dark` and `cyber-amber`). `specs/007-app-themes/spec.md` (FR-021
+  dropped, FR-022 narrowed to surfaces, final Clarifications session). `docs/design/
+  product-look-and-feel.md` (the two stale #1039 text-softening bullets consolidated into one
+  accurate bullet: surfaces/accent/warning facts kept, the reverted text-softening claim
+  removed) and `foundations-tokens-theming.md` (surface-ladder note corrected: text tokens are
+  untouched by #1039, not "pure-neutralled by it", though still byte-identical to Dark's own).
+  `node scripts/check-theme-contrast.mjs`: **839/839 pairs across 5 themes PASS** (unchanged
+  total). #1039's final, settled shape:
+  Cyber Amber equals Default Dark (surfaces AND text) plus the orange accent, Send and ring,
+  and a warning hue moved to 88.
+- [X] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
+  report/screenshots in the PR body (depends on T039).
+  **Done**: build slot granted 2026-10-20; merged `origin/main` (#1050/#700/#464) first, one
+  real conflict resolved (Cyber Amber's `--command-pill-bg` moved off a `--muted` alias onto
+  Default Dark's own literal). `ci-local.mjs` 16/16 PASS (`check-theme-contrast` 872/872, Rust
+  tests 731/0 failed; one transient linker failure traced to a stale `CARGO_MANIFEST_DIR` path
+  cached from a different worktree sharing `CARGO_TARGET_DIR`, fixed by touching `build.rs`'s
+  mtime, no content change). `verify-1039-amber-retune.mjs`: 0 failures, 0 notExercised, gitHead
+  `d3b2ee6a`. Screenshots viewed directly (both themes: chat+warning, Manage sessions, Settings
+  Appearance): Cyber Amber read as Default Dark plus a vivid orange accent, no warm tint
+  anywhere. Draft PR #1094 opened (`Closes #1039`).
+- [X] T044 Post-draft-PR self-review against the issue body's own grill decisions and the
+  Mission's stated watch-items (depends on T040).
+  **Done (11 findings, all fixed):**
+  1. [High] Mermaid's own `MERMAID_THEME_VARIABLES['cyber-amber']` was still the old brown
+     palette (`src/shared/mermaidThemeData.ts`) -- now reuses `DARK_FAMILY` directly, the same
+     object Dark itself uses.
+  2. [High] `--input`, `--scrollbar-thumb`/`--scrollbar-thumb-hover` and `--composer-focus` were
+     still independent values (achromatic, but not literally Dark's own) -- now byte-identical
+     literals to `.theme-dark`'s own.
+  3. [Decided] `--ring`/`--sidebar-ring` were `oklch(0.60 0 0)` (achromatic, but a DIFFERENT
+     lightness from Dark's `oklch(0.556 0 0)`) and several comments wrongly called `--ring`
+     part of the "accent family" -- Stuart's own grill on the issue body says the focus ring is
+     unchanged (the 2026-10-09 achromatic-ring decision); now byte-identical to Dark's literal,
+     and spec.md/the verify script/the globals.css header comment/`product-look-and-feel.md`
+     all corrected.
+  4. [Decided, RESOLVED]: #1039's new accent hue (55.9) closed the gap to Cyber Amber's own
+     `--severity-error` (hue 12, unchanged since #551) to 1.23:1, under the 1.5:1 distinctness
+     floor. Flagged to Main; decision (2026-10-20): grid search L 0.655-0.675/chroma 0.15-
+     0.24/hue 5-25 for a point clearing BOTH 1.5:1 AND error-text->=4.5:1-everywhere; none found
+     (confirmed, no point in that space clears both -- the two floors' lightness windows do not
+     overlap at any hue/chroma in range). Per Main's fallback: WCAG text contrast wins.
+     `--severity-error` retuned to `oklch(0.665 0.12 22)` (`#d37472`) -- the best accent-vs-
+     error swatch ratio achievable (1.42:1) while keeping every error-text pair >=4.5:1
+     (6.14:1/`--background`, 5.56:1/`--card`-`--popover`, 4.69:1/`--muted`, 4.50:1 on the
+     composited `destructive/80`
+     hover fill over the dialog footer -- a real constraint only discovered by running
+     `check-theme-contrast.mjs` for real, since near-black `destructive-foreground` text sits
+     on that composited fill too). Recorded as a named accepted departure,
+     `docs/design/accessibility.md` "Accepted departures" (the error row also carries its own
+     icon and word, WCAG 1.4.1); `scripts/verify-551-presets.mjs`'s own
+     `CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR` lowered from 1.5 to 1.4 for Cyber Amber only, with
+     a comment pointing at the departure. `check-theme-contrast.mjs` re-run: 872/872 pairs
+     across 5 themes PASS (the hover-fill failure this retune first introduced is gone).
+  5. FR-022 amended to the full wording (surface AND text tokens, plus `--input`/scrollbar/
+     `--composer-focus`, equal Default Dark; the status palette keeps the preset's own values,
+     with the one exception above); a new Clarifications session records the correction; this
+     Phase's own intro (above) and T040 no longer mention FR-021.
+  6. [Medium] `scripts/verify-1043-theme-radio-helpers.mjs`'s own hand-maintained Cyber Amber
+     swatch (`#0f0703`/`#c14100`) was stale -- corrected to `#0a0a0a`/`#c2410c`.
+  7. [Medium] Stale comments fixed with the current, real measured numbers:
+     `radio-group.tsx`, `theme-contrast-pairs.mjs` (two spots), `CommandPillOverlay.tsx` (three
+     spots) all still claimed Cyber Amber's `--primary`/`--popover` or `--command-pill-bg`
+     aliased `--muted` the same way Nordic Frost still does -- #1039 moved Cyber Amber off both
+     of those; `docs/design/product-look-and-feel.md`'s own "839/839" claim updated to the
+     current total (872, after the #1050/#700/#464 merge).
+  8. [Medium] `scripts/verify-1039-amber-retune.mjs` extended: a real Dark-vs-Cyber-Amber token
+     EQUALITY assertion (not only chroma) for `--ring`/`--sidebar-ring`/`--input`/
+     `--scrollbar-thumb`/`--scrollbar-thumb-hover`/`--composer-focus` -- captured live from
+     Dark's own turn (`THEMES` reordered to put Dark first), then compared against Cyber
+     Amber's own reading of the SAME token; catches a lightness mismatch between two achromatic
+     values that the existing chroma-only check could not.
+  9. [High] `scripts/verify-1039-amber-retune.mjs` extended: the existing `997-notice-severity`
+     fixture now also carries one assistant message with a short Mermaid fence (its own
+     "EXTENDED" header comment, README.md's provenance table updated -- not a new fixture per
+     AGENTS.md). Mermaid bakes `themeVariables` straight into the rendered SVG, never through a
+     CSS custom property, so item 1's fix could not be verified via computed style. A real step
+     reads the rendered Mermaid `<img>`'s `data:image/svg+xml` src, decodes it, and asserts the
+     real SVG text contains Dark's own node text literal (`MERMAID_NODE_TEXT`, `#fafafa`) in
+     both Dark and Cyber Amber; Mermaid derives node FILL internally rather than emitting
+     `primaryColor` verbatim, so fill equality is instead proven by a full-string SVG
+     comparison (round-3 gate fix, self-caught live: id-normalised, since `MermaidBlock`'s own
+     per-mount `id="mermaid-${reactId}"` legitimately differs across this check's own screen
+     navigation) -- Cyber Amber's turn round-trips through Obsidian first (proving a genuine
+     re-render, not a stale cached image), then its final SVG is asserted byte-identical to
+     Dark's own captured SVG.
+  10. [Medium] Screenshots extended: a code block (the Mermaid diagram's own "Show source"
+      toggle), an open dropdown (the Profile menu, captured before clicking through to Manage
+      sessions) and a toast (an unknown-command refusal, the same client-side mechanism
+      `verify-997-notice-severity.mjs` uses, no fake-omp tape involved) added per theme.
+      `settleForScreenshot` (imported from `verify-700-todo-pin-helpers.mjs`, the fix issue
+      #700's own gate round 7 self-caught failure landed) now runs before EVERY shot: moves the
+      pointer, blurs, presses Escape, and THROWS (fails the run, not a soft skip) if a stray
+      tooltip/hover card is still open -- always called BEFORE the action that produces a
+      shot's own state (opening the dropdown, showing the code block, sending the refusal),
+      never after, so it cannot dismiss the very overlay a shot exists to capture. `dirty` in
+      `report.json` is unchanged (already honest).
+  11. [Low] PR #1094's own body corrected: dropped the "active Settings row" accent-outline
+      claim (both themes render the identical plain muted-background highlight, no outline in
+      either); noted the focus ring stays achromatic in both; noted the Settings theme picker
+      shows no colour swatch chip at all yet (plain radio list) -- #1070 adds the two-colour
+      swatch chip later. Evidence section updated for items 1-10 above.
+  **NOT run** (no-build remediation lane, held for the next build slot): items 8, 9 and 10's
+  own new/extended assertions and screenshots are code-verified only (`node --check` clean,
+  matches the committed script's own token/property pairing and selectors); `check:theme-
+  contrast` 872/872 pairs across 5 themes PASS (item 4's retune fixed the one real failure it
+  introduced, `destructive-foreground`/`destructive-fill-hover`, 4.33:1 -> now clears 4.5:1);
+  `pnpm typecheck`/`vitest run` (148/148)/`check:indent`/`check:file-size`/`check:parity`/
+  `check:drag-regions` all green. Actually live-running the extended script (switching themes,
+  reading real tokens, rendering the Mermaid diagram, capturing every screenshot) is deferred
+  to the next build slot, alongside the rest of T040's own re-run.
+
+T034–T038 keep `dark-high-contrast`/`obsidian`/`nordic-frost` byte-identical to `origin/main`;
+confirmed by `check-theme-contrast.mjs` re-running their other pairs unchanged inside the
+839-pair total this phase itself reached (up from 733 at Phase 8, +106 pairs: Cyber Amber's
+full re-check plus Dark's newly-touched literal-copy foreground pairs). T044's own merge of
+`origin/main` (#1050/#700/#464) brought the total to 872 before any T044 token change; T044's
+own fixes added no new PAIRS entries, only changed Cyber Amber's existing literal values.
+
+---
+
+## Phase 10: Convergence — #1074 App-wide softer text (opacity) (append-only, `/speckit.converge`)
+
+Amends spec.md with a new Clarifications session (2026-10-20) and FR-023 (alpha-based text
+softening), per the #1074 grill (2026-10-20, Stuart, none deferred). Supersedes #1039's own
+abandoned text-softening attempt (Phase 9's T043 reverted it back out of that issue entirely so
+it could land here, app-wide, instead). Same additive rule as Phases 8/9: `dark-high-contrast`
+stays byte-identical to `origin/main`; only `dark`, `obsidian`, `nordic-frost` and `cyber-amber`
+gain the new alpha tokens.
+
+- [X] T045 Add spec.md Clarifications session 2026-10-20 (#1074) and FR-023 (alpha-based
+  `--foreground`/`--chat-foreground`/`--muted-foreground`, every preset but the high-contrast
+  one).
+  **Done**: `specs/007-app-themes/spec.md` gained the Clarifications session and FR-023,
+  immediately after FR-022.
+- [X] T046 Apply the three alpha tokens (`oklch(1 0 0 / 90%)`/`78%`/`60%`) to `--foreground`/
+  `--chat-foreground`/`--muted-foreground` in `.theme-dark`, `.theme-obsidian`,
+  `.theme-nordic-frost` and `.theme-cyber-amber` (`globals.css`); switch `.theme-dark`'s own
+  six literal duplicates (`--card-foreground`, `--popover-foreground`,
+  `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
+  `--sidebar-accent-foreground`) to `var(--foreground)` so they inherit the alpha the same way
+  Obsidian/Nordic Frost/Cyber Amber already alias them (depends on T045).
+  **Done**: `.theme-dark` (`--foreground` -> `oklch(1 0 0 / 90%)`, `--chat-foreground` ->
+  `oklch(1 0 0 / 78%)`, `--muted-foreground` -> `oklch(1 0 0 / 60%)`, the six aliases
+  switched to `var(--foreground)`), `.theme-obsidian`/`.theme-nordic-frost`/
+  `.theme-cyber-amber` (same three tokens retuned; their own six aliases already read
+  `var(--foreground)` from #550/#551, so no further edit needed there). Every
+  `primary-foreground`/`send-foreground`/`destructive-foreground`/
+  `sidebar-primary-foreground`/`state-*-foreground`/`pr-*-foreground` token (sits on a
+  coloured fill) is untouched, still a solid literal. `.theme-dark-high-contrast` untouched.
+  Measured (`scripts/contrast-math.mjs`, gamma-composited): every background/card/popover pair
+  in the four affected presets clears 4.5:1 -- Dark and Cyber Amber (byte-identical surfaces)
+  15.93/14.59/14.59, 11.97/11.15/11.15, 7.30/7.04/7.04; Obsidian 15.39/13.51/12.17,
+  11.65/10.43/9.51, 7.22/6.71/6.26; Nordic Frost 15.50/14.13/12.42, 11.71/10.84/9.67,
+  7.22/6.89/6.34 (foreground/chat-foreground/muted-foreground rows respectively). No floor
+  failed; nothing relaxed.
+- [X] T047 Hand-recompute `src/shared/themes.ts`'s four `titleBarOverlay.symbolColor` literals
+  (`dark`, `obsidian`, `nordic-frost`, `cyber-amber`) to each theme's new composited
+  `--foreground` colour, since Electron's `setTitleBarOverlay` API takes an opaque hex with no
+  alpha channel; extend `scripts/check-theme-contrast.mjs`'s metadata drift check
+  (`THEME_METADATA_RE`/`swatchMetadataDriftCheck`) with a `symbolColor` comparison against the
+  real composited `--foreground`-over-`--background` colour, alongside its existing
+  `swatch`/`swatchPrimary`/`titleBarOverlay.color` checks, so the two can never silently drift
+  apart again (depends on T046).
+  **Done**: `src/shared/themes.ts` (`dark` `symbolColor` `#fafafa` -> `#e7e7e7`, `obsidian`
+  `#F8FAFC` -> `#e7e7e7` [byte-coincidence of rounding, not a bug -- Obsidian's own background
+  is a different hex to Dark's], `nordic-frost` `#eff7fb` -> `#e6e7e8`, `cyber-amber`
+  `#fafafa` -> `#e7e7e7`; `dark-high-contrast`'s `#ffffff` untouched, its own `--foreground`
+  stays fully opaque so the composited value equals the raw one). `scripts/check-theme-
+  contrast.mjs`'s `THEME_METADATA_RE` gained a trailing `symbolColor` capture group,
+  `themeMetadata` entries gained `symbolColor`; `theme-contrast-pairs.mjs`'s
+  `swatchMetadataDriftCheck` now also composites `foreground` over `background`
+  (`resolvedLinear`, the same primitive every other alpha check here uses) and fails loudly on
+  a mismatch. `checkedCount` is unchanged (one increment per theme, same as before) so the
+  PAIRS total stays at 872.
+- [X] T048 Run every no-build check (`pnpm typecheck`, `check:theme-contrast`, `check:indent`,
+  `check:file-size`, `check:parity`, `check:drag-regions`, `check:ui-text`, `vitest run`) and
+  confirm 872/872 pairs across 5 themes PASS with no new failures (depends on T047).
+  **Done**: `node scripts/check-theme-contrast.mjs` 872/872 PASS, including the new
+  `symbolColor` rows for all 5 themes; `pnpm typecheck` clean; no other no-build check touched
+  by this issue's file set regressed.
+- [X] T049 Write a new live check, `scripts/verify-1074-text-opacity.mjs` (modelled on
+  `verify-1039-amber-retune.mjs`/`verify-551-presets.mjs`): for each of the 5 themes, read the
+  computed colours of a header, chat prose, muted text, a primary button label and a badge
+  label; assert the alpha values in the four affected presets and solid text in Dark (high
+  contrast); assert text on coloured fills stays solid; sample the rendered pixel luminance of
+  a chat paragraph so the opacity genuinely composites; screenshot chat, the Session list and
+  Settings in each theme, with a tooltip/hover-card guard before every shot; record
+  `report.json` (depends on T048).
+  **Done**: `scripts/verify-1074-text-opacity.mjs` authored, `node --check`-clean, **and
+  LIVE-RUN**: all 5 themes, 0 failures, 0 `notExercised`, real-painted-pixel compositing check
+  passing in every theme (real alpha 0.9/0.78/0.6 in the four non-HC presets, solid 1.0 in Dark
+  high contrast and for every coloured-fill label), screenshots viewed directly. gitHead
+  `f068e7b3`, dirty `false`, exitCode `0` (PR #1104).
+
+- [X] T050 Main's build-slot-queue follow-up (2026-10-20): confirm exactly how the checker
+  composites an alpha foreground over its real surface before measuring (cite the compositing
+  code), report the lowest measured ratio per alpha tier (0.9/0.78/0.6) with its theme and
+  surface, and audit for a missing alpha pair -- if found, add it and commit, no build
+  (depends on T048).
+  **Done**: compositing confirmed at `scripts/contrast-math.mjs:32-43` (`compositeOverLinear`/
+  `resolvedLinear`, gamma-space blend), called from `check-theme-contrast.mjs:322-324` (the
+  main `PAIRS` loop) for every pair, including the three new #1074 tokens -- no separate
+  alpha-aware code path exists; the same primitive already composited every pair since the
+  #806 gate-round-5 fix (`contrast-math.mjs`'s own header comment). Audit found a genuine gap:
+  `--chat-foreground` renders inside the user message bubble (`UserMessageRow.tsx:94,107`,
+  `bg-accent/50` over `--background`), not only on the plain chat `--background` the one
+  existing `chat-foreground`/`background` PAIRS entry covers -- and since `--chat-foreground`
+  is now itself translucent (#1074), its own alpha composites a SECOND time on top of the
+  bubble's. `theme-contrast-pairs.mjs`'s `userBubbleLinkContrastRows` (already composited
+  `--accent-text` over that exact bubble backdrop, #610) renamed to `userBubbleContrastRows`
+  and extended to also check `--chat-foreground` there, same backdrop, same gamma-space
+  compositing (`theme-contrast-pairs.mjs:404-424`); `check-theme-contrast.mjs`'s own import and
+  merged loop updated to match. `--muted-foreground`/sidebar and `--muted-foreground`/composer-
+  surface were NOT missing: `sidebar` is already a real `PAIRS` entry, and the composer surface
+  is `transparent` in every preset but Dark (high contrast) (where it IS checked), so the other
+  four themes' real composer backdrop is `--background`, already covered. Total pairs: 872 ->
+  877 (+1 per theme, 5 themes), re-run 877/877 PASS. Lowest enforced ratio per tier, against
+  the plain `background`/`card`/`popover` surfaces the issue's own table named: 0.9 tier
+  12.17:1 (Obsidian, `popover-foreground`/`popover`); 0.78 tier 11.65:1 (Obsidian,
+  `chat-foreground`/`background`); 0.6 tier 6.26:1 (Obsidian, `muted-foreground`/`popover`,
+  unchanged from the issue's own original measurement). Lowest enforced ratio across EVERY
+  real checked surface (tinted severity banners, the sidebar-border literal, the new user-
+  bubble pair): 0.9 tier 9.84:1 (Obsidian, `foreground` on a severity-info tinted banner over
+  `popover`); 0.78 tier 10.28:1 (Nordic Frost, `chat-foreground` on the user bubble); 0.6 tier
+  5.64:1 (Obsidian, `muted-foreground`/`sidebar-border`, pre-existing, unrelated to #1074).
+  `pnpm typecheck`/`check:file-size`/`check:indent` all still green. No build run.
+
+T046 keeps `dark-high-contrast` byte-identical to `origin/main`; confirmed by
+`check-theme-contrast.mjs` re-running its other pairs unchanged inside the original 872-pair
+total (no PAIRS entries added or removed by T046 itself, only token values and the metadata
+drift check's own internal comparison count, which was already one-per-theme). T050 later adds
+one genuinely new pair per theme (872 -> 877, see that task's own entry).
+
+- [X] T051 Main's gate round 3 follow-up (2026-10-20): recompute Mermaid text colours against
+  the REAL rendered node fill (not `--card`/`primaryColor`) and fix every stale comment found
+  in the same audit, no build (depends on T050).
+  **Done**: read `node_modules/mermaid`'s own bundled `'dark'` base theme source directly
+  (`theme-dark.js`'s constructor) and confirmed Mermaid hardcodes its real node fill
+  (`mainBkg`/`nodeBkg`) to a literal `#1f2020`, ignoring our own `primaryColor` override
+  entirely -- `mermaidThemeData.ts` never sets a `mainBkg` key, so Mermaid's base-class
+  `|| this.primaryColor` fallback never fires. Recomputed `primaryTextColor` against that real
+  backdrop for `DARK_FAMILY`/Obsidian/Nordic Frost: 13.33:1/13.43:1/13.32:1 respectively (all
+  comfortably clear 4.5:1; no hex values needed changing, only the comments citing `--card`).
+  Also fixed, same audit: `mermaidThemeData.ts`'s stale `textColor`-on-`critBkgColor` claim
+  (corrected to `taskTextColor`, the variable actually drawn there) and its stale Cyber Amber
+  `textColor` (`#fafafa`) literal-match claim (`textColor` is `#e7e7e7` post-#1074; the real
+  `#fafafa` literal match is `taskTextColor`, deliberately unsoftened); `switch.tsx`'s stale
+  `theme-contrast-pairs.mjs` script-path reference (moved to `switch-track-contrast.mjs` in
+  round 2) and its stale "solid thumb, ~5.2:1" claim (the thumb's own `bg-foreground` is also
+  90% alpha now -- real worst case Obsidian popover, ~4.08:1, still >3:1); `globals.css`'s
+  Obsidian/Nordic Frost worst-case comments (the real lowest ratio across the whole story is
+  Obsidian's own `muted-foreground`/`sidebar-border`, 5.64:1, tighter than the previously-cited
+  `--composer-selection-fg` case, 5.82:1); and `ChatHeader.tsx`'s Focused-pill comment
+  (re-verified post-#1074's alpha change, double-composite over `active-indicator/20` still
+  clears 4.5:1 in every theme, worst case Nordic Frost 10.81:1). Added a composer-selection
+  screenshot (`verify-1074-text-opacity.mjs`, a real `/btw` command pill Ctrl+A-selected) per
+  theme, source-only (no run this round). Filed two chore issues for gaps this story cannot
+  close itself: #1106 (`check-mermaid-contrast.mjs` needs `electron`, blocked not merely
+  deferred) and #1108 (Gantt/Journey task-text tokens never verified against a real rendered
+  diagram -- `AGENTS.md`'s "no new fixtures" rule blocks fixing this here). spec.md Clarifications
+  gained a round-3 session recording both findings. `pnpm typecheck`/no-build checks run clean
+  (see verification note below). No build run; live-verify of the new composer-selection shot
+  deferred to the next build slot.
+
+- [X] T052 Main's gate round 3 follow-up, part 2 (2026-10-20): three concrete fixes Main named
+  after reviewing T051's audit -- Journey/Timeline task-label colour (HIGH), a missing
+  `titleColor` token, and the Focused pill's alpha -- plus extending the fixture (fixtures may be
+  EXTENDED, not only newly added) so Journey's solid labels are captured live, no build
+  (depends on T051).
+  **Done**: (1) `getMermaidThemeCSS` (`mermaidTheme.ts`) gains a journey-scoped
+  `.task ~ switch .label, .journey-section ~ switch .label { color: taskTextColor !important }`
+  rule -- confirmed via `node_modules/mermaid`'s own journeyDiagram/svgDraw source that Journey
+  (and Timeline, same renderer) draws task/section labels as a foreignObject `div.label`
+  SIBLING of the coloured `.task-type-N`/`.section-type-N` rect, so Mermaid's own
+  `.label {color: textColor}` default painted them with the SOFTENED #1074 tier -- measured as
+  low as 4.06:1 (Main's own finding). (2) `titleColor` (flowchart `.cluster text`) added to
+  `MermaidThemeVariables`/`mermaidThemeData.ts` for every softened theme at FR-023's 0.9 tier
+  over `--card` (byte-identical to `primaryTextColor`'s own value, same formula) -- previously
+  unset, fell through to Mermaid's own hardcoded `#F9FFFE` in every preset. (3) A new dedicated
+  solid token, `--active-indicator-foreground` (plain white, every preset), replaces
+  `ChatHeader.tsx`'s Focused-pill `text-foreground` (FR-023's "stays solid on a coloured fill"
+  exception, not a re-verified translucent ratio); added to FR-023's exception list, Tailwind's
+  `@theme` mapping, and a new `focused-badge-contrast.mjs` module (`focusedBadgeContrastRows`,
+  a real ENFORCED pair, merged into `check-theme-contrast.mjs`'s loop -- moved to its own file
+  immediately, not grown inline, after it first pushed `theme-contrast-pairs.mjs` to 625 lines,
+  over the #806 cap). Fixture (`997-notice-severity.jsonl`) extended with a second `journey`
+  fence in the same assistant message (confirmed harmless to `verify-1039-amber-retune.mjs`'s
+  own first-match `querySelector`/`.find()` selectors); `verify-1074-text-opacity.mjs` gained a
+  real assertion decoding the second rendered Mermaid SVG and checking it contains the theme's
+  solid `taskTextColor` literal, plus two honest `notExercised` entries (the Focused pill needs
+  a split view this script's single-pane flow never opens; `titleColor` needs a flowchart
+  subgraph the fixture's own fence doesn't have). Issue #1108 amended (comment + title) to its
+  narrower remaining Gantt-only scope now that Journey is covered.
+  Re-ran every no-build check after moving `focused-badge-contrast.mjs` out:
+  `pnpm typecheck` clean, `vitest run` 148/148, `check:indent` 0/460 files, `check:theme-contrast`
+  **892/892 PASS** (up from 887: +5, one new `focusedBadgeContrastRows` pair per theme),
+  `check:file-size` 0 cap violations, `check:versions` aligned, `check:omp-schema` no drift,
+  `cargo fmt --check` clean. No build run this task; live-verify of the Journey-label/
+  composer-selection assertions and every screenshot done in T053, the next build slot.
+
+- [X] T053 Main's gate round 3 build slot, final live-verify (2026-10-20): merge `origin/main`,
+  rerun the chained `ci-local.mjs` + `verify-1074-text-opacity.mjs`, falsify any red, VIEW the
+  Journey diagram and composer-selection shots, report "slot released" (depends on T052).
+  **Done**: merged `origin/main` cleanly (#1067 "Enter sends oldest queued follow-up", one
+  commit, `docs/PLAN.md` auto-merged, `MessageInput.tsx` exactly at its 1632-line baseline).
+  Two real bugs found and fixed live, falsified not assumed: (1) `check:ui-text` failed --
+  a CSS-template-literal comment in `getMermaidThemeCSS` referenced the literal string
+  `FR-023`, which is baked verbatim into the compiled bundle (unlike a stripped TS `//`
+  comment) and tripped the leak detector's `FR-\d{3}` pattern; reworded to drop the code
+  reference. (2) The Journey SVG-content assertion (T052) searched for the plain hex literal
+  and failed in every non-HC theme on the real exe; live debugging confirmed the CSS rule and
+  correct colour WERE present in the embedded `<style>` block, just serialized as
+  `rgb(r, g, b)` -- Mermaid's own per-mount stylesheet scoping re-serializes every colour this
+  way -- fixed the assertion to match that form instead of hex. A third regression (the new
+  Journey-diagram screenshot's `scrollIntoView` leaving the transcript scrolled away from the
+  chat-prose message, breaking the already-passing "selected chat-prose text" check in every
+  theme) was caught and fixed in the same pass by restoring the scroll position after the shot.
+  `ci-local.mjs`: **all 16 steps PASS** (typecheck, vitest 148/148, indent, theme-contrast
+  892/892, drag-regions, IPC parity, file-size, versions, OMP schema drift + self-test,
+  `cargo fmt --check`, `cargo test`, `cargo clippy`, Tauri debug build, `check:ui-text` 0
+  leaks). `verify-1074-text-opacity.mjs`: **0 failures across all 5 themes, exitCode 0**;
+  every Journey SVG assertion confirmed the real rendered `rgb()` colour matches each theme's
+  solid `taskTextColor` (Dark/Cyber Amber `rgb(250, 250, 250)` == `#fafafa`, Obsidian
+  `rgb(248, 250, 252)` == `#F8FAFC`, Nordic Frost `rgb(239, 247, 251)` == `#eff7fb`, Dark HC
+  `rgb(255, 255, 255)` == `#ffffff`). gitHead `91b30ff8`, dirty `false`, exeSha256
+  `6fa3fbc96595…` (confirmed unchanged through copy and post-launch; cross-checked against a
+  concurrent lane's build into the same shared `CARGO_TARGET_DIR` by proving this run's own
+  #1074-specific behaviours -- Journey labels, composer-selection -- actually passed, not
+  merely assumed). Journey diagram screenshot viewed directly (Dark): "My day" journey with
+  blue/green coloured section/task bars, crisp solid white labels legible against every
+  coloured fill, no washout. **Correction (gate round 3, part 3, Test HIGH -- evidence
+  honesty): the composer-selection screenshot viewed directly (Dark) did NOT show a selection
+  at all** -- `settleForScreenshot`'s own blur+Escape ran AFTER Ctrl+A and cleared it before
+  the shot fired every time, every theme; see T054 for the fix (reordered, not yet
+  live-verified) and the honest evidence this shot was never standing in for
+  (`--composer-selection-fg` legibility is proven statically by `composerSelectionContrastRows`
+  and live, for Dark, by #1050's own `assertSelectionHighlightVisible` check).
+  PR #1104 body updated with the full round-3 evidence; PLAN.md row updated. `notExercised`
+  (5, all genuine, unchanged from T052).
+
+- [X] T054 Gate round 3, part 3 (reviewer fixes, no rebuild, 2026-10-21): three reviewer
+  findings on PR #1104, applied as docs-and-comment/script fixes with no rerun (depends on
+  T053). **Test HIGH (evidence honesty):** the composer-selection shot never showed a real
+  selection (T053's own correction above) -- fixed by moving the single `settleForScreenshot`
+  call in `verify-1074-text-opacity.mjs` to run BEFORE `clearAndType`/Ctrl+A only, so nothing
+  clears the highlight before the screenshot; reworded the PR body, this file's T053 entry and
+  the script's own comments to stop claiming the shot proves legibility (that's
+  `composerSelectionContrastRows` + #1050's own live check, not this screenshot) and to mark
+  the reorder unrun. Narrowed the Journey SVG assertion from "this rgb string appears somewhere
+  in the SVG" to the actual CSS rule text (`.task~switch .label{color:rgb(...)`), and added an
+  explicit Dark (high contrast) caveat: its own `textColor`/`taskTextColor` are both the
+  identical solid `#ffffff`, so that one theme's pass can't discriminate whether the override
+  fired. Fixed three stale comments the same audit found: Journey's `fillType0-7` fills are
+  fixed literal hex values, not derived from `primaryColor`/`secondaryColor`; Timeline shares
+  the identical renderer/class names and `textPlacement:'fo'` default but is NOT separately
+  verified (no Timeline fence in this fixture, #1108 stays Gantt-only); `titleColor` sits on
+  Mermaid's own hardcoded `clusterBkg` literal `#474949`, not `tertiaryColor`/`--card`, measuring
+  7.39:1 (still clears 4.5:1, no value change). Extended the fixture README's own
+  `997-notice-severity.jsonl` row with the round-3 Journey-fence addition it was missing.
+  **UI review PASS, 2 items:** moved the `getMermaidThemeCSS` Journey comment from INSIDE the
+  template literal (where it shipped verbatim inside every Mermaid SVG's own embedded `<style>`
+  block) to a plain JS comment above the `return`. FR-023's exception list (`spec.md`) now
+  names `composer-selection-fg` and Mermaid's `taskTextColor`/`taskTextClickableColor`
+  explicitly, alongside the already-present `active-indicator-foreground`.
+  **Code review, 1 item:** `mermaidThemeData.ts`'s own comment wrongly claimed `taskTextColor`
+  was live-verified "via a shared Gantt path" -- Gantt actually uses it as an SVG `fill`
+  (`.taskText { fill }`), never through Journey's `color`-based CSS override; corrected to say
+  only Journey's foreignObject-label use is live-verified this round, Gantt's own use stays
+  unverified under #1108. No build run this task (docs/comments/script-reorder only, explicitly
+  deferred per Main); the `settleForScreenshot` reorder and the narrowed Journey assertion are
+  both unrun, next build slot.
+
+- [X] T055 Gate round 3, part 3, FINAL live-verify (confirmation build slot, 2026-10-21): merge
+  `origin/main` (#1109 git-changes-panel polish, clean), rerun the chained `ci-local.mjs` +
+  `verify-1074-text-opacity.mjs`, VIEW the composer-selection shot zoomed, commit script fixes
+  before the final run (depends on T054). **Two real bugs caught and fixed live by this run,
+  not assumed:** (1) `verify-1074-text-opacity.mjs` grew to 637 lines on T054's own
+  comment/logic additions, tripping `check:file-size` as a new over-cap file (no baseline) --
+  extracted `JOURNEY_TASK_TEXT_COLOUR`/`hexToRgbString`/the whole Journey-rule assertion into a
+  new `assertJourneyLabelsSolid` in `verify-1074-text-opacity-helpers.mjs` (568 lines now, well
+  under cap). (2) T054's narrowed Journey-rule regex had two live-confirmed format bugs: it
+  assumed the bare selector `.task~switch .label{color:rgb(...)` with no scoping prefix, when
+  Mermaid's per-mount scoping actually prepends EVERY selector with its own
+  `#mermaid-<reactId> ` token (different every render); and it assumed `{color:` sat directly
+  after the FIRST selector, when the two comma-joined selectors actually share ONE declaration
+  block (`{color:...}` follows only the second, `.journey-section~switch .label`). Fixed both,
+  confirmed via a temporary debug log against the real decoded SVG, then removed the debug log.
+  A pre-existing transient linker failure (another worktree's `windows-app-manifest.xml` path
+  leaking in via the shared `CARGO_TARGET_DIR`) was falsified and fixed with
+  `cargo clean -p refract-tauri`, per this repo's own documented recovery, before the real run.
+  `ci-local.mjs`: **all 16 steps PASS** (typecheck, vitest 148/148, indent,
+  `check:theme-contrast` 892/892, drag-regions, IPC parity, `check:file-size` 0 violations,
+  versions, OMP schema drift + self-test, `cargo fmt --check`, `cargo test`, `cargo clippy`,
+  Tauri debug build, `check:ui-text` 0 leaks). `verify-1074-text-opacity.mjs`: **0 failures
+  across all 5 themes, exitCode 0**; every Journey-rule assertion now confirms the exact
+  two-selector rule text, including the honest Dark (high contrast) caveat. Composer-selection
+  screenshot viewed directly (Dark), zoomed: a real `/btw hi` draft shows a genuine native
+  selection highlight across both the pill and the plain text -- the reorder fix from T054
+  genuinely works, confirmed live, not merely re-asserted. gitHead `0ad1c9cd`, dirty `false`,
+  exeSha256 `2e7cd008ea99…`. `notExercised` unchanged (5, all genuine). PR #1104 body updated
+  with the final confirmation.
+

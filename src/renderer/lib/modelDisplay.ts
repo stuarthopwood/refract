@@ -30,17 +30,21 @@ export const THINKING_LEVEL_LABEL: Record<string, string> = {
  * also render an unrecognised future value, which this closed menu list never offers to pick). */
 export const THINKING_LEVELS: readonly ThinkingLevel[] = ['inherit', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
-/** "provider/model-name" for a Session's last known model, or `null` before any `get_state`
- * has ever reported one (T063). Split so a surface rendering model and effort as two
- * separately-iconed chips (docs/DESIGN.md "No bracket/parenthetical UI copy") -- both
- * SessionDetailsCard.tsx and MessageInput.tsx -- never has to re-parse a combined string. */
+/** The display NAME ONLY for a Session's last known model (#741 Part 1: the provider moves to a
+ * place that doesn't need it at a glance -- the details card's own muted "via <Provider>" second
+ * line, `@/lib/providerLabels`' `friendlyProviderLabel`, and (unchanged by this issue)
+ * `ModelPicker.tsx`'s own Tooltip/accessible-name parenthetical, which builds its OWN
+ * `provider/name` string locally rather than through this function now that this function's own
+ * return shape dropped the provider). `null` before any `get_state` has ever reported a model
+ * (T063). Built from the FIELDS (`name`/`id`), never by splitting a combined string on `/` -- an
+ * id such as `openrouter/google/gemini` stays untouched either way. */
 export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | null {
   if (!session.lastModel) return null
-  const { provider, id, name } = session.lastModel
+  const { id, name } = session.lastModel
   // Gate round 7 fix (Flow Low, `agent://Arch877`): `name ?? id` kept an EMPTY-STRING `name`
   // (never actually seen from omp [INFERENCE], but not ruled out by the type) -- `?.trim() ||`
   // falls through to `id` for both `undefined`/`null` and a blank/whitespace-only string.
-  return `${provider}/${name?.trim() || id}`
+  return name?.trim() || id
 }
 
 /** The human label for a Session's last known thinking level: `null` before any model has ever

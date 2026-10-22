@@ -45,6 +45,21 @@ Open:
 
 `icon-sm` and `icon-xs` match a 24px minimum target (WCAG 2.5.8); see [accessibility.md](accessibility.md#targets). `icon-lg` exists in `buttonVariants` but has no documented role in this system.
 
+### Whitespace (horizontal padding)
+
+Decided (Stuart, 2026-10-21, #1144): one rule for the space between a control's edge and its text, scaled by control height, for every pill, chip, badge and text button.
+
+| Control | Padding each side |
+|---|---|
+| Text tokens inside running text (the composer's slash command pill, the inline attachment chips in the message box) | 6 px |
+| Pills, chips and badges up to 24 px tall, and `xs` buttons | 8 px |
+| Text buttons 28 px and taller (`sm`, `default`, `lg`) | 10 px |
+
+- The side next to a leading or trailing icon is 2 px tighter, through `has-data-[icon=inline-start]` and `has-data-[icon=inline-end]`. `Badge` and `Button` `xs`, `default` and `lg` already do this; `Button` `sm` does not yet (its icon side is 6 px, 4 px tighter than its 10 px) and moves to 8 px under #1144.
+- Use the primitive's own padding. A call-site `px-*`, `pl-*` or `pr-*` that breaks this table is a defect.
+- Composer text tokens sit in a mirror layer under the masked textarea, so their padding is drawn with `box-shadow`, never real `padding` (real padding would move the caret off the text).
+- Exceptions: icon-only buttons stay square (their padding comes from their fixed size), and inline code in prose keeps 4 px.
+
 ## Menus
 
 Menus and context menus (#471) follow one rule by menu type, not by menu mechanism (agenda item 5): the same rule applies to a `DropdownMenu`, a `ContextMenu`, or a right-click menu.
@@ -61,11 +76,11 @@ For both kinds:
 - The shortcut, when one exists, is a right-aligned `Kbd`.
 - Groups are split by separators.
 - The destructive item is last, after a separator, in the destructive colour.
-- Check marks and radio marks are allowed.
+- Check marks and radio marks are allowed. **A single-choice menu is a real radio group** (`DropdownMenuRadioGroup`/`DropdownMenuRadioItem`, `menuitemradio` with `aria-checked`) whose leading radio mark is the same ring-and-dot indicator the Ask card's radios use, filled for the selected item; never a trailing check standing in for a radio (Stuart, 2026-10-19, #1043).
 
 Evidence at `origin/main` 9f23d22: action-menu items carry no icons today (`SessionList.tsx:309-327` and `:420-422`, `ManageSessionRow.tsx:422-439`); the Profile and Approval mode menus already have a leading icon on nearly every item.
 
-Open: the Profile menu's theme submenu uses colour swatches, not icons, to be settled under tokens and theming (#456, #458).
+Decided (Stuart, 2026-10-19, #1043; swatch ruling amended 2026-10-20, ui-architect-v3): the Profile menu's theme submenu is a radio group; each theme's colour swatch is a small two-colour chip (the theme's own `--background` and `--primary`, split down the middle) after the name, never a round mark that could read as a radio. The swatch-versus-icon question for tokens and theming (#456, #458) is otherwise unchanged.
 
 ## Tooltip
 
@@ -139,11 +154,13 @@ rows") already governs it and this issue's own grill confirmed it is not reopene
 
 ## Chips and pills
 
-Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
+Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Their horizontal padding follows the whitespace rule under "Button" above (#1144). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
 
 ## List rows
 
 A list row (session row, repository row, subagent row) is an unboxed row under the zero-box rule, with a state icon or leading icon, its label, and trailing actions. Repeated row actions are icon-only with a tooltip (agenda item 1). The row's own action menu is an action menu (text only, see "Menus" above) reachable from an `⋮` trigger, a right-click, and the row's native context-menu keys (`Shift+F10`, the Menu key).
+
+**Selected-row bar (issue #1122, 2026-10-21, grilled, none deferred):** every persistent selected/active row or nav entry (the "Pull requests" nav entry, Session rows, the collapsed Project group header, the Settings nav, PR list rows, Explorer rows, Manage sessions rows, the Subagent panel) renders the one shared `ActiveIndicatorBar` component (`src/renderer/components/ActiveIndicatorBar.tsx`) -- a flush full-height (`inset-y-0`, no rounded caps) 2px `--active-indicator` bar with its own forced-colours fallback -- instead of a hand-copied `<span>`, following the "Reusable components first" rule above. Every site is square-cornered, but not all the same way: the "Pull requests" nav entry/Session rows/the Settings nav/Explorer rows/the Subagent panel join `globals.css`'s square-choice selector (`data-choice-item`/`role="treeitem"`); PR list rows and Manage sessions rows are square by omission (no rounding class was ever applied to either). Every site carries the shared accent fill except the collapsed group header (bar only, #735 decision 22, unaffected by this issue). See [product-look-and-feel.md](product-look-and-feel.md) "Active/selected indicator" for the full shape decision. The transient dropdown/menu keyboard-focus bar (issue #564) is a separate, narrower rule and keeps its own hand-written span.
 
 ## Dialogs
 
@@ -170,7 +187,7 @@ Colour only reinforces the icon and the word; it is never the only signal (WCAG 
 | Channel | Scope | Dismissal |
 |---|---|---|
 | Banner | A Session- or pane-scoped problem | Stays until the problem is fixed. |
-| Toast | A transient app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** |
+| Toast | A transient app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation state. |
 | Transcript notice | Agent-originated news | Stays in the transcript like any other row. |
 

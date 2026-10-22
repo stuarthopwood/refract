@@ -40,21 +40,79 @@ function truncateLabel(label: string): string {
   return `${label.slice(0, LABEL_MAX_CHARS).trimEnd()}\u2026`
 }
 
+/** Gate round 1 fix (issue #1077, item 2): the one line-finding loop `extractContextLabel` and
+ * `extractTaskGoalPreview` each used to carry their own copy of -- first line that is not
+ * blank, not a bare "# Goal"-style heading-only line, and non-empty AFTER stripping a leading
+ * Markdown heading marker and/or "Goal:" prefix. Returns the ZERO-BASED line index found and
+ * that line's own stripped text, or `null` when every line fails one of the three checks. */
+function findFirstContentLine(lines: string[]): { index: number; stripped: string } | null {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim()
+    if (line.length === 0) continue
+    if (HEADING_ONLY_GOAL_RE.test(line)) continue
+    const stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
+    if (stripped.length === 0) continue
+    return { index: i, stripped }
+  }
+  return null
+}
+
 /** First non-empty line of a batch `task()` call's own `context` argument, Markdown heading
  * markers and "Goal:" prefixes stripped, truncated to about 60 characters (issue #941 grill
  * item 3). Plain text only: `context` is untrusted agent-authored text, never rendered as
  * Markdown here. `null` when every line is empty or a bare "# Goal" heading with nothing after
  * it on every line (the whole context body was blank). */
 export function extractContextLabel(context: string): string | null {
-  for (const rawLine of context.split('\n')) {
-    const line = rawLine.trim()
-    if (line.length === 0) continue
-    if (HEADING_ONLY_GOAL_RE.test(line)) continue
-    const stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
-    if (stripped.length === 0) continue
-    return truncateLabel(stripped)
-  }
-  return null
+  const found = findFirstContentLine(context.split('\n'))
+  if (!found) return null
+  return truncateLabel(found.stripped)
+}
+
+// Gate round 1 fix (issue #1077, item 2, MEDIUM): raised from 240 to a genuine DOM-size guard
+// (1500) -- the visible clamp is `line-clamp-3` alone now, not this character budget; the
+// budget exists only so a pathologically long task can never bloat the DOM/accessible name
+// without bound, not to decide what is visually shown.
+const GOAL_PREVIEW_MAX_CHARS = 1500
+
+// A leading Markdown heading marker ALONE (no "Goal:" prefix) -- used to clean every line PAST
+// the first one throughout the preview (gate round 1 fix, issue #1077, item 2): the first
+// line's own "Goal:" prefix is a one-off per `HEADING_OR_GOAL_PREFIX_RE` above, never
+// meaningful on a later line of the same task.
+const LEADING_HEADING_MARKER_RE = /^#{1,6}\s*/
+
+/** Truncates `text` to at most `maxCodePoints` Unicode code points (never raw UTF-16 code
+ * units, which `String.prototype.slice` operates on and can split a surrogate pair -- an emoji
+ * or other astral character -- in half, gate round 1 fix, issue #1077, item 2). `text.length`
+ * (UTF-16 units) is always >= its own code-point count, so the cheap length check below only
+ * ever does the expensive `Array.from` spread when it is genuinely needed. */
+function truncateByCodePoint(text: string, maxCodePoints: number): string {
+  if (text.length <= maxCodePoints) return text
+  const codePoints = Array.from(text)
+  if (codePoints.length <= maxCodePoints) return text
+  return `${codePoints.slice(0, maxCodePoints).join('').trimEnd()}\u2026`
+}
+
+/** A single subagent's own goal when no Stage-level context exists to show instead (issue
+ * #1077): `item.task`'s own first non-blank lines, with the SAME heading/"Goal:" stripping
+ * `extractContextLabel` above applies to a Stage's own context (`findFirstContentLine`, shared),
+ * but keeping the line breaks that follow (rather than folding to one line). Gate round 1 fix
+ * (item 2): every line PAST the first also has its own leading Markdown heading marker stripped
+ * and blank lines collapsed (dropped outright) THROUGHOUT, not only on the first line, and the
+ * whole result is capped by `GOAL_PREVIEW_MAX_CHARS` as a DOM-size guard only -- the VISIBLE
+ * clamp is the caller's own `line-clamp-3`. The untruncated task stays reachable via the row's
+ * own "See input & output" toggle, so this never needs a separate expand control of its own.
+ * Plain text only, same reasoning as `extractContextLabel`: `task` is untrusted agent-authored
+ * text. `null` when every line is empty or a bare "# Goal" heading with nothing after it. */
+export function extractTaskGoalPreview(task: string): string | null {
+  const lines = task.split('\n')
+  const found = findFirstContentLine(lines)
+  if (!found) return null
+  const restLines = lines
+    .slice(found.index + 1)
+    .map((line) => line.trim().replace(LEADING_HEADING_MARKER_RE, '').trim())
+    .filter((line) => line.length > 0)
+  const combined = restLines.length > 0 ? `${found.stripped}\n${restLines.join('\n')}` : found.stripped
+  return truncateByCodePoint(combined, GOAL_PREVIEW_MAX_CHARS)
 }
 
 /** The longest common prefix shared by every name in a Stage with 2+ agents (issue #941 grill

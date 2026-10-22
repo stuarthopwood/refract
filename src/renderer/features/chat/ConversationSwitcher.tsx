@@ -10,6 +10,7 @@ import { HistoryIcon, PlusIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { notify, useChatScrollStore, useSessionsStore } from '@/state'
 import type { ConversationInfo } from '../../../shared/model'
 import { applySnapshot } from './applySnapshot'
@@ -118,7 +119,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex shrink-0 items-center gap-1.5">
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
         aria-disabled={!canSwitch || creating || switching}
         className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
@@ -148,28 +149,42 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
             <ul className="flex min-w-0 flex-col gap-1">
               {conversations.map((conversation) => (
                 <li key={conversation.file} className="min-w-0">
-                  <button
-                    type="button"
-                    aria-disabled={!canSwitch || switching || conversation.isCurrent}
-                    aria-current={conversation.isCurrent}
-                    onClick={() => {
-                      if (!canSwitch || switching || conversation.isCurrent) return
-                      void handleOpenConversation(conversation.file)
-                    }}
-                    data-choice-item
-                    className="flex w-full min-w-0 flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left hover:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
-                  >
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <span className="min-w-0 truncate" title={conversation.title || 'Untitled conversation'}>{conversation.title || 'Untitled conversation'}</span>
-                      {conversation.isCurrent && <Badge variant="secondary">Current</Badge>}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(conversation.createdAt).toLocaleString()}
-                    </span>
-                    {conversation.preview && (
-                      <span className="truncate text-xs text-muted-foreground" title={conversation.preview}>{conversation.preview}</span>
-                    )}
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild aria-describedby={undefined}>
+                      <button
+                        type="button"
+                        aria-disabled={!canSwitch || switching || conversation.isCurrent}
+                        aria-current={conversation.isCurrent}
+                        onClick={() => {
+                          if (!canSwitch || switching || conversation.isCurrent) return
+                          void handleOpenConversation(conversation.file)
+                        }}
+                        data-choice-item
+                        className="flex w-full min-w-0 flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left outline-none focus-visible:outline-hidden hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
+                      >
+                        <span className="flex items-center gap-2 text-sm font-medium">
+                          <span className="min-w-0 truncate">{conversation.title || 'Untitled conversation'}</span>
+                          {conversation.isCurrent && <Badge variant="secondary">Current</Badge>}
+                        </span>
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                          {new Date(conversation.createdAt).toLocaleString()}
+                        </span>
+                        {conversation.preview && (
+                          <span className="truncate text-xs text-muted-foreground">{conversation.preview}</span>
+                        )}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="right"
+                      sideOffset={22}
+                      collisionPadding={8}
+                      className="flex-col items-start [overflow-wrap:anywhere] max-w-[min(20rem,var(--radix-tooltip-content-available-width))]"
+                    >
+                      <p className="font-medium">{conversation.title || 'Untitled conversation'}</p>
+                      <p className="text-muted-foreground">{new Date(conversation.createdAt).toLocaleString()}</p>
+                      {conversation.preview && <p className="text-muted-foreground">{conversation.preview}</p>}
+                    </TooltipContent>
+                  </Tooltip>
                 </li>
               ))}
             </ul>

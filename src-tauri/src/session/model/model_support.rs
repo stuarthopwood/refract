@@ -276,3 +276,268 @@ pub(super) fn resolve_role_selector<'a>(
     direct_selector_with_fallback(model_roles, target)
         .filter(|hop| !hop.starts_with('@') && *hop != "*")
 }
+
+/// #741 decision 1: the FIRST time this Session's pin state is read this run (lazily, from
+/// `current_selection` -- never eagerly at `SessionAgent::new`, which has no `await` and no
+/// registry access of its own), folds the registry's own persisted `pinned_model` field into
+/// in-memory `State.pinned` so a hand-picked model (`set_model`/`cycle_model`/a direct `/switch
+/// <model>` token, all pinned BEFORE this app restart) still reads as pinned afterwards, instead
+/// of resetting to `false` (and so to the `default` role) the moment the process relaunched. An
+/// old `registry.json` with no `pinned_model` field at all deserialises it `false`
+/// (`registry.rs`'s own `#[serde(default)]`), correctly folding in as "not pinned". Guarded by
+/// `pinned_seeded` so the registry lock is only ever taken once per Session per run; a later
+/// in-run pin/un-pin can never be clobbered by a stale re-seed (it persists its own value the
+/// moment it happens, via `persist_pinned` below).
+pub(super) async fn ensure_pin_seeded(agent: &SessionAgent) {
+    let already_seeded = agent.with_model_state(|s| s.pinned_seeded).await;
+    if already_seeded {
+        return;
+    }
+    let persisted_pinned = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .is_some_and(|session| session.pinned_model);
+    agent
+        .with_model_state(|s| {
+            // Gate round 1 fix (LOW #9): a pin/unpin writer (`set_model`/`cycle_model`/
+            // `apply_role_now`/`handle_switch_text`, all of which now also set `pinned_seeded`
+            // in the SAME write) could have run while this function was awaiting the registry
+            // lock above -- re-checking here, inside the SAME `with_model_state` call that
+            // would otherwise write a stale `persisted_pinned` read, stops that race from
+            // clobbering the writer's own fresher, already-persisted value.
+            if s.pinned_seeded {
+                return;
+            }
+            s.pinned_seeded = true;
+            if persisted_pinned {
+                s.pinned = true;
+            }
+        })
+        .await;
+}
+
+/// #741 decision 1: persists the Session's own CURRENT `pinned` state (read back from state
+/// itself, gate round 1 fix LOW #9 -- never a caller-supplied `bool` that could have gone stale
+/// between its own write and this call) to the registry's own `pinnedModel` field --
+/// best-effort, matching `thinking_level.rs`'s own `update_session` discipline (a failed write
+/// only means a SUBSEQUENT restart replays the stale value once more; nothing else this run
+/// depends on the write having landed, so it is never surfaced as an error to the caller of
+/// `set_model`/`cycle_model`/`apply_role_now`/`handle_switch_text`). The compare and the
+/// (possible) write happen under ONE registry lock (gate round 2 fix HIGH #1: two separate
+/// `.lock().await` calls here used to let a concurrent writer land between the compare and the
+/// write).
+///
+/// The registry WRITE is still skipped when the persisted value already matches -- but the
+/// `session_list_changed` EVENT now ALWAYS fires regardless (gate round 2 fix HIGH #1): every
+/// caller of this function also just updated `current_role`/`pending_role_reapply` in the SAME
+/// `with_model_state` write immediately before calling it (a role switch while already unpinned,
+/// Default to Smol via `apply_role_now`; a hand-pick via `pick_model_via_rpc` while the chip was
+/// showing Fallback over an ALREADY-true pin). In both cases the PIN bool itself does not
+/// change, so the old "skip the write and skip the emit together" shape left the chip showing a
+/// stale role until some unrelated event happened to force a refresh -- the renderer's Sessions
+/// store is purely event-driven (`init-stores.ts`'s own `onSessionListChanged`), never polled.
+pub(super) async fn persist_pinned(agent: &SessionAgent) {
+    let current = agent.with_model_state(|s| s.pinned).await;
+    let mut registry = agent.registry().lock().await;
+    let already_persisted = registry
+        .get_session(agent.session_id())
+        .is_some_and(|session| session.pinned_model == current);
+    if !already_persisted {
+        let _ = registry
+            .update_session(
+                agent.session_id(),
+                crate::store::registry::SessionPatch {
+                    pinned_model: Some(current),
+                    ..Default::default()
+                },
+            )
+            .await;
+    }
+    drop(registry);
+    agent.events().emit_session_list_changed();
+}
+
+/// #741 decision 2: the effective role for one `model_change` entry's own JSON value.
+/// `resolvedModelIsFallback` (`omp://session.md`: "marks a retry-fallback transition") overrides
+/// whatever `role` this SAME entry also carries -- OMP's own automatic recovery after repeated
+/// failures is not the user's saved choice, so the chip reads Fallback even if `role` still says
+/// e.g. `"default"`. The reserved role name `"fallback"` (`omp://session.md`: "ephemeral")
+/// doubles as the renderer's own sentinel for this (`modelRoles.ts`'s `FALLBACK_ROLE`). FINDINGS
+/// item 61: never observed `true` live (a 90s probe against a connection-refused failure never
+/// triggered it) -- shipped code-verified against the documented field, not a live-forced
+/// observation; forcing the transition live is #650.
+pub(super) fn model_change_role(value: &Value) -> String {
+    if value
+        .get("resolvedModelIsFallback")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return "fallback".to_string();
+    }
+    value
+        .get("role")
+        .and_then(Value::as_str)
+        .unwrap_or("default")
+        .to_string()
+}
+
+/// #741 decision 2 (issue text "Refresh the role... after any model change, and after a
+/// fallback"): `model_changed`/`retry_fallback_succeeded` (`omp://rpc.md`'s event list) are
+/// autonomous OMP events, landing OUTSIDE this lane's own set_model/apply_role_now/
+/// handle_switch_text paths -- clearing the role cache here is the only way `model.rs`'s own
+/// `current_selection` re-reads the Session file fresh on its next call, picking up the new
+/// entry (and `resolvedModelIsFallback`, `model_change_role` above) instead of returning a stale
+/// cached role forever. Called from `model.rs`'s own `on_frame` for every frame.
+///
+/// Gate round 1 fix (round 2, real bug found live): the renderer's own Sessions store is
+/// EVENT-driven, never polled (`init-stores.ts`'s `onSessionListChanged` is the only thing that
+/// calls `sessions-store.ts`'s own `refresh()`) -- every OTHER mutation path here already emits
+/// `session_list_changed` itself (`persist_pinned`), but this autonomous path never did, so a
+/// live fallback's own role change sat correctly updated in Rust state forever, invisible to the
+/// chip, until some UNRELATED event happened to trigger a refresh. Emitting it here is what
+/// actually makes "a live fallback refreshes the chip without a restart" true.
+pub(super) async fn maybe_invalidate_role_cache(agent: &SessionAgent, frame_type: &str) {
+    if frame_type != "model_changed" && frame_type != "retry_fallback_succeeded" {
+        return;
+    }
+    agent
+        .with_model_state(|s| {
+            s.current_role = None;
+            s.role_probed_path = None;
+            // Gate round 1 fix (HIGH #2/#5): force `resolve_current_selection` to re-read the
+            // Conversation file at least once even while `pinned` is true (a fresh fallback
+            // entry must be able to outrank a pin), and bump the generation so a read already in
+            // flight when THIS invalidation lands cannot write its own now-stale result back
+            // over whatever this invalidation's own reprobe discovers next.
+            s.role_needs_reprobe = true;
+            s.role_generation = s.role_generation.wrapping_add(1);
+        })
+        .await;
+    agent.events().emit_session_list_changed();
+}
+
+/// Reads the Session's own current Conversation file (if any) for its LATEST `model_change`
+/// entry's effective role (`model_change_role` above: `set_model`/`open_session`-override always
+/// writes an explicit `role:"default"`; `cycle_model` omits `role` entirely -- both reconstruct
+/// to `"default"`, FINDINGS item 51). `None` when the file has no `model_change` entry at all or
+/// cannot be read -- never guessed as `"default"` (#741). Moved here from `model.rs` (gate round
+/// 1, file-size): that file is at its own 600-line cap and this is a pure Session-state helper
+/// this sibling file already owns the rest of.
+async fn read_role_from_session_file(conversation_path: &str) -> Option<String> {
+    let content = tokio::fs::read_to_string(conversation_path).await.ok()?;
+    let mut latest: Option<String> = None;
+    for line in content.lines() {
+        let line = line.trim();
+        // Gate-fix (HIGH, perf): skip the `serde_json::from_str` parse entirely for the common
+        // case -- most lines in a long-running Conversation are not `model_change` entries, and
+        // a plain substring scan is far cheaper than parsing JSON just to discard it.
+        if line.is_empty() || !line.contains("model_change") {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) == Some("model_change") {
+            latest = Some(model_change_role(&value)); // #741 decision 2
+        }
+    }
+    latest
+}
+
+/// `model.rs`'s own `current_selection` wraps this after `ensure_pin_seeded`. Lazily seeds
+/// `current_role` from the Session's own Conversation file on the first call this run (gate-fix,
+/// HIGH, #741: never a guessed `"default"`), then returns the cached value on every later call.
+/// A Session whose Conversation has no `model_change` entry at all (the common case) is not
+/// re-read and re-parsed on every later `sessions.list()` poll: the negative result is cached
+/// too, keyed by the probed path, so a later call for the SAME Conversation returns immediately,
+/// while a genuinely new Conversation (a different path) is still probed fresh.
+///
+/// Gate round 1 fix (HIGH #2): a PINNED Session used to return here unconditionally, so an
+/// autonomous fallback entry a fresh `model_changed`/`retry_fallback_succeeded` frame wrote to
+/// the Conversation file (`maybe_invalidate_role_cache` above) could never be discovered while
+/// pinned -- "fallback outranks a pin" was unreachable. `role_needs_reprobe` forces one fresh
+/// file read through to the probe below even though `pinned` is true; the PERSISTED pin
+/// (`registry.json`'s `pinnedModel`) is never touched here or by the probe that follows -- only
+/// the returned, DISPLAYED `effective_pinned` can change.
+///
+/// Gate round 1 fix (HIGH #5): a SECOND invalidation (bumps `role_generation`) could land WHILE
+/// this file read is in flight; writing this read's now-stale result back would silently cancel
+/// that newer invalidation's own request to re-probe. The write-back closure below only applies
+/// (and only clears `role_needs_reprobe`) if the generation is still the one this read started
+/// under.
+///
+/// Gate round 2 fix (HIGH #5, round 2): the no-path and already-probed early-return branches
+/// used to clear `role_needs_reprobe` unconditionally, with no generation check at all -- a
+/// `maybe_invalidate_role_cache` bump landing between the FIRST state read (just below) and one
+/// of those branches could have its own reprobe request silently dropped by a call that never
+/// actually re-read anything. `entry_generation`, captured in that very first read, gates both.
+///
+/// Gate round 2 fix (MEDIUM #6): after a reprobe, the returned `(pinned, role)` pair now comes
+/// from the SAME `with_model_state` closure that performed the write-back, read fresh after it
+/// applies -- not the `pinned`/`cached_role` locals captured at the top of this call. Two
+/// concurrent polls landing either side of a write-back used to be able to disagree with each
+/// other on an identical Session state; reading the state's own post-write values closes that.
+pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
+    let (pinned, cached_role, needs_reprobe, entry_generation) = agent
+        .with_model_state(|s| {
+            (
+                s.pinned,
+                s.current_role.clone(),
+                s.role_needs_reprobe,
+                s.role_generation,
+            )
+        })
+        .await;
+    if !needs_reprobe && (pinned || cached_role.is_some()) {
+        let effective_pinned = pinned && cached_role.as_deref() != Some("fallback"); // #741: fallback outranks a stale pin
+        return (effective_pinned, cached_role);
+    }
+    let Some(path) = agent.current_conversation_path().await else {
+        agent
+            .with_model_state(|s| {
+                if s.role_generation == entry_generation {
+                    s.role_needs_reprobe = false;
+                }
+            })
+            .await;
+        return (pinned, cached_role);
+    };
+    let (already_probed, read_generation) = agent
+        .with_model_state(|s| {
+            (
+                s.role_probed_path.as_deref() == Some(path.as_str()),
+                s.role_generation,
+            )
+        })
+        .await;
+    if already_probed {
+        agent
+            .with_model_state(|s| {
+                if s.role_generation == entry_generation {
+                    s.role_needs_reprobe = false;
+                }
+            })
+            .await;
+        return (pinned, cached_role);
+    }
+    let role = read_role_from_session_file(&path).await;
+    let (state_pinned, state_role) = agent
+        .with_model_state(|s| {
+            if s.role_generation == read_generation {
+                s.role_needs_reprobe = false;
+                if let Some(role) = role.clone() {
+                    if s.current_role.is_none() {
+                        s.current_role = Some(role);
+                    }
+                } else {
+                    s.role_probed_path = Some(path.clone());
+                }
+            }
+            (s.pinned, s.current_role.clone())
+        })
+        .await;
+    let effective_pinned = state_pinned && state_role.as_deref() != Some("fallback"); // #741: a fresh fallback entry outranks a pin immediately, not just on the next poll
+    (effective_pinned, state_role)
+}

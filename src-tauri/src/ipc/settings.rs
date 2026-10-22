@@ -14,7 +14,9 @@
 
 use serde_json::Value;
 
-use crate::store::settings::{ApprovalMode, ChatWidth, SessionListCollapse, SplitLayout};
+use crate::store::settings::{
+    ApprovalMode, ChatWidth, HolidayTouches, SessionListCollapse, SplitLayout,
+};
 
 use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture};
 
@@ -45,6 +47,10 @@ pub fn register(d: &mut Dispatcher) {
     // every `settings.*` channel in one place, same reasoning `ipc/mod.rs`'s own module split
     // documents for every other per-area file.
     d.register(
+        "settings.setShowContextUsageBar",
+        settings_set_show_context_usage_bar,
+    );
+    d.register(
         "settings.setWordPredictionEnabled",
         settings_set_word_prediction_enabled,
     );
@@ -57,6 +63,7 @@ pub fn register(d: &mut Dispatcher) {
         settings_set_pull_requests_list_width,
     );
     d.register("settings.setChatWidth", settings_set_chat_width);
+    d.register("settings.setHolidayTouches", settings_set_holiday_touches);
 }
 
 pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -255,6 +262,39 @@ fn parse_chat_width(value: &str) -> Option<ChatWidth> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
+/// `settings.setHolidayTouches(value)` (issue #1048): same enum-parse-then-persist shape as
+/// `settings_set_chat_width` above.
+pub fn settings_set_holiday_touches(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let value = match args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(parse_holiday_touches)
+        {
+            Some(value) => value,
+            None => {
+                return Err(invalid_argument(
+                    "settings.setHolidayTouches expects one of 'full' | 'artwork' | 'off'",
+                ))
+            }
+        };
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_holiday_touches(value)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+fn parse_holiday_touches(value: &str) -> Option<HolidayTouches> {
+    serde_json::from_value(Value::String(value.to_string())).ok()
+}
+
 /// Issue #457: `field` is one of the two known `TranscriptDisplaySettings` keys, validated here
 /// (`invalid-argument` for anything else) before ever reaching the store's own per-field merge.
 pub fn settings_set_transcript_display(state: AppState, args: Vec<Value>) -> HandlerFuture {
@@ -397,6 +437,23 @@ pub fn settings_set_pull_requests_list_width(state: AppState, args: Vec<Value>) 
             .lock()
             .await
             .set_pull_requests_list_width_px(width_px)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// `settings.setShowContextUsageBar(enabled)` (issue #1082, spec 004 FR-034).
+pub fn settings_set_show_context_usage_bar(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let enabled = require_bool(&args, 0, "settings.setShowContextUsageBar", "enabled")?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_show_context_usage_bar(enabled)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");

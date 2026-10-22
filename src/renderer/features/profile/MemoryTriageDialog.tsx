@@ -90,17 +90,8 @@
 // 14. (L4) A bulk confirm targeting exactly one Session reuses the single-stop wording
 //     verbatim ("Stop {name}'s agent?") instead of "Stop 1 idle agent?".
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode, RefObject } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import type { ComponentProps, RefObject } from 'react'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
@@ -125,67 +116,8 @@ function isStillIdle(sessionId: string): boolean {
 
 /** Shared by the per-row and bulk confirm flows (quality-gate remediation, round 2, item 13):
  *  they differ only in title/description/busy/onConfirm. */
-function ConfirmStopAlertDialog({
-  open,
-  busy,
-  title,
-  description,
-  onCancel,
-  onConfirm,
-  onCloseAutoFocus
-}: {
-  open: boolean
-  busy: boolean
-  title: ReactNode
-  description: ReactNode
-  onCancel(): void
-  onConfirm(): void
-  onCloseAutoFocus(): void
-}) {
-  return (
-    <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onCancel() }}>
-      <AlertDialogContent
-        onEscapeKeyDown={(event) => {
-          if (busy) event.preventDefault()
-        }}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          onCloseAutoFocus()
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel
-            aria-disabled={busy}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              if (busy) {
-                event.preventDefault()
-                return
-              }
-              onCancel()
-            }}
-          >
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="invert"
-            aria-disabled={busy}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              event.preventDefault()
-              onConfirm()
-            }}
-          >
-            {busy ? 'Stopping…' : 'Stop'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
+function ConfirmStopAlertDialog(props: Omit<ComponentProps<typeof ConfirmAlertDialog>, 'confirmLabel' | 'busyLabel'>) {
+  return <ConfirmAlertDialog {...props} confirmLabel="Stop" busyLabel="Stopping…" />
 }
 
 export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryTriageDialogProps) {

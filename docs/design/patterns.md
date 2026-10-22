@@ -17,6 +17,7 @@ Naming and microcopy (agenda item 6) is sentence case, verb first, with no trail
 | **Remove** | Take it out of Refract without deleting data (for example, a repository). |
 | **Delete** | Permanent. |
 | **Archive** | Reversible hide. |
+| **Retry** | Run a refused action again, in the same dialog (issue #891 gate round 1, ui-architect-v3: the confirm button relabels to Retry after a refusal rather than adding a second control). |
 
 Confirm buttons repeat the verb ("Delete session"), never "OK" or "Yes." Evidence at `origin/main` 9f23d22: Add repository (`AddRepositoryDialog`), Cancel (`PullRequestDetail`'s `AlertDialogCancel`), Close (the read-only/blocked dialog footer).
 
@@ -45,7 +46,7 @@ Four written-down channels (agenda item 7), each with one job:
 | Channel | Scope | Dismissal |
 |---|---|---|
 | Banner | A problem scoped to one Session or pane | Stays until the problem is fixed. |
-| Toast | A transient, app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** |
+| Toast | A transient, app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation. |
 | Transcript notice | Agent-originated news | Renders as a normal transcript row; never dropped. |
 

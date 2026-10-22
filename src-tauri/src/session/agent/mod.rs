@@ -107,6 +107,7 @@ struct AgentState {
     turn_generation: u64,
     stop_requested: bool,
     shutdown_generation: u64,
+    turn_abort_requested: bool, // issue #911: true while `chat.stop`'s own `abort` RPC is in flight for this turn
     // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
     advisor: crate::session::advisor::State,
     #[allow(dead_code)]
@@ -202,6 +203,7 @@ impl SessionAgent {
                 turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,
+                turn_abort_requested: false,
                 advisor: Default::default(),
                 model: Default::default(),
                 readout: Default::default(),
@@ -273,55 +275,6 @@ impl SessionAgent {
     // -----------------------------------------------------------------------------------------
     // Status / events
     // -----------------------------------------------------------------------------------------
-
-    fn status_event_locked(&self, state: &AgentState) -> Value {
-        let mut payload = json!({
-            "sessionId": self.session_id,
-            "status": state.status,
-            "unread": state.unread,
-            "launchedMode": state.launched_mode,
-            "pendingMode": state.pending_mode,
-        });
-        let obj = payload
-            .as_object_mut()
-            .expect("status_event_locked payload is always a JSON object");
-        // `stopReason`/`stopDetail` are TS `?:` optional fields (the renderer checks
-        // `=== undefined`, ChatPane.tsx:205): omitted entirely when absent, not sent as JSON
-        // `null` (code-review finding, 2026-10-13).
-        if let Some(reason) = state.stop_reason {
-            obj.insert("stopReason".to_string(), Value::String(reason.to_string()));
-        }
-        if let Some(detail) = &state.stop_detail {
-            obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
-        }
-        // Lane R3 (issue #786): `terminatedUnexpectedly`/`pendingToolNames` (`session::
-        // termination`'s own `on_exit` hook) and `startProgress` (`session::start_queue`'s own
-        // `on_start_progress` hook), each omitted entirely while absent -- same gate rule as
-        // `stopReason`/`stopDetail` above.
-        Self::insert_termination_and_progress_fields(obj, state);
-        payload
-    }
-
-    /// Lane R3 (#786): shared by `status_event_locked` (session:status event) and `runtime_view`
-    /// (`SessionSnapshot.runtime`) so both stay in lock-step. `summary_fields` skips it: progress
-    /// yes (#985, cheap, already in memory), termination no (needs a fresh file re-read per row).
-    fn insert_termination_and_progress_fields(
-        obj: &mut serde_json::Map<String, Value>,
-        state: &AgentState,
-    ) {
-        if state.termination.terminated_unexpectedly {
-            obj.insert("terminatedUnexpectedly".to_string(), Value::Bool(true));
-            if !state.termination.pending_tool_names.is_empty() {
-                obj.insert(
-                    "pendingToolNames".to_string(),
-                    json!(state.termination.pending_tool_names),
-                );
-            }
-        }
-        if let Some(progress) = state.start_queue.to_wire() {
-            obj.insert("startProgress".to_string(), progress);
-        }
-    }
 
     pub(super) async fn emit_status(&self) {
         let state = self.state.lock().await;
@@ -411,6 +364,7 @@ impl SessionAgent {
     /// an unrelated Session's refresh wiped this one's notice until its next status emit (no tick).
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
+        let pending_selection = crate::session::pending_selection::wire(self).await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "status": state.status,
@@ -422,6 +376,9 @@ impl SessionAgent {
         let object = payload
             .as_object_mut()
             .expect("summary_fields payload is always a JSON object");
+        if let Some(pending) = pending_selection {
+            object.insert("pendingSelection".to_string(), pending);
+        }
         if let Some(reason) = state.stop_reason {
             object.insert("stopReason".to_string(), Value::String(reason.to_string()));
         }
@@ -472,7 +429,8 @@ impl SessionAgent {
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
         let before = state.transcript.items().to_vec();
-        state.transcript.apply_frame(frame);
+        let turn_abort_requested = state.turn_abort_requested;
+        state.transcript.apply_frame(frame, turn_abort_requested);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued while still holding `state.lock()` (code-review finding, 2026-10-13): otherwise
         // a concurrent `emit_patch_reset` (`SessionManager::set_visible`) can slip its own

@@ -104,6 +104,35 @@ where
         on_directory_changed,
         on_fatal,
         Duration::from_millis(WATCH_DEBOUNCE_MS),
+        true,
+    )
+}
+
+/// Gate round 1 item 2 (#464, Git changes panel): identical to `watch_directory`, except the
+/// root-liveness poll's own perf mitigation (re-queuing the watched ROOT ITSELF into the
+/// debounce `pending` set every `ROOT_LIVENESS_POLL_INTERVAL`, see that block's own comment
+/// below) is skipped. That mitigation is correct and wanted for the File explorer (whose
+/// `is_loaded` guard already turns a no-op refresh for a closed directory into nothing), but
+/// this panel's own callback treats EVERY ping -- root or not -- as "refetch everything", so the
+/// same mitigation would instead re-fire a full refetch roughly every `ROOT_LIVENESS_POLL_
+/// INTERVAL` forever, with nothing actually changed. The "does the root still exist" fatal
+/// check one block above the skipped re-queue keeps running regardless: a deleted/moved
+/// worktree root must still fire `on_fatal` for this consumer too.
+pub fn watch_directory_without_liveness_requeue<F, G>(
+    worktree_root: &Path,
+    on_directory_changed: F,
+    on_fatal: G,
+) -> Option<DirectoryWatchHandle>
+where
+    F: Fn(String) + Send + Sync + 'static,
+    G: Fn() + Send + Sync + 'static,
+{
+    watch_directory_with_debounce(
+        worktree_root,
+        on_directory_changed,
+        on_fatal,
+        Duration::from_millis(WATCH_DEBOUNCE_MS),
+        false,
     )
 }
 
@@ -112,6 +141,7 @@ fn watch_directory_with_debounce<F, G>(
     on_directory_changed: F,
     on_fatal: G,
     debounce: Duration,
+    requeue_root_on_liveness: bool,
 ) -> Option<DirectoryWatchHandle>
 where
     F: Fn(String) + Send + Sync + 'static,
@@ -175,10 +205,17 @@ where
                 // roughly one `ROOT_LIVENESS_POLL_INTERVAL` plus one debounce period even if the
                 // detailed per-subfolder event stream has gone silent. Subdirectories below the
                 // root are not covered by this mitigation; recorded as a residual, not a
-                // complete fix.
-                pending.insert(String::new());
-                if deadline.is_none() {
-                    deadline = Some(Instant::now() + debounce);
+                // complete fix. Gate round 1 item 2 (#464): skipped entirely when
+                // `requeue_root_on_liveness` is false (`watch_directory_without_liveness_
+                // requeue`'s own caller, `git_changes_watch_state`, treats EVERY ping as
+                // "refetch everything" and would otherwise refire roughly every
+                // `ROOT_LIVENESS_POLL_INTERVAL` forever) -- the fatal "root still exists" check
+                // just above this block is NOT part of this gate and always runs regardless.
+                if requeue_root_on_liveness {
+                    pending.insert(String::new());
+                    if deadline.is_none() {
+                        deadline = Some(Instant::now() + debounce);
+                    }
                 }
             }
 

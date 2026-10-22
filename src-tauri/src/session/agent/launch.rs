@@ -247,6 +247,8 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.process = Some(proc.clone());
+            // Issue #911 (gate-fix): a brand-new process life starts with no turn in flight.
+            state.turn_abort_requested = false;
         }
 
         let state_data = match self.attach_and_verify(&proc, session).await {
@@ -336,6 +338,8 @@ impl SessionAgent {
 
         self.emit_status().await;
         self.emit_patch_reset().await;
+        // #766 part A: a choice made while the agent was stopped applies before the first prompt.
+        crate::session::pending_selection::drain(self).await;
         Ok(())
     }
 

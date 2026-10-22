@@ -71,6 +71,8 @@ use subagents_progress::{
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
+/// Issue #700/#701 slice (b) decision item 1: "first sentence of `task`, ~100 chars" -- a SEPARATE budget from `NAME_OR_TASK_MAX_CHARS` above (the panel's own identity label).
+const TASK_SUMMARY_MAX_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SummaryStatus {
@@ -101,6 +103,10 @@ pub(super) struct SummaryEntry {
     tool_call_id: String,
     spec_index: u32,
     name_or_task: String,
+    /// Gate round 1 fix 6 (#700/#701 slice b): subagent's own given `name`; `None` falls back to `nameOrTask` on the card.
+    name: Option<String>,
+    /// Issue #700/#701 slice (b): Agents card's own one-line summary (`model.ts`'s `taskSummary`), independent of `name`.
+    task_summary: Option<String>,
     status: SummaryStatus,
     started_at: i64,
     duration_ms: Option<i64>,
@@ -479,6 +485,62 @@ fn subagent_name_or_task(spec: &Value) -> String {
     }
 }
 
+/// Gate round 1 fix 6 (#700/#701 slice b): subagent's own given `name`; `None` on an empty or absent name.
+fn subagent_name(spec: &Value) -> Option<String> {
+    spec.get("name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Issue #700/#701 slice (b), decision item 1: one-line task summary (first sentence of `task`, ~100 chars, inert text). Gate round 1 fix 8: a "sentence" ends only at `.`/`!`/`?` followed by whitespace or end-of-text (`package.json`/`e.g.`/`v1.2`/`./x` no longer cut mid-token); whitespace runs collapse to one space, and a leading markdown heading marker is stripped.
+/// `None` once nothing remains. The 100-char cap uses `char_indices().nth(N)` (one O(n) scan, never a full `Vec<char>` copy), reserving the trailing `...` inside the cap, with any dangling trailing space trimmed first.
+fn subagent_task_summary(spec: &Value) -> Option<String> {
+    let raw = spec.get("task").and_then(Value::as_str).unwrap_or("");
+    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let without_heading = if collapsed.starts_with('#') {
+        collapsed.trim_start_matches('#').trim_start()
+    } else {
+        collapsed.as_str()
+    };
+    if without_heading.is_empty() {
+        return None;
+    }
+    let mut sentence_end = None;
+    for (i, c) in without_heading.char_indices() {
+        if c != '.' && c != '!' && c != '?' {
+            continue;
+        }
+        let after = i + c.len_utf8();
+        if without_heading[after..]
+            .chars()
+            .next()
+            .is_none_or(char::is_whitespace)
+        {
+            sentence_end = Some(after);
+            break;
+        }
+    }
+    let sentence = sentence_end
+        .map_or(without_heading, |end| &without_heading[..end])
+        .trim();
+    if sentence.is_empty() {
+        return None;
+    }
+    let char_count = sentence.chars().count();
+    if char_count > TASK_SUMMARY_MAX_CHARS {
+        let keep = TASK_SUMMARY_MAX_CHARS.saturating_sub(3);
+        let byte_end = sentence
+            .char_indices()
+            .nth(keep)
+            .map_or(sentence.len(), |(i, _)| i);
+        let truncated = sentence[..byte_end].trim_end();
+        Some(format!("{truncated}..."))
+    } else {
+        Some(sentence.to_string())
+    }
+}
+
 /// `tool_execution_start` for the `task` tool: creates one `SubagentSummary` per spec (port of
 /// `handleTaskStart`, minus the persisted `currentTurnSubagents` durable-turn marker -- this
 /// build never clears the list at the next turn start, so that marker's own purpose, telling
@@ -513,6 +575,8 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
             tool_call_id: tool_call_id.to_string(),
             spec_index: index as u32,
             name_or_task: subagent_name_or_task(spec),
+            name: subagent_name(spec),
+            task_summary: subagent_task_summary(spec),
             status: SummaryStatus::Running,
             started_at,
             duration_ms: None,

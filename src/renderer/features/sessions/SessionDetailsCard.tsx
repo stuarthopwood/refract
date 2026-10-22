@@ -6,6 +6,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { useSessionsStore } from '@/state'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
+import { friendlyProviderLabel } from '@/lib/providerLabels'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { DiffStatLine, StateIcon, STATUS_LABEL, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'
@@ -111,21 +112,32 @@ export function SessionDetailsCard({
               </p>
             </div>
             {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)"
-                    suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="flex min-w-0 items-center gap-1.5 truncate">
-                <CpuIcon aria-hidden className="size-3.5 shrink-0" />
-                <span className="truncate">{formatModelLabel(session) ?? 'Model not known yet'}</span>
-              </span>
-              {formatThinkingLevelLabel(session) && (
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <ReasoningGaugeIcon level={session.lastThinkingLevel} className="size-3.5 shrink-0" />
-                  <span>
-                    <span className="sr-only">Thinking level: </span>
-                    {formatThinkingLevelLabel(session)}
-                  </span>
+                    suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). Gate round 1 fix
+                    (LOW #12): the model/effort row and its own "via <Provider>" caption below are
+                    grouped in one `flex flex-col gap-0.5` -- the outer card's own `gap-2` between
+                    EVERY row read as "via Provider" belonging to the NEXT unrelated row, not a
+                    caption of the model row directly above it. */}
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-1.5 truncate">
+                  <CpuIcon aria-hidden className="size-3.5 shrink-0" />
+                  <span className="truncate">{formatModelLabel(session) ?? 'Model not known yet'}</span>
                 </span>
-              )}
+                {formatThinkingLevelLabel(session) && (
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <ReasoningGaugeIcon level={session.lastThinkingLevel} className="size-3.5 shrink-0" />
+                    <span>
+                      <span className="sr-only">Thinking level: </span>
+                      {formatThinkingLevelLabel(session)}
+                    </span>
+                  </span>
+                )}
+              </div>
+              {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map,
+                  raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this
+                  card has room for it that the composer strip does not. `pl-5` aligns it under
+                  the model name's own text, past the CpuIcon (`size-3.5` + `gap-1.5` above it). */}
+              {session.lastModel && <p className="truncate pl-5 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <FileDiffIcon aria-hidden className="size-3.5 shrink-0" />

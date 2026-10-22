@@ -11,9 +11,31 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use super::notice_prefixes::HIDDEN_TOOL_NOTICE_PREFIX;
 use super::{
-    now_ms, SubagentStatus, TranscriptItem, ASYNC_RESULT_CUSTOM_TYPE, SUBAGENT_NAME_LENGTH,
+    now_ms, NoticeLevel, SubagentStatus, TranscriptItem, ASYNC_RESULT_CUSTOM_TYPE,
+    SUBAGENT_NAME_LENGTH,
 };
+
+/// Issue #911 (gate-fix, file-size): moved verbatim from the parent `transcript` module (same
+/// #899 gate round 2 precedent this file's own header cites) so `transcript.rs` stays at its
+/// own file-size baseline while this story's own `ToolStatus::Cancelled` addition lands.
+pub(super) fn hidden_tool_failure_notice(
+    tool_call_id: &str,
+    tool_name: &str,
+    output: &str,
+) -> TranscriptItem {
+    let text = if output.is_empty() {
+        format!("{tool_name} failed.")
+    } else {
+        output.to_string()
+    };
+    TranscriptItem::Notice {
+        id: format!("{HIDDEN_TOOL_NOTICE_PREFIX}{tool_call_id}"),
+        level: NoticeLevel::Error,
+        text,
+    }
+}
 
 /// Reads `args.tasks[]` defensively (port of `readTaskSpecs`): a malformed or absent array means
 /// the caller falls back to rendering the call as a plain `tool` item instead of silently
@@ -147,6 +169,7 @@ pub(super) fn apply_batch_task_result(
     is_error: bool,
     details: &Value,
     live: bool,
+    turn_abort_requested: bool, // issue #911 (gate-fix): still-running member settles Cancelled, not Error
 ) -> Vec<Arc<TranscriptItem>> {
     let subagent_positions: Vec<usize> = items
         .iter()
@@ -176,6 +199,7 @@ pub(super) fn apply_batch_task_result(
             ..
         } = Arc::make_mut(&mut items[pos])
         {
+            let was_running = matches!(status, SubagentStatus::Running);
             let entry_job_id = entry
                 .and_then(|e| e.get("id"))
                 .and_then(Value::as_str)
@@ -184,11 +208,17 @@ pub(super) fn apply_batch_task_result(
             // when it maps to `Cancelled`; anything else -- including a lingering `pending`,
             // which `map_progress_status` reads as still-Running -- falls back to `Error`
             // instead of leaving the row spinning forever once the batch itself has already
-            // failed (#899 gate round 2 finding N1, decision 15, #563).
+            // failed (#899 gate round 2 finding N1, decision 15, #563). Issue #911 (gate-fix):
+            // a member still genuinely `Running` when the user's own Stop was in flight for
+            // this turn settles `Cancelled` too, even when OMP's own per-agent `progress[i]`
+            // entry says nothing of the kind -- matching the SAME "cut short by Stop, not a
+            // failure" reasoning #563 decision 15 already applies when OMP's own entry DOES
+            // say `cancelled`/`aborted`.
             if is_error {
                 let entry_status = entry.and_then(|e| e.get("status")).and_then(Value::as_str);
                 *status = match map_progress_status(entry_status) {
                     SubagentStatus::Cancelled => SubagentStatus::Cancelled,
+                    _ if turn_abort_requested && was_running => SubagentStatus::Cancelled,
                     _ => fallback_status,
                 };
                 if let Some(jid) = entry_job_id {

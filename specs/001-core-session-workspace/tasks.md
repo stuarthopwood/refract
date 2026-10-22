@@ -4081,8 +4081,1102 @@ user message, found past the old 8...") in full, 9,901 bytes into the file -- pa
 8,192-byte window, under the new 65,536-byte cap. PR #1006 switched from `Refs #862` to
 `Closes #862`.
 
+## Phase 64: Stage rows defer running auto-open to the chain row (#1000, FR-087, research.md
+decision 22) [US1]
 
-## Phase 64: Side chat panel double scrollbar (#802) [US1]
+Takes the next free numbers against `origin/main` (this branch's own convention, matching
+Phase 60/61's own notes above): #1003 (Async-result job matching, FR-085, decision 20, Phase 62,
+T293-T311) and #1006 (Conversation preview/title scan, FR-086, decision 21, Phase 63, T312/T313)
+both merged first, claiming every number this phase previously used (including a second,
+independent collision on the same T312/T313/FR-086/decision-21/Phase-63 set this branch had
+already renumbered to once for #1003) -- renumbered again to Phase 64, FR-087, decision 22,
+T314/T315 below.
+
+**Goal**: narrow `StageGroupRow`'s own auto-open condition (FR-067/FR-084) so that once a turn
+has two or more Stages, a Stage row no longer auto-opens merely because one of its own agents
+is running -- only failed/cancelled/exited still do -- since the per-turn Subagent chain row
+(FR-068) already carries the live running overview for the whole turn at that point, and a
+turn's running agents were otherwise shown expanded twice over (ui-architect-v3 ruling at PR
+#999's own gate, recorded on issue #1000; full rationale in research.md decision 22).
+
+- [X] T314 `SubagentChainRow.tsx`'s `StageGroupRow`: `isOpenByDefault` now reads
+  `group.totalStages` -- while a turn has only one Stage, unchanged (`total > 1 && (isRunning ||
+  failed/cancelled/exited)`); once a turn has two or more Stages, `running` is dropped from the
+  condition (`total > 1 && (failed/cancelled/exited)`). No change to `useStickyDisclosure`'s own
+  upward-only latch, `StageGroupRow`'s solo-Stage exclusion (`total > 1`), or `SubagentChainRow`'s
+  own `isUnsettled`/default-open rule -- all three already give this decision everything it
+  needs with no further code (FR-087).
+- [X] T315 New `scripts/verify-1000-stage-defer.mjs`, reusing the existing `stages-941.jsonl`
+  fixture with one additional additive `{"__delay__": 1500}` (no new fixture, AGENTS.md; mirrors
+  Stage 1's own existing delay, now also applied to Stage 2) -- the only window in this fixture
+  where a Stage genuinely, observably runs while the turn already has two or more Stages.
+  Proves: Stage 2 stays closed while running at that point, with the chain row already open and
+  showing "2 stages"/"Running"; Stage 1 (opened earlier, single-Stage-so-far) does not close
+  itself once the turn grows past it (amended: Stage 3, see gate round 1); after the whole
+  ten-Stage turn settles, Stage 2 stays
+  closed (never auto-opened, so nothing to self-close) while Stage 5 (its own failed member) is
+  open regardless of Stage count; a manual open plus keyboard focus placed inside Stage 2 while
+  running survives both it settling and every later Stage streaming in behind it (WCAG 2.4.3).
+  Shim-confirmed check and a fresh, `mkdtemp`'d debug-log path (same pattern as
+  `verify-941-part2.mjs`/`verify-991-stage-focus.mjs`). Written, not run end-to-end (no build
+  slot granted for this sub-task): `node --check` plus a real `import()` load-check, `pnpm
+  typecheck`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs`, and `node
+  scripts/check-parity.mjs --gate` all clean.
+- [X] Confirmed, no change needed: `scripts/verify-941-stage-naming-helpers.mjs`'s own Stage 1
+  `'true'` expand-cycle expectation and `scripts/verify-991-stage-focus.mjs`'s own
+  focus-survives-settling phase both still hold exactly as before -- Stage 1's own render during
+  ITS OWN delay window is still single-Stage-so-far (Stage 2's new delay runs strictly later in
+  the tape), so it auto-opens under the UNCHANGED single-Stage half of the new condition either
+  way; by the time either script's own assertions run (after the whole turn settles), Stage 1
+  stays open purely through `useStickyDisclosure`'s own upward-only latch, set during its own
+  earlier running window, regardless of the turn later being reclassified multi-Stage. Also
+  confirmed unaffected by the fixture's own second additive delay (a pure wall-clock pacing
+  change, no JSON field): `verify-941-stage-naming-panel-helpers.mjs`'s own Story559
+  duration-based disambiguation ("2s" from Stage 2's 1800ms, "4s" from Stage 5's 4300ms) and
+  `verify-941-part2.mjs`'s own position-scoped `EXPECTED_PANEL_ROWS` structure check.
+- [X] Gate round 1 remediation (code-reviewer, test-reviewer, a11y-auditor; #1007): T314's
+  `isOpenByDefault` now reads a new `hasBadMember` (`counts.failed`/`counts.cancelled`/
+  `counts.exited` directly, not the Stage's own overall `status`), opening a multi-Stage Stage
+  the instant any ONE member goes bad instead of waiting for the whole Stage to settle
+  (Decided, Skippy, delegated by Stuart, UI architect's suggested fix; FR-087 and research.md
+  decision 22 reworded to match, Clarifications wording split into two sentences). T315's
+  `verify-1000-stage-defer.mjs` rewritten: "is Stage 2 running" now reads the always-rendered
+  TRIGGER's own `aria-label`, never the collapsible content (Radix never renders it while
+  closed -- Stage 2 staying closed IS the behaviour under test, so the old content-based wait
+  silently timed out and masked the whole discriminator); the closed-while-running screenshot
+  now taken BEFORE the manual-open step, so it actually shows what it claims; a NEW, genuinely
+  untouched multi-agent Stage (Stage 3) checked closed at full settle, since Stage 2 itself is
+  manually opened later in the same run and is no longer a clean "never touched" witness; a
+  distinct NOT-PROVEN verdict and exit code (2), never DONE/exit 0, when the critical discriminator
+  window is missed. `SubagentChainRow.tsx` gained `aria-live="off"` on the Stage content
+  wrapper (context brief/"Uses:" line), matching `SpineList`/`UpNextList`'s own convention.
+  Stale "Stage 2 has no delay" comments fixed in `verify-941-stage-naming-expand-helpers.mjs`
+  and `verify-991-stage-focus.mjs` (both now state Stage 2 carries its own additive delay too
+  and is deterministically closed, not merely unpaced). Non-build checks re-run clean
+  (`node --check`, `pnpm typecheck`, `pnpm vitest run` 148/148, `check:indent`, `check:file-size`,
+  `check:parity --gate`).
+
+## Phase 65: Stop-cut-short tool rows settle neutral (#911, FR-088) [US1]
+
+**Goal**: a tool call the user Stops mid-flight settles to a new, neutral `cancelled` status
+(stop-circle icon, muted "Stopped" label, no Error line) instead of the full failed/red
+treatment a genuine failure gets -- confirmed live during #570's own gate round 1
+(`verify-570-tool-colours.mjs` turn (c), 2026-10-16), recorded there as a gap this story's own
+pre-existing `interrupted`/`exited` code did not cover (out of scope for #570). Tool rows had
+no `cancelled` concept the way subagents already got at #563 decision 15.
+
+- [X] T316 `src-tauri/src/omp/transcript.rs`: new `ToolStatus::Cancelled` variant. New
+  `AgentState.turn_abort_requested` (`session/agent/mod.rs`), set by `chat.rs::stop()` under
+  the same lock its existing no-op checks already read (before the `abort` RPC goes out),
+  cleared by `handle_turn_settled` (`frame.rs`) once the turn it belongs to fully settles.
+  Threaded through `apply_transcript_frame` → `TranscriptState::apply_frame` →
+  `apply_frame_items` → `apply_tool_execution_end`, which now settles a call's `isError:true`
+  end frame to `Cancelled` (instead of `Error`) only when the flag is set AND the call's own
+  prior status was genuinely `Running` -- never by matching the call's own error text ("Command
+  aborted" is OMP's wording, not a contract). `finalize_live_transcript`'s process-exit path
+  (`diff.rs`) extended the same way: `SubagentFinalizeCause::UserStop` now also settles a
+  still-running Tool row to `Cancelled` (`Crash` still settles it `Error`), removing the one
+  remaining "Tool rows have no `Cancelled` concept" exception that split left behind.
+  Renderer: `src/shared/model.ts`'s tool `status` union gains `'cancelled'`; `toolStatus.tsx`'s
+  `RowStatus`/`toolStatusLabel` ("Stopped")/`GLYPH_KEY_BY_STATUS` (the SAME `cancelled`
+  stop-circle shape `subagentStatus.tsx`'s own subagent `cancelled` already uses, via the
+  shared `statusGlyph.ts` table, never a second hand-written copy); `ToolRow.tsx`'s
+  `ToolGroupRow` gains a `cancelledCount`, ranked between `interrupted` and `done` in the
+  group's own worst-state order, with an "N stopped" meta count beside "N failed"/
+  "N interrupted"; `transcriptRowVisibility.ts`'s tool-group force-visible rule deliberately
+  does NOT extend to `cancelled` (as unremarkable as `done`, FR-088); `RequestCard.tsx`'s `ask`
+  tool handling folds the new status into its existing "Cancelled" wording (D22), alongside the
+  pre-existing `error` case.
+- [X] T317 New `scripts/verify-911-stop-neutral.mjs`, modelled on
+  `scripts/verify-570-tool-colours.mjs` (live Stop button) and
+  `scripts/verify-1000-stage-defer.mjs` (fake-omp fixture, report.json, themed screenshots).
+  New fixture `scripts/fixtures/omp-frames/stop-911.jsonl` (AGENTS.md: a fake-omp frame
+  fixture genuinely needed here -- no existing tape scripts an `abort` wait, and a real omp's
+  own abort timing is not deterministic enough to assert against): turn A runs a `bash` call,
+  waits for the real `abort` command the script's own Stop click sends, then settles that
+  call's `tool_execution_end` with `isError:true` (OMP's own real wire shape, per #570's live
+  finding) and a `prompt_result` of `status: "aborted"`; turn B runs a second `bash` call that
+  fails genuinely (`isError:true`, no abort in flight); a third, already-`done` call proves
+  unaffected. Proves: turn A's row settles to the neutral `cancelled` treatment (stop-circle
+  icon class, muted colour token, "Stopped" label, no Error line); turn B's row stays `error`
+  (red icon/label, Error line); the done call is untouched. Must fail on `origin/main` for the
+  right reason (no `Cancelled`/`turn_abort_requested` code there at all -- turn A settles
+  `error` exactly like turn B). Screenshots in all 3 themes (`switchTheme`). Written, not run
+  end-to-end: no build slot granted for this sub-task (the fix is Rust-side, so the live check
+  cannot genuinely pass without a rebuilt exe) -- `node --check` plus a real `import()`
+  load-check are the only commands actually run against this file and the new fixture.
+  **notExercised**: the fixture's own `abort`→`tool_execution_end{isError:true}`→
+  `prompt_result{status:"aborted"}` sequence is hand-written against the documented wire
+  contract (`src/shared/frames.ts`'s `PromptResultFrame.status` union already lists
+  `'aborted'`; `transcript.rs`'s own `apply_prompt_result_notice` already has an `"aborted"`
+  arm) and against #570's own live finding of the exact `isError:true`/"Command aborted" shape
+  a genuine OMP abort produces -- it is not itself a fresh live capture of a real signed-in
+  `omp`'s own abort response (recapturing one was out of scope for this fix; #570's own
+  turn (c) already captured the shape once, live, confirming it).
+
+**Spec**: `spec.md` gains FR-088 (amends FR-008) and a dated Clarifications section recording
+the decision, Decided/Skippy/delegated-by-Stuart per this story's own away-mode convention.
+
+**Gate round 1 remediation** (code-reviewer/test-reviewer/accessibility-auditor/ui-architect-v3;
+all addressed): **(1, High)** `turn_abort_requested` narrowed to only SET while a turn is
+genuinely in flight (`Working`/`NeedsYou` AND odd `turn_generation`), and cleared in every
+place it could otherwise leak (`agent_start`, a fresh launch/attach, `handle_exit`, and
+`chat.rs::stop()` itself when the `abort` RPC errors/times out/returns `success != true`).
+**(2, High)** `src-tauri/tests/transcript_golden.rs:79` updated for the new `apply_frame`
+signature (contract update, not a new test); grepped the whole crate for every other caller of
+every changed signature, none found. **(3, Medium)** `handle_exit`'s own `finalize_cause` now
+also reads `UserStop` from `turn_abort_requested` alone (not only the session-level
+`requested && stop_requested`), so a process exit racing an in-flight Stop still settles
+`Cancelled`. **(4, Medium)** `apply_batch_task_result` (`subagent_items.rs`) settles a still-
+`Running` subagent member `Cancelled` when `turn_abort_requested` is set, even when OMP's own
+per-agent `progress[i]` entry says nothing of the kind. **(5, Medium, Decided)** history
+reload has no persisted abort signal -- recorded as a known limitation (FR-088, Clarifications,
+and the live-check's own `notExercised`), deliberately NOT worked around with an error-text
+heuristic. **(6, Medium, Decided)** the `prompt_result{status:"aborted"}` notice now reads
+"Turn stopped." (was "Turn aborted."); subagent `Cancelled` and the `ask` tool's own
+"Cancelled" wording are unchanged (both confirmed to have sources other than the user's Stop).
+**(7, Medium)** `docs/design/foundations-icons.md`/`product-chat.md` updated for the tool-row
+`cancelled` status and the group's "N stopped" count. **(8, Medium)** `verify-911-stop-
+neutral.mjs` now waits for the bash row's own status word to read "Running" before clicking
+Stop, and re-resolves both colour tokens plus both rows' own icon colour once per theme inside
+the existing screenshot loop, not only under the default theme. **(9, Low)**
+`finalize_live_items`'s own stale doc comment fixed; a stopped hidden bookkeeping call (e.g.
+`todo`) no longer posts a red failure notice; the no-matching-`tool_execution_start` end-frame
+branch now also respects `turn_abort_requested`.
+
+## Phase 66: Stage label colour and jump-to-Stage from the chain row (#1008, FR-089) [US1]
+
+**Goal**: a failed Stage's own label reads `text-severity-error`, the same way a failed tool
+call's own label already does; the chain row's own "Stage N" text becomes a real button that
+scrolls to, opens, and focuses the Stage row it describes -- both items pre-decided on the
+issue (ui-architect-v3 gate on PR #1007/#1000).
+
+- [X] T318 `src/renderer/features/subagents/subagentStatus.tsx`: new `isSubagentFailedStatus`
+  (mirrors `isSubagentSuccessStatus`), `SUBAGENT_ERROR_TEXT_CLASS` (`text-severity-error`), and
+  the shared `subagentStatusTextClass(status)` combinator (green when finished, the new error
+  class when failed, `undefined` otherwise) both `StageGroupRow` and `ChainStageLine` read, so
+  the two surfaces can never colour a Stage differently.
+- [X] T319 `src/renderer/features/chat/CollapsedLine.tsx`: new optional `id` prop threaded onto
+  whichever element already receives focus (the plain row `div` with no `children`, or the
+  `CollapsibleTrigger` button with them) -- a stable DOM id a sibling component (the chain row)
+  can look a Stage row up by, since there is no React ref across sibling subtrees.
+- [X] T320 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow`'s own
+  `labelClassName` reads `subagentStatusTextClass(status)` (replacing the success-only
+  ternary), tagged with the new `id={stageRowDomId(group.id)}`; `ChainStageLine`'s "Stage N"
+  `<span>` becomes a `<button>` (accessible name "Go to Stage N", same colour class) calling
+  the new `jumpToStage(sessionId, stage.id)` on click. Split `stageRowDomId`/`jumpToStage` out
+  to a new `src/renderer/features/chat/stageJump.ts` module (keeps `SubagentChainRow.tsx` under
+  the #806 600-line cap): `jumpToStage` forces the target's manual-open state through
+  `useStageToggleStore.setManualOpen` directly (the same store `useStickyDisclosure` already
+  reads, decision 19/FR-084/#991), then `document.getElementById`/`scrollIntoView`/`.focus()`s
+  the row found by its new DOM id, dropping to `'auto'` scroll under
+  `prefers-reduced-motion` (matching `SideChatPanel.tsx`'s own convention).
+- [X] T321 New `scripts/verify-1008-stage-label-jump.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors/`resolveCssVarColor` pattern. Reuses the
+  SAME `stages-941.jsonl` fixture (AGENTS.md: no new fixtures needed -- it already carries a
+  genuinely failed Stage, Stage 5's own `FailAgent`, among ten Stages). Measures Stage 5's own
+  label against the theme's resolved `--severity-error` (red/green discriminator 1: reads the
+  default colour on `origin/main`) and Stage 1's own label against the same token (a done-Stage
+  regression guard). Proves the jump on Stage 1 (mouse click) and Stage 3 (keyboard: focus the
+  button directly, then a real Enter keypress) -- both multi-member, fully finished, never
+  otherwise touched, so each starts genuinely closed: asserts the target row opens
+  (`aria-expanded`), holds `document.activeElement`, and sits inside the viewport
+  (`getBoundingClientRect`). The jump button's own existence
+  (`button[aria-label="Go to Stage N"]`) is red/green discriminator 2 -- `origin/main` never
+  renders one (`ChainStageLine`'s text stays a plain span there). Screenshots in all 3 themes.
+  **Written, not run end-to-end**: no build slot granted for this sub-task -- `node --check`
+  plus a real `import()` load-check (`CARGO_TARGET_DIR` unset, stopping at the shared
+  build-slot guard) are the only commands actually run against this file.
+
+**Spec**: `spec.md` gains FR-089 (amends FR-079, FR-068) and a dated Clarifications section
+recording both decisions, Decided/Skippy/delegated-by-Stuart per this story's own away-mode
+convention; `research.md` gains decision 23 with the full rationale.
+
+**Gate round 1 remediation** (Main, 2026-10-18; Sec/Code/A11y PASS, Test/UI FAIL -- all 9 items
+addressed, no build slot used): **(1, High, UI, Decided)** the "Go to Stage N" button now
+renders only while its own Stage row reads `rowVisibility(stage, transcriptDisplay) ===
+'visible'` (`ChainStageLine.tsx`) -- "Show tool calls" off can drop a settled, problem-free
+Stage's own row entirely (not merely an `'sr-only'` stub), leaving nothing for `jumpToStage` to
+find; a hidden Stage falls back to its original plain-text label, and `jumpToStage` itself
+defensively no-ops `setManualOpen` when the row lookup comes back empty. **(2, Medium, UI,
+Decided: top-aligned, not centred)** `jumpToStage` (`stageJump.ts`) now scrolls ONLY the
+transcript's own `[aria-label="Transcript"]` viewport (found via `row.closest(...)`, its
+position relative to the row computed by rect maths, `viewport.scrollTo({ top, behavior })`),
+never a bare `scrollIntoView` that would walk up every scrollable ancestor (a real hazard in a
+split pane); `row.focus({ preventScroll: true })` stops the browser's own native focus-scroll
+fighting it. **(3, Medium, UI, Decided)** the button gained `cursor-pointer`, `hover:underline`,
+a `title` of "Go to {stage heading}", and `py-0.5` to match `ChainAgentEntry`'s own 28px button
+height. **(4, Medium, UI, Decided: scope by sessionId)** `stageRowDomId` now takes `sessionId`
+too -- a split pane showing two Sessions at once could otherwise produce a duplicate DOM id
+across their two Transcript trees, a real HTML violation, not merely an ambiguous lookup. **(5,
+Medium, UI)** `subagentStatusTextClass` now takes the roll-up `counts` directly (not a single
+derived `status`): a Stage with any member settled `failed` is red immediately, even while a
+sibling member is still running, matching FR-089's own "any member failed" wording exactly
+(previously derived from `overallStatus`, whose running-first priority order delayed the red
+label until the whole Stage settled). **(6, Low, all, Decided)** the button's own `aria-label`
+is now "Go to {full stage heading, speech form}" (e.g. "Go to Stage 5, Finish the remaining
+Story559 polish and run the fail probe."), not a bare "Go to Stage N" that never distinguished
+two unopened Stages for a screen reader user. **(7, High, Test)**
+`scripts/verify-1008-stage-label-jump.mjs`'s colour checks moved INSIDE the per-theme loop,
+re-resolving `--severity-error`/`--severity-success` after each `switchTheme` (previously
+resolved once, under the default theme only), and now also measure the chain row's own "Go to
+Stage 5" button text, not only the in-place label. **(8, Medium, Test)** before each jump, the
+script scrolls the transcript to its own end and hard-asserts the target row starts off-screen
+(Stage 1/Stage 3 sit near the top of the ten-Stage turn); after the jump, `cdp.waitFor` polls
+for in-viewport instead of a single immediate read, since the now-smooth scroll settles
+asynchronously. **(9, Medium, Test)** #991 persistence across a remount is now exercised: right
+after Stage 1's own mouse jump, "Show tool calls" is toggled off then back on via the real
+`window.refract.settings.setTranscriptDisplay` IPC round trip (the same dev-exposed call
+`verify-557-thought-runs.mjs` already uses) -- doubling as item 1's own visibility-gating proof
+(Stage 1's button must disappear while hidden, Stage 5's must stay, force-visible) and
+confirming Stage 1's manual-open survives the remount once restored. `prefers-reduced-motion` is
+recorded in the script's own `notExercised` (no CDP emulation set up for it), never silently
+skipped without comment. `ChainStageLine`/`ChainAgentEntry` were also split out of
+`SubagentChainRow.tsx` into a new `ChainStageLine.tsx` during this round, purely to stay under
+the #806 600-line cap once the above fixes landed (safe circular import back to
+`SubagentChainRow.tsx` for hoisted `function`/`type` exports only).
+
+**Non-build checks** (re-run after gate round 1 remediation): `pnpm typecheck`, `pnpm run
+check:indent`, `pnpm run check:file-size` (`SubagentChainRow.tsx` 500 lines, new
+`ChainStageLine.tsx` well under the cap, no baseline bump), `pnpm run check:parity -- --gate`,
+`pnpm exec vitest run` (148/148 existing tests, no new tests per the prototyping-phase rule),
+`node --check` plus a real `import()` load-check on the rewritten live-check script
+(`CARGO_TARGET_DIR` unset, stopping at the shared build-slot guard) all clean.
+
+## Phase 67: One-agent to two-agent Stage focus-loss follow-up (#1001, FR-090) [US1]
+
+**Goal**: a keyboard-focused solo Stage's own Prompt/Result code block never drops focus to
+`<body>` the instant a second agent streams into the same Stage and the content swaps from a
+bare `SubagentBody` to a `SpineList` -- pre-decided on the issue (accessibility auditor finding
+at PR #999's own gate, Decided/Skippy/delegated-by-Stuart 2026-10-18/2026-10-19).
+
+- [X] T322 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow` gains
+  `memberContentRef` (a CALLBACK ref -- see the live-run record below for why, wrapping only
+  the solo-body-or-`SpineList` slot, never unmounting itself across the transition),
+  `triggerRef` (forwarded onto the Stage's own `CollapsedLine`), `focusWasInsideRef` (kept
+  current by a `focusin`/`focusout` listener attached via that callback ref, since a focused
+  node's removal blurs it to `<body>` synchronously -- there is no later point at which the
+  just-removed element can be asked whether it held focus), and `prevTotalRef`. A
+  `useLayoutEffect` keyed on `total` moves focus to `triggerRef` the instant a 1-to-2-member
+  transition is observed with `focusWasInsideRef.current` true and `document.activeElement`
+  already fallen to `<body>`/`null`. Structural no-remount alternative (pre-wrapping the solo
+  body in the same `SpineList`/`SpineItem` shape) considered and rejected: see FR-090/spec.md
+  Clarifications for the full rationale. **Live-run record**: first attempt (head `3941250`)
+  FAILED -- the listener was attached via a plain `useRef` + `useEffect(() => {...}, [])`,
+  which runs once at mount, but a solo Stage starts collapsed (Radix never renders
+  `CollapsibleContent` while closed), so the ref was still `null` then and the listener never
+  attached once the row was later expanded; fixed with a callback ref (head `28b26e1`, re-fires
+  on every real mount/unmount). **Gate round 1** (Main, 2026-10-19) found two further Mediums
+  in the `focusin`/`focusout` handling, both fixed: a window blur fires `focusout` with
+  `relatedTarget` null while `document.activeElement` stays the SAME element (never reassigned
+  by a blur) -- the handler now returns early (keeping the flag) when `event.target ===
+  document.activeElement`; a click onto a non-focusable spot used to leave the flag stuck true
+  forever (indistinguishable from a real removal using `relatedTarget`/`activeElement` alone)
+  -- now uses the repo's own `ProfileAlertRows.tsx`/`FileExplorerPanel.tsx` rAF-plus-
+  `isConnected` pattern to tell a deliberate click-away apart from a genuine removal.
+- [X] T323 New fixture `scripts/fixtures/omp-frames/stages-1001.jsonl` (a new fixture was
+  required: every existing `stages-941.jsonl` Stage declares its full member count upfront in
+  one `task()` call's own `tasks[]`, so none of them ever grows after first render). One Stage
+  whose two members arrive as two SEPARATE `task()` calls sharing one assistant message id --
+  the documented mechanism (`transcript.rs`/`subagent_items.rs`) by which a Stage genuinely
+  grows `total` from 1 to 2 in place. The first call's own shared batch `context` is the only
+  one either member ever carries, so the Stage's own header label stays stable across the
+  transition (`computeStageLabel`'s tier-1 rule), giving the live check one stable title
+  selector throughout.
+- [X] T324 New `scripts/verify-1001-stage-focus-join.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`/`verify-991-stage-focus.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors. Places keyboard focus on the solo member's
+  own Prompt code block, then samples `document.activeElement` on every animation frame (not
+  Node-side polling, so no CDP round-trip jitter can narrow the window) across the whole join --
+  THE red/green discriminator: zero sampled frames may ever read `document.activeElement ===
+  document.body`. Also confirms focus lands specifically on the Stage's own trigger once
+  settled (the fix's own stated remedy, not merely "somewhere other than body"). Per-theme
+  screenshots only (no colour-dependent assertion), matching `verify-991-stage-focus.mjs`'s own
+  theme-loop rationale. **Live-run record**: first attempt (head `3941250`) FAILED --
+  `document.activeElement` was `<body>` in 208 of 390 sampled frames -- fixed with a callback
+  ref (head `28b26e1`, see T322's own note above); re-ran clean (0 failures, 0 notExercised,
+  verdict DONE).
+
+**Spec**: `spec.md` gains FR-090 (amends FR-067) and a dated Clarifications section recording
+the no-remount-vs-fallback structural decision, Decided/Skippy/delegated-by-Stuart per this
+story's own away-mode convention.
+
+**Gate round 1 remediation** (Main, 2026-10-19; five Mediums, all fixed, no build slot used):
+**(1, A11y/UI)** a window blur fires `focusout` with `relatedTarget` null while
+`document.activeElement` stays the SAME element (never reassigned by a blur) --
+`StageGroupRow`'s handler now returns early (keeping the flag) when `event.target ===
+document.activeElement`, the window-blur signature, preferred over `document.hasFocus()`.
+**(2, Code/Test/A11y)** a click onto a non-focusable spot used to leave the flag stuck true
+forever -- now uses the repo's own `ProfileAlertRows.tsx`/`FileExplorerPanel.tsx`
+rAF-plus-`isConnected` pattern (the just-blurred target is still connected one frame later only
+when nothing removed it) to tell a deliberate click-away apart from a real removal. **(3,
+Code)** a missed join (or a missed pre-join precondition) is now a hard failure in
+`verify-1001-stage-focus-join.mjs`, not a silent `notExercised`; the LAST pre-join frame (not
+merely "any") must confirm focus; `joinedMemberExpr` is scoped to the Stage's own content.
+**(4, Test/A11y, Visual)** focus is placed with a real keyboard Tab (not `.focus()`), arming
+`:focus-visible` for the rest of the run; the Dark-theme screenshot (taken before any theme
+switch steals focus) is backed by a hard `:focus-visible` match, not eyeballing alone; the
+later per-theme shots are honestly labelled as non-proofs. **(5, Test)** a simulated window
+blur (`Emulation.setFocusEmulationEnabled`) is spliced in before the join, re-using the
+existing assertions; a dedicated click-away negative proof needs its own second 1-to-2
+transition and is recorded in `notExercised` instead.
+
+**Non-build checks** (re-run after gate round 1 remediation): `pnpm typecheck`, `pnpm vitest
+run` (148/148, no new tests per the prototyping-phase rule), `pnpm run check:indent`, `pnpm run
+check:file-size` (no baseline change), `node --check` on the updated script, plus a real
+`import()` load-check (fails only at the shared `CARGO_TARGET_DIR` build-slot guard, confirming
+every import resolves) -- all clean.
+
+## Phase 68: Code-block background follows theme surface (#975, FR-050 amended) [US1]
+
+(Renumbered against `origin/main` just before merging, this file's own convention: Phase 67/
+T322-T324 claims the next free numbers as of this branch's cut from `origin/main`.)
+
+**Goal**: a fenced code block's header and body share one literal background -- the active
+preset's own `--card` -- in every built-in theme, never a bundled Shiki syntax theme's fixed
+colour; every token colour that syntax theme ships still clears 4.5:1 against the new
+background. Pre-decided on the issue (Decided, Skippy, delegated by Stuart 2026-10-19).
+
+- [X] T325 `src/renderer/features/chat/Markdown.tsx`: `CodeBlockHeader` moves from `bg-muted` to
+  `bg-card` (matching the body/gutter's existing surface). `CodeBlock`'s `codeToHtml` effect
+  neutralises Shiki's own root background to `transparent` via `colorReplacements`, keyed on
+  `highlighter.getTheme(syntaxTheme).bg`; the highlighted-body wrapper `<div>` gains its own
+  `bg-card` (the inner `<pre>`'s `[&>pre]:m-0` means its box exactly covers the div's, same as
+  the plain-fallback `<pre>` already painting its own box directly).
+- [X] T326 `src/shared/themes.ts`: `dark`, `obsidian`, `nordic-frost` and `cyber-amber` move
+  `syntaxTheme` from `github-dark` to `github-dark-default` (research.md decision 25's own
+  "no amount of surface retuning can fix `github-dark`'s comment colour" finding);
+  `dark-high-contrast`'s `github-dark-high-contrast` is unchanged.
+- [X] T327 `scripts/theme-contrast-pairs.mjs`: new `shikiTokenContrastRows(themes,
+  themeMetadata)` -- loads every distinct `syntaxTheme` via `shiki`'s `createHighlighter`
+  (JS regex engine, no WASM), collects each theme's distinct non-self-backgrounded token
+  foreground colours (plus its own default `.fg`), and checks each against that preset's
+  resolved `--card` at 4.5:1. `scripts/check-theme-contrast.mjs`'s `THEME_METADATA_RE` gains a
+  `syntaxTheme` capture group (between `swatch` and `titleBarOverlay`, `themes.ts`'s own
+  declaration order) and wires the new check into the existing composited-checks loop.
+- [X] T328 Update the docs: amended `specs/001-core-session-workspace/spec.md` with FR-050
+  (amended again, after issue #558's own prior amendment) and a dated `### Session 2026-10-19
+  (Code-block background follows theme surface, #975)` Clarifications entry; `research.md`
+  decision 25 records the full rationale, including why a surface retune alone cannot fix
+  `github-dark`'s own comment colour; `src/shared/themes.ts`'s own `nordic-frost`/`cyber-amber`
+  doc comment (originally written by #551) is rewritten to record the follow-up as resolved.
+- [X] T329 New fixture `scripts/fixtures/omp-frames/code-surface-975.jsonl` (hand-extended copy
+  of `user-message-time.jsonl`'s own first-turn shape, a FIXED assistant reply carrying one
+  deterministic JavaScript fence -- a comment, a string, a keyword, a function -- so the
+  rendered Shiki token colours are stable run over run, which a real model turn could not
+  guarantee) and new `scripts/verify-975-code-surface.mjs`, modelled on
+  `verify-439-history-truncate.mjs`'s own fixture-driven harness and `verify-551-presets.mjs`'s
+  themed-screenshot loop. For every built-in preset: asserts by computed style that the header
+  and body share one literal background, that it equals the theme's own live-resolved `--card`
+  (read off a throwaway `div.bg-card` probe, never a hand-copied hex), that Shiki's own raw
+  `<pre>` background computes to transparent (`rgba(0, 0, 0, 0)`, a hard check the WRAPPER div's
+  own `bg-card` alone cannot prove), and that the rendered comment TOKEN -- the leaf `span.line >
+  span` with no children, not the outer line wrapper, which inherits the `<pre>`'s own default
+  foreground (gate round 1 fix, Main, Code1/Code2 High) -- clears 4.5:1 against that background,
+  measured live via `contrast-math.mjs`'s `measuredContrastRatio`; screenshots each preset
+  (Cyber Amber the headline shot). **Live-verified (build slot, head `9b7afa8`, re-run after gate
+  round 1 remediation): `report.json` 0 failures, exitCode 0, gitHead matches, dirty false.**
+  Every preset's header/body backgrounds were byte-identical computed-style strings equal to
+  that theme's own live `--card` probe; Shiki's own `<pre>` background computed to transparent
+  in every preset; the comment token measured 5.35:1 (Obsidian, the lowest) to 5.82:1 (Dark) for
+  the four `github-dark-default` presets, 11.31:1 for Dark high contrast's own
+  `github-dark-high-contrast` -- matching research.md decision 25's own predicted range exactly,
+  and genuinely distinct from each theme's own inherited default foreground (the gate round 1
+  regression guard). All 5 screenshots viewed: Cyber Amber (headline) and Dark both show one
+  seamless surface behind header and body, every token readable.
+
+**Non-build checks**: `pnpm typecheck`, `pnpm vitest run` (148/148, no new tests per the
+prototyping-phase rule), `pnpm run check:indent` (0 odd-indent lines), `pnpm run check:file-size`
+(`Markdown.tsx` exactly at its existing 997-line baseline, no growth; `check-theme-contrast.mjs`
+exactly at its existing 743-line baseline), `pnpm run check:theme-contrast` (828 of 828 pairs
+PASS across 5 themes, up from 773 -- 50 new rows: 45 Shiki-token rows, including `carriage-return`
+now correctly included rather than wrongly excluded per gate round 1, plus a new `ring`/`card`
+pair for `CodeBlock`'s own focus ring), `node --check` on both edited scripts -- all clean.
+**Live Tauri verify: DONE** (see T329 above, re-run at head `9b7afa8` after gate round 1
+remediation); `ci-local.mjs` all steps PASS (`cargo fmt --check`, `cargo test` 731 passed/0
+failed/1 ignored, `cargo clippy -D warnings`, Tauri debug build) at head `9b7afa8`.
+
+## Phase 69: Convergence -- composer role chip, pin persistence, fallback signal, provider line (#741, FR-091)
+
+**Written retroactively** (code landed before this phase; `/speckit.converge`'s own append-only
+contract applied here reflects reality rather than driving it). Real commits: `1daa6e57` on
+`feat/741-role-chip` (`stuarthopwood/refract`, PR #1037) carries every item below; this phase's
+own doc/spec edits (`spec.md` FR-091, this file, `docs/PLAN.md`) land in later commits on the
+same branch/PR, cited by sha where the report below gives one.
+
+- [X] T330 `src-tauri/src/store/registry.rs`: `Session.pinned_model: bool` (`#[serde(default)]`,
+  an old `registry.json` reads `false`) and `SessionPatch.pinned_model: Option<bool>`, applied in
+  `update_session`. Every `registry::Session` literal across the Rust tree (`ipc/
+  sessions_lifecycle.rs`, `ipc/pull_requests/handlers.rs`, `session/manager.rs` and its test
+  helper, `session/side_chat.test.rs`, `session/termination.test.rs`, `session/agent/
+  launch_support.test.rs`, `store/registry_tests.rs`, `ipc/sessions_lifecycle_tests.rs`) updated.
+- [X] T331 `src-tauri/src/session/model/model_support.rs`: `ensure_pin_seeded` (lazily folds the
+  registry's persisted `pinned_model` into in-memory `State.pinned` on the first
+  `current_selection` call per Session per run) and `persist_pinned` (writes it back on every
+  `set_model`/`cycle_model`/`handle_switch_text` pin and `apply_role_now` un-pin, best-effort,
+  `session_list_changed` emitted on success). Called from `model.rs`'s `current_selection` and
+  all three pin/un-pin sites.
+- [X] T332 `src-tauri/src/session/model/model_support.rs`: `model_change_role` maps a
+  `model_change` entry's `resolvedModelIsFallback: true` to the reserved `"fallback"` role,
+  overriding `role`; `maybe_invalidate_role_cache` clears the cached role on OMP's own
+  `model_changed`/`retry_fallback_succeeded` frames (`model.rs`'s `on_frame`), so a live fallback
+  refreshes the chip without a restart. `model.rs`'s `current_selection` early-return additionally
+  lets a freshly-cached `"fallback"` outrank a stale `pinned` flag (a Session OMP has since moved
+  off a hand-picked model no longer reads Custom).
+- [X] T333 FINDINGS item 61 + `docs/spike/fallback-probe-741.mjs`: an isolated, credential-less,
+  zero-real-token probe attempting to force `resolvedModelIsFallback: true` live. Inconclusive in
+  90s against a connection-refused model (no fallback frame, no second `model_change` entry, no
+  `prompt_result` at all in that window). T332 ships code-verified against the documented field
+  per the issue's own decision 2 fallback clause; forcing/confirming the transition live is #650.
+- [X] T334 `src/renderer/lib/modelRoles.ts` (new): role labels (reused from
+  `ModelRolesSection.tsx`'s now-exported `CHAT_ROLE_DESCRIPTORS`), provisional per-role lucide
+  icons, the `"fallback"`/`"custom"` sentinels and their tooltips, a friendly provider map
+  (`friendlyProviderLabel`), and `roleChipDisplay()` (pinned -> Custom; `currentRole` -> its
+  label/icon/tooltip or nothing at all for an unrecognised value).
+- [X] T335 `src/renderer/features/chat/ComposerPickers.tsx`: `RoleChip` (text plus icon, no
+  colour, `aria-disabled` ghost button with an `sr-only` "Role: " prefix and a Tooltip, no click
+  handler pending #766); mounted in `MessageInput.tsx`'s bottom row immediately before
+  `ModelPicker`.
+- [X] T336 `src/renderer/lib/modelDisplay.ts`: `formatModelLabel` is now name-only (was
+  `provider/name`); `src/renderer/features/sessions/SessionDetailsCard.tsx` gets a muted "via
+  {provider}" second line (`friendlyProviderLabel`); `ModelPicker.tsx` (its one other caller, at
+  its 600-line cap, unchanged tooltip scope) migrated to build its own `provider/name` string
+  locally instead of through the now-renamed helper.
+- [X] T337 Docs: `specs/001-core-session-workspace/spec.md` FR-091 (new), acceptance scenario 6
+  (User Story 5) amended for the role chip and the provider line, two new Edge Cases (pin
+  survives a restart; fallback outranks a stale pin), and a dated `### Session 2026-10-19
+  (Composer role chip, pin persistence, fallback signal, #741)` Clarifications entry recording
+  `issuecomment-6266024041`'s four decisions. This Convergence phase. `docs/PLAN.md`'s #741 row.
+- [X] T338 Live CDP verification (`scripts/verify-741-role-chip.mjs` + `verify-741-role-chip-
+  helpers.mjs`, five launches, a fake-omp tape): chip text and icon for a role Session; muted-text
+  contrast >= 4.5:1 and a real keyboard path (Tab/focus-visible/Tooltip/Escape/Shift+Tab) on the
+  chip; real-geometry truncation (not a guessed selector); Custom after a hand-pick AND after a
+  restart with the same `REFRACT_DATA_DIR` (pin persisted, found by session id not index); a
+  mid-session fallback WHILE PINNED (an autonomous `retry_fallback_succeeded` frame, the pin
+  itself never cleared); no chip for an unrecognised role (asserted only after `sessions.list()`
+  reports the seeded role) AND for an empty conversation file (`currentRole: null`); Fallback
+  from a tape entry carrying `resolvedModelIsFallback: true` (tape-proven, since T333 could not
+  force it live; the real-OMP probe is #650), its own accessible name asserted too; the details
+  card's name and "via ..." line; the role chip and Model picker wrapping together at 380px/520px
+  chat widths; accessible names via the AX tree; strip screenshots in all five theme presets.
+  Gate round 1 fixes (Main's five-reviewer gate on this Convergence): `model.rs`/`model_support.rs`
+  fallback-outranks-a-pin made reachable (a `role_needs_reprobe`/`role_generation` pair forces a
+  re-probe even while pinned, generation-guarded against a race with a second invalidation), the
+  pin-seeding race closed (every pin/un-pin writer also sets `pinned_seeded`; `persist_pinned`
+  reads back from state and skips a no-op write), `ComposerPickers.tsx`'s `RoleChip` contrast and
+  AX-name fixes (an explicit `aria-label`, not a visible-text-plus-sr-only-span join, which
+  measured an extra space live), `RoleAndModelPicker` (narrow-width wrap-together),
+  `modelRoles.ts` icon swap and the `CUSTOM_ROLE` string-forgery guard, `ModelPicker.tsx`'s
+  `friendlyProviderLabel`/`ROLE_LABEL` reuse, `SessionDetailsCard.tsx`'s tighter model/provider
+  grouping. **Real product bug found live and fixed**: `maybe_invalidate_role_cache` updated
+  Rust-side role/pin state correctly but never emitted `session_list_changed` -- the renderer's
+  own Sessions store is purely event-driven (`init-stores.ts`'s `onSessionListChanged`, no
+  polling timer), so a live fallback's new role sat correct in Rust state but invisible to the
+  chip until this fix.
+
+**FINAL LIVE-VERIFIED PASS, clean HEAD `871b89bb`**: full chained `ci-local.mjs && verify-741-
+role-chip.mjs` -- `ci-local.mjs` all 11 non-build steps PASS, `cargo fmt --check`/`cargo test`
+PASS; `verify-741-role-chip.mjs`: **0 failures, 0 notExercised** across all five launches.
+Screenshots viewed: the chip at full muted-text strength in all five theme presets (`01-chip-
+default-*.png`), the composer row right after the real keyboard Tab/Shift+Tab path (focus ring
+visible on the Ask pill after Shift+Tab, `06-composer-row.png`), the Session details card's real
+hover-triggered "via GitHub Copilot" line (`06-details-card.png`), the hand-pick-to-Custom and
+restart-persisted-Custom chips (`02`/`03`), the mid-session Fallback-while-pinned transition with
+no restart (`07-chip-fallback-while-pinned.png`), the standalone tape-proven Fallback chip with
+its exact composed Tooltip text (`04-chip-fallback.png`), both no-chip cases (`05`/`10`), and the
+role chip + Model picker sharing one row at 380px and 520px (`08`/`09`). Three fix rounds against
+this exact build before it passed clean (this file's own trailer, immediately below, keeps the
+non-build-only citation from before the build slot was granted, for the record).
+
+**Non-build checks** (re-run at head `1daa6e57`, before gate round 1): `pnpm tsc --noEmit -p
+tsconfig.web.json` clean; `node scripts/check-indent.mjs` (0 odd-indent lines); `node
+scripts/check-file-size.mjs` (0 cap violations, no baseline raised -- `model.rs`/`manager.rs`/
+`ModelPicker.tsx`/`MessageInput.tsx` all brought back to/under cap by splitting pin/fallback
+helpers into `model_support.rs` and condensing comments); targeted `vitest run` on `model-roles-
+store.test.ts`, `modelRoleSuffix.test.ts`, `sessions-store.test.ts` (28/28 passed; no new
+renderer tests, per the prototyping-phase rule).
+
+## Phase 70: Convergence (#891, FR-029 amended) [US6]
+
+(Next free numbers after merging `origin/main`: Phase 69/T330-T338 claimed by #741 above, so this
+phase claims Phase 70/T339 onward.)
+
+**Goal**: Delete no longer dead-ends on a full, generated-file worktree or one still held open by
+another program. The Delete dialog runs a background leftover-files walk on open; the worktree-
+held preflight runs before the agent is stopped; Refract removes the worktree's own files with its
+own long-path-safe walker instead of `git worktree remove --force`. Decided on the issue (Stuart,
+2026-10-15 and 2026-10-19 grill, issue #891); Rust implementation already landed on this branch.
+
+- [X] T339 `src-tauri/src/fs/remove_tree.rs` (new): long-path-safe recursive worktree-file
+  remover replacing `git worktree remove --force` for this Session's own worktree. Per-entry
+  `symlink_metadata` (never following a link), `\\?\`-prefixed paths used over 260 characters,
+  read-only attributes cleared before removal, junctions/symlinks removed as links and never
+  descended into or deleted through. Only this worktree's own `.git/worktrees/<name>` admin entry
+  is removed afterward (never `git worktree prune`), verified with `git worktree list
+  --porcelain`. **Gate round 1 decision (issuecomment-6273798707):** reversed to
+  `std::fs::remove_dir_all` behind a containment gate instead of a hand-rolled walker. **Gate
+  round 3 (H2):** `remove_dir_all` retried up to 10 times (300ms apart) on raw OS errors
+  32/33/5/145, re-checking containment before each attempt.
+- [X] T340 `src-tauri/src/git/worktree_holders.rs` (new): the holder preflight run before the
+  agent is stopped. Windows Restart Manager names a program and pid holding a file open inside
+  the worktree, excluding this Session's own recorded `omp` pids (`process/pid_records.rs`); only
+  if Restart Manager finds nobody, a safe rename probe (rename the worktree folder to a sibling
+  name inside the worktrees root and straight back) catches a folder held only as a working
+  directory. A named holder, or an in-use folder with no named holder, refuses the delete; a
+  holder that cannot be detected does not block. **Gate round 3 (H1), the real root cause of an
+  earlier "transient sharing violation":** Refract's own background `sessions.deleteCheck`
+  refresh (not this preflight) was racing a Retry's own removal; fixed with a new per-Session
+  `fs/worktree_access.rs` read/write lock, not a change to this file.
+- [X] T341 `src-tauri/src/ipc/sessions_lifecycle.rs`: registers `sessions.deleteLeftoverSummary(id:
+  string): Promise<Result<LeftoverSummary>>` (`LeftoverSummary = { generatedFolders: { name:
+  string; fileCount: number }[]; otherFiles: string[]; moreCount: number; unavailable: boolean }`),
+  a background filesystem walk started when the Delete dialog opens, separate from the existing
+  git-based `sessions.deleteCheck`. Wires `worktree_holders`'s preflight into `sessions.delete`
+  ahead of stopping the agent, surfacing a refusal as the new `worktree-held` error code through
+  the existing `Promise<Result<void>>` error channel (no signature change); a refusal leaves the
+  Session running. `remove_session_worktree`'s own signature stays stable (#476). **Gate round 3
+  (H1):** both `sessions.deleteCheck` and `sessions.delete` wired to the new `fs/worktree_access`
+  read/write lock.
+- [X] T342 `src/shared/ipc.ts`: `IpcErrorCode` gains `worktree-held`; the `sessions` interface
+  gains `deleteLeftoverSummary(id: string): Promise<Result<LeftoverSummary>>` and the `LeftoverSummary`
+  type, alongside the existing `deleteCheck`/`delete` entries.
+- [X] T343 `src/renderer/features/sessions/DeleteDialog.tsx`: fetches `deleteLeftoverSummary`
+  alongside the existing `deleteCheck`, on the same cancelled-guard `useEffect([open,
+  session.id, check])` pattern, rendering the generated-folders/other-files list with a
+  "Checking files…" loading state and Delete enabled throughout; a `worktree-held` refusal
+  surfaces through the dialog's existing `role="alert"` error paragraph, so Retry is clicking
+  Delete again with no new control. **Gate rounds 2-3:** a unified always-mounted status line,
+  a `refused` flag (not bare `error`) driving the Retry label, a separate `refreshing` flag so
+  the post-refusal background refresh never greys out Retry, a generation counter guarding every
+  refresh callback against an out-of-order stale result, and stale-state clearing on a failed
+  refresh.
+- [X] T344 Docs: amended `specs/001-core-session-workspace/spec.md` FR-029, two new Acceptance
+  Scenarios (User Story 6) and two new Edge Cases, and a dated `### Session 2026-10-19 (Session
+  delete: leftover summary and holder preflight, issue #891)` Clarifications entry;
+  `plan.md`'s new `## Amendment 2026-10-19` section; `contracts/ipc.md`'s new
+  `sessions.deleteLeftoverSummary` row and the `worktree-held` error documented on
+  `sessions.delete`.
+
+**Non-build checks**: Rust side already compiles clean (`cargo check -p refract-tauri
+--all-targets`, confirmed on this branch before this phase was appended); this phase's own work
+is documentation plus the frontend dialog wiring (T342/T343), landing in the same PR.
+
+**FINAL LIVE-VERIFIED PASS (gate round 3), clean HEAD `6452a137`**: full chained `ci-local.mjs &&
+verify-891-delete-leftovers.mjs` -- `ci-local.mjs` all 16 steps PASS (`cargo fmt --check`, `cargo
+test`, `cargo clippy -D warnings`, Tauri debug build); `verify-891-delete-leftovers.mjs`: **0
+failures, 3 honest `notExercised`**, `gitHead` matches, `dirty: false`. All acceptance scenarios
+PASS, including (c) and (d)'s Retry succeeding on a single click (the real `fs/worktree_access.rs`
+read/write-lock fix, not a retry-loop band-aid). All five screenshots viewed directly.
+
+## Phase 71: Composer command pill, no spelling underline (#1050, FR-092)
+
+(Next free numbers against `origin/main` at this branch's own cut, b29367aa: Phase 70/T339-T344
+claimed by #891 above, so this phase claims Phase 71/T345 onward; the highest FR in this spec is
+FR-091, so this phase claims FR-092.)
+
+**Goal**: a recognised leading command or skill token in the composer's draft gets a subtle
+accent pill (`--card` fill, `--accent-text` glyphs) and the box turns spellcheck off while it
+shows; an unrecognised token (`/zzz`) gets neither. Decided (Skippy, delegated by Stuart
+2026-10-19, away mode, issue #1050; reversible on the issue) -- see spec.md's own 2026-10-20
+Clarifications entry for the six-point decision record.
+
+- [X] T345 Docs convergence: this phase, `spec.md` FR-092 (new, amends FR-032/FR-033) and its
+  dated `### Session 2026-10-20 (Composer command pill, no spelling underline, #1050)`
+  Clarifications entry recording all six decided points, including the `--muted` -> `--card`
+  pill-fill correction found by measurement (not by eye, per the issue's own instruction).
+  `docs/PLAN.md`'s "Composer command pill" row.
+- [X] T346 `src/renderer/features/chat/CommandPillOverlay.tsx` (new): `findRecognisedCommandToken`
+  (reuses `parseSlashCommand`/`classifySlashInvocation` from `shared/slash-commands.ts` against
+  the composer's own `commands` list -- never a hard-coded copy of either), `CommandPillSegments`
+  (the invisible-gap/pill/invisible-gap render, same shape `ChipOverlaySegments` already uses,
+  `rounded-sm bg-card text-accent-text [box-decoration-break:clone]`, no border, no padding so no
+  layout shift), and `useCommandPillOverlay` (the memo/ref/scroll-sync-on-mount hook) --
+  `MessageInput.tsx`'s own file-size baseline (1632 lines) had zero headroom, so every piece of
+  logic beyond the bare integration call lives here.
+- [X] T347 `src/renderer/features/chat/MessageInput.tsx`: wires `useCommandPillOverlay`, the new
+  overlay div (same inert/`aria-hidden`/scroll-synced box-model-matching pattern as the ghost-
+  text/chip overlays beside it) and `spellCheck={!commandToken}` on the `<textarea>`, plus the
+  overlay's own scroll sync in the existing `onScroll` handler -- net file-size growth kept at
+  zero against the baseline (condensed one pre-existing wrapped comment by the same margin the
+  new wiring needed; `pnpm check:file-size` confirms 1631/1632, 0 cap violations).
+- [X] T348 `scripts/theme-contrast-pairs.mjs`: new `{ fg: 'accent-text', bg: 'card', min: 7,
+  onlyThemes: ['dark-high-contrast'] }` pair (the generic `accent-text`/`card` 4.5:1 pair already
+  existed and already covers every preset's own baseline floor for this pill). `pnpm check:
+  theme-contrast` confirms all 830 pairs PASS across all five presets.
+- [X] T349 Live CDP verification (`scripts/verify-1050-command-pill.mjs`, fake-omp tape
+  `1050-command-pill.jsonl` carrying the native `/btw` built-in plus one tape-provided
+  `source: 'skill'` descriptor): `/btw hi` and `/skill:demo-review do it` show the pill and
+  `spellCheck === false`; `/zzz` shows neither; the pill's own rect sits over the token's own
+  glyph box (measured against the textarea's own padding, not a guessed selector); the textarea's
+  own `getBoundingClientRect().height`/`scrollHeight` and `selectionStart`/`selectionEnd` after
+  an identical keystroke sequence are identical with and without the pill; spellcheck returns the
+  instant the leading slash is deleted; arguments render as plain invisible-gap text (asserted
+  structurally, not by pixel guess); the pill stays aligned across all five theme presets and in
+  a scrolled multi-line draft (`scrollTop` sync asserted directly); screenshots per state.
+
+**Non-build checks** (re-run after merging `origin/main` twice, `3140b87c`): `pnpm typecheck`
+clean; `pnpm test` 148/148 passed (no new renderer tests, per the prototyping-phase rule); `node
+scripts/check-indent.mjs` (0 odd-indent lines across 426 files); `node scripts/check-file-
+size.mjs` (0 cap violations, `MessageInput.tsx` 1631/1632); `node scripts/check-theme-
+contrast.mjs` (all 830 pairs PASS); `node scripts/check-parity.mjs` (104/104 requests, 24/24
+events, unaffected by this issue); `node scripts/check-drag-regions.mjs` (0 violations).
+
+**FINAL LIVE-VERIFIED PASS, clean HEAD `3140b87c`**: full chained `ci-local.mjs &&
+verify-1050-command-pill.mjs` -- `ci-local.mjs` all 16 steps PASS (`cargo fmt --check`, `cargo
+test` 731 passed/0 failed/1 ignored, `cargo clippy -D warnings`, Tauri debug build, check:ui-text
+0 leaks); `verify-1050-command-pill.mjs`: **48/48 checks PASS, 0 failures, 0 notExercised**,
+`gitHead` matches, `dirty: false`. Screenshots viewed directly, zoomed 4-8x on the composer: the
+pill renders with a rounded, borderless fill (`--card`) and `--accent-text` glyphs exactly over
+the token in every one of the five presets, no doubled or ghost text anywhere (the real
+textarea's own plain glyphs are fully masked), arguments stay plain, the real caret is visible
+and correctly positioned (end of draft for `/skill:demo-review do it`, position 0 after the
+slash is deleted), and the scrolled-draft screenshot shows the pilled token correctly out of
+view with nothing duplicated at the wrong scroll offset. Draft PR #1064 (`Closes #1050`).
+
+**Gate round 1 remediation (2026-10-20, Code/Test/A11y/UI reviewers, all four independently;
+Sec PASS)**: one HIGH, found by all four -- the opaque pill overlay painted ON TOP of the real
+`<textarea>` (confirmed from `02-pill-btw.png`: the caret at offset 3 was gone), hiding the
+native caret, selection highlight and IME composition inside the recognised token. Fixed with
+the standard "highlight-within-textarea" technique: `CommandPillOverlay` (renamed from
+`CommandPillSegments`) now renders the WHOLE draft as a mirror sitting UNDER the textarea; the
+textarea itself goes `relative z-[1] text-transparent caret-foreground selection:text-foreground`
+(`COMMAND_PILL_TEXTAREA_CLASS`) ONLY while a token is present, so the native caret/selection/IME
+keep painting on the real control, on top of the mirror. `useCommandPillOverlay`'s own scroll
+sync moved from `useEffect` to `useLayoutEffect` (no one-frame flash of the mirror at `scrollTop:
+0` on mount). One MEDIUM: the pill's fill is now a dedicated `--command-pill-bg` token (not
+`--card` directly) -- the gate added a "visibly distinct from the composer surface" floor
+(>=1.4:1) alongside the existing accent-text floor; `--command-pill-bg` resolves to `--muted` in
+Nordic Frost/Cyber Amber (clears both outright) and to `--card` in Dark/Obsidian/Dark (high
+contrast) (an accepted, documented gap on the new floor only -- proven analytically that no
+single colour clears both there, see `globals.css`'s own per-theme comment and spec.md's new
+2026-10-20 gate-round-1 Clarifications entry). One file-organisation fix (no separate severity,
+bundled with the HIGH): `COMPOSER_MIRROR_CLASS` is now a shared constant (`CommandPillOverlay.tsx`)
+used by the ghost-text, chip AND pill mirrors (was three verbatim copies of the same className
+string in `MessageInput.tsx`); `[scrollbar-gutter:stable]` added to it and to the textarea
+unconditionally (a scrolled draft's real content width must match every mirror's own wrapping
+width exactly); a trailing `\n` gets a zero-width-space line-box fix. `MessageInput.tsx`'s own
+earlier single-line-squashed import/render (a mis-aimed attempt to protect its file-size cap)
+reverted to normally-formatted code -- the real saving comes from `COMPOSER_MIRROR_CLASS`
+deduplication instead, landing at **1627/1632**, five lines BELOW the cap, not merely at it.
+`scripts/verify-1050-command-pill.mjs` gained: pixel-level, blink-safe caret-visibility checks at
+offset 0 and mid-token; a real Ctrl+A selection-highlight pixel check; completing a partial
+command via a real slash-menu click; `/btw` -> `/btwx` (an unrecognised edit) dropping the pill;
+a long wrapping skill name; a pasted-text chip beside the pill (ghost text recorded
+`notExercised`: no scripted `predict_word` reply exists in this tape, and FR-058 degrades
+silently on no reply); the overlay's own structural proof that arguments stay plain, rewritten
+for the new whole-draft mirror shape. Split into `verify-1050-command-pill-helpers.mjs` (both
+under the 600-line cap, no baseline needed). Non-build checks re-run clean: `pnpm typecheck`;
+`pnpm test` 148/148; `check:indent` 0/427 files; `check:file-size` 0 violations
+(`MessageInput.tsx` 1627/1632); `check:theme-contrast` all 837 pairs PASS; `check:parity` 106/106
+requests + 24/24 events (the +2 requests are Main's own unrelated #1063 merge, not this issue);
+`check:drag-regions` 0 violations. **A fresh FINAL LIVE-VERIFIED PASS (the chained `ci-local.mjs
+&& verify-1050-command-pill.mjs` run) is pending the next build slot** -- not yet run; the
+paragraph above this one is round 0's own build, superseded by this remediation.
+
+**Gate round 2 remediation (2026-10-20, Main)**: round 1's accepted 3-theme gap (Dark/Obsidian/
+Dark (high contrast) could not clear the new 1.4:1 fill-vs-composer floor without dropping
+`--accent-text` below its own 4.5:1 floor) was not accepted -- the conflict is `--accent-text`
+against the fill, so the pill now gets its OWN text token too. `globals.css`: `--command-pill-bg`
+is a plain neutral step in every preset now (Dark `oklch(0.31 0 0)`, Obsidian `oklch(0.32 0.02
+255)`, Dark high contrast `oklch(0.30 0 0)`, Nordic Frost/Cyber Amber unchanged `var(--muted)`),
+chosen only to clear 1.4:1 against the effective composer backdrop (measured 1.50-1.52:1 in all
+five); `--command-pill-fg` (new) is the same hue as `--accent-text`, lightened/desaturated only
+as far as needed to clear 4.5:1 (7:1 Dark high contrast) on that fill (Dark 4.66:1, Obsidian
+4.54:1, Dark high contrast 7.26:1, all measured) -- a plain alias of `--accent-text` in Nordic
+Frost/Cyber Amber, which already cleared both floors. `CommandPillOverlay.tsx`'s `PILL_CLASS`
+now reads `text-command-pill-fg` (was `text-accent-text`). `theme-contrast-pairs.mjs`: the
+informational exception is gone -- `command-pill-fg`/`command-pill-bg` (4.5:1, 7:1 HC) and
+`command-pill-bg`/background-or-composer-background (1.4:1) are BOTH enforced in every preset
+now, measured via `node scripts/check-theme-contrast.mjs`: **all 840 pairs PASS, no gap, no
+informational exception.** `spec.md`'s new 2026-10-20 "gate round 2" Clarifications entry and
+FR-092's own amended text record the correction. Non-build checks re-run clean (unchanged file-
+size/indent/parity/drag-region numbers from round 1; theme-contrast now 840/840, was 837/837).
+**A fresh FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.
+
+**Gate round 3 remediation (2026-10-20, Main)**: round 2's delta gate found one CRITICAL (Send/
+Stop unclickable while a pill shows, `MessageInput.tsx`'s Send/Stop button container had no
+z-index at all so the pill-only textarea `z-[1]` painted over it -- fixed with its own `z-[3]`,
+full stacking order documented in `CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`
+comment), two HIGHs (the selection highlight painted nothing -- `selection:text-foreground` set
+only a text colour, and CSS falls an author `::selection` rule's unset properties back to the
+element's ordinary value, never the UA's special highlight; fixed with a real
+`selection:bg-composer-selection-bg` fill, new `--composer-selection-bg`/`-fg` tokens that are
+plain aliases of the already-enforced `accent-foreground`/`accent` pair -- and an IME
+composition underline would have gone invisible too under the old `color`-based masking, since
+anything reading `color` was hidden along with the glyphs; fixed by masking via
+`[-webkit-text-fill-color:transparent]` instead, which leaves `color` itself real, with its own
+`::selection`/`forced-colors` overrides since that property doesn't inherit the UA's forced-
+colours safety net the way `color` does) and two MEDIUMs (a ~150ms flicker from the shared
+`Textarea` primitive's own `transition-colors` fading the mask on/off out of sync with the
+mirror's instant mount/unmount -- fixed by narrowing the composer's OWN textarea to
+`transition-[border-color,box-shadow]`, not touching the shared primitive; Dark/Obsidian's
+`--command-pill-fg` hue had drifted 15-25 degrees off `--accent-text`'s real measured hue --
+retuned to 279/280 respectively, Dark 4.65:1/Obsidian 4.75:1/Dark high contrast 7.26:1, all
+measured, `check:theme-contrast` 856/856 PASS including two new enforced `composer-selection-
+fg`/`composer-selection-bg` pairs). Plus a UI Low (the pill's own fill now extends 2px past the
+token's glyph box via `box-shadow`, which never reserves layout space, so edge glyphs no longer
+sit flush against the fill) and a spec/notExercised Low (the IME `notExercised` entry narrowed to
+what is actually proven: composed text shows through the mirror correctly; the underline's own
+colour is still not live-verified, no IME harness built).
+
+`scripts/verify-1050-command-pill.mjs` gained: a real `elementFromPoint` + pointer-click proof
+that Send reaches the button while a pill shows (run LAST, since a real click genuinely consumes
+the fake-omp tape's one scripted `prompt` reply); the selection-highlight check rewritten to
+sample a GLYPH-FREE cell (the space after the token, not the pill's own inked centre, which gave
+a false pass from ordinary glyph-rendering noise) and assert the selected pixel matches the
+live-resolved `--composer-selection-bg`, not merely "differs"; the resting `02-pill-btw.png`
+shot now taken BEFORE Ctrl+A (it used to capture the already-selected state); a new
+`02b-selection-highlight.png` for the selected state; an OKLCH hue-difference assertion (<=5
+degrees from `--accent-text`) in the theme loop; a stuck Profile-name tooltip now explicitly
+dismissed (pointer moved to a neutral point, waited for `[role="tooltip"]` to clear) before each
+theme's own measurement/screenshot; a caret-visibility check on a WRAPPED visual line of the
+long skill name (offset 150, past the first line) and another after scrolling a long draft to
+its own bottom (previously every caret check only ever covered the unwrapped, unscrolled first
+line); a pasted-text chip's own `elementFromPoint` clickability check beside the pill.
+
+Non-build checks re-run clean: `pnpm typecheck`; `pnpm test` 148/148 (no new tests); `check:
+indent` 0/429; `check:file-size` 0 violations (`MessageInput.tsx` and `theme-contrast-pairs.mjs`
+both condensed back to their own baselines after this round's comments); `check:theme-contrast`
+all 856/856 pairs PASS; `check:parity` 106/106 + 24/24 (unaffected); `check:drag-regions` 0
+violations. `spec.md`'s new 2026-10-20 "gate round 3" Clarifications entry and FR-092's own
+amended text record every correction. **A fresh FINAL LIVE-VERIFIED PASS is still pending the
+next build slot** -- not yet run.
+
+## Phase 72: Agent rows show only the goal (#1077, FR-093)
+
+(Next free numbers against `origin/main` at this branch's own cut, `4996ede9`: Phase 71/
+T345-T349 claimed by #1050 above, so this phase claims Phase 72/T350 onward; the highest FR in
+this spec is FR-092, so this phase claims FR-093.)
+
+**Goal**: an expanded Stage row or subagent row shows only the goal; the full Prompt/Result
+move behind a "See input & output" toggle. Decided (Stuart, `grill-with-docs`, 2026-10-20,
+issue #1077; none deferred) -- see spec.md's own 2026-10-20 Clarifications entry for the
+four-point decision record.
+
+- [X] T350 Docs convergence: this phase, `spec.md` FR-093 (new, amends FR-067/FR-068) and its
+  dated `### Session 2026-10-20 (Agent rows show only the goal, #1077)` Clarifications entry
+  recording the four decided points. `docs/PLAN.md`'s "Agent rows show only the goal" row status.
+- [X] T351 `src/renderer/components/InlineDisclosure.tsx` (new, ADR 0003): the shared text-link
+  disclosure shape lifted out of `Markdown.tsx`'s `MermaidBlock` "Show source" toggle -- a
+  caller-controlled `open`/`onOpenChange`, `aria-expanded`/`aria-controls`, and an Escape
+  handler that closes and returns focus to the trigger whether focus sits on the trigger
+  itself or deep inside (a CodeBlock's own Copy button) -- the WCAG 2.4.3 hazard issues
+  #991/#1001 fixed one level up for a Stage's own trigger. `Markdown.tsx`'s `MermaidBlock`
+  ported onto it unchanged (net line reduction) -- it gains both Escape-to-close and a correct
+  `:focus-visible` ring for free, live-checked directly (gate round 1 fix, item 8).
+- [X] T352 `src/renderer/features/chat/stageMeta.ts`: a shared `findFirstContentLine` helper
+  (gate round 1 fix, item 2) replaces the copied line-finding loop in both `extractContextLabel`
+  and the new `extractTaskGoalPreview` -- `item.task`'s own first non-blank lines, heading
+  markers and blank lines cleaned THROUGHOUT (not only the first line), capped at 1500
+  code-points (`GOAL_PREVIEW_MAX_CHARS`, a code-point-safe `truncateByCodePoint`, never
+  `.slice()`, which can split a surrogate pair) as a DOM-size guard only -- the visible clamp is
+  the caller's own `line-clamp-3`.
+- [X] T353 `src/renderer/features/chat/ToolRow.tsx`/`SubagentGoalPreview.tsx` (new, own file,
+  file-size): `SubagentRowProps.showGoal` is required (no implicit default, gate round 1 fix,
+  item 10); `SubagentGoalPreview` (exported) renders the clamped goal paragraph alone, reused by
+  both `SubagentBody` (a Stage member's own goal) and `StageGroupRow` directly (a context-less
+  solo Stage's own goal, item 7); `SubagentBody` wraps its existing Prompt/Result blocks in the
+  new `InlineDisclosure` ("See input"/"See input & output", gated on `item.result`'s own
+  presence, flipping to "Hide ..." once open), its own label carrying an `sr-only` suffix naming
+  the agent (item 9, every sibling link otherwise reads identical visible text).
+- [X] T354 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow`'s own direct
+  `SubagentBody` call (solo Stage) passes `showGoal={!group.context}`; each multi-agent member's
+  own `SubagentRow` call passes `showGoal={!toolCallIdsWithContext.has(item.toolCallId)}` (gate
+  round 1 fix, item 1: `item.context` alone is unreliable per member -- the wire stamps a call's
+  own `context` argument onto only that call's spec-index-0 item, so a correlation by
+  `toolCallId` is required for a call's 2nd+ member to resolve correctly). A context-less solo
+  Stage's own goal renders at the Stage level, before "Uses:" (item 7); a failed/cancelled/
+  exited solo Stage also keeps its own one-line failure reason visible there (item 6).
+- [X] T355 Live CDP verification (`scripts/verify-1077-agent-goal.mjs`, new fake-omp tape
+  `stages-1077.jsonl`): an expanded Stage row shows the goal and the toggle link with no Prompt/
+  Result visible; the link opens and closes input/output with the correct labels and
+  `aria-expanded`/`aria-controls`; a still-running agent shows "See input" (no "& output"); a
+  single subagent row (no Stage goal) shows its own task as the goal, clamped to 3 lines;
+  closing the toggle (Escape, focus deep inside) returns focus to the link; reopening starts
+  collapsed again (no remembered state); screenshots in 2 themes with no stray hover card/
+  tooltip open. `report.json` records `gitHead`, `dirty`, failures and `notExercised`.
+
+**Non-build checks**: `pnpm typecheck` clean; `pnpm test` 148/148 passed (no new renderer
+tests, prototyping-phase rule); `node scripts/check-indent.mjs` 0 odd-indent lines across 451
+files scanned (3 allow-listed); `node scripts/check-file-size.mjs` 0 cap violations across 516
+files scanned (`ToolRow.tsx` 594/600, `Markdown.tsx` 994/997 baseline, both within cap, no
+growth past Markdown.tsx's own baseline); `node scripts/check-theme-contrast.mjs` all 872 pairs
+across 5 themes PASS (no new token, reuses `--muted-foreground`/`--foreground`/`--ring`); `node
+scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
+change); `node scripts/check-drag-regions.mjs` 0 violations across 152 files.
+
+**FINAL LIVE-VERIFIED PASS**: `node scripts/ci-local.mjs` all steps PASS (`cargo fmt --check`,
+`cargo test`, `cargo clippy`, Tauri debug build, typecheck, vitest 148/148, indent, theme-
+contrast, drag-regions, parity, file-size, versions, omp-schema drift, check:ui-text).
+`scripts/verify-1077-agent-goal.mjs` against the just-built exe: **gitHead
+`1f775683e761c0a2e4f66642ed54205c87b69237`, dirty: false, exeSha256 `601c930a0656…`, 0 failures,
+1 notExercised, exitCode 0**. Two script bugs found and fixed first, neither a product defect:
+Phase 8 opened a member's own toggle before its owning Stage had settled (a missing wait); a
+plain `cdp.click` on a nested member toggle landed off-screen (fixed with the established
+`clickScrolled` helper, same fix `verify-941-stage-naming-helpers.mjs` already carries for this
+exact class of bug). Screenshots viewed directly: a solo Stage (no context) shows only its own
+goal, genuinely clamped (`scrollHeight=64 > clientHeight=48`), its leading "# Goal" heading
+stripped, the toggle reading "See input" while running then "See input & output" once settled;
+opening reveals both Prompt and Result; Escape with focus deep inside returns it to the link;
+collapsing/re-expanding the Stage resets the toggle; Stage B's own shared goal shows once with
+neither member duplicating it, each member's own toggle independent. The Dark and Obsidian
+screenshots were captured with Stage B's two members already expanded (not the pristine
+goal-only state shots 01/02 prove) -- both confirmed to show no stray hover card or tooltip,
+and Stage B's two members' own opened Prompt/Result each correctly scoped to itself.
+
+**Gate round 1 remediation (2026-10-20, Main; Sec/Test/A11y/UI PASS, Code FAIL on one High)**:
+one HIGH, four MEDIUM, five LOW, all fixed in this one round.
+- **HIGH (item 1)**: a context-less multi-agent Stage showed no goal anywhere --
+  `SubagentChainRow.tsx:368`'s member call was hardcoded `showGoal={false}`. Fixed with a
+  `toolCallIdsWithContext` correlation by `toolCallId` (`item.context` alone is unreliable per
+  member -- the wire stamps a call's own `context` argument onto only that call's spec-index-0
+  item, per `groupSubagentStages.ts`'s own `flush()` comment, so a call's 2nd+ member carries no
+  `item.context` of its own even when its OWN call genuinely had one). New fixture Stage C
+  (`flat-task`, two agents, no context) live-checks the genuinely context-less case directly.
+- **MEDIUM (item 2)**: the goal preview's own 240-char cap was tighter than its visual
+  `line-clamp-3` needed, `.slice()` could split a surrogate pair, and only the FIRST line had
+  its heading/blank-line noise cleaned. Fixed: raised to 1500 code points (a DOM-size guard
+  only), a code-point-safe `truncateByCodePoint`, cleaning THROUGHOUT via a new shared
+  `findFirstContentLine` helper (replacing the copied loop); FR-093 and the stale `notExercised`
+  wording both corrected.
+- **MEDIUM (item 3)**: Escape now also bails on `event.defaultPrevented` (a nested Tooltip's own
+  dismiss gets the first press, WCAG 1.4.13) and the listener moved to the OUTER wrapper so
+  Escape also works when focus sits on the trigger itself, not only deep inside the content.
+- **MEDIUM (item 4)**: dropped `preventScroll` on the focus-return `.focus()` call -- a focused
+  element deep inside a long, internally-scrolled `CodeBlock` now comes back into view.
+- **MEDIUM (item 5)**: `InlineDisclosure`'s content div regained its own `space-y-2` (the 8px
+  Prompt/Result gap `CollapsibleContent`'s own ambient spacing used to supply for free); the
+  trigger now uses the shared `mutedLinkClassName` (extracted into a new `linkStyles.ts` to
+  avoid an import cycle back through `Markdown.tsx`), matching "Show full brief" exactly.
+- **MEDIUM (item 6)**: a failed/cancelled/exited solo Stage's own one-line failure reason
+  (`extractResultSummary`, the same mechanism a multi-agent member's own `summary` slot already
+  used) is restored next to its own goal, not only reachable behind the toggle.
+- **MEDIUM (item 7)**: a context-less solo Stage's own goal now renders at the Stage level,
+  before "Uses:" -- the same order a context-bearing Stage's own `StageContextBrief` already
+  used -- instead of nested inside `SubagentBody`, after "Uses:".
+- **MEDIUM (item 8)**: `Markdown.tsx`'s `MermaidBlock` "Show source" toggle, already ported onto
+  the shared `InlineDisclosure`, gains Escape-to-close and a correct focus ring for free; T351
+  and the PR body corrected to say so, and a new live-check phase opens it via real keyboard
+  input (Shift+Tab back from the composer, a real Enter), asserts a hard `:focus-visible` match,
+  screenshots the ring, then confirms Escape closes it too.
+- **MEDIUM (item 9)**: each toggle's own label now carries an `sr-only` suffix naming its agent
+  (`"See input & output for MemberOne"`) -- every sibling link otherwise read identical visible
+  text, ambiguous to a screen reader user tabbing between them.
+- **LOW (item 10)**: `showGoal` is now required (no implicit default); `InlineDisclosureProps`
+  dropped its unused `className`/`buttonClassName` (neither caller ever used one); this script's
+  own header corrected from a stale "WRITTEN, NOT RUN" claim to describe the real first
+  build-slot run above; T354's text and the Dark-screenshot claim above both corrected; every
+  screenshot (including the new Mermaid ring shot, via a lighter non-blurring equivalent that
+  preserves the very focus state it proves) confirms no stray tooltip first, fatally.
+
+Non-build checks re-run clean: `pnpm typecheck`; `pnpm test` 148/148; `check:indent` 0/454
+files; `check:file-size` 0 violations (`ToolRow.tsx` 599/600, `SubagentChainRow.tsx` 588/600,
+`SubagentGoalPreview.tsx`/`linkStyles.ts` new, both small); `check:theme-contrast`/`check:
+parity`/`check:drag-regions` unaffected (no new token, no IPC/drag-region change). **A fresh
+FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.
+
+## Phase 73: Enter sends queued follow-up (#1067, FR-094)
+
+(Next free numbers against `origin/main` at this branch's own cut, `a5e3ff7b`: Phase 72/T350-T355
+claimed by #1077 above, so this phase claims Phase 73/T356 onward; the highest FR in this spec is
+FR-093, so this phase claims FR-094.)
+
+**Goal**: Enter on a blank composer with at least one queued follow-up sends the oldest one,
+exactly as its own "Send now" chip would. Decided (Stuart, `grill-with-docs`, 2026-10-20, issue
+#1067; none deferred) -- see spec.md's own 2026-10-20 Clarifications entry for the decision
+record.
+
+- [X] T356 Docs convergence: this phase, `spec.md` FR-094 (new, amends FR-011/FR-012) and its
+  dated `### Session 2026-10-20 (Enter sends queued follow-up, #1067)` Clarifications entry
+  recording the decided rule, the "blank" definition, and the discoverability/single-flight
+  details. `docs/PLAN.md`'s "Enter sends queued follow-up" row status.
+- [X] T357 `src/renderer/features/chat/enterSendsQueuedFollowUp.ts` (new, small helper --
+  `MessageInput.tsx` is at its own `check:file-size` baseline cap; renamed from
+  `useEnterSendsQueuedFollowUp.ts` in gate round 1, DECIDED item 4: not a hook, no `use*` prefix):
+  `computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost, disabled)`
+  derives whether a plain Enter should steer the oldest queued follow-up instead of calling the
+  ordinary `handleSend()`, returning a discriminated `{ applies: true; chip: DerivedChip } | {
+  applies: false }` union (gate round 1, DECIDED item 4: replaces a plain `{ applies: boolean;
+  chip: DerivedChip | undefined }` shape that forced callers to assert `chip!`). "Blank" (amended
+  gate round 1, DECIDED item 1) is `text === ''` exactly, not merely whitespace-only -- a single
+  space or a Shift+Enter-inserted newline is a real draft -- with no pending images, text chips,
+  or file attachments, AND no attachment read still in flight (gate round 1, DECIDED item 3:
+  `pendingAttachmentReads`, PR #723's own guard; this is deliberately distinct from issue #744's
+  still-open `hasSendableContent`, which asks the opposite question for the Send button). The
+  oldest follow-up is `chips.find`'s first `queue === 'followUp'` entry (follow-ups list before
+  any steering chip, in `followUp` array/FIFO order); a steering-only queue yields no match. The
+  rule is suppressed while the slash menu is open, a live ghost-text suggestion is showing, or
+  the composer is `disabled` (gate round 2, Main, MEDIUM item b: the helper used to ignore
+  `disabled` entirely; now short-circuits to `applies: false` before any other check). Neither
+  slash-menu nor ghost-text can actually coexist with a blank draft today -- `showSlashMenu`
+  requires `text` to start with `/`, `isGhostTextEligible` requires text already on the line --
+  but both guards are explicit anyway.
+- [X] T358 `src/renderer/features/chat/MessageInput.tsx`: the Enter branch of `handleKeyDown`
+  calls `handleSendNow(enterQueuedFollowUp.chip)` instead of `handleSend()` when
+  `enterQueuedFollowUp.applies` (gate round 1, DECIDED item 4: the discriminated union above
+  removes the need for a `chip!` non-null assertion), reusing its existing `inFlightChips`
+  single-flight guard unchanged (a fast double Enter resolves to the same chip key on both
+  presses, so the second call is a no-op) and its existing "Sending now…" announcement. The
+  empty-state hint overlay's lead text reads the shortened "Enter: send next queued" (gate round
+  2, LOW item 5: the original full sentence still truncated at the 360px panel floor; shortened
+  to fit) while the rule applies, in place of the default "Message the agent" wording; the
+  `composerHintId` sr-only description (already wired into the textarea's `aria-describedby`,
+  issue #533) keeps the FULL "Enter sends the next queued message" sentence, with the ordinary
+  "Markdown is supported. Type slash for commands." text appended after it (gate round 1, DECIDED
+  item 5). The Send button's own `aria-keyshortcuts="Enter"` is dropped while the rule applies
+  (gate round 1, DECIDED item 6: the button must never claim Enter sends the empty draft while
+  Enter actually steers the queue instead); its tooltip reads plain "Send" instead of
+  `<Kbd>Enter</Kbd>` (gate round 2, UI review (a): the button is unconditionally `aria-disabled`
+  while the rule applies, so the tooltip -- wired into the button's own `aria-describedby` by
+  Radix -- must not describe an action, the queued send, the disabled button itself cannot
+  perform). IME composition and Shift+Enter are unaffected (both already gated before this branch
+  runs).
+- [X] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape
+  `scripts/fixtures/omp-frames/1067-enter-queued.jsonl`). Covers: two queued follow-ups mid-turn,
+  chips render oldest-first; the hint and `aria-describedby` while the rule applies, in two
+  themes, plus one 360px-wide screenshot proving the hint fits without horizontal overflow; an
+  attachment-only "blank" composer (text === '', a real pasted file attachment, follow-up queued)
+  does NOT promote the queued follow-up and the hint stays the DEFAULT wording (gate round 1,
+  Code1/Test1 HIGH: live-exercised via a synthetic clipboard file paste, no longer merely reasoned
+  about); Enter on a blank composer sends the oldest queued follow-up then the next, with the
+  composer's own focus confirmed before the steering-only no-op check (gate round 1 LOW item);
+  Enter with typed text still sends that text even with a follow-up queued; opening the slash
+  menu on an unmatched command sends no command (the composer's ordinary unknown-command
+  refusal, honestly relabelled in gate round 1 as NOT a live test of FR-094's own slash-menu guard
+  -- see `notExercised` below for why that combination is unreachable); a fast double Enter sends
+  exactly once (proven by an exact fake-omp debug-log RECV count), with its own "Sending now…"
+  announcement recorded via `assertTrue` (gate round 1 LOW item) rather than merely waited for;
+  Shift+Enter inserts a newline and sends nothing. `report.json` records `gitHead`, `dirty`,
+  failures and `notExercised` (a ghost suggestion showing at the same instant as a blank composer;
+  the slash menu open at the same instant as an otherwise-blank composer; an IME composition in
+  progress at the same instant as a blank composer -- all three structurally unreachable, per
+  their own doc comments in the script). Four script bugs were found and fixed while getting this
+  green, none a product defect: the visible-hint selector matched zero elements (a generic
+  `[aria-hidden="true"].text-muted-foreground` class selector was too fragile; replaced with a
+  search for a genuinely visible span carrying the exact expected text, excluding `.sr-only`
+  duplicates); two chip-index assertions assumed insertion order instead of the real render order
+  (`chips` always lists every follow-up chip before any steering chip, regardless of when each
+  was queued); `pressShiftEnter`'s synthesized CDP key event carried no `text` payload, so
+  Chromium never ran the native "insert a newline" edit command the production code deliberately
+  relies on (mirrors the bug class `verify-1077-agent-goal.mjs`'s own gate-round-1 remediation
+  already warns about -- a synthetic key dispatch with no `text` field reaches `onKeyDown` but
+  inserts nothing); a bare `pressEnter()` after the theme-switch screenshot loop landed on nothing
+  (`settleForScreenshot` blurs the active element and `switchTheme` leaves focus inside the
+  profile menu), fixed with an explicit re-click of the composer textarea before relying on any
+  later bare Enter.
+
+**Non-build checks** (run against the renderer changes alone, before any build slot): `pnpm
+typecheck` clean; `pnpm test` 148/148 passed (no new renderer tests, prototyping-phase rule);
+`node scripts/check-indent.mjs` 0 odd-indent lines across 457 files scanned (3 allow-listed);
+`node scripts/check-file-size.mjs` 0 cap violations across 522 files scanned (`MessageInput.tsx`
+1632/1632 baseline, unchanged -- new logic lives in `enterSendsQueuedFollowUp.ts` instead);
+`node scripts/check-theme-contrast.mjs` all 872 pairs across 5 themes PASS (no new token); `node
+scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
+change); `node scripts/check-drag-regions.mjs` 0 violations across 153 files.
+
+**FINAL LIVE-VERIFIED PASS**: branch merged with `origin/main` (v0.7.0 release, #1039 Cyber
+Amber retune) first; non-build checks re-run clean on the merged tree (`pnpm typecheck`; `pnpm
+test` 148/148; `check:indent` 0/458; `check:file-size` 0/523, `MessageInput.tsx` unchanged at
+1632/1632; `check:theme-contrast` 872/872; `check:parity` 115/115 requests, 25/25 events;
+`check:drag-regions` 0/153). `node scripts/ci-local.mjs` all steps PASS (`cargo fmt --check`,
+`cargo test`, `cargo clippy`, Tauri debug build, typecheck, vitest, indent, theme-contrast,
+drag-regions, file-size, versions, omp-schema drift, check:ui-text).
+`scripts/verify-1067-enter-queued.mjs` against the just-built exe: **gitHead
+`965184456b5d50c8d0d5b76c2f1c1dd065016b8e`, dirty: true (the verify script's own in-flight fixes
+were uncommitted at run time, now committed in this same change), 0 failures, 2 notExercised,
+all 14 assertions PASS**. Screenshots viewed directly (`hint-dark.png`, `hint-obsidian.png`):
+both queued follow-up chips show with their own "Send now" buttons, and the composer's hint
+overlay reads "Enter sends the next queued message" in place of "Message the agent", the "/ for
+commands" and "Markdown supported" hints unchanged beside it, in both themes.
+
+## Phase 74: Model roles overhaul (#1069, FR-095 to FR-099)
+
+- [X] T360 [US1] Docs convergence: amend `specs/001-core-session-workspace/spec.md` with the
+  `### Session 2026-10-20 (Model roles overhaul, #1069)` Clarifications entry and FR-095 to
+  FR-099 (provider switch, filtered dropdown, off-provider display, trigger text, reasoning
+  radios). Thread `reasoning: boolean`/`thinking: string[] | null` through `ModelCatalogEntry`
+  (`src/shared/model.ts`; `src-tauri/src/ipc/model_roles.rs`'s struct and
+  `parse_catalog_response`), updating that file's two existing parse tests to the now-true "six
+  needed fields" shape (no new tests, prototyping-phase rule) rather than leaving them asserting
+  a superseded premise. `cargo test --lib ipc::model_roles`: 18/18 passed.
+- [X] T361 [US1] Build the provider switch and reasoning radios as new components, not inlined
+  into the 469-line `ModelRolesSection.tsx` (#806 file-size cap): `modelProviderFilter.ts` (pure
+  helpers -- provider list, provider-filtered catalog, current-value catalog resolution, default
+  provider), `ProviderSwitch.tsx` (the `ToggleGroup` row, ADR 0003, extending
+  `ManageSessionsToolbar.tsx`'s own segmented-filter pattern), `RoleReasoningRadios.tsx` (the
+  seven-option radio group per chat role, `RadioGroup`/`RadioGroupItem`/`RadioGroupIndicator` plus
+  `RADIO_RING_CLASS`/`RADIO_DOT_CLASS` from #1043/PR #1057). Wired `ModelRolesSection.tsx` to:
+  track the selected provider (initialised once from the Default role's current model, falling
+  back to the first catalog provider); filter each chat role's `SelectContent` to the selected
+  provider and drop the provider from its item labels; resolve a role's current value against the
+  FULL catalog to render its trigger as the model's display name, with a muted "via {provider}"
+  tag when it is on a different provider than the one selected; render `RoleReasoningRadios` under
+  each of the 10 chat roles only, writing/clearing the role's `:level` suffix through
+  `modelRoleSuffix.ts`'s existing helpers (FR-095 to FR-099). Extracted `friendlyProviderLabel`
+  out of `lib/modelRoles.ts` into a new leaf module, `lib/providerLabels.ts` (re-exported from
+  `modelRoles.ts` unchanged for its existing callers), because `ModelRolesSection.tsx` importing
+  `ProviderSwitch.tsx` importing `lib/modelRoles.ts` would otherwise be a real circular import --
+  that file reads this section's own `CHAT_ROLE_DESCRIPTORS` at its module top level.
+- [ ] T362 Non-build checks and the live check: `pnpm typecheck`, `pnpm test` (148/148, unchanged),
+  `pnpm check:indent` (0/468), `pnpm check:file-size` (0 violations -- `src/shared/model.ts`'s
+  doc comment trimmed to land exactly on its 656-line baseline, not past it),
+  `pnpm check:theme-contrast` (892/892, no new token), `pnpm check:parity` (115/115 requests,
+  25/25 events, unaffected), `pnpm check:drag-regions` (0/155); `cargo fmt --check`, `cargo
+  clippy --all-targets -- -D warnings` (`src-tauri`) all clean. Write
+  `scripts/verify-1069-roles-overhaul.mjs` (new, modelled on an existing Settings CDP check,
+  teaching the shared `verify-tauri-fake-omp.mjs` harness the one-shot `omp config get/set
+  modelRoles --json` and `omp models --kind <kind> --json` CLI calls it never answered before --
+  neither is part of the `--mode rpc-ui` wire tape, and no earlier live check drove the Model
+  roles section this deep) proving the switch starts on Default's provider and filters every
+  dropdown, items carry no provider prefix, an off-provider role shows "via {provider}", the
+  radios exist only on chat roles with unsupported levels disabled and a reason, picking a level
+  writes the suffix (read back through a fresh `modelRoles.list()` IPC call) and Inherit clears
+  it, triggers show the name only, and the switch/radios are keyboard-operable. Gated on the
+  build slot (no `verify-*.mjs` run by this worker); run and reported once granted.
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #1069). T360/T361's own
+checks (`cargo test`, `pnpm typecheck`) were run as each landed; T362's non-build checks were run
+and are green (see above), and `scripts/verify-1069-roles-overhaul.mjs` plus its
+`scripts/fixtures/model-catalogs/chat-1069.json` fixture and the `verify-tauri-fake-omp.mjs`
+one-shot `config`/`models` handling it needs are written and syntax-checked (`node --check`), but
+NOT yet run against a built exe -- Main's "ready for build slot" instruction gates that (no
+`verify-*.mjs` run by this worker); T362 stays open until the build slot is granted, the Tauri
+debug build runs, and the script's own pass (and its `report.json`) is recorded here.
+
+## Phase 75: Convergence (#838 agent-to-agent lines, #762 `/models`, FR-100/FR-101)
+
+`/speckit.converge` against the amended spec (FR-100, FR-101 and the 2026-10-22 Clarifications
+entry): seven findings, all appended below; nothing else in scope was found unmet.
+
+- [X] T363 Handle a bare `/models` in `MessageInput.tsx` before `open()` (clear the draft,
+  `useViewStore.openSettings('model-roles')`, send nothing) and list it in
+  `session/agent/commands.rs` `NATIVE_BUILT_COMMANDS` ("Open model role settings"), keeping it in
+  `NATIVE_RESERVED_COMMANDS` per FR-100 (missing)
+- [X] T364 Teach the Rust transcript builder OMP's `irc:incoming` custom type and pass
+  `details.fromParent`/`replyTo` through as optional `agent-message` fields (`fromParent`,
+  `replyTo` in `src/shared/model.ts`); a missing `to` with `fromParent` reads "this agent", not
+  "main agent". Moved into `omp/transcript/agent_message.rs` (#806 cap) per FR-101 (missing)
+- [X] T365 Draw `AgentMessageRow` with a direction glyph (`agentMessageDirection.ts`:
+  `fromParent` first, then the "Main"/"main agent" names), the label in `--agent-message`,
+  "Main agent" as the parent's one label, and an sr-only "Agent message from X to Y" per
+  FR-101 (partial)
+- [X] T366 Render a `write agent://<id>` call as a main-to-subagent line (`AgentSteerRow`,
+  status glyph while running/failed/interrupted/stopped, "failed" in the error colour, "View full
+  call" on expansion), a grouping boundary in `groupToolItems.ts` and never hidden by "Show tool
+  calls" (`transcriptRowVisibility.ts`) per FR-101 (missing)
+- [X] T367 Add `--agent-message` to every built-in theme in `globals.css` (Tailwind
+  `text-agent-message`) and its 4.5:1 pairs (`background`, `muted`) to
+  `scripts/theme-contrast-pairs.mjs` per FR-101 (missing)
+- [X] T368 Amend `docs/design/foundations-icons.md`'s colour rule (agent-to-agent message
+  identity) and add the agent-message token and a reserved-hue table to
+  `docs/design/foundations-tokens-theming.md` per FR-101 (missing)
+- [x] T369 Verify: `pnpm ci:local` and a live scratch-instance check
+  (`scripts/verify-p1-agentmsg.mjs`: glyph, colour and accessible name per direction in Dark,
+  Obsidian and Dark (high contrast); `/models` opens Model roles) per FR-100/FR-101 (partial)
+
+## Phase 76: Side chat panel double scrollbar (#802) [US1]
 
 **Goal**: fix the bug where the Side chat panel (spec 014) showed two vertical scrollbars at
 its right edge once an answer grew taller than the pane -- chore/bugfix, no FR change (same
@@ -4090,7 +5184,7 @@ category as #811/Phase 38): the panel's documented behaviour (one scroll contain
 pinned, nothing clipped) is unchanged; only the implementation that failed to deliver it is
 fixed.
 
-- [X] T314 [US1] `src/renderer/features/right-pane/side-chat/SideChatPanel.tsx`: root div
+- [X] T370 [US1] `src/renderer/features/right-pane/side-chat/SideChatPanel.tsx`: root div
   changed from `flex h-full flex-col` to `flex min-h-0 flex-1 flex-col`. Root cause (read from
   code; the issue's own on-issue probe needs a live build this lane was never granted):
   `react-resizable-panels`' `Panel` component (`node_modules/react-resizable-panels/dist/
@@ -4110,7 +5204,7 @@ fixed.
   `react-resizable-panels` wrapper itself (out of scope: every other `ResizablePanel` in the app
   shares the same injected wrapper and none of them are reported as double-scrolling, so
   changing the shared library wrapper is not this bug's fix).
-- [X] T315 [US1] New `scripts/fixtures/omp-frames/side-chat-long-answer.jsonl` (a minimal
+- [X] T371 [US1] New `scripts/fixtures/omp-frames/side-chat-long-answer.jsonl` (a minimal
   Session-shaped tape plus one `get_btw_history`/`btw` exchange whose response is already a
   COMPLETE record with a deliberately tall-but-narrow 87-line markdown answer: a 40-item bullet
   list, a small 2-column table, and a 30-line code block, ending in a literal last-line marker)

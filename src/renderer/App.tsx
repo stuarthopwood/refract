@@ -3,7 +3,7 @@ import { ArrowLeftRightIcon } from 'lucide-react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
-import { BrandWatermark } from '@/features/chat/BrandWatermark'
+import { EmptyChatState } from '@/features/chat/EmptyChatState'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
@@ -532,27 +532,9 @@ export function App() {
                   // "Pull requests" is a left-nav entry, not a separate shell).
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : paneSessionIds.length === 0 ? (
-                  // Spec 012 (research.md decision 3): no pane open at all -- no composer exists
-                  // in this branch, so the mark anchors to this div's own full box.
-                  //
-                  // Quality-gate remediation (code-reviewer/ui-architect, Medium): `20cqw` needs
-                  // this root itself to be the query container (`[container-type:size]`), not the
-                  // window, matching ChatPane.tsx's own transcript container (research.md decision
-                  // 8) -- missing it here sized the mark off the WHOLE window instead of this box.
-                  // `isolate` plus the mark's own `-z-10` (BrandWatermark.tsx) then keeps the
-                  // absolutely-positioned mark painting BEHIND this normal-flow text instead of
-                  // over it: `isolate` is what creates the stacking context here (`container-type`
-                  // does not, it only applies style and size containment).
-                  <div
-                    data-chat-empty-state
-                    role="region"
-                    aria-label="Chat"
-                    tabIndex={-1}
-                    className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [container-type:size]"
-                  >
-                    <BrandWatermark variant="live" />
-                    Select a Session or create one.
-                  </div>
+                  // Spec 012 (research.md decision 3, extracted to EmptyChatState.tsx, gate
+                  // round 2 item 11): no pane open at all.
+                  <EmptyChatState />
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
                   <ChatPane
                     sessionId={frontSessionId as string}
@@ -560,6 +542,7 @@ export function App() {
                     reservesWindowControls={!paneShown}
                     otherSession={otherSessionForNarrowCollapse}
                     showWatermark
+                    showAmbientLoop
                   />
                 ) : (
                   <ResizablePanelGroup
@@ -582,7 +565,7 @@ export function App() {
                   >
                     <ResizablePanel id="split-pane-0" defaultSize={`${dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>
-                        <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} />
+                        <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} showAmbientLoop />
                       </ErrorBoundary>
                     </ResizablePanel>
                     <ResizableHandle withHandle aria-label="Resize chat panes" />

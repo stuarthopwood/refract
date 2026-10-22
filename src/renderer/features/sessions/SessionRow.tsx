@@ -1,4 +1,5 @@
 import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
@@ -136,12 +137,9 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
 
   return (
     <li ref={rowRef} data-choice-item className="group relative w-full">
-      {isVisible && (
-        <span
-          aria-hidden
-          className="absolute inset-y-1 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
-        />
-      )}
+      {/* Issue #1122: the shared `ActiveIndicatorBar` (square, flush full-height, 2px) replaces
+          this row's own hand-copied rounded-pill/inset span. */}
+      {isVisible && <ActiveIndicatorBar />}
       <ContextMenu
         onOpenChange={(open) => {
           if (!open) return

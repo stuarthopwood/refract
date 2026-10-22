@@ -343,6 +343,13 @@ fn scrub_known_divergences(value: &mut Value) {
                 // `readout.ts` never named todo phases either, so it never appears on that
                 // shell's side of this diff.
                 map.remove("todoPhases");
+                // Issue #700/#701 slice (a): `todoProgress: {done,total}` (Electron's own
+                // frozen shape, still present on that side of this diff) is superseded on the
+                // Rust side by the richer `todoTree` (full phases/tasks, `readout_todo.rs`'s
+                // `build_todo_tree`) -- the SAME kind of one-sided rename `branch`/`todoPhases`
+                // above already establish a precedent for, never a behavioural divergence.
+                map.remove("todoTree");
+                map.remove("todoProgress");
             }
             // Issue #937: `sessions.open`'s own response value gained a brand-new, Rust-only
             // `advisorOn` field (Electron never shipped omp's advisor subsystem at all, epic
@@ -350,6 +357,14 @@ fn scrub_known_divergences(value: &mut Value) {
             // its two sibling keys unique to this one object shape.
             if map.contains_key("conversations") && map.contains_key("subagents") {
                 map.remove("advisorOn");
+            }
+            // Issue #741: a Session's own `pinnedModel` field (the persisted pin state) is a
+            // brand-new, Rust-only field -- `shared/ipc.ts`'s own doc comment already notes
+            // Electron never ports this family either, so it never appears on that shell's
+            // side of this diff. Discriminated by `worktreePath`/`baseBranch`, two sibling
+            // keys unique to a Session object shape in this trace.
+            if map.contains_key("worktreePath") && map.contains_key("baseBranch") {
+                map.remove("pinnedModel");
             }
             if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null))
             {

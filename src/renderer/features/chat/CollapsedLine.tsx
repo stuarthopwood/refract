@@ -84,6 +84,12 @@ export interface CollapsedLineProps {
   /** Expansion content; omit entirely for a line with nothing to expand (it then renders as a
    * plain, non-interactive row with no chevron and no trigger). */
   children?: React.ReactNode
+  /** Issue #1008 item 2: a stable DOM id on whichever element actually receives focus (the
+   * plain row `div` with no `children`, or the `CollapsibleTrigger` button with them) --
+   * `ChainStageLine`'s own "Go to Stage N" jump button looks a Stage row up by this id
+   * (`document.getElementById`, not a ref: the two components are siblings, not parent/child).
+   * Omit for a row nothing ever needs to jump to. */
+  id?: string
   className?: string
   contentClassName?: string
 }
@@ -116,7 +122,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     hideDetailWhenOpen,
     children,
     className,
-    contentClassName
+    contentClassName,
+    id
   },
   ref
 ) {
@@ -168,7 +175,12 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
               // genuinely shrink below its own content width under real pressure, while
               // `max-w-[40%]` still caps how much of the row it can claim either way.
               summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1',
-              summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
+              // Issue #997: `[overflow-wrap:anywhere]` (not `break-words`, which Tailwind maps
+              // to `overflow-wrap: break-word` -- a word still spills past the edge once the
+              // whole word is wider than the column, e.g. a long unbroken token/URL) is this
+              // transcript's prevailing choice; the expanded detail `<p id={detailId}>` below
+              // (same file) already uses it for the identical reason.
+              summaryWrap || (wrapWhenOpen && actualOpen) ? '[overflow-wrap:anywhere] whitespace-normal' : 'truncate',
               summaryClassName ?? 'text-muted-foreground'
             )}
             title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
@@ -222,6 +234,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     return (
       <div
         ref={ref as React.Ref<HTMLDivElement>}
+        id={id}
         tabIndex={-1}
         // Gate round 3 (architect L-d): an inset `outline` (not a `ring`/box-shadow) so this row
         // still shows a focus indicator in forced-colours mode, matching the trigger below.
@@ -241,6 +254,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       <div className="flex items-start gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
+          id={id}
           aria-label={triggerAriaLabel}
           aria-describedby={showDetail ? detailId : undefined}
           className={cn(

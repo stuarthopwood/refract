@@ -94,8 +94,29 @@ pub async fn delete_check_for_missing_worktree(
 }
 
 /// `sessions.deleteCheck` must decide the same way `remove_session_worktree` decides which
-/// removal path to take -- by asking git, never by `fs.stat`-ing the folder.
+/// removal path to take -- by asking git, never by `fs.stat`-ing the folder. Issue #1055:
+/// bounded by `worktree_access::READER_TIMEOUT`; on timeout the future (and, via git's own
+/// `kill_on_drop`, every git child it started) is dropped, so the caller's read guard is
+/// released and a waiting Delete can proceed or refuse honestly instead of hanging.
 pub async fn delete_check_for_session(
+    repo: &Path,
+    worktree_path: &Path,
+    branch: &str,
+) -> Result<DeleteCheck, GitError> {
+    tokio::time::timeout(
+        crate::fs::worktree_access::READER_TIMEOUT,
+        delete_check_for_session_unbounded(repo, worktree_path, branch),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        Err(GitError::new(
+            GitErrorCode::GitFailed,
+            format!("Refract could not check {} in time, so it cannot say what Delete would lose. Close any program that might be slowing git down, then try again.", worktree_path.display()),
+        ))
+    })
+}
+
+async fn delete_check_for_session_unbounded(
     repo: &Path,
     worktree_path: &Path,
     branch: &str,

@@ -188,3 +188,21 @@ Created 2026-10-02 with `/speckit.taskstoissues`. All in `stuarthopwood/refract`
 | T010 | #267 | T020 | #318 | | |
 
 The same table is posted as a comment on tracking issue #117.
+
+## Phase 9: Convergence
+
+- [x] T030 Add the `NSIS_HOOK_PREINSTALL`/`NSIS_HOOK_POSTINSTALL` pair and extend `NSIS_HOOK_POSTUNINSTALL` in `src-tauri/installerHooks.nsh`: a silent install never adds the Desktop shortcut and keeps an existing one; uninstall (not upgrade) removes `$DESKTOP\Refract.lnk`; the finish-page checkbox stays Tauri's own (ticked by default) per FR-028, FR-029, FR-030 (missing)
+- [x] T031 Live-verify on a real installer: interactive Enter-through creates the shortcut targeting the installed exe, `/S` creates none and keeps an existing one, silent uninstall removes it, then restore the previous version per FR-028, FR-029, FR-030 (missing)
+
+## Phase 10: Convergence (issue #883, FR-032 to FR-035)
+
+Appended by `/speckit.converge` on 2026-10-22: the code only checks at startup and needs a click to
+download (FR-012, FR-014). Task ids continue after the #881 convergence phase (T030 and T031).
+
+- [ ] T032 [US3] FR-032 (partial): add the 4-hour periodic re-check in `src-tauri/src/updates/mod.rs` (`run_periodic_update_checks`, tick skipped while checking, downloading, downloaded, or installing; the debug-only `REFRACT_UPDATE_CHECK_INTERVAL_SECS` override, ignored in release builds) and start it from `src-tauri/src/lib.rs` setup after the startup check. Rust unit tests for the interval resolution and the skip predicate.
+- [ ] T033 [US3] FR-033 (partial): run the startup check and every re-check as one cycle (`run_update_cycle`) that calls `installer::download_update` when the check lands on `available`, with no click; `run_startup_update_check` takes the data directory.
+- [ ] T034 [US3] FR-035 (missing): add the `updates.installNow` IPC (`src-tauri/src/ipc/updates.rs`, `src/shared/ipc.ts`, `src/shared/updates.ts`; `pnpm check:parity`) that requires phase `downloaded`, flags a relaunch, and quits through the normal exit path so `run_install_on_quit_hook` verifies and hands off the install; `install_on_quit.rs` relaunches Refract after the silent installer finishes when flagged. Also resolve a stale `downloaded` phase at startup when its version is already installed.
+- [ ] T035 [US3] FR-034 (missing): add an update row to the sidebar notice stack (`src/renderer/features/profile/ProfileAlertRows.tsx` and a new shared-row-based `UpdateAlertRow`) showing "Refract <version> is ready" with an "Update now" action; update the footer badge copy in `src/renderer/features/status-bar/StatusBar.tsx` (no "Download update" step; "Update now" in the popover).
+- [ ] T036 [US3] FR-035 (missing): the confirm dialog "N agents are running; restarting stops them" with Cancel and "Restart and update", built on the shared `AlertDialog`, shown only when an agent is mid-turn.
+- [ ] T037 [US3] Verify live (`scripts/verify-883-updates.mjs`): fake `gh` on `PATH`, debug interval override, assert no prompt at launch, periodic detection, automatic download, the notice row and footer badge, and the confirm dialog where the fake-omp fixtures allow; screenshots of each state.
+- [ ] T038 [US3] Docs: update `specs/006-installer-and-updates/quickstart.md` Story 3 for the periodic check and Update now, and `docs/PLAN.md` row #883 to `done`.

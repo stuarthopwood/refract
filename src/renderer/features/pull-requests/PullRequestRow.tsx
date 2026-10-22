@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { PullRequestState, PullRequestSummary } from '../../../shared/github'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { cn } from '@/lib/utils'
 
@@ -27,11 +28,20 @@ export interface CheckDisplay {
   label: string
 }
 
-export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckDisplay> = {
-  passed: { icon: CheckCircle2Icon, label: 'Checks passed' },
-  failed: { icon: XCircleIcon, label: 'Checks failed' },
-  pending: { icon: LoaderCircleIcon, label: 'Checks running' },
-  none: { icon: CircleDashedIcon, label: 'No checks' }
+export interface CheckStateDisplay extends CheckDisplay {
+  /** Issue #1121 (2026-10-21 decision): every non-`none` check state now carries its own
+   * severity colour, on both the icon and the label word -- supersedes #568 decision 5 ("check
+   * status stays a plain icon+word, turning red only on failure") for PR checks only; tool-call
+   * rows elsewhere keep #570's own failure-only colour rule, unaffected. `none` keeps
+   * `text-muted-foreground`, the same colour both surfaces already showed. */
+  colorClass: string
+}
+
+export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckStateDisplay> = {
+  passed: { icon: CheckCircle2Icon, label: 'Checks passed', colorClass: 'text-severity-success' },
+  failed: { icon: XCircleIcon, label: 'Checks failed', colorClass: 'text-severity-error' },
+  pending: { icon: LoaderCircleIcon, label: 'Checks running', colorClass: 'text-severity-warning' },
+  none: { icon: CircleDashedIcon, label: 'No checks', colorClass: 'text-muted-foreground' }
 }
 
 /** High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged was never
@@ -64,14 +74,16 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
       data-pr-number={pullRequest.number}
       data-pr-author={pullRequest.author.login}
       data-pr-state={pullRequest.state}
-      className="relative flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-    >
-      {selected && (
-        <span
-          aria-hidden
-          className="absolute inset-y-1 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
-        />
+      // Issue #1122: the PR list row gains the same accent fill every other persistent selected
+      // row already has (it previously had the bar below but no fill at all).
+      className={cn(
+        'relative flex w-full flex-col gap-1 px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+        selected ? 'bg-accent text-accent-foreground' : 'hover:bg-surface-hover'
       )}
+    >
+      {/* Issue #1122: the shared `ActiveIndicatorBar` (square, flush full-height, 2px) replaces
+          this row's own hand-copied rounded-pill/inset span. */}
+      {selected && <ActiveIndicatorBar />}
       <span className="flex items-center gap-1.5 font-medium">
         <span className="min-w-0 flex-1 truncate">{pullRequest.title}</span>
         <span className="shrink-0 text-xs font-normal text-muted-foreground">#{pullRequest.number}</span>
@@ -82,15 +94,8 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
           {state.label}
         </span>
         <span aria-hidden="true">{'\u00b7'}</span>
-        <span className="flex items-center gap-1">
-          <CheckIcon
-            aria-hidden
-            className={cn(
-              'size-3.5',
-              pullRequest.checkState === 'pending' && 'animate-spin',
-              pullRequest.checkState === 'failed' && 'text-severity-error'
-            )}
-          />
+        <span className={cn('flex items-center gap-1', check.colorClass)}>
+          <CheckIcon aria-hidden className={cn('size-3.5', pullRequest.checkState === 'pending' && 'animate-spin')} />
           {check.label}
         </span>
         <span aria-hidden="true">{'\u00b7'}</span>

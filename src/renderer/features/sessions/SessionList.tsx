@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, GitPullRequestIcon, SearchXIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -12,9 +13,10 @@ import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { SearchField } from '@/components/SearchField'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
-import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useViewStore } from '@/state'
+import { useAccountsStore, useHolidayStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
+import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { searchSessions, showingCountLabel } from './sessionDisplay'
 import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
 import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
@@ -55,6 +57,10 @@ export function SessionList() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const view = useViewStore((state) => state.view)
   const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
+  // Issue #1048 (Holiday touches): the sidebar accessory beside the "Refract" wordmark below.
+  const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
+  const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   // #735 decisions 15-19: the persisted collapse/expand state. `restored` gates the
   // toolbar and every group below -- nothing paints open and then immediately snaps shut once
   // the persisted state loads a moment after Repositories do (decision 19).
@@ -228,6 +234,9 @@ export function SessionList() {
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
         <span className="text-sm font-semibold">Refract</span>
+        {/* Issue #1048 (Holiday touches): a purely decorative accessory beside the wordmark --
+            `aria-hidden`, the "Refract" accessible name above is unchanged either way. */}
+        {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-3.5 shrink-0 text-muted-foreground" />}
       </div>
       {/* specs/003-pull-request-management FR-001, T011: above the repository groups, Stuart's
           placement answer (spec 003 Clarifications). `aria-current` gives the selected state a
@@ -235,21 +244,23 @@ export function SessionList() {
       <Button
         variant="ghost"
         aria-current={view === 'pull-requests' ? 'page' : undefined}
+        // Issue #1122: `data-choice-item` joins this nav entry to the shared square-choice
+        // selector (globals.css) -- the unlayered rule there overrides the Button base's own
+        // `rounded-lg` regardless of source order (same pattern `RequestCard.tsx` already uses).
+        data-choice-item
+        // `Button`'s base `outline-none` shows no focus change under forced colours (which strips
+        // its box-shadow ring), so the forced-colors outline classes draw a real one there.
         className={cn(
           'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
+          'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
           view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}
         aria-label={activeCountLabel ? `Pull requests, ${activeCountLabel} active` : 'Pull requests'}
         onClick={handleOpenPullRequests}
       >
-        {/* #567 decision 18: "A selected nav entry gets the 2px bar plus the fill", the same
-            selected cue a Session row and a Group header's own visible-Session bar use. */}
-        {view === 'pull-requests' && (
-          <span
-            aria-hidden
-            className="absolute inset-y-1 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
-          />
-        )}
+        {/* #567 decision 18, superseded by issue #1122: the shared `ActiveIndicatorBar` --
+            square, flush full-height, 2px -- not this nav entry's own hand-copied span. */}
+        {view === 'pull-requests' && <ActiveIndicatorBar />}
         <GitPullRequestIcon aria-hidden className="size-4" />
         <span className="min-w-0 truncate">Pull requests</span>
         {/* Issue #569 decisions 3-4: a plain trailing count, never a box or `(N)` brackets

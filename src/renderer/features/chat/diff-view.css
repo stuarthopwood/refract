@@ -10,6 +10,11 @@
  * (0, 0) regardless of the hue digit, so the insert/delete tint keeps its own hue. */
 
 .diff-view {
+  /* #1111 item 3: the react-diff-view gutter's own `sr-only` "Added"/"Removed" labels
+     (`DiffView.tsx`'s `renderGutter`) are absolutely positioned (Tailwind's `sr-only` utility)
+     with no positioned ancestor of their own, so without this they can grow the SCROLLABLE
+     AREA AT THE WINDOW LEVEL on a long diff instead of staying contained inside this box. */
+  position: relative;
   --diff-font-family: var(--font-code);
   --diff-background-color: var(--card);
   --diff-text-color: var(--card-foreground);

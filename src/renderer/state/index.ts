@@ -1,5 +1,5 @@
 import { initStores } from './init-stores'
-import { notify } from './notify'
+import { dismissSlashCommandRefusalToast, notify } from './notify'
 import { useAdvisorStore } from './advisor-store'
 import { useAlertDismissStore } from './alert-dismiss-store'
 import { useAccountsStore } from './accounts'
@@ -9,9 +9,10 @@ import { useDraftStore } from './draft-store'
 import { useMemoryStore } from './memory-store'
 import { useModelRolesStore } from './model-roles-store'
 import { usePendingRequestsStore } from './pending-requests-store'
-import { EMPTY_QUEUE, useQueueStore } from './queue-store'
+import { EMPTY_QUEUE, IMAGE_ONLY_QUEUE_TEXT, useQueueStore } from './queue-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
+import { useHolidayStore } from './holiday-store'
 import { useChatScrollStore } from './scroll-store'
 import { useSessionsStore } from './sessions-store'
 import { EMPTY_TRANSCRIPT, useTranscriptStore } from './transcript-store'
@@ -20,6 +21,7 @@ import { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore } from './readout-s
 import { useSubagentPanelStore } from './subagent-store'
 import { SIDE_CHAT_LOADING_HINT, useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
+import { useGitChangesStore } from './git-changes-store'
 import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore } from './right-pane-store'
 import { useSplitStore } from './split-store'
 import { useSessionListStore } from './session-list-store'
@@ -28,10 +30,11 @@ import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, u
 import { useThemeStore } from './theme-store'
 import { useChatWidthStore } from './chat-width-store'
 import { useStageToggleStore } from './stage-toggle-store'
+import { useTodoPinStore } from './todo-pin-store'
 import { useUpdateStore } from './update-store'
 
 export { initStores }
-export { notify }
+export { dismissSlashCommandRefusalToast, notify }
 export { useAccountsStore }
 export { useAdvisorStore }
 export { useAlertDismissStore }
@@ -42,9 +45,10 @@ export { useDraftStore }
 export { useMemoryStore }
 export { useModelRolesStore }
 export { usePendingRequestsStore }
-export { EMPTY_QUEUE, useQueueStore }
+export { EMPTY_QUEUE, IMAGE_ONLY_QUEUE_TEXT, useQueueStore }
 export { useRepositoriesStore }
 export { DEFAULT_SETTINGS, useSettingsStore }
+export { useHolidayStore } from './holiday-store'
 export { useChatScrollStore }
 export { useSessionsStore }
 export { EMPTY_TRANSCRIPT, useTranscriptStore }
@@ -54,6 +58,7 @@ export { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore }
 export { useSubagentPanelStore }
 export { SIDE_CHAT_LOADING_HINT, useSideChatStore }
 export { useFileExplorerStore }
+export { useGitChangesStore }
 export { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore }
 export { useSplitStore }
 export { useSessionListStore }
@@ -64,6 +69,7 @@ export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThe
 export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-width-store'
 export { useUpdateStore }
 export { useStageToggleStore }
+export { useTodoPinStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -86,14 +92,17 @@ export interface RefractDevStores {
   subagentPanel: typeof useSubagentPanelStore
   sideChat: typeof useSideChatStore
   fileExplorer: typeof useFileExplorerStore
+  gitChanges: typeof useGitChangesStore
   rightPane: typeof useRightPaneStore
   split: typeof useSplitStore
   pullRequests: typeof usePullRequestsStore
   pullRequestsLayout: typeof usePullRequestsLayoutStore
   theme: typeof useThemeStore
   chatWidth: typeof useChatWidthStore
+  holiday: typeof useHolidayStore
   updates: typeof useUpdateStore
   stageToggle: typeof useStageToggleStore
+  todoPin: typeof useTodoPinStore
 }
 
 declare global {
@@ -126,13 +135,16 @@ if (import.meta.env.DEV) {
     subagentPanel: useSubagentPanelStore,
     sideChat: useSideChatStore,
     fileExplorer: useFileExplorerStore,
+    gitChanges: useGitChangesStore,
     rightPane: useRightPaneStore,
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
     pullRequestsLayout: usePullRequestsLayoutStore,
     theme: useThemeStore,
     chatWidth: useChatWidthStore,
+    holiday: useHolidayStore,
     updates: useUpdateStore,
-    stageToggle: useStageToggleStore
+    stageToggle: useStageToggleStore,
+    todoPin: useTodoPinStore
   }
 }

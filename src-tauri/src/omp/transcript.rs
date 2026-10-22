@@ -30,15 +30,15 @@ use super::diff::{finalize_live_transcript, merge_history_with_live, SubagentFin
 mod subagent_items;
 use subagent_items::{
     apply_async_result_jobs, apply_batch_task_result, build_message_subagent_items,
-    jobs_from_details, read_batch_context, read_task_specs, try_apply_async_result,
-    upsert_subagent_items,
+    hidden_tool_failure_notice, jobs_from_details, read_batch_context, read_task_specs,
+    try_apply_async_result, upsert_subagent_items,
 };
 mod notice_prefixes;
-use notice_prefixes::{
-    COMMAND_OUTPUT_NOTICE_PREFIX, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX,
-};
+use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
 mod file_attachment_markers;
 use file_attachment_markers::FileAttachmentRef;
+mod agent_message;
+use agent_message::try_build_agent_message;
 
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
@@ -149,13 +149,18 @@ pub enum TranscriptItem {
         #[serde(skip)]
         async_settled: bool,
     },
-    #[serde(rename = "agent-message")]
+    #[serde(rename = "agent-message", rename_all = "camelCase")]
     AgentMessage {
         id: String,
         from: String,
         to: String,
         text: String,
         at: i64,
+        // #838: OMP's `details.fromParent`/`replyTo`, passed through (`agent_message.rs`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_parent: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reply_to: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Advisory {
@@ -207,6 +212,7 @@ pub enum ToolStatus {
     Done,
     Error,
     Interrupted,
+    Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -275,13 +281,6 @@ const HIDDEN_TOOLS: &[&str] = &["todo"];
 
 const ASYNC_RESULT_CUSTOM_TYPE: &str = "async-result";
 const ADVISORY_CUSTOM_TYPE: &str = "advisor";
-const AGENT_MESSAGE_CUSTOM_TYPES: &[&str] = &[
-    "agent-message",
-    "agent_message",
-    "irc-message",
-    "irc_message",
-    "subagent-message",
-];
 
 fn is_advisory_severity(value: &str) -> bool {
     matches!(value, "nit" | "concern" | "blocker")
@@ -464,58 +463,6 @@ fn join_text(parts: &[Value]) -> String {
         .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
         .filter_map(|p| p.get("text").and_then(Value::as_str))
         .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Subagent-to-parent IRC messages (T079, FR-048): port of `transcript.ts` lines 292-336
-// ---------------------------------------------------------------------------
-
-fn try_build_agent_message(
-    message_id: &str,
-    custom_type: &str,
-    message: &Value,
-) -> Option<TranscriptItem> {
-    let details = message.get("details");
-    let looks_like_agent_message = AGENT_MESSAGE_CUSTOM_TYPES.contains(&custom_type)
-        || details
-            .map(|d| {
-                d.get("from").and_then(Value::as_str).is_some()
-                    || d.get("sender").and_then(Value::as_str).is_some()
-            })
-            .unwrap_or(false);
-    if !looks_like_agent_message {
-        return None;
-    }
-    let d = details;
-    let from = d
-        .and_then(|d| d.get("from").and_then(Value::as_str))
-        .or_else(|| d.and_then(|d| d.get("sender").and_then(Value::as_str)))
-        .unwrap_or("subagent")
-        .to_string();
-    let to = d
-        .and_then(|d| d.get("to").and_then(Value::as_str))
-        .or_else(|| d.and_then(|d| d.get("recipient").and_then(Value::as_str)))
-        .unwrap_or("main agent")
-        .to_string();
-    let text = d
-        .and_then(|d| d.get("text").and_then(Value::as_str))
-        .or_else(|| d.and_then(|d| d.get("message").and_then(Value::as_str)))
-        .map(String::from)
-        .unwrap_or_else(|| {
-            message
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string()
-        });
-    let at = as_timestamp(message, "timestamp").unwrap_or_else(now_ms);
-    Some(TranscriptItem::AgentMessage {
-        id: format!("agent-message:{message_id}"),
-        from,
-        to,
-        text,
-        at,
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -856,19 +803,6 @@ fn try_build_advisory_items(
         level: NoticeLevel::Info,
         text: content.to_string(),
     }])
-}
-
-fn hidden_tool_failure_notice(tool_call_id: &str, tool_name: &str, output: &str) -> TranscriptItem {
-    let text = if output.is_empty() {
-        format!("{tool_name} failed.")
-    } else {
-        output.to_string()
-    };
-    TranscriptItem::Notice {
-        id: format!("{HIDDEN_TOOL_NOTICE_PREFIX}{tool_call_id}"),
-        level: NoticeLevel::Error,
-        text,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1260,6 +1194,7 @@ fn apply_tool_execution_start(
 fn apply_tool_execution_end(
     items: Vec<Arc<TranscriptItem>>,
     frame: &Value,
+    turn_abort_requested: bool,
 ) -> Vec<Arc<TranscriptItem>> {
     let tool_call_id = frame
         .get("toolCallId")
@@ -1284,7 +1219,7 @@ fn apply_tool_execution_end(
     let result_details = result.get("details").cloned();
 
     if HIDDEN_TOOLS.contains(&tool_name.as_str()) {
-        if !is_error {
+        if !is_error || turn_abort_requested {
             return items;
         }
         let mut items = items;
@@ -1304,6 +1239,7 @@ fn apply_tool_execution_end(
             is_error,
             result_details.as_ref().unwrap_or(&Value::Null),
             true,
+            turn_abort_requested,
         );
         if updated.len() != items.len()
             || !updated
@@ -1327,16 +1263,17 @@ fn apply_tool_execution_end(
         matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
     if !has_existing {
+        let status = match (is_error, turn_abort_requested) {
+            (false, _) => ToolStatus::Done,
+            (true, true) => ToolStatus::Cancelled,
+            (true, false) => ToolStatus::Error,
+        };
         items.push(Arc::new(TranscriptItem::Tool {
             id: format!("tool-exec:{tool_call_id}"),
             tool_call_id,
             tool: tool_name,
             target: String::new(),
-            status: if is_error {
-                ToolStatus::Error
-            } else {
-                ToolStatus::Done
-            },
+            status,
             started_at: Some(now_ms()),
             duration_ms: Some(0),
             args: Value::Null,
@@ -1357,7 +1294,7 @@ fn apply_tool_execution_end(
                     Arc::make_mut(&mut item)
                 {
                     let new_duration = Some(started_at.map(|sa| (now_ms() - sa).max(0)).unwrap_or(0));
-                    *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
+                    *status = if !is_error { ToolStatus::Done } else if turn_abort_requested && matches!(status, ToolStatus::Running) { ToolStatus::Cancelled } else { ToolStatus::Error };
                     *duration_ms = new_duration;
                     *out = Some(output.clone());
                     *det = result_details.clone();
@@ -1399,7 +1336,7 @@ fn apply_prompt_result_notice(
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,
-                text: "Turn aborted.".to_string(),
+                text: "Turn stopped.".to_string(),
             }));
             items
         }
@@ -1419,6 +1356,7 @@ fn apply_frame_items(
     items: Vec<Arc<TranscriptItem>>,
     frame: &Value,
     has_user_acted: bool,
+    turn_abort_requested: bool,
 ) -> Vec<Arc<TranscriptItem>> {
     let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
     match frame_type {
@@ -1449,7 +1387,7 @@ fn apply_frame_items(
             }
         }
         "tool_execution_start" => apply_tool_execution_start(items, frame),
-        "tool_execution_end" => apply_tool_execution_end(items, frame),
+        "tool_execution_end" => apply_tool_execution_end(items, frame, turn_abort_requested),
         "prompt_result" => apply_prompt_result_notice(items, frame),
         "command_output" => {
             let text = frame
@@ -1542,8 +1480,8 @@ fn attach_tool_result(
 
     let mut items = items;
     if tool_name == "task" {
-        let updated =
-            apply_batch_task_result(items.clone(), &tool_call_id, is_error, details_ref, false);
+        let updated = // issue #911: history replay has no live abort signal, always `false`
+            apply_batch_task_result(items.clone(), &tool_call_id, is_error, details_ref, false, false);
         if updated.len() != items.len()
             || !updated
                 .iter()
@@ -1745,7 +1683,7 @@ impl TranscriptState {
         }
     }
 
-    /// Finalizes every still-live row: tool->`error`; subagent settles per `cause` (`#563` decision 15: `UserStop`->`Cancelled`, `Crash`->`Exited`).
+    /// Finalizes every still-live row: tool AND subagent both settle per `cause` (`#563` decision 15, extended to Tool by #911: `UserStop`->`Cancelled`, `Crash`-> `Error`/`Exited` respectively).
     pub fn finalize_live_items(&mut self, cause: SubagentFinalizeCause) {
         let items = std::mem::take(&mut self.items);
         self.items = finalize_live_transcript(items, cause);
@@ -1764,10 +1702,10 @@ impl TranscriptState {
 
     /// Applies one live rpc-ui frame (port of `applyFrame`), mutating `self.items` in place so
     /// that only the items the frame actually touched get a new `Arc` -- everything else keeps
-    /// its identity (see this struct's own doc comment).
-    pub fn apply_frame(&mut self, frame: &Value) {
+    /// its identity (see this struct's own doc comment). `turn_abort_requested` (issue #911): `session::agent`'s own per-turn flag, read fresh under the same lock -- see `apply_tool_execution_end`'s own doc comment.
+    pub fn apply_frame(&mut self, frame: &Value, turn_abort_requested: bool) {
         let items = std::mem::take(&mut self.items);
-        self.items = apply_frame_items(items, frame, self.has_user_acted);
+        self.items = apply_frame_items(items, frame, self.has_user_acted, turn_abort_requested);
     }
 
     pub fn items(&self) -> &[Arc<TranscriptItem>] {

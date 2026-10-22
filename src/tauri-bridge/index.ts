@@ -17,6 +17,8 @@ import type {
   FilePreview,
   FileTreeNode,
   GitStatusMap,
+  GitChangesSnapshot,
+  LeftoverSummary,
   LowMemoryWarning,
   MergeInput,
   PullRequestListResult,
@@ -138,6 +140,8 @@ const refract: RefractApi = {
         IPC_REQUESTS.SESSIONS_DELETE_CHECK,
         id
       ),
+    deleteLeftoverSummary: (id) =>
+      request<LeftoverSummary>(IPC_REQUESTS.SESSIONS_DELETE_LEFTOVER_SUMMARY, id),
     delete: (id, options) => request<void>(IPC_REQUESTS.SESSIONS_DELETE, id, options),
     recreateWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_RECREATE_WORKTREE, id),
     recover: (id) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_RECOVER, id),
@@ -214,6 +218,21 @@ const refract: RefractApi = {
     ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.FILE_EXPLORER_ENSURE_WATCHING, sessionId)
   },
 
+  // Spec 018 slice 1 (issue #464): was missing from this bridge entirely (the Rust dispatcher,
+  // `shared/ipc.ts`'s `RefractApi` contract, and the renderer store all already assumed this
+  // existed) -- added here, same `request`/channel-constant pattern as `fileExplorer` above.
+  gitChanges: {
+    list: (sessionId) => request<{ snapshot: GitChangesSnapshot | null }>(IPC_REQUESTS.GIT_CHANGES_LIST, sessionId),
+    stage: (sessionId, paths) => request<void>(IPC_REQUESTS.GIT_CHANGES_STAGE, sessionId, paths),
+    unstage: (sessionId, paths) => request<void>(IPC_REQUESTS.GIT_CHANGES_UNSTAGE, sessionId, paths),
+    stageAll: (sessionId, group) => request<void>(IPC_REQUESTS.GIT_CHANGES_STAGE_ALL, sessionId, group),
+    unstageAll: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_UNSTAGE_ALL, sessionId),
+    diff: (sessionId, path, staged, untracked) => request<{ patch: string; reason: string | null }>(IPC_REQUESTS.GIT_CHANGES_DIFF, sessionId, path, staged, untracked),
+    commit: (sessionId, message) => request<void>(IPC_REQUESTS.GIT_CHANGES_COMMIT, sessionId, message),
+    stopWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_STOP_WATCHING, sessionId),
+    ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_ENSURE_WATCHING, sessionId)
+  },
+
   settings: {
     get: () => request<Settings>(IPC_REQUESTS.SETTINGS_GET),
     setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode),
@@ -224,12 +243,18 @@ const refract: RefractApi = {
     setTranscriptDisplay: (field, visible) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, field, visible),
     setShowSampleData: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, enabled),
     setDetectImagePathsOnPaste: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE, enabled),
+    setShowContextUsageBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR, enabled),
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
     // own doc comment.
     setWordPredictionEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED, enabled),
     setPullRequestsListWidth: (widthPx) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH, widthPx),
-    setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width)
+    setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width),
+    setHolidayTouches: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_HOLIDAY_TOUCHES, value)
+  },
+
+  debug: {
+    getOverrides: () => request<{ date: string | null; idleTimeoutMs: number | null; flightIntervalMs: number | null }>(IPC_REQUESTS.DEBUG_GET_OVERRIDES)
   },
 
   modelRoles: {
@@ -316,7 +341,8 @@ const refract: RefractApi = {
   updates: {
     check: () => request<UpdateState>(IPC_REQUESTS.UPDATES_CHECK),
     getState: () => request<UpdateState>(IPC_REQUESTS.UPDATES_GET_STATE),
-    install: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL)
+    install: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL),
+    installNow: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL_NOW)
   },
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
@@ -344,6 +370,7 @@ const refract: RefractApi = {
   onFileExplorerPatch: (handler) =>
     on<{ sessionId: string; relativePath: string; entries: FileTreeNode[]; truncated: number }>(IPC_EVENTS.FILE_EXPLORER_PATCH, handler),
   onFileExplorerReset: (handler) => on<{ sessionId: string }>(IPC_EVENTS.FILE_EXPLORER_RESET, handler),
+  onGitChangesRefresh: (handler) => on<{ sessionId: string }>(IPC_EVENTS.GIT_CHANGES_REFRESH, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler),
   onReadinessInstallProgress: (handler) =>

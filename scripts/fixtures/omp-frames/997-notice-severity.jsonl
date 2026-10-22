@@ -1,0 +1,66 @@
+// SYNTHESIZED, not captured live: issue #997's own live check needs one turn that deterministically
+// renders a short (under NoticeRow.tsx's 160-char LONG_NOTICE_CHARS) warning notice AND a short
+// error notice, so `scripts/verify-997-notice-severity.mjs` can assert NoticeRow's computed text
+// colour against each theme preset's own `--severity-warning`/`--severity-error` CSS variable with
+// no dependence on a real model ever choosing to emit one of each on its own. Preamble through the
+// first `prompt` wait/response/`agent_start`/user `message_start`/`message_end` reuses
+// `session.jsonl`'s own genuinely-recorded shapes verbatim (this README's "every Session-shaped
+// tape" note). The two `notice` frames are built directly from the documented wire contract
+// (src/shared/frames.ts's `NoticeFrame`). See README.md's provenance table.
+// EXTENDED (#1039 round-1 self-review, 2026-10-20): one assistant message added before the
+// notice frames, a FIXED hand-written reply (not a real model's own wording, same convention
+// `code-surface-975.jsonl` uses for its own JS fence) containing one short ` ```mermaid ` fence
+// -- so `scripts/verify-1039-amber-retune.mjs` can assert a real rendered Mermaid diagram's own
+// SVG is byte-identical between Default Dark and Cyber Amber (a round-trip through Obsidian
+// first proves a genuine re-render, not a stale cached image) (AGENTS.md "no new fixtures":
+// extending this already-committed, already-reused tape, not adding a new one).
+// EXTENDED AGAIN (#1074 gate round 3, Main's follow-up, 2026-10-20): a second `journey` fence
+// appended to the SAME assistant message's text (verify-1039's own `querySelector('img[role=
+// "img"]')`/button `.find()` calls are first-match, so this stays harmless to that check --
+// confirmed by reading its own selectors directly), so `verify-1074-text-opacity.mjs` can assert
+// the real rendered Journey task/section labels stay solid (`taskTextColor`) against Mermaid's
+// own coloured `fillType0-7` task-bar fills, closing part of #1108 (Journey task-text tokens
+// were previously measured by `contrast-math.mjs` arithmetic only, never a real rendered
+// diagram; #1108 is amended to its narrower remaining Gantt-only scope).
+// `verify-997-notice-severity.mjs`'s own assertions are unaffected: it only reads NoticeRow
+// styling, never asserts message content or count.
+// EXTENDED AGAIN (#838 agent-to-agent lines, 2026-10-22): three `irc:incoming` custom messages
+// (subagent to main, `fromParent` from Main, and subagent to subagent with an explicit `to`), then a
+// `read`, a `write agent://R1_Worker` steer, a second `read` and a failed `write agent://Nobody`, all
+// after the notices and before `prompt_result`, so `scripts/verify-p1-agentmsg.mjs` can assert each
+// direction glyph, the violet label, the grouping boundary and the failed state. Synthesized from the
+// wire shape read from local OMP session files (field names only); every earlier consumer reads
+// first-match NoticeRow/Mermaid elements and is unaffected.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\997-notice-severity\\conversation.json","sessionId":"sess-997-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"}}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true}
+{"type":"available_commands_update","commands":[{"name":"new","description":"Start a new Conversation in this Session"},{"name":"tools","description":"List available tools"}]}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}
+{"type":"notice","level":"warning","message":"Issue #997 live check: short warning notice (NoticeRow colour)."}
+{"type":"notice","level":"error","message":"Issue #997 live check: short error notice (NoticeRow colour)."}
+{"type":"message_end","messageId":"msg-irc-838-1","message":{"role":"custom","customType":"irc:incoming","content":"R1_Worker: gate round 1 done.","display":true,"details":{"id":"irc-838-1","from":"R1_Worker","message":"Issue #838 live check: gate round 1 done, PR opened."},"timestamp":0}}
+{"type":"message_end","messageId":"msg-irc-838-2","message":{"role":"custom","customType":"irc:incoming","content":"Main: rebase first.","display":true,"details":{"id":"irc-838-2","from":"Main","message":"Issue #838 live check: rebase on main first.","fromParent":true,"replyTo":"irc-838-1"},"timestamp":0}}
+{"type":"message_end","messageId":"msg-irc-838-3","message":{"role":"custom","customType":"irc:incoming","content":"R2_Reviewer: two issues.","display":true,"details":{"id":"irc-838-3","from":"R2_Reviewer","to":"R1_Worker","message":"Issue #838 live check: found two issues in your diff."},"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"call-838-read-a","toolName":"read","args":{"path":"README.md"},"intent":"Reading README.md"}
+{"type":"tool_execution_end","toolCallId":"call-838-read-a","toolName":"read","result":{"content":[{"type":"text","text":"issue-838 fixture readme content"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-838-steer","toolName":"write","args":{"path":"agent://R1_Worker","content":"Issue #838 live check: please also update the docs.\nSecond line of the steer."},"intent":"Steering R1_Worker"}
+{"type":"tool_execution_end","toolCallId":"call-838-steer","toolName":"write","result":{"content":[{"type":"text","text":"Delivered to R1_Worker"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-838-read-b","toolName":"read","args":{"path":"README.md"},"intent":"Reading README.md"}
+{"type":"tool_execution_end","toolCallId":"call-838-read-b","toolName":"read","result":{"content":[{"type":"text","text":"issue-838 fixture readme content"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-838-steer-fail","toolName":"write","args":{"path":"agent://Nobody","content":"Issue #838 live check: this agent does not exist."},"intent":"Steering Nobody"}
+{"type":"tool_execution_end","toolCallId":"call-838-steer-fail","toolName":"write","result":{"content":[{"type":"text","text":"Agent not found: Nobody"}]},"isError":true}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}

@@ -3,6 +3,7 @@ import type { Result, SessionSnapshot, SessionStatusEvent, SessionSummary } from
 import type { Session } from '../../shared/model'
 import { notify } from './notify'
 import { useSplitStore } from './split-store'
+import { useGitChangesStore } from './git-changes-store'
 import { useSessionListStore } from './session-list-store'
 
 interface SessionsState {
@@ -102,6 +103,12 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // FR-016: a session only ever leaves this list via `sessions.delete` (archiving keeps it
       // listed); prune any pane still pointing at an id that is now gone.
       useSplitStore.getState().pruneDeleted(new Set(result.value.map((session) => session.id)))
+      // Gate round 3 fix (#1076 MEDIUM 3): the one place either a Session delete (it drops out
+      // of this list entirely) or an archive (it stays listed but `archivedAt` is now set) is
+      // already observed -- drops any `commitDraft` for a session that is neither currently
+      // listed nor active, so a half-typed commit message is never kept forever for a Session
+      // that can no longer be reopened the ordinary way.
+      useGitChangesStore.getState().pruneCommitDrafts(new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id)))
     } else {
       notify(result.error)
     }

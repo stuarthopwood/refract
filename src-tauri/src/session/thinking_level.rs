@@ -91,16 +91,21 @@ fn reasoning_label(level: &str) -> String {
     }
 }
 
-pub async fn set_thinking_level(agent: &SessionAgent, level: &str) -> Result<Value, AgentError> {
-    if !VALID_THINKING_LEVELS.contains(&level) {
-        return Err(AgentError::new(
-            "invalid-argument",
-            format!(
-                "Unknown reasoning level: {level}. Valid levels: {}",
-                VALID_THINKING_LEVELS.join(", ")
-            ),
-        ));
+pub(super) fn validate_level(level: &str) -> Result<(), AgentError> {
+    if VALID_THINKING_LEVELS.contains(&level) {
+        return Ok(());
     }
+    Err(AgentError::new(
+        "invalid-argument",
+        format!(
+            "Unknown reasoning level: {level}. Valid levels: {}",
+            VALID_THINKING_LEVELS.join(", ")
+        ),
+    ))
+}
+
+pub async fn set_thinking_level(agent: &SessionAgent, level: &str) -> Result<Value, AgentError> {
+    validate_level(level)?;
     let res = agent
         .request_rpc_if_idle(
             json!({ "type": "set_thinking_level", "level": level }),

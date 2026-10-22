@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 
 use super::atomic_json::write_json_file;
 pub use super::chat_width::ChatWidth;
+pub use super::holiday_touches::HolidayTouches;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -90,9 +91,15 @@ pub struct Settings {
     pub theme: ThemeId,
     pub watermark_enabled: bool,
     pub chat_width: ChatWidth,
+    /// Issue #1048 (Settings, Appearance "Holiday touches"): default `Full` -- see
+    /// `HolidayTouches`'s own doc comment. No raw/lazy-correction tracking needed, the same
+    /// plain-enum shape `chat_width` above uses.
+    pub holiday_touches: HolidayTouches,
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
+    /// Issue #1082 (spec 004 FR-034): the 2px context usage bar; default on.
+    pub show_context_usage_bar: bool,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -204,6 +211,12 @@ impl SettingsStore {
             .and_then(|v| serde_json::from_value::<ChatWidth>(v.clone()).ok())
             .unwrap_or(ChatWidth::Full);
 
+        // Issue #1048: default `Full` -- a missing/malformed value is never trusted, the same
+        // lazy-correction pattern `chat_width` above uses.
+        let holiday_touches = object
+            .get("holidayTouches")
+            .and_then(|v| serde_json::from_value::<HolidayTouches>(v.clone()).ok())
+            .unwrap_or(HolidayTouches::Full);
         let raw_transcript_display = object.get("transcriptDisplay").and_then(Value::as_object);
         let transcript_display = TranscriptDisplaySettings {
             thinking: raw_transcript_display
@@ -221,6 +234,10 @@ impl SettingsStore {
 
         let detect_image_paths_on_paste = object
             .get("detectImagePathsOnPaste")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let show_context_usage_bar = object
+            .get("showContextUsageBar")
             .and_then(Value::as_bool)
             .unwrap_or(true);
 
@@ -248,7 +265,7 @@ impl SettingsStore {
             .map(clamp_pull_requests_list_width_px)
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
-        const KNOWN_FIELDS: [&str; 13] = [
+        const KNOWN_FIELDS: [&str; 15] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -256,9 +273,11 @@ impl SettingsStore {
             "theme",
             "watermarkEnabled",
             "chatWidth",
+            "holidayTouches",
             "transcriptDisplay",
             "showSampleData",
             "detectImagePathsOnPaste",
+            "showContextUsageBar",
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -277,9 +296,11 @@ impl SettingsStore {
             theme,
             watermark_enabled,
             chat_width,
+            holiday_touches,
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
+            show_context_usage_bar,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -333,6 +354,10 @@ impl SettingsStore {
         }
         map.insert("chatWidth".to_string(), json!(self.data.chat_width));
         map.insert(
+            "holidayTouches".to_string(),
+            json!(self.data.holiday_touches),
+        );
+        map.insert(
             "transcriptDisplay".to_string(),
             json!(self.data.transcript_display),
         );
@@ -342,6 +367,10 @@ impl SettingsStore {
         map.insert(
             "detectImagePathsOnPaste".to_string(),
             json!(self.data.detect_image_paths_on_paste),
+        );
+        map.insert(
+            "showContextUsageBar".to_string(),
+            json!(self.data.show_context_usage_bar),
         );
         map.insert(
             "wordPredictionEnabled".to_string(),
@@ -450,6 +479,19 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
+    /// `settings.setHolidayTouches(value)` (issue #1048): plain-replace shape, as `set_chat_width`
+    /// above uses -- no raw/lazy-correction tracking needed.
+    pub async fn set_holiday_touches(
+        &mut self,
+        value: HolidayTouches,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            holiday_touches: value,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
     /// `settings.setTranscriptDisplay(field, visible)` (issue #457): merges ONE field into
     /// `transcript_display`, never a whole-object replace (a quick second toggle built from a
     /// stale value must not revert the first).
@@ -490,6 +532,15 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             detect_image_paths_on_paste: enabled,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setShowContextUsageBar(enabled)` (issue #1082): plain boolean, like the one above.
+    pub async fn set_show_context_usage_bar(&mut self, enabled: bool) -> std::io::Result<Settings> {
+        let next = Settings {
+            show_context_usage_bar: enabled,
             ..self.data.clone()
         };
         self.persist_whole(next).await

@@ -50,6 +50,8 @@ export interface UpdatesApi {
     getState(): Promise<Result<UpdateState>>;
     /** Downloads and checksum-verifies; `onUpdatesStateChanged` drives a progress indicator. */
     install(): Promise<Result<void>>;
+    /** "Update now": quits, installs the verified download, and relaunches. Needs phase `'downloaded'`. */
+    installNow(): Promise<Result<void>>;
   };
   /** Drives the first-run readiness screen's Install progress text. */
   onReadinessInstallProgress(handler: (payload: DependencyInstallProgress) => void): Unsubscribe;

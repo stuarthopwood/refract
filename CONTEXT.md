@@ -33,8 +33,12 @@ Hide a **Session** from the main list while keeping its **Worktree** and **Conve
 _Avoid_: Close, remove (ambiguous with delete)
 
 **Delete**:
-Permanently remove a **Session**, its **Worktree**, and its **Conversations**, only after a confirmation that names what will be lost (uncommitted changes, unpushed commits).
+Permanently remove a **Session**, its **Worktree**, and its **Conversations**. A manual Delete asks first, naming what will be lost (uncommitted changes, unpushed commits); **Session cleanup** deletes without asking, but only Sessions it archived itself and that pass the same safety checks (issue #476).
 _Avoid_: Remove, discard
+
+**Session cleanup**:
+The automatic housekeeping in Settings > Sessions: it **Archives** a **Session** whose pull request has merged once it has been inactive for a chosen number of days, and, if a delete period is chosen, later **Deletes** the Sessions it archived. It never touches a Session archived by hand (issue #476).
+_Avoid_: Auto-cleanup, garbage collection, reaping
 
 **Group header**:
 The collapsible header above one Project's Sessions in the session list, shared by the Archived group.
@@ -132,6 +136,10 @@ _Avoid_: Active pane, selected pane
 The left-nav entry and the main view that shows when no **Chat pane** is open: what needs the developer and their recent work across all **Projects** (Sessions waiting on them, recent **Sessions**, their pull requests and issues).
 _Avoid_: Home pane, dashboard, start page
 
+**Holiday touches**:
+Seasonal, purely decorative artwork (and, when allowed, gentle ambient motion) that Refract shows near a holiday, and the Appearance setting that controls it (Full, Artwork only, Off).
+_Avoid_: Easter eggs, seasonal theme, festive mode
+
 **Pull requests view**:
 The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Project**'s **GitHub repository** and its pull requests, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
 _Avoid_: PR view, merge requests (GitLab's term)
@@ -139,6 +147,14 @@ _Avoid_: PR view, merge requests (GitLab's term)
 **Issues view**:
 The left-nav entry and the list-plus-detail view it opens, listing GitHub issues from every **Project** that has a **GitHub repository**, on the same list shell as the **Pull requests view**.
 _Avoid_: Issues page, issue log, issue tracker
+
+**Item reference**:
+A mention of a pull request or issue by number in chat prose: `#123` means that number in the **GitHub repository** of the chat's **Session**'s **Project**, and `owner/repo#123` means that number in the named repository. Shown as a link with an **Item card**; a pull request opens in the **Pull requests view**, anything else on GitHub (issue #1155).
+_Avoid_: Hashtag, issue link, PR link
+
+**Item card**:
+The hover card an **Item reference** shows on hover or focus: repository and created date, title and number, state and author, and for a pull request its base and head branches (issue #1155).
+_Avoid_: Tooltip, preview, popup
 
 **Filter tab**:
 One of the tabs across the top of a **Pull requests view**'s or **Issues view**'s list (pull requests: All, Authored by me, Assigned to me, Involves me, Review requested; issues: Open, Assigned to me, Authored by me, Mentions me), narrowing which items the list shows; exactly one is active at a time, defaulting to the first. The Pull requests first tab is **All** (renamed from Open, Stuart 2026-10-16, #499), because the State control in its Filters section (Open, Closed incl. merged, All; default Open) now narrows whichever tab is active. Pull requests Filter tabs are ghost tabs in one row that scrolls sideways, the active one on a subtle background (#499). Pull requests' Overview/Changes pair uses a locally-styled underline variant of the shared Tabs primitive, pending #394's app-wide tab convention.
@@ -215,9 +231,29 @@ _Avoid_: Filter (see **Filter tab**), section
 A compact, glanceable display of one live fact about something elsewhere in the app -- the **Status line**'s own entries (for example, Changes, Pull request, Subagents). Most readouts are plain text; some are also the entry point to an action, in which case they behave like a quiet text button rather than a chip (for example, one that opens an external link or a panel).
 _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
+**Role·Model pill**:
+The composer control showing the **Session**'s current role and the model it runs on ("Default · Sonnet 5.5"), or "Pinned" and the model when a model was chosen directly. It opens one switcher for both; the thinking level has its own pill (issue #766).
+_Avoid_: Role chip, model badge, model picker (for the combined control)
+
+**Pending change**:
+A role, model or thinking-level choice made while a turn runs or the agent is stopped. It shows at once with a "next turn" mark and is applied before the next prompt (or when the agent starts); the last choice wins (issue #766).
+_Avoid_: Queued change (a queued message is different), deferred setting
+
+**Prism**:
+Refract's way of splitting one task across models (issue #1089): **Solo** (one model), **Draft & check** (a quick model drafts and a checker accepts it or hands it up to a stronger model) or **Second opinion** (models from other families review and the drafter revises once). Set to Off, On or Max in Settings.
+_Avoid_: Cascade, critique, orchestration, multi-model, ensemble, HydraFusion
+
+**OMP setting**:
+A setting that lives in OMP's own config, not Refract's, shown in Refract's Settings as a row tagged "OMP" (issue #691). Refract reads it live and writes it back to OMP's global config, so the terminal and Refract agree; a **Project** can still override it in its own `.omp/config.yml`, which the row shows.
+_Avoid_: Imported setting, Refract setting (for these), config key (in UI text)
+
 **Advisor**:
-omp's optional watchdog subsystem that watches a Session's turns and emits advisories (blocker, concern and nit rows -- see **Advisory accent bar**/**Advisory location**/**Advisory concern run**), a distinct thing from those rows themselves. Runs on `modelRoles.advisor`, possibly a different provider than the primary model, and sees the Session's transcript. Toggled per Session, not persisted, with `/advisor on`, `/advisor off` and `/advisor status` (issue #917); no Settings toggle. Decided (Stuart, 2026-10-16): no cost readout (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead; a persistent on/off indicator is tracked separately as issue #937. That indicator (issue #937, follow-up to #917/PR #923) is the **Status line**'s own Advisor readout (**Readout**, zero-box convention): shown only while the advisor is on for that Session, hidden entirely while off, with no cost, spend, or token figures of its own; clicking it sends `/advisor off`. Its state comes from `/advisor on|off`'s own reply text (the only fully-trusted signal) plus a best-effort, silent `/advisor status` probe run once on Session attach/resume -- that probe's own reply never appears in the transcript, and its ambiguous wording (`session::advisor`'s own header comment) is never trusted for an "on" reading, only an unambiguous "Advisor is enabled"/"Advisor is disabled" substring is.
+omp's optional watchdog subsystem that watches a Session's turns and emits advisories (blocker, concern and nit rows -- see **Advisory accent bar**/**Advisory location**/**Advisory concern run**), a distinct thing from those rows themselves. Runs on `modelRoles.advisor`, possibly a different provider than the primary model, and sees the Session's transcript. Toggled per Session, not persisted, with `/advisor on`, `/advisor off` and `/advisor status` (issue #917). **Amended 2026-10-20 (Stuart, #691 grill):** a Settings row (an **OMP setting**) sets whether the Advisor is on for *new* Sessions. OMP starts it off for RPC hosts, so Refract applies that choice itself at each Session start. The Advisor readout and the per-Session `/advisor` command keep their 2026-10-16 "no Settings toggle" rule. Decided (Stuart, 2026-10-16): no cost readout (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead; a persistent on/off indicator is tracked separately as issue #937. That indicator (issue #937, follow-up to #917/PR #923) is the **Status line**'s own Advisor readout (**Readout**, zero-box convention): shown only while the advisor is on for that Session, hidden entirely while off, with no cost, spend, or token figures of its own; clicking it sends `/advisor off`. Its state comes from `/advisor on|off`'s own reply text (the only fully-trusted signal) plus a best-effort, silent `/advisor status` probe run once on Session attach/resume -- that probe's own reply never appears in the transcript, and its ambiguous wording (`session::advisor`'s own header comment) is never trusted for an "on" reading, only an unambiguous "Advisor is enabled"/"Advisor is disabled" substring is.
 _Avoid_: Advisory (the note the Advisor produces, not the subsystem itself), reviewer, chip (the React component and the issue title use that word informally; prose calls it the Advisor readout, per **Status line**/**Readout**/**Chip**'s own _Avoid_ notes)
+
+**Source tag**:
+A small muted icon-and-word label at the start of a transcript row naming who the row came from when it is neither the developer nor the main agent, for example "Advisor" on an **Advisory** (issue #1041). Shared by every such row.
+_Avoid_: Badge, chip, author label
 
 **Advisory accent bar**:
 The 3px left stripe on a BLOCKER row (always, even collapsed, error colour) or an EXPANDED concern row (warning colour) -- drawn as an absolutely-positioned `before:` pseudo-element on `AdvisoryRow`'s own local wrapper `div` (zero layout impact, so the icon stays on the shared 24px grid in every state); never a `CollapsedLine` primitive prop (issue #558, gate round 1).

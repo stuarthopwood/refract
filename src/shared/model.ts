@@ -2,8 +2,9 @@
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
 import type { ThemeId } from './themes';
-import type { ChatWidth } from './chatWidth';
+import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
+import type { TodoPhase } from './todo';
 
 /** A local git project the developer has added to Refract. Owns zero or more Sessions. */
 export interface Repository {
@@ -111,10 +112,10 @@ export interface Settings {
   split: SplitLayout | null; // spec 005: null = single pane, no split open
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
-  chatWidth: ChatWidth; // issue #554, FR-049/FR-073: default 'full'
+  chatWidth: ChatWidth; holidayTouches: HolidayTouches; // issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
-  detectImagePathsOnPaste: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration.
+  detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on
   wordPredictionEnabled?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation.
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; // #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
@@ -205,14 +206,14 @@ export function isModelRoleId(value: unknown): value is ModelRoleId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(ROLE_CATALOG_KIND, value);
 }
 
-/** One `omp models --kind <kind> --json` row (fields this feature needs; the CLI returns more --
- * `omp://models.md` "JSON includes provider, kind, id, selector, name, ..."). `selector` is the
- * exact `provider/modelId` string usable as a `modelRoles` value. */
+/** One `omp models --kind <kind> --json` row (fields this feature needs; `selector` is the exact
+ * `provider/modelId` string; `reasoning`/`thinking`, issue #1069, feed the reasoning radios). */
 export interface ModelCatalogEntry {
   provider: string;
   id: string;
   selector: string;
   name: string;
+  reasoning: boolean; thinking: string[] | null;
 }
 
 /** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the
@@ -322,8 +323,7 @@ export interface DiffStat {
 }
 
 /** Spec 004 FR-002 to FR-008, FR-021: the chip row's live data, assembled in main
- * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately
- * absent: it is a pure client clock the renderer computes itself (FR-005). */
+ * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately absent: it is a pure client clock the renderer computes itself (FR-005). */
 export interface SessionReadout {
   changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
@@ -334,7 +334,7 @@ export interface SessionReadout {
   // a plain "2 finished", and a turn whose only subagents failed must never read a misleading
   // "0 finished" (SubagentsChip, ReadoutChips.tsx); `cancelled` (issue #563) is its own count too.
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden)
-  todoProgress: { done: number; total: number } | null; branch?: { name: string; detached: boolean } | null; // todoProgress: null = no task list; branch (#724/R5): live branch or (detached) sha
+  todoTree: TodoPhase[] | null; branch?: { name: string; detached: boolean } | null; // todoTree: null = no task list; the shared pure derive (readout/todoDerive.ts) computes done/total/current task from it (decision record item 4, issue #700/#701); branch (#724/R5): live branch or (detached) sha
   todoPhases: Array<{ name: string; pendingCount: number }> | null; // Issue #941 "Up next": pending Todo phases (name, outstanding task count); null = no task list or every phase finished (Rust-only field)
 }
 
@@ -361,8 +361,7 @@ export interface SubagentSummary {
    * transcript's own `kind: 'subagent'` row (`subagent:<toolCallId>:<specIndex>`, transcript.ts)
    * derive from the SAME source array in the SAME order -- their respective `id` strings use
    * unrelated schemes and must never be compared directly, so `reconcileSubagentsOnAttach`
-   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex`
-   * instead. */
+   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex` instead. */
   specIndex: number;
   nameOrTask: string;
   /** `'exited'` (issue #489, FINDINGS item 45): Refract still remembered this subagent as
@@ -373,18 +372,19 @@ export interface SubagentSummary {
    * (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) -- so every surviving `running`
    * candidate `reconcileSubagentsOnAttach` finds is unconditionally resolved to `exited`, never
    * by asking OMP. Distinct from `failed`: nothing about the subagent's own work is known to
-   * have failed, only its process disappeared.
-   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, not
+   * have failed, only its process disappeared. Gate fixes 2 finding 9: that probe exercised two
+   * `omp` processes within one Node script, not
    * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` CAN outlive
    * it on Windows for a window, so "its process disappeared" is not simply assumed:
-   * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own
-   * process dies (primary defence), `src/main/process/pidRecords.ts`'s `reapStale()` is the
+   * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own process dies (primary defence), `src/main/process/pidRecords.ts`'s `reapStale()` is the
    * fallback for the rarer case Refract itself was killed too abruptly -- run from
    * `src/main/index.ts` at startup, awaited before any Session attaches, so by the time
    * `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for real. */
   status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
+  taskSummary?: string; // Issue #700/#701 slice (b): first sentence of `task`, ~100 chars, inert text (Agents card) -- absent when the task had no text at all (subagents.rs's `subagent_task_summary`)
+  name?: string; // Gate round 1 fix 6 (#700/#701 slice b): the subagent's own given name (never falls back to `task`, unlike `nameOrTask`); absent when none was given (Agents card row header)
 }
 
 /** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
@@ -425,8 +425,8 @@ export type TranscriptItem =
        * (terminationDetection.ts) confirms the writing process is actually gone -- same family as
        * `'exited'` on a `subagent` item below (#489), just file-tail-derived instead of
        * registry-derived, and never asserted for a Session that is genuinely still `working`
-       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. */
-      status: 'running' | 'done' | 'error' | 'interrupted';
+       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. `'cancelled'` (issue #911): the user's own Stop button cut a still-running call short, same family as a `subagent` item's own `'cancelled'` (#563 decision 15). */
+      status: 'running' | 'done' | 'error' | 'interrupted' | 'cancelled';
       /** Absent when built from history (no reliable wall clock to derive it from), matching
        * the `thinking` item's `startedAt`. */
       startedAt?: number;
@@ -483,7 +483,7 @@ export type TranscriptItem =
       from: string;
       to: string;
       text: string;
-      at: number;
+      at: number; fromParent?: boolean; replyTo?: string; // #838: OMP's `irc:incoming` `details.fromParent` (sent by the main agent) and `replyTo` (id answered), passed through by Rust
     }
   | {
       /** An OMP-injected `<advisory>` note (T084, FR-051), parsed out of a `role: 'custom'`
@@ -627,7 +627,7 @@ export type GitStatusMark = 'modified' | 'added' | 'untracked' | 'deleted' | 'ig
  * not ignored; `.git` itself is never a key (FR-007). Built for reuse, as-is, by the future
  * git-changes panel (#464, FR-011), not gated on that panel's own existence. */
 export type GitStatusMap = Record<string, GitStatusMark>;
-
+export type { GitChangesGroupKind, GitChangesFileEntry, GitChangesHeader, GitChangesSnapshot } from './model-git-changes';
 /** Spec 015 Slice 2 (data-model.md `FilePreview`, FR-012 to FR-015): the currently-selected
  * file's preview data. Replaced wholesale on every selection change; `kind: 'deleted'` when the
  * underlying file disappears while open (FR-021), never left showing stale content. `kind:

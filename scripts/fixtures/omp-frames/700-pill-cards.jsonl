@@ -1,0 +1,54 @@
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\\\scratch\\\\700-pill-cards\\\\conversation.json","sessionId":"sess-0700b","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":null}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"task-batch-1","toolName":"task","args":{"tasks":[{"name":"alpha","task":"Investigate alpha."},{"name":"beta","task":"Draft the staged migration plan for the user settings schema covering backward compatibility, a rollback path, and the staged rollout sequence across every supported region, including rollback triggers and a communication plan for affected teams."},{"name":"gamma","task":"Audit error handling across the retry pipeline"}]},"intent":"Running three subagents"}
+{"type":"tool_execution_update","toolCallId":"task-batch-1","toolName":"task","partialResult":{"details":{"progress":[{"id":"gamma","status":"failed","task":"Audit error handling across the retry pipeline"}]}}}
+{"type":"tool_execution_end","toolCallId":"task-batch-1","toolName":"task","result":{"content":[{"type":"text","text":"1 of 3 subagents finished, 1 failed"}],"details":{"progress":[{"index":0,"id":"alpha","status":"finished","task":"Investigate alpha.","durationMs":900},{"index":1,"id":"beta","status":"running","task":"Draft the staged migration plan..."},{"index":2,"id":"gamma","status":"failed","task":"Audit error handling across the retry pipeline"}]}},"isError":false}
+{"type":"tool_execution_start","toolCallId":"todo-1","toolName":"todo","args":{"action":"create"},"intent":"Planning the work"}
+{"type":"tool_execution_end","toolCallId":"todo-1","toolName":"todo","result":{"content":[{"type":"text","text":"Todo list updated"}],"details":{"op":"create","phases":[{"name":"Setup","tasks":[{"content":"Scaffold","status":"pending"},{"content":"Configure","status":"pending"}]},{"name":"Work","tasks":[{"content":"Write tests","status":"pending"},{"content":"Implement feature","status":"pending"},{"content":"Update docs","status":"pending"},{"content":"Deploy","status":"pending"},{"content":"Clean up","status":"pending"},{"content":"Finalize","status":"pending"}]}],"storage":"session"}},"isError":false}
+{"type":"tool_execution_start","toolCallId":"todo-2","toolName":"todo","args":{"action":"update"},"intent":"Updating the todo list (todo-2)"}
+{"type":"tool_execution_end","toolCallId":"todo-2","toolName":"todo","result":{"content":[{"type":"text","text":"Todo list updated"}],"details":{"op":"update","phases":[{"name":"Setup","tasks":[{"content":"Scaffold","status":"completed"},{"content":"Configure","status":"completed"}]},{"name":"Work","tasks":[{"content":"Write tests","status":"in_progress"},{"content":"Implement feature","status":"pending"},{"content":"Update docs","status":"pending"},{"content":"Deploy","status":"pending"},{"content":"Clean up","status":"pending"},{"content":"Finalize","status":"pending"}]}],"storage":"session"}},"isError":false}
+{"__delay__":300}
+{"type":"tool_execution_start","toolCallId":"todo-3","toolName":"todo","args":{"action":"update"},"intent":"Updating the todo list (todo-3)"}
+{"type":"tool_execution_end","toolCallId":"todo-3","toolName":"todo","result":{"content":[{"type":"text","text":"Todo list updated"}],"details":{"op":"update","phases":[{"name":"Setup","tasks":[{"content":"Scaffold","status":"completed"},{"content":"Configure","status":"completed"}]},{"name":"Work","tasks":[{"content":"Write tests","status":"completed"},{"content":"Implement feature","status":"in_progress"},{"content":"Update docs","status":"pending"},{"content":"Deploy","status":"pending"},{"content":"Clean up","status":"pending"},{"content":"Finalize","status":"pending"}]}],"storage":"session"}},"isError":false}
+{"__delay__":300}
+{"type":"tool_execution_start","toolCallId":"todo-4","toolName":"todo","args":{"action":"update"},"intent":"Updating the todo list (todo-4)"}
+{"type":"tool_execution_end","toolCallId":"todo-4","toolName":"todo","result":{"content":[{"type":"text","text":"Todo list updated"}],"details":{"op":"update","phases":[{"name":"Setup","tasks":[{"content":"Scaffold","status":"completed"},{"content":"Configure","status":"completed"}]},{"name":"Work","tasks":[{"content":"Write tests","status":"completed"},{"content":"Implement feature","status":"completed"},{"content":"Update docs","status":"blocked","blocker":"waiting on API docs"},{"content":"Deploy","status":"in_progress"},{"content":"Clean up","status":"pending"},{"content":"Finalize","status":"pending"}]}],"storage":"session"}},"isError":false}
+{"__delay__":2000}
+{"type":"tool_execution_start","toolCallId":"todo-5","toolName":"todo","args":{"action":"update"},"intent":"Updating the todo list (todo-5)"}
+{"type":"tool_execution_end","toolCallId":"todo-5","toolName":"todo","result":{"content":[{"type":"text","text":"Todo list updated"}],"details":{"op":"update","phases":[{"name":"Setup","tasks":[{"content":"Scaffold","status":"completed"},{"content":"Configure","status":"completed"}]},{"name":"Work","tasks":[{"content":"Write tests","status":"completed"},{"content":"Implement feature","status":"completed"},{"content":"Update docs","status":"blocked","blocker":"waiting on API docs"},{"content":"Deploy","status":"completed"},{"content":"Clean up","status":"abandoned"},{"content":"Finalize","status":"in_progress"}]}],"storage":"session"}},"isError":false}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"alpha finished, beta is still running, gamma failed. Continuing with the remaining work."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"alpha finished, beta is still running, gamma failed. Continuing with the remaining work."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\\\scratch\\\\700-pill-cards\\\\conversation.json","sessionId":"sess-0700b","messageCount":2,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":[{"name":"Setup","tasks":[{"content":"Scaffold","status":"completed"},{"content":"Configure","status":"completed"}]},{"name":"Work","tasks":[{"content":"Write tests","status":"completed"},{"content":"Implement feature","status":"completed"},{"content":"Update docs","status":"blocked","blocker":"waiting on API docs"},{"content":"Deploy","status":"completed"},{"content":"Clean up","status":"abandoned"},{"content":"Finalize","status":"in_progress"}]}]}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u2","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u2","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"tool_execution_update","toolCallId":"task-batch-1","toolName":"task","partialResult":{"details":{"progress":[{"id":"beta","status":"finished","task":"Draft the staged migration plan...","durationMs":45000}]}}}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a2","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"beta finished too."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":"beta finished too."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\\\scratch\\\\700-pill-cards\\\\conversation.json","sessionId":"sess-0700b","messageCount":4,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":[{"name":"Setup","tasks":[{"content":"Scaffold","status":"completed"},{"content":"Configure","status":"completed"}]},{"name":"Work","tasks":[{"content":"Write tests","status":"completed"},{"content":"Implement feature","status":"completed"},{"content":"Update docs","status":"blocked","blocker":"waiting on API docs"},{"content":"Deploy","status":"completed"},{"content":"Clean up","status":"abandoned"},{"content":"Finalize","status":"in_progress"}]}]}}
