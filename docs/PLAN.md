@@ -57,7 +57,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 4 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
 | 5 | #883 | In-app update check | Release path; left open when #794 closed |
 | 6 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
-| 7 | #766 | Combined Role·Model pill, Ctrl+R, change any time | Re-grilled 2026-10-20; part A (Rust queue) in PR #1183 |
+| 7 | #766 | Combined Role·Model pill, Ctrl+R, change any time | done (PR #1183 + PR #1187) |
 | 8 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
 | 9 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
 | 10 | #1082 | Context usage colour gradient | Composer strip, after #724 |
