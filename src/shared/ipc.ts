@@ -154,6 +154,17 @@ export interface SessionSummary extends Session {
   /** Lane RM (#740, #741): `true` once chosen directly (picker, `/switch`, `/model`, cycle) --
    * a later Settings role change skips it. Optional: Electron never ports this family. */
   pinned?: boolean;
+  /** #766 part A: a role/model and/or reasoning change chosen while the Session was working or
+   * stopped, held in Rust and applied at the next idle (before the next prompt) or right after
+   * the agent starts. `null`/absent: nothing pending. When a role/model change is pending,
+   * exactly one of `role`/`model` is non-null (`role`: a role to apply; `model`: a concrete model
+   * to pin). `thinkingLevel` is independent of them. Refreshed through the existing
+   * `session:list-changed` push (`onSessionListChanged`, the one `pinned`/`currentRole` ride on). */
+  pendingSelection?: {
+    role: string | null;
+    model: { provider: string; modelId: string } | null;
+    thinkingLevel: string | null;
+  } | null;
   /** Lane RM (#741, #740): the role this Session is on, `null` while pinned (`ipc-model.ts`'s
    * own `ModelApi.listRoles` doc has the full reasoning). Optional, same reason as `pinned`. */
   currentRole?: string | null;

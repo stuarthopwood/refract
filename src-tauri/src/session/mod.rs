@@ -12,6 +12,7 @@ pub mod advisor;
 pub mod agent;
 pub mod manager;
 pub mod model;
+pub mod pending_selection;
 pub mod readout;
 mod readout_head_watch;
 pub mod side_chat;

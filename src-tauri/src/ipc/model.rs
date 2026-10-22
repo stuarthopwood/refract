@@ -13,7 +13,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::session::model;
-use crate::session::thinking_level;
+use crate::session::pending_selection;
 use crate::session::SessionManager;
 
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
@@ -61,7 +61,7 @@ pub fn model_set_model(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        let result = model::set_model(&agent, provider, model_id)
+        let result = pending_selection::choose_model(&agent, provider, model_id)
             .await
             .map_err(map_model_error)?;
         Ok(result)
@@ -77,7 +77,9 @@ pub fn model_cycle_model(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        let result = model::cycle_model(&agent).await.map_err(map_model_error)?;
+        let result = pending_selection::choose_cycle(&agent)
+            .await
+            .map_err(map_model_error)?;
         Ok(result)
     })
 }
@@ -95,7 +97,7 @@ pub fn model_set_thinking_level(state: AppState, args: Vec<Value>) -> HandlerFut
         };
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        let result = thinking_level::set_thinking_level(&agent, level)
+        let result = pending_selection::choose_thinking_level(&agent, level)
             .await
             .map_err(map_model_error)?;
         Ok(result)
@@ -118,7 +120,7 @@ pub fn model_apply_role(state: AppState, args: Vec<Value>) -> HandlerFuture {
         require_session(&state, session_id).await?;
         let known_roles = model::known_role_list().await.map_err(map_model_error)?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        let result = model::apply_role(&agent, role, &known_roles)
+        let result = pending_selection::choose_role(&agent, role, &known_roles)
             .await
             .map_err(map_model_error)?;
         Ok(result)

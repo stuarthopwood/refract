@@ -338,6 +338,8 @@ impl SessionAgent {
 
         self.emit_status().await;
         self.emit_patch_reset().await;
+        // #766 part A: a choice made while the agent was stopped applies before the first prompt.
+        crate::session::pending_selection::drain(self).await;
         Ok(())
     }
 
