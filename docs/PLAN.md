@@ -67,6 +67,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 14 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
 | 15 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
 | 16 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
+| 17 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
 | alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
 
 p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
@@ -75,7 +76,7 @@ p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
 - Closed as superseded or obsolete: #510, #512, #515 (Rust start state machine, PR #827, epic #797); #155, #282, #297, #304 (Electron-era docs and live-verify tasks; leftovers go to #650).
 - p1 to p3: #391, #392 (FDB integrations, still blocked on FDB discovery).
 - p1 to p2: #549, #579 (umbrella epics; children carry priority), #660, #881.
-- p2 to p1: #777, #687, #526, #538, #730.
+- p2 to p1: #777, #687, #526, #538, #730, #513.
 - p2 to p3: #1089, #1081, #887, #878, #874, #869, #867, #848, #751, #752, #753, #748, #1102, #697, #694, #706, #772, #773, #545, #1048, #1058.
 - Kept p2 on review: #1085, #932, #846, #842, #750, #732, #696, #695, #693, #684, #682.
 - #777 is renderer CPU (re-rendering the transcript), not model token cost; it is p1 for responsiveness, not for budget.
