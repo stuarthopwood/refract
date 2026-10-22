@@ -3,9 +3,9 @@
 // 427 lines, past the single-responsibility threshold).
 //
 // Reasoning picker: a labelled trigger naming the Session's current value (the same last-known
-// `lastThinkingLevel` value the old read-only line read, T062/T063). Disabled states match the
-// Model picker (`pickerShared.tsx`'s `usePickerDisabled`/`usePickerOpenState`): refuses to open
-// while working/needs-you, and also while stopped (showing the last-known value). A
+// `lastThinkingLevel` value the old read-only line read, T062/T063). It stays enabled while the
+// Session is working or stopped (#766 part B): a change is queued by Rust and shows the "next
+// turn" clock glyph until applied. A
 // `DropdownMenuRadioGroup`/`RadioItem` (gate round 1 fix, code-reviewer HIGH) exposes the current
 // level as `aria-checked`/`role="menuitemradio"`, never a plain item with a decorative check
 // icon. Gate round 2 (LOW): the disabled reason is now ALSO a visible Tooltip, not only the
@@ -31,140 +31,55 @@
 //   of duplicating its exact string locally.
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2Icon, PaperclipIcon } from 'lucide-react'
+import { ClockIcon, Loader2Icon, PaperclipIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
-import { roleChipDisplay } from '@/lib/modelRoles'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
 import { notify, useSessionsStore } from '@/state'
+import { useChatAreaAnnouncer } from './chatAreaAnnouncer'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
-import { COMPOSER_DISABLED_CLASS, GHOST_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
-
-import { ModelPicker } from './ModelPicker'
-
-/** #741 decisions 1-3: the composer's role chip, immediately before the Model picker in the
- * bottom row (`MessageInput.tsx`). Shows the Session's `currentRole`/`pinned` fields
- * (`sessions.list()`, already present -- no new IPC) as a small ghost button, text plus a
- * provisional per-role icon (`@/lib/modelRoles`; #717 reviews the final icon choice). No role
- * colour (#714 adds it); colour is never the only cue either way. Inert for now (#766 makes it
- * the role switcher's own trigger): `aria-disabled` rather than the native `disabled` attribute,
- * matching every other composer trigger's own disabled pattern, so it stays focusable and its
- * Tooltip stays reachable on keyboard focus -- clicking or pressing it today does nothing at all
- * (no handler is attached), the least surprising placeholder for a control that visibly looks
- * like a button and is described in the issue as becoming one. An unestablished role shows no
- * chip (#741: "if the role cannot be established, show nothing rather than a guess") -- this
- * component then renders nothing, not an empty slot.
- *
- * Gate round 1 fix (HIGH #1): `COMPOSER_DISABLED_CLASS` (via `PICKER_TRIGGER_CLASS`) dims every
- * OTHER composer trigger to `opacity-60` while `aria-disabled` -- correct for a trigger that
- * COULD open given a different Session state, but this chip never opens at all this release, so
- * that dimming read as a broken/disabled control and dropped text contrast under 3.4:1 in every
- * theme. `aria-disabled:opacity-100` renders it at full muted-text strength instead (the border
- * and hover-reset rules already in `PICKER_TRIGGER_CLASS` are untouched); `aria-disabled:cursor-
- * default` replaces the inherited `cursor-not-allowed`, since nothing was ever "not allowed" here
- * -- there is no action to refuse.
- *
- * Gate round 1 fix (MEDIUM #6): the accessible name now reads `"<label>, role"` (visible text
- * FIRST, `docs/design/accessibility.md:16`) instead of an sr-only "Role: " PREFIX, matching every
- * other composer trigger's own WCAG 2.5.3 fix. Live-verified round 2: a visible text node plus a
- * trailing sr-only `<span>` measured as "Default , role" (an extra space) -- Chromium's own
- * accessible-name-from-content algorithm joins sibling text alternatives with a space, same as
- * `innerText`. An explicit `aria-label` (the SAME technique `ModelPicker.tsx`'s own identical
- * WCAG 2.5.3 fix already uses) is a single literal string, immune to that join. The visible text
- * itself is untouched (still just `{label}`). The Tooltip composes three sentences: "Role:
- * <label>.", the role's own description word for word (`roleChipDisplay`'s `tooltip`, e.g. the
- * Fallback/Custom sentences decision 2/1 fixed verbatim), then "Change the role from the model
- * picker." (today's one way to actually do that, since this chip itself is inert).
- */
-export function RoleChip({ sessionId }: { sessionId: string }) {
-  const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
-  const display = session ? roleChipDisplay(session) : null
-  if (!display) return null
-  const { label, Icon, tooltip } = display
-  const fullTooltip = `Role: ${label}. ${tooltip} Change the role from the model picker.`
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-disabled="true"
-          aria-label={`${label}, role`}
-          className={cn(PICKER_TRIGGER_CLASS, 'max-w-28 aria-disabled:opacity-100 aria-disabled:cursor-default')}
-        >
-          <Icon aria-hidden className="size-3" />
-          <span className="min-w-0 flex-1 truncate">{label}</span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{fullTooltip}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-/** Gate round 1 fix (Layout/Visual HIGH #7): `RoleChip` and `ModelPicker` wrap TOGETHER as one
- * unit at a narrow chat width -- as bare siblings in the composer's own `flex-wrap` row
- * (`MessageInput.tsx`), the chip could wrap onto its own line while the picker stranded alone on
- * the next, or vice versa. `min-w-0 max-w-full` lets this pair shrink inside the row instead of
- * forcing it wider than available space; `ModelPicker`'s own trigger also gained `min-w-0 shrink`
- * so IT (and only it) can give up width inside this pair before the pair itself overflows.
- *
- * Gate round 2 fix (HIGH #2): the chip's OWN className used to carry `min-w-0 shrink` too,
- * overriding `PICKER_TRIGGER_CLASS`'s own `shrink-0` via `cn`'s tailwind-merge -- at a narrow
- * width the chip shrank alongside the Model picker instead of keeping its own natural size,
- * measured live collapsing all the way down to a single truncated glyph ("D."). The chip now
- * keeps `shrink-0` (dropped from its own className), so ONLY the Model picker ever gives up
- * width; the chip's inner `truncate` span and its own `max-w-28` (`max-w-24` measured live as
- * just barely clipping "Fallback", the longest role label) are the chip's sole truncation
- * guards, reached only if its own text somehow still overflows that cap.
- *
- * Lives here, not inline in `MessageInput.tsx` (already at its own 1632-line baseline with no
- * headroom) or `ModelPicker.tsx` (at its 600-line cap).
- */
-export function RoleAndModelPicker({ sessionId }: { sessionId: string }) {
-  return (
-    <div className="flex min-w-0 max-w-full items-center gap-1.5">
-      <RoleChip sessionId={sessionId} />
-      <ModelPicker sessionId={sessionId} />
-    </div>
-  )
-}
+import { COMPOSER_DISABLED_CLASS, GHOST_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerOpenState } from './pickerShared'
 
 export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
-  const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
-  // Gate round 5 fix (Flow Medium #9): set for the duration of `setThinkingLevel`; folded into
-  // `usePickerOpenState`'s own disabled condition so the menu cannot reopen mid-request.
+  const announce = useChatAreaAnnouncer((s) => s.announce)
+  // Set for the duration of `setThinkingLevel`; folded into `usePickerOpenState` so the menu
+  // cannot reopen mid-request.
   const [pendingLabel, setPendingLabel] = useState<string | null>(null)
-  const effectiveDisabled = disabled || pendingLabel !== null
-  const { open, onOpenChange } = usePickerOpenState(effectiveDisabled)
+  const { open, onOpenChange } = usePickerOpenState(pendingLabel !== null)
   const thinkingLabel = formatThinkingLevelLabel(session ?? {})
+  const nextLevel = session?.pendingSelection?.thinkingLevel ?? null
+  const nextLabel = nextLevel ? (THINKING_LEVEL_LABEL[nextLevel as ThinkingLevel] ?? nextLevel) : null
+  const stopped = session?.status === 'stopped'
 
   async function handleSelect(level: ThinkingLevel) {
     setPendingLabel(THINKING_LEVEL_LABEL[level] ?? level)
     try {
       const result = await window.refract.model.setThinkingLevel(sessionId, level)
-      if (!result.ok) notify({ code: result.error.code, message: result.error.message })
+      if (!result.ok) return notify(result.error, sessionId)
+      if (result.value.queued) announce(`${THINKING_LEVEL_LABEL[level] ?? level} queued for next turn`)
     } finally {
       setPendingLabel(null)
     }
   }
 
   const label = thinkingLabel ?? 'Reasoning not known yet'
-  const disabledReason = notIdle ? 'Available once the session is idle.' : stopped ? 'Start the agent to change the reasoning level.' : null
-  const triggerLabel = pendingLabel ?? label
-  // Gate round 5 fix (Flow Medium #11): the accessible name now STARTS with the trigger's own
-  // visible text (WCAG 2.5.3, `docs/design/accessibility.md:16`) -- the "Reasoning" noun moves to
-  // the Tooltip below instead of prefixing the name, the same choice `ModelPicker.tsx` makes for
-  // its own "Model: ..." prefix (consistency decision, gate round 5 Medium #11). Gate round 6 fix
-  // (`agent://Arch877` Medium 3): both the unset-level labels ("Reasoning not reported"/
-  // "Reasoning not known yet") already START with "Reasoning" -- appending the noun
-  // unconditionally doubled it ("Reasoning not reported, reasoning"); the noun is now added only
-  // when the trigger's own label does not already start with it.
+  const triggerLabel = pendingLabel ?? nextLabel ?? label
+  // The accessible name starts with the trigger's visible text (WCAG 2.5.3); the "Reasoning"
+  // noun is added only when the label does not already start with it.
   const startsWithReasoning = /^reasoning\b/i.test(triggerLabel)
-  const ariaLabel = `${triggerLabel}${startsWithReasoning ? '' : ', reasoning'}${disabledReason ? `. ${disabledReason}` : pendingLabel ? '. Applying…' : ''}`
-  const tooltipContent = disabledReason ?? (pendingLabel ? 'Applying…' : /^reasoning\b/i.test(label) ? label : `Reasoning: ${label}`)
+  const pendingSuffix = nextLabel ? (stopped ? ', applies when the agent starts' : ', applies next turn') : ''
+  const ariaLabel = `${triggerLabel}${startsWithReasoning ? '' : ', reasoning'}${pendingSuffix}${pendingLabel ? '. Applying…' : ''}`
+  const tooltipContent = pendingLabel
+    ? 'Applying…'
+    : nextLabel
+      ? `${stopped ? 'Applies when the agent starts' : 'Applies on next turn'}. Now: ${label}.`
+      : /^reasoning\b/i.test(label)
+        ? label
+        : `Reasoning: ${label}`
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -172,42 +87,40 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-disabled={effectiveDisabled}
               aria-busy={pendingLabel !== null}
               aria-label={ariaLabel}
-              // Gate round 2 fix (LOW): the Tooltip's own content always duplicates something
-              // already in the accessible name (the level when enabled, the disabled reason when
-              // not) -- suppressed so a screen reader never says either twice; the Tooltip
-              // itself still shows visually on hover and keyboard focus.
+              // The Tooltip repeats the accessible name; suppress the described-by so a screen
+              // reader never says it twice.
               aria-describedby={undefined}
               className={PICKER_TRIGGER_CLASS}
             >
               {pendingLabel !== null ? (
                 <Loader2Icon aria-hidden className="size-3 animate-spin" />
               ) : (
-                <ReasoningGaugeIcon level={session?.lastThinkingLevel} className="size-3" />
+                <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-3" />
               )}
               <span>{triggerLabel}</span>
+              {nextLabel && pendingLabel === null && <ClockIcon aria-hidden data-pending-glyph className="size-3 shrink-0 text-foreground" />}
             </button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent>{tooltipContent}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start">
-        {/* Gate round 1 fix (code-reviewer HIGH): a `DropdownMenuRadioGroup`/`RadioItem` bound to
-            the Session's current level, instead of a plain `DropdownMenuItem` with a decorative
-            `aria-hidden` check icon -- Radix exposes the current one as `aria-checked`/
-            `role="menuitemradio"` automatically. */}
+        {nextLabel && session?.lastThinkingLevel && (
+          <>
+            <DropdownMenuItem onSelect={() => void handleSelect(session.lastThinkingLevel as ThinkingLevel)}>Keep current ({label})</DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {/* A `DropdownMenuRadioGroup` exposes the current level as `aria-checked`. */}
         <DropdownMenuRadioGroup value={session?.lastThinkingLevel ?? undefined} onValueChange={(value) => void handleSelect(value as ThinkingLevel)}>
           {THINKING_LEVELS.map((level) => (
             <DropdownMenuRadioItem key={level} value={level}>
-              {/* LOW fix (#1043): the shared `DropdownMenuRadioItem` now draws a leading
-                  ring-and-dot mark before `children`, the same as the Theme submenu's own row
-                  (`ProfileMenu.tsx`'s `ThemeSubmenu`, which wraps its own label the same way) --
-                  wrapped in a truncating `min-w-0 flex-1` span for the same reason: a bare text
-                  child has no element to apply `truncate` to if a future label ever grows long
-                  enough to risk overflow against the row's own fixed-width menu. */}
-              <span className="min-w-0 flex-1 truncate">{THINKING_LEVEL_LABEL[level]}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {THINKING_LEVEL_LABEL[level]}
+                {level === nextLevel && <span className="text-xs text-muted-foreground"> next</span>}
+              </span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

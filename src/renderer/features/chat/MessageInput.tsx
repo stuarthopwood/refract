@@ -23,7 +23,9 @@ import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
 import { useSlashMenuCompletion } from './useSlashMenuCompletion'
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
-import { AttachButton, ReasoningPicker, RoleAndModelPicker } from './ComposerPickers'
+import { AttachButton, ReasoningPicker } from './ComposerPickers'
+import { ModelPicker } from './ModelPicker'
+import { openRoleSwitcher } from './useRoleCycleShortcut'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, COMPOSER_SELECTION_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
@@ -485,11 +487,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
     // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
     clearGhostState()
-    // Issue #762: bare `/models` opens Settings > Model roles, never reaches OMP (its hub writes roles).
+    // Issue #762: bare `/models` opens Settings > Model roles; bare `/role` (#766) opens the switcher.
     const modelsInvocation = parseSlashCommand(draftText)
-    if (modelsInvocation?.name === 'models' && modelsInvocation.rest === '' && attachments.images.length === 0 && attachments.files.length === 0) {
+    const bareCommand = attachments.images.length === 0 && attachments.files.length === 0 && modelsInvocation?.rest === ''
+    if (bareCommand && (modelsInvocation?.name === 'models' || modelsInvocation?.name === 'role')) {
       useDraftStore.getState().clear(sessionId)
-      useViewStore.getState().openSettings('model-roles')
+      if (modelsInvocation.name === 'models') useViewStore.getState().openSettings('model-roles')
+      else openRoleSwitcher(sessionId)
       return
     }
     if (notStarted) {
@@ -1546,15 +1550,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             </Tooltip>
           </div>
         </div>
-        {/* Composer bottom row (#564, spec 001 FR-065): Approval pill, then role chip + Model
-            picker wrapped as one unit (`RoleAndModelPicker`, gate round 1 HIGH #7: wrap together,
-            never split across two lines), Reasoning picker (FR-064), then Attach. Gate round 5
-            (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus outline off the
-            box's own bottom border; `px-2.5`/`py-1.5` stay a wider off-grid debt (round 6 fixed
-            the triggers' own `gap-1.5` to `gap-2`). */}
-        <div data-composer-row className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
+        {/* Composer bottom row (#564): Approval pill, combined Role.Model pill (#766), Reasoning
+            picker, then Attach. `@container` lets the pill hide its model text when narrow. */}
+        <div data-composer-row className="@container flex flex-wrap items-center gap-2 px-2.5 pb-2">
           <ApprovalModePill sessionId={sessionId} />
-          <RoleAndModelPicker sessionId={sessionId} />
+          <ModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />
           <ComposerBranchLabel sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
