@@ -310,6 +310,14 @@ draft, are never offered as an update by User Story 3's check.
 - **FR-027**: The Check for updates action and the update badge MUST be reachable and operable
   by keyboard, with a visible focus indicator, consistent with the rest of Settings (spec 004
   FR-016).
+- **FR-028**: An interactive install MUST offer a "Create a desktop shortcut" checkbox on the
+  installer's finish page, ticked by default; ticked, the install MUST leave a Desktop shortcut
+  named Refract that opens the installed Refract and uses the Refract icon; unticked, it MUST NOT
+  add one (issue #881).
+- **FR-029**: A silent install (`/S`, the mode the in-app updater uses) MUST NOT add a Desktop
+  shortcut and MUST leave an existing one in place (issue #881).
+- **FR-030**: Uninstalling MUST remove the Refract Desktop shortcut and MUST NOT remove it during an
+  upgrade (issue #881; refines FR-022).
 
 ### Key Entities
 
