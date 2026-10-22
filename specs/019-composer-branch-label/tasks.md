@@ -23,7 +23,7 @@
 
 ## Phase 4: Polish & Cross-Cutting Concerns
 
-- [ ] T006 Live check on a scratch instance: label shows the branch, follows a terminal `git switch -c`, reads "Detached at <sha>" on a detached HEAD, truncates a 60-character name without pushing Reasoning out, opens the Git changes panel; Dark, Obsidian and Dark (high contrast) screenshots (SC-001, SC-002, SC-003)
+- [x] T006 Live check on a scratch instance: label shows the branch, follows a terminal `git switch -c`, reads "Detached at <sha>" on a detached HEAD, truncates a 60-character name without pushing Reasoning out, opens the Git changes panel; Dark, Obsidian and Dark (high contrast) screenshots (SC-001, SC-002, SC-003)
 - [X] T007 Update `docs/PLAN.md`'s #724 row
 
 ## Dependencies & Execution Order
