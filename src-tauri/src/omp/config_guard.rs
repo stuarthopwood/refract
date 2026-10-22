@@ -25,6 +25,8 @@ const CACHE_TTL: Duration = Duration::from_secs(5);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(6);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 const PROJECT_CONFIG: &str = ".omp/config.yml";
+const MAX_PROJECT_CONFIG_BYTES: u64 = 256 * 1024;
+const FAILURE_BACKOFF: Duration = Duration::from_secs(30);
 const ADVISOR_KEY: &str = "modelRoles.advisor";
 const ADVISOR_SELECTOR: &str = "github-copilot/gemini-4-argon:auto";
 const THRESHOLDS_KEY: &str = "compaction.modelThresholds";
@@ -240,9 +242,14 @@ pub fn overridden_guarded_keys(paths: &[String]) -> Vec<String> {
 
 struct GuardState {
     cache: Option<(Instant, Value)>,
+    /// Set after a failed or timed-out `omp config list`, so a hung `omp` costs one wait, not one per launch.
+    failed_at: Option<Instant>,
 }
 
-static STATE: AsyncMutex<GuardState> = AsyncMutex::const_new(GuardState { cache: None });
+static STATE: AsyncMutex<GuardState> = AsyncMutex::const_new(GuardState {
+    cache: None,
+    failed_at: None,
+});
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 static PENDING: StdMutex<Option<GuardNotice>> = StdMutex::new(None);
 
@@ -299,10 +306,8 @@ fn record(
     let new = display(Some(&drift.new));
     match result {
         Ok(()) => {
-            log::info!(
-                "omp settings guard: reset {} (was {old}) -> {new}",
-                drift.key
-            );
+            log::info!("omp settings guard: reset {}", drift.key);
+            log::debug!("omp settings guard: {} was {old}, now {new}", drift.key);
             resets.push(ResetEntry {
                 key: drift.key.clone(),
                 old,
@@ -321,18 +326,34 @@ fn record(
     }
 }
 
-async fn project_overrides(project_dir: &Path) -> Vec<OverrideEntry> {
-    let file = project_dir.join(PROJECT_CONFIG);
-    match tokio::fs::read_to_string(&file).await {
-        Ok(yaml) => overridden_guarded_keys(&scan_yaml_paths(&yaml))
-            .into_iter()
-            .map(|key| OverrideEntry {
-                key,
-                file: PROJECT_CONFIG.to_string(),
-            })
-            .collect(),
-        Err(_) => Vec::new(),
+async fn read_project_config(file: &Path) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let meta = tokio::fs::symlink_metadata(file).await.ok()?;
+    if !meta.file_type().is_file() || meta.len() > MAX_PROJECT_CONFIG_BYTES {
+        return None;
     }
+    let mut bytes = Vec::new();
+    tokio::fs::File::open(file)
+        .await
+        .ok()?
+        .take(MAX_PROJECT_CONFIG_BYTES)
+        .read_to_end(&mut bytes)
+        .await
+        .ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+async fn project_overrides(project_dir: &Path) -> Vec<OverrideEntry> {
+    let Some(yaml) = read_project_config(&project_dir.join(PROJECT_CONFIG)).await else {
+        return Vec::new();
+    };
+    overridden_guarded_keys(&scan_yaml_paths(&yaml))
+        .into_iter()
+        .map(|key| OverrideEntry {
+            key,
+            file: PROJECT_CONFIG.to_string(),
+        })
+        .collect()
 }
 
 /// One guard run: serialised, cached read, reset, notice (only when something changed or failed).
@@ -340,23 +361,32 @@ pub async fn run(project_dir: Option<&Path>) -> Option<GuardNotice> {
     let mut state = STATE.lock().await;
     let list = match &state.cache {
         Some((at, list)) if at.elapsed() < CACHE_TTL => list.clone(),
-        _ => match run_json(&["config", "list", "--json"], "Could not read omp config.").await {
-            Ok(list) => {
-                state.cache = Some((Instant::now(), list.clone()));
-                list
-            }
-            Err(err) => {
-                log::warn!("omp settings guard: config list failed: {}", err.message);
+        _ => {
+            if state.failed_at.is_some_and(|at| at.elapsed() < FAILURE_BACKOFF) {
                 return None;
             }
-        },
+            match run_json(&["config", "list", "--json"], "Could not read omp config.").await {
+                Ok(list) => {
+                    state.failed_at = None;
+                    state.cache = Some((Instant::now(), list.clone()));
+                    list
+                }
+                Err(err) => {
+                    state.failed_at = Some(Instant::now());
+                    log::warn!("omp settings guard: config list failed: {}", err.message);
+                    return None;
+                }
+            }
+        }
     };
     let drifts = plan_drift(&list);
     if drifts.is_empty() {
         return None;
     }
-    let (resets, failures) = apply(&list, drifts).await;
+    // Cleared before applying: a timeout that drops this future mid-write must not leave the stale
+    // pre-reset list for the next run.
     state.cache = None;
+    let (resets, failures) = apply(&list, drifts).await;
     drop(state);
     if resets.is_empty() && failures.is_empty() {
         return None;
@@ -400,7 +430,12 @@ pub async fn run_before_launch(events: &EventSink, project_dir: &Path) {
                 events.emit_omp_guard_reset(&notice);
             }
         }
-        Err(_) => log::warn!("omp settings guard: timed out, launching anyway"),
+        Err(_) => {
+            log::warn!("omp settings guard: timed out, launching anyway");
+            if let Ok(mut state) = STATE.try_lock() {
+                state.failed_at = Some(Instant::now());
+            }
+        }
     }
 }
 

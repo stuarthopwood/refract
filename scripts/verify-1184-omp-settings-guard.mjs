@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { mkdtempSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort } from './verify-tauri-cdp.mjs';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
 import {
   buildLauncher, buildAndCopyExeFresh, launchBuiltExe, requireSharedCargoTarget, gitHead, sha256OfFile, safeRmSync,
 } from './verify-tauri-scratch-helpers.mjs';
@@ -64,18 +64,40 @@ async function main() {
     check('toast names the reset', /Reset \d+ OMP settings?/.test(toastText) && toastText.includes('advisor.reviewMode turn → agent-end'), toastText);
     const live = await cdp.evaluate(`!!document.querySelector('[data-sonner-toaster]') && document.querySelectorAll('[data-sonner-toast]').length`);
     check('exactly one guard toast', live === 1, String(live));
+    await sleep(1000);
     await cdp.screenshot(path.join(SHOTS, '01-guard-toast.png'));
 
-    await cdp.clickByText('Details');
+    // KEYBOARD: Tab to the toast's Details button and require a painted outline (a11y gate).
+    const tab = async () => {
+      for (const type of ['keyDown', 'keyUp']) {
+        await cdp.send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+      }
+    };
+    const onDetails = document.activeElement?.matches?.('[data-sonner-toast] [data-button]') && document.activeElement.innerText.trim() === 'Details';
+    await cdp.evaluate('document.activeElement?.blur?.()');
+    let reached = false;
+    for (let i = 0; i < 80 && !reached; i++) {
+      await tab();
+      reached = await cdp.evaluate(onDetails);
+    }
+    check('Tab reaches the toast Details button', reached);
+    const ring = await cdp.evaluate((() => { const s = getComputedStyle(document.activeElement); return { style: s.outlineStyle, width: parseFloat(s.outlineWidth), color: s.outlineColor }; })());
+    check('focused Details button paints a visible outline', ring.style === 'solid' && ring.width >= 2 && ring.color !== 'rgba(0, 0, 0, 0)', JSON.stringify(ring));
+    await cdp.screenshot(path.join(SHOTS, '03-details-keyboard-focus.png'));
+
+    await cdp.evaluate(`document.activeElement.click()`);
     await cdp.waitFor(`!!document.querySelector('[data-testid="omp-guard-details"]')`, { label: 'Details dialog open' });
     const details = await cdp.evaluate(`document.querySelector('[data-testid="omp-guard-details"]').innerText`);
     check('Details lists advisor.reviewMode old → new', details.includes('advisor.reviewMode: turn → agent-end'), details);
     check('Details lists task.softRequestBudget old → new', details.includes('task.softRequestBudget: 999 → 80'), details);
     await cdp.screenshot(path.join(SHOTS, '02-guard-details.png'));
 
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await cdp.waitFor(`!document.querySelector('[data-testid="omp-guard-details"]') && document.activeElement !== document.body`, { label: 'focus leaves <body> after Details closes' });
     check('scratch advisor.reviewMode reset to agent-end', ompGet('advisor.reviewMode') === 'agent-end');
     check('scratch task.softRequestBudget reset to 80', Number(ompGet('task.softRequestBudget')) === 80);
-    const shots = ['01-guard-toast.png', '02-guard-details.png'].map((n) => ({ n, sha256: sha256OfFile(path.join(SHOTS, n)) }));
+    const shots = ['01-guard-toast.png', '02-guard-details.png', '03-details-keyboard-focus.png'].map((n) => ({ n, sha256: sha256OfFile(path.join(SHOTS, n)) }));
     const report = { head, exe: exePath, exeSha256: hash, scratchAgentDir: AGENT_DIR, before, shots };
     writeFileSync(path.join(ROOT, 'report.json'), JSON.stringify(report, null, 2));
     console.log(`verify-1184: PASS ${JSON.stringify(report)}`);
