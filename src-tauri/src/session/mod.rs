@@ -13,6 +13,7 @@ pub mod agent;
 pub mod manager;
 pub mod model;
 pub mod readout;
+mod readout_head_watch;
 pub mod side_chat;
 pub mod start_queue;
 pub mod subagents;
