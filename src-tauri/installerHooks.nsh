@@ -30,7 +30,33 @@
 ; `$DeleteAppDataCheckboxState` is never left checked by a user during either, and this hook
 ; never prompts or deletes data mid-upgrade.
 
+; Issue #881 (spec 006 FR-028..FR-030): Desktop shortcut. Tauri's own template already shows a
+; ticked-by-default "Create a desktop shortcut" checkbox on the finish page (MUI SHOWREADME) and
+; removes the shortcut on uninstall when it targets the installed exe. Two gaps are closed here:
+; 1. A silent (/S) install must never ADD a shortcut (the template creates one for any silent run
+;    that is not an /UPDATE), but must leave an existing one alone. PREINSTALL records whether it
+;    existed; POSTINSTALL deletes it again only if a silent run created it.
+; 2. Uninstall removes $DESKTOP\${PRODUCTNAME}.lnk even when its target no longer matches.
+Var RefractHadDesktopShortcut
+
+!macro NSIS_HOOK_PREINSTALL
+  StrCpy $RefractHadDesktopShortcut 0
+  ${If} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
+    StrCpy $RefractHadDesktopShortcut 1
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_POSTINSTALL
+  ${If} ${Silent}
+  ${AndIf} $RefractHadDesktopShortcut = 0
+    Delete "$DESKTOP\${PRODUCTNAME}.lnk"
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $UpdateMode <> 1
+    Delete "$DESKTOP\${PRODUCTNAME}.lnk"
+  ${EndIf}
   ${If} $DeleteAppDataCheckboxState = 1
   ${AndIf} $UpdateMode <> 1
     RMDir /r "$APPDATA\refract-tauri"

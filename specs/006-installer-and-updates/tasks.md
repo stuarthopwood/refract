@@ -188,3 +188,8 @@ Created 2026-10-02 with `/speckit.taskstoissues`. All in `stuarthopwood/refract`
 | T010 | #267 | T020 | #318 | | |
 
 The same table is posted as a comment on tracking issue #117.
+
+## Phase 9: Convergence
+
+- [x] T030 Add the `NSIS_HOOK_PREINSTALL`/`NSIS_HOOK_POSTINSTALL` pair and extend `NSIS_HOOK_POSTUNINSTALL` in `src-tauri/installerHooks.nsh`: a silent install never adds the Desktop shortcut and keeps an existing one; uninstall (not upgrade) removes `$DESKTOP\Refract.lnk`; the finish-page checkbox stays Tauri's own (ticked by default) per FR-028, FR-029, FR-030 (missing)
+- [x] T031 Live-verify on a real installer: interactive Enter-through creates the shortcut targeting the installed exe, `/S` creates none and keeps an existing one, silent uninstall removes it, then restore the previous version per FR-028, FR-029, FR-030 (missing)
