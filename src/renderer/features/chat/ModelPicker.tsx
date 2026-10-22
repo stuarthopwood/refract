@@ -185,6 +185,8 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
     const key = event.key
     const handled = ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'ArrowDown', 'Enter', ' ', 'Escape', 'Tab'].includes(key)
     if (handled) event.preventDefault()
+    // Radix's focus trap loops Tab after our handler has already moved focus.
+    if (key === 'Tab') event.stopPropagation()
     if (key === 'ArrowLeft') moveRole(-1)
     else if (key === 'ArrowRight') moveRole(1)
     else if (key === 'Home') moveRole(0, 'first')
@@ -212,6 +214,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
       closeAndReturnFocus()
     } else if (event.key === 'Tab') {
       event.preventDefault()
+      event.stopPropagation()
       roleRowRef.current?.focus()
     }
   }
