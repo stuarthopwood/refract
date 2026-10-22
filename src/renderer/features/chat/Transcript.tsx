@@ -9,35 +9,28 @@ import {
 } from '@/components/ui/message-scroller'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Message, MessageContent } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
-import { type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
 import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
-import { LinkContext, Markdown } from './Markdown'
-import { AgentMessageRow, AgentSteerRow } from './AgentMessageRow'
-import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
+import { LinkContext } from './Markdown'
 import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
-import { groupToolItems, isAgentSteerGroup, isToolGroup, isThoughtRun } from './groupToolItems'
+import { groupToolItems, isToolGroup } from './groupToolItems'
 import { groupThoughtItems } from './groupThoughtItems'
-import { ThoughtRunRow } from './ThoughtRunRow'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
-import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
+import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
-import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
-import { UserMessageRow, type UserItem } from './UserMessageRow'
-import { NoticeRow } from './NoticeRow'
-import { SkillPromptRow } from './SkillPromptRow'
+import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
+import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 import { JUMP_SCROLL_TOP_MARGIN_PX, JumpToStageContext, stageRowDomId } from './stageJump'
 
-type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
 // Cached per repository id for the renderer's lifetime (T072, FR-045): every AskQuestionRow in
 // every Session of the same repository shares one `repositories.userName` round trip.
@@ -100,97 +93,6 @@ function splitIntoTurns(items: TranscriptItem[]): Turn[] {
   }
   turns.push(current)
   return turns
-}
-
-interface TranscriptRowProps {
-  item: AdvisoryGroupedTranscriptItem
-  sessionId: string | null
-  pending: PendingRequest[]
-  userName: string | undefined; hideTime?: boolean // #555 amendment: hides a user row's own time under a directly-above TimeGapDivider (see UserMessageRowProps)
-  resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
-  /** Both reuse EXISTING Transcript mechanisms (gate round 2/3): reveal -> suppressLogAnnouncements; queued -> revealedAnnouncement. */
-  onAdvisoryReveal: () => void
-  onQueuedAnnounce: (text: string) => void
-}
-
-// Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
-// docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
-// pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
-// tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
-  if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
-  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
-  if (isToolGroup(item)) return isAgentSteerGroup(item) ? <AgentSteerRow item={item.items[0]!} /> : <ToolGroupRow group={item} />
-  if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
-
-  switch (item.kind) {
-    case 'user':
-      // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow` (split out to keep this file within its `check:file-size` baseline).
-      return <UserMessageRow item={item} userName={userName} hideTime={hideTime} />
-
-    case 'assistant-text':
-      return (
-        <Message>
-          <MessageContent className="w-full">
-            <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
-            {item.streaming && (
-              <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
-            )}
-          </MessageContent>
-        </Message>
-      )
-
-    case 'thinking':
-      // Defensive fallback for a non-empty `thinking` item that reaches here ungrouped (should
-      // not normally occur: `groupThoughtItems` wraps every run, including a run of one, into a
-      // `ThoughtRun` before this renders -- see `groupToolItems.ts`'s own comment for why every
-      // consumer downstream must never switch React element type between a lone item and a run).
-      // `!item.text` matches `groupThoughtItems`'s own "dropped from grouping" rule for an empty
-      // thought (defensive; Rust never actually sends one).
-      if (!item.text) return null
-      return <ThoughtRunRow group={{ kind: 'thought-run', id: item.id, items: [item] }} />
-
-    case 'tool':
-      if (item.tool === 'ask') {
-        if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
-        return <AskQuestionRow item={item} userName={userName} requestId={[...resolvedAskByRequestId].find(([, v]) => v?.id === item.id)?.[0]} sessionId={sessionId ?? undefined} />
-      }
-      // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
-      // normally occur: `groupToolItems` wraps every run, including a run of one, in a
-      // `ToolGroup` before this renders). Wrapped as a one-item group so this still renders
-      // through the same `ToolGroupRow` component type as the grouped path above.
-      return <ToolGroupRow group={{ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] }} />
-
-    case 'agent-message':
-      return <AgentMessageRow item={item} />
-
-    case 'advisory':
-      return <AdvisoryRow item={item} sessionId={sessionId ?? undefined} onQueuedAnnounce={onQueuedAnnounce} />
-
-    case 'request': {
-      const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined
-      if (live && !item.resolved) {
-        return <RequestCard sessionId={sessionId as string} request={live} />
-      }
-      if (item.resolved === 'answered' || item.resolved === 'cancelled') {
-        // Superseded by the matching `ask` tool item once it resolves (T072); until then (a brief
-        // race between the answer landing and that item's own `tool_execution_end`), fall back to
-        // the plain one-line summary so the question is never shown as still pending.
-        const askItem = resolvedAskByRequestId.get(item.requestId)
-        if (askItem && askItem.status !== 'running') return null
-      }
-      return <ResolvedRequestSummary resolved={item.resolved} requestId={item.requestId} sessionId={sessionId ?? undefined} />
-    }
-
-    case 'notice':
-      return <NoticeRow level={item.level} text={item.text} />
-
-    case 'skill-prompt':
-      return <SkillPromptRow item={item} />
-
-    default:
-      return null
-  }
 }
 
 interface TurnTotalLineProps {
@@ -321,7 +223,7 @@ export function Transcript({
   // Issue #672: the history (if any) behind the notice dims to ~40% opacity while a start runs; a genuinely empty Session has nothing to dim.
   const dimTranscript = Boolean(startNotice) && (hasHistory || hasConversationStarted)
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
-  const pending = pendingBySession[sessionId] ?? []
+  const pending = pendingBySession[sessionId] ?? NO_PENDING
 
   const session = sessions.find((s) => s.id === sessionId)
   const userName = useRepositoryUserName(session?.repositoryId ?? null)
@@ -337,13 +239,19 @@ export function Transcript({
     return () => clearInterval(interval)
   }, [isTurnRunning])
 
-  const resolvedAskByRequestId = React.useMemo(() => {
-    const map = new Map<string, ToolItem | undefined>()
+  // Rows receive only their own link (never the whole map), so a patch re-renders only the row it changed.
+  const askLinks = React.useMemo(() => {
+    const askByRequestId = new Map<string, ToolItem | undefined>()
+    const requestIdByAskItemId = new Map<string, string>()
     items.forEach((item, index) => {
-      if (item.kind === 'request') map.set(item.requestId, findPrecedingAskItem(items, index))
+      if (item.kind !== 'request') return
+      const ask = findPrecedingAskItem(items, index)
+      askByRequestId.set(item.requestId, ask)
+      if (ask && !requestIdByAskItemId.has(ask.id)) requestIdByAskItemId.set(ask.id, item.requestId)
     })
-    return map
+    return { askByRequestId, requestIdByAskItemId }
   }, [items])
+  const handleAdvisoryReveal = React.useCallback(() => setSuppressLogAnnouncements(true), [])
 
   const turns = React.useMemo(() => splitIntoTurns(items), [items])
 
@@ -979,8 +887,9 @@ export function Transcript({
                             sessionId={sessionId}
                             pending={pending}
                             userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
-                            resolvedAskByRequestId={resolvedAskByRequestId}
-                            onAdvisoryReveal={() => setSuppressLogAnnouncements(true)} onQueuedAnnounce={setRevealedAnnouncement}
+                            resolvedAsk={row.kind === 'request' ? askLinks.askByRequestId.get(row.requestId) : undefined}
+                            askRequestId={row.kind === 'tool' ? askLinks.requestIdByAskItemId.get(row.id) : undefined}
+                            onAdvisoryReveal={handleAdvisoryReveal} onQueuedAnnounce={setRevealedAnnouncement}
                           />
                         </MessageScrollerItem>
                       )

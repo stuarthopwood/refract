@@ -962,7 +962,7 @@ interface MarkdownProps {
 // comments above), so it is still called with no custom schema. `streaming` is threaded through
 // `StreamingContext` (read only by the `code`/`MermaidBlock` renderer) rather than via a per-flip
 // `components` map, so the rest of the component identities stay stable across the transition.
-export function Markdown({ text, id, streaming = false, className }: MarkdownProps) {
+function MarkdownImpl({ text, id, streaming = false, className }: MarkdownProps) {
   // Per-message footnote-id namespace (see `MarkdownProps.id` above). `id` is a UUID (`shared/
   // model.ts`'s `TranscriptItem.id`) but is sanitized defensively rather than assumed safe, since
   // it ends up inside an `id`/href-fragment pair. This REPLACES mdast-util-to-hast's own
@@ -988,3 +988,6 @@ export function Markdown({ text, id, streaming = false, className }: MarkdownPro
     </StreamingContext.Provider>
   )
 }
+
+// Memoised: a streamed patch re-renders only the row whose text changed, never re-parsing unchanged messages.
+export const Markdown = React.memo(MarkdownImpl)
