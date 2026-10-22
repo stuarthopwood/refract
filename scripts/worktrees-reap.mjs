@@ -13,7 +13,8 @@
 //   those)> replaces the `gh` lookup. Honoured only when both --root and --repo are under the OS
 //   temp directory; see scripts/worktrees-reap-fixture.mjs.
 // Ignored files: a worktree is skipped when it holds an ignored path other than node_modules/
-//   (any depth), dist/, out/, .vite/ or src-tauri/target/, because removal would delete it.
+//   (any depth), dist/, out/, .vite/, src-tauri/target/, src-tauri/gen/ or a top-level
+//   *.tsbuildinfo, because removal would delete it.
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -23,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 const MAX_WORKTREES = 8
 const MIN_FREE_GB = 20
 // Ignored paths that are safe to lose with a worktree (rebuildable output).
-const IGNORED_ALLOWED = /^(?:(?:.*\/)?node_modules\/|dist\/|out\/|\.vite\/|src-tauri\/target\/)/
+const IGNORED_ALLOWED = /^(?:(?:.*\/)?node_modules\/|dist\/|out\/|\.vite\/|src-tauri\/target\/|src-tauri\/gen\/|[^/]*\.tsbuildinfo$)/
 const CMD_META = /[&^%|<>"()]/
 const HUSK_NAME = /^[A-Za-z0-9._-]+$/
 
