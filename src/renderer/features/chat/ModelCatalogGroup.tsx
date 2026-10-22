@@ -31,7 +31,7 @@ import { PICKER_OPTION_ACTIVE_CLASS, PICKER_OPTION_CLASS } from './pickerShared'
 
 export function ModelCatalogGroup({
   modelsHeadingId,
-  roleCount,
+  indexOffset,
   catalogError,
   catalog,
   filteredCatalog,
@@ -40,12 +40,13 @@ export function ModelCatalogGroup({
   retryOptionId,
   retrying,
   currentModel,
+  nextModel,
   onHoverIndex,
   onRetry,
   onSelectModel
 }: {
   modelsHeadingId: string
-  roleCount: number
+  indexOffset: number
   catalogError: string | undefined
   catalog: ModelCatalogEntry[] | undefined
   filteredCatalog: ModelCatalogEntry[]
@@ -54,6 +55,7 @@ export function ModelCatalogGroup({
   retryOptionId: string
   retrying: boolean
   currentModel: { provider: string; id: string } | null
+  nextModel: { provider: string; modelId: string } | null
   onHoverIndex: (index: number) => void
   onRetry: () => void
   onSelectModel: (entry: ModelCatalogEntry) => void
@@ -68,9 +70,9 @@ export function ModelCatalogGroup({
           id={retryOptionId}
           role="option"
           aria-disabled={retrying || undefined}
-          data-active={roleCount === clampedActiveIndex}
+          data-active={indexOffset === clampedActiveIndex}
           onMouseEnter={() => {
-            if (!retrying) onHoverIndex(roleCount)
+            if (!retrying) onHoverIndex(indexOffset)
           }}
           onMouseDown={(event) => event.preventDefault()}
           onClick={(event) => {
@@ -84,7 +86,7 @@ export function ModelCatalogGroup({
             // `items-center`) so a wrapped multi-line error doesn't centre the Retry label
             // against only its first line.
             'items-start justify-between gap-2',
-            roleCount === clampedActiveIndex && PICKER_OPTION_ACTIVE_CLASS,
+            indexOffset === clampedActiveIndex && PICKER_OPTION_ACTIVE_CLASS,
             retrying && 'cursor-not-allowed opacity-60'
           )}
         >
@@ -118,7 +120,7 @@ export function ModelCatalogGroup({
       )}
       {!catalogError &&
         filteredCatalog.map((entry, modelIndex) => {
-          const flatIndex = roleCount + modelIndex
+          const flatIndex = indexOffset + modelIndex
           const active = flatIndex === clampedActiveIndex
           // Gate round 1 fix (MEDIUM, code-reviewer): compares identity (`provider` + `id`),
           // never the display label -- the old `modelLabel === \`${provider}/${name}\``
@@ -144,6 +146,8 @@ export function ModelCatalogGroup({
                 {/* Gate round 6 fix (`agent://Arch877` Visual N6): `text-xs`, matching the Roles
                     group's own secondary text size (was unset, inheriting the row's `text-sm`). */}
                 {entry.name} <span className="text-xs text-muted-foreground">{entry.provider}</span>
+                {checked && <span className="text-xs text-muted-foreground"> current</span>}
+                {nextModel && entry.provider === nextModel.provider && entry.id === nextModel.modelId && <span className="text-xs text-muted-foreground"> next</span>}
               </span>
               {checked && <CheckIcon aria-hidden className="size-3.5 shrink-0" />}
             </div>

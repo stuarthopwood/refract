@@ -5,23 +5,11 @@
 import { useEffect, useState } from 'react'
 import { badgeVariants } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { useSessionsStore } from '@/state'
 
-/** `notIdle`: the Session is working or needs-you -- the API's own mid-turn refusal rule.
- * `stopped`: no agent is running at all; a picker still shows the last-known value but cannot
- * change it either (decision 3). Either state disables the trigger, with its own reason text. */
-export function usePickerDisabled(sessionId: string) {
-  const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
-  const notIdle = status === 'working' || status === 'needs-you'
-  const stopped = status === 'stopped'
-  return { disabled: notIdle || stopped, notIdle, stopped }
-}
-
-/** Shared by both pickers (gate round 1 fix, code-reviewer HIGH): blocks only an attempt to
- * OPEN while disabled -- Escape, an outside click, and selecting an item all still close an
- * already-open menu even if `disabled` flipped true in the meantime -- and force-closes an
- * already-open menu the instant `disabled` itself becomes true (the Session starts a turn, or
- * stops, while the menu is sitting open). */
+/** Shared by both pickers: blocks only an attempt to OPEN while `disabled`, and force-closes an
+ * already-open menu the instant `disabled` becomes true. The pickers are no longer disabled by
+ * Session status (#766 part B: changes queue for the next turn), so callers pass `false` unless
+ * they have their own reason. */
 export function usePickerOpenState(disabled: boolean) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
