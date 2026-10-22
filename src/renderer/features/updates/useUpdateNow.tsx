@@ -1,4 +1,4 @@
-// "Update now" (issue #883, FR-030): restart and install the downloaded update. Shared by the
+// "Update now" (issue #883, FR-035): restart and install the downloaded update. Shared by the
 // sidebar notice row and the footer badge popover. With any agent mid-turn it asks first
 // (restarting stops them); with none it goes straight through.
 import { useRef, useState } from 'react'

@@ -1,4 +1,4 @@
-// Sidebar notice row for a downloaded update (issue #883, FR-029): "Refract <version> is ready"
+// Sidebar notice row for a downloaded update (issue #883, FR-034): "Refract <version> is ready"
 // with an "Update now" action. Dismissal is per version and lasts until the app restarts, like
 // the other rows; the footer badge and install-on-quit stay either way.
 import { useEffect, useRef } from 'react'

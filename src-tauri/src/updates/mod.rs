@@ -65,11 +65,11 @@ pub async fn run_startup_update_check(
     run_update_cycle(store, data_dir, current_version, on_state).await
 }
 
-/// FR-028: how often Refract re-checks for a newer release while it stays open.
+/// FR-032: how often Refract re-checks for a newer release while it stays open.
 pub const PERIODIC_CHECK_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(4 * 60 * 60);
 
-/// Debug-only override of `PERIODIC_CHECK_INTERVAL` (FR-028) so a live check need not wait hours.
+/// Debug-only override of `PERIODIC_CHECK_INTERVAL` (FR-032) so a live check need not wait hours.
 const INTERVAL_OVERRIDE_ENV: &str = "REFRACT_UPDATE_CHECK_INTERVAL_SECS";
 
 /// Pure so it can be tested for both build kinds: release builds (`debug == false`) always use
@@ -92,7 +92,7 @@ pub fn check_interval() -> std::time::Duration {
     )
 }
 
-/// FR-028: a tick is skipped while a check, download, or install is in progress, and while a
+/// FR-032: a tick is skipped while a check, download, or install is in progress, and while a
 /// verified installer already waits (nothing left to find).
 fn should_run_cycle(phase: state::UpdatePhase) -> bool {
     !matches!(
@@ -104,7 +104,7 @@ fn should_run_cycle(phase: state::UpdatePhase) -> bool {
     )
 }
 
-/// One automatic cycle (FR-028, FR-029): check, and download at once when a newer release is
+/// One automatic cycle (FR-032, FR-033): check, and download at once when a newer release is
 /// found, through the same checksum and signature path as the manual install. A download failure
 /// is already persisted and broadcast as `Failed` by `download_update`.
 pub async fn run_update_cycle(
@@ -127,7 +127,7 @@ pub async fn run_update_cycle(
     store.lock().await.get()
 }
 
-/// FR-028: re-checks every `interval` while the app runs; the first one a full interval after
+/// FR-032: re-checks every `interval` while the app runs; the first one a full interval after
 /// the startup check. Never returns.
 pub async fn run_periodic_update_checks(
     store: SharedUpdateState,
@@ -142,7 +142,7 @@ pub async fn run_periodic_update_checks(
     }
 }
 
-/// FR-031: set by `updates.installNow` just before it quits Refract, so the install-on-quit hook
+/// FR-035: set by `updates.installNow` just before it quits Refract, so the install-on-quit hook
 /// relaunches Refract after the installer finishes. Process-global because the quit hook runs
 /// from `lib.rs`'s own `ExitRequested` handler, with no channel back to the IPC call.
 static RESTART_AFTER_INSTALL: std::sync::atomic::AtomicBool =

@@ -64,7 +64,7 @@ fn current_version(state: &AppState) -> Result<String, IpcError> {
 }
 
 /// Issue #883: the whole background lifecycle -- the startup check (FR-020), then the 4-hour
-/// periodic check (FR-028), both broadcasting each transition to the renderer. Kept out of
+/// periodic check (FR-032), both broadcasting each transition to the renderer. Kept out of
 /// `lib.rs` (`AGENTS.md` "No god files").
 pub async fn run_update_lifecycle(
     session_manager: std::sync::Arc<crate::session::SessionManager>,
@@ -136,7 +136,7 @@ fn updates_install(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// Issue #883 (FR-031): "Update now". Requires a verified installer (`Downloaded`), flags a
+/// Issue #883 (FR-035): "Update now". Requires a verified installer (`Downloaded`), flags a
 /// relaunch, then quits through the normal exit path, so `lib.rs`'s own `ExitRequested` hook stops
 /// every agent, re-verifies the installer, hands the install off, and relaunches Refract. The
 /// renderer has already asked the developer to confirm when agents are running.
