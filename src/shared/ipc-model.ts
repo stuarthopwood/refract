@@ -47,22 +47,29 @@ export type ThinkingLevel = 'off' | 'inherit' | 'minimal' | 'low' | 'medium' | '
 /** Per-Session model/role/reasoning actions over the live RPC connection (never OMP's config --
  * see `RefractApi.modelRoles` for that): the composer picker's `setModel`/`cycleModel`, the
  * Reasoning picker's `setThinkingLevel` (#564), and the role selector (`/role`, Ctrl+R)'s
- * `applyRole`/`listRoles`. Every call refuses with `'not-idle'` while the Session is working
- * (FINDINGS "RM0 probe" item 57's own closing entry: mid-turn `set_model` is not provably safe
- * on `omp` 18.10.1, a regression from a clean 18.8.0 pass) -- refused outright, never queued,
- * except #740's own Settings-triggered role reapply, which is not driven through this API at all
- * (it runs Session-side on its own next settle). The Rust build is the only implementation --
+ * `applyRole`/`listRoles`. `setModel`/`cycleModel`/`applyRole`/`setThinkingLevel` apply at once
+ * while the Session is idle. While it is working or stopped they do not refuse (#766 part A):
+ * the choice is held in Rust (one pending slot for role/model, one for reasoning; last choice
+ * wins) and the result carries `queued: true`. It is applied at the next idle, before the next
+ * prompt, or right after the agent starts -- never sent to OMP mid-turn (FINDINGS "RM0 probe"
+ * item 57's own closing entry: mid-turn `set_model` is not provably safe on `omp` 18.10.1).
+ * Choosing the value that is already applied while a choice is pending clears the pending slot
+ * (`queued` absent). The pending state is `SessionSummary.pendingSelection`. A queued choice
+ * that fails to apply is dropped with an Error transcript notice. #740's own Settings-triggered
+ * role reapply is separate and not driven through this API. The Rust build is the only implementation --
  * Electron never ported this family, and Electron itself is gone (R13, 2026-10-15, #873), so
  * `RefractApi.model` below is no longer optional. */
 export interface ModelApi {
   /** `set_model { provider, modelId }`: Session-scoped only (OMP's own description, "for this
    * session only" -- never writes `modelRoles`); pins the Session (a later Settings role
    * change, #740, leaves it alone) and clears any tracked role. */
-  setModel(sessionId: string, provider: string, modelId: string): Promise<Result<{ model: Model }>>;
+  setModel(sessionId: string, provider: string, modelId: string): Promise<Result<{ model: Model; queued?: boolean }>>;
   /** `cycle_model`: steps through catalog models, NOT roles (FINDINGS item 54 corrects
    * `omp://settings.md`'s own `cycleOrder` description for this specific RPC command) -- pins
-   * the Session exactly like `setModel` (a concrete model was just chosen, not a role). */
-  cycleModel(sessionId: string): Promise<Result<{ model: Model }>>;
+   * the Session exactly like `setModel` (a concrete model was just chosen, not a role). When
+   * `queued`, the target is unknown until it is applied, so `model` is the model known to be
+   * applied now (`null` if never read) and `pendingSelection` has `role` and `model` both null. */
+  cycleModel(sessionId: string): Promise<Result<{ model: Model | null; queued?: boolean }>>;
   /** Forwards OMP's own native `/switch @<role>` (FINDINGS item 54: proven to resolve the role
    * alias correctly; constitution I: Refract does not reimplement `modelRoles`/`cycleOrder`
    * resolution OMP already does). Un-pins the Session and records `role` as its own tracked
@@ -70,8 +77,12 @@ export interface ModelApi {
    * back from OMP). `role` must be one of `listRoles`' own `roles[].role` values: an unknown
    * role is refused locally (`'invalid-argument'`) before anything is sent, since OMP's own
    * text command silently no-ops on one it cannot resolve rather than erroring (FINDINGS item
-   * 53's documented gap). */
-  applyRole(sessionId: string, role: string): Promise<Result<{ model: Model; role: string }>>;
+   * 53's documented gap). When `queued`, `role` is the requested role and `model` is the model
+   * known to be applied now (`null` if never read). */
+  applyRole(
+    sessionId: string,
+    role: string,
+  ): Promise<Result<{ model: Model | null; role: string; queued?: boolean }>>;
   /** The Ctrl+R selector's own listing (and `/role`'s own argument validation source):
    * `cycleOrder` plus the literal `"plan"` role (Stuart 2026-10-13), each with its configured
    * `modelRoles` selector (the raw string; the renderer's own catalog lookup turns it into a
@@ -87,7 +98,7 @@ export interface ModelApi {
    * only, forwarding OMP's own RPC after validating `level` against the closed set above --
    * never pins the Session or touches its tracked role (unlike `setModel`/`cycleModel`/
    * `applyRole`, reasoning effort is orthogonal to which model/role is selected). Same refusal
-   * rules as `setModel` (`'not-idle'` while working). The resolved `thinkingLevel` is `null`
+   * queuing rules as `setModel`; when `queued`, `thinkingLevel` is the requested level. The resolved `thinkingLevel` is `null`
    * (gate round 1, 2026-10-15, amended by Stuart) when OMP's `get_state` does not report a level
    * back for a successful switch -- which OMP does both for `'inherit'` itself (resolved instead
    * to `null` here ONLY if the request was for a different level the model did not confirm; a
@@ -96,6 +107,9 @@ export interface ModelApi {
    * and for any OTHER level on a model that does not report reasoning effort at all. `null` MUST
    * NOT be treated as an error: the renderer shows "Reasoning not reported" for it, never a
    * toast, since the underlying `set_thinking_level` RPC itself already succeeded. */
-  setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<Result<{ thinkingLevel: string | null }>>;
+  setThinkingLevel(
+    sessionId: string,
+    level: ThinkingLevel,
+  ): Promise<Result<{ thinkingLevel: string | null; queued?: boolean }>>;
 }
 

@@ -23,15 +23,17 @@
 //   pins/records a genuine change.
 // - Mid-turn safety is NOT provably safe (FINDINGS item 57's unnumbered closing entry: a clean
 //   18.8.0 pass regressed to a provider 400 on 18.10.1 switching between two different real
-//   models) -- every user-initiated switch (`set_model`, `cycle_model`, `/switch`, `/role`)
-//   refuses outright while the Session is working, the same `SessionNotIdleError` pattern `/new`
-//   already uses, never queues. Closing the race this needs (gate-fix, HIGH): the idle check and
+//   models) -- so nothing user-initiated is ever sent to OMP mid-turn. `model.setModel`/
+//   `cycleModel`/`applyRole`/`setThinkingLevel` are routed through `session::pending_selection`
+//   (#766 part A): idle applies at once, working/stopped QUEUES the choice (drained at the next
+//   idle or after agent start). The functions below are the idle-time apply paths; `/switch`
+//   and `/model` text commands still refuse while working (the same `SessionNotIdleError`
+//   pattern `/new` uses). Closing the race this needs (gate-fix, HIGH): the idle check and
 //   the RPC/prompt dispatch happen under ONE lock acquisition (`agent::mod`'s own
 //   `request_rpc_if_idle`/`send_if_idle`), not as two separate steps a concurrent turn start
-//   could land between. The ONE exception is #740's own decided design for a Settings role
-//   change reaching an open Session: that path queues for the Session's own next settle (never
-//   refuses) via `queue_role_reapply_or_ready`, itself atomic with the status read for the same
-//   reason.
+//   could land between. #740's Settings-triggered role change reaching an open Session
+//   queues for the Session's own next settle (never refuses) via `queue_role_reapply_or_ready`,
+//   itself atomic with the status read for the same reason.
 // - A Session's tracked role is read from its own Conversation file's latest `model_change`
 //   entry the first time it is needed each run (gate-fix, HIGH, #741: "if the role cannot be
 //   established, show nothing rather than a guess"), then cached in memory (`State.current_role`,
@@ -87,6 +89,8 @@ pub(super) struct State {
     /// Settings (#740's decided design: "automatic at the next idle moment", never refused).
     /// Applied by `on_frame` below at the Session's own next settle, then cleared.
     pub(super) pending_role_reapply: Option<String>,
+    /// #766 part A: role/model and reasoning choices made while not idle (`pending_selection`).
+    pub(super) pending: super::pending_selection::PendingSelection,
     /// Gate-fix (HIGH, perf): the Conversation file path `current_selection` already probed and
     /// found NO `model_change` entry in, so a Session nobody has ever changed the model/role on
     /// is not re-read and re-parsed on every later `sessions.list()` poll. Distinct from
@@ -156,13 +160,13 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
     let pending = agent
         .with_model_state(|s| s.pending_role_reapply.take())
         .await;
-    if let Some(role) = pending {
-        // Gate-fix (MEDIUM, perf): run on a clone of the agent's own `Arc` rather than inline,
-        // so the frame listener itself is never blocked waiting on this reapply's own RPCs.
-        // Gate-fix (#856): `agent::frame`'s own settle-time `get_state` RPC is ALSO spawned off
-        // the listener task now (same file), so this reapply no longer shares that worry alone.
-        let agent = agent.arc();
-        tokio::spawn(async move {
+    // Gate-fix (MEDIUM, perf): run on a clone of the agent's own `Arc` rather than inline,
+    // so the frame listener itself is never blocked waiting on this reapply's own RPCs.
+    // Gate-fix (#856): `agent::frame`'s own settle-time `get_state` RPC is ALSO spawned off
+    // the listener task now (same file), so this reapply no longer shares that worry alone.
+    let agent = agent.arc();
+    tokio::spawn(async move {
+        if let Some(role) = pending {
             // Gate-fix (HIGH, round 2): re-queue ONLY on `not-idle` (a genuine race -- the
             // Session started a new turn between the settle frame and this spawned task's own
             // `send_if_idle` call). Any OTHER error (the role's model is unavailable, not signed
@@ -181,8 +185,11 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
                         .await;
                 }
             }
-        });
-    }
+        }
+        // #766 part A: the user's queued role/model/reasoning choice lands after any
+        // Settings-triggered reapply, so the user's last choice wins.
+        super::pending_selection::drain(&agent).await;
+    });
 }
 
 pub(super) async fn on_exit(_agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
@@ -479,15 +486,7 @@ pub async fn apply_role(
     role: &str,
     known_roles: &[String],
 ) -> Result<Value, AgentError> {
-    if !known_roles.iter().any(|r| r == role) {
-        return Err(AgentError::new(
-            "invalid-argument",
-            format!(
-                "Unknown role: {role}. Valid roles: {}",
-                known_roles.join(", ")
-            ),
-        ));
-    }
+    super::pending_selection::validate_known_role(role, known_roles)?;
     apply_role_now(agent, role, false, None, None).await
 }
 

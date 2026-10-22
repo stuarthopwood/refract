@@ -364,6 +364,7 @@ impl SessionAgent {
     /// an unrelated Session's refresh wiped this one's notice until its next status emit (no tick).
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
+        let pending_selection = crate::session::pending_selection::wire(self).await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "status": state.status,
@@ -375,6 +376,9 @@ impl SessionAgent {
         let object = payload
             .as_object_mut()
             .expect("summary_fields payload is always a JSON object");
+        if let Some(pending) = pending_selection {
+            object.insert("pendingSelection".to_string(), pending);
+        }
         if let Some(reason) = state.stop_reason {
             object.insert("stopReason".to_string(), Value::String(reason.to_string()));
         }

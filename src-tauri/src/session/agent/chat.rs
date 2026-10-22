@@ -17,6 +17,14 @@ impl SessionAgent {
         images: Option<Vec<Value>>,
     ) -> Result<Value, AgentError> {
         let (proc, working) = {
+            let idle_with_process = {
+                let state = self.state.lock().await;
+                state.status == SessionStatus::Idle && state.process.is_some()
+            };
+            // #766 part A: a queued role/model/reasoning choice lands before the next prompt.
+            if idle_with_process {
+                crate::session::pending_selection::drain(self).await;
+            }
             let mut state = self.state.lock().await;
             // Port of `SessionAgent.ts`'s own `send()`: marks the user as having acted before
             // anything else (code-review finding, 2026-10-13 -- this was never called, so every
