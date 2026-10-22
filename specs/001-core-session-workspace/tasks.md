@@ -5144,3 +5144,34 @@ one-shot `config`/`models` handling it needs are written and syntax-checked (`no
 NOT yet run against a built exe -- Main's "ready for build slot" instruction gates that (no
 `verify-*.mjs` run by this worker); T362 stays open until the build slot is granted, the Tauri
 debug build runs, and the script's own pass (and its `report.json`) is recorded here.
+
+## Phase 75: Convergence (#838 agent-to-agent lines, #762 `/models`, FR-100/FR-101)
+
+`/speckit.converge` against the amended spec (FR-100, FR-101 and the 2026-10-22 Clarifications
+entry): seven findings, all appended below; nothing else in scope was found unmet.
+
+- [X] T363 Handle a bare `/models` in `MessageInput.tsx` before `open()` (clear the draft,
+  `useViewStore.openSettings('model-roles')`, send nothing) and list it in
+  `session/agent/commands.rs` `NATIVE_BUILT_COMMANDS` ("Open model role settings"), keeping it in
+  `NATIVE_RESERVED_COMMANDS` per FR-100 (missing)
+- [X] T364 Teach the Rust transcript builder OMP's `irc:incoming` custom type and pass
+  `details.fromParent`/`replyTo` through as optional `agent-message` fields (`fromParent`,
+  `replyTo` in `src/shared/model.ts`); a missing `to` with `fromParent` reads "this agent", not
+  "main agent". Moved into `omp/transcript/agent_message.rs` (#806 cap) per FR-101 (missing)
+- [X] T365 Draw `AgentMessageRow` with a direction glyph (`agentMessageDirection.ts`:
+  `fromParent` first, then the "Main"/"main agent" names), the label in `--agent-message`,
+  "Main agent" as the parent's one label, and an sr-only "Agent message from X to Y" per
+  FR-101 (partial)
+- [X] T366 Render a `write agent://<id>` call as a main-to-subagent line (`AgentSteerRow`,
+  status glyph while running/failed/interrupted/stopped, "failed" in the error colour, "View full
+  call" on expansion), a grouping boundary in `groupToolItems.ts` and never hidden by "Show tool
+  calls" (`transcriptRowVisibility.ts`) per FR-101 (missing)
+- [X] T367 Add `--agent-message` to every built-in theme in `globals.css` (Tailwind
+  `text-agent-message`) and its 4.5:1 pairs (`background`, `muted`) to
+  `scripts/theme-contrast-pairs.mjs` per FR-101 (missing)
+- [X] T368 Amend `docs/design/foundations-icons.md`'s colour rule (agent-to-agent message
+  identity) and add the agent-message token and a reserved-hue table to
+  `docs/design/foundations-tokens-theming.md` per FR-101 (missing)
+- [ ] T369 Verify: `pnpm ci:local` and a live scratch-instance check
+  (`scripts/verify-p1-agentmsg.mjs`: glyph, colour and accessible name per direction in Dark,
+  Obsidian and Dark (high contrast); `/models` opens Model roles) per FR-100/FR-101 (partial)
