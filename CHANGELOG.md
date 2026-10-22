@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.9.0 (2026-10-22)
+
+### Features
+
+- feat(design-system): one selected-item style + Explorer text/icon tone (https://github.com/stuarthopwood/refract/pull/1153)
+- feat(pull-requests): RAG check colours, State select height, state-only reason line, Open on GitHub button (https://github.com/stuarthopwood/refract/pull/1154)
+- feat(chat): agent-to-agent line styling, /models command, delete-wait timeout (https://github.com/stuarthopwood/refract/pull/1161)
+- feat(composer): image-only send, context-usage gradient, live branch label (https://github.com/stuarthopwood/refract/pull/1162)
+- feat(chat): close-pane chat glyph and ghost New conversation button (https://github.com/stuarthopwood/refract/pull/1167)
+- feat(installer): optional desktop shortcut on the finish page (https://github.com/stuarthopwood/refract/pull/1172)
+- feat(updates): periodic check, background download and restart to update (https://github.com/stuarthopwood/refract/pull/1174)
+- feat(rm): queue role, model and thinking changes while a turn runs (#766 part A) (https://github.com/stuarthopwood/refract/pull/1183)
+- feat(rm): combined Role·Model pill, one switcher and Ctrl+R role cycling (#766 part B) (https://github.com/stuarthopwood/refract/pull/1187)
+- feat(omp): OMP settings guard resets drifted token-cost settings (#1184) (https://github.com/stuarthopwood/refract/pull/1189)
+
+### Fixes
+
+- perf(chat): memoise transcript rows and markdown (https://github.com/stuarthopwood/refract/pull/1177)
+- fix(worktrees): remove pnpm node_modules junctions before git worktree remove (https://github.com/stuarthopwood/refract/pull/1182)
+
+### Other
+
+- docs(plan): file #1155 chat item references with hover card (https://github.com/stuarthopwood/refract/pull/1156)
+- docs(plan): 2026-10-22 priority review and p1 order (https://github.com/stuarthopwood/refract/pull/1160)
+- docs(plan): working rule 13 director model and 2026-10-22 token-cost decisions (https://github.com/stuarthopwood/refract/pull/1166)
+- docs(plan): place #1169 and #1170 (https://github.com/stuarthopwood/refract/pull/1171)
+- chore(worktrees): add pnpm worktrees:reap and the post-merge reap step (https://github.com/stuarthopwood/refract/pull/1179)
+- docs(plan): place #1184 OMP settings guard at priority 3 (https://github.com/stuarthopwood/refract/pull/1185)
+
 ## v0.8.0 (2026-10-21)
 
 ### Features
