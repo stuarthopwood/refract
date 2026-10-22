@@ -12,6 +12,9 @@
 // Test-only: --pr-fixture <json file mapping branch -> {state, headRefOid} (or an array of
 //   those)> replaces the `gh` lookup. Honoured only when both --root and --repo are under the OS
 //   temp directory; see scripts/worktrees-reap-fixture.mjs.
+// --apply first deletes <worktree>\node_modules with `rmdir /s /q` on a \\?\ path, because git
+//   cannot delete pnpm's directory junctions (#1181); a worktree git deregistered but could not
+//   fully delete is finished with the guarded husk deleter.
 // Ignored files: a worktree is skipped when it holds an ignored path other than node_modules/
 //   (any depth), dist/, out/, .vite/, src-tauri/target/, src-tauri/gen/ or a top-level
 //   *.tsbuildinfo, because removal would delete it.
@@ -250,7 +253,12 @@ function huskReason(dir, registered) {
       try {
         real = fs.realpathSync(p)
       } catch {
-        return null
+        // A partial removal leaves junctions whose .pnpm target is already gone; judge the recorded target.
+        try {
+          real = path.resolve(top, fs.readlinkSync(p).replace(/^\\\\\?\\/, ''))
+        } catch {
+          return null
+        }
       }
       if (!isInside(real, dir)) return null
     }
@@ -268,6 +276,16 @@ function deleteHusk(dir) {
   const target = assertSafeTarget(dir)
   spawnSync(cmdExe(),  ['/d', '/c', 'rmdir', '/s', '/q', target], { cwd: os.tmpdir(), windowsHide: true })
   return !fs.existsSync(target)
+}
+
+// `git worktree remove` stops at pnpm's node_modules directory junctions on Windows (#1181);
+// `rmdir /s /q` on a \\?\ path removes a junction without following it.
+function deleteNodeModules(worktreePath) {
+  const nm = assertSafeTarget(path.join(worktreePath, 'node_modules'))
+  if (CMD_META.test(nm)) return false
+  if (!fs.existsSync(nm)) return true
+  spawnSync(cmdExe(), ['/d', '/c', 'rmdir', '/s', '/q', `\\\\?\\${nm}`], { cwd: os.tmpdir(), windowsHide: true })
+  return !fs.existsSync(nm)
 }
 
 function check(worktrees) {
@@ -318,15 +336,25 @@ function main() {
     try {
       const target = assertSafeTarget(wt.path)
       if (!apply) {
-        console.log(`would run: git worktree remove -- "${target}" ; git branch -D ${wt.branch}`)
+        console.log(`would run: remove "${target}\\node_modules" via cmd rmdir (if present) ; git worktree remove -- "${target}" ; git branch -D ${wt.branch}`)
         continue
       }
       console.log(`removing ${target}`)
+      if (!deleteNodeModules(target)) {
+        failures++
+        console.log('  FAILED: node_modules still present, busy or locked')
+        continue
+      }
       const r = git(repo, ['worktree', 'remove', '--', target])
       if (r.status !== 0) {
-        failures++
-        console.log(`  FAILED, busy or locked: ${(r.stderr || '').trim().split('\n')[0]}`)
-        continue
+        // Git may deregister the worktree and then fail on leftovers; finish with the guarded deleter.
+        const deregistered = !listWorktrees().some((w) => norm(w.path) === norm(target))
+        if (!deregistered || !deleteHusk(target)) {
+          failures++
+          console.log(`  FAILED, busy or locked: ${(r.stderr || '').trim().split('\n')[0]}`)
+          continue
+        }
+        console.log('  git left a deregistered leftover folder; deleted it')
       }
       removed.push(wt)
       if (/^(main|master)$/.test(wt.branch)) continue
