@@ -112,7 +112,9 @@ mod tests {
             "timestamp": 1,
             "details": { "id": "m2", "from": "R3_Worker", "message": "done" }
         });
-        let wire = serde_json::to_value(try_build_agent_message("y", "irc:incoming", &message).unwrap()).unwrap();
+        let wire =
+            serde_json::to_value(try_build_agent_message("y", "irc:incoming", &message).unwrap())
+                .unwrap();
         assert_eq!(wire["to"], "main agent");
         assert!(wire.get("fromParent").is_none());
         assert!(wire.get("replyTo").is_none());
