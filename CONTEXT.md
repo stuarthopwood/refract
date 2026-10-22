@@ -148,6 +148,14 @@ _Avoid_: PR view, merge requests (GitLab's term)
 The left-nav entry and the list-plus-detail view it opens, listing GitHub issues from every **Project** that has a **GitHub repository**, on the same list shell as the **Pull requests view**.
 _Avoid_: Issues page, issue log, issue tracker
 
+**Item reference**:
+A mention of a pull request or issue by number in chat prose: `#123` means that number in the **GitHub repository** of the chat's **Session**'s **Project**, and `owner/repo#123` means that number in the named repository. Shown as a link with an **Item card**; a pull request opens in the **Pull requests view**, anything else on GitHub (issue #1155).
+_Avoid_: Hashtag, issue link, PR link
+
+**Item card**:
+The hover card an **Item reference** shows on hover or focus: repository and created date, title and number, state and author, and for a pull request its base and head branches (issue #1155).
+_Avoid_: Tooltip, preview, popup
+
 **Filter tab**:
 One of the tabs across the top of a **Pull requests view**'s or **Issues view**'s list (pull requests: All, Authored by me, Assigned to me, Involves me, Review requested; issues: Open, Assigned to me, Authored by me, Mentions me), narrowing which items the list shows; exactly one is active at a time, defaulting to the first. The Pull requests first tab is **All** (renamed from Open, Stuart 2026-10-16, #499), because the State control in its Filters section (Open, Closed incl. merged, All; default Open) now narrows whichever tab is active. Pull requests Filter tabs are ghost tabs in one row that scrolls sideways, the active one on a subtle background (#499). Pull requests' Overview/Changes pair uses a locally-styled underline variant of the shared Tabs primitive, pending #394's app-wide tab convention.
 _Avoid_: Filter, category, "Created by me" (say Authored by me)
