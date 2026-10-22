@@ -21,6 +21,14 @@ update process, uninstaller."
   announces a new version; the developer clicks Update; it downloads and installs when Refract
   is next quit; it never interrupts a running agent.
 
+### Session 2026-10-22 (issue #883)
+
+- Q: How frictionless should updates be? -> A: Re-check every 4 hours while open, download a
+  found update in the background, then prompt with "Update now" in the sidebar notice stack
+  (restart and install at once, confirming first if agents are running). Ignoring the prompt
+  keeps install-on-quit. FR-028 to FR-031 supersede the "you click, installs on quit" answer
+  above and the click in FR-014.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Install Refract (Priority: P1)
@@ -310,6 +318,19 @@ draft, are never offered as an update by User Story 3's check.
 - **FR-027**: The Check for updates action and the update badge MUST be reachable and operable
   by keyboard, with a visible focus indicator, consistent with the rest of Settings (spec 004
   FR-016).
+- **FR-028** (issue #883): While Refract is open, it MUST re-check for a newer release every 4
+  hours, the first re-check 4 hours after the startup check. A re-check MUST be skipped while
+  another check, a download, or an install is in progress. Debug builds only MAY override the
+  interval through `REFRACT_UPDATE_CHECK_INTERVAL_SECS`; release builds MUST ignore it.
+- **FR-029** (issue #883): When a check finds a newer release, at startup or on a re-check,
+  Refract MUST download it in the background through the same checksum and Authenticode
+  verification as FR-014, with no click needed. A failure is reported as in FR-014 and FR-018.
+- **FR-030** (issue #883): When the download is verified, Refract MUST show an "Update now"
+  prompt as a row in the sidebar notice stack, next to the existing footer badge. Ignoring it
+  keeps FR-015: the update installs the next time Refract quits.
+- **FR-031** (issue #883): Selecting Update now MUST quit Refract, install the verified update,
+  and start the new version. If any agent is mid-turn, Refract MUST first ask the developer to
+  confirm ("N agents are running; restarting stops them"), and MUST NOT quit if they cancel.
 
 ### Key Entities
 
