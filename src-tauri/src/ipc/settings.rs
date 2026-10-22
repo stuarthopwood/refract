@@ -47,6 +47,10 @@ pub fn register(d: &mut Dispatcher) {
     // every `settings.*` channel in one place, same reasoning `ipc/mod.rs`'s own module split
     // documents for every other per-area file.
     d.register(
+        "settings.setShowContextUsageBar",
+        settings_set_show_context_usage_bar,
+    );
+    d.register(
         "settings.setWordPredictionEnabled",
         settings_set_word_prediction_enabled,
     );
@@ -433,6 +437,23 @@ pub fn settings_set_pull_requests_list_width(state: AppState, args: Vec<Value>) 
             .lock()
             .await
             .set_pull_requests_list_width_px(width_px)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// `settings.setShowContextUsageBar(enabled)` (issue #1082, spec 004 FR-034).
+pub fn settings_set_show_context_usage_bar(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let enabled = require_bool(&args, 0, "settings.setShowContextUsageBar", "enabled")?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_show_context_usage_bar(enabled)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");

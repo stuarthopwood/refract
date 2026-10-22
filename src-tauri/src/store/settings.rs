@@ -98,6 +98,8 @@ pub struct Settings {
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
+    /// Issue #1082 (spec 004 FR-034): the 2px context usage bar; default on.
+    pub show_context_usage_bar: bool,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -234,6 +236,10 @@ impl SettingsStore {
             .get("detectImagePathsOnPaste")
             .and_then(Value::as_bool)
             .unwrap_or(true);
+        let show_context_usage_bar = object
+            .get("showContextUsageBar")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -259,7 +265,7 @@ impl SettingsStore {
             .map(clamp_pull_requests_list_width_px)
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
-        const KNOWN_FIELDS: [&str; 14] = [
+        const KNOWN_FIELDS: [&str; 15] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -271,6 +277,7 @@ impl SettingsStore {
             "transcriptDisplay",
             "showSampleData",
             "detectImagePathsOnPaste",
+            "showContextUsageBar",
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -293,6 +300,7 @@ impl SettingsStore {
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
+            show_context_usage_bar,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -359,6 +367,10 @@ impl SettingsStore {
         map.insert(
             "detectImagePathsOnPaste".to_string(),
             json!(self.data.detect_image_paths_on_paste),
+        );
+        map.insert(
+            "showContextUsageBar".to_string(),
+            json!(self.data.show_context_usage_bar),
         );
         map.insert(
             "wordPredictionEnabled".to_string(),
@@ -520,6 +532,15 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             detect_image_paths_on_paste: enabled,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setShowContextUsageBar(enabled)` (issue #1082): plain boolean, like the one above.
+    pub async fn set_show_context_usage_bar(&mut self, enabled: bool) -> std::io::Result<Settings> {
+        let next = Settings {
+            show_context_usage_bar: enabled,
             ..self.data.clone()
         };
         self.persist_whole(next).await
