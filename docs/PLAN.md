@@ -53,19 +53,20 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 |---|---|---|---|
 | 1 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |
 | 2 | #1055 | Delete dialog: hung-git wait timeout and two copy fixes | Bug, grilled 2026-10-22, scope narrowed |
-| 3 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
-| 4 | #883 | In-app update check | Release path; left open when #794 closed |
-| 5 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
-| 6 | #766 | Combined Role·Model pill, Ctrl+R, change any time | Re-grilled 2026-10-20 |
-| 7 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
-| 8 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
-| 9 | #1082 | Context usage colour gradient | Composer strip, after #724 |
-| 10 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
-| 11 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
-| 12 | #469 | Tool-row icons with verb tooltips | Transcript rows |
-| 13 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
-| 14 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
-| 15 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
+| 3 | #1184 | OMP settings guard: reset drifted token-cost settings at start and before each Session launch | Filed p1 2026-10-22; protects the token savings; small Rust module on existing `omp/config.rs` |
+| 4 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
+| 5 | #883 | In-app update check | Release path; left open when #794 closed |
+| 6 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
+| 7 | #766 | Combined Role·Model pill, Ctrl+R, change any time | Re-grilled 2026-10-20 |
+| 8 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
+| 9 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
+| 10 | #1082 | Context usage colour gradient | Composer strip, after #724 |
+| 11 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
+| 12 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
+| 13 | #469 | Tool-row icons with verb tooltips | Transcript rows |
+| 14 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
+| 15 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
+| 16 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
 | alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
 
 p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
@@ -755,3 +756,5 @@ Also filed 2026-10-22 (Stuart, grilled, none deferred): **#1155** chat Item refe
 Also filed 2026-10-22 (Stuart's #1055 grill, Lane D): **#1157** and **#1158** (`p2`) and **#1159** (`p3`), the #1055 items refiled when #1055 was narrowed to the delete-wait timeout and two copy fixes; placed as rows after the Delete dialog follow-ups row.
 
 Also filed 2026-10-22 (Stuart, grilled, none deferred): **#1169** `Pull (n)` from the default branch (Git changes panel and composer strip) and **#1170** live Markdown styling in the composer, placed as rows after #1155. Both `p2`.
+
+Also filed 2026-10-22 (Stuart, grilled, none deferred): **#1184** OMP settings guard (`p1`), placed as Priority order 3, after #1055; comment posted on #691 (Guarded tag and baseline edit).
