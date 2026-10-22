@@ -53,7 +53,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 |---|---|---|---|
 | 1 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |
 | 2 | #1055 | Delete dialog: hung-git wait timeout and two copy fixes | Bug, grilled 2026-10-22, scope narrowed |
-| 3 | #1184 | OMP settings guard: reset drifted token-cost settings at start and before each Session launch | Filed p1 2026-10-22; protects the token savings; small Rust module on existing `omp/config.rs` |
+| 3 | #1184 | OMP settings guard: reset drifted token-cost settings at start and before each Session launch | Filed p1 2026-10-22; protects the token savings; small Rust module on existing `omp/config.rs`; done (PR #PRNUM), item 5 moved to #691 |
 | 4 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
 | 5 | #883 | In-app update check | Release path; left open when #794 closed |
 | 6 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
