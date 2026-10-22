@@ -137,7 +137,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', 'first question');
     await cdp.pressEnter();
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Approval card (turn 1 working)' });
-        check(await cdp.evaluate(`typeof window.__refractRenderCounts === 'object'`), 'render-counter hook is present in this build (else the exe is the wrong build)');
+    check(await cdp.evaluate(`typeof window.__refractRenderCounts === 'object'`), 'render-counter hook is present in this build (else the exe is the wrong build)');
     // #769 case A: paste while the turn is working and blocked on the approval (no streaming).
     const pasteA = await cdp.evaluate(PASTE_AND_TIME);
     check(pasteA.appeared, '#769 A: chip appears while the turn is working (pending approval)', { ms: pasteA.ms, bytes: pasteA.bytes });
