@@ -16,10 +16,10 @@ import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
 import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
-import { AgentMessageRow } from './AgentMessageRow'
+import { AgentMessageRow, AgentSteerRow } from './AgentMessageRow'
 import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
 import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
-import { groupToolItems, isToolGroup, isThoughtRun } from './groupToolItems'
+import { groupToolItems, isAgentSteerGroup, isToolGroup, isThoughtRun } from './groupToolItems'
 import { groupThoughtItems } from './groupThoughtItems'
 import { ThoughtRunRow } from './ThoughtRunRow'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
@@ -120,7 +120,7 @@ interface TranscriptRowProps {
 function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
   if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
-  if (isToolGroup(item)) return <ToolGroupRow group={item} />
+  if (isToolGroup(item)) return isAgentSteerGroup(item) ? <AgentSteerRow item={item.items[0]!} /> : <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
 
   switch (item.kind) {

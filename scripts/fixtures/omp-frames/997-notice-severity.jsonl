@@ -24,6 +24,13 @@
 // diagram; #1108 is amended to its narrower remaining Gantt-only scope).
 // `verify-997-notice-severity.mjs`'s own assertions are unaffected: it only reads NoticeRow
 // styling, never asserts message content or count.
+// EXTENDED AGAIN (#838 agent-to-agent lines, 2026-10-22): three `irc:incoming` custom messages
+// (subagent to main, `fromParent` from Main, and subagent to subagent with an explicit `to`), then a
+// `read`, a `write agent://R1_Worker` steer, a second `read` and a failed `write agent://Nobody`, all
+// after the notices and before `prompt_result`, so `scripts/verify-p1-agentmsg.mjs` can assert each
+// direction glyph, the violet label, the grouping boundary and the failed state. Synthesized from the
+// wire shape read from local OMP session files (field names only); every earlier consumer reads
+// first-match NoticeRow/Mermaid elements and is unaffected.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -44,5 +51,16 @@
 {"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}
 {"type":"notice","level":"warning","message":"Issue #997 live check: short warning notice (NoticeRow colour)."}
 {"type":"notice","level":"error","message":"Issue #997 live check: short error notice (NoticeRow colour)."}
+{"type":"message_end","messageId":"msg-irc-838-1","message":{"role":"custom","customType":"irc:incoming","content":"R1_Worker: gate round 1 done.","display":true,"details":{"id":"irc-838-1","from":"R1_Worker","message":"Issue #838 live check: gate round 1 done, PR opened."},"timestamp":0}}
+{"type":"message_end","messageId":"msg-irc-838-2","message":{"role":"custom","customType":"irc:incoming","content":"Main: rebase first.","display":true,"details":{"id":"irc-838-2","from":"Main","message":"Issue #838 live check: rebase on main first.","fromParent":true,"replyTo":"irc-838-1"},"timestamp":0}}
+{"type":"message_end","messageId":"msg-irc-838-3","message":{"role":"custom","customType":"irc:incoming","content":"R2_Reviewer: two issues.","display":true,"details":{"id":"irc-838-3","from":"R2_Reviewer","to":"R1_Worker","message":"Issue #838 live check: found two issues in your diff."},"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"call-838-read-a","toolName":"read","args":{"path":"README.md"},"intent":"Reading README.md"}
+{"type":"tool_execution_end","toolCallId":"call-838-read-a","toolName":"read","result":{"content":[{"type":"text","text":"issue-838 fixture readme content"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-838-steer","toolName":"write","args":{"path":"agent://R1_Worker","content":"Issue #838 live check: please also update the docs.\nSecond line of the steer."},"intent":"Steering R1_Worker"}
+{"type":"tool_execution_end","toolCallId":"call-838-steer","toolName":"write","result":{"content":[{"type":"text","text":"Delivered to R1_Worker"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-838-read-b","toolName":"read","args":{"path":"README.md"},"intent":"Reading README.md"}
+{"type":"tool_execution_end","toolCallId":"call-838-read-b","toolName":"read","result":{"content":[{"type":"text","text":"issue-838 fixture readme content"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-838-steer-fail","toolName":"write","args":{"path":"agent://Nobody","content":"Issue #838 live check: this agent does not exist."},"intent":"Steering Nobody"}
+{"type":"tool_execution_end","toolCallId":"call-838-steer-fail","toolName":"write","result":{"content":[{"type":"text","text":"Agent not found: Nobody"}]},"isError":true}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
 {"type":"session_settled"}

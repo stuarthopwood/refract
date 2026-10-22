@@ -115,7 +115,7 @@ fn partial_removal_message(err: &std::io::Error, worktree_path: &Path) -> String
         Some(145) => "a file inside it reappeared while Refract was removing it".to_string(),
         _ => format!("{err}"),
     };
-    format!("Some files were already deleted. Refract could not finish removing {wt}: {reason}. Close any terminal or editor open in that folder, then choose Retry.")
+    format!("Some files may already have been deleted. Refract could not finish removing {wt}: {reason}. Close any terminal or editor open in that folder, then choose Retry.")
 }
 
 /// Maps `fs::remove_tree`'s own error into the same `GitError` shape every other refusal in
