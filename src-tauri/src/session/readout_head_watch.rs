@@ -19,9 +19,9 @@ use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use crate::git::git::git_raw;
 
 use super::agent::SessionAgent;
-use super::readout::schedule_readout_update;
+use super::readout::{compute_branch, current_readout_value, schedule_readout_update};
 
-const DEBOUNCE_MS: u64 = 300;
+const DEBOUNCE_MS: u64 = 150;
 const GIT_PATH_TIMEOUT: Duration = Duration::from_secs(3);
 
 static WATCHERS: LazyLock<StdMutex<HashMap<String, RecommendedWatcher>>> =
@@ -48,6 +48,21 @@ async fn resolve_head_dir(worktree_path: &str) -> Option<PathBuf> {
     head.parent().map(Path::to_path_buf)
 }
 
+/// Fast path: the full readout recompute also runs the diff stat (several git processes, about a
+/// second on a loaded Windows box), so the new branch is pushed on the last readout at once and
+/// the full recompute (scheduled straight after) then stores it with everything else.
+async fn push_branch_now(agent: &Arc<SessionAgent>, worktree_path: &str) {
+    let branch = compute_branch(worktree_path).await;
+    let mut readout = current_readout_value(agent).await;
+    if readout.get("branch") == Some(&branch) || !agent.is_visible() {
+        return;
+    }
+    readout["branch"] = branch;
+    agent
+        .events()
+        .emit_readout_update(agent.session_id(), readout);
+}
+
 /// Starts (or replaces) the HEAD watch for `agent`'s Session. A worktree git cannot read, or a
 /// directory the OS will not watch, leaves the Session unwatched; turn and tool-call refreshes
 /// still apply.
@@ -58,6 +73,7 @@ pub(super) async fn start(agent: &SessionAgent, worktree_path: &str) {
         return;
     };
     let weak = Arc::downgrade(&agent.arc());
+    let worktree = worktree_path.to_string();
     let armed = Arc::new(AtomicBool::new(false));
     let runtime = tokio::runtime::Handle::current();
     let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
@@ -75,10 +91,12 @@ pub(super) async fn start(agent: &SessionAgent, worktree_path: &str) {
         }
         let weak = weak.clone();
         let armed = armed.clone();
+        let worktree = worktree.clone();
         runtime.spawn(async move {
             tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
             armed.store(false, Ordering::SeqCst);
             if let Some(agent) = weak.upgrade() {
+                push_branch_now(&agent, &worktree).await;
                 schedule_readout_update(&agent).await;
             }
         });

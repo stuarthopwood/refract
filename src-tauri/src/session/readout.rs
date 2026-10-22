@@ -515,7 +515,7 @@ async fn refresh_pull_request(agent: &SessionAgent, worktree_path: &str, branch:
 /// `Value::Null` for an unreadable worktree (missing, not a git repo, or no commits yet) -- never
 /// retained across a transient failure (unlike `pull_request`): a worktree that is readable one
 /// tick and not the next has genuinely changed state, not merely hit a momentary blip.
-async fn compute_branch(worktree_path: &str) -> Value {
+pub(super) async fn compute_branch(worktree_path: &str) -> Value {
     let path = Path::new(worktree_path);
     let symbolic = git_raw(
         path,

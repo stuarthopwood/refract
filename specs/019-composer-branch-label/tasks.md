@@ -9,17 +9,17 @@
 
 ## Phase 1: Foundational (Blocking Prerequisites)
 
-- [ ] T001 Add `src-tauri/src/session/readout_head_watch.rs`: resolve `git rev-parse --git-path HEAD` against the worktree, watch its parent directory non-recursively, filter to file name `HEAD`, debounce 300 ms, then `schedule_readout_update`; one watcher per Session in a static map, replaced on start (FR-003)
-- [ ] T002 Declare the module in `src-tauri/src/session/mod.rs`; start the watch from `readout::on_launch`'s first pass and stop it in `readout::on_exit` in `src-tauri/src/session/readout.rs` (FR-003)
+- [X] T001 Add `src-tauri/src/session/readout_head_watch.rs`: resolve `git rev-parse --git-path HEAD` against the worktree, watch its parent directory non-recursively, filter to file name `HEAD`, debounce 150 ms, push the new branch at once (branch-only fast path), then `schedule_readout_update`; one watcher per Session in a static map, replaced on start (FR-003)
+- [X] T002 Declare the module in `src-tauri/src/session/mod.rs`; start the watch from `readout::on_launch`'s first pass and stop it in `readout::on_exit` in `src-tauri/src/session/readout.rs` (FR-003)
 
 ## Phase 2: User Story 1 - See the branch the Session is really on (Priority: P1)
 
-- [ ] T003 [US1] Add `src/renderer/features/chat/ComposerBranchLabel.tsx`: reads `readout.branch` for the pane's Session; renders nothing when null; "Detached at <sha>" when detached; `GitBranchIcon` plus truncating name (FR-001, FR-002, FR-006)
-- [ ] T004 [US1] Render it after `ReasoningPicker` in the composer bottom row in `src/renderer/features/chat/MessageInput.tsx`, without growing that file past its baseline (FR-001, FR-006)
+- [X] T003 [US1] Add `src/renderer/features/chat/ComposerBranchLabel.tsx`: reads `readout.branch` for the pane's Session; renders nothing when null; "Detached at <sha>" when detached; `GitBranchIcon` plus truncating name (FR-001, FR-002, FR-006)
+- [X] T004 [US1] Render it after `ReasoningPicker` in the composer bottom row in `src/renderer/features/chat/MessageInput.tsx`, without growing that file past its baseline (FR-001, FR-006)
 
 ## Phase 3: User Story 2 - Open the Git panel from the label (Priority: P1)
 
-- [ ] T005 [US2] Make the label a `PICKER_TRIGGER_CLASS` button with accessible name "Branch: <name>. Open Git changes panel" and a Tooltip (full name, base branch, "Session branch: x" when it differs), opening `openHostedPanel('git-changes', sessionId, { opener })` (FR-004, FR-005)
+- [X] T005 [US2] Make the label a `PICKER_TRIGGER_CLASS` button with accessible name "Branch: <name>. Open Git changes panel" and a Tooltip (full name, base branch, "Session branch: x" when it differs), opening `openHostedPanel('git-changes', sessionId, { opener })` (FR-004, FR-005)
 
 ## Phase 4: Polish & Cross-Cutting Concerns
 
