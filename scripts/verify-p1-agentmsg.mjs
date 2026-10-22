@@ -175,9 +175,9 @@ async function main() {
     // 3. Steer is a line, splits the reads; failed steer shows the error state.
     const layout = await cdp.evaluate(`(() => {
       const steer = ${rowByLabelExpr('Agent message from Main agent to R1_Worker')};
-      const readRows = Array.from(document.querySelectorAll('button')).filter((b) => /\\bread\\b/.test(b.textContent ?? '') && (b.textContent ?? '').includes('README.md'));
+      const readRows = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent ?? '').includes('README.md') && !(b.textContent ?? '').includes('Agent message'));
       const ordered = readRows.length === 2 && steer && (readRows[0].compareDocumentPosition(steer) & Node.DOCUMENT_POSITION_FOLLOWING) && (steer.compareDocumentPosition(readRows[1]) & Node.DOCUMENT_POSITION_FOLLOWING);
-      return { readRows: readRows.length, ordered: !!ordered, steerText: steer?.textContent ?? null };
+      return { readRows: readRows.length, readTexts: readRows.map((b) => (b.textContent ?? '').slice(0, 80)), logButtons: Array.from(document.querySelectorAll('[role="log"] button')).map((b) => (b.textContent ?? '').slice(0, 60)), ordered: !!ordered, steerText: steer?.textContent ?? null };
     })()`);
     check(layout.readRows === 2 && layout.ordered, 'steer ends the read run: two separate read rows, steer between them', layout);
     check(!/\bwrite\b|agent:\/\//.test(layout.steerText ?? 'write'), 'steer row shows no raw "write"/"agent://" text', layout);
@@ -219,6 +219,10 @@ async function main() {
     await cdp.typeIntoByLabel('Message', '/models');
     const menuOption = await cdp.waitFor(`(() => { const o = Array.from(document.querySelectorAll('[role="option"]')).find((el) => (el.textContent ?? '').includes('Open model role settings')); return o ? o.textContent : null; })()`, { timeoutMs: 10_000, label: '/models listed in the slash menu' });
     check(typeof menuOption === 'string' && menuOption.includes('models'), '/models listed in the slash menu as "Open model role settings"', { menuOption });
+    // Enter on a top-level row completes to "/models " (the menu's existing rule for every
+    // command); the next Enter sends it.
+    await cdp.pressEnter();
+    await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && el.value === '/models '; })()`, { timeoutMs: 5_000, label: 'Enter completed the draft to "/models "' });
     await cdp.pressEnter();
     const current = await cdp.waitFor(`(() => { const b = document.querySelector('nav[aria-label="Settings sections"] button[aria-current="page"]'); return b ? b.textContent.trim() : null; })()`, { timeoutMs: 10_000, label: 'Settings open' });
     check(current === 'Model roles', '/models opens Settings at Model roles', { current });
