@@ -26,9 +26,9 @@
 // ported. Issue #724 (folded in): `branch` is a brand-new, Rust-only field (constitution/epic
 // rule 5), computed fresh every readout tick via `git symbolic-ref`/`git rev-parse` against the
 // Session's own worktree (never retained across a transient git failure, same stance `changes`
-// already takes). The issue's own suggested dedicated worktree-HEAD-file watcher is NOT
-// implemented (still disclosed): this recomputes on every tool-call end, turn start/end, and
-// attach instead, the floor the issue's own text accepts when the watcher isn't built.
+// already takes). Spec 019 adds the issue's worktree-HEAD watch (`readout_head_watch.rs`,
+// started by `on_launch`, stopped by `on_exit`) on top of the existing refresh points: every
+// tool-call end, turn start/end, and attach.
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
 // decoded frame, `on_exit` for process exit, and `on_start_progress` for the ready-wait banner
@@ -189,6 +189,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
 }
 
 pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
+    super::readout_head_watch::stop(agent.session_id());
     // A process exit mid-turn must not leave a phantom "turn running" reading behind forever
     // (the chip otherwise never clears once `agent_start` set it, since no `session_settled`
     // frame is coming from a process that has already exited). Also stops the PR-poll timer
@@ -247,6 +248,7 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
                 agent
                     .with_readout_state(|s| s.pull_request_branch = Some(session.branch.clone()))
                     .await;
+                super::readout_head_watch::start(&agent, &session.worktree_path).await;
             }
             refresh_pull_request(&agent, &session.worktree_path, &session.branch).await;
             schedule_readout_update(&agent).await;
@@ -513,7 +515,7 @@ async fn refresh_pull_request(agent: &SessionAgent, worktree_path: &str, branch:
 /// `Value::Null` for an unreadable worktree (missing, not a git repo, or no commits yet) -- never
 /// retained across a transient failure (unlike `pull_request`): a worktree that is readable one
 /// tick and not the next has genuinely changed state, not merely hit a momentary blip.
-async fn compute_branch(worktree_path: &str) -> Value {
+pub(super) async fn compute_branch(worktree_path: &str) -> Value {
     let path = Path::new(worktree_path);
     let symbolic = git_raw(
         path,

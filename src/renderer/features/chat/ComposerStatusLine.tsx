@@ -22,13 +22,13 @@ import type { RefObject } from 'react'
 import {
   AdvisorChip,
   ChangesChip,
-  ContextUsageChip,
   CurrentTimeChip,
   PullRequestChip,
   SubagentsChip,
   TodoProgressChip,
   TurnTimeChip
 } from './readout/ReadoutChips'
+import { ContextUsageChip } from './readout/ContextUsageChip'
 
 export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)

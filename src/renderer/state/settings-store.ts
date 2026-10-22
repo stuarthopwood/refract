@@ -15,6 +15,7 @@ interface SettingsState {
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
+  setShowContextUsageBar(enabled: boolean): Promise<void>
   setWordPredictionEnabled(enabled: boolean): Promise<void>
 }
 
@@ -100,6 +101,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setDetectImagePathsOnPaste: async (enabled) => {
     const result = await window.refract.settings.setDetectImagePathsOnPaste(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setShowContextUsageBar: async (enabled) => {
+    const result = await window.refract.settings.setShowContextUsageBar(enabled)
     if (result.ok) {
       set({ settings: result.value })
     } else {

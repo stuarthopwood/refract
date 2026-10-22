@@ -9,9 +9,8 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
@@ -45,7 +44,10 @@ import {
   toImageContent
 } from './attachments'
 import { useComposerClearanceCallbackRef } from './composerHeightVar'
-import { appendFileAttachmentText, FILE_ATTACHMENTS_MARKER, stripFileAttachmentsMarkerForDisplay } from './anyFileAttachments'
+import { appendFileAttachmentText, FILE_ATTACHMENTS_MARKER } from './anyFileAttachments'
+import { hasSendableContent, imageDisplayNames, isImageOnlyDraft, isImageOnlyQueued, queuedChipRpcText, SECOND_IMAGE_ONLY_REFUSAL } from './imageOnlySend'
+import { QueuedChipList } from './QueuedChipList'
+import { ComposerBranchLabel } from './ComposerBranchLabel'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
@@ -107,6 +109,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // `aria-disabled` reflects an in-flight path/drop read, same guard as `handleSend` (draft-store.ts).
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
+  const imageOnlyNames = useQueueStore((s) => s.imageOnlyBySession[sessionId])
   // Issue #540 (#591 cycle 3, full architectural replacement): chip identity/text/queue come
   // ONLY from the real `followUp`/`steering` arrays above via `deriveQueuedChips`
   // (queuedChips.ts) -- there is no more client-tracked "reserved"/"confirmed"/"pending" chip
@@ -474,7 +477,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // on the NEXT draft instead), the same race class `disabled`/`starting` already guard against.
     if (disabled || starting || pendingAttachmentReads > 0) return
     const draftText = overrideText ?? text
-    if (!draftText.trim()) return
+    if (!hasSendableContent(draftText, attachments)) return
+    // #744 (spec 009 FR-042): OMP's queue cannot tell two image-only follow-ups apart.
+    const imageOnly = isImageOnlyDraft(draftText, attachments)
+    if (imageOnly && isImageOnlyQueued(followUp, steering)) return void toast.error(SECOND_IMAGE_ONLY_REFUSAL)
     // Enter-send and the Send button both clear the draft via `clear(sessionId)` below, bypassing
     // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
     // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
@@ -511,7 +517,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // FR-013: every pending text chip's full original text is substituted back into the draft at
     // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
     // sees is exactly what the developer would have gotten pasting the whole block directly.
-    const message = substituteChips(draftText, attachments.textChips)
+    const message = substituteChips(imageOnly ? '' : draftText, attachments.textChips)
     // #926 (D1 HIGH): typed text carrying the literal marker is refused, draft stays intact.
     if (message.includes(FILE_ATTACHMENTS_MARKER)) {
       toast.error(`The message contains the reserved "${FILE_ATTACHMENTS_MARKER}" marker line used internally for file attachments. Remove it and try again.`)
@@ -655,6 +661,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     dismissSlashCommandRefusalToast(sessionId)
+    if (imageOnly) useQueueStore.getState().setImageOnly(sessionId, result.value.queued ? imageDisplayNames(attachments.images) : null)
     // Spec 010 FR-005: one atomic clear for both text and attachments (replacing the former
     // separate `setText('')`/`setAttachments(EMPTY_ATTACHMENTS)` calls) -- FR-007: pending image
     // attachments clear once the send is accepted, not once the agent's turn finishes; pending
@@ -889,7 +896,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   async function handleRemoveQueued(chip: DerivedChip) {
     if (inFlightChips.has(chip.key)) return
     setInFlightChips((prev) => new Map(prev).set(chip.key, 'remove'))
-    const result = await window.refract.chat.removeQueued(sessionId, chip.text, chip.queue)
+    const result = await window.refract.chat.removeQueued(sessionId, queuedChipRpcText(chip), chip.queue)
     setInFlightChips((prev) => {
       const next = new Map(prev)
       next.delete(chip.key)
@@ -933,7 +940,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // `chat.sendNow` takes no `images` argument: OMP's `promote_queued_message` moves the queued
     // message (attachments included) rather than reprocessing it, so this call site must never
     // touch, forward, or clear the composer's own current pending images.
-    const result = await window.refract.chat.sendNow(sessionId, chip.text)
+    const result = await window.refract.chat.sendNow(sessionId, queuedChipRpcText(chip))
     setInFlightChips((prev) => {
       const next = new Map(prev)
       next.delete(chip.key)
@@ -1217,82 +1224,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   return (
     <div ref={composerClearanceRef} className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
       {chips.length > 0 && (
-        <ul
-          ref={chipListRef}
-          aria-label="Queued messages"
-          className="m-0 flex list-none flex-wrap gap-1.5 p-0"
-          onFocus={handleChipListFocus}
-          onBlur={handleChipListBlur}
-        >
-          {chips.map((chip) => {
-            const busyAction = inFlightChips.get(chip.key)
-            const sendBusy = busyAction === 'send'
-            const removeBusy = busyAction === 'remove'
-            const anyBusy = busyAction != null
-            const displayText = stripFileAttachmentsMarkerForDisplay(chip.text)
-            const removeLabel = removeBusy ? `Removing queued message: ${displayText}` : `Remove queued message: ${displayText}`
-            return (
-              <li key={chip.key} data-chip-key={chip.key}>
-                <Badge
-                  variant="secondary"
-                  className="h-auto max-w-full gap-1.5 overflow-visible py-0.5 pr-0.5"
-                >
-                  <span className="max-w-64 truncate" title={displayText}>
-                    {displayText}
-                  </span>
-                  {/* Issue #540 (#591 cycle 3): Send now is offered only for a real follow-up
-                   * chip -- OMP's `promote_queued_message` only ever matches a queued
-                   * follow-up, so a steering chip's "Send now" could never succeed. A steering
-                   * chip instead shows a quiet status: it is already on its way to the agent's
-                   * next step. The control stays a `Button` throughout its busy state (never
-                   * swapped for inert text) so focus is never lost to the busy transition
-                   * itself. */}
-                  {chip.queue === 'followUp' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      data-chip-action="send"
-                      aria-label={sendBusy ? `Sending now: ${displayText}` : `Send now: ${displayText}`}
-                      aria-busy={sendBusy}
-                      aria-disabled={anyBusy}
-                      className="rounded-full px-2 text-[0.7rem] font-medium aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-                      onClick={() => {
-                        if (anyBusy) return
-                        void handleSendNow(chip)
-                      }}
-                    >
-                      {sendBusy ? 'Sending now…' : 'Send now'}
-                    </Button>
-                  ) : (
-                    <span className="px-1 text-[0.7rem] text-muted-foreground">Sending at the next step</span>
-                  )}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        data-chip-action="remove"
-                        aria-label={removeLabel}
-                        aria-busy={removeBusy}
-                        aria-disabled={anyBusy}
-                        className="rounded-full text-muted-foreground hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-                        onClick={() => {
-                          if (anyBusy) return
-                          void handleRemoveQueued(chip)
-                        }}
-                      >
-                        <XIcon className="size-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{removeLabel}</TooltipContent>
-                  </Tooltip>
-                </Badge>
-              </li>
-            )
-          })}
-        </ul>
+        <QueuedChipList chips={chips} inFlightChips={inFlightChips} imageOnlyNames={imageOnlyNames} listRef={chipListRef} onFocus={handleChipListFocus} onBlur={handleChipListBlur} onSendNow={(chip) => void handleSendNow(chip)} onRemove={(chip) => void handleRemoveQueued(chip)} />
       )}
       {disabled && (
         <span id={stopReasonId} className="sr-only">
@@ -1599,9 +1531,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   )}
                   aria-label="Send message"
                   aria-keyshortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
-                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}
+                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
                   onClick={() => {
-                    if (disabled || starting || pendingAttachmentReads > 0 || !text.trim()) return
+                    if (disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)) return
                     void handleSend()
                   }}
                 >
@@ -1624,6 +1556,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           <ApprovalModePill sessionId={sessionId} />
           <RoleAndModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />
+          <ComposerBranchLabel sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
         </div>
       </div>

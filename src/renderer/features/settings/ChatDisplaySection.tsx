@@ -22,7 +22,7 @@
 // "unsupported" toast to show); Electron keeps ghost text always on instead (`MessageInput.tsx`'s
 // own `wordPredictionEnabled !== false` read treats absent as enabled).
 import { useEffect, useRef } from 'react'
-import { Switch } from '@/components/ui/switch'
+import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { useSettingsStore } from '@/state'
 
 export function ChatDisplaySection() {
@@ -30,6 +30,8 @@ export function ChatDisplaySection() {
   const setTranscriptDisplay = useSettingsStore((state) => state.setTranscriptDisplay)
   const detectImagePathsOnPaste = useSettingsStore((state) => state.settings.detectImagePathsOnPaste)
   const setDetectImagePathsOnPaste = useSettingsStore((state) => state.setDetectImagePathsOnPaste)
+  const showContextUsageBar = useSettingsStore((state) => state.settings.showContextUsageBar !== false)
+  const setShowContextUsageBar = useSettingsStore((state) => state.setShowContextUsageBar)
   const wordPredictionEnabled = useSettingsStore((state) => state.settings.wordPredictionEnabled)
   const setWordPredictionEnabled = useSettingsStore((state) => state.setWordPredictionEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -44,76 +46,47 @@ export function ChatDisplaySection() {
         Chat
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
-        Choose what the chat transcript shows and how pasted content is handled
+        Choose what the chat transcript shows, how pasted content is handled, and how context usage is drawn
         {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
       </p>
       <div className="flex flex-col divide-y divide-border">
-        <div className="flex items-center justify-between gap-4 py-3">
-          <div className="flex flex-col gap-0.5">
-            <label htmlFor="transcript-display-thinking" className="text-sm font-medium">
-              Show thinking output
-            </label>
-            <span id="transcript-display-thinking-description" className="text-xs text-muted-foreground">
-              The agent's reasoning while it works.
-            </span>
-          </div>
-          <Switch
-            id="transcript-display-thinking"
-            aria-describedby="transcript-display-thinking-description"
-            checked={transcriptDisplay.thinking}
-            onCheckedChange={(checked) => void setTranscriptDisplay('thinking', checked)}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4 py-3">
-          <div className="flex flex-col gap-0.5">
-            <label htmlFor="transcript-display-tool-calls" className="text-sm font-medium">
-              Show tool calls
-            </label>
-            <span id="transcript-display-tool-calls-description" className="text-xs text-muted-foreground">
-              Tool calls and subagents the agent runs. Approvals, questions, failed or interrupted calls, and the subagent chain always show.
-            </span>
-          </div>
-          <Switch
-            id="transcript-display-tool-calls"
-            aria-describedby="transcript-display-tool-calls-description"
-            checked={transcriptDisplay.toolCalls}
-            onCheckedChange={(checked) => void setTranscriptDisplay('toolCalls', checked)}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4 py-3">
-          <div className="flex flex-col gap-0.5">
-            <label htmlFor="detect-image-paths-on-paste" className="text-sm font-medium">
-              Attach images pasted as a file path
-            </label>
-            <span id="detect-image-paths-on-paste-description" className="text-xs text-muted-foreground">
-              A pasted path to an image file (for example, Explorer's "Copy as path") attaches the image above the message box.
-            </span>
-          </div>
-          <Switch
-            id="detect-image-paths-on-paste"
-            aria-describedby="detect-image-paths-on-paste-description"
-            checked={detectImagePathsOnPaste}
-            onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
-          />
-        </div>
+        <SettingSwitchRow
+          id="transcript-display-thinking"
+          label="Show thinking output"
+          description="The agent's reasoning while it works."
+          checked={transcriptDisplay.thinking}
+          onCheckedChange={(checked) => void setTranscriptDisplay('thinking', checked)}
+        />
+        <SettingSwitchRow
+          id="transcript-display-tool-calls"
+          label="Show tool calls"
+          description="Tool calls and subagents the agent runs. Approvals, questions, failed or interrupted calls, and the subagent chain always show."
+          checked={transcriptDisplay.toolCalls}
+          onCheckedChange={(checked) => void setTranscriptDisplay('toolCalls', checked)}
+        />
+        <SettingSwitchRow
+          id="detect-image-paths-on-paste"
+          label="Attach images pasted as a file path"
+          description={'A pasted path to an image file (for example, Explorer\'s "Copy as path") attaches the image above the message box.'}
+          checked={detectImagePathsOnPaste}
+          onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
+        />
+        {/* Issue #1082 (spec 004 FR-034): on by default. */}
+        <SettingSwitchRow
+          id="show-context-usage-bar"
+          label="Show context usage bar"
+          description="A thin bar under the context usage figures, filled to how much of the context window is in use."
+          checked={showContextUsageBar}
+          onCheckedChange={(checked) => void setShowContextUsageBar(checked)}
+        />
         {wordPredictionEnabled !== undefined && (
-          <div className="flex items-center justify-between gap-4 py-3">
-            <div className="flex flex-col gap-0.5">
-              <label htmlFor="word-prediction-enabled" className="text-sm font-medium">
-                Word prediction (ghost text)
-              </label>
-              <span id="word-prediction-enabled-description" className="text-xs text-muted-foreground">
-                Suggests how to finish the word you're typing in the message box. Off by default: the shared prediction
-                engine can use several hundred MB of memory once started.
-              </span>
-            </div>
-            <Switch
-              id="word-prediction-enabled"
-              aria-describedby="word-prediction-enabled-description"
-              checked={wordPredictionEnabled}
-              onCheckedChange={(checked) => void setWordPredictionEnabled(checked)}
-            />
-          </div>
+          <SettingSwitchRow
+            id="word-prediction-enabled"
+            label="Word prediction (ghost text)"
+            description="Suggests how to finish the word you're typing in the message box. Off by default: the shared prediction engine can use several hundred MB of memory once started."
+            checked={wordPredictionEnabled}
+            onCheckedChange={(checked) => void setWordPredictionEnabled(checked)}
+          />
         )}
       </div>
     </div>

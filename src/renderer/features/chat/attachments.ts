@@ -23,6 +23,7 @@ export interface PendingImageAttachment {
   base64: string // exactly the payload sent as ImageContent.data
   byteLength: number // decoded size; already checked against MAX_IMAGE_INPUT_BYTES
   previewUrl: string // `data:${mimeType};base64,${base64}`, used for the thumbnail and the modal
+  name?: string // #744: display only (an image-only queue chip's label), never sent
 }
 
 export interface PendingTextChip {
@@ -179,7 +180,8 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
       mimeType: mimeType as SupportedImageMimeType,
       base64,
       byteLength: blob.size,
-      previewUrl: dataUrl
+      previewUrl: dataUrl,
+      name: file.name || undefined
     }
   }
 }
@@ -432,7 +434,8 @@ export async function buildImagePathAttachment(sessionId: string, filePath: stri
       mimeType,
       base64,
       byteLength,
-      previewUrl: `data:${mimeType};base64,${base64}`
+      previewUrl: `data:${mimeType};base64,${base64}`,
+      name: filePath.split(/[\\/]/).pop() || undefined
     }
   }
 }

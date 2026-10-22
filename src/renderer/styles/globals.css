@@ -405,6 +405,14 @@
    * colour here is already held to) -- issue #731 now aliases `--state-unread-response` back
    * onto it, the first session state this role covers. */
   --severity-success: var(--state-working);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.696 0.149 162.48);
+  --context-usage-70: oklch(0.769 0.163 70.08);
+  --context-usage-100: oklch(0.704 0.185 22.216);
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: #38BDF8;
@@ -554,6 +562,14 @@
    * All four also clear the >=3:1 non-text floor against `--background`/`--surface-1`/
    * `--surface-2`. */
   --severity-success: oklch(0.696 0.17 162.48);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.696 0.149 162.48);
+  --context-usage-70: oklch(0.769 0.163 70.08);
+  --context-usage-100: oklch(0.74 0.155 22.216);
   --severity-warning: oklch(0.769 0.188 70.08);
   --severity-error: oklch(0.74 0.191 22.216);
   --severity-info: #38BDF8;
@@ -856,6 +872,14 @@
    * "do not create a second set" rule, same as Dark). `--severity-info` is the one new colour,
    * verified >=3:1 against `--background` (12.45:1) and `--card`/`--popover` (11.80:1). */
   --severity-success: var(--state-working);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.85 0.005 162);
+  --context-usage-30: oklch(0.8 0.170 162);
+  --context-usage-70: oklch(0.85 0.114 70);
+  --context-usage-100: oklch(0.82 0.097 22);
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: oklch(0.82 0.13 220);
@@ -1023,6 +1047,14 @@
    * (7.16:1), `--surface-1`/card (6.48:1) and `--surface-2`/popover (5.64:1), fixing the mock's
    * "accent and info are the same sky blue" finding. */
   --severity-success: oklch(0.70 0.17 162.48);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.70 0.150 162.48);
+  --context-usage-70: oklch(0.76 0.161 70.08);
+  --context-usage-100: oklch(0.76 0.140 22.216);
   --severity-warning: oklch(0.76 0.188 70.08);
   --severity-error: oklch(0.76 0.191 22.216);
   --severity-info: oklch(0.70 0.15 255);
@@ -1253,6 +1285,14 @@
    * own `--severity-error` uses, per #568/#529 decision 5 -- `--destructive`/`--state-stopped`
    * alias it already; `--pr-closed` below is updated to the same literal too. */
   --severity-success: oklch(0.70 0.17 162.48);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.70 0.150 162.48);
+  --context-usage-70: oklch(0.78 0.157 88);
+  --context-usage-100: oklch(0.72 0.150 22);
   --severity-warning: oklch(0.78 0.17 88);
   --severity-error: oklch(0.665 0.12 22);
   --severity-info: oklch(0.70 0.12 200);

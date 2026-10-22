@@ -216,6 +216,18 @@ field whose bottom bar shows the mode, model, and agent.
   at the 4.5:1 body-text floor; `--background` (the pinned panel's own surface) was already
   gated there by #941.
 
+### Session 2026-10-22 (context usage gradient, issue #1082; grilled by Stuart 2026-10-20)
+
+- Q: What is coloured? -> A: The figures text "N/M (P%)" only; the gauge icon stays muted (FR-033).
+- Q: Which colours? -> A: A smooth OKLCH blend between four new per-theme tokens
+  (`--context-usage-0/-30/-70/-100`: grey, green, amber, red), not the session-state colours;
+  every blended colour meets 4.5:1 on the composer background in each theme, the stops tuned
+  per theme where needed and checked at every 10% step by `check:theme-contrast`.
+- Q: The high state? -> A: Keep the 90%+ warning icon and the word "high"; the word takes the
+  same gradient colour, not a fixed red (supersedes #895).
+- Q: A progress bar? -> A: Yes, 2px under the figures, the same colour on a faint track,
+  decorative, on by default, with "Show context usage bar" in Settings > Chat (FR-034).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -690,6 +702,21 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   finished/exited/failed/cancelled counts when any are non-zero (the same counting rule FR-007
   uses); and MUST include a pointer-only link that opens the Subagent panel (FR-017), equivalent
   to activating the Agents readout itself (FR-031).
+- **FR-033** (new, 2026-10-22, issue #1082; supersedes #895): The Context usage readout's
+  figures text "N/M (P%)" and, at 90% and over, its word "high" MUST take one colour from a
+  smooth OKLCH blend between four per-theme context-usage tokens: 0% (muted grey), 30% (green),
+  70% (amber), 100% (red), interpolated for every percent between and clamped at 100. The gauge
+  icon stays muted; the 90%+ warning icon and the word "high" stay (colour is never the only
+  signal); "Not available" stays muted; the `sr-only` phrase is unchanged. Every blended colour
+  MUST meet 4.5:1 against the composer background in every built-in theme, checked by
+  `check:theme-contrast` at every 10% step. In forced-colors mode the colour is dropped and the
+  icon and word carry the state.
+- **FR-034** (new, 2026-10-22, issue #1082): A 2px progress bar MUST sit under the Context usage
+  figures, the readout's own width, filled to P% (clamped 0-100) in the FR-033 colour on a faint
+  track; decorative (`aria-hidden`), hidden with "Not available"; its width change respects
+  `prefers-reduced-motion`. It is on by default and turned off by a "Show context usage bar"
+  switch in Settings > Chat, beside the other readout settings (`showContextUsageBar`, persisted
+  in the Rust settings store).
 
 ### Key Entities
 
