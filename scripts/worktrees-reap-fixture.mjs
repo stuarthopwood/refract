@@ -42,6 +42,11 @@ for (const n of names) {
 const nmA = path.join(wtPath('a-merged-clean'), 'node_modules')
 fs.mkdirSync(path.join(nmA, 'pkg'), { recursive: true })
 run(base, 'cmd.exe', ['/d', '/c', 'mklink', '/J', path.join(nmA, 'link'), path.join(nmA, 'pkg')])
+// (a) also gets a junction to a folder outside the worktree; reaping must not follow it (#1181).
+const outside = path.join(base, 'outside-target')
+fs.mkdirSync(outside)
+fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep\n')
+run(base, 'cmd.exe', ['/d', '/c', 'mklink', '/J', path.join(nmA, 'outlink'), outside])
 fs.writeFileSync(path.join(wtPath('b-merged-dirty'), 'a.txt'), 'dirty\n')
 fs.writeFileSync(path.join(wtPath('g-merged-ignored'), '.env'), 'SECRET=1\n')
 
@@ -90,6 +95,15 @@ try {
   console.log('=== apply')
   reapRun(['--apply'])
   snapshot('after apply')
+  const checks = {
+    'worktree a removed': !fs.existsSync(wtPath('a-merged-clean')),
+    'branch lane/a-merged-clean deleted': !git(repo, 'branch', '--format=%(refname:short)').split(/\r?\n/).includes('lane/a-merged-clean'),
+    'junction target kept with content': fs.existsSync(path.join(outside, 'keep.txt')),
+  }
+  for (const [name, ok] of Object.entries(checks)) {
+    console.log(`${ok ? 'PASS' : 'FAIL'}: ${name}`)
+    if (!ok) process.exitCode = 1
+  }
   console.log('=== check')
   reapRun(['--check'])
   console.log('=== negative: ambient REAP_PR_FIXTURE has no effect (no --pr-fixture; gh is used, branches are not real PRs)')

@@ -28,7 +28,7 @@ The controller merges the PR (`gh pr merge --squash --delete-branch`). Do not cl
 
 A worktree is reaped only when all of these hold: its PR is merged, its tree is clean, the branch tip equals the PR head, it is not the caller's cwd, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process command line names its path, and `git worktree remove` (without `--force`) succeeds. Everything else is skipped with a reason.
 
-After removal the script deletes leftover `node_modules` husks (folders with no `.git` that hold only `node_modules` and whose links resolve inside the folder), then runs `git branch -D` for each removed worktree's branch. Every delete target must sit strictly inside the worktrees folder; the script refuses anything else.
+Before `git worktree remove` the script deletes the worktree's `node_modules` with `rmdir /s /q` on a `\\?\` path (git cannot delete pnpm's directory junctions). If git still fails after deregistering the worktree, the leftover folder is deleted with the guarded husk deleter. After removal the script deletes leftover `node_modules` husks (folders with no `.git` that hold only `node_modules` and whose links resolve inside the folder), then runs `git branch -D` for each removed worktree's branch. Every delete target must sit strictly inside the worktrees folder; the script refuses anything else.
 
 ## Options
 
