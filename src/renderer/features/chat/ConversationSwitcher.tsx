@@ -119,7 +119,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex shrink-0 items-center gap-1.5">
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
         aria-disabled={!canSwitch || creating || switching}
         className="aria-disabled:pointer-events-none aria-disabled:opacity-50"

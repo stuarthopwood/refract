@@ -15,7 +15,7 @@
 // `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
 // before the double-click ever reaches the page's own JS, so a renderer-driven toggle was dead
 // code and has been removed.
-import { PanelRightCloseIcon, SplitSquareHorizontalIcon } from 'lucide-react'
+import { MessageSquareXIcon, SplitSquareHorizontalIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -102,7 +102,7 @@ export function ChatHeader({
                 aria-label={`Close ${session.name} chat pane`}
                 aria-keyshortcuts="Control+W"
               >
-                <PanelRightCloseIcon aria-hidden className="size-4" />
+                <MessageSquareXIcon aria-hidden className="size-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
