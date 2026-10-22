@@ -2,11 +2,18 @@
 // start-of-wave guard. See `.omp/skills/worktree-reap/SKILL.md` for the lane lifecycle.
 //
 // Usage: node scripts/worktrees-reap.mjs [--apply | --check] [--repo <path>] [--root <path>]
-//          [--registry <path>]
+//          [--registry <path>] [--no-registry]
 //   --check exits 1 when the worktrees folder holds more than MAX_WORKTREES worktrees or its
 //   drive has under MIN_FREE_GB free; it never deletes anything.
-// Test-only: REAP_PR_FIXTURE=<json file mapping branch -> {state, headRefOid} (or an array of
-//   those)> replaces the `gh` lookup; see scripts/worktrees-reap-fixture.mjs.
+//   --apply refuses (exit 2) when the registry file is absent, unless --no-registry is passed.
+// Exit codes: 0 success; 1 --check problem, or --apply finished with at least one failure
+//   (busy/locked removal, husk still present, branch delete failure, husk error); 2 bad usage,
+//   refused, or crashed.
+// Test-only: --pr-fixture <json file mapping branch -> {state, headRefOid} (or an array of
+//   those)> replaces the `gh` lookup. Honoured only when both --root and --repo are under the OS
+//   temp directory; see scripts/worktrees-reap-fixture.mjs.
+// Ignored files: a worktree is skipped when it holds an ignored path other than node_modules/
+//   (any depth), dist/, out/, .vite/ or src-tauri/target/, because removal would delete it.
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -15,8 +22,27 @@ import { fileURLToPath } from 'node:url'
 
 const MAX_WORKTREES = 8
 const MIN_FREE_GB = 20
+// Ignored paths that are safe to lose with a worktree (rebuildable output).
+const IGNORED_ALLOWED = /^(?:(?:.*\/)?node_modules\/|dist\/|out\/|\.vite\/|src-tauri\/target\/)/
+const CMD_META = /[&^%|<>"()]/
+const HUSK_NAME = /^[A-Za-z0-9._-]+$/
+
+const USAGE =
+  'usage: node scripts/worktrees-reap.mjs [--apply | --check] [--repo <path>] [--root <path>] [--registry <path>] [--no-registry] [--pr-fixture <path>]'
+const BOOLEAN_FLAGS = ['--apply', '--check', '--no-registry']
+const VALUE_FLAGS = ['--repo', '--root', '--registry', '--pr-fixture']
 
 const args = process.argv.slice(2)
+const usageError = (msg) => {
+  console.error(`worktrees:reap: ${msg}\n${USAGE}`)
+  process.exit(2)
+}
+for (let i = 0; i < args.length; i++) {
+  if (VALUE_FLAGS.includes(args[i])) {
+    if (args[i + 1] === undefined || args[i + 1].startsWith('--')) usageError(`missing value for ${args[i]}`)
+    i++
+  } else if (!BOOLEAN_FLAGS.includes(args[i])) usageError(`unknown argument: ${args[i]}`)
+}
 const flag = (name) => args.includes(name)
 const option = (name) => {
   const i = args.indexOf(name)
@@ -44,6 +70,23 @@ function defaultRepo() {
 const repo = path.resolve(option('--repo') ?? defaultRepo())
 const root = path.resolve(option('--root') ?? `${repo}-worktrees`)
 const apply = flag('--apply')
+
+const realOrResolved = (p) => {
+  try {
+    return fs.realpathSync.native(p)
+  } catch {
+    return path.resolve(p)
+  }
+}
+const prFixturePath = option('--pr-fixture') ? path.resolve(option('--pr-fixture')) : null
+if (prFixturePath) {
+  const tmp = realOrResolved(os.tmpdir())
+  if (!isInside(realOrResolved(root), tmp) || !isInside(realOrResolved(repo), tmp)) {
+    console.error('worktrees:reap: --pr-fixture is test-only and needs both --root and --repo under the OS temp directory')
+    process.exit(2)
+  }
+  console.log('*** TEST FIXTURE ACTIVE: PR state comes from --pr-fixture, not GitHub ***')
+}
 
 function dataDir() {
   const override = process.env.REFRACT_DATA_DIR
@@ -82,7 +125,12 @@ function listWorktrees() {
 }
 
 function loadRegistry() {
-  if (!fs.existsSync(registryPath)) return { paths: new Set(), note: `no registry at ${registryPath}` }
+  if (flag('--no-registry')) return { paths: new Set(), note: 'WARN: --no-registry: Session protection is OFF' }
+  if (!fs.existsSync(registryPath)) {
+    const msg = `no registry at ${registryPath}`
+    if (apply) throw new Error(`${msg}; refusing --apply (pass --no-registry to override)`)
+    return { paths: new Set(), note: `WARN: ${msg}; Session protection is OFF (--apply would refuse)` }
+  }
   const parsed = JSON.parse(fs.readFileSync(registryPath, 'utf8'))
   const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : []
   return {
@@ -134,14 +182,14 @@ function namesPath(text, wtPath) {
 }
 
 function prLookup(branch) {
-  if (process.env.REAP_PR_FIXTURE) {
-    const map = JSON.parse(fs.readFileSync(process.env.REAP_PR_FIXTURE, 'utf8'))
+  if (prFixturePath) {
+    const map = JSON.parse(fs.readFileSync(prFixturePath, 'utf8'))
     const v = map[branch]
     return v ? (Array.isArray(v) ? v : [v]) : []
   }
   const out = execFileSync(
     'gh',
-    ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,headRefOid'],
+    ['pr', 'list', '--head', branch, '--state', 'all', '--limit', '100', '--json', 'number,state,headRefOid'],
     { cwd: repo, encoding: 'utf8', windowsHide: true },
   )
   return JSON.parse(out)
@@ -152,15 +200,20 @@ function evaluate(wt, ctx) {
   if (ctx.registry.paths.has(norm(wt.path))) return ['skip', 'registry Session']
   const cwd = norm(process.cwd())
   if (cwd === norm(wt.path) || cwd.startsWith(`${norm(wt.path)}/`)) return ['skip', 'caller cwd is inside it']
-  const status = git(wt.path, ['status', '--porcelain'])
+  const status = git(wt.path, ['status', '--porcelain', '--ignored'])
   if (status.status !== 0) return ['skip', 'git status failed']
-  if (status.stdout.trim()) return ['skip', 'dirty tree']
+  const lines = status.stdout.split(/\r?\n/).filter(Boolean)
+  if (lines.some((l) => !l.startsWith('!! '))) return ['skip', 'dirty tree']
+  const unexpected = lines.map((l) => l.slice(3).replace(/^"|"$/g, '')).filter((p) => !IGNORED_ALLOWED.test(p))
+  if (unexpected.length) return ['skip', `ignored files present: ${unexpected.slice(0, 3).join(', ')}`]
   let prs
   try {
     prs = prLookup(wt.branch)
   } catch (err) {
     return ['skip', `PR lookup failed: ${String(err.message).split('\n')[0]}`]
   }
+  const open = prs.find((p) => String(p.state).toUpperCase() === 'OPEN')
+  if (open) return ['skip', `open PR${open.number ? ` #${open.number}` : ''}`]
   const merged = prs.filter((p) => String(p.state).toUpperCase() === 'MERGED')
   if (merged.length === 0) {
     return ['skip', prs.length ? `PR ${String(prs[0].state).toLowerCase()}, not merged` : 'no PR for the branch']
@@ -204,9 +257,15 @@ function huskReason(dir, registered) {
   return 'only node_modules, every top-level link resolves inside it'
 }
 
+function cmdExe() {
+  const comSpec = process.env.ComSpec
+  if (comSpec && path.isAbsolute(comSpec) && /\\cmd\.exe$/i.test(comSpec)) return comSpec
+  return path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe')
+}
+
 function deleteHusk(dir) {
   const target = assertSafeTarget(dir)
-  spawnSync('cmd.exe', ['/d', '/c', 'rmdir', '/s', '/q', target], { cwd: os.tmpdir(), windowsHide: true })
+  spawnSync(cmdExe(),  ['/d', '/c', 'rmdir', '/s', '/q', target], { cwd: os.tmpdir(), windowsHide: true })
   return !fs.existsSync(target)
 }
 
@@ -252,50 +311,79 @@ function main() {
     if (verdict === 'reap') reap.push(wt)
   }
 
+  let failures = 0
   const removed = []
   for (const wt of reap) {
-    const target = assertSafeTarget(wt.path)
-    if (!apply) {
-      console.log(`would run: git worktree remove -- "${target}" ; git branch -D ${wt.branch}`)
-      continue
+    try {
+      const target = assertSafeTarget(wt.path)
+      if (!apply) {
+        console.log(`would run: git worktree remove -- "${target}" ; git branch -D ${wt.branch}`)
+        continue
+      }
+      console.log(`removing ${target}`)
+      const r = git(repo, ['worktree', 'remove', '--', target])
+      if (r.status !== 0) {
+        failures++
+        console.log(`  FAILED, busy or locked: ${(r.stderr || '').trim().split('\n')[0]}`)
+        continue
+      }
+      removed.push(wt)
+      if (/^(main|master)$/.test(wt.branch)) continue
+      const b = git(repo, ['branch', '-D', wt.branch])
+      if (b.status === 0) console.log(`deleted branch ${wt.branch}`)
+      else {
+        failures++
+        console.log(`FAILED: branch ${wt.branch} not deleted: ${b.stderr.trim()}`)
+      }
+    } catch (err) {
+      failures++
+      console.log(`FAILED  ${wt.path}: ${err.message}`)
     }
-    console.log(`removing ${target}`)
-    const r = git(repo, ['worktree', 'remove', '--', target])
-    if (r.status !== 0) {
-      console.log(`  skipped, busy or locked: ${(r.stderr || '').trim().split('\n')[0]}`)
-      continue
-    }
-    removed.push(wt)
   }
 
-  const registered = new Set(listWorktrees().map((w) => norm(w.path)))
   const husks = []
-  for (const e of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!e.isDirectory()) continue
-    const dir = path.join(root, e.name)
-    const reason = huskReason(dir, registered)
-    if (reason) husks.push([dir, reason])
-  }
-  for (const [dir, reason] of husks) {
-    if (!apply) {
-      console.log(`HUSK  ${dir}  ${reason}\nwould run: rmdir /s /q "${assertSafeTarget(dir)}"`)
-      continue
+  try {
+    const registered = new Set(listWorktrees().map((w) => norm(w.path)))
+    for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue
+      const dir = path.join(root, e.name)
+      try {
+        const reason = huskReason(dir, registered)
+        if (!reason) continue
+        if (!HUSK_NAME.test(e.name) || CMD_META.test(root)) {
+          console.log(`SKIP  ${dir}  husk, but the path has characters unsafe for cmd.exe`)
+          continue
+        }
+        const target = assertSafeTarget(dir)
+        if (!apply) {
+          console.log(`HUSK  ${dir}  ${reason}\nwould run: rmdir /s /q "${target}"`)
+          husks.push(dir)
+          continue
+        }
+        console.log(`deleting husk ${target}`)
+        if (deleteHusk(dir)) {
+          console.log('  gone')
+          husks.push(dir)
+        } else {
+          failures++
+          console.log('  FAILED: STILL PRESENT')
+        }
+      } catch (err) {
+        failures++
+        console.log(`FAILED  husk ${dir}: ${err.message}`)
+      }
     }
-    console.log(`deleting husk ${assertSafeTarget(dir)}`)
-    console.log(deleteHusk(dir) ? '  gone' : '  STILL PRESENT')
+  } catch (err) {
+    failures++
+    console.log(`FAILED  husk pass: ${err.message}`)
   }
 
-  for (const wt of removed) {
-    if (/^(main|master)$/.test(wt.branch)) continue
-    const r = git(repo, ['branch', '-D', wt.branch])
-    console.log(r.status === 0 ? `deleted branch ${wt.branch}` : `branch ${wt.branch} not deleted: ${r.stderr.trim()}`)
-  }
   console.log(
     apply
-      ? `done: ${removed.length} worktree(s) removed, ${husks.length} husk(s) handled`
+      ? `done: ${removed.length} worktree(s) removed, ${husks.length} husk(s) deleted, ${failures} failure(s)`
       : `dry run only: ${reap.length} worktree(s) and ${husks.length} husk(s) would be removed; rerun with --apply`,
   )
-  return 0
+  return failures ? 1 : 0
 }
 
 try {

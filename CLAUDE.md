@@ -60,7 +60,7 @@ The soft cap is 600 lines per source file (TypeScript, TSX, scripts, and the Rus
 - After every `gh pr merge`, the controller (whoever runs the merge) runs `pnpm worktrees:reap` (dry run), reviews the plan, then `pnpm worktrees:reap --apply`.
 - Lanes never delete their own worktree, folder, or branch.
 - Before each multi-lane wave, run `pnpm worktrees:reap --check` (exits 1 above 8 worktrees or under 20 GB free).
-- Never remove a worktree by hand or with `--force`; the script skips dirty, open-PR, busy, and registry-Session worktrees and reports why. Details: `AGENTS.md` and `.omp/skills/worktree-reap/SKILL.md`.
+- Never remove a worktree by hand or with `--force`; the script skips dirty, open-PR, busy, and registry-Session worktrees and reports why. Exit codes: 0 success, 1 `--check` problem or `--apply` with a failure, 2 usage error or refusal. Details: `AGENTS.md` and `.omp/skills/worktree-reap/SKILL.md`.
 
 ## The plan
 

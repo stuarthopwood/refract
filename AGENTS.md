@@ -66,7 +66,7 @@ Lane worktrees are created per lane and were never removed (49 worktrees, about 
 - After every `gh pr merge`, the controller runs `pnpm worktrees:reap` (dry run), reviews the plan, then runs `pnpm worktrees:reap --apply`.
 - Lanes never delete their own worktree, folder, or branch.
 - Before each multi-lane wave, run `pnpm worktrees:reap --check`. It exits 1 when the worktrees folder holds more than 8 worktrees or its drive has under 20 GB free.
-- The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Everything else is skipped and reported.
+- The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Everything else is skipped and reported (including open-PR worktrees and ignored files beyond rebuildable output). Exit codes: 0 success, 1 `--check` problem or `--apply` with at least one failure, 2 usage error or refusal (for example `--apply` with no registry file; `--no-registry` overrides).
 - Lane lifecycle: `.omp/skills/worktree-reap/SKILL.md`. Put this rule in every lane brief.
 
 ## Rust build is the main build (Stuart, 2026-10-13, epic #797)

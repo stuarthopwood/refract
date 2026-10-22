@@ -25,12 +25,12 @@ fs.mkdirSync(root)
 git(repo, 'init', '-q', '-b', 'main')
 git(repo, 'config', 'user.email', 'fixture@example.invalid')
 git(repo, 'config', 'user.name', 'fixture')
-fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n')
+fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.env\n')
 fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n')
 git(repo, 'add', '-A')
 git(repo, 'commit', '-q', '-m', 'init')
 
-const names = ['a-merged-clean', 'b-merged-dirty', 'c-open-pr', 'd-registry', 'f-busy']
+const names = ['a-merged-clean', 'b-merged-dirty', 'c-open-pr', 'd-registry', 'f-busy', 'g-merged-ignored']
 const prs = {}
 const wtPath = (n) => path.join(root, n)
 for (const n of names) {
@@ -43,6 +43,10 @@ const nmA = path.join(wtPath('a-merged-clean'), 'node_modules')
 fs.mkdirSync(path.join(nmA, 'pkg'), { recursive: true })
 run(base, 'cmd.exe', ['/d', '/c', 'mklink', '/J', path.join(nmA, 'link'), path.join(nmA, 'pkg')])
 fs.writeFileSync(path.join(wtPath('b-merged-dirty'), 'a.txt'), 'dirty\n')
+fs.writeFileSync(path.join(wtPath('g-merged-ignored'), '.env'), 'SECRET=1\n')
+
+// (h) a husk whose name carries a cmd.exe metacharacter must be skipped, never deleted.
+fs.mkdirSync(path.join(root, 'x&y', 'node_modules', 'pkg'), { recursive: true })
 
 // (e) husk
 const husk = path.join(root, 'e-husk')
@@ -69,11 +73,11 @@ const snapshot = (label) => {
   console.log(`--- ${label}: branches`)
   console.log(git(repo, 'branch', '--format=%(refname:short)'))
 }
-const reapRun = (extra) => {
-  const r = spawnSync(process.execPath, [reap, '--repo', repo, '--root', root, '--registry', regFile, ...extra], {
+const reapRun = (extra, env = {}) => {
+  const r = spawnSync(process.execPath, [reap, '--repo', repo, '--root', root, '--registry', regFile, '--pr-fixture', prFile, ...extra], {
     cwd: os.tmpdir(),
     encoding: 'utf8',
-    env: { ...process.env, REAP_PR_FIXTURE: prFile },
+    env: { ...process.env, ...env },
   })
   console.log(r.stdout + r.stderr + `exit ${r.status}`)
 }
@@ -88,6 +92,19 @@ try {
   snapshot('after apply')
   console.log('=== check')
   reapRun(['--check'])
+  console.log('=== negative: ambient REAP_PR_FIXTURE has no effect (no --pr-fixture; gh is used, branches are not real PRs)')
+  const ambient = spawnSync(process.execPath, [reap, '--repo', repo, '--root', root, '--registry', regFile], {
+    cwd: os.tmpdir(),
+    encoding: 'utf8',
+    env: { ...process.env, REAP_PR_FIXTURE: prFile },
+  })
+  console.log(ambient.stdout.split('\n').filter((l) => /^(REAP|SKIP)/.test(l)).join('\n') + `\nexit ${ambient.status}`)
+  console.log('=== negative: --pr-fixture with a non-temp --root refuses')
+  const refused = spawnSync(process.execPath, [reap, '--repo', repo, '--root', path.dirname(reap), '--pr-fixture', prFile], {
+    cwd: os.tmpdir(),
+    encoding: 'utf8',
+  })
+  console.log(refused.stdout + refused.stderr + `exit ${refused.status}`)
 } finally {
   process.kill(busy.pid)
   console.log(`killed fixture pid ${busy.pid}`)

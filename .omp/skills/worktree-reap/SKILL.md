@@ -32,5 +32,8 @@ After removal the script deletes leftover `node_modules` husks (folders with no 
 
 ## Options
 
-- `--repo <path>`, `--root <path>`, `--registry <path>` override the defaults.
-- `REAP_PR_FIXTURE=<json>` replaces the `gh` lookup. It is test-only; `node scripts/worktrees-reap-fixture.mjs` drives it against a scratch fixture under the temp directory.
+- `--repo <path>`, `--root <path>`, `--registry <path>` override the defaults. Unknown flags and missing values exit 2 with usage.
+- `--apply` refuses (exit 2) when the registry file is absent; `--no-registry` overrides that and turns Session protection off.
+- `--pr-fixture <json>` replaces the `gh` lookup. It is test-only, honoured only when both `--root` and `--repo` are under the OS temp directory (otherwise exit 2); `node scripts/worktrees-reap-fixture.mjs` drives it against a scratch fixture.
+- A worktree with ignored files other than `node_modules/`, `dist/`, `out/`, `.vite/`, `src-tauri/target/` is skipped, and so is one with an open PR. Husks whose name has characters outside `A-Za-z0-9._-` are skipped.
+- Exit codes: 0 success; 1 `--check` problem or `--apply` finished with at least one failure; 2 usage error, refusal, or crash.
