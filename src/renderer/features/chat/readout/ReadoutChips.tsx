@@ -5,23 +5,21 @@
 // `useReadoutStore()`'s entry for that id, seeded from `SessionSnapshot.readout` and kept live
 // by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
+// `ContextUsageChip` (#1082: gradient and bar) lives in its own module, `ContextUsageChip.tsx`.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent, RefObject } from 'react'
 import {
   ClockIcon,
   EyeIcon,
   FileDiffIcon,
-  GaugeIcon,
   GitPullRequestIcon,
   ListTodoIcon,
   Loader2Icon,
   PinIcon,
-  TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
 import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
-import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
@@ -34,16 +32,6 @@ import { TodoCard } from './TodoCard'
 import { deriveSubagentPhrase } from './subagentDerive'
 import { deriveTodoTotals, hasTodoPlan } from './todoDerive'
 import { useReadoutCard } from './useReadoutCard'
-
-// Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
-// 4, #437 LOW): the visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a
-// screen-reader user hearing "seven point five k" loses precision a sighted user reading "7.5k"
-// at least sees spelled out in full on hover/zoom; the full locale-formatted figure (`7,500`) is
-// unambiguous read aloud either way. `ChangesChip` below shares its own equivalent,
-// `formatDiffStatAccessible` (gate round 5, DRY: extracted to `sessionDisplay.tsx` so the status
-// line and the Session details card's diff line can both use it, never phrasing the same stat
-// two different ways).
-const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
 
 /** FR-002: "N files, +A -D" (each figure abbreviated past 1,000 by the shared `compactNumber`
  * formatter, issue #437), matching the Session details card's own diff line exactly -- both now
@@ -72,47 +60,6 @@ export function ChangesChip({ sessionId }: { sessionId: string }) {
       accessibleName={`Open Git changes panel (${formatDiffStatAccessible(changes)})`}
     >
       <DiffStatLine stat={changes} />
-    </ReadoutChip>
-  )
-}
-
-/** FR-003: "N/M (P%)" (each figure abbreviated by the shared `compactNumber` formatter, the word
- * "tokens" dropped from the visible text, issue #437, 2026-10-15 grill), hidden when `null`,
- * "Not available" for the `'not-available'` literal, a visible warning (icon + the word "high",
- * never colour alone) once `percent >= 90`. The full wording, including the high-usage warning
- * and the full (un-abbreviated) token figures, reaches assistive technology through a real
- * `sr-only` span next to the `aria-hidden` visual text -- the same pattern
- * `CurrentTimeChip`/`TodoProgressChip` already use -- rather than this chip's own former
- * `accessibleName` prop, which `ReadoutChip`'s role-less `<span>` fallback (no
- * `onActivate`/`href` here) exposes as a bare `aria-label` that several real screen readers
- * (NVDA in browse mode, often Narrator and JAWS) ignore on a non-interactive element. */
-export function ContextUsageChip({ sessionId }: { sessionId: string }) {
-  const contextUsage = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.contextUsage)
-  if (contextUsage === null) return null
-  if (contextUsage === 'not-available') {
-    return (
-      <ReadoutChip icon={GaugeIcon}>
-        <span>Not available</span>
-      </ReadoutChip>
-    )
-  }
-  // Gate round 5 fix (Flow LOW): the rounded, DISPLAYED percent is what the warning must agree
-  // with -- testing the raw value let 89.5 to 89.99 show "90%" with no warning at all, since the
-  // raw value itself was still under 90 even though the rounded figure the developer reads was
-  // already at the threshold.
-  const percent = Math.round(contextUsage.percent)
-  const high = percent >= 90
-  const used = compactNumber(contextUsage.usedTokens)
-  const windowSize = compactNumber(contextUsage.windowTokens)
-  const usedFull = FULL_NUMBER_FORMAT.format(contextUsage.usedTokens)
-  const windowFull = FULL_NUMBER_FORMAT.format(contextUsage.windowTokens)
-  return (
-    <ReadoutChip icon={high ? TriangleAlertIcon : GaugeIcon}>
-      <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${usedFull} of ${windowFull} tokens used, ${percent} percent`}</span>
-      <span aria-hidden>
-        {used}/{windowSize} ({percent}%)
-        {high && <span className="font-medium text-destructive"> high</span>}
-      </span>
     </ReadoutChip>
   )
 }

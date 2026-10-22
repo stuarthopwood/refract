@@ -115,7 +115,7 @@ export interface Settings {
   chatWidth: ChatWidth; holidayTouches: HolidayTouches; // issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
-  detectImagePathsOnPaste: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration.
+  detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on
   wordPredictionEnabled?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation.
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; // #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
