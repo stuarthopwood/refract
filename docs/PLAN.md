@@ -2,7 +2,7 @@
 
 The ordered work queue for Refract. It exists so one question gets a reliable answer: **what is next?**
 
-- Last updated: 2026-10-21 (#1113 round-2/round-3 gate follow-ups: #1115 `diff_stat.rs` symlink-following filed as its own issue; #1116 collects the remaining Low/Medium leftovers). Earlier: Rust promotion: epic #797 and lanes #784 to #796; earlier: the 2026-10-08/09/10 merge run, issues #443 to #650, plus long-open strays #71, #102, #388, #593, #603. **Phase R below runs first and changes how main-process rows are handled; its statuses were refreshed from merged PRs on 2026-10-14.** 2026-10-20: #1069 (Model roles overhaul) filed and placed after #714. 2026-10-20 (later): #1101 and #1102 filed, #730 and #1060 amended, from Stuart's Git changes panel screenshot feedback (away mode). 2026-10-21: #1069 built and live-verified on branch `feat/1069-roles-overhaul` (not yet built with #714, which has not landed); row updated, awaiting a build slot. 2026-10-21: #1119 to #1122 filed from a grill-with-docs session (Explorer tone, PR input height, PR checks RAG colour, one selected-item style); #756 amended (preview header consolidated into one ghost row with Source/Wrap, retitled); comments posted on #568 (superseded by #1121) and #700 (todo green, folded into #1118). 2026-10-21 (later): #1124 to #1126 filed from a grill-with-docs session (Menus: context/dropdown parity and muted icons, Tabs: accent underline no divider, Right-pane icon rail accent), placed after #1121; #1127 filed (Model roles reasoning radios follow-ups from PR #1114's final gate), placed after #1069. 2026-10-21 (later): #1069 merged (PR #1114, `55c77e93`); #700 slice (b) merged (PR #1118, `c8c30404`); #1151 filed (gate follow-ups from PR #1118's round-2 gate), placed after #700/#701.
+- Last updated: 2026-10-22 (priority review with Stuart: p1 order set in "Queue > Priority order", 10 issues closed, 32 relabelled). Earlier, 2026-10-21 (#1113 round-2/round-3 gate follow-ups: #1115 `diff_stat.rs` symlink-following filed as its own issue; #1116 collects the remaining Low/Medium leftovers). Earlier: Rust promotion: epic #797 and lanes #784 to #796; earlier: the 2026-10-08/09/10 merge run, issues #443 to #650, plus long-open strays #71, #102, #388, #593, #603. **Phase R below runs first and changes how main-process rows are handled; its statuses were refreshed from merged PRs on 2026-10-14.** 2026-10-20: #1069 (Model roles overhaul) filed and placed after #714. 2026-10-20 (later): #1101 and #1102 filed, #730 and #1060 amended, from Stuart's Git changes panel screenshot feedback (away mode). 2026-10-21: #1069 built and live-verified on branch `feat/1069-roles-overhaul` (not yet built with #714, which has not landed); row updated, awaiting a build slot. 2026-10-21: #1119 to #1122 filed from a grill-with-docs session (Explorer tone, PR input height, PR checks RAG colour, one selected-item style); #756 amended (preview header consolidated into one ghost row with Source/Wrap, retitled); comments posted on #568 (superseded by #1121) and #700 (todo green, folded into #1118). 2026-10-21 (later): #1124 to #1126 filed from a grill-with-docs session (Menus: context/dropdown parity and muted icons, Tabs: accent underline no divider, Right-pane icon rail accent), placed after #1121; #1127 filed (Model roles reasoning radios follow-ups from PR #1114's final gate), placed after #1069. 2026-10-21 (later): #1069 merged (PR #1114, `55c77e93`); #700 slice (b) merged (PR #1118, `c8c30404`); #1151 filed (gate follow-ups from PR #1118's round-2 gate), placed after #700/#701.
 - Source of truth for scope is the GitHub issue. This file holds the **order**, **dependencies** and **status**. Do not copy issue text here.
 - Freshness marker: the **date above**, not a pinned commit. Re-check `origin/main` and the open issues/PRs each time this file is used -- a pinned sha goes stale the moment another docs PR lands concurrently, as happened between PR #607 and PR #608 on 2026-10-09.
 
@@ -42,6 +42,39 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 12. **Grill first, then the full Spec Kit plan (Stuart, 2026-10-15).** Every story starts with a `/grill-with-docs` session (the main agent interviews Stuart against `CONTEXT.md`, `docs/adr` and the code, one question at a time with a recommended answer, updating `CONTEXT.md` and ADRs inline), and its outcomes feed the Spec Kit steps. Then the issue's whole Spec Kit pickup plan runs in order, with no step skipped (converge: amend the spec, `/speckit.converge`, `/speckit.implement`; specify: specify, clarify, plan, tasks, analyze, implement). The grill is run by the main agent with Stuart, never by a delegated worker (workers cannot ask Stuart questions); the main agent passes the outcomes to the worker in its brief. Put this rule in every delegation brief.
 
 ## Queue
+
+### Priority order (Stuart, 2026-10-22)
+
+**Read this list first for "What's next?"** It overrides the phase order below for p1 work: take the first row that is not done and whose Needs are met, then find its full row in the phases below. Token budget is tight (2026-10-22), so prefer cheap, already-grilled rows and keep gates proportionate.
+
+| Order | Issue | Work | Why here |
+|---|---|---|---|
+| 1 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |
+| 2 | #1055 | Delete dialog: hung-git wait timeout and two copy fixes | Bug, grilled 2026-10-22, scope narrowed |
+| 3 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
+| 4 | #883 | In-app update check | Release path; left open when #794 closed |
+| 5 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
+| 6 | #766 | Combined Role·Model pill, Ctrl+R, change any time | Re-grilled 2026-10-20 |
+| 7 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
+| 8 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
+| 9 | #1082 | Context usage colour gradient | Composer strip, after #724 |
+| 10 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
+| 11 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
+| 12 | #469 | Tool-row icons with verb tooltips | Transcript rows |
+| 13 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
+| 14 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
+| 15 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
+| alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
+
+p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
+
+- Closed as done: #212, #218 (PR #819), #298 (`readiness.installDependency`, R11).
+- Closed as superseded or obsolete: #510, #512, #515 (Rust start state machine, PR #827, epic #797); #155, #282, #297, #304 (Electron-era docs and live-verify tasks; leftovers go to #650).
+- p1 to p3: #391, #392 (FDB integrations, still blocked on FDB discovery).
+- p1 to p2: #549, #579 (umbrella epics; children carry priority), #660, #881.
+- p2 to p1: #777, #687, #526, #538, #730.
+- p2 to p3: #1089, #1081, #887, #878, #874, #869, #867, #848, #751, #752, #753, #748, #1102, #697, #694, #706, #772, #773, #545, #1048, #1058.
+- Kept p2 on review: #1085, #932, #846, #842, #750, #732, #696, #695, #693, #684, #682.
 
 ### Phase R: Rust promotion (P0, runs first and in parallel with Phases A to E)
 
