@@ -9,7 +9,10 @@ fn validate_config_key_accepts_plain_identifiers_and_rejects_flags_and_dotted_ke
     assert!(validate_config_key("cycleOrder").is_ok());
     assert!(validate_config_key("-1").is_err());
     assert!(validate_config_key("--json").is_err());
-    assert!(validate_config_key("composer.predictions").is_err());
+    assert!(validate_config_key("composer.predictions").is_ok());
+    assert!(validate_config_key("a..b").is_err());
+    assert!(validate_config_key("a.-b").is_err());
+    assert!(validate_config_key("a.").is_err());
     assert!(validate_config_key("").is_err());
 }
 
