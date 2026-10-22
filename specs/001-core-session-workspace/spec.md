@@ -1214,6 +1214,30 @@
   only -- no provider prefix, no `:level` suffix -- the chosen level shows only in the role's own
   radio group.
 
+### Session 2026-10-22 (Agent-to-agent lines and `/models`, #838, #762)
+
+- Q: Issue #838 (Stuart 2026-10-13, grilled 2026-10-22, proposal accepted as written): every
+  agent-to-agent line draws the same right arrow, and the main agent steering a subagent shows as
+  a generic `write agent://<id>` tool row. How should these lines look? -> A: One bubble glyph per
+  direction (subagent to main `MessageSquareReplyIcon`, main to subagent `MessageSquareShareIcon`,
+  subagent to subagent and `agent://all` broadcasts `MessagesSquareIcon`), the glyph and the
+  "<sender> to <recipient>" label in one new violet `--agent-message` token defined for every
+  built-in theme (a hue no other meaning uses; 4.5:1 on the background and the row hover), the
+  preview and expanded text unchanged, "Main agent" as the one label for the parent, and an
+  sr-only "Agent message from X to Y" in place of the visible pair. The Rust transcript builder
+  recognises OMP's real `irc:incoming` custom type and passes `details.fromParent`/`replyTo`
+  through as optional item fields; the renderer decides the direction from `fromParent` first,
+  then the "Main"/"main agent" names. A `write agent://<id>` call renders as a main-to-subagent
+  line (outgoing glyph, preview from the written content, "View full call" on expansion), ends
+  any run of grouped tool calls, and is never hidden by "Show tool calls"; while running,
+  failed, interrupted or stopped it shows its status glyph instead, and a failed write reads
+  "failed" in the error colour, never violet.
+- Q: Issue #762 (narrowed 2026-10-21; `/switch` and `/model` already shipped in PR #836): what
+  does `/models` do? -> A: It is a Refract-native command: a bare `/models` opens Settings at the
+  Model roles section, clears the draft and sends nothing to OMP (OMP's own `models` opens its
+  role-writing hub). It is listed in the slash menu as "Open model role settings" and stays a
+  reserved name, so `chat.send` refuses it if it ever arrives and a custom command cannot take it.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1924,6 +1948,21 @@ The developer types a slash command and finds the ones the agent offers. If a se
   silently-greyed control with no explanation. Picking an enabled level MUST write it as the role's
   existing `:level` suffix via the existing suffix helpers (`modelRoleSuffix.ts`); picking Inherit
   MUST clear it.
+- **FR-100** (new, 2026-10-22, issue #762): A bare `/models` typed in the message box MUST open
+  Settings at the Model roles section, clear the draft, and send nothing to the agent. The slash
+  menu MUST list it as a native command ("Open model role settings"); the name MUST stay reserved
+  so `chat.send` refuses it and no custom command can claim it.
+- **FR-101** (new, 2026-10-22, issue #838; amends FR-048): Each agent-to-agent line MUST show a
+  direction glyph (a reply bubble for subagent to main, an outgoing bubble for main to subagent, a
+  two-bubble glyph between subagents or for a broadcast) and its sender and recipient in the
+  `--agent-message` colour, with the main agent always named "Main agent" and an sr-only "Agent
+  message from X to Y" as its accessible label; the preview and expanded text keep their normal
+  colours. The direction MUST come from the message's own `fromParent` flag when OMP reports it
+  (`irc:incoming`), falling back to the sender and recipient names. A main-agent
+  `write agent://<id>` call with a message MUST render as a main-to-subagent line, ending any run
+  of grouped tool calls and never hidden by "Show tool calls"; its status glyph replaces the
+  bubble while running, failed, interrupted or stopped, a failed write reads "failed" in the
+  error colour, and expansion shows the full message and "View full call".
 
 ### Key Entities
 

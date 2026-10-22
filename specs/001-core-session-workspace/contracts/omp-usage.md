@@ -166,7 +166,12 @@ even though it completed cleanly (bare `/switch` only echoes `Current model: <pr
 is read-only without an argument): its description is `Switch model for this session only`, i.e. a
 model write by another name, and T092's own instructions flag "/model writes" for Stuart's
 decision before Refract exposes them -- this is a judgment call recorded here, not a probe result,
-because the denylist regex (name-only) does not catch it. The 3 `starts-agent-turn` names
+because the denylist regex (name-only) does not catch it. **Superseded by issue #762 (Stuart,
+2026-10-13; built in PR #836 and the #762 follow-up):** `switch` is now supported with one
+verified argument shape (a single model token), `/model` and `/model <model>` are a Refract-side
+rewrite to `/switch` and never reach OMP's role-writing `model` hub, and `/models` is a
+Refract-native command that opens Settings at Model roles (FR-100) and is never forwarded. The
+3 `starts-agent-turn` names
 (`/ratchet`, `/green`, `/init`) are excluded for the reason the class itself states: unverified
 against a real model. Every `works-local` command actually included in the supported set was
 checked against its raw recorded frames for this run: all 56 produce a visible `command_output`,

@@ -148,6 +148,8 @@ export function DeleteDialog({
   // `deleteCheck` refresh -- `loading` also gates the Delete/Retry button's `aria-disabled`,
   // and that refresh must never grey out Retry while it runs in the background.
   const [refreshing, setRefreshing] = useState(false)
+  // Issue #1055: a failed post-refusal re-check says so, instead of silently hiding the bullets.
+  const [recheckFailed, setRecheckFailed] = useState(false)
   // Issue #891 gate round 3 (M4): Retry can be clicked again WHILE a previous attempt's own
   // post-failure refresh is still in flight (`refreshing` deliberately does not disable the
   // button) -- a generation counter so a stale refresh response from an EARLIER attempt can
@@ -172,6 +174,7 @@ export function DeleteDialog({
     setError(null)
     setRefused(false)
     setRefreshing(false)
+    setRecheckFailed(false)
     let cancelled = false
 
     if (check) {
@@ -260,6 +263,7 @@ export function DeleteDialog({
           // must not keep showing the PRE-delete loss bullets as if they were still accurate
           // -- cleared, not left stale.
           setResult(refreshed.ok ? refreshed.value : null)
+          setRecheckFailed(!refreshed.ok)
         })
       }
       if (!leftoverSummaryOverride) {
@@ -328,6 +332,7 @@ export function DeleteDialog({
             {!result.hasUpstream && <li>This branch has no upstream</li>}
           </ul>
         )}
+        {recheckFailed && <p className="text-sm text-muted-foreground">Couldn't re-check what Delete would lose.</p>}
         {/* Issue #891 gate round (M2): ONE role="status" line for every coarse step of the
             leftover-files walk/delete, never the list itself (the list below is a separate,
             non-live element). Issue #891 gate round 2 (M5): ALWAYS mounted, never conditionally

@@ -48,6 +48,30 @@ exactly zero stays `--muted-foreground` in either direction, so a `-0` never rea
 -- the shared `DiffStatCounts` component (`sessionDisplay.tsx`) is the one place this rule is
 implemented.
 
+### Agent-message token (issue #838)
+
+`--agent-message` (`globals.css`, every built-in theme; `oklch(0.78 0.12 295)`, raised to
+`oklch(0.85 0.1 295)` in Dark (high contrast)) colours the glyph and the "<sender> to
+<recipient>" label of an agent-to-agent line (`AgentMessageRow.tsx`), never its preview or
+expanded text, and nothing else. Checked at 4.5:1 against `--background` and `--muted` (the
+row's hover) in every theme by `scripts/theme-contrast-pairs.mjs`. It shares the violet family
+with the brand spinner's `--agent-spinner-core` (a brand mark, not a meaning colour, and never
+drawn on a chat line), so the two cannot be confused in context.
+
+### Reserved hues
+
+Each categorical colour that carries meaning, so a new one is checked against the others first.
+
+| Hue | Meaning | Tokens |
+|---|---|---|
+| Green | Working, success, added lines | `--state-working`, `--severity-success`, `--diff-added` |
+| Amber | Needs you, warning | `--state-needs-you`, `--severity-warning` |
+| Red | Stopped, error, deleted lines | `--state-stopped`, `--severity-error`, `--destructive`, `--diff-removed` |
+| Blue | Info, unread response | `--severity-info`, `--state-unread-response` |
+| Grey | Idle, neutral, done tool calls | `--state-idle`, `--muted-foreground` |
+| Violet | Agent-to-agent message identity (#838); the brand spinner (a brand mark) | `--agent-message`, `--agent-spinner-core` |
+| Per-theme accent | Links and primary fills, never a state | `--accent-text`, `--primary` |
+
 ## Theme files
 
 A theme is a data file (JSON) of palette, semantic-role, and component-token overrides, loaded from the user's profile folder and listed in the Appearance section of Settings beside the built-in presets (agenda item 9, #458).

@@ -19,8 +19,11 @@
 // is exactly why it already uses a cooperative cancel flag rather than a kill).
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
+
+use crate::git::git::{GitError, GitErrorCode};
 
 static LOCKS: LazyLock<Mutex<HashMap<String, Arc<RwLock<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -50,4 +53,24 @@ pub async fn read_guard(session_id: &str) -> OwnedRwLockReadGuard<()> {
 /// outstanding reader above has released its own read guard.
 pub async fn write_guard(session_id: &str) -> OwnedRwLockWriteGuard<()> {
     lock_for(session_id).write_owned().await
+}
+
+/// Issue #1055: `sessions.delete`'s own write-guard wait is bounded. A reader that never
+/// finishes (a hung git call: fsmonitor, antivirus, a network drive) would otherwise leave the
+/// dialog on "Deleting…" forever, and the fair `RwLock` would queue every later reader behind
+/// this writer too. Longer than `READER_TIMEOUT` so a bounded `deleteCheck` gives up first.
+pub const WRITE_GUARD_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Issue #1055: the most a `sessions.deleteCheck` reader may hold its read guard for.
+pub const READER_TIMEOUT: Duration = Duration::from_secs(15);
+
+pub const STILL_CHECKING_MESSAGE: &str =
+    "Refract is still checking this folder, so nothing was deleted. Choose Retry in a moment.";
+
+/// `write_guard` with `WRITE_GUARD_TIMEOUT`: an honest refusal (nothing touched yet, Retry
+/// works) instead of an unbounded wait.
+pub async fn write_guard_bounded(session_id: &str) -> Result<OwnedRwLockWriteGuard<()>, GitError> {
+    tokio::time::timeout(WRITE_GUARD_TIMEOUT, write_guard(session_id))
+        .await
+        .map_err(|_| GitError::new(GitErrorCode::WorktreeHeld, STILL_CHECKING_MESSAGE))
 }

@@ -1,5 +1,6 @@
 import { HIDDEN_TOOL_NOTICE_PREFIX } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
+import { agentSteerTarget } from './agentMessageDirection'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type ThinkingItem = Extract<TranscriptItem, { kind: 'thinking' }>
@@ -38,6 +39,11 @@ export function isThoughtRun(item: { kind: string }): item is ThoughtRun {
   return item.kind === 'thought-run'
 }
 
+// #838: a one-call group holding a `write agent://<id>` steering call (always alone, see below).
+export function isAgentSteerGroup(item: { kind: string }): boolean {
+  return isToolGroup(item) && item.items.length === 1 && agentSteerTarget(item.items[0]!) !== undefined
+}
+
 // Merges runs of adjacent `tool` items that share the same `tool` name into one `ToolGroup`
 // (T074, docs/DESIGN.md "Chat"). Every run -- including a run of one -- becomes a `ToolGroup`
 // (see `flushRun`): `TranscriptRow` must never switch between rendering a lone call and a run
@@ -71,7 +77,8 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
   }
 
   for (const item of items) {
-    if (item.kind === 'tool' && item.skill) {
+    // #838: a `write agent://<id>` steering call is an agent-to-agent line, a boundary like a skill.
+    if (item.kind === 'tool' && (item.skill || agentSteerTarget(item) !== undefined)) {
       flushRun()
       result.push({ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] })
       continue

@@ -3,7 +3,7 @@
 // render loop only ever calls, never inlines.
 import type { TranscriptDisplaySettings } from '../../../shared/model'
 import { isStageGroup } from './groupSubagentStages'
-import { isToolGroup } from './groupToolItems'
+import { isAgentSteerGroup, isToolGroup } from './groupToolItems'
 import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 
 // Bookkeeping rows (docs/DESIGN.md "Transcript rhythm", Stuart 2026-10-04): a run of these reads
@@ -84,6 +84,8 @@ export function rowVisibility(row: AdvisoryGroupedTranscriptItem, transcriptDisp
   // part of the filtered `ToolGroup`/`StageGroup` set this function otherwise governs).
   if (row.kind === 'advisory-run') return 'visible'
   if (transcriptDisplay.toolCalls) return 'visible'
+  // #838: a steering write renders as an agent-to-agent line, which "Show tool calls" never hides.
+  if (isAgentSteerGroup(row)) return 'visible'
   // Issue #563: Stage groups follow the lone-subagent rule below (cancelled counts as visible too).
   if (isStageGroup(row)) {
     if (row.items.some((item) => item.status === 'error' || item.status === 'exited' || item.status === 'cancelled')) return 'visible'

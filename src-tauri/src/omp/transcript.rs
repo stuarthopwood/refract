@@ -37,6 +37,8 @@ mod notice_prefixes;
 use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
 mod file_attachment_markers;
 use file_attachment_markers::FileAttachmentRef;
+mod agent_message;
+use agent_message::try_build_agent_message;
 
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
@@ -147,13 +149,18 @@ pub enum TranscriptItem {
         #[serde(skip)]
         async_settled: bool,
     },
-    #[serde(rename = "agent-message")]
+    #[serde(rename = "agent-message", rename_all = "camelCase")]
     AgentMessage {
         id: String,
         from: String,
         to: String,
         text: String,
         at: i64,
+        // #838: OMP's `details.fromParent`/`replyTo`, passed through (`agent_message.rs`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_parent: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reply_to: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Advisory {
@@ -274,13 +281,6 @@ const HIDDEN_TOOLS: &[&str] = &["todo"];
 
 const ASYNC_RESULT_CUSTOM_TYPE: &str = "async-result";
 const ADVISORY_CUSTOM_TYPE: &str = "advisor";
-const AGENT_MESSAGE_CUSTOM_TYPES: &[&str] = &[
-    "agent-message",
-    "agent_message",
-    "irc-message",
-    "irc_message",
-    "subagent-message",
-];
 
 fn is_advisory_severity(value: &str) -> bool {
     matches!(value, "nit" | "concern" | "blocker")
@@ -463,58 +463,6 @@ fn join_text(parts: &[Value]) -> String {
         .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
         .filter_map(|p| p.get("text").and_then(Value::as_str))
         .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Subagent-to-parent IRC messages (T079, FR-048): port of `transcript.ts` lines 292-336
-// ---------------------------------------------------------------------------
-
-fn try_build_agent_message(
-    message_id: &str,
-    custom_type: &str,
-    message: &Value,
-) -> Option<TranscriptItem> {
-    let details = message.get("details");
-    let looks_like_agent_message = AGENT_MESSAGE_CUSTOM_TYPES.contains(&custom_type)
-        || details
-            .map(|d| {
-                d.get("from").and_then(Value::as_str).is_some()
-                    || d.get("sender").and_then(Value::as_str).is_some()
-            })
-            .unwrap_or(false);
-    if !looks_like_agent_message {
-        return None;
-    }
-    let d = details;
-    let from = d
-        .and_then(|d| d.get("from").and_then(Value::as_str))
-        .or_else(|| d.and_then(|d| d.get("sender").and_then(Value::as_str)))
-        .unwrap_or("subagent")
-        .to_string();
-    let to = d
-        .and_then(|d| d.get("to").and_then(Value::as_str))
-        .or_else(|| d.and_then(|d| d.get("recipient").and_then(Value::as_str)))
-        .unwrap_or("main agent")
-        .to_string();
-    let text = d
-        .and_then(|d| d.get("text").and_then(Value::as_str))
-        .or_else(|| d.and_then(|d| d.get("message").and_then(Value::as_str)))
-        .map(String::from)
-        .unwrap_or_else(|| {
-            message
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string()
-        });
-    let at = as_timestamp(message, "timestamp").unwrap_or_else(now_ms);
-    Some(TranscriptItem::AgentMessage {
-        id: format!("agent-message:{message_id}"),
-        from,
-        to,
-        text,
-        at,
-    })
 }
 
 // ---------------------------------------------------------------------------

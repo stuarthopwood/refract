@@ -483,7 +483,7 @@ export type TranscriptItem =
       from: string;
       to: string;
       text: string;
-      at: number;
+      at: number; fromParent?: boolean; replyTo?: string; // #838: OMP's `irc:incoming` `details.fromParent` (sent by the main agent) and `replyTo` (id answered), passed through by Rust
     }
   | {
       /** An OMP-injected `<advisory>` note (T084, FR-051), parsed out of a `role: 'custom'`

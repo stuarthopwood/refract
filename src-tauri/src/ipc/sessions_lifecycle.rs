@@ -391,15 +391,13 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // is currently in flight for this Session.
         cancel_and_wait(&id).await;
 
-        // Issue #891 gate round 3 (H1, Main's own root-cause finding from app.log): the write
-        // guard blocks until EVERY Refract-owned reader of this worktree (`sessions.
-        // deleteCheck`'s own git children, the leftover-summary walk above) has actually
-        // finished and released -- the leftover walk was already cancelled above for
-        // responsiveness, but `deleteCheck`'s own background P4 refresh has no cooperative
-        // cancel and must simply be waited out; it is a handful of plain git calls, never
-        // slow enough to matter. Held for the rest of this handler, through the actual
-        // removal, so no NEW reader can start once this begins either.
-        let _write_guard = crate::fs::worktree_access::write_guard(&id).await;
+        // Issue #891 gate round 3 (H1): the write guard blocks until EVERY Refract-owned reader
+        // of this worktree (`deleteCheck`'s own git children, the leftover walk above) has
+        // released, and is held through the removal so no NEW reader can start. Issue #1055:
+        // bounded (`write_guard_bounded`), so a hung reader yields an honest Retry refusal.
+        let _write_guard = crate::fs::worktree_access::write_guard_bounded(&id)
+            .await
+            .map_err(map_git_error)?;
 
         // Issue #891, Stuart's 2026-10-19 grill item 2: the NAMED-holder (file-handle) check
         // runs BEFORE the agent is stopped -- a refused Delete for an external FILE holder must
