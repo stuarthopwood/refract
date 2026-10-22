@@ -5,6 +5,7 @@
 // slice (plan.md Project Structure: `omp/process.rs`, `omp/transcript.rs`, `omp/diff.rs`).
 
 pub mod config;
+pub mod config_guard;
 pub mod diff;
 pub mod images;
 pub mod login_providers;
