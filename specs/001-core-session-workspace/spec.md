@@ -1263,6 +1263,9 @@
 - Q: What does accessibility (WCAG 2.1 AA) require? -> A: The bar is text, never colour alone,
   and is not a live region, so opening a stopped Session announces nothing extra. **Start
   agent** is a real button reachable by keyboard. Starting the agent is announced once.
+- Q: When a stopped Session already shows a stop banner (crashed, failed to start, worktree
+  missing), does the Agent stopped bar also show? -> A: No. The existing banner replaces the
+  bar; it already says the agent is stopped (Stuart, 2026-10-23).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -2015,7 +2018,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
   "Agent stopped" and offer a **Start agent** button and a **Don't show again** text button. The
   bar MUST be text, never colour alone, and MUST NOT be a live region, so opening a stopped
   session announces nothing extra. **Start agent** MUST be a real button reachable by keyboard.
-  The bar MUST disappear once the agent starts.
+  The bar MUST disappear once the agent starts. When a FR-034 or FR-035 stop banner applies
+  (crashed, failed to start, worktree missing), that banner replaces the bar and the bar MUST
+  NOT show alongside it.
 - **FR-106** (new, 2026-10-23, issue #1205): The "Starting agent" notice MUST show only while an
   agent is actually being started, never for a session that is only being shown, and starting
   MUST be announced to assistive technology exactly once.
