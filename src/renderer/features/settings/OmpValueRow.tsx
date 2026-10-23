@@ -63,9 +63,14 @@ export function OmpValueRow({ info, value, defaultValue, onChange, onReset }: Om
   const text = toText(value)
   const [draft, setDraft] = useState(text)
   const inputRef = useRef<HTMLInputElement>(null)
+  const saving = useRef(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const isDefault = JSON.stringify(value) === JSON.stringify(defaultValue)
 
-  useEffect(() => setDraft(text), [text])
+  useEffect(() => {
+    setDraft(text)
+    setSaveFailed(false)
+  }, [text])
 
   // aria-disabled keeps the button focusable, so the guard lives in the handler.
   const resetButton = (
@@ -78,7 +83,8 @@ export function OmpValueRow({ info, value, defaultValue, onChange, onReset }: Om
       onClick={() => {
         if (isDefault) return
         onReset()
-        inputRef.current?.focus()
+        if (info.kind === 'toggle') document.getElementById(id)?.focus()
+        else inputRef.current?.focus()
       }}
     >
       Reset to default
@@ -103,24 +109,29 @@ export function OmpValueRow({ info, value, defaultValue, onChange, onReset }: Om
   }
 
   const invalid = parseText(info.kind, draft) === undefined
-  const showError = invalid && draft !== text
+  const showError = (invalid && draft !== text) || saveFailed
   const errorId = `${id}-error`
   const commit = (): void => {
     const parsed = parseText(info.kind, draft)
-    if (parsed === undefined || draft === text) return
-    void Promise.resolve(onChange(parsed)).then((ok) => {
-      if (ok === false) setDraft(text)
-    })
+    if (parsed === undefined || draft === text || saving.current) return
+    saving.current = true
+    void Promise.resolve(onChange(parsed))
+      .then((ok) => setSaveFailed(ok === false))
+      .catch(() => setSaveFailed(true))
+      .finally(() => {
+        saving.current = false
+      })
   }
   return (
     <SettingFieldRow
       id={id}
       label={info.label}
       description={`Set by Refract. Default: ${toText(defaultValue) || 'none'}. ${FORMAT_HINT[info.kind] ?? ''}`.trim()}
+      wrap
       note={
         showError ? (
           <span id={errorId} className="text-xs text-destructive">
-            {ERROR_TEXT[info.kind] ?? 'Enter a valid value.'}
+            {invalid ? (ERROR_TEXT[info.kind] ?? 'Enter a valid value.') : 'Could not save this value. Try again.'}
           </span>
         ) : undefined
       }
@@ -133,7 +144,10 @@ export function OmpValueRow({ info, value, defaultValue, onChange, onReset }: Om
           aria-describedby={showError ? `${id}-description ${errorId}` : `${id}-description`}
           aria-invalid={invalid}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setSaveFailed(false)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') commit()
           }}
