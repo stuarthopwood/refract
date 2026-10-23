@@ -42,15 +42,16 @@ pub fn register(d: &mut Dispatcher) {
     d.register("sessions.cancelStart", sessions_cancel_start);
 }
 
-/// Port of `ipc/canAutoStart.ts`: an allow-list (never a deny-list), so a future, unrecognised
-/// `stopReason` fails CLOSED (stays stopped) rather than auto-starting into whatever that new
-/// state turns out to mean. `agent-exited`/`start-failed` must never auto-start (FR-034): the
-/// crashed/failed agent stays visibly stopped until the user explicitly asks `sessions.recover`.
-/// A `not-started`/absent Session whose Conversation tail shows it died mid-turn is excluded too
-/// (issue #509 requirement 6), so opening it never silently auto-starts past the chance to
-/// Resume with the default instruction before the stop banner ever shows. `worktree-missing` is
-/// exempt from that extra exclusion: its own dedicated Recreate/Archive/Delete actions apply
-/// regardless of what the tail happens to show.
+/// Port of `ipc/canAutoStart.ts`. Issue #1205 (FR-103, FR-104): no longer gates any start -- a
+/// passive `sessions.open` never starts the agent at all. It survives only as the Rust twin of the
+/// renderer's `canAutoStartSession`, which now only chooses whether a stop banner (FR-034,
+/// FR-035) shows instead of the "Agent stopped" bar. An allow-list (never a deny-list), so a
+/// future, unrecognised `stopReason` fails CLOSED (banner shown). `agent-exited`/`start-failed`
+/// keep their banner until the user explicitly asks `sessions.recover`. A `not-started`/absent
+/// Session whose Conversation tail shows it died mid-turn is excluded too (issue #509
+/// requirement 6), so its Resume banner shows. `worktree-missing` is exempt from that extra
+/// exclusion: its own dedicated Recreate/Archive/Delete actions apply regardless of the tail.
+#[cfg_attr(not(test), allow(dead_code))]
 fn can_auto_start(stop_reason: Option<&str>, terminated_unexpectedly: bool) -> bool {
     let normally_allowed = matches!(
         stop_reason,
@@ -374,15 +375,15 @@ pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
 /// `AttachableAgent`.
 pub(crate) trait AttachableAgent {
     async fn status(&self) -> SessionStatus;
-    async fn stop_reason(&self) -> Option<String>;
     async fn resolve_termination(&self) -> TerminationDetectionResult;
     async fn start(&self) -> Result<(), AgentError>;
     async fn notify_list_changed(&self);
 }
 
 /// Port of `ipc/attachSnapshot.ts`'s own `attachSnapshotCore`'s decision body: `force_start`
-/// restarts regardless of reason (including `agent-exited`); a passive open only starts when
-/// `can_auto_start` says the Session was never wrong to begin with. Returns the FRESH
+/// (`sessions.recover`, or `sessions.open` with `userAction: true`) restarts regardless of reason
+/// (including `agent-exited`); a passive open never starts the agent (issue #1205, FR-103), and
+/// `build_snapshot` shows the saved history instead. Returns the FRESH
 /// `TerminationDetectionResult` to thread into `build_snapshot` whenever (and only whenever) the
 /// Session actually was `Stopped` (`None` otherwise: nothing needed computing, same as the
 /// previous shape) -- never `runtime_view()`'s own cached value, which only ever reflects a
@@ -399,8 +400,7 @@ pub(crate) async fn attach_snapshot_decision<A: AttachableAgent>(
     // reattaches when reopened") needs this, otherwise a tool call still outstanding when a
     // deliberate stop fired looks identical, from the file alone, to a crash.
     let detection = agent.resolve_termination().await;
-    let stop_reason = agent.stop_reason().await;
-    if force_start || can_auto_start(stop_reason.as_deref(), detection.terminated_unexpectedly) {
+    if force_start {
         let _ = agent.start().await;
         agent.notify_list_changed().await;
     }
@@ -415,10 +415,6 @@ struct AttachAgentAdapter<'a> {
 impl AttachableAgent for AttachAgentAdapter<'_> {
     async fn status(&self) -> SessionStatus {
         self.agent.status().await
-    }
-
-    async fn stop_reason(&self) -> Option<String> {
-        stop_reason_of(&self.agent.runtime_view().await)
     }
 
     async fn resolve_termination(&self) -> TerminationDetectionResult {
@@ -460,10 +456,9 @@ async fn attach_snapshot_core(
     Ok(super::conversations::build_snapshot(&refreshed, &agent, detection.as_ref()).await)
 }
 
-/// `sessions.open` (T024): auto-starts a `stopped` Session when nothing is wrong with the agent
-/// itself (`can_auto_start`). `userAction` (issue #509 quality-gate fix) bypasses this gate
-/// outright -- a user explicitly sending a message to a not-yet-opened pane must still start the
-/// agent, same as `force_start` below.
+/// `sessions.open` (T024): never starts a `stopped` Session on its own (issue #1205, FR-103);
+/// the snapshot carries its saved history instead. `userAction: true` (**Start agent**, a send,
+/// issue #509) is the explicit action that starts it (FR-104), same as `force_start` below.
 pub fn sessions_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(id) = args.first().and_then(Value::as_str).map(str::to_string) else {

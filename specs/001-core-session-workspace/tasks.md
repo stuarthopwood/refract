@@ -5271,25 +5271,25 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 (`canAutoStartSession`) still drives the "Starting agent" notice on a passive open. No new tests
 (prototyping phase): verification is a live run with the fake-omp harness.
 
-- [ ] T377 Confirm OMP's session-file record format on a real `.jsonl` (a file under a Session's
+- [x] T377 Confirm OMP's session-file record format on a real `.jsonl` (a file under a Session's
   `sessionDir`, cross-checked with `omp://session.md` "File Format"): the `type: "title"` first
   line, `type: "message"` records and their nested `message` shape (`user`, `assistant`,
   `toolResult`, `toolCall` parts), the prelude entry types to skip, and whether one file can hold
   more than one branch (`id`/`parentId`) and if so how the active branch is found. Record it as a
   new item in `docs/spike/FINDINGS.md` before T378 starts, per Constitution IV and FR-103
   (missing)
-- [ ] T378 Add `src-tauri/src/session/saved_history.rs`: read the Session's
+- [x] T378 Add `src-tauri/src/session/saved_history.rs`: read the Session's
   `current_conversation` file (`store/registry.rs:35-44`) line by line, skip malformed lines and
   non-message records as `conversations.rs`'s `read_conversation_file` does, collect the
   `message` objects in order (following the active branch if T377 found branches), and return
   `omp::transcript::TranscriptState::from_history(&messages)` items; report a missing or empty
   file as its own result per FR-103 and FR-024 (missing)
-- [ ] T379 Make a passive `sessions.open` never start the agent: in
+- [x] T379 Make a passive `sessions.open` never start the agent: in
   `src-tauri/src/ipc/sessions_agent.rs` `attach_snapshot_decision` starts only when `force_start`
   (`userAction: true`, `sessions.recover`); keep `can_auto_start` only for choosing the stop
   banner, and update its doc comment and `contracts/ipc.md`'s `sessions.open` row (already
   amended) per FR-103 and FR-104 (contradicts)
-- [ ] T380 In `src-tauri/src/ipc/conversations.rs` `build_snapshot`, when the agent stays
+- [x] T380 In `src-tauri/src/ipc/conversations.rs` `build_snapshot`, when the agent stays
   stopped, inject T378's items into `runtime.transcript` (and a plain missing-or-empty notice
   when the file is absent) so the existing `SessionSnapshot` shape (`src/shared/ipc.ts:224-236`)
   carries the history with no `omp` process; the live transcript replaces it once the agent
@@ -5314,7 +5314,7 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `isOpening && status === 'stopped' && canAutoStartSession` condition (`ChatPane.tsx` about
   `:205-224`) with the real start signal, and announce the start once to assistive technology
   per FR-106 (contradicts)
-- [ ] T385 Add the `showAgentStoppedBar` setting (default `true`; an absent field reads `true`):
+- [x] T385 Add the `showAgentStoppedBar` setting (default `true`; an absent field reads `true`):
   `src-tauri/src/store/agent_stopped_bar.rs` (new, beside `chat_width.rs`), `store/settings.rs`,
   `ipc/settings.rs` registering `settings.setShowAgentStoppedBar`, and `Settings` plus the
   setter in `src/shared/model.ts` and `src/shared/ipc.ts`, keeping `pnpm check:parity` green
