@@ -12,26 +12,27 @@ interface TokenGuardState {
   loaded: boolean
   error: string | null
   load(): Promise<void>
-  set(key: string, value: unknown): Promise<void>
+  set(key: string, value: unknown): Promise<boolean>
   reset(key: string): Promise<void>
 }
 
 export const useTokenGuardStore = create<TokenGuardState>((set) => {
-  const apply = (result: Result<TokenGuardSnapshot>): void => {
+  const apply = (result: Result<TokenGuardSnapshot>): boolean => {
     if (result.ok) {
       set({ values: result.value.values, defaults: result.value.defaults, loaded: true, error: null })
     } else {
       set({ error: result.error.message })
     }
+    return result.ok
   }
   return {
     values: {},
     defaults: {},
     loaded: false,
     error: null,
-    load: async () => apply(await window.refract.tokenGuard.get()),
+    load: async () => void apply(await window.refract.tokenGuard.get()),
     set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value)),
-    reset: async (key) => apply(await window.refract.tokenGuard.reset(key))
+    reset: async (key) => void apply(await window.refract.tokenGuard.reset(key))
   }
 })
 

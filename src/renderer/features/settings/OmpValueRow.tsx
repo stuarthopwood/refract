@@ -1,15 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SettingFieldRow } from '@/components/SettingFieldRow'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import type { TokenGuardKeyInfo, TokenGuardValue } from '../../../shared/tokenGuard'
+
+const FORMAT_HINT: Partial<Record<TokenGuardKeyInfo['kind'], string>> = {
+  count: 'Whole number, 0 or more.',
+  record: 'Format: model=tokens, model=tokens.',
+  list: 'Comma-separated.'
+}
+
+const ERROR_TEXT: Partial<Record<TokenGuardKeyInfo['kind'], string>> = {
+  count: 'Enter a whole number, 0 or more.',
+  record: 'Enter model=tokens pairs separated by commas, tokens a whole number, 0 or more.',
+  list: 'Enter a comma-separated list.'
+}
 
 // One "Set by Refract" row of Settings > OMP: a typed control plus a per-row reset to default.
 interface OmpValueRowProps {
   info: TokenGuardKeyInfo
   value: TokenGuardValue | undefined
   defaultValue: TokenGuardValue | undefined
-  onChange: (value: unknown) => void
+  onChange: (value: unknown) => void | Promise<boolean>
   onReset: () => void
 }
 
@@ -49,12 +62,25 @@ export function OmpValueRow({ info, value, defaultValue, onChange, onReset }: Om
   const id = `omp-${info.key}`
   const text = toText(value)
   const [draft, setDraft] = useState(text)
+  const inputRef = useRef<HTMLInputElement>(null)
   const isDefault = JSON.stringify(value) === JSON.stringify(defaultValue)
 
   useEffect(() => setDraft(text), [text])
 
+  // aria-disabled keeps the button focusable, so the guard lives in the handler.
   const resetButton = (
-    <Button variant="ghost" size="sm" disabled={isDefault} aria-label={`Reset ${info.label} to default`} onClick={onReset}>
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-disabled={isDefault}
+      aria-label={`Reset ${info.label} to default`}
+      className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+      onClick={() => {
+        if (isDefault) return
+        onReset()
+        inputRef.current?.focus()
+      }}
+    >
       Reset to default
     </Button>
   )
@@ -77,33 +103,44 @@ export function OmpValueRow({ info, value, defaultValue, onChange, onReset }: Om
   }
 
   const invalid = parseText(info.kind, draft) === undefined
+  const showError = invalid && draft !== text
+  const errorId = `${id}-error`
+  const commit = (): void => {
+    const parsed = parseText(info.kind, draft)
+    if (parsed === undefined || draft === text) return
+    void Promise.resolve(onChange(parsed)).then((ok) => {
+      if (ok === false) setDraft(text)
+    })
+  }
   return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <label htmlFor={id} className="text-sm font-medium">
-          {info.label}
-        </label>
-        <span id={`${id}-description`} className="text-xs text-muted-foreground">
-          {`Set by Refract. Default: ${toText(defaultValue) || 'none'}.`}
-          {info.kind === 'record' ? ' Format: model=tokens, model=tokens.' : ''}
-          {info.kind === 'list' ? ' Comma-separated.' : ''}
-        </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
+    <SettingFieldRow
+      id={id}
+      label={info.label}
+      description={`Set by Refract. Default: ${toText(defaultValue) || 'none'}. ${FORMAT_HINT[info.kind] ?? ''}`.trim()}
+      note={
+        showError ? (
+          <span id={errorId} className="text-xs text-destructive">
+            {ERROR_TEXT[info.kind] ?? 'Enter a valid value.'}
+          </span>
+        ) : undefined
+      }
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Input
+          ref={inputRef}
           id={id}
-          className="w-72"
-          aria-describedby={`${id}-description`}
+          className="w-72 min-w-0 flex-1"
+          aria-describedby={showError ? `${id}-description ${errorId}` : `${id}-description`}
           aria-invalid={invalid}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => {
-            const parsed = parseText(info.kind, draft)
-            if (parsed !== undefined && draft !== text) onChange(parsed)
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commit()
           }}
+          onBlur={commit}
         />
         {resetButton}
       </div>
-    </div>
+    </SettingFieldRow>
   )
 }

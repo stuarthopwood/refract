@@ -37,7 +37,7 @@ export function OmpSection() {
               info={info}
               value={values[info.key]}
               defaultValue={defaults[info.key]}
-              onChange={(value) => void set(info.key, value)}
+              onChange={(value) => set(info.key, value)}
               onReset={() => void reset(info.key)}
             />
           ))}

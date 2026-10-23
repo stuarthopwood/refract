@@ -16,19 +16,24 @@ interface CallsState {
   bySession: Record<string, CallsEntry>
   handingOff: Record<string, boolean>
   handoffError: Record<string, string | null>
+  /** Polite status text for the Hand off flow (empty until one starts). */
+  handoffNotice: Record<string, string>
   setCalls(payload: TokenGuardCalls): void
   dismissBanner(sessionId: string): void
   dismissHandoffError(sessionId: string): void
-  handOff(sessionId: string): Promise<void>
+  /** Resolves true when the Hand off succeeded. */
+  handOff(sessionId: string): Promise<boolean>
 }
 
 export const useTokenGuardCallsStore = create<CallsState>((set, get) => ({
   bySession: {},
   handingOff: {},
   handoffError: {},
+  handoffNotice: {},
   setCalls: ({ sessionId, conversationId, calls }) =>
     set((s) => {
       const previous = s.bySession[sessionId]
+      if (previous?.conversationId === conversationId && previous.calls === calls) return s
       const sameConversation = previous?.conversationId === conversationId
       return {
         bySession: {
@@ -45,8 +50,12 @@ export const useTokenGuardCallsStore = create<CallsState>((set, get) => ({
     }),
   dismissHandoffError: (sessionId) => set((s) => ({ handoffError: { ...s.handoffError, [sessionId]: null } })),
   handOff: async (sessionId) => {
-    if (get().handingOff[sessionId]) return
-    set((s) => ({ handingOff: { ...s.handingOff, [sessionId]: true }, handoffError: { ...s.handoffError, [sessionId]: null } }))
+    if (get().handingOff[sessionId]) return false
+    set((s) => ({
+      handingOff: { ...s.handingOff, [sessionId]: true },
+      handoffError: { ...s.handoffError, [sessionId]: null },
+      handoffNotice: { ...s.handoffNotice, [sessionId]: 'Handing off…' }
+    }))
     // Blocks scroll recording across the whole in-flight window, like a manual new Conversation.
     useChatScrollStore.getState().setInFlight(sessionId, true)
     let failure: string | null = null
@@ -59,7 +68,12 @@ export const useTokenGuardCallsStore = create<CallsState>((set, get) => ({
       failure = err instanceof Error ? err.message : 'Hand off failed.'
     } finally {
       useChatScrollStore.getState().setInFlight(sessionId, false)
-      set((s) => ({ handingOff: { ...s.handingOff, [sessionId]: false }, handoffError: { ...s.handoffError, [sessionId]: failure } }))
+      set((s) => ({
+        handingOff: { ...s.handingOff, [sessionId]: false },
+        handoffError: { ...s.handoffError, [sessionId]: failure },
+        handoffNotice: { ...s.handoffNotice, [sessionId]: failure === null ? 'Handed off to a new conversation' : '' }
+      }))
     }
+    return failure === null
   }
 }))
