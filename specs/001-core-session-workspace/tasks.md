@@ -5294,23 +5294,23 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   when the file is absent) so the existing `SessionSnapshot` shape (`src/shared/ipc.ts:224-236`)
   carries the history with no `omp` process; the live transcript replaces it once the agent
   starts per FR-103 (missing)
-- [ ] T381 Route every passive path through the history-only open and audit it: Session-row
+- [x] T381 Route every passive path through the history-only open and audit it: Session-row
   click, Ctrl+click into a Split (`split-store.ts`), a notification click and startup pane
   restore (`init-stores.ts` `onUiOpenSession`), all via `ChatPane.tsx`'s snapshot effect
   (`useSessionsStore.getState().open(sessionId)`); none may pass `userAction: true` per FR-103
   (partial)
-- [ ] T382 Sending to a stopped Session: `MessageInput.tsx` keeps the draft and the pending
+- [x] T382 Sending to a stopped Session: `MessageInput.tsx` keeps the draft and the pending
   message while `open(sessionId, true)` starts the agent, waits for ready through the existing
   `src-tauri/src/session/start_queue.rs` ready signal (no new queue), then sends exactly once;
   a failed start keeps the draft and shows the existing stop banner per FR-104 (partial)
-- [ ] T383 Add `src/renderer/features/chat/AgentStoppedBar.tsx` from shared `components/ui`
+- [x] T383 Add `src/renderer/features/chat/AgentStoppedBar.tsx` from shared `components/ui`
   primitives: text "Agent stopped", a **Start agent** button (`open(sessionId, true)`) and a
   **Don't show again** text button; not a live region, not colour alone, keyboard reachable;
   shown only while the shown Session is stopped with no FR-034/FR-035 stop banner and
   `showAgentStoppedBar` is on; mount it above the composer in `ChatPane.tsx` without growing
   `ChatPane.tsx` past its file-size baseline (1,445; extract a block if needed) per FR-105 and
   the #806 cap (missing)
-- [ ] T384 Show the "Starting agent" notice only while a start is actually running: replace the
+- [x] T384 Show the "Starting agent" notice only while a start is actually running: replace the
   `isOpening && status === 'stopped' && canAutoStartSession` condition (`ChatPane.tsx` about
   `:205-224`) with the real start signal, and announce the start once to assistive technology
   per FR-106 (contradicts)
@@ -5319,7 +5319,7 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `ipc/settings.rs` registering `settings.setShowAgentStoppedBar`, and `Settings` plus the
   setter in `src/shared/model.ts` and `src/shared/ipc.ts`, keeping `pnpm check:parity` green
   per FR-107 and `contracts/ipc.md` (missing)
-- [ ] T386 Add Settings > Sessions: `src/renderer/features/settings/SessionsSection.tsx` (new)
+- [x] T386 Add Settings > Sessions: `src/renderer/features/settings/SessionsSection.tsx` (new)
   with the "Show the Agent stopped bar" toggle from a shared switch component, a `'sessions'`
   `SettingsSectionId` in `view-store.ts`, and its `SECTIONS` entry in `SettingsScreen.tsx`; wire
   **Don't show again** to turn the setting off with a `sonner` toast confirming it and an

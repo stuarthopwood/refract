@@ -8,7 +8,7 @@ import { create } from 'zustand'
 // remounted when `view` changes (App.tsx swaps the whole main area on it).
 
 export type MainView = 'chat' | 'pull-requests' | 'settings' | 'manage-sessions'
-export type SettingsSectionId = 'session-readout' | 'appearance' | 'model-roles' | 'chat' | 'right-pane' | 'omp'
+export type SettingsSectionId = 'session-readout' | 'sessions' | 'appearance' | 'model-roles' | 'chat' | 'right-pane' | 'omp'
 
 export type ArchiveFilter = 'all' | 'active' | 'archived'
 export type SortKey = 'recent' | 'name' | 'repo' | 'status'
