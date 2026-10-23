@@ -165,7 +165,7 @@ A comment thread anchored to a location in a pull request's diff (spec 003), wit
 _Avoid_: Comment thread, discussion
 
 **Review action**:
-Any of comment, reply, resolve, unresolve, submit a review (comment/approve/request changes), or merge (spec 003) -- every one runs only as the direct result of an explicit user action, and approving, requesting changes, and merging each require a confirmation naming the pull request and the exact action first.
+Any of comment, reply, react, resolve, unresolve, submit a review (comment/approve/request changes), close, or merge (spec 003; react and close added 2026-10-23, #1199 and #1196) -- every one runs only as the direct result of an explicit user action, and approving, requesting changes, closing, and merging each require a confirmation naming the pull request and the exact action first; reacting never asks, since it is undone by clicking again.
 _Avoid_: PR action, operation
 
 **Rendered view**:
