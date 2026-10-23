@@ -51,24 +51,27 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 
 | Order | Issue | Work | Why here |
 |---|---|---|---|
-| 1 | #1200 | Long-PR layout bug: app frame stops filling the window, list column blank, two scrollbars | Bug, filed p1 2026-10-23; breaks the Pull requests view on real PRs |
-| 2 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |
-| 3 | #1055 | Delete dialog: hung-git wait timeout and two copy fixes | Bug, grilled 2026-10-22, scope narrowed |
-| 4 | #1184 | OMP settings guard: reset drifted token-cost settings at start and before each Session launch | Filed p1 2026-10-22; protects the token savings; small Rust module on existing `omp/config.rs`; done (PR #1189), item 5 moved to #691 |
-| 5 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
-| 6 | #883 | In-app update check | Release path; left open when #794 closed |
-| 7 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
-| 8 | #766 | Combined Role·Model pill, Ctrl+R, change any time | done (PR #1183 + PR #1187) |
-| 9 | #762 | `/switch` and `/model` | Same files as #766, straight after it; done (PR #1161) |
-| 10 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip; done (PR #1162) |
-| 11 | #1082 | Context usage colour gradient | Composer strip, after #724; done (PR #1162) |
-| 12 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, built, PR #1202 awaiting merge |
-| 13 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
-| 14 | #469 | Tool-row icons with verb tooltips | Transcript rows |
-| 15 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
-| 16 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
-| 17 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
-| 18 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
+| 1 | #1212 | **P0 Token guard:** launch `--config` overlay with the token settings, snapcompact tool-result imaging and snapcompact-first compaction, post-turn shake above 60k context, long-conversation Hand off at 300/500 calls, Refract-owned rules via `--append-system-prompt`; replaces #1184's global reset (PR #1189) | P0 (Stuart 2026-10-23); token budget; probe RPC `compact` method selection first |
+| 2 | #1200 | Long-PR layout bug: app frame stops filling the window, list column blank, two scrollbars | Bug, filed p1 2026-10-23; breaks the Pull requests view on real PRs |
+| 3 | #1205 | Open stopped Sessions without starting the agent (configurable "Agent stopped" bar) | Raised to p1 2026-10-23; saves memory and tokens on every look-back and at startup restore; probe first |
+| 4 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |
+| 5 | #1055 | Delete dialog: hung-git wait timeout and two copy fixes | Bug, grilled 2026-10-22, scope narrowed |
+| 6 | #1184 | OMP settings guard: reset drifted token-cost settings at start and before each Session launch | Filed p1 2026-10-22; protects the token savings; small Rust module on existing `omp/config.rs`; done (PR #1189), item 5 moved to #691 |
+| 7 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
+| 8 | #883 | In-app update check | Release path; left open when #794 closed |
+| 9 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
+| 10 | #766 | Combined Role·Model pill, Ctrl+R, change any time | done (PR #1183 + PR #1187) |
+| 11 | #762 | `/switch` and `/model` | Same files as #766, straight after it; done (PR #1161) |
+| 12 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip; done (PR #1162) |
+| 13 | #1082 | Context usage colour gradient | Composer strip, after #724; done (PR #1162) |
+| 14 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, done (PR #1202) |
+| 15 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
+| 16 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it |
+| 17 | #469 | Tool-row icons with verb tooltips | Transcript rows |
+| 18 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
+| 19 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
+| 20 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
+| 21 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
 | alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
 
 p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
@@ -393,6 +396,10 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 | **Pull requests comment editor** | **#1196 (Stuart 2026-10-23, grilled twice, none deferred): rich comment editor: composer-styled field with Write/Preview, a compact Markdown toolbar (Ctrl+B/I/K) and #1170's live styling; Close pull request (confirmed) and Comment below the top-level editor; each review thread gets a ghost Reply that toggles a smaller editor** (Esc keeps the draft, focus returns to Reply) | todo; after #915; reuses #675's shared composer field and #1170 |
 | **Pull requests Checks section** | **#1198 (Stuart 2026-10-23, grilled, none deferred): GitHub-style Checks section at the end of the Overview, grouped by outcome (Action required/Failing open; Pending; Successful, Neutral, Skipped collapsed with counts), per-check rows with RAG icon, name, duration and an "Open details" menu; no re-run in v1** | todo; passes `statusCheckRollup` entries through `PullRequestDetail` |
 | **Pull requests reactions** | **#1199 (Stuart 2026-10-23, grilled, none deferred): reaction pills with counts on comments and reviews, click toggles yours, smiley picker of GitHub's eight, no confirmation** | todo; after #915 (same `Timeline.tsx`) |
+| **Session list header size** | **#1203 (Stuart 2026-10-23, grilled, none deferred): Project and Archived group headers (and counts) from 12 px to 14 px, matching Session names; medium weight, muted colour and chevron kept** | todo; `GroupHeader.tsx`; serialise with the Session list lane (`SessionList.tsx`, #811) |
+| **Stopped status icon** | **#1204 (Stuart 2026-10-23, grilled, none deferred): Stopped icon `SquareIcon` to `CirclePauseIcon`** in the shared status table (`sessionDisplay.tsx`), same slot and colour | todo; check against #731 and #482 |
+| **Open stopped Sessions without starting** | **#1205 (Stuart 2026-10-23, grilled, none deferred): showing a stopped Session (row click, Split, notification, startup restore) never starts its agent; history is read from the saved session file, an "Agent stopped" bar offers Start agent, and sending a message starts then sends; the bar can be hidden in Settings > Sessions or with "Don't show again". Raised to p1 2026-10-23.** Probe first whether the transcript can be built from the `.jsonl` alone | todo; probe first; touches `sessions_agent.rs`, `conversations.rs`, `ChatPane.tsx` |
+| **Active-row shimmer** | **#1210 (Stuart 2026-10-23, grilled, none deferred): KITT-style highlight sweep across the label of the single newest running transcript row** (spinner kept), static under reduced motion and when hidden, Settings > Appearance switch as its 2.2.2 pause control | todo; after #1208 (label weights); one shared shimmer utility with the subagent-row shimmer |
 | **GitHub issues** | **#503 Report an issue** (Project-header button and dialog, v1 without the AI draft: title, description, labels from the GitHub repository, live duplicate check, file with `gh issue create --body-file -`), then **#504 Issues view**, **grilled 2026-10-15 (all resolved):** nav order **Home, Pull requests, Issues** as three menu items with no heading, then a divider and a gap before the Project groups; cross-Project list on the Pull requests **Filter tabs** (Open, Assigned to me, Authored by me, Mentions me) plus State, Project, Label and Search selects; Sort select (Updated default, Created, Priority p1 to p3); **Start a Session from this issue in v1** (Session "#<n> <title>", branch `issue-<n>-<slug>`, linked back; auto-sends the issue as the first prompt only when the author is OWNER, COLLABORATOR or MEMBER, otherwise prefills with a review note). Then **#874 Pull requests view across Projects** on the same shell, straight after #504; then #503's AI drafting step (needs a mechanism probe) | todo; both edit `SessionList.tsx`, so after A4 (#480) and #811, serialised with the Session list lane and #869; backend in Rust only: `src-tauri/src/github/` and a new `src-tauri/src/ipc/issues.rs` (not `src/main/github/gh.ts`, frozen) |
 | **OMP adoption (18.6.x)** | **#520 probe first** (B5), then **#515** reattach model error (row A2h, in Phase A), **#517** Stop returns queued messages with `abort_and_restore_queue`, **#521** usage-limit and slow-mode readout (with #454), **#519** generate frame types from OMP's wire schema, and **#518** `message_update` deltas only if #510's analysis says message volume matters. #516 native side chat is row C2. Probe each command on the live OMP before building (items 14 to 19) | todo; #517 and #518 edit `SessionAgent.ts`, `transcript.ts` and `MessageInput.tsx`, so serialise with the Composer and Transcript lanes and A0 |
 | **OMP release review (process)** | **#689 (Stuart 2026-10-12): on every new OMP version, review the release notes for breaking changes and feature opportunities.** OMP is at **18.10.1**; the last live verification is **18.8.0** (minimum 18.6.3), and fourteen releases (18.8.1 to 18.10.1, every release after the verified 18.8.0) were unread until the baseline run on 2026-10-12 by two read-only reviewers: **no breaking change to the RPC contract, CLI flags or session-file shape** (every "Breaking Changes" section is an internal `@oh-my-pi/*` npm API and Refract has no such dependency). Re-test leads, from notes only: **#540** (18.8.7: no spurious final `agent_end` on interrupt-to-steer, high), **#577** (18.8.4 `/new` kept plan or goal mode), **#446** (18.8.1 RPC multi-select `ask`), **#503** (18.8.7 `omp anonymize` and `/dump anon`), **#512** (18.10.0 shared embedding server), **#516** (18.8.6 btw icon markers), **#502 and #563** (18.9.0 async job metadata); watch items: `worktree.onStart` / `onExit` and `bash.gitGuard`, `retry_fallback_*` / `model_changed` frames, `stop` behaviour, Windows daemons not reused after upgrading omp. Two ledgers: **reviewed** (through 18.10.1) versus **verified** (live probes, 18.8.0); the supported range moves only on a probe (#520, now to run on 18.10.1). Deliver `pnpm omp:release-review --from --to`, `docs/omp-releases/` (README ledger, CHECKLIST, reports), a daily "OMP released" issue Action (open decision), an agent runbook in `AGENTS.md`, and the #560 in-app note; all in the repository (#658). Comments left on #520, #540, #577, #446, #503, #512, #516, #502 | todo, before #520's probe run | #520, #560, #519 | `scripts/`, `docs/omp-releases/`, `.github/workflows/`, `AGENTS.md`, `readiness.ts` |
@@ -775,3 +782,13 @@ Also filed 2026-10-23 (Stuart, grilled, none deferred): **#1193** agent-driven i
 Also 2026-10-23 (Stuart, grilled, none deferred): **#915** amended into the Pull requests Timeline restyle (history line, author badges, soft borders, GitHub alerts; p3 to p2) and **#1196** filed (ghost Reply toggle, p2), placed as rows after #1194.
 
 Also 2026-10-23 (Stuart, grilled, none deferred): **#915** amended again (bot badge confirmed, content-width tables, allow-listed proxied images behind a Principle V ADR, datetime tooltips); **#1196** amended into the rich comment editor; **#1198** Checks section and **#1199** reactions filed (`p2`), placed after #1196; **#1200** long-PR layout bug filed (`p1`), placed as Priority order 1. `CONTEXT.md` **Review action** gains react (no confirmation) and close (confirmed).
+
+Also filed 2026-10-23 (Stuart, grilled, none deferred): **#1203** group headers at 14 px, **#1204** stopped icon to `CirclePauseIcon`, **#1205** open stopped Sessions without starting the agent; all `p2`, placed as rows after #1199.
+
+Also 2026-10-23: **#1205** amended (the "Agent stopped" bar is configurable: Settings toggle plus "Don't show again") and raised to `p1`, placed as Priority order 2 after #1200.
+
+Also filed 2026-10-23 (Stuart, grilled, UX architect consulted, none deferred): **#1208** lighter font weights and sentence-case verbs (`p1`), placed in Priority order directly before #469; comment posted on #469 (shared verb map).
+
+Also filed 2026-10-23 (Stuart, grilled, none deferred): **#1210** active-row shimmer (`p2`), placed as a row after #1205; comment posted on #566 (2.2.2 pause path).
+
+Also filed 2026-10-23 (Stuart, grilled, none deferred): **#1212** P0 token guard, placed as Priority order 1; #1184 (shipped in PR #1189) is superseded by it.
