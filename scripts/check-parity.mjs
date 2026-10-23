@@ -352,6 +352,7 @@ const REQUEST_LANES = {
   TOKEN_GUARD_GET: 'TG',
   TOKEN_GUARD_SET: 'TG',
   TOKEN_GUARD_RESET: 'TG',
+  TOKEN_GUARD_HANDOFF: 'TG',
   ACCOUNTS_GITHUB_LIST: 'R9', // #792, accounts.rs
   ACCOUNTS_GITHUB_ADD_START: 'R9',
   ACCOUNTS_GITHUB_ADD_CANCEL: 'R9',
@@ -381,6 +382,7 @@ const EVENT_LANES = {
   UI_OPEN_SESSION: 'R10b', // #793, window shell/chrome
   MEMORY_WARNING: 'R5', // #788, "memory warning" in R5's own work description
   TOKEN_GUARD_LAUNCH_WARNING: 'TG', // #1212, token guard launch warning
+  TOKEN_GUARD_CALLS: 'TG', // #1212, per-Conversation model-call count
   READOUT_UPDATE: 'R5',
   SUBAGENTS_UPDATE: 'R5',
   SUBAGENT_PATCH: 'R5',

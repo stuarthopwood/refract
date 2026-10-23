@@ -5,6 +5,7 @@ import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { showTokenGuardWarning } from './token-guard-store'
+import { useTokenGuardCallsStore } from './token-guard-calls-store'
 import { usePendingRequestsStore } from './pending-requests-store'
 import { useQueueStore } from './queue-store'
 import { useAskPicksStore } from './ask-picks-store'
@@ -175,6 +176,7 @@ export function initStores(): void {
     useSplitStore.getState().replaceFocused(sessionId)
   })
   window.refract.onTokenGuardLaunchWarning(showTokenGuardWarning)
+  window.refract.onTokenGuardCalls((payload) => useTokenGuardCallsStore.getState().setCalls(payload))
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })

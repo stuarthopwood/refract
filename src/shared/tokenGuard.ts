@@ -15,6 +15,21 @@ export interface TokenGuardLaunchWarning {
   reason: string;
 }
 
+/** `token-guard:calls`: model calls in a Session's current Conversation. */
+export interface TokenGuardCalls {
+  sessionId: string;
+  conversationId: string;
+  calls: number;
+}
+
+export type TokenGuardHandoffResult = { ok: true } | { ok: false; reason: string };
+
+/** Calls at which the Status line offers a Hand off, and the pane banner repeats it. */
+export const LONG_CONVERSATION_CALLS = 300;
+export const LONG_CONVERSATION_BANNER_CALLS = 500;
+/** A dismissed banner returns after this many more calls. */
+export const LONG_CONVERSATION_BANNER_REPEAT = 100;
+
 export type TokenGuardKind = 'count' | 'toggle' | 'text' | 'list' | 'record';
 
 export interface TokenGuardKeyInfo {

@@ -31,15 +31,15 @@ Owns: `src-tauri/src/omp/token_guard/{shake.rs,counter.rs}`, `src-tauri/src/sess
 - [X] T012 [B] [US3] Hook the settle points in `session/agent/frame.rs` (`session_settled`, `prompt_result` with `sessionSettled`) with a single call into `token_guard::shake` without growing `frame.rs` beyond a few lines
 - [X] T013 [B] [US4] Add `token_guard/counter.rs`: count assistant `message_end` per Session and Conversation, reset on new Conversation, re-derive from history on open or resume, emit `token-guard:calls` (FR-013)
 - [X] T014 [B] [US4] Add `session/agent/handoff.rs` and the `tokenGuard.handoff` channel: Idle only, request summary, await settle, `start_new_conversation`, send summary as first message, return `{ok:false, reason}` on failure leaving the old Conversation untouched (FR-015, FR-020)
-- [ ] T015 [B] [US4] Add `LongConversationChip.tsx` (a `ReadoutChip` with the text "Long conversation, N calls" and a real `Button` "Hand off", disabled with a text reason while busy) and wire it into the Status line at 300 calls (FR-014, FR-020)
-- [ ] T016 [B] [US4] Add `LongConversationBanner.tsx` from the shared `ui/alert` and wire it into `ChatPane.tsx` at 500 calls: Hand off button, per-Conversation dismissal, returns after 100 more calls (FR-014, FR-021)
-- [ ] T017 [B] [US4] Accessibility: state in text not colour alone; keyboard-operable buttons with visible focus; one visually hidden `role="status"` announcement per threshold per Conversation, not per call; handle toast/dialog focus on Hand off failure (FR-016, SC-005)
-- [ ] T018 [B] [US4] Wire frontend Hand off error display (reason in text) using shared components (FR-015)
+- [X] T015 [B] [US4] Add `LongConversationChip.tsx` (a `ReadoutChip` with the text "Long conversation, N calls" and a real `Button` "Hand off", disabled with a text reason while busy) and wire it into the Status line at 300 calls (FR-014, FR-020)
+- [X] T016 [B] [US4] Add `LongConversationBanner.tsx` from the shared `ui/alert` and wire it into `ChatPane.tsx` at 500 calls: Hand off button, per-Conversation dismissal, returns after 100 more calls (FR-014, FR-021)
+- [X] T017 [B] [US4] Accessibility: state in text not colour alone; keyboard-operable buttons with visible focus; one visually hidden `role="status"` announcement per threshold per Conversation, not per call; handle toast/dialog focus on Hand off failure (FR-016, SC-005)
+- [X] T018 [B] [US4] Wire frontend Hand off error display (reason in text) using shared components (FR-015)
 - [ ] T019 [B] Lane B gate: run T020 and T021 part 2
 
 ## Verification (existing gates only)
 
-- [ ] T020 [A/B] Run `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:ui-text`, `pnpm check:theme-contrast`, `pnpm check:drag-regions`, `pnpm check:file-size`, `pnpm check:parity`; and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` each with `--manifest-path src-tauri/Cargo.toml`, using the shared `CARGO_TARGET_DIR` (SC-001 to SC-006 guards)
+- [X] T020 [A/B] Run `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:ui-text`, `pnpm check:theme-contrast`, `pnpm check:drag-regions`, `pnpm check:file-size`, `pnpm check:parity`; and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` each with `--manifest-path src-tauri/Cargo.toml`, using the shared `CARGO_TARGET_DIR` (SC-001 to SC-006 guards)
 - [ ] T021 [A/B] Live check per `quickstart.md` with `scripts/verify-tauri.mjs` and a scratch `REFRACT_DATA_DIR` (never `pnpm dev`, never the real `%APPDATA%\refract-tauri`): part 1 (Lane A) steps 1 to 3 and 7; part 2 (Lane B) steps 4 to 6. Record evidence in the PR body (SC-001 to SC-006)
 
 ## Dependencies

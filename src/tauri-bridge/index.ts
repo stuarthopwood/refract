@@ -20,6 +20,8 @@ import type {
   GitChangesSnapshot,
   LeftoverSummary,
   LowMemoryWarning,
+  TokenGuardCalls,
+  TokenGuardHandoffResult,
   TokenGuardLaunchWarning,
   TokenGuardSnapshot,
   MergeInput,
@@ -314,7 +316,9 @@ const refract: RefractApi = {
   tokenGuard: {
     get: () => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_GET),
     set: (key, value) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_SET, { key, value }),
-    reset: (key) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET, { key })
+    reset: (key) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET, { key }),
+    handoff: (sessionId) =>
+      request<TokenGuardHandoffResult>(IPC_REQUESTS.TOKEN_GUARD_HANDOFF, sessionId)
   },
 
   // Synchronous by design (FR-011, research.md decision 4): called once from `main.tsx`'s very
@@ -367,6 +371,7 @@ const refract: RefractApi = {
   onMemoryWarning: (handler) => on<LowMemoryWarning>(IPC_EVENTS.MEMORY_WARNING, handler),
   onTokenGuardLaunchWarning: (handler) =>
     on<TokenGuardLaunchWarning>(IPC_EVENTS.TOKEN_GUARD_LAUNCH_WARNING, handler),
+  onTokenGuardCalls: (handler) => on<TokenGuardCalls>(IPC_EVENTS.TOKEN_GUARD_CALLS, handler),
   onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
   onSubagentsUpdate: (handler) =>
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
