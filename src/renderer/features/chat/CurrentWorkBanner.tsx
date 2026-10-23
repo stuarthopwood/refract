@@ -30,14 +30,16 @@ function useHeldText(next: string | null): string | null {
 }
 
 function useElapsedMs(startedAt: number | null): number | null {
-  const [now, setNow] = useState(() => Date.now())
+  const [tick, setTick] = useState(() => ({ startedAt, now: Date.now() }))
   useEffect(() => {
     if (startedAt === null) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 1000)
+    setTick({ startedAt, now: Date.now() })
+    const timer = setInterval(() => setTick({ startedAt, now: Date.now() }), 1000)
     return () => clearInterval(timer)
   }, [startedAt])
-  return startedAt === null ? null : now - startedAt
+  if (startedAt === null) return null
+  const now = tick.startedAt === startedAt ? tick.now : Date.now()
+  return Math.max(0, now - startedAt)
 }
 
 export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
@@ -78,12 +80,13 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
       <Tooltip>
         <TooltipTrigger asChild>
           <span
-            key={text}
             aria-describedby={undefined}
             data-testid="current-work-banner-text"
-            className="min-w-0 flex-1 truncate animate-in fade-in-0 duration-150 motion-reduce:animate-none"
+            className="block min-w-0 flex-1 truncate"
           >
-            {text}
+            <span key={text} className="animate-in fade-in-0 duration-150 motion-reduce:animate-none">
+              {text}
+            </span>
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-md break-words">{text}</TooltipContent>

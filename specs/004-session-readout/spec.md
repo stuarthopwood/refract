@@ -751,7 +751,8 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   auto-retry attempt (`auto_retry_start/_end`) and whether an auto-compaction runs
   (`auto_compaction_start/_end`), and expose them as `latestIntent`, `latestTool`, `retry` and
   `compacting` on the existing coalesced `readout:update` (no new event). All clear at the turn
-  boundary. The elapsed time reuses `turnTime.startedAt`.
+  boundary. The elapsed time reuses `turnTime.startedAt`. Known limit: intent is captured at
+  `tool_execution_start` only, because OMP's `tool_execution_update` carries no intent.
 - **FR-038** (new, 2026-10-23, issue #687): Agent text is untrusted. The banner MUST render it as
   plain text only, strip control characters, and cap it at 160 characters.
 - **FR-039** (new, 2026-10-23, issue #687): The banner MUST be one ~24px line of ~12px muted text,

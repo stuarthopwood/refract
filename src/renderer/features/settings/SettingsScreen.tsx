@@ -155,7 +155,7 @@ export function SettingsScreen() {
                 Session readout
               </h2>
               <p className="mb-4 text-sm text-muted-foreground">
-                Choose which readouts show in the chip row above the message box, for every open Session.
+                Choose which readouts show in the chip row above the message box, and whether the current-work line shows above it, for every open Session.
               </p>
               <div className="flex flex-col divide-y divide-border">
                 {READOUT_TOGGLES.map((toggle) => {

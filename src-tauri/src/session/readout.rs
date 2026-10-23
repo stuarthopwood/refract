@@ -309,6 +309,7 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
             s.state_synced = false;
             s.context_usage = None;
             s.todo_phases = None;
+            s.activity.reset();
         })
         .await;
     schedule_readout_update(agent).await;
