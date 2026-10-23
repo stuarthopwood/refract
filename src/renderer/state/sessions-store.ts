@@ -194,6 +194,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const result = await window.refract.sessions.create({ repositoryId, baseBranch })
       if (result.ok) {
         await get().refresh()
+        // Issue #1205 (FR-104): creating a Session is an explicit action, so it starts the agent;
+        // started before the pane mounts so the pane's passive open joins this forced one.
+        void get().open(result.value.id, true)
         useSplitStore.getState().replaceFocused(result.value.id)
         // #735 decision 20, with an accepted departure (recorded on the issue): every create
         // caller (the header "+", the branch picker, Ctrl+N, the row menu's "New session from
