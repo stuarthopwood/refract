@@ -22,7 +22,7 @@ pub const COMMANDS_UPDATE: &str = "commands:update";
 pub const SETTINGS_CHANGED: &str = "settings:changed";
 pub const UI_OPEN_SESSION: &str = "ui:open-session";
 pub const MEMORY_WARNING: &str = "memory:warning";
-pub const OMP_GUARD_RESET: &str = "omp-guard:reset";
+pub const TOKEN_GUARD_LAUNCH_WARNING: &str = "token-guard:launch-warning";
 pub const READOUT_UPDATE: &str = "readout:update";
 pub const ADVISOR_UPDATE: &str = "advisor:update";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
@@ -184,9 +184,13 @@ impl EventSink {
         );
     }
 
-    /// `omp-guard:reset` (#1184): one notice per OMP settings guard run that reset or failed a key.
-    pub fn emit_omp_guard_reset(&self, notice: &crate::omp::config_guard::GuardNotice) {
-        self.send(OMP_GUARD_RESET, notice);
+    /// `token-guard:launch-warning` (#1212): the overlay or rules file could not be written, so
+    /// this launch runs without the failed argument.
+    pub fn emit_token_guard_warning(&self, session_id: &str, reason: &str) {
+        self.send(
+            TOKEN_GUARD_LAUNCH_WARNING,
+            &serde_json::json!({ "sessionId": session_id, "reason": reason }),
+        );
     }
 
     /// `readout:update` (lane R5, issue #788): the chip row's live `SessionReadout` bundle

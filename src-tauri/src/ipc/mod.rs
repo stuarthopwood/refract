@@ -46,6 +46,7 @@ pub mod settings;
 pub mod side_chat;
 pub mod subagents;
 pub mod theme;
+pub mod token_guard;
 pub mod updates;
 
 /// Shared state every registered handler receives. `registry`/`settings` are each behind their
@@ -184,7 +185,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     file_attachments::register(dispatcher);
     side_chat::register(dispatcher);
     theme::register(dispatcher);
-    app::register(dispatcher);
+    token_guard::register(dispatcher);
     updates::register(dispatcher);
     model_roles::register(dispatcher);
     model::register(dispatcher);

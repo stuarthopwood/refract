@@ -78,7 +78,7 @@ pub enum ApprovalMode {
 impl ApprovalMode {
     /// Maps to the value OMP's `--approval-mode` flag expects (`src/shared/model.ts`'s
     /// `OMP_APPROVAL_MODE`).
-    fn omp_flag(self) -> &'static str {
+    pub(super) fn omp_flag(self) -> &'static str {
         match self {
             ApprovalMode::Ask => "always-ask",
             ApprovalMode::EditFreely => "write",
@@ -256,18 +256,6 @@ pub struct OmpProcess {
     inner: Arc<Inner>,
 }
 
-fn build_args(opts: &OmpProcessOptions) -> Vec<String> {
-    let mut args = vec![
-        "--mode".to_string(),
-        "rpc-ui".to_string(),
-        format!("--approval-mode={}", opts.approval_mode.omp_flag()),
-    ];
-    if opts.no_session {
-        args.push("--no-session".to_string());
-    }
-    args
-}
-
 impl OmpProcess {
     /// Spawns `omp` and wires up its stdout/stderr/exit reader tasks (FR-001), returning as soon
     /// as the child and those tasks exist -- before the ready handshake. Split out of the old
@@ -284,7 +272,7 @@ impl OmpProcess {
             Some(path) => path.clone(),
             None => executables::resolve_omp().map_err(ProcessError::new)?,
         };
-        let args = build_args(opts);
+        let args = super::process_args::build_args(opts).await;
 
         let mut command = Command::new(&omp_path);
         command
