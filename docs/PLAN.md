@@ -61,10 +61,10 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 8 | #883 | In-app update check | Release path; left open when #794 closed |
 | 9 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
 | 10 | #766 | Combined Role·Model pill, Ctrl+R, change any time | done (PR #1183 + PR #1187) |
-| 11 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
-| 12 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
-| 13 | #1082 | Context usage colour gradient | Composer strip, after #724 |
-| 14 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
+| 11 | #762 | `/switch` and `/model` | Same files as #766, straight after it; done (PR #1161) |
+| 12 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip; done (PR #1162) |
+| 13 | #1082 | Context usage colour gradient | Composer strip, after #724; done (PR #1162) |
+| 14 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, done (PR #1202) |
 | 15 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
 | 16 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it |
 | 17 | #469 | Tool-row icons with verb tooltips | Transcript rows |

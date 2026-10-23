@@ -1,7 +1,7 @@
 // Data stored or held by Refract, and the shapes Refract derives from OMP.
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
-import type { ThemeId } from './themes';
+import type { ThemeId } from './themes'; import type { ActivityReadoutFields } from './activity';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
 import type { TodoPhase } from './todo';
@@ -103,7 +103,7 @@ export type ReadoutKind =
   | 'current-time'
   | 'pull-request'
   | 'subagents'
-  | 'todo-progress';
+  | 'todo-progress' | 'current-work';
 
 export interface Settings {
   version: 1;
@@ -233,7 +233,7 @@ export const DEFAULT_SESSION_READOUT: Record<ReadoutKind, boolean> = {
   'current-time': false,
   'pull-request': true,
   subagents: true,
-  'todo-progress': true,
+  'todo-progress': true, 'current-work': true,
 };
 
 /** Maps Settings.approvalMode to the value OMP's `--approval-mode` flag expects. */
@@ -324,7 +324,7 @@ export interface DiffStat {
 
 /** Spec 004 FR-002 to FR-008, FR-021: the chip row's live data, assembled in main
  * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately absent: it is a pure client clock the renderer computes itself (FR-005). */
-export interface SessionReadout {
+export interface SessionReadout extends ActivityReadoutFields {
   changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
   turnTime: { startedAt: number } | null; // null = no turn running (chip hidden)

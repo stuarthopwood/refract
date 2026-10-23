@@ -36,7 +36,12 @@ const READOUT_TOGGLES: ReadoutToggleDescriptor[] = [
   { kind: 'current-time', label: 'Current time', description: 'The current time of day, updating at the top of each minute.' },
   { kind: 'pull-request', label: 'Pull request', description: "The open pull request for the Session's branch, if any." },
   { kind: 'subagents', label: 'Subagents', description: 'How many subagents are running or finished for the current turn.' },
-  { kind: 'todo-progress', label: 'Todo progress', description: "How many of the agent's current tasks are done." }
+  { kind: 'todo-progress', label: 'Todo progress', description: "How many of the agent's current tasks are done." },
+  {
+    kind: 'current-work',
+    label: 'Show current work above the composer',
+    description: 'A one-line banner of what the agent is doing while a turn runs or it needs you.'
+  }
 ]
 
 interface SettingsSectionDescriptor {
@@ -150,7 +155,7 @@ export function SettingsScreen() {
                 Session readout
               </h2>
               <p className="mb-4 text-sm text-muted-foreground">
-                Choose which readouts show in the chip row above the message box, for every open Session.
+                Choose which readouts show in the chip row above the message box, and whether the current-work line shows above it, for every open Session.
               </p>
               <div className="flex flex-col divide-y divide-border">
                 {READOUT_TOGGLES.map((toggle) => {
