@@ -7,8 +7,10 @@ use std::io;
 use std::path::Path;
 
 pub mod args;
+pub mod counter;
 pub mod overlay;
 pub mod rules;
+pub mod shake;
 pub mod values;
 
 /// Writes `bytes` to `path` atomically (unique temp file, then rename). A file that already holds

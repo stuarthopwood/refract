@@ -16,6 +16,7 @@ impl SessionAgent {
         text: String,
         images: Option<Vec<Value>>,
     ) -> Result<Value, AgentError> {
+        crate::session::token_guard::await_shake(self).await;
         let (proc, working) = {
             let idle_with_process = {
                 let state = self.state.lock().await;

@@ -23,6 +23,7 @@ pub const SETTINGS_CHANGED: &str = "settings:changed";
 pub const UI_OPEN_SESSION: &str = "ui:open-session";
 pub const MEMORY_WARNING: &str = "memory:warning";
 pub const TOKEN_GUARD_LAUNCH_WARNING: &str = "token-guard:launch-warning";
+pub const TOKEN_GUARD_CALLS: &str = "token-guard:calls";
 pub const READOUT_UPDATE: &str = "readout:update";
 pub const ADVISOR_UPDATE: &str = "advisor:update";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
@@ -190,6 +191,18 @@ impl EventSink {
         self.send(
             TOKEN_GUARD_LAUNCH_WARNING,
             &serde_json::json!({ "sessionId": session_id, "reason": reason }),
+        );
+    }
+
+    /// `token-guard:calls` (#1212): the model-call count of a Session's current Conversation.
+    pub fn emit_token_guard_calls(&self, session_id: &str, conversation_id: &str, calls: u32) {
+        self.send(
+            TOKEN_GUARD_CALLS,
+            serde_json::json!({
+                "sessionId": session_id,
+                "conversationId": conversation_id,
+                "calls": calls
+            }),
         );
     }
 

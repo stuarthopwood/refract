@@ -20,6 +20,7 @@ pub mod start_queue;
 pub mod subagents;
 pub mod termination;
 pub mod thinking_level;
+pub mod token_guard;
 
 pub use agent::{AgentError, SessionAgent, SessionStatus};
 pub use manager::SessionManager;

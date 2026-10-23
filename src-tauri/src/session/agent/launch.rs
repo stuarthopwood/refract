@@ -338,6 +338,9 @@ impl SessionAgent {
         crate::session::subagents::on_attach_reconcile(self).await;
         crate::session::readout::on_launch(self).await;
         crate::session::advisor::on_launch(self).await;
+        if complete {
+            crate::session::token_guard::on_history_loaded(self, &messages).await;
+        }
         self.sync_from_state(&state_data, None).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 

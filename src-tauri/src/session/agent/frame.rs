@@ -87,7 +87,9 @@ impl SessionAgent {
             // the way to rendering normally -- every OTHER `command_output` (`/usage show`,
             // `/session info`, ...) renders exactly as before #937.
             "command_output" => {
-                if !crate::session::advisor::handle_command_output(self, &frame).await {
+                if !crate::session::advisor::handle_command_output(self, &frame).await
+                    && !crate::session::token_guard::swallow_shake_output(self).await
+                {
                     self.apply_transcript_frame(&frame).await;
                 }
             }
@@ -124,6 +126,7 @@ impl SessionAgent {
         crate::session::start_queue::on_frame(self, frame_type, &frame).await;
         crate::session::subagents::on_frame(self, frame_type, &frame).await;
         crate::session::termination::on_frame(self, frame_type, &frame).await;
+        crate::session::token_guard::on_frame(self, frame_type, &frame).await;
     }
 
     async fn set_queue(&self, follow_up: Vec<String>, steering: Vec<String>) {
@@ -226,6 +229,7 @@ impl SessionAgent {
         };
         self.settle_turn_pending().await;
         self.set_status(SessionStatus::Idle, None, None).await;
+        crate::session::token_guard::on_turn_settled(self, generation).await;
         // Gate-fix (#856): `on_session_settled`'s own `get_state` round trip (up to
         // `DEFAULT_REQUEST_TIMEOUT_MS`, 60s) used to run inline here, on the SAME task that
         // `spawn_frame_listener`'s own `rx.recv()` loop calls `handle_frame` from -- nothing

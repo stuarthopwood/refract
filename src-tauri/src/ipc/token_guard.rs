@@ -12,6 +12,33 @@ pub fn register(d: &mut Dispatcher) {
     d.register("tokenGuard.get", token_guard_get);
     d.register("tokenGuard.set", token_guard_set);
     d.register("tokenGuard.reset", token_guard_reset);
+    d.register("tokenGuard.handoff", token_guard_handoff);
+}
+
+/// `tokenGuard.handoff` (#1212): `{ ok: true }` or `{ ok: false, reason }` (a refused or failed
+/// Hand off is an outcome the renderer shows in text, not an IPC error).
+fn token_guard_handoff(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let Some(session_id) = args.first().and_then(Value::as_str).map(str::to_string) else {
+            return Err(invalid_argument(
+                "tokenGuard.handoff expects a string sessionId",
+            ));
+        };
+        if state
+            .registry
+            .lock()
+            .await
+            .get_session(&session_id)
+            .is_none()
+        {
+            return Err(super::not_found(format!("Session not found: {session_id}")));
+        }
+        let agent = state.session_manager.get_or_create_agent(&session_id);
+        Ok(match agent.hand_off().await {
+            Ok(()) => json!({ "ok": true }),
+            Err(err) => json!({ "ok": false, "reason": err.message }),
+        })
+    })
 }
 
 fn snapshot(values: &ValueMap) -> Value {

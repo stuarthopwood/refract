@@ -78,6 +78,7 @@ impl SessionAgent {
         // Lane R6 (issue #789): a brand-new Conversation always means a brand-new side-chat
         // history store too -- unconditional, matching the readout/subagents resets above.
         crate::session::side_chat::on_conversation_reset(self).await;
+        crate::session::token_guard::on_conversation_reset(self, None).await;
         if let Ok(res) = proc
             .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
             .await
@@ -211,6 +212,8 @@ impl SessionAgent {
         if previous_conversation.as_deref() != Some(file.as_str()) {
             crate::session::side_chat::on_conversation_reset(self).await;
         }
+        crate::session::token_guard::on_conversation_reset(self, complete.then_some(&messages[..]))
+            .await;
         self.sync_from_state(&data, None).await;
         self.emit_patch_reset().await;
         Ok(())

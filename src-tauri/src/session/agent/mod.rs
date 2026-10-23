@@ -56,6 +56,7 @@ mod chat;
 mod commands;
 mod conversations;
 mod frame;
+mod handoff;
 mod lane_support;
 mod launch;
 mod launch_support;
@@ -122,6 +123,7 @@ struct AgentState {
     start_queue: crate::session::start_queue::State,
     #[allow(dead_code)]
     termination: crate::session::termination::State,
+    token_guard: crate::session::token_guard::State,
 }
 
 /// One per opened Session (`session::manager::SessionManager::get_or_create_agent`). See this
@@ -211,6 +213,7 @@ impl SessionAgent {
                 side_chat: Default::default(),
                 start_queue: Default::default(),
                 termination: Default::default(),
+                token_guard: Default::default(),
             }),
             status_tx,
             start_lock: AsyncMutex::new(()),
@@ -554,5 +557,10 @@ impl SessionAgent {
         with_termination_state,
         termination,
         crate::session::termination::State
+    );
+    with_lane_state!(
+        with_token_guard_state,
+        token_guard,
+        crate::session::token_guard::State
     );
 }
