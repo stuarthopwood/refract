@@ -65,11 +65,12 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 12 | #1082 | Context usage colour gradient | Composer strip, after #724 |
 | 13 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
 | 14 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
-| 15 | #469 | Tool-row icons with verb tooltips | Transcript rows |
-| 16 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
-| 17 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
-| 18 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
-| 19 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
+| 15 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it |
+| 16 | #469 | Tool-row icons with verb tooltips | Transcript rows |
+| 17 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
+| 18 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
+| 19 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
+| 20 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
 | alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
 
 p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
@@ -783,3 +784,5 @@ Also 2026-10-23 (Stuart, grilled, none deferred): **#915** amended again (bot ba
 Also filed 2026-10-23 (Stuart, grilled, none deferred): **#1203** group headers at 14 px, **#1204** stopped icon to `CirclePauseIcon`, **#1205** open stopped Sessions without starting the agent; all `p2`, placed as rows after #1199.
 
 Also 2026-10-23: **#1205** amended (the "Agent stopped" bar is configurable: Settings toggle plus "Don't show again") and raised to `p1`, placed as Priority order 2 after #1200.
+
+Also filed 2026-10-23 (Stuart, grilled, UX architect consulted, none deferred): **#1208** lighter font weights and sentence-case verbs (`p1`), placed in Priority order directly before #469; comment posted on #469 (shared verb map).
