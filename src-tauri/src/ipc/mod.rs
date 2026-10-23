@@ -185,6 +185,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     file_attachments::register(dispatcher);
     side_chat::register(dispatcher);
     theme::register(dispatcher);
+    app::register(dispatcher);
     token_guard::register(dispatcher);
     updates::register(dispatcher);
     model_roles::register(dispatcher);
