@@ -60,8 +60,11 @@ interface Settings {
   approvalMode: 'ask' | 'edit-freely' | 'auto';   // default 'ask'
   chatWidth: 'full' | 'reading-column';           // FR-049/FR-073, default 'full'
   sessionListCollapse: SessionListCollapse;       // default { collapsedRepositoryIds: [], archivedOpen: false }
+  showAgentStoppedBar: boolean;                   // FR-105/FR-107 (issue #1205), default true
 }
 ```
+
+`showAgentStoppedBar` only hides the "Agent stopped" bar; a stopped Session always opens history-only whatever its value (FR-103). A `settings.json` written before issue #1205 has no such field and reads as `true`.
 
 Mapping to OMP's `--approval-mode`: `ask` = `always-ask`, `edit-freely` = `write`, `auto` = `yolo`.
 
@@ -108,6 +111,8 @@ Read by scanning `Session.sessionDir` for `*.jsonl` files:
 | `isCurrent` | `file === Session.currentConversation` |
 
 A Conversation's history is loaded by attaching an agent to it and calling `get_messages`, not by parsing the file, so its format stays OMP's business. A Conversation reaching real end-of-file within the scan cap with no user message anywhere is not listed; one whose cap is hit first (preview empty, title still read) is still listed, never hidden (research.md decision 21).
+
+**Amended 2026-10-23 (issue #1205, FR-103):** a stopped Session's current Conversation is now shown without an agent, so its history is read from the file: every `type: "message"` record's `message` object (roles `user`, `assistant`, `toolResult`, with `toolCall` content parts) is collected in file order and passed to `omp::transcript::TranscriptState::from_history`, the same builder that turns `get_messages` output into `TranscriptItem`s. The record format is confirmed against a real session file before the reader is built (tasks.md Phase 78); the title line and OMP's prelude entries (`model_change`, `thinking_level_change`, `custom`, `custom_message`) are skipped. Once the agent starts, `get_messages` stays the source of truth, as before.
 
 ## Held in memory
 

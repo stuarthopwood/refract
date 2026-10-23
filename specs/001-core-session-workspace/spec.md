@@ -1238,6 +1238,32 @@
   role-writing hub). It is listed in the slash menu as "Open model role settings" and stays a
   reserved name, so `chat.send` refuses it if it ever arrives and a custom command cannot take it.
 
+### Session 2026-10-23 (Open stopped Sessions without starting the agent, #1205)
+
+- Q: Issue #1205 (grilled with Stuart 2026-10-23): clicking a stopped Session starts its agent,
+  which costs a cold start (about 16 seconds to a first answer token, 2.2 to 3.9 seconds to
+  ready) and memory just to read the history. Should showing a stopped Session start its agent?
+  -> A: No. The default changes: showing a stopped Session never starts its agent. Its
+  Conversation history is read from OMP's saved session file, with no `omp` process.
+- Q: How does the developer know the agent is not running, and how do they start it? -> A: A
+  quiet bar above the composer reads "Agent stopped" with a **Start agent** button. The
+  composer stays usable: sending a message starts the agent, waits for it to be ready, then
+  sends, so nothing typed is lost.
+- Q: Which ways of showing a Session follow the rule? -> A: Every passive path: a Session-row
+  click, Ctrl+click into a Split, a notification click, and restoring saved panes at Refract
+  start. Only an explicit action starts an agent: **Start agent**, sending a message, or the
+  existing **Resume** action.
+- Q: When does the "Starting agent" notice show? -> A: Only when an agent is actually being
+  started, never for a Session that is only being shown.
+- Q: (Amended 2026-10-23) Is any of this configurable? -> A: The bar is; the behaviour is not.
+  Settings > Sessions gains a toggle "Show the Agent stopped bar", on by default, and the bar
+  gains a **Don't show again** text button that turns the same setting off; a toast confirms it,
+  with **Undo**. A stopped Session always opens history-only. With the bar hidden, sending a
+  message or the Session row's **Resume** action starts the agent.
+- Q: What does accessibility (WCAG 2.1 AA) require? -> A: The bar is text, never colour alone,
+  and is not a live region, so opening a stopped Session announces nothing extra. **Start
+  agent** is a real button reachable by keyboard. Starting the agent is announced once.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1322,9 +1348,11 @@ The developer quits Refract, or it crashes, and reopens it later. Their reposito
 **Acceptance Scenarios**:
 
 1. **Given** sessions existed when Refract closed, **When** Refract starts, **Then** every repository and non-archived session is listed, and no agent is running for any of them yet.
-2. **Given** a session listed from a previous run, **When** the developer opens it, **Then** its conversations are shown, the one that was current resumes, and a follow-up message continues that same conversation.
+2. **Given** a session listed from a previous run, **When** the developer opens it, **Then** its conversations are shown, the one that was current resumes, and a follow-up message continues that same conversation. (Amended 2026-10-23, issue #1205, FR-103: opening it shows the current conversation's history with no agent running; the conversation resumes when the developer sends a follow-up or selects **Start agent**.)
 3. **Given** a session's current conversation cannot be found or is empty, **When** the developer opens it, **Then** Refract says so plainly instead of silently showing an empty new conversation.
 4. **Given** Refract is closed normally, **When** the developer looks at running processes, **Then** no agent process from Refract remains running; **Given** Refract was force-killed, **When** it is next started, **Then** any agent process left over from the killed run is stopped before new sessions start.
+5. **Given** a stopped session (issue #1205), **When** the developer shows it by any passive path (a Session-row click, Ctrl+click into a Split, a notification click, or saved panes restored at Refract start), **Then** its current conversation's history is shown from the saved session file, no agent process starts, no "Starting agent" notice shows, and an "Agent stopped" bar with a **Start agent** button sits above the composer (unless the developer has turned the bar off).
+6. **Given** a stopped session shown history-only, **When** the developer types a message and sends it, **Then** the agent starts, the message is sent once the agent is ready, and nothing typed is lost.
 
 ---
 
@@ -1458,7 +1486,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-020**: Changing the app's Approval mode while a session is mid-turn MUST show the new mode as pending on that session; the change MUST take effect only once that session is idle (its turn, any background work, and any pending approval or question have all finished), at which point Refract restarts that session's agent behind the scenes and reattaches the same conversation; an in-flight turn or a pending prompt MUST NOT be interrupted by a mode change.
 - **FR-021**: Agent-produced text, tool output, and file contents MUST be displayed as inert content and never executed or loaded as active content.
 - **FR-022**: Refract MUST remember repositories and non-archived sessions across restarts and list them on the next start without starting an agent for each.
-- **FR-023**: Opening a previously used session MUST restore its conversations, resume the one that was current, and allow it to continue.
+- **FR-023**: Opening a previously used session MUST restore its conversations, resume the one that was current, and allow it to continue. (Amended 2026-10-23, issue #1205: for a stopped session, "resume" happens on the first explicit action, per FR-103 and FR-104; opening it alone shows the history without starting the agent.)
 - **FR-024**: Refract MUST confirm that a reopened session's current conversation is really the saved one and MUST tell the user if it is missing or empty, rather than presenting a blank conversation as if it were the saved one.
 - **FR-025**: Each session's agent MUST run inside that session's own worktree.
 - **FR-026**: Several sessions MUST be able to work at the same time without their messages, requests, or output mixing.
@@ -1473,7 +1501,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-035**: When a session's worktree folder is found missing, Refract MUST show the session as stopped with the missing path, MUST keep its conversations readable, and MUST offer to recreate the worktree from the session's branch (only if that branch still exists), archive the session, or delete it; it MUST NOT offer a recover action, because the agent cannot run without its worktree.
 - **FR-036**: Refract MUST show an actionable setup message when the agent cannot be started (not installed, not signed in, wrong version).
 - **FR-037**: Refract MUST show the low-memory condition as a quiet alert row directly under the profile item (FR-072 covers the unverified-OMP-version row the same surface also carries): one line with an icon, the text "Low memory", one text action "Triage", and a small control that dismisses the row for the rest of the run (it reappears only if the condition still holds the next time Refract starts). The row MUST NOT state an agent count of its own (amended 2026-10-17, gate round 2, Code FAIL: the system's own live-agent count includes every non-stopped agent -- idle, working, AND waiting on the user -- while Triage only ever lists idle ones, so a count on the row would promise a number Triage could not match). Triage MUST open a dialog listing every Session whose agent is idle -- MUST NOT list one that is mid-turn or waiting on the user -- stating how many idle Sessions it found, each with its own Stop action, plus one Stop idle action that targets every listed Session at once; stopping an agent MUST always require the user to confirm first, naming the Session, and MUST NOT happen automatically under any condition.
-- **FR-038**: Users MUST be able to stop a session's agent without archiving the session; the session stays listed, and reopening it reattaches its current conversation.
+- **FR-038**: Users MUST be able to stop a session's agent without archiving the session; the session stays listed, and reopening it reattaches its current conversation. (Amended 2026-10-23, issue #1205: reopening it shows the current conversation's history without starting the agent, per FR-103; the conversation reattaches on the first explicit action, per FR-104.)
 - **FR-039**: The session list MUST show a details card for a session, on hover and on keyboard focus after a short delay, with its status, time since last activity, repository, branch, the absolute folder path of its worktree, the model and reasoning effort (the last known values while the agent is not running, FR-041), and the number of files changed with additions and deletions. The card MUST stay open while the pointer is over it, MUST be dismissible with Esc, and MUST NOT hide the row it describes. Files changed MUST count every file that differs from the session's Base branch (committed edits, uncommitted edits to tracked files, and new untracked files; ignored files are not counted) with the lines added and removed, where the lines of a new untracked text file count as added up to a size cap beyond which the card marks the count as partial; it MUST show a muted "Not available" when the worktree is missing or the count cannot be read within 3 seconds. The card is the only details surface; the chat header does not repeat it. (Amended 2026-10-15, issue #567 decisions 11, 16: the session list row's own relative time is a short, visually distinct form -- "now", "5m", "3h", "2d", then a short date from 7 days on -- redrawn by one shared app-level tick aligned to the minute rather than only when the row happens to redraw, and marked `aria-hidden`; the card above keeps the long "N ago" form. The row's own accessible description, read via `aria-describedby` rather than the row's visible text, states in order: the row's own activity text when its second line is not the branch, the branch and its Base branch, "Last active" with the long time form, and the worktree path.)
 - **FR-040**: The message box MUST use round, icon-only Send and Stop buttons placed inside the field, with no "Send" or "Stop" text; each button MUST have an accessible name and a tooltip on hover and on keyboard focus that shows its keyboard shortcut as key-cap icons. The field MUST be more transparent than the page surface while keeping text contrast at WCAG AA. (amended 2026-10-16, issue #927: in Dark and Obsidian the field's fill is fully transparent (shows the chat background through it) with a faint border around the soft divider tone, and the field's own focus outline and the Approval mode/Model/Reasoning/Attach triggers' resting chrome and focus outline are all muted to match -- an accepted WCAG 1.4.11 departure, `docs/design/accessibility.md` "Accepted departures"; Dark (high contrast) is explicitly excluded and keeps its prior opaque fill, opaque border and full focus ring unchanged. Send and Stop themselves are unaffected.)
 - **FR-041**: The message box MUST show, inside the field, the session's model provider, model name, and reasoning effort, read from the agent while it runs and kept as last known values per session so they remain visible when the agent is not running; before any value has been seen it MUST show a muted "Model not known yet". A model role MUST be shown only once a verified source for it exists on the supported OMP version. (superseded by FR-064, 2026-10-15, issue #564: the bottom row now offers model and reasoning pickers in place of this read-only line).
@@ -1969,6 +1997,34 @@ The developer types a slash command and finds the ones the agent offers. If a se
   band below it, the pull request list column MUST always render, and only the detail column MUST
   scroll, with exactly one vertical scrollbar. Keyboard scrolling MUST stay inside the detail
   column. This MUST be checked on a long pull request at 1920x1080 and 1280x720.
+- **FR-103** (new, 2026-10-23, issue #1205; amends FR-023, FR-038): Showing a stopped session
+  MUST NOT start its agent. Every passive path follows this rule: a Session-row click, Ctrl+click
+  into a Split, a notification click (FR-027), and restoring saved panes at Refract start. The
+  session's current conversation history MUST be read from OMP's saved session file (the
+  session's `currentConversation` under its `sessionDir`) with no `omp` process, and MUST render
+  through the same transcript as a live session. When that file is missing or empty, Refract
+  MUST say so plainly (FR-024). The existing stop banners for a crashed, failed, or
+  missing-worktree session (FR-034, FR-035) are unchanged.
+- **FR-104** (new, 2026-10-23, issue #1205): Only an explicit action MUST start a stopped
+  session's agent: **Start agent** (FR-105), sending a message, or the existing **Resume**
+  action. Sending a message to a stopped session MUST start the agent, wait until it is ready,
+  then send the message, so nothing typed is lost; the composer MUST stay usable while the
+  agent is stopped.
+- **FR-105** (new, 2026-10-23, issue #1205): While a shown session's agent is stopped (and no
+  stop banner from FR-034 or FR-035 applies), a quiet bar directly above the composer MUST read
+  "Agent stopped" and offer a **Start agent** button and a **Don't show again** text button. The
+  bar MUST be text, never colour alone, and MUST NOT be a live region, so opening a stopped
+  session announces nothing extra. **Start agent** MUST be a real button reachable by keyboard.
+  The bar MUST disappear once the agent starts.
+- **FR-106** (new, 2026-10-23, issue #1205): The "Starting agent" notice MUST show only while an
+  agent is actually being started, never for a session that is only being shown, and starting
+  MUST be announced to assistive technology exactly once.
+- **FR-107** (new, 2026-10-23, issue #1205): Settings MUST gain a **Sessions** section with a
+  toggle "Show the Agent stopped bar", on by default, persisted in `settings.json`. **Don't show
+  again** on the bar MUST turn the same setting off and show a toast confirming it, with an
+  **Undo** action that turns it back on. The setting MUST only hide the bar (FR-105); it MUST NOT
+  change FR-103 or FR-104: a stopped session always opens history-only, and with the bar hidden,
+  sending a message or the Session row's **Resume** action starts the agent.
 
 ### Key Entities
 
@@ -2007,7 +2063,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - Ending a session normally means Archive: it hides the session from the main list while keeping its worktree and conversations, and is reversible from an archived view. Delete is a separate, explicit action that only proceeds after a confirmation naming the uncommitted changes and unpushed commits that will be lost.
 - Model choice, thinking level, and other agent settings come from the agent's own configuration; a settings screen for those is out of scope, though the single Approval mode setting described here is in scope.
 - The right pane (git changes, file browser, side chat), plan mode, forking sessions, image attachments, and subagent progress views are out of scope and get their own specs. Refract's own git use in this spec is limited to creating and deleting worktrees, listing branches, reading status to warn before a delete, and read-only change counts for display (FR-030); commit and push controls and the changes pane belong to that later spec, and until then those actions happen only by asking the agent in chat; pull request management has its own spec (003).
-- Sessions are only started when the user opens them, not when Refract starts. A cold start took about 16 seconds to the first answer token on the reference machine (3 runs, 2.2 to 3.9 seconds to ready).
+- Sessions are only started when the user opens them, not when Refract starts. A cold start took about 16 seconds to the first answer token on the reference machine (3 runs, 2.2 to 3.9 seconds to ready). (Amended 2026-10-23, issue #1205: opening a stopped session no longer starts it either; only an explicit action does, per FR-103 and FR-104.)
 - Each live session costs roughly 1.1 to 1.7 GB on the reference machine, mostly the developer's own tool servers running under the agent, and about 1.9 GB while answering. Refract does not limit live agents (a decision by the developer); it warns when memory is low and lets the developer stop agents.
 - Approval mode sits on top of the agent's own per-tool settings: a tool the developer has configured to always prompt (or deny) in the agent's own configuration still prompts (or is denied) even in Auto.
 - Spec 005 (split chat pane) lets two sessions be on screen at once. Wherever this spec says the developer is "viewing" a session or that a session is the visible one (for example FR-006's unread rule), a session shown in either pane counts as viewed.

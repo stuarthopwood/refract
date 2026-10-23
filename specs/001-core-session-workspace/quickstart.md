@@ -54,6 +54,10 @@ pnpm build        # must pass before a change lands on main
 2. Expect: within 10 s no `omp.exe` started by Refract remains (Job Object; check with `Get-Process omp`, ignoring your other sessions by parent pid).
 3. Relaunch. Expect: the Session is listed and no agent is running. Open it: both messages are shown, and a follow-up that depends on them is answered correctly.
 4. Delete the Session's conversation file on disk, reopen the Session. Expect: a clear "conversation missing" message, not a blank chat.
+5. Open stopped Sessions without starting them (FR-103 to FR-107, issue #1205). With a stopped Session that has a saved conversation, click its row. Expect: the history shows, no new `omp.exe` appears in `Get-Process omp`, no "Starting agent" notice shows, and an "Agent stopped" bar with **Start agent** and **Don't show again** sits above the composer. Repeat with Ctrl+click into a Split, a notification click, and a restart of Refract with that Session in a saved pane: same result each time.
+6. Select **Start agent**. Expect: the "Starting agent" notice shows, the start is announced once to a screen reader, the agent reaches idle, and the bar disappears. Stop the agent, reopen the Session, type a message and send it without starting first. Expect: the agent starts, the message is sent once it is ready, and the draft is never lost.
+7. Select **Don't show again** on the bar. Expect: the bar hides, a toast confirms it with **Undo**, and Settings > Sessions shows "Show the Agent stopped bar" off; **Undo** turns it back on. With the bar off, reopen a stopped Session. Expect: still history-only, no agent; sending a message starts it.
+8. Keyboard and screen reader: Tab reaches **Start agent** and **Don't show again** as real buttons; opening a stopped Session announces nothing extra.
 
 **Story 5: several sessions (FR-005, FR-006, FR-026, FR-027, FR-039, FR-044, SC-005)**
 
