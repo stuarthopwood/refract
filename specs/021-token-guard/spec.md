@@ -8,6 +8,29 @@
 
 **Input**: User description: "Token guard (issue #1212, P0): launch overlay, periodic shake, snapcompact, long-conversation Hand off, Refract-owned rules. Supersedes #1184. All five decisions grilled by Stuart on 2026-10-23, none deferred."
 
+## Clarifications
+
+### Session 2026-10-23
+
+All answers come from the issue's grilled block (Stuart, 2026-10-23) and the code; none were left open.
+
+- Q: Does the overlay replace the #1184 global reset, or run beside it? -> A: It replaces it. Refract stops reading and writing the global OMP config for guarding; the #1184 code is removed (plan.md lists every file). The `omp config set` helper and dotted-key validator in `omp/config.rs` stay (reused by #691).
+- Q: Where do the overlay values live and what edits them? -> A: In a Refract-owned store beside the other Refract data, seeded with the grilled defaults. A deliberate change in Settings > OMP updates the stored value; the next launch writes it into the overlay. A running Session keeps the values it launched with (OMP reads config once).
+- Q: Does Settings > OMP exist yet? -> A: No (#691 is still open; the "Guarded" rows of #1184 item 5 never shipped). This feature adds the OMP section with only the "Set by Refract" rows; #691 later adds its own rows to it.
+- Q: What does a "Set by Refract" row offer? -> A: The key, a plain-language label, the current value, a control suited to the type (switch, number, text, and a per-model number list for `compaction.modelThresholds`), the text "Set by Refract", and Reset to default.
+- Q: Can RPC `compact` select the shake method? -> A: No (probed on omp 18.12.6; research.md). RPC `compact` takes only optional focus instructions and manual compaction knows only soft, remote and snapcompact. The `/shake` command does run in RPC mode with no model call, so Refract sends that after a turn settles. The per-Session overlay fallback is not needed.
+- Q: What counts as "after every turn ends"? -> A: The existing settle point (`session_settled`, or `prompt_result` with `sessionSettled`). Never during a turn.
+- Q: What if the shake fails or finds nothing? -> A: Nothing is shown; it is logged. At most one attempt per settle, so a Conversation still above 60k after a shake is not re-shaken until its next settle.
+- Q: Does the `/shake` output reach the transcript? -> A: No; the frame is swallowed like the silent advisor probe.
+- Q: Which calls does the counter count? -> A: One per completed assistant `message_end` on the main Conversation stream. It resets on a new Conversation and is re-derived from loaded history when a Conversation is opened or resumed.
+- Q: What does Hand off do? -> A: Asks the agent in the current Conversation for a handoff summary, waits for it, starts a new Conversation in the same Session (`conversations.startNew`), and sends the summary as its first message. It is offered only while the Session is idle. On failure nothing is started and the old Conversation is untouched.
+- Q: Is anything hard-blocked? -> A: No. The readout at 300 and the banner at 500 only offer Hand off.
+- Q: Do the readout and banner coexist? -> A: Yes. At 500 both show; the banner can be dismissed for that Conversation and returns after another 100 calls.
+- Q: How is the rules text passed? -> A: As a file path: Refract writes the shipped rules into its data folder on launch and passes that path with `--append-system-prompt` (which accepts text or a file). This avoids quoting 1.5k characters on a Windows command line.
+- Q: Does the overlay touch the terminal OMP or a Project's own `.omp/config.yml`? -> A: Neither. The overlay is passed only to OMP processes Refract launches; Refract never edits a Project's config and no longer reports overrides.
+- Q: What if the overlay or rules file cannot be written? -> A: The Session launches without the failed argument and the developer sees one toast saying the token guard is off for that launch and why.
+- Q: Which launch paths need the arguments? -> A: Every place that builds the `omp` argument list for a Refract Session (the Session process builder). Side-chat and other helper processes that reuse that builder inherit them.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Token-cost settings cannot drift for Refract Sessions (Priority: P1)
@@ -128,6 +151,10 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **FR-016**: The readout and banner MUST convey state in text, not colour alone; Hand off MUST be keyboard operable; each threshold crossing MUST be announced once per Conversation.
 - **FR-017**: If the overlay or rules file cannot be written, the launch MUST proceed without them and the developer MUST be told once.
 - **FR-018**: All UI MUST be built from shared components in the renderer's component library.
+- **FR-019**: The output of the shake MUST NOT appear in the transcript.
+- **FR-020**: Hand off MUST be offered only while the Session is idle; while busy the button is disabled with the reason in text.
+- **FR-021**: The pane banner MUST be dismissible for the current Conversation and reappear after 100 further calls.
+- **FR-022**: The OMP section MUST be added to Settings without removing or reordering the existing sections, so #691 can add rows to it later.
 
 ### Key Entities
 
@@ -151,5 +178,9 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 
 ## Assumptions
 
+- #691 (the wider Settings > OMP) is not shipped; this feature adds the OMP section with only the "Set by Refract" rows.
+- Refract launches OMP in `rpc-ui` mode (the issue says `rpc`); the arguments are added for that mode.
+- Overlay values are persisted in a small separate Refract store, not the main settings file, to stay within the file-size cap; the issue's "Refract settings" is read as "Refract-owned stored values".
+- The shake is triggered with OMP's `/shake` command because RPC `compact` cannot select a method (research.md).
 - Tests: no new renderer or shared tests (prototyping rule); minimal Rust unit tests for the new module are allowed; verified live.
 - Whether `snapcompact.systemPrompt` should later become `agents-md` is decided from a separate one-week comparison, out of scope here.
