@@ -3,7 +3,7 @@
 
 use super::process::OmpProcessOptions;
 
-pub(super) async fn build_args(opts: &OmpProcessOptions) -> Vec<String> {
+pub(super) async fn build_args(opts: &OmpProcessOptions) -> (Vec<String>, Vec<String>) {
     let mut args = vec![
         "--mode".to_string(),
         "rpc-ui".to_string(),
@@ -12,6 +12,7 @@ pub(super) async fn build_args(opts: &OmpProcessOptions) -> Vec<String> {
     if opts.no_session {
         args.push("--no-session".to_string());
     }
-    args.extend(super::token_guard::args::launch_args(&crate::data_dir()).await);
-    args
+    let (guard_args, warnings) = super::token_guard::args::launch_args(&crate::data_dir()).await;
+    args.extend(guard_args);
+    (args, warnings)
 }

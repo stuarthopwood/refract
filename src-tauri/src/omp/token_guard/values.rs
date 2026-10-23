@@ -98,27 +98,55 @@ pub fn defaults() -> ValueMap {
         .collect()
 }
 
-fn is_count(value: &Value) -> bool {
-    value.as_u64().is_some()
+const MAX_TEXT_CHARS: usize = 200;
+const MAX_ENTRIES: usize = 64;
+const METHODS: &[&str] = &["snapcompact", "shake", "handoff", "soft"];
+const REVIEW_MODES: &[&str] = &["agent-end", "turn"];
+
+/// Upper bound for a count key (thresholds and line/size counts share the token ceiling).
+fn max_count(key: &str) -> u64 {
+    match key {
+        "task.maxConcurrency" => 64,
+        "task.softRequestBudget" => 10_000,
+        _ => 2_000_000,
+    }
+}
+
+fn is_count(value: &Value, max: u64) -> bool {
+    value.as_u64().is_some_and(|n| n <= max)
 }
 
 fn is_text(value: &Value) -> bool {
-    value.as_str().is_some_and(|s| !s.trim().is_empty())
+    value
+        .as_str()
+        .is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= MAX_TEXT_CHARS)
 }
 
-/// Per-type validation (data-model.md): counts are non-negative integers, text is non-empty.
+fn is_member(value: &Value, allowed: &[&str]) -> bool {
+    value.as_str().is_some_and(|s| allowed.contains(&s))
+}
+
+/// Per-type validation (data-model.md): counts are bounded non-negative integers, text is
+/// non-empty and short, lists and maps are size-capped, enum-like keys take known values only.
 pub fn validate(key: &str, value: &Value) -> Result<(), String> {
     let kind = kind_of(key).ok_or_else(|| format!("Unknown token guard key: {key}"))?;
-    let ok = match kind {
-        Kind::Int => is_count(value),
-        Kind::Bool => value.is_boolean(),
-        Kind::Text => is_text(value),
-        Kind::TextList => value
-            .as_array()
-            .is_some_and(|items| !items.is_empty() && items.iter().all(is_text)),
-        Kind::IntRecord => value
-            .as_object()
-            .is_some_and(|map| map.iter().all(|(k, v)| !k.trim().is_empty() && is_count(v))),
+    let max = max_count(key);
+    let ok = match (kind, key) {
+        (Kind::Int, _) => is_count(value, max),
+        (Kind::Bool, _) => value.is_boolean(),
+        (Kind::Text, "advisor.reviewMode") => is_member(value, REVIEW_MODES),
+        (Kind::Text, _) => is_text(value),
+        (Kind::TextList, _) => value.as_array().is_some_and(|items| {
+            !items.is_empty()
+                && items.len() <= MAX_ENTRIES
+                && items.iter().all(|i| is_member(i, METHODS))
+        }),
+        (Kind::IntRecord, _) => value.as_object().is_some_and(|map| {
+            map.len() <= MAX_ENTRIES
+                && map.iter().all(|(k, v)| {
+                    !k.trim().is_empty() && k.chars().count() <= MAX_TEXT_CHARS && is_count(v, max)
+                })
+        }),
     };
     if ok {
         Ok(())
@@ -220,5 +248,16 @@ mod tests {
     fn rejects_unknown_and_negative() {
         assert!(validate("nope", &json!(1)).is_err());
         assert!(validate("task.maxConcurrency", &json!(-1)).is_err());
+    }
+
+    #[test]
+    fn rejects_out_of_bounds_values() {
+        assert!(validate("task.maxConcurrency", &json!(65)).is_err());
+        assert!(validate("task.softRequestBudget", &json!(10_001)).is_err());
+        assert!(validate("compaction.thresholdTokens", &json!(2_000_001)).is_err());
+        assert!(validate("compaction.methodOrder", &json!(["shake", "rm"])).is_err());
+        assert!(validate("advisor.reviewMode", &json!("whatever")).is_err());
+        assert!(validate("advisor.reviewMode", &json!("turn")).is_ok());
+        assert!(validate("modelRoles.advisor", &json!("x".repeat(201))).is_err());
     }
 }

@@ -54,7 +54,10 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
 pub(super) async fn on_conversation_reset(agent: &SessionAgent, history: Option<&[Value]>) {
     let calls = history.map_or(0, counter::count_assistant_messages);
     agent
-        .with_token_guard_state(|s| s.counter.reset(calls))
+        .with_token_guard_state(|s| {
+            s.counter.reset(calls);
+            s.shake.reset_baseline();
+        })
         .await;
     emit_calls(agent).await;
 }
@@ -69,20 +72,33 @@ pub(super) async fn on_history_loaded(agent: &SessionAgent, history: &[Value]) {
     emit_calls(agent).await;
 }
 
+/// Starts capturing the Hand off summary; its own settle must not trigger a shake.
 pub(super) async fn begin_summary_capture(agent: &SessionAgent) {
     agent
-        .with_token_guard_state(|s| s.counter.begin_capture())
+        .with_token_guard_state(|s| {
+            s.counter.begin_capture();
+            s.shake.suppress_next_settle(true);
+        })
         .await;
 }
 
-pub(super) async fn end_summary_capture(agent: &SessionAgent) -> Option<String> {
+/// `settled_ok` false means no summary settle will arrive, so the suppression is dropped.
+pub(super) async fn end_summary_capture(agent: &SessionAgent, settled_ok: bool) -> Option<String> {
     agent
-        .with_token_guard_state(|s| s.counter.end_capture())
+        .with_token_guard_state(|s| {
+            if !settled_ok {
+                s.shake.suppress_next_settle(false);
+            }
+            s.counter.end_capture()
+        })
         .await
 }
 
 /// `agent/frame.rs`'s `command_output` arm: `true` when this frame is the shake's own reply.
-pub(super) async fn swallow_shake_output(agent: &SessionAgent) -> bool {
+pub(super) async fn swallow_shake_output(agent: &SessionAgent, frame: &Value) -> bool {
+    if !shake::is_shake_reply(frame) {
+        return false;
+    }
     agent
         .with_token_guard_state(|s| std::mem::take(&mut s.shake.swallow_output))
         .await
@@ -100,6 +116,7 @@ pub(super) async fn await_shake(agent: &SessionAgent) {
 }
 
 /// `agent/frame.rs` hook, called once per genuine settle with that settle's turn generation.
+/// The claim also marks the shake in flight, so a prompt arriving before the stats read waits.
 pub(super) async fn on_turn_settled(agent: &SessionAgent, settle_id: u64) {
     let claimed = agent
         .with_token_guard_state(|s| s.shake.claim(settle_id))
@@ -108,18 +125,29 @@ pub(super) async fn on_turn_settled(agent: &SessionAgent, settle_id: u64) {
         return;
     }
     let agent = agent.arc();
-    tokio::spawn(async move { run_shake(&agent).await });
+    tokio::spawn(async move {
+        run_shake(&agent).await;
+        agent.with_token_guard_state(|s| s.shake.finish()).await;
+    });
 }
 
-async fn run_shake(agent: &SessionAgent) {
+async fn context_tokens(agent: &SessionAgent) -> Option<u64> {
     let stats = agent
         .request_rpc(json!({ "type": "get_session_stats" }), STATS_TIMEOUT_MS)
         .await;
-    let tokens = stats
+    stats
         .ok()
         .filter(|res| res.get("success").and_then(Value::as_bool) == Some(true))
-        .and_then(|res| res.get("data").and_then(shake::context_tokens_from_stats));
-    if !shake::exceeds_threshold(tokens) {
+        .and_then(|res| res.get("data").and_then(shake::context_tokens_from_stats))
+}
+
+/// Runs one claimed attempt; the caller clears the in-flight and swallow flags afterwards.
+async fn run_shake(agent: &SessionAgent) {
+    let tokens = context_tokens(agent).await;
+    if !agent
+        .with_token_guard_state(|s| s.shake.needs_shake(tokens))
+        .await
+    {
         return;
     }
     let listed = agent
@@ -139,7 +167,10 @@ async fn run_shake(agent: &SessionAgent) {
         }
         return;
     }
-    agent.with_token_guard_state(|s| s.shake.begin()).await;
+    // The reply window opens before the send so a fast `command_output` is never missed.
+    agent
+        .with_token_guard_state(|s| s.shake.arm_swallow())
+        .await;
     let result = agent
         .request_rpc_if_idle(
             json!({ "type": "prompt", "message": shake::SHAKE_COMMAND }),
@@ -147,18 +178,32 @@ async fn run_shake(agent: &SessionAgent) {
             "Shake refused",
         )
         .await;
+    agent.with_token_guard_state(|s| s.shake.sent()).await;
     let accepted = matches!(
         &result,
         Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true)
     );
     if accepted {
-        // The reply frame normally lands before or right after the RPC response; the swallow
-        // window closes after a short bound either way so a later command output is never hidden.
-        tokio::time::sleep(Duration::from_millis(shake::SHAKE_REPLY_WINDOW_MS)).await;
+        // Hold the swallow window until the reply arrives (the swallow closes it), capped.
+        let deadline =
+            tokio::time::Instant::now() + Duration::from_millis(shake::SHAKE_REPLY_WINDOW_MS);
+        while agent
+            .with_token_guard_state(|s| s.shake.swallow_output)
+            .await
+            && tokio::time::Instant::now() < deadline
+        {
+            tokio::time::sleep(Duration::from_millis(WAIT_POLL_MS)).await;
+        }
     }
     agent.with_token_guard_state(|s| s.shake.finish()).await;
     if accepted {
         let _ = agent.refresh_from_state().await;
+        let after = context_tokens(agent).await.or(tokens);
+        if let Some(after) = after {
+            agent
+                .with_token_guard_state(|s| s.shake.record_post_shake(after))
+                .await;
+        }
     }
     log::info!(
         "token-guard: shake for session {} at {:?} context tokens: {}",

@@ -160,8 +160,9 @@ impl SessionAgent {
         // leave its `waiting`/`prompt` stage stuck on the wire the way a success-only clear did.
         let _stage_guard = crate::session::start_queue::guard_stage_for_attempt(self);
 
-        let connected = OmpProcess::connect(&opts).await;
-        for reason in crate::omp::token_guard::args::take_warnings() {
+        let mut launch_warnings = Vec::new();
+        let connected = OmpProcess::connect_with_warnings(&opts, &mut launch_warnings).await;
+        for reason in launch_warnings {
             self.events()
                 .emit_token_guard_warning(&self.session_id, &reason);
         }

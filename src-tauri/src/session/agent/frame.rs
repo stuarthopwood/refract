@@ -88,7 +88,7 @@ impl SessionAgent {
             // `/session info`, ...) renders exactly as before #937.
             "command_output" => {
                 if !crate::session::advisor::handle_command_output(self, &frame).await
-                    && !crate::session::token_guard::swallow_shake_output(self).await
+                    && !crate::session::token_guard::swallow_shake_output(self, &frame).await
                 {
                     self.apply_transcript_frame(&frame).await;
                 }

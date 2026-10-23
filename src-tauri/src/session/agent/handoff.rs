@@ -9,6 +9,15 @@ use super::{AgentError, SessionAgent, SessionStatus};
 const SUMMARY_PROMPT: &str = "Write a handoff summary so a fresh conversation can continue this work: the goal, what is done, decisions made, files touched, open problems, and the exact next step. Reply with the summary only; do not call any tools.";
 const SUMMARY_TIMEOUT_SECS: u64 = 180;
 const POLL_MS: u64 = 100;
+const MAX_SUMMARY_CHARS: usize = 12_000;
+
+/// Caps the summary sent as the new Conversation's first message, on a char boundary.
+fn truncate_summary(summary: &str) -> String {
+    match summary.char_indices().nth(MAX_SUMMARY_CHARS) {
+        Some((end, _)) => format!("{}\n\n[summary truncated]", &summary[..end]),
+        None => summary.to_string(),
+    }
+}
 
 impl SessionAgent {
     /// `tokenGuard.handoff`: only while idle with a live process. A failure before the new
@@ -30,7 +39,7 @@ impl SessionAgent {
             Ok(_) => self.wait_for_settle_after(before).await,
             Err(err) => Err(err),
         };
-        let summary = crate::session::token_guard::end_summary_capture(self).await;
+        let summary = crate::session::token_guard::end_summary_capture(self, settled.is_ok()).await;
         settled?;
         let summary = summary.filter(|s| !s.trim().is_empty()).ok_or_else(|| {
             AgentError::new(
@@ -38,6 +47,7 @@ impl SessionAgent {
                 "The agent returned no summary, so nothing was handed off.".to_string(),
             )
         })?;
+        let summary = truncate_summary(&summary);
         self.start_new_conversation().await?;
         self.send(
             format!("Continuing from a previous conversation. Handoff summary:\n\n{summary}"),
@@ -83,5 +93,19 @@ impl SessionAgent {
             }
             tokio::time::sleep(Duration::from_millis(POLL_MS)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_summary_is_cut_on_a_char_boundary() {
+        let long = "é".repeat(MAX_SUMMARY_CHARS + 5);
+        let cut = truncate_summary(&long);
+        assert!(cut.ends_with("[summary truncated]"));
+        assert_eq!(cut.matches('é').count(), MAX_SUMMARY_CHARS);
+        assert_eq!(truncate_summary("short"), "short");
     }
 }
