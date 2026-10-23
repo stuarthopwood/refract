@@ -61,6 +61,9 @@ use super::agent::SessionAgent;
 #[path = "readout_todo.rs"]
 mod readout_todo;
 use readout_todo::{build_todo_tree, compute_up_next, parse_todo_phases, TodoPhaseState};
+#[path = "readout_activity.rs"]
+mod readout_activity;
+use readout_activity::ActivityState;
 
 /// Issue #788's own acceptance criterion: "the readout push does not exceed one event per 100 ms
 /// per Session under streaming" -- test-review/perf gate round 1 finding: the PREVIOUS 50 ms value
@@ -115,6 +118,8 @@ pub(super) struct State {
     /// timer) and by `on_exit` (stopping it) -- the spawned timer loop checks this on every tick
     /// and exits the moment it no longer matches, so at most one timer is ever live per agent.
     pr_poll_generation: u64,
+    /// Issue #687: latest intent/tool, retry and compaction state for the current-work banner.
+    activity: ActivityState,
 }
 
 fn now_ms() -> i64 {
@@ -137,6 +142,7 @@ fn jitter_ms(cap_ms: u64) -> u64 {
 }
 
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
+    readout_activity::on_frame(agent, frame_type, frame).await;
     match frame_type {
         "agent_start" => {
             let started_at = now_ms();
@@ -197,7 +203,7 @@ pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested
     // a mismatch and return.
     let had_turn = agent
         .with_readout_state(|s| {
-            let had = s.turn_started_at.is_some();
+            let had = s.turn_started_at.is_some() | s.activity.reset();
             s.turn_started_at = None;
             s.pr_poll_generation = s.pr_poll_generation.wrapping_add(1);
             had
@@ -319,7 +325,7 @@ pub async fn current_readout_value(agent: &SessionAgent) -> Value {
 }
 
 fn empty_readout() -> Value {
-    json!({
+    let mut readout = json!({
         "changes": Value::Null,
         "contextUsage": Value::Null,
         "turnTime": Value::Null,
@@ -328,7 +334,9 @@ fn empty_readout() -> Value {
         "todoTree": Value::Null,
         "todoPhases": Value::Null,
         "branch": Value::Null,
-    })
+    });
+    ActivityState::default().write_into(&mut readout);
+    readout
 }
 
 fn parse_context_usage(value: &Value) -> Option<ContextUsageState> {
@@ -574,7 +582,7 @@ fn build_readout_value(
         .pull_request
         .as_ref()
         .map(|pr| json!({ "number": pr.number, "url": pr.url }));
-    json!({
+    let mut readout = json!({
         "changes": changes,
         "contextUsage": context_usage,
         "turnTime": turn_time,
@@ -583,5 +591,7 @@ fn build_readout_value(
         "todoTree": todo_tree,
         "todoPhases": todo_phases_up_next,
         "branch": branch,
-    })
+    });
+    s.activity.write_into(&mut readout);
+    readout
 }

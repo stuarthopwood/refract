@@ -104,10 +104,10 @@ fn parse_approval_mode(value: &str) -> Option<ApprovalMode> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
-/// Spec 004 FR-012 to FR-014: the seven known `ReadoutKind` values; an unrecognised one is
+/// Spec 004 FR-012 to FR-014: the eight known `ReadoutKind` values; an unrecognised one is
 /// `invalid-argument` here (the store's own `set_readout_visibility` additionally no-ops on one,
 /// a second, independent layer).
-const READOUT_KINDS: [&str; 7] = [
+const READOUT_KINDS: [&str; 8] = [
     "changes",
     "context-usage",
     "turn-time",
@@ -115,6 +115,7 @@ const READOUT_KINDS: [&str; 7] = [
     "pull-request",
     "subagents",
     "todo-progress",
+    "current-work",
 ];
 
 fn require_bool(

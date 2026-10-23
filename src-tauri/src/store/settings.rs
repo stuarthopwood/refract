@@ -40,6 +40,8 @@ pub struct SessionReadout {
     pub subagents: bool,
     #[serde(rename = "todo-progress")]
     pub todo_progress: bool,
+    #[serde(rename = "current-work")]
+    pub current_work: bool,
 }
 
 /// Matches `src/shared/model.ts`'s own `DEFAULT_SESSION_READOUT` exactly, field for field.
@@ -52,6 +54,7 @@ fn default_session_readout() -> SessionReadout {
         pull_request: true,
         subagents: true,
         todo_progress: true,
+        current_work: true,
     }
 }
 
@@ -170,26 +173,20 @@ impl SettingsStore {
         let session_readout = object
             .get("sessionReadout")
             .and_then(Value::as_object)
-            .map(|o| SessionReadout {
-                changes: o.get("changes").and_then(Value::as_bool).unwrap_or(true),
-                context_usage: o
-                    .get("context-usage")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(true),
-                turn_time: o.get("turn-time").and_then(Value::as_bool).unwrap_or(true),
-                current_time: o
-                    .get("current-time")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                pull_request: o
-                    .get("pull-request")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(true),
-                subagents: o.get("subagents").and_then(Value::as_bool).unwrap_or(true),
-                todo_progress: o
-                    .get("todo-progress")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(true),
+            .map(|o| {
+                let flag = |key: &str, default: bool| {
+                    o.get(key).and_then(Value::as_bool).unwrap_or(default)
+                };
+                SessionReadout {
+                    changes: flag("changes", true),
+                    context_usage: flag("context-usage", true),
+                    turn_time: flag("turn-time", true),
+                    current_time: flag("current-time", false),
+                    pull_request: flag("pull-request", true),
+                    subagents: flag("subagents", true),
+                    todo_progress: flag("todo-progress", true),
+                    current_work: flag("current-work", true),
+                }
             })
             .unwrap_or_else(default_session_readout);
 
@@ -428,6 +425,7 @@ impl SettingsStore {
             "pull-request" => readout.pull_request = visible,
             "subagents" => readout.subagents = visible,
             "todo-progress" => readout.todo_progress = visible,
+            "current-work" => readout.current_work = visible,
             _ => return Ok(self.data.clone()),
         }
         let next = Settings {
