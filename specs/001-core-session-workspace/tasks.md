@@ -5324,7 +5324,7 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `SettingsSectionId` in `view-store.ts`, and its `SECTIONS` entry in `SettingsScreen.tsx`; wire
   **Don't show again** to turn the setting off with a `sonner` toast confirming it and an
   **Undo** action that turns it back on per FR-107 (missing)
-- [ ] T387 Verify live with the fake-omp harness (`scripts/verify-tauri.mjs`; add a stopped
+- [x] T387 Verify live with the fake-omp harness (`scripts/verify-tauri.mjs`; add a stopped
   Session fixture with a saved `.jsonl` under `scripts/fixtures/` if none fits; a fixture, not a
   test) against quickstart.md Story 4 steps 5 to 8: history shows and no `omp` starts on each
   passive path, no "Starting agent" notice until **Start agent** or a send, the queued send lands
