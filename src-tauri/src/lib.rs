@@ -282,7 +282,6 @@ pub fn run() {
     // agent-backed handler already shares, never a second store instance.
     let events = events::EventSink::new(app_handle_slot.clone(), registry.clone());
     let events_for_memory_monitor = events.clone();
-    let events_for_guard = events.clone();
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     shell::memory::start_monitor(session_manager.clone(), events_for_memory_monitor);
     let session_manager_for_exit = session_manager.clone();
@@ -447,11 +446,6 @@ pub fn run() {
                     .await;
                 });
             }
-            // #1184: reset drifted OMP token-cost settings at start (never blocks the window).
-            let events_for_guard = events_for_guard.clone();
-            tauri::async_runtime::spawn(async move {
-                omp::config_guard::run_at_startup(&events_for_guard).await;
-            });
             Ok(())
         })
         .build(tauri::generate_context!())

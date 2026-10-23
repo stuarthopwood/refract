@@ -29,6 +29,7 @@ import {
   TurnTimeChip
 } from './readout/ReadoutChips'
 import { ContextUsageChip } from './readout/ContextUsageChip'
+import { LongConversationChip } from './LongConversation'
 
 export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
@@ -48,6 +49,7 @@ export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: stri
           regardless of where Advisor itself sits -- this placement only fixes where Advisor
           falls in that same already-shifting row, not a guarantee against the shift itself. */}
       <AdvisorChip sessionId={sessionId} textareaRef={textareaRef} />
+      <LongConversationChip sessionId={sessionId} />
       {sessionReadout['current-time'] && <CurrentTimeChip className="ml-auto" />}
     </div>
   )

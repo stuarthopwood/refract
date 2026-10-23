@@ -78,7 +78,7 @@ pub enum ApprovalMode {
 impl ApprovalMode {
     /// Maps to the value OMP's `--approval-mode` flag expects (`src/shared/model.ts`'s
     /// `OMP_APPROVAL_MODE`).
-    fn omp_flag(self) -> &'static str {
+    pub(super) fn omp_flag(self) -> &'static str {
         match self {
             ApprovalMode::Ask => "always-ask",
             ApprovalMode::EditFreely => "write",
@@ -256,35 +256,26 @@ pub struct OmpProcess {
     inner: Arc<Inner>,
 }
 
-fn build_args(opts: &OmpProcessOptions) -> Vec<String> {
-    let mut args = vec![
-        "--mode".to_string(),
-        "rpc-ui".to_string(),
-        format!("--approval-mode={}", opts.approval_mode.omp_flag()),
-    ];
-    if opts.no_session {
-        args.push("--no-session".to_string());
-    }
-    args
-}
-
 impl OmpProcess {
-    /// Spawns `omp` and wires up its stdout/stderr/exit reader tasks (FR-001), returning as soon
-    /// as the child and those tasks exist -- before the ready handshake. Split out of the old
-    /// combined `spawn()` (code-review/perf finding, 2026-10-13: "subscribe() only happens after
-    /// `OmpProcess::spawn` returns ... frames sent between ready and subscribe go nowhere"): a
-    /// caller that needs every frame from the very first one (`session::agent::launch`) must
-    /// call `subscribe()` on the value this returns, and only THEN call `wait_ready` -- so its
-    /// listener is registered before any frame (including ones emitted during the ready-wait
-    /// itself) can possibly be produced, the same guarantee `OmpProcess.ts` gets for free from
-    /// attaching `proc.on('frame', ...)` before calling `start()` (SessionAgent.ts:471).
+    /// Spawns `omp` and wires up its reader tasks (FR-001), returning before the ready handshake:
+    /// a caller needing every frame (`session::agent::launch`) must `subscribe()` first, and only
+    /// THEN call `wait_ready` (code-review/perf finding, 2026-10-13).
     pub async fn connect(opts: &OmpProcessOptions) -> Result<Self, ProcessError> {
+        Self::connect_with_warnings(opts, &mut Vec::new()).await
+    }
+
+    /// `connect`, also collecting this launch's token guard warnings for the caller to emit.
+    pub async fn connect_with_warnings(
+        opts: &OmpProcessOptions,
+        warnings: &mut Vec<String>,
+    ) -> Result<Self, ProcessError> {
         executables::ensure_no_default_cwd_in_exe_path();
         let omp_path = match &opts.omp_path {
             Some(path) => path.clone(),
             None => executables::resolve_omp().map_err(ProcessError::new)?,
         };
-        let args = build_args(opts);
+        let (args, launch_warnings) = super::process_args::build_args(opts).await;
+        warnings.extend(launch_warnings);
 
         let mut command = Command::new(&omp_path);
         command
@@ -307,18 +298,11 @@ impl OmpProcess {
         })?;
 
         let pid = child.id().unwrap_or(0);
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| ProcessError::new("OmpProcess: stdin not piped"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| ProcessError::new("OmpProcess: stdout not piped"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| ProcessError::new("OmpProcess: stderr not piped"))?;
+        let (Some(stdin), Some(stdout), Some(stderr)) =
+            (child.stdin.take(), child.stdout.take(), child.stderr.take())
+        else {
+            return Err(ProcessError::new("OmpProcess: stdio not piped"));
+        };
 
         let (exit_tx, _exit_rx) = watch::channel(None);
 

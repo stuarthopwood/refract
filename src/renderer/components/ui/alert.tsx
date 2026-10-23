@@ -31,12 +31,13 @@ function Alert({
   className,
   variant,
   box,
+  role = "alert",
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
   return (
     <div
       data-slot="alert"
-      role="alert"
+      role={role}
       className={cn(alertVariants({ variant, box }), className)}
       {...props}
     />
@@ -82,4 +83,16 @@ function AlertAction({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-export { Alert, AlertTitle, AlertDescription, AlertAction }
+// In-flow actions row under the description (use instead of the corner-pinned `AlertAction` when
+// the text must not run under the buttons).
+function AlertActions({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="alert-actions"
+      className={cn("mt-1.5 flex flex-wrap items-center gap-1.5", className)}
+      {...props}
+    />
+  )
+}
+
+export { Alert, AlertTitle, AlertDescription, AlertAction, AlertActions }

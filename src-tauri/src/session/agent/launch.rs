@@ -160,14 +160,13 @@ impl SessionAgent {
         // leave its `waiting`/`prompt` stage stuck on the wire the way a success-only clear did.
         let _stage_guard = crate::session::start_queue::guard_stage_for_attempt(self);
 
-        // #1184: reset drifted token-cost settings before `omp` reads its config; bounded, never fatal.
-        crate::omp::config_guard::run_before_launch(
-            self.events(),
-            Path::new(&session.worktree_path),
-        )
-        .await;
-
-        let proc = match OmpProcess::connect(&opts).await {
+        let mut launch_warnings = Vec::new();
+        let connected = OmpProcess::connect_with_warnings(&opts, &mut launch_warnings).await;
+        for reason in launch_warnings {
+            self.events()
+                .emit_token_guard_warning(&self.session_id, &reason);
+        }
+        let proc = match connected {
             Ok(p) => p,
             Err(err) => {
                 let detail = format!("{failure_prefix}{}", err.message);
@@ -340,6 +339,9 @@ impl SessionAgent {
         crate::session::subagents::on_attach_reconcile(self).await;
         crate::session::readout::on_launch(self).await;
         crate::session::advisor::on_launch(self).await;
+        if complete {
+            crate::session::token_guard::on_history_loaded(self, &messages).await;
+        }
         self.sync_from_state(&state_data, None).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 

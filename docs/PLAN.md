@@ -51,7 +51,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 
 | Order | Issue | Work | Why here |
 |---|---|---|---|
-| 1 | #1212 | **P0 Token guard:** launch `--config` overlay with the token settings, snapcompact tool-result imaging and snapcompact-first compaction, post-turn shake above 60k context, long-conversation Hand off at 300/500 calls, Refract-owned rules via `--append-system-prompt`; replaces #1184's global reset (PR #1189) | P0 (Stuart 2026-10-23); token budget; probe RPC `compact` method selection first |
+| 1 | #1212 | **P0 Token guard:** launch `--config` overlay with the token settings, snapcompact tool-result imaging and snapcompact-first compaction, post-turn shake above 60k context, long-conversation Hand off at 300/500 calls, Refract-owned rules via `--append-system-prompt`; replaces #1184's global reset (PR #1189) | P0 (Stuart 2026-10-23); token budget; probe RPC `compact` method selection first; done (PR #1215), Lows in #1216 |
 | 2 | #1200 | Long-PR layout bug: app frame stops filling the window, list column blank, two scrollbars | Bug, filed p1 2026-10-23; breaks the Pull requests view on real PRs |
 | 3 | #1205 | Open stopped Sessions without starting the agent (configurable "Agent stopped" bar) | Raised to p1 2026-10-23; saves memory and tokens on every look-back and at startup restore; probe first |
 | 4 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |

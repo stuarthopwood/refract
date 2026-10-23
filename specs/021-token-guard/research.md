@@ -1,0 +1,31 @@
+# Research: Token guard
+
+Probed 2026-10-23 on omp 18.12.6 (`C:\Users\shopwood\AppData\Local\omp\omp.exe`) in a scratch agent dir (`PI_CODING_AGENT_DIR`) with a dummy `ANTHROPIC_API_KEY`, so no real config, key or running process was touched.
+
+## 1. `--config` overlay
+- `omp --help`: `--config=<value>` is "extra config.yml-style overlay for this run, repeatable". Format is the nested YAML of `~/.omp/agent/config.yml` (`compaction:` with `idleThresholdTokens:` under it).
+- `omp config get` ignores `--config`, so precedence over a changed global config cannot be proven offline. **Decision**: pass the overlay on every launch and prove precedence in the live verify task (change global config, confirm the Session still shows overlay values).
+
+## 2. `--append-system-prompt`
+- Help: "Append text or file contents to the system prompt". It takes **text or a file path**. **Decision**: pass a file path (Refract writes the shipped rules to its data dir each launch), avoiding Windows command-line quoting of about 1.5k characters.
+
+## 3. Can RPC `compact` select a method?
+- **No.** The handler is `case "compact": t.compact(r.customInstructions)`; there is no method option. Manual compaction modes are soft, remote and snapcompact only. `{"type":"compact","method":"shake"}` returned "Nothing to compact (session too small)"; `method` is ignored.
+- Shake exists as an auto/idle compaction action and as the **`/shake [elide|images|thinking]` slash command**, which calls `session.shake()` with no model call and works over rpc-ui: `{"type":"prompt","message":"/shake"}` returned a `command_output` frame ("Nothing to shake.") and a prompt response with `agentInvoked:false`.
+- **Decision**: send `/shake` as a prompt after the turn settles, swallowing the `command_output` frame like `session::advisor::handle_command_output`. The issue's fallback (per-Session overlay making shake the idle-compaction method) is not needed.
+
+## 4. Context and counts
+- `get_session_stats` works in RPC (`contextUsage {tokens, contextWindow, percent}`, message counts). Refract already tracks context usage per Session in `session/readout.rs` (`on_sync_from_state`); reuse it.
+- Call count: one per completed assistant `message_end` frame.
+
+## 5. Launch shape
+- Refract launches `omp --mode rpc-ui --approval-mode=<flag> [--no-session]` (the issue says `rpc`). `build_args` is `process.rs:259`, `connect` is `:281`. `process.rs` is baselined at 1106 lines so the builder is extracted.
+
+## 6. Settings > OMP
+- `SettingsScreen.tsx` has no OMP section and #691 is open; the "Guarded" rows of #1184 never shipped. This feature adds the section with "Set by Refract" rows only.
+
+## 7. Shipping the rules file
+- Embed with `include_str!("../../resources/refract-rules.md")` and write to the data dir at launch; no Tauri bundle resource or capability change is needed.
+
+## 8. Unverified offline
+- Whether the overlay's `modelRoles.advisor` (a record entry, not a settings key in #1184's finding) is honoured by `--config` is not provable offline; the live check (T021) confirms it. If omp ignores it, the fallback is leaving `modelRoles.advisor` to `ipc::model_roles::set_model_role` on explicit Settings change only, and the spec FR-004 entry is amended.

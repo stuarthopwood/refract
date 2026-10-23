@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-22
 
-**Status**: Draft
+**Status**: Superseded by 021-token-guard / #1212 (the global reset was removed; Refract now passes a per-launch overlay instead)
 
 **Input**: User description: "OMP settings guard (issue #1184), items 1-4 only. Refract checks a set of OMP token-cost settings at start and before every Session launch, and resets any that have drifted from Refract's baseline, telling the developer what it changed. Item 5 (the Guarded tag in Settings > OMP and editing the baseline) moved to #691 (Stuart, 2026-10-22 scope comment)."
 

@@ -20,7 +20,10 @@ import type {
   GitChangesSnapshot,
   LeftoverSummary,
   LowMemoryWarning,
-  OmpGuardNotice,
+  TokenGuardCalls,
+  TokenGuardHandoffResult,
+  TokenGuardLaunchWarning,
+  TokenGuardSnapshot,
   MergeInput,
   PullRequestListResult,
   RefractApi,
@@ -310,6 +313,14 @@ const refract: RefractApi = {
     set: (themeId) => request<Settings>(IPC_REQUESTS.THEME_SET, themeId)
   },
 
+  tokenGuard: {
+    get: () => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_GET),
+    set: (key, value) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_SET, { key, value }),
+    reset: (key) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET, { key }),
+    handoff: (sessionId) =>
+      request<TokenGuardHandoffResult>(IPC_REQUESTS.TOKEN_GUARD_HANDOFF, sessionId)
+  },
+
   // Synchronous by design (FR-011, research.md decision 4): called once from `main.tsx`'s very
   // first lines, before React mounts, so the renderer's single JS thread blocks until the right
   // theme class is already known. Reads `window.__REFRACT_THEME_BOOTSTRAP__`, set by an
@@ -358,7 +369,9 @@ const refract: RefractApi = {
   onSettingsChanged: (handler) => on<Settings>(IPC_EVENTS.SETTINGS_CHANGED, handler),
   onUiOpenSession: (handler) => on<{ sessionId: string }>(IPC_EVENTS.UI_OPEN_SESSION, handler),
   onMemoryWarning: (handler) => on<LowMemoryWarning>(IPC_EVENTS.MEMORY_WARNING, handler),
-  onOmpGuardReset: (handler) => on<OmpGuardNotice>(IPC_EVENTS.OMP_GUARD_RESET, handler),
+  onTokenGuardLaunchWarning: (handler) =>
+    on<TokenGuardLaunchWarning>(IPC_EVENTS.TOKEN_GUARD_LAUNCH_WARNING, handler),
+  onTokenGuardCalls: (handler) => on<TokenGuardCalls>(IPC_EVENTS.TOKEN_GUARD_CALLS, handler),
   onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
   onSubagentsUpdate: (handler) =>
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
