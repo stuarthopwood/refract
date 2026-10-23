@@ -60,7 +60,7 @@ export const useViewStore = create<ViewState>((set) => ({
     set({
       view: 'settings',
       settingsSection:
-        section === 'session-readout' || section === 'appearance' || section === 'model-roles' || section === 'chat' || section === 'right-pane'
+        section === 'session-readout' || section === 'appearance' || section === 'model-roles' ||         section === 'chat' || section === 'right-pane' || section === 'omp'
           ? section
           : DEFAULT_SETTINGS_SECTION
     }),
