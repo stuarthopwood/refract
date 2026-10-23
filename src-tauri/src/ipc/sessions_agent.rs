@@ -441,6 +441,9 @@ async fn attach_snapshot_core(
         return Err(not_found(format!("Session not found: {id}")));
     };
     let agent = state.session_manager.get_or_create_agent(id);
+    if !force_start {
+        agent.mark_worktree_missing_if_invalid().await;
+    }
     let adapter = AttachAgentAdapter {
         state,
         agent: agent.clone(),
