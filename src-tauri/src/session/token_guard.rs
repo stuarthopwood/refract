@@ -57,6 +57,7 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent, history: Option<
         .with_token_guard_state(|s| {
             s.counter.reset(calls);
             s.shake.reset_baseline();
+            s.shake.clear_suppression();
         })
         .await;
     emit_calls(agent).await;
@@ -92,6 +93,13 @@ pub(super) async fn end_summary_capture(agent: &SessionAgent, settled_ok: bool) 
             s.counter.end_capture()
         })
         .await
+}
+
+/// The Hand off failed after its summary settled: a leftover suppression must not outlive it.
+pub(super) async fn clear_summary_suppression(agent: &SessionAgent) {
+    agent
+        .with_token_guard_state(|s| s.shake.clear_suppression())
+        .await;
 }
 
 /// `agent/frame.rs`'s `command_output` arm: `true` when this frame is the shake's own reply.
@@ -141,7 +149,7 @@ async fn context_tokens(agent: &SessionAgent) -> Option<u64> {
         .and_then(|res| res.get("data").and_then(shake::context_tokens_from_stats))
 }
 
-/// Runs one claimed attempt; the caller clears the in-flight and swallow flags afterwards.
+/// Runs one claimed attempt; the caller releases the cycle (in-flight, swallow, active) afterwards.
 async fn run_shake(agent: &SessionAgent) {
     let tokens = context_tokens(agent).await;
     if !agent
@@ -169,7 +177,7 @@ async fn run_shake(agent: &SessionAgent) {
     }
     // The reply window opens before the send so a fast `command_output` is never missed.
     agent
-        .with_token_guard_state(|s| s.shake.arm_swallow())
+        .with_token_guard_state(|s| s.shake.arm_swallow(tokens))
         .await;
     let result = agent
         .request_rpc_if_idle(
@@ -195,7 +203,6 @@ async fn run_shake(agent: &SessionAgent) {
             tokio::time::sleep(Duration::from_millis(WAIT_POLL_MS)).await;
         }
     }
-    agent.with_token_guard_state(|s| s.shake.finish()).await;
     if accepted {
         let _ = agent.refresh_from_state().await;
         let after = context_tokens(agent).await.or(tokens);

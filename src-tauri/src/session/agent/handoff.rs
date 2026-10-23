@@ -41,6 +41,9 @@ impl SessionAgent {
         };
         let summary = crate::session::token_guard::end_summary_capture(self, settled.is_ok()).await;
         settled?;
+        if summary.as_deref().is_none_or(|s| s.trim().is_empty()) {
+            crate::session::token_guard::clear_summary_suppression(self).await;
+        }
         let summary = summary.filter(|s| !s.trim().is_empty()).ok_or_else(|| {
             AgentError::new(
                 "handoff-empty",

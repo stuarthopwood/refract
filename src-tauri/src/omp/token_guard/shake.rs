@@ -24,6 +24,9 @@ pub struct ShakeState {
     /// The next shake `command_output` frame is the shake's own reply and is hidden from the
     /// transcript; also holds off new claims, so the shake's own settle never re-triggers one.
     pub swallow_output: bool,
+    /// A shake cycle (stats read, send, reply, post-shake bookkeeping) is running; blocks new
+    /// claims only, never a user prompt.
+    active: bool,
     /// Settle id (the agent's turn generation) of the last attempt: one attempt per settle.
     last_settle: Option<u64>,
     /// Context size recorded after the last shake; `None` until one ran in this Conversation.
@@ -42,16 +45,26 @@ impl ShakeState {
         if std::mem::take(&mut self.suppress_next) {
             return false;
         }
-        if self.in_flight || self.swallow_output || self.last_settle == Some(settle_id) {
+        if self.active
+            || self.in_flight
+            || self.swallow_output
+            || self.last_settle == Some(settle_id)
+        {
             return false;
         }
         self.last_settle = Some(settle_id);
         self.in_flight = true;
+        self.active = true;
         true
     }
 
     pub fn suppress_next_settle(&mut self, suppress: bool) {
         self.suppress_next = suppress;
+    }
+
+    /// Drops a pending Hand off suppression so it can never skip a later, legitimate shake.
+    pub fn clear_suppression(&mut self) {
+        self.suppress_next = false;
     }
 
     /// A new Conversation starts without a post-shake baseline.
@@ -72,9 +85,13 @@ impl ShakeState {
             }
     }
 
-    /// Opens the reply window just before the shake RPC is sent.
-    pub fn arm_swallow(&mut self) {
+    /// Opens the reply window just before the shake RPC is sent, and starts measuring regrowth
+    /// from the pre-shake size so a failed post-shake read still leaves a baseline.
+    pub fn arm_swallow(&mut self, pre_shake_tokens: Option<u64>) {
         self.swallow_output = true;
+        if pre_shake_tokens.is_some() {
+            self.post_shake_tokens = pre_shake_tokens;
+        }
     }
 
     /// The shake RPC was answered: stop blocking prompts, keep hiding its reply until it arrives.
@@ -83,6 +100,7 @@ impl ShakeState {
     }
 
     pub fn finish(&mut self) {
+        self.active = false;
         self.in_flight = false;
         self.swallow_output = false;
     }
@@ -131,13 +149,34 @@ mod tests {
         let mut state = ShakeState::default();
         assert!(state.claim(2));
         assert!(!state.claim(4));
-        state.arm_swallow();
+        state.arm_swallow(Some(70_000));
         state.sent();
         assert!(!state.claim(4));
         state.finish();
         assert!(state.claim(4));
         state.finish();
         assert!(!state.claim(4));
+    }
+
+    #[test]
+    fn cycle_stays_active_after_the_reply_until_finish() {
+        let mut state = ShakeState::default();
+        assert!(state.claim(2));
+        state.arm_swallow(Some(70_000));
+        state.sent();
+        state.swallow_output = false;
+        assert!(!state.claim(4));
+        assert!(!state.needs_shake(Some(75_000)));
+        state.finish();
+        assert!(state.claim(4));
+    }
+
+    #[test]
+    fn suppression_can_be_cleared() {
+        let mut state = ShakeState::default();
+        state.suppress_next_settle(true);
+        state.clear_suppression();
+        assert!(state.claim(2));
     }
 
     #[test]
