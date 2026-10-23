@@ -1,4 +1,4 @@
-// Issue #687 (spec 004 FR-031 to FR-038): the one pure derive behind the current-work banner's
+// Issue #687 (spec 004 FR-035 to FR-040): the one pure derive behind the current-work banner's
 // line. #526's session-row status line reuses it later; neither re-derives priorities. Every
 // string that came from the agent (tool `intent`, todo task text, a target path) is untrusted:
 // it is reduced to plain text here, control characters stripped, and capped at

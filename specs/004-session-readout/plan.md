@@ -124,6 +124,16 @@ new field in an existing file. The constitution gate that still has open items (
 unchanged by design and is resolved by the three Phase 1 probe tasks in tasks.md, which run before
 any other task in this spec.
 
+## Current-work banner (issue #687, FR-035 to FR-040)
+
+Rust keeps the main agent's latest tool `intent`, latest tool name and target, retry attempt and
+compaction flag in `session/readout_activity.rs` and writes them into the existing coalesced
+`readout:update` (no new event). `src/shared/activity.ts` holds the one pure `deriveActivity()`;
+`CurrentWorkBanner` (mounted by `ComposerAboveStack` under the pinned Todo panel) renders it.
+No plain-verb helper existed in the renderer (`ToolRow` shows raw tool names), so the verb map
+lives in `activity.ts` beside its only consumer. The `current-work` readout kind reuses the
+existing readout-visibility setting path.
+
 ## Complexity Tracking
 
 None.

@@ -1,5 +1,5 @@
-// The main agent's live activity for the current-work banner (issue #687, spec 004 FR-031 to
-// FR-038), split out of the parent `readout` module (#806 file-size discipline) the same way
+// The main agent's live activity for the current-work banner (issue #687, spec 004 FR-035 to
+// FR-040), split out of the parent `readout` module (#806 file-size discipline) the same way
 // `readout_todo.rs` is. Retains the latest tool call's own `intent` argument (and, when a call
 // carries none, its tool name plus target path so the renderer can phrase a plain verb), the
 // auto-retry attempt, and whether an auto-compaction is running. Everything rides the existing
@@ -74,7 +74,13 @@ impl ActivityState {
                     return false;
                 };
                 let args = frame.get("args").unwrap_or(&Value::Null);
-                self.latest_intent = args.get("intent").and_then(Value::as_str).and_then(bounded);
+                // OMP's wire schema carries `intent` on the frame itself; the call's own args may
+                // carry the same field (subagent progress reads it there), so accept either.
+                self.latest_intent = frame
+                    .get("intent")
+                    .or_else(|| args.get("intent"))
+                    .and_then(Value::as_str)
+                    .and_then(bounded);
                 self.latest_tool = Some((name.to_string(), target_of(args)));
                 true
             }

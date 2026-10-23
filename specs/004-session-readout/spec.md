@@ -228,6 +228,25 @@ field whose bottom bar shows the mode, model, and agent.
 - Q: A progress bar? -> A: Yes, 2px under the figures, the same colour on a faint track,
   decorative, on by default, with "Show context usage bar" in Settings > Chat (FR-034).
 
+### Session 2026-10-23 (current-work banner, issue #687; grilled by Stuart)
+
+- Q: Where does the activity come from? -> A: The main agent's latest tool-call `intent` plus
+  OMP's retry/compaction frames, retained in Rust and sent on the existing `readout:update`
+  (FR-037); one pure `deriveActivity()` picks the line (FR-036).
+- Q: Pinned Todo panel? -> A: The Todo line is dropped; intent and waiting lines stay (FR-036).
+- Q: Chrome? -> A: One muted line, no spinner, no stop control, elapsed time like OMP (FR-035,
+  FR-039); a Setting turns it off (FR-040).
+- Q: Untrusted text? -> A: Plain text, controls stripped, 160 characters (FR-038).
+
+### User Story 4 - Know what the agent is doing right now (Priority: P2, issue #687)
+
+A user glancing at a working Session sees one muted line above the composer saying what it is
+doing, with how long the turn has run.
+
+**Acceptance**: while working, the line shows the current Todo task, intent or plain verb; it
+changes to "Waiting for your answer" when the Session needs you, and disappears when idle or
+when the Setting is off; with the Todo panel pinned, the Todo line is not repeated.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -717,6 +736,31 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   `prefers-reduced-motion`. It is on by default and turned off by a "Show context usage bar"
   switch in Settings > Chat, beside the other readout settings (`showContextUsageBar`, persisted
   in the Rust settings store).
+- **FR-035** (new, 2026-10-23, issue #687): While a Session is working or needs you, one line
+  MUST sit above the composer (below the pinned Todo panel) naming what the main agent is doing
+  now, prefixed with the elapsed turn time ("1m 12s · Reading ChatPane.tsx"). It is hidden when
+  the Session is idle. One banner per chat pane.
+- **FR-036** (new, 2026-10-23, issue #687): One pure `deriveActivity()` in `src/shared/activity.ts`
+  MUST pick the line by priority: needs you (approval or question pending), "Retrying · attempt
+  n of m", "Compacting context…", "Waiting for N subagents", the current Todo task "n of m", the
+  latest tool-call `intent`, a plain verb for the latest tool call when it carried no intent
+  (never the raw tool name), then "Working…". While the Todo panel is pinned, the Todo line is
+  dropped; intent and waiting lines stay.
+- **FR-037** (new, 2026-10-23, issue #687): The Rust readout MUST retain the main agent's latest
+  tool-call `intent` (set when the call starts), the latest call's name and target path, the
+  auto-retry attempt (`auto_retry_start/_end`) and whether an auto-compaction runs
+  (`auto_compaction_start/_end`), and expose them as `latestIntent`, `latestTool`, `retry` and
+  `compacting` on the existing coalesced `readout:update` (no new event). All clear at the turn
+  boundary. The elapsed time reuses `turnTime.startedAt`.
+- **FR-038** (new, 2026-10-23, issue #687): Agent text is untrusted. The banner MUST render it as
+  plain text only, strip control characters, and cap it at 160 characters.
+- **FR-039** (new, 2026-10-23, issue #687): The banner MUST be one ~24px line of ~12px muted text,
+  no box, no spinner, no stop control, `aria-live="off"`, truncated with the full text in the
+  shared Tooltip. It updates at most about twice a second, holds each text at least 600 ms, and
+  fades over 100-150 ms unless `prefers-reduced-motion`.
+- **FR-040** (new, 2026-10-23, issue #687): A "Show current work above the composer" switch
+  (readout kind `current-work`, default on) MUST sit beside the other readout toggles in
+  Settings and hide the banner when off.
 
 ### Key Entities
 

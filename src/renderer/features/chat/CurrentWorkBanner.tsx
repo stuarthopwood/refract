@@ -1,4 +1,4 @@
-// Issue #687 (spec 004 FR-031 to FR-038): the current-work banner, one muted line directly above
+// Issue #687 (spec 004 FR-035 to FR-040): the current-work banner, one muted line directly above
 // the composer. Shown while the Session is working or needs you, hidden when idle, gated by
 // `sessionReadout['current-work']`. One per ChatPane (each split pane mounts its own, keyed by
 // `sessionId`). Text comes from the shared pure `deriveActivity` (src/shared/activity.ts) and is

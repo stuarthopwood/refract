@@ -62,7 +62,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 9 | #762 | `/switch` and `/model` | Same files as #766, straight after it; done (PR #1161) |
 | 10 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip; done (PR #1162) |
 | 11 | #1082 | Context usage colour gradient | Composer strip, after #724; done (PR #1162) |
-| 12 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, in progress (branch `feat/687-current-work-banner`) |
+| 12 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, built, PR #1202 awaiting merge |
 | 13 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
 | 14 | #469 | Tool-row icons with verb tooltips | Transcript rows |
 | 15 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |

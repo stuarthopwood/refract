@@ -825,3 +825,11 @@ driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
 - [ ] T148 Extend `check:theme-contrast` to sample the context-usage blend at every 10% step against the composer background in every theme at 4.5:1, tuning the stops until it passes, per FR-033 (missing)
 - [ ] T149 Add the 2px decorative context usage bar under the figures and the `showContextUsageBar` setting (Rust settings store, default on) with a "Show context usage bar" switch in Settings > Chat, per FR-034 (missing)
 - [ ] T150 Move `ContextUsageChip` out of `ReadoutChips.tsx` (at the 600-line cap) into its own module so the new code does not grow it, per Constitution (file-size rule, issue #806) (missing)
+
+## Phase 41: Convergence for issue #687 (current-work banner)
+
+- [X] T151 Retain the main agent's latest tool `intent`, latest tool name and target, auto-retry attempt and compaction state in a new `session/readout_activity.rs`, cleared at the turn boundary, and expose `latestIntent`, `latestTool`, `retry`, `compacting` on the coalesced `readout:update`, per FR-037
+- [X] T152 Add the pure `deriveActivity()` and `sanitizeActivityText` in `src/shared/activity.ts` with the FR-036 priority, plain-verb fallback and FR-038 sanitising, per FR-036, FR-038
+- [X] T153 Add `CurrentWorkBanner` and `ComposerAboveStack` (one line, no spinner or stop control, Tooltip for full text, held 600 ms, fade honouring reduced motion, Todo line dropped when pinned), per FR-035, FR-039
+- [X] T154 Add the `current-work` readout kind (default on) to the Rust settings store, `READOUT_KINDS`, `model.ts` and a "Show current work above the composer" Settings switch, per FR-040
+- [ ] T155 Add `scripts/verify-687-current-work-banner.mjs`, a live check that drives priority states, idle hiding, the Setting off and the pinned-Todo case, per FR-035 to FR-040
