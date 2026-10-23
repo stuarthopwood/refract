@@ -51,26 +51,27 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 
 | Order | Issue | Work | Why here |
 |---|---|---|---|
-| 1 | #1200 | Long-PR layout bug: app frame stops filling the window, list column blank, two scrollbars | Bug, filed p1 2026-10-23; breaks the Pull requests view on real PRs |
-| 2 | #1205 | Open stopped Sessions without starting the agent (configurable "Agent stopped" bar) | Raised to p1 2026-10-23; saves memory and tokens on every look-back and at startup restore; probe first |
-| 3 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |
-| 4 | #1055 | Delete dialog: hung-git wait timeout and two copy fixes | Bug, grilled 2026-10-22, scope narrowed |
-| 5 | #1184 | OMP settings guard: reset drifted token-cost settings at start and before each Session launch | Filed p1 2026-10-22; protects the token savings; small Rust module on existing `omp/config.rs`; done (PR #1189), item 5 moved to #691 |
-| 6 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
-| 7 | #883 | In-app update check | Release path; left open when #794 closed |
-| 8 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
-| 9 | #766 | Combined Role·Model pill, Ctrl+R, change any time | done (PR #1183 + PR #1187) |
-| 10 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
-| 11 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
-| 12 | #1082 | Context usage colour gradient | Composer strip, after #724 |
-| 13 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
-| 14 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
-| 15 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it |
-| 16 | #469 | Tool-row icons with verb tooltips | Transcript rows |
-| 17 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
-| 18 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
-| 19 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
-| 20 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
+| 1 | #1212 | **P0 Token guard:** launch `--config` overlay with the token settings, snapcompact tool-result imaging and snapcompact-first compaction, post-turn shake above 60k context, long-conversation Hand off at 300/500 calls, Refract-owned rules via `--append-system-prompt`; replaces #1184's global reset (PR #1189) | P0 (Stuart 2026-10-23); token budget; probe RPC `compact` method selection first |
+| 2 | #1200 | Long-PR layout bug: app frame stops filling the window, list column blank, two scrollbars | Bug, filed p1 2026-10-23; breaks the Pull requests view on real PRs |
+| 3 | #1205 | Open stopped Sessions without starting the agent (configurable "Agent stopped" bar) | Raised to p1 2026-10-23; saves memory and tokens on every look-back and at startup restore; probe first |
+| 4 | #744 | Attachment-only send | Bug, grilled 2026-10-22 (probe OMP first) |
+| 5 | #1055 | Delete dialog: hung-git wait timeout and two copy fixes | Bug, grilled 2026-10-22, scope narrowed |
+| 6 | #1184 | OMP settings guard: reset drifted token-cost settings at start and before each Session launch | Filed p1 2026-10-22; protects the token savings; small Rust module on existing `omp/config.rs`; done (PR #1189), item 5 moved to #691 |
+| 7 | #777 | Transcript re-renders and re-parses every message on each patch | Raised to p1 2026-10-22; renderer CPU on every streamed token (no model token cost) |
+| 8 | #883 | In-app update check | Release path; left open when #794 closed |
+| 9 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
+| 10 | #766 | Combined Role·Model pill, Ctrl+R, change any time | done (PR #1183 + PR #1187) |
+| 11 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
+| 12 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
+| 13 | #1082 | Context usage colour gradient | Composer strip, after #724 |
+| 14 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
+| 15 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
+| 16 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it |
+| 17 | #469 | Tool-row icons with verb tooltips | Transcript rows |
+| 18 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
+| 19 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
+| 20 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
+| 21 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
 | alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
 
 p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
@@ -789,3 +790,5 @@ Also 2026-10-23: **#1205** amended (the "Agent stopped" bar is configurable: Set
 Also filed 2026-10-23 (Stuart, grilled, UX architect consulted, none deferred): **#1208** lighter font weights and sentence-case verbs (`p1`), placed in Priority order directly before #469; comment posted on #469 (shared verb map).
 
 Also filed 2026-10-23 (Stuart, grilled, none deferred): **#1210** active-row shimmer (`p2`), placed as a row after #1205; comment posted on #566 (2.2.2 pause path).
+
+Also filed 2026-10-23 (Stuart, grilled, none deferred): **#1212** P0 token guard, placed as Priority order 1; #1184 (shipped in PR #1189) is superseded by it.
