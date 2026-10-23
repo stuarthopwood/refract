@@ -114,8 +114,14 @@ function run(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
+// Windows env names are case-insensitive but a spread `process.env` keeps the inherited key's own
+// case (for example `PSMODULEPATH`), so adding `PSModulePath` alongside it passes both to the
+// child and Windows keeps the inherited one. Drop every case variant before setting it.
 function runPowershell(script) {
-  const env = { ...process.env, PSModulePath: RESTRICTED_PSMODULEPATH };
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath'),
+  );
+  env.PSModulePath = RESTRICTED_PSMODULEPATH;
   return run(POWERSHELL_EXE, ['-NoProfile', '-Command', script], { env });
 }
 
@@ -427,7 +433,7 @@ function verifySignature(assetPath, expectedPinHex) {
     fields[line.slice(0, eq)] = line.slice(eq + 1);
   }
   if (fields.Status !== 'Valid') {
-    fail(`${assetPath}: Authenticode status is "${fields.Status}", expected "Valid".`);
+    fail(`${assetPath}: Authenticode status is "${fields.Status}", expected "Valid".\n${result.stderr}`);
   }
   if (fields.SignerSha256 !== expectedPinHex) {
     fail(
