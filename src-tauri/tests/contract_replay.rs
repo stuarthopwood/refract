@@ -350,6 +350,12 @@ fn scrub_known_divergences(value: &mut Value) {
                 // above already establish a precedent for, never a behavioural divergence.
                 map.remove("todoTree");
                 map.remove("todoProgress");
+                // Issue #687: the current-work banner's own `latestIntent`/`latestTool`/`retry`/
+                // `compacting` fields are brand-new, Rust-only (same precedent as above).
+                map.remove("latestIntent");
+                map.remove("latestTool");
+                map.remove("retry");
+                map.remove("compacting");
             }
             // Issue #937: `sessions.open`'s own response value gained a brand-new, Rust-only
             // `advisorOn` field (Electron never shipped omp's advisor subsystem at all, epic
