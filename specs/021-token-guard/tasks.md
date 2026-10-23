@@ -21,7 +21,7 @@ Owns: `src-tauri/src/omp/{process.rs,process_args.rs,mod.rs,token_guard/**}`, `s
 - [X] T007 [A] [US2] Add `token-guard-store.ts` and subscribe in `init-stores.ts`; show one sonner toast per launch warning (FR-017)
 - [X] T008 [A] [US2] Add the `omp` section id to `SettingsSectionId` in `view-store.ts` and render `OmpSection.tsx` and `OmpValueRow.tsx` in `SettingsScreen.tsx`: one row per overlay key, "Set by Refract" text, typed control (`SettingSwitchRow`, `ui/input`, model-threshold list), Reset to default, note that running Sessions keep launch values; existing sections unchanged (FR-006, FR-007, FR-008, FR-022)
 - [X] T009 [A] [US1] Remove the #1184 global reset: delete every Rust, renderer, shared and script item in plan.md "#1184 removal list", keep the dotted-key validator and its test, mark `specs/020-omp-settings-guard/spec.md` superseded (FR-009)
-- [ ] T010 [A] Lane A gate: run the verification gates (T020) and the live checks for quickstart steps 1 to 3 and 7 (T021 part 1); fix before Lane B starts
+- [X] T010 [A] Lane A gate: run the verification gates (T020) and the live checks for quickstart steps 1 to 3 and 7 (T021 part 1); fix before Lane B starts
 
 ## Lane B: shake, call counter, Long conversation readout, Hand off, banner, accessibility
 
@@ -35,12 +35,12 @@ Owns: `src-tauri/src/omp/token_guard/{shake.rs,counter.rs}`, `src-tauri/src/sess
 - [X] T016 [B] [US4] Add `LongConversationBanner.tsx` from the shared `ui/alert` and wire it into `ChatPane.tsx` at 500 calls: Hand off button, per-Conversation dismissal, returns after 100 more calls (FR-014, FR-021)
 - [X] T017 [B] [US4] Accessibility: state in text not colour alone; keyboard-operable buttons with visible focus; one visually hidden `role="status"` announcement per threshold per Conversation, not per call; handle toast/dialog focus on Hand off failure (FR-016, SC-005)
 - [X] T018 [B] [US4] Wire frontend Hand off error display (reason in text) using shared components (FR-015)
-- [ ] T019 [B] Lane B gate: run T020 and T021 part 2
+- [X] T019 [B] Lane B gate: run T020 and T021 part 2
 
 ## Verification (existing gates only)
 
 - [X] T020 [A/B] Run `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:ui-text`, `pnpm check:theme-contrast`, `pnpm check:drag-regions`, `pnpm check:file-size`, `pnpm check:parity`; and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` each with `--manifest-path src-tauri/Cargo.toml`, using the shared `CARGO_TARGET_DIR` (SC-001 to SC-006 guards)
-- [ ] T021 [A/B] Live check per `quickstart.md` with `scripts/verify-tauri.mjs` and a scratch `REFRACT_DATA_DIR` (never `pnpm dev`, never the real `%APPDATA%\refract-tauri`): part 1 (Lane A) steps 1 to 3 and 7; part 2 (Lane B) steps 4 to 6. Record evidence in the PR body (SC-001 to SC-006)
+- [X] T021 [A/B] Live check per `quickstart.md` with `scripts/verify-tauri.mjs` and a scratch `REFRACT_DATA_DIR` (never `pnpm dev`, never the real `%APPDATA%\refract-tauri`): part 1 (Lane A) steps 1 to 3 and 7; part 2 (Lane B) steps 4 to 6. Record evidence in the PR body (SC-001 to SC-006)
 
 ## Dependencies
 
