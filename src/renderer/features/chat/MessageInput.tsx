@@ -276,7 +276,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   const isWorking = status === 'working'
-  const notStarted = status === 'stopped' && stopReason === 'not-started'
+  // Issue #1205 (FR-104): any stop without a stop banner (not started, or stopped on request)
+  // keeps the composer usable; a send starts the agent.
+  const notStarted = status === 'stopped' && (stopReason === 'not-started' || stopReason === undefined)
   const disabled = status === 'stopped' && !notStarted
 
   const { slashMatches, showSlashMenu, slashMenuKey, slashMenuViewProps, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey } = useSlashMenuCompletion({

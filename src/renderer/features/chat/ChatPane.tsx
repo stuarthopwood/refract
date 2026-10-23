@@ -796,7 +796,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // agent is stopped (and this Session HAS been started before -- `not-started` still accepts a
   // first message, exactly like the composer itself) is refused with a notice, never silently
   // swallowed (#432's own requirement).
-  const composerDisabled = session.status === 'stopped' && effectiveStopReason !== 'not-started'
+  const composerDisabled = session.status === 'stopped' && effectiveStopReason !== 'not-started' && effectiveStopReason !== undefined
   useTauriFileDrop({ sessionId, paneRef: chatPaneRef, composerDisabled, dragDepthRef, setIsDraggingFiles })
 
   function hasFilesPayload(event: ReactDragEvent): boolean {
