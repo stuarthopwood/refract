@@ -4,7 +4,7 @@ import type { GitHubAccount } from '../../shared/accounts'
 import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
-import { showOmpGuardNotice } from './omp-guard-store'
+import { showTokenGuardWarning } from './token-guard-store'
 import { usePendingRequestsStore } from './pending-requests-store'
 import { useQueueStore } from './queue-store'
 import { useAskPicksStore } from './ask-picks-store'
@@ -174,7 +174,7 @@ export function initStores(): void {
   window.refract.onUiOpenSession(({ sessionId }) => {
     useSplitStore.getState().replaceFocused(sessionId)
   })
-  window.refract.onOmpGuardReset(showOmpGuardNotice)
+  window.refract.onTokenGuardLaunchWarning(showTokenGuardWarning)
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })

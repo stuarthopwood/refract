@@ -4,7 +4,7 @@
 
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
 import type { LowMemoryWarning } from './lowMemoryWarning';
-import type { OmpGuardNotice } from './ompGuardNotice';
+import type { TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';
 
 import type {
   ApprovalMode,
@@ -236,7 +236,7 @@ export type SlashCommand = SlashCommandDescriptor;
 export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
 
 export type { LowMemoryWarning } from './lowMemoryWarning';
-export type { OmpGuardNotice } from './ompGuardNotice';
+export type { TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';
 
 export interface SessionStatusEvent {
   sessionId: string;
@@ -414,6 +414,9 @@ export const IPC_REQUESTS = {
   PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST: 'pullRequests.newSessionFromPullRequest',
   THEME_PREVIEW: 'theme.preview',
   THEME_SET: 'theme.set',
+  TOKEN_GUARD_GET: 'tokenGuard.get',
+  TOKEN_GUARD_SET: 'tokenGuard.set',
+  TOKEN_GUARD_RESET: 'tokenGuard.reset',
   ACCOUNTS_GITHUB_LIST: 'accounts.github.list',
   ACCOUNTS_GITHUB_ADD_START: 'accounts.github.addStart',
   ACCOUNTS_GITHUB_ADD_CANCEL: 'accounts.github.addCancel',
@@ -443,7 +446,7 @@ export const IPC_EVENTS = {
   SETTINGS_CHANGED: 'settings:changed',
   UI_OPEN_SESSION: 'ui:open-session',
   MEMORY_WARNING: 'memory:warning',
-  OMP_GUARD_RESET: 'omp-guard:reset',
+  TOKEN_GUARD_LAUNCH_WARNING: 'token-guard:launch-warning',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   ADVISOR_UPDATE: 'advisor:update',
@@ -762,6 +765,15 @@ export interface RefractApi extends UpdatesApi {
     set(themeId: ThemeId): Promise<Result<Settings>>;
   };
 
+  /** #1212 token guard: the Refract-owned values behind the `omp` launch overlay ("Set by
+   * Refract" rows in Settings > OMP). A change applies to the next launched Session. `set`
+   * validates the key and value per type (`invalid-argument` otherwise). */
+  tokenGuard: {
+    get(): Promise<Result<TokenGuardSnapshot>>;
+    set(key: string, value: unknown): Promise<Result<TokenGuardSnapshot>>;
+    reset(key: string): Promise<Result<TokenGuardSnapshot>>;
+  };
+
   /** Spec 007 contracts/ipc.md "Bootstrap": synchronous, called once from `main.tsx`'s very
    * first lines, before React mounts and before any class is set on `<html>` -- replaces the old
    * hardcoded `document.documentElement.classList.add('dark')`. Blocks the renderer's single JS
@@ -806,7 +818,7 @@ export interface RefractApi extends UpdatesApi {
   onSettingsChanged(handler: (payload: Settings) => void): Unsubscribe;
   onUiOpenSession(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
-  onOmpGuardReset(handler: (payload: OmpGuardNotice) => void): Unsubscribe;
+  onTokenGuardLaunchWarning(handler: (payload: TokenGuardLaunchWarning) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;
