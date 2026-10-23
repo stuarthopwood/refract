@@ -59,10 +59,10 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 6 | #883 | In-app update check | Release path; left open when #794 closed |
 | 7 | #658 | Post-merge worktree reap step and script | Cheap chore, disk |
 | 8 | #766 | Combined Role·Model pill, Ctrl+R, change any time | done (PR #1183 + PR #1187) |
-| 9 | #762 | `/switch` and `/model` | Same files as #766, straight after it |
-| 10 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip |
-| 11 | #1082 | Context usage colour gradient | Composer strip, after #724 |
-| 12 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area |
+| 9 | #762 | `/switch` and `/model` | Same files as #766, straight after it; done (PR #1161) |
+| 10 | #724 | Current branch in the composer strip, opens the Git panel | Grilled 2026-10-22; composer strip; done (PR #1162) |
+| 11 | #1082 | Context usage colour gradient | Composer strip, after #724; done (PR #1162) |
+| 12 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, in progress (branch `feat/687-current-work-banner`) |
 | 13 | #838 | Agent-to-agent lines | Grilled 2026-10-22 |
 | 14 | #469 | Tool-row icons with verb tooltips | Transcript rows |
 | 15 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
