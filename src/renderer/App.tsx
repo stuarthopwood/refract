@@ -456,7 +456,10 @@ export function App() {
   }, [paneShown, showReadiness, view])
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    // #1200: `relative` makes this the containing block for every absolutely positioned descendant
+    // (e.g. an `sr-only` node at the end of a long scroller); with `h-screen overflow-hidden` none can
+    // grow or scroll the document.
+    <div className="relative flex h-screen flex-col overflow-hidden">
       {/* Permanent drag strip (FR-057): Electron settles overlapping `-webkit-app-region` values
           by DOM document order, not paint/z-index (confirmed live), so this being the FIRST
           drag-region element in the tree means the left-nav header and the chat header (both
