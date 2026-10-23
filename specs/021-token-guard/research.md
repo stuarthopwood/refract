@@ -26,3 +26,6 @@ Probed 2026-10-23 on omp 18.12.6 (`C:\Users\shopwood\AppData\Local\omp\omp.exe`)
 
 ## 7. Shipping the rules file
 - Embed with `include_str!("../../resources/refract-rules.md")` and write to the data dir at launch; no Tauri bundle resource or capability change is needed.
+
+## 8. Unverified offline
+- Whether the overlay's `modelRoles.advisor` (a record entry, not a settings key in #1184's finding) is honoured by `--config` is not provable offline; the live check (T021) confirms it. If omp ignores it, the fallback is leaving `modelRoles.advisor` to `ipc::model_roles::set_model_role` on explicit Settings change only, and the spec FR-004 entry is amended.

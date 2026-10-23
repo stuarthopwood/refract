@@ -27,7 +27,7 @@ Owns: `src-tauri/src/omp/{process.rs,process_args.rs,mod.rs,token_guard/**}`, `s
 
 Owns: `src-tauri/src/omp/token_guard/{shake.rs,counter.rs}`, `src-tauri/src/session/agent/{handoff.rs,frame.rs (hooks only)}`, the `tokenGuard.handoff` and `token-guard:calls` additions in `ipc/token_guard.rs`, `src/shared/ipc.ts` entries, `src/renderer/features/chat/{LongConversationChip.tsx,LongConversationBanner.tsx}` plus minimal wiring in `ComposerStatusLine.tsx`/`MessageInput.tsx`/`ChatPane.tsx`.
 
-- [ ] T011 [B] [US3] Add `token_guard/shake.rs`: after settle, if the Session's context tokens exceed 60000, send `/shake` once through `proc.request`; swallow its `command_output` frame; log result; make the next prompt await an in-flight shake with a bounded timeout; never run while a turn is active (FR-011, FR-012, FR-019); minimal Rust unit tests for the threshold and one-per-settle logic
+- [ ] T011 [B] [US3] Add `token_guard/shake.rs`: after settle, if the Session's context tokens exceed 60000, read context tokens fresh (`get_session_stats` `contextUsage`, not the possibly stale readout), send `/shake` once through `proc.request`; swallow its `command_output` frame; log result; make the next prompt await an in-flight shake with a bounded timeout; never run while a turn is active (FR-011, FR-012, FR-019); minimal Rust unit tests for the threshold and one-per-settle logic
 - [ ] T012 [B] [US3] Hook the settle points in `session/agent/frame.rs` (`session_settled`, `prompt_result` with `sessionSettled`) with a single call into `token_guard::shake` without growing `frame.rs` beyond a few lines
 - [ ] T013 [B] [US4] Add `token_guard/counter.rs`: count assistant `message_end` per Session and Conversation, reset on new Conversation, re-derive from history on open or resume, emit `token-guard:calls` (FR-013)
 - [ ] T014 [B] [US4] Add `session/agent/handoff.rs` and the `tokenGuard.handoff` channel: Idle only, request summary, await settle, `start_new_conversation`, send summary as first message, return `{ok:false, reason}` on failure leaving the old Conversation untouched (FR-015, FR-020)
@@ -44,7 +44,7 @@ Owns: `src-tauri/src/omp/token_guard/{shake.rs,counter.rs}`, `src-tauri/src/sess
 
 ## Dependencies
 
-T001 -> T002, T004, T006. T003 -> T004. T004 -> T005. T006 -> T007, T008. T009 independent of T002 to T008 but before T010. T010 -> T011 to T018 (Lane B starts after Lane A merges). T011 -> T012. T013 -> T014 -> T015, T016. T015, T016 -> T017, T018. T019 last.
+T001 -> T002, T004, T006. T003 -> T004. T004 -> T005. T006 -> T007, T008. T009 after T006 and T008 (both edit `ipc.ts`, the bridge, `check-parity.mjs` and `init-stores.ts`, so removal follows additions) and before T010. T010 -> T011 to T018 (Lane B starts after Lane A merges). T011 -> T012. T013 -> T014 -> T015, T016. T015, T016 -> T017, T018. T019 last.
 
 ## Coverage
 
