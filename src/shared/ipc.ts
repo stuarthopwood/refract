@@ -3,6 +3,8 @@
 // renderer; this is the only file that may cross that boundary (constitution V).
 
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
+import type { LowMemoryWarning } from './lowMemoryWarning';
+import type { OmpGuardNotice } from './ompGuardNotice';
 
 import type {
   ApprovalMode,
@@ -19,7 +21,7 @@ import type {
   Repository,
   RepositoryRemote,
   Session,
-  SessionReadout,
+  SessionListCollapse, SessionReadout,
   SessionStartProgress,
   SessionStatus,
   Settings,
@@ -28,17 +30,20 @@ import type {
   TranscriptDisplaySettings,
   TranscriptItem,
 } from './model';
-import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor, SupportedImageMimeType } from './frames';
+import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
 import type { ModelApi, RoleChangeSummary } from './ipc-model';
+import type { AttachmentsApi } from './ipc-attachments';
+import type { DebugApi } from './ipc-debug';
+import type { LeftoverSummary } from './ipc-sessions';
+import type { GitChangesApi } from './ipc-git-changes';
+import type { FileExplorerApi } from './ipc-file-explorer';
 import type {
-  ChangedFile,
-  FilterTab,
-  MergeMethod,
-  PullRequestDetail,
-  PullRequestSummary,
-  ReviewVerdict
+  ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
+  PullRequestStateFilter, PullRequestSummary, ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
+import type { ChatWidth } from './chatWidth';
+import type { HolidayTouches } from './holidayTouches';
 import type { UpdatesApi } from './updates';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
@@ -96,6 +101,7 @@ export type IpcErrorCode =
   | 'checkout-failed'
   | 'disabled'
   | 'session-archived'
+  | 'worktree-held'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch'; // lane R11b (#794)
 
 export interface IpcError {
@@ -117,15 +123,6 @@ export interface Check {
    * the developer without blocking them (e.g. an omp version newer than any specifically
    * verified one). Never set alongside `ok: false` -- a hard failure always blocks instead. */
   warning?: boolean;
-}
-
-/** #514/#432: `attachments.readImageFile`'s success payload -- the exact fields
- * `PendingImageAttachment` (renderer `attachments.ts`) needs to build the same thumbnail/preview
- * UI a pasted clipboard image already gets; deliberately no path or other file metadata. */
-export interface AttachmentImageFile {
-  mimeType: SupportedImageMimeType;
-  base64: string;
-  byteLength: number;
 }
 
 export interface Readiness {
@@ -158,6 +155,17 @@ export interface SessionSummary extends Session {
   /** Lane RM (#740, #741): `true` once chosen directly (picker, `/switch`, `/model`, cycle) --
    * a later Settings role change skips it. Optional: Electron never ports this family. */
   pinned?: boolean;
+  /** #766 part A: a role/model and/or reasoning change chosen while the Session was working or
+   * stopped, held in Rust and applied at the next idle (before the next prompt) or right after
+   * the agent starts. `null`/absent: nothing pending. When a role/model change is pending,
+   * exactly one of `role`/`model` is non-null (`role`: a role to apply; `model`: a concrete model
+   * to pin). `thinkingLevel` is independent of them. Refreshed through the existing
+   * `session:list-changed` push (`onSessionListChanged`, the one `pinned`/`currentRole` ride on). */
+  pendingSelection?: {
+    role: string | null;
+    model: { provider: string; modelId: string } | null;
+    thinkingLevel: string | null;
+  } | null;
   /** Lane RM (#741, #740): the role this Session is on, `null` while pinned (`ipc-model.ts`'s
    * own `ModelApi.listRoles` doc has the full reasoning). Optional, same reason as `pinned`. */
   currentRole?: string | null;
@@ -174,7 +182,7 @@ export type { DiffStat } from './model';
  * data only) and re-exported here, the same reasoning `DiffStat` above already uses, so preload
  * can import it from `../../shared/ipc` alongside every other IPC-facing type instead of a
  * second import source. */
-export type { FileTreeNode, FilePreview, GitStatusMap } from './model';
+export type { FileTreeNode, FilePreview, GitStatusMap, GitChangesSnapshot } from './model';
 
 /** The renderer-facing copy of main's in-memory SessionRuntime (data-model.md). */
 export interface SessionRuntimeView {
@@ -218,19 +226,17 @@ export interface SessionSnapshot {
   // back) shows the real current list instead of an empty one -- subsequent changes still arrive
   // via `subagents:update`, this is only the seed `sessions.open`/`recover` itself must not drop.
   subagents: SubagentSummary[];
+  advisorOn: boolean; // issue #937: initial Advisor-chip on/off state; subsequent changes via advisor:update
 }
 
 export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] };
 
 export type SlashCommand = SlashCommandDescriptor;
 
-export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true };
+export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
 
-export interface LowMemoryWarning {
-  low: boolean;
-  freeBytes: number;
-  liveAgents: number;
-}
+export type { LowMemoryWarning } from './lowMemoryWarning';
+export type { OmpGuardNotice } from './ompGuardNotice';
 
 export interface SessionStatusEvent {
   sessionId: string;
@@ -275,7 +281,7 @@ export interface PullRequestListResult {
  * `headSha` taken right before the mutation, not just whatever the in-process staleness cache
  * happens to hold (which the poll keeps re-seeding even while the dialog is open). */
 export interface SubmitReviewInput {
-  verdict: ReviewVerdict;
+  verdict: Exclude<ReviewVerdict, 'dismissed'>; // dismissed: real post-submit verdict, never submittable (#568 decision 10)
   body?: string;
   expectedHeadSha: string;
 }
@@ -287,6 +293,11 @@ export interface MergeInput {
   method: MergeMethod;
   expectedHeadSha: string;
 }
+
+/** `ipc-sessions.ts`'s own `LeftoverSummary` has the full reasoning -- split out there (issue
+ * #891) to keep this file at its own file-size baseline (issue #806), re-exported here so every
+ * existing import from `../../shared/ipc` keeps working unchanged. */
+export type { LeftoverSummary } from './ipc-sessions';
 
 // ---------------------------------------------------------------------------
 // Channel names
@@ -309,6 +320,7 @@ export const IPC_REQUESTS = {
   SESSIONS_ARCHIVE: 'sessions.archive',
   SESSIONS_RESTORE: 'sessions.restore',
   SESSIONS_DELETE_CHECK: 'sessions.deleteCheck',
+  SESSIONS_DELETE_LEFTOVER_SUMMARY: 'sessions.deleteLeftoverSummary',
   SESSIONS_DELETE: 'sessions.delete',
   SESSIONS_RECREATE_WORKTREE: 'sessions.recreateWorktree',
   SESSIONS_RECOVER: 'sessions.recover',
@@ -322,6 +334,9 @@ export const IPC_REQUESTS = {
   SESSIONS_REVEAL_WORKTREE: 'sessions.revealWorktree',
   SESSIONS_REVEAL_FILE: 'sessions.revealFile',
   ATTACHMENTS_READ_IMAGE_FILE: 'attachments.readImageFile',
+  ATTACHMENTS_READ_FILE: 'attachments.readFile',
+  ATTACHMENTS_PICK_FILES: 'attachments.pickFiles',
+  ATTACHMENTS_RECORD_DROPPED_PATHS: 'attachments.recordDroppedPaths',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
@@ -355,6 +370,15 @@ export const IPC_REQUESTS = {
   // expansion/scroll state) the moment one mounts again.
   FILE_EXPLORER_STOP_WATCHING: 'fileExplorer.stopWatching',
   FILE_EXPLORER_ENSURE_WATCHING: 'fileExplorer.ensureWatching',
+  GIT_CHANGES_LIST: 'gitChanges.list',
+  GIT_CHANGES_STAGE: 'gitChanges.stage',
+  GIT_CHANGES_UNSTAGE: 'gitChanges.unstage',
+  GIT_CHANGES_STAGE_ALL: 'gitChanges.stageAll',
+  GIT_CHANGES_UNSTAGE_ALL: 'gitChanges.unstageAll',
+  GIT_CHANGES_COMMIT: 'gitChanges.commit',
+  GIT_CHANGES_DIFF: 'gitChanges.diff',
+  GIT_CHANGES_ENSURE_WATCHING: 'gitChanges.ensureWatching',
+  GIT_CHANGES_STOP_WATCHING: 'gitChanges.stopWatching',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
@@ -363,15 +387,21 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_TRANSCRIPT_DISPLAY: 'settings.setTranscriptDisplay',
   SETTINGS_SET_SHOW_SAMPLE_DATA: 'settings.setShowSampleData',
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
+  SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR: 'settings.setShowContextUsageBar',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
+  SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
+  SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
+  SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
+  SETTINGS_SET_HOLIDAY_TOUCHES: 'settings.setHolidayTouches',
+  DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
-  // Lane RM: `model: {...}` (ipc-model.ts).
   MODEL_SET_MODEL: 'model.setModel',
   MODEL_CYCLE_MODEL: 'model.cycleModel',
   MODEL_APPLY_ROLE: 'model.applyRole',
   MODEL_LIST_ROLES: 'model.listRoles',
+  MODEL_SET_THINKING_LEVEL: 'model.setThinkingLevel',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -398,6 +428,7 @@ export const IPC_REQUESTS = {
   UPDATES_CHECK: 'updates.check',
   UPDATES_GET_STATE: 'updates.getState',
   UPDATES_INSTALL: 'updates.install',
+  UPDATES_INSTALL_NOW: 'updates.installNow',
   APP_GET_VERSION: 'app.getVersion',
 } as const;
 
@@ -412,14 +443,17 @@ export const IPC_EVENTS = {
   SETTINGS_CHANGED: 'settings:changed',
   UI_OPEN_SESSION: 'ui:open-session',
   MEMORY_WARNING: 'memory:warning',
+  OMP_GUARD_RESET: 'omp-guard:reset',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
+  ADVISOR_UPDATE: 'advisor:update',
   SUBAGENT_PATCH: 'subagent:patch',
   SIDE_CHAT_PATCH: 'side-chat:patch',
   SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
   SIDE_CHAT_CONVERSATION_CHANGED: 'side-chat:conversation-changed',
   FILE_EXPLORER_PATCH: 'file-explorer:patch',
   FILE_EXPLORER_RESET: 'file-explorer:reset',
+  GIT_CHANGES_REFRESH: 'git-changes:refresh',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
   READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
@@ -427,12 +461,9 @@ export const IPC_EVENTS = {
   UPDATES_STATE_CHANGED: 'updates:state-changed',
 } as const;
 
-/** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
- * `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync` request/response pair answered by a
- * synchronous `ipcMain.on` handler, called once from `main.tsx`'s very first lines before React
- * mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42). Kept out
- * of `IPC_REQUESTS` (every other entry there is `ipcMain.handle`/`ipcRenderer.invoke`, async) and
- * out of `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
+/** Spec 007 contracts/ipc.md "Bootstrap": the one channel that is not `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync`/`ipcMain.on`
+ * pair, called once from `main.tsx` before React mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42). Kept
+ * out of `IPC_REQUESTS` (async `invoke`/`handle` there) and `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
 export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 
 // ---------------------------------------------------------------------------
@@ -483,6 +514,11 @@ export interface RefractApi extends UpdatesApi {
     archive(id: string): Promise<Result<void>>;
     restore(id: string): Promise<Result<void>>;
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;
+    /** Issue #891: a background filesystem walk, separate from `deleteCheck`, listing generated
+     * folders and other files the delete would remove. Can take real time against a large
+     * worktree -- the Delete dialog shows "Checking files…" until it resolves and never gates
+     * Delete on it. */
+    deleteLeftoverSummary(id: string): Promise<Result<LeftoverSummary>>;
     delete(id: string, options: { confirmed: true }): Promise<Result<void>>;
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;
@@ -514,31 +550,9 @@ export interface RefractApi extends UpdatesApi {
     revealFile(sessionId: string, path: string): Promise<Result<void>>;
   };
 
-  attachments: {
-    /** #514/#432: the one shared main-process image-file reader both features use. `path` is
-     * either an absolute OS path (Explorer "Copy as path", a screenshot tool, `webUtils.
-     * getPathForFile` on a dropped `File`) or a path relative to this Session's own worktree;
-     * this is a USER-initiated read (a paste, a confirmed typed path, or a drag-drop), never
-     * agent/tool/model-authored text -- an absolute token is NOT required to stay inside the
-     * worktree (unlike `sessions.revealFile`/the file explorer), matching the trust level the
-     * existing repository folder-picker already grants a user's own absolute path choice. Rejects
-     * UNC/device paths, resolves symlinks/junctions via `realpath`, requires a regular file,
-     * identifies the type purely by its magic bytes (never the extension, FR-003's own rule),
-     * and enforces the same byte-size and pixel caps `buildImageAttachment` (renderer) checks for
-     * a pasted clipboard image -- constitution V: the renderer's own check is never trusted
-     * alone. Never returns the resolved path or any other file metadata to the renderer. */
-    readImageFile(sessionId: string, path: string): Promise<Result<AttachmentImageFile>>;
-    /** #432: the renderer-safe replacement for Electron's own `webUtils.getPathForFile`
-     * (bridged here, not imported from `electron` in a renderer file, to avoid pulling its
-     * ambient Node `setTimeout` override into the whole web program). Optional (issue #793):
-     * absent in the Tauri build -- the standard `File` API exposes no OS path, and its own
-     * `drop` DOM event never reaches the page either; `onFileDrop` below is the replacement. */
-    getPathForFile?(file: File): string;
-    /** Tauri build only (issue #793): real OS paths from Tauri's own native drag-drop handler,
-     * which swallows the HTML5 `drop` event (`dragenter`/`dragover`/`dragleave` still fire).
-     * `position` is physical pixels from the webview's top-left corner. Absent in Electron. */
-    onFileDrop?(handler: (event: { paths: string[]; position: { x: number; y: number } }) => void): Unsubscribe;
-  };
+  /** `ipc-attachments.ts`'s own `AttachmentsApi` has the full reasoning -- split out there to
+   * keep this file at its own file-size baseline (issue #806). */
+  attachments: AttachmentsApi;
 
   clipboard: {
     /** Fallback for a sandboxed renderer where `navigator.clipboard.writeText` is refused
@@ -615,79 +629,11 @@ export interface RefractApi extends UpdatesApi {
     getHistory(sessionId: string): Promise<Result<SideChatRecord[]>>;
   };
 
-  fileExplorer: {
-    /** Spec 015 contracts/ipc.md "File explorer" (FR-001, FR-004 to FR-007, T004/T005): lists
-     * one directory's immediate children only (lazy-load, FR-005 -- never recurses), folders
-     * before files then alphabetical within each group (FR-006). `relativePath` `''` lists the
-     * worktree root itself (FR-004); any other value is resolved against that Session's
-     * worktree root through `resolveInWorktree` (`src/main/ipc/files.ts`, issue #610's own
-     * already-hardened containment check, reused unchanged here rather than a second
-     * implementation) and MUST stay inside it after resolving symlinks/junctions, or the call
-     * fails `outside-worktree` rather than reading outside it. `.git` itself is never returned
-     * as an entry (FR-007). `truncated` (Slice 2, PR #671 gate round 2 fix, security-auditor/
-     * code-reviewer LOW) is the count of entries past a main-side cap on how many this one
-     * directory ever returns -- enforced in main BEFORE any per-entry symlink classification
-     * work runs, not only by the renderer's own virtualisation, so a pathologically huge
-     * directory can never force unbounded `readlink`/`stat` work; `0` means nothing was cut.
-     * No git-status/ignore filtering here (Slice 2, FR-009 to FR-011) -- that is `getStatus`
-     * below, merged in by the renderer, never part of this response. */
-    listDirectory(sessionId: string, relativePath: string): Promise<Result<{ entries: FileTreeNode[]; truncated: number }>>;
-    /** Spec 015 Slice 2 (FR-012 to FR-015, FR-002/FR-003, data-model.md `FilePreview`): reads one
-     * file's preview data. Same path-containment check and error codes as `listDirectory`
-     * (`resolveInWorktree`, reused unchanged). Binary detection is by content (a NUL byte in a
-     * capped header slice, reusing `diffStat.ts`'s own `isBinary` heuristic), never by
-     * extension; an image is detected by magic bytes, also never by extension (FR-014). A file
-     * over the preview size cap returns `kind: 'too-large'` with `size` set, never a partial
-     * read (FR-002, SC-001). */
-    readPreview(sessionId: string, relativePath: string): Promise<Result<{ preview: FilePreview }>>;
-    /** Spec 015 Slice 2 (FR-010, FR-011, data-model.md `GitStatusMap`): issues the single shared
-     * git-status/ignore reader (research.md decisions 2 and 6) once for the whole worktree; the
-     * renderer merges this into every currently-loaded node's `gitStatus` rather than calling
-     * per-path. `null` on any failure (no git repo, git unavailable, timeout) -- never thrown,
-     * mirrors `diffStat.ts`'s own never-throw-into-renderer convention; the tree still renders
-     * with no status marks in that case. Built for reuse by #464 (FR-011) -- this method's shape
-     * is intentionally generic (a full map, not scoped to the explorer's own currently-expanded
-     * paths). */
-    getStatus(sessionId: string): Promise<Result<{ status: GitStatusMap | null }>>;
-    /** Spec 015 Slice 3 (FR-016, FR-017, research.md decision 1): resolves `Code.exe` via the
-     * dedicated fixed-install-root resolver (never `resolveExecutable('code')`/`code.cmd`, never
-     * `shell: true`) and spawns it with an absolute-path args array. `{ opened: false }` when no
-     * known install root resolves -- a normal result, not an IPC error, so the renderer shows the
-     * "VS Code not found" state inline rather than a toast. No silent fallback to any other
-     * launcher. */
-    openInVSCode(sessionId: string, relativePath: string): Promise<Result<{ opened: boolean }>>;
-    /** Spec 015 Slice 3 (FR-018): reveals one file in the OS file explorer via
-     * `shell.showItemInFolder`, the exact same hardened pattern `sessions.revealFile` (issue
-     * #610) already established -- deliberately NEVER `shell.openPath`, which runs a file's own
-     * default verb (a `.cmd`/`.ps1`/`.lnk`/`.js` an agent or tool wrote would execute). */
-    reveal(sessionId: string, relativePath: string): Promise<Result<void>>;
-    /** Spec 015 Slice 3 (FR-018): writes the file's absolute path to the clipboard. The renderer
-     * tries `navigator.clipboard.writeText` itself first (`useWorktreeActions.ts`'s own
-     * fallback pattern) and only calls this when the sandboxed renderer refuses it. Error
-     * `clipboard-failed` on a main-process clipboard write failure. */
-    copyPath(sessionId: string, relativePath: string): Promise<Result<void>>;
-    /** PR #671 gate round 7 fix (Sec7/Code7/A11y7/Verif7): the recursive watcher `ensureWatcher`
-     * (`src/main/ipc/fileExplorer.ts`) opens an OS directory handle that blocks
-     * rename/move of every ancestor of the worktree root for as long as it runs. Stops the
-     * watcher for this Session outright -- call `ensureWatching` to resume it. The renderer
-     * calls this when the LAST open `FileExplorerPanel` for a Session unmounts (ref-counted per
-     * `sessionId` -- round 9 correction: today this is exactly one mounted instance per
-     * Session, `App.tsx` renders only one `RightPaneShell`; the ref-count exists for React
-     * StrictMode's own dev-time double mount/unmount/remount, not a real multi-instance case).
-     * A no-op (never errors) if nothing is currently watching this Session. */
-    stopWatching(sessionId: string): Promise<Result<void>>;
-    /** Counterpart to `stopWatching`. Round 9 correction (Sec9/Code9/Verif9 Medium): this used
-     * to say "restarts the watch handle WITHOUT re-listing any directory" -- round 8 changed
-     * that: when a watch handle actually (re)starts, every directory the renderer still has
-     * loaded is re-flushed through the existing bounded/deduped patch queue, so changes made
-     * while unwatched (including a previewed file's own deletion, FR-021) are caught up via an
-     * ordinary patch, not a reset. The renderer's own cached expansion/scroll state (FR-025)
-     * survives untouched either way. A no-op if the Session is archived or already being
-     * watched; if the worktree folder does not currently resolve AND this Session had cached
-     * state from before, a one-shot reset is sent instead of leaving a stale tree marked ready
-     * with nothing watching under it. */
-    ensureWatching(sessionId: string): Promise<Result<void>>;
-  };
+  /** `ipc-file-explorer.ts`'s own `FileExplorerApi` has the full reasoning -- split out there to
+   * keep this file at its own file-size baseline (issue #806). */
+  fileExplorer: FileExplorerApi;
+
+  gitChanges: GitChangesApi;
 
   settings: {
     get(): Promise<Result<Settings>>;
@@ -705,13 +651,9 @@ export interface RefractApi extends UpdatesApi {
      * `setSplit`. Pushes `settings:changed`, no new event. */
     setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
     /** Issue #457, quality-gate remediation (HIGH): takes ONE field at a time (not the whole
-     * `TranscriptDisplaySettings` object -- a quick second toggle sent with the renderer's
-     * stale pre-write value of the first field could otherwise revert it), merged in main
-     * against the persisted row, the same per-field pattern `setReadoutVisibility` already
-     * uses. Returns this call's own written value, the same race-safety pattern as every other
-     * setter here. Pushes `settings:changed`, no new event. Hiding is a renderer-side view
-     * filter only -- hidden items stay in the persisted Conversation.
-     */
+     * `TranscriptDisplaySettings` object -- a stale second toggle could otherwise revert the
+     * first), merged in main against the persisted row. Pushes `settings:changed`; hiding is a
+     * renderer-side view filter only -- hidden items stay in the persisted Conversation. */
     setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<Result<Settings>>;
     /** Spec 013 FR-020 to FR-022 (contracts/ipc.md): persists the whole `Settings` row and
      * returns this call's own written value, the same race-safety pattern as
@@ -722,8 +664,18 @@ export interface RefractApi extends UpdatesApi {
      * `settings:changed`; turns OFF path-based image-attach detection on paste entirely when
      * `false` (pasting a clipboard image directly is never affected). */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
+    setShowContextUsageBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1082 (spec 004 FR-034).
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
+    setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
+    setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
+    setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
+    setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
   };
+
+  /** Issue #1048 (R-lane live-check harness): debug-build-only knobs (`ipc-debug.ts`'s own
+   * `DebugApi` has the full reasoning) -- split out there to keep this file at its own
+   * file-size baseline (issue #806). */
+  debug: DebugApi;
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,
    * never a file Refract edits itself -- always OMP's GLOBAL config.yml, never a project override. */
@@ -758,9 +710,9 @@ export interface RefractApi extends UpdatesApi {
     listCatalog(kind: CatalogKind): Promise<Result<ModelCatalogEntry[]>>;
   };
 
-  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s
-   * own `ModelApi` has the full reasoning); optional (Electron never ports this family). */
-  model?: ModelApi;
+  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s own
+   * `ModelApi` has the full reasoning); non-optional since Electron is gone (R13, gate round 1). */
+  model: ModelApi;
 
   window: {
     /** Pops open one of the in-app menu bar's real submenus (spec 001 T100, FR-057) at `x`/`y`,
@@ -774,8 +726,8 @@ export interface RefractApi extends UpdatesApi {
   // only surface pull-request data crosses the renderer/main boundary through.
   pullRequests: {
     /** FR-001 to FR-006: called on open and on every explicit refresh, never polled automatically
-     * (FR-028). `query` is the FR-004 narrowing filter. */
-    list(repositoryId: string, tab: FilterTab, query?: string): Promise<Result<PullRequestListResult>>;
+     * (FR-028). `state` is issue #499's State control; `query` is the FR-004 narrowing filter. */
+    list(repositoryId: string, tab: FilterTab, state: PullRequestStateFilter, query?: string): Promise<Result<PullRequestListResult>>;
     /** FR-007 to FR-011: called on open and again by the renderer's own polling loop while
      * `checkState === 'pending'` (FR-010); each call refreshes the main-process staleness cache. */
     detail(repositoryId: string, number: number): Promise<Result<PullRequestDetail>>;
@@ -854,8 +806,10 @@ export interface RefractApi extends UpdatesApi {
   onSettingsChanged(handler: (payload: Settings) => void): Unsubscribe;
   onUiOpenSession(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
+  onOmpGuardReset(handler: (payload: OmpGuardNotice) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
+  onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
   onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void): Unsubscribe;
   /** Gate-fix (round 4, Sec4 Medium): fired whenever the Session's agent process exits, even an
@@ -889,6 +843,7 @@ export interface RefractApi extends UpdatesApi {
    * watcher is re-established on the next `listDirectory('')` -- without this the panel keeps
    * showing a stale tree forever with no watcher running underneath it. */
   onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
+  onGitChangesRefresh(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }

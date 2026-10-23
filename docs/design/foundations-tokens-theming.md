@@ -34,6 +34,44 @@ Markdown rendering is the working default component-token group under this model
 
 `--agent-spinner-core` (`AgentSpinner.tsx`, `src/renderer/components/brand/AgentSpinner.tsx`) is this model's first actually-shipped layer-3 component token (the markdown tokens above are still the working default, not yet built) -- declared once per theme block (`.theme-dark`, `.theme-obsidian`, `.theme-dark-high-contrast` in `globals.css`), defaulting to the same brand violet in every theme today (Stuart, 2026-10-09: "same brand violet in every theme for now"; `#9A68E4` since round 5's A11y remediation -- the original `#864DD6` failed 3:1 against `--sidebar-accent`, the selected/hovered session row where the icon is the only visible status cue, in all three themes). A custom theme file (#458) may override it per-theme once theme-file loading is built, exactly as the three-layer model intends. The component's own `palette` prop/`data-palette` attribute offers two further, deliberately NON-theme-derived overrides (`'export'`, `'blue'`) for Stuart to compare visually -- these are fixed per-instance values, not theme tokens, and win over the inherited theme value because they are declared directly on the `.agent-spinner` element itself. Checked against `--sidebar`, `--sidebar-accent`, `--card`, `--popover` and `--background` (every surface the mark renders on) by `scripts/check-theme-contrast.mjs`'s `PAIRS` list, >=3:1 non-text floor, in every theme.
 
+### Diff-stat colour tokens (issue #925)
+
+`--diff-added`/`--diff-removed` (`globals.css`, every built-in theme) are layer-3 component
+tokens for the coloured `+N`/`-N` portion of a change-count stat, wherever one shows (the
+composer status line's Changes readout, the Session details card's identical diff line, the
+Pull requests Changes tab's aggregate line and per-file diff header, and the chat transcript's
+own expanded `DiffView` header): aliases of the SAME `--state-working`/`--destructive` values
+`DiffView.tsx`/`diff-view.css` already colour the diff gutter and its own line markers with
+(issue #630), never a second, independently-tunable hue (this page's own "do not create a
+second set" rule, #550). A count takes its colour only when strictly positive; a count of
+exactly zero stays `--muted-foreground` in either direction, so a `-0` never reads as an error
+-- the shared `DiffStatCounts` component (`sessionDisplay.tsx`) is the one place this rule is
+implemented.
+
+### Agent-message token (issue #838)
+
+`--agent-message` (`globals.css`, every built-in theme; `oklch(0.78 0.12 295)`, raised to
+`oklch(0.85 0.1 295)` in Dark (high contrast)) colours the glyph and the "<sender> to
+<recipient>" label of an agent-to-agent line (`AgentMessageRow.tsx`), never its preview or
+expanded text, and nothing else. Checked at 4.5:1 against `--background` and `--muted` (the
+row's hover) in every theme by `scripts/theme-contrast-pairs.mjs`. It shares the violet family
+with the brand spinner's `--agent-spinner-core` (a brand mark, not a meaning colour, and never
+drawn on a chat line), so the two cannot be confused in context.
+
+### Reserved hues
+
+Each categorical colour that carries meaning, so a new one is checked against the others first.
+
+| Hue | Meaning | Tokens |
+|---|---|---|
+| Green | Working, success, added lines | `--state-working`, `--severity-success`, `--diff-added` |
+| Amber | Needs you, warning | `--state-needs-you`, `--severity-warning` |
+| Red | Stopped, error, deleted lines | `--state-stopped`, `--severity-error`, `--destructive`, `--diff-removed` |
+| Blue | Info, unread response | `--severity-info`, `--state-unread-response` |
+| Grey | Idle, neutral, done tool calls | `--state-idle`, `--muted-foreground` |
+| Violet | Agent-to-agent message identity (#838); the brand spinner (a brand mark) | `--agent-message`, `--agent-spinner-core` |
+| Per-theme accent | Links and primary fills, never a state | `--accent-text`, `--primary` |
+
 ## Theme files
 
 A theme is a data file (JSON) of palette, semantic-role, and component-token overrides, loaded from the user's profile folder and listed in the Appearance section of Settings beside the built-in presets (agenda item 9, #458).
@@ -47,14 +85,14 @@ A theme is a data file (JSON) of palette, semantic-role, and component-token ove
 
 ## Surface ladder and edge classes
 
-**Built** (#550, PR #596; #606 wires the divider token into four component call sites). Depth comes from a ladder of surfaces, not elevation or shadow (agenda item 9, #550, mock review #549): **background**, then **surface-1** (aliased to `--card`), **surface-2** (aliased to `--popover`), **surface-3** (the "neutral highlight" hover/selected fill, `--surface-hover`), each a step lighter, so nesting is shown by tone, not borders. Measured steps above each preset's own canvas (CIE L*, a roughly perceptual scale): **Obsidian** -- card +7.10, popover +11.49, sidebar +2.65. **Dark** -- card +5.03, sidebar +5.03 (same value as card). **Dark (high contrast)** -- card +2.48, sidebar +0.90, both below the roughly-5-L* step the other two presets use; its own stricter-floor redesign (soft dividers switched off, every edge/text at a tighter floor) stays deferred to #552, same as everywhere else in this story -- its ladder is additive-only (new token names alias existing, unchanged values), not retuned to match the other two presets' step size.
+**Built** (#550, PR #596; #551, draft PR #973; #606 wires the divider token into four component call sites). Depth comes from a ladder of surfaces, not elevation or shadow (agenda item 9, #550, mock review #549): **background**, then **surface-1** (aliased to `--card`), **surface-2** (aliased to `--popover`), **surface-3** (the "neutral highlight" hover/selected fill, `--surface-hover`), each a step lighter, so nesting is shown by tone, not borders. Measured steps above each preset's own canvas (CIE L*, a roughly perceptual scale): **Obsidian** -- card +7.10, popover +11.49, sidebar +2.65. **Dark** -- card +5.03, sidebar +5.03 (same value as card). **Nordic Frost** (#551) -- card +5.27, popover +11.12, sidebar +2.87. **Cyber Amber** (#1039, amended 2026-10-20) -- card +5.00, popover +5.00, sidebar +5.00 -- byte-identical to Dark's own ladder: Stuart's 2026-10-20 amendment removed the first #1039 cut's barely-visible warm tint (chroma 0.005) from every surface token (`--background`/`--card`/`--popover`/`--sidebar`/`--surface-3`/`--border`), so these are now PURE neutral (chroma 0), literally the same hex as `.theme-dark`'s own tokens. `--foreground`/`--chat-foreground`/`--muted-foreground` were also retuned softer as part of #1039 for a time, then that text-softening was reverted entirely (Stuart, 2026-10-20): it moved to a separate, app-wide issue, so these text tokens are simply untouched by #1039, byte-identical to Dark's own CURRENT `origin/main` values (as they already were before #1039). Only the accent family, the warning hue, and `themes.ts`'s own `swatchPrimary` remain Cyber-Amber-specific. **Dark (high contrast)** -- card +2.48, sidebar +0.90, both below the roughly-5-L* step the other presets use; its own stricter-floor redesign (soft dividers switched off, every edge/text at a tighter floor) stays deferred to #552, same as everywhere else in this story -- its ladder is additive-only (new token names alias existing, unchanged values), not retuned to match the other presets' step size. **Landed (#1074, Stuart 2026-10-20, FR-023):** that separate, app-wide issue is #1074 -- `--foreground`/`--chat-foreground`/`--muted-foreground` move to white at 90%/78%/60% alpha respectively, each composited over the surface it actually sits on, in Dark, Obsidian, Nordic Frost and Cyber Amber; Dark (high contrast) stays solid. A foreground on a coloured, non-neutral fill (Send, destructive, state/PR-state, and the composer's own selection-highlight text) stays a solid, opaque literal, FR-023's own "stays solid" exception. `scripts/check-theme-contrast.mjs`: 887/887 pairs across 5 themes PASS; live-verified (`scripts/verify-1074-text-opacity.mjs`, draft PR #1104).
 
 Edges split into two classes, and a theme can only change token values, never which class a given edge belongs to:
 
 | Edge class | Minimum contrast | Used for |
 | --- | --- | --- |
-| Control edges | At least 3:1 against what's behind them (WCAG 1.4.11) | Inputs, outline buttons, toggles, focus rings. `--border`/`--border-strong` in every theme (Dark/HC keep their existing `--border` unchanged; Obsidian's is retuned strong, `#6F7C9D`; `--border-strong` is a plain alias of `--border` everywhere). |
-| Decorative dividers | No contrast requirement ("soft"), carry no meaning | Between panes, rows, headers, sections. A separate `--divider` token, never `--border` weakened (Dark `oklch(1 0 0 / 16%)`, Obsidian `#2E3342`, HC aliases `--border`). |
+| Control edges | At least 3:1 against what's behind them (WCAG 1.4.11) | Inputs, outline buttons, toggles, focus rings. `--border`/`--border-strong` in every theme (Dark/HC keep their existing `--border` unchanged; Obsidian's is retuned strong, `#6F7C9D`; Nordic Frost `#79818c`, Cyber Amber `oklch(0.56 0 0)` (#1039, amended 2026-10-20: byte-identical to Dark's own `--border`, `#747474` -- no warm tint, was `oklch(0.56 0.005 50)`/`#887e78` under the first #1039 cut and under #551); `--border-strong` is a plain alias of `--border` everywhere). |
+| Decorative dividers | No contrast requirement ("soft"), carry no meaning | Between panes, rows, headers, sections. A separate `--divider` token, never `--border` weakened (Dark `oklch(1 0 0 / 16%)`, Obsidian `#2E3342`, Nordic Frost `oklch(1 0 0 / 14%)`, Cyber Amber `oklch(1 0 0 / 16%)` (#1039, matching Dark's own value since Cyber Amber's surfaces follow Dark's own ladder exactly), HC aliases `--border`). |
 
 `scripts/check-theme-contrast.mjs` resolves `var()` indirection and treats `--divider` pairs as informational only (the high-contrast-specific stricter floor stays deferred to #552); `--border`/`--border-strong` are checked as real control-edge pairs in every theme. #606 wires `--divider` (via the `border-divider`/`bg-divider` utilities) into the main-split resize handle, the Pull requests list/detail divider, the status bar's top border, and the composer's top border. It also removed the bottom border outright from `ChatHeader.tsx`, `SessionList.tsx`'s own header, and `SubagentPanel.tsx`'s header -- **accepted by Stuart, 2026-10-09, as the correct rule, not a gap**: a panel header is never separated from its own content by a divider line, only by a different surface shade and/or whitespace (see "Panel header" in [components.md](components.md#panel-header)). `PullRequestsView.tsx`'s own header still carries its original full-strength `border-border` today, which does not follow this rule -- an inconsistency left for the #579 sweep to fix, not a second accepted pattern.
 
@@ -69,7 +107,7 @@ Today tooltips and menus already share the elevated `--popover` surface and a bo
 
 ## Accent and primary fill colour
 
-**Decided (Stuart, 2026-10-09): the focus ring stays achromatic, not a gap.** Indigo family: the filled commit button and the accent role both use the mock's indigo (agenda item 9, #549, #550 mock review, PR #596). Accent covers **fills** (the commit button, the accent role) and **text/links** (via the new `--accent-text` token); the **focus ring is a decided exception**: `--ring` stays achromatic grey in every preset including the new Obsidian (`oklch(0.62 0 0)`, only brightened from Dark/HC's shared `oklch(0.556 0 0)`, never retuned to indigo), matching Dark/HC's existing grey focus rings. This corrects this page's own earlier wording, which said accent is used "as text, links, AND focus"; that third use is now ruled out by decision, not left as a declared gap on PR #596 awaiting Stuart. Contrast is unaffected by the ring staying achromatic: `scripts/check-theme-contrast.mjs`'s `ring`/`background`, `ring`/`popover` and `ring`/`muted` pairs (the 3:1 WCAG 1.4.11 non-text floor) already pass for the grey ring in every theme, since the floor only requires sufficient tonal separation from the surface, not a particular hue.
+**Decided (Stuart, 2026-10-09): the focus ring stays achromatic, not a gap.** Indigo family: the filled commit button and the accent role both use the mock's indigo (agenda item 9, #549, #550 mock review, PR #596). Accent covers **fills** (the commit button, the accent role) and **text/links** (via the new `--accent-text` token); the **focus ring is a decided exception**: `--ring` stays achromatic grey in every preset including the new Obsidian (`oklch(0.62 0 0)`, only brightened from Dark/HC's shared `oklch(0.556 0 0)`, never retuned to indigo), matching Dark/HC's existing grey focus rings. This corrects this page's own earlier wording, which said accent is used "as text, links, AND focus"; that third use is now ruled out by decision, not left as a declared gap on PR #596 awaiting Stuart. Contrast is unaffected by the ring staying achromatic: `scripts/check-theme-contrast.mjs`'s `ring`/`background`, `ring`/`popover` and `ring`/`muted` pairs (the 3:1 WCAG 1.4.11 non-text floor) already pass for the grey ring in every theme, since the floor only requires sufficient tonal separation from the surface, not a particular hue. **Nordic Frost and Cyber Amber (#551) are the exception to the indigo family itself, not to the achromatic-ring rule above (both still keep a grey `--ring`):** each is additive, built with its own distinct per-preset accent hue instead of a second indigo value, matching the mock's own per-theme signature -- Nordic Frost's `--accent-text`/`--primary` are a cyan (`#1ad1d1`/`#007a7c`, real hue ~195, the mock's "arctic" identity); Cyber Amber's were originally a warm orange-amber (`#fcae93`/`#c14100`, the mock's "phosphor amber" identity), **retuned by #1039 (2026-10-19) to a vivid orange: `--accent-text` `#fb923c` (real hue ~55.9), `--primary`/`--send` `#c2410c` (real hue ~38.4) with white text** -- see `globals.css`'s own `.theme-cyber-amber` header comment for the full #1039 rationale.
 
 **Chosen values** (measured unrounded, WCAG relative luminance; corrects an earlier draft of this same agenda item that quoted 4.5:1 and 4.3:1):
 
@@ -85,7 +123,7 @@ This settles #550's own open values; the two candidates this page did not choose
 - **Dark** keeps today's unretuned `--background`, `oklch(0.145 0 0)` ≈ `#0a0a0a`, darker than Obsidian's `#0F1014`, as the default. The 2026-10-07 retune to about `#1a1a1a` to `#1e1e1e` (#452) is explicitly deferred, not folded into this story: PR #596's own remediation made Dark and Dark (high contrast) additive-only specifically so nothing already rendering on `origin/main` could regress, and a canvas retune would have been exactly that kind of change.
 - A new built-in **Obsidian** preset uses the mock's `#0F1014` canvas, built out in full since nothing existing renders with it yet: `--border` retuned strong (`#6F7C9D`), `--accent-text` (`#8588F4`) and `--severity-error` widened with margin against `--popover`.
 - Both pass the contrast script (283 of 283 pairs across 3 themes), and Dark is the settled default (Q14); Stuart can compare the two live and revisit the retune later.
-- The composer stays strictly darker than the page background on either canvas (Obsidian's `--composer-background` is `#08090C`, near black) -- the existing "Composer tone" rule ([product-chat.md](product-chat.md)) holds unchanged on the new preset, rather than being a new rule.
+- ~~The composer stays strictly darker than the page background on either canvas~~ **Superseded 2026-10-16 (#927):** on both canvases the composer's fill is transparent with a faint `--composer-border`; only Dark (high contrast) keeps a 3:1 composer edge. See "Composer tone" in [product-chat.md](product-chat.md).
 - Indigo text needs its own lighter accent token on either canvas: Dark's new `--accent-text` is `#7375F2` (5.24:1 against `--background`, 4.74:1 against `--card`/`--popover`), measured against TODAY's unretuned background, not the still-deferred #452 retune; Obsidian's is `#8588F4` (6.18:1 / 5.35:1 / 4.78:1 against background/surface-1/surface-2).
 
 This resolves the canvas call left open in plan row B6: both presets exist, but the #452 Dark retune this page originally expected "once built" is a separate, still-open piece of work -- not a deviation from this decision, since #549/#550's own canvas-colour call only required both to ship as presets with Dark as default, which is what landed.
@@ -99,7 +137,7 @@ Dark (high contrast) keeps all state and severity colours and glyphs, but raises
 - A thicker **2px** focus ring.
 - No tone-only depth between surfaces: borders carry the depth instead.
 
-Same components and rules as every other preset; only token values change, so high contrast stays a theme file rather than a separate code path. The Terminal Monochrome treatment (glyph-first, minimal hue), a #552 proposal that was never built, is **not adopted**; #552 can close once this is written into the design document, which this page does.
+Same components and rules as every other preset; only token values change, so high contrast stays a theme file rather than a separate code path. The Terminal Monochrome treatment (glyph-first, minimal hue), a #552 proposal that was never built, is **not adopted** -- written into the design document, answering that open question. **#552 stays open**: this decision's full value list (every edge and divider at 4.5:1, the wider ring) is not built yet, only the red (severity/stopped/PR-closed, gate round 1, now at 7:1 -- see [accessibility.md](accessibility.md) "High contrast theme").
 
 ## Open
 

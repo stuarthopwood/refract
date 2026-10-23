@@ -1,6 +1,6 @@
 import * as React from "react"
 import { CheckIcon, CopyIcon } from "lucide-react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useClearedAnnouncement } from "@/lib/use-cleared-announcement"

@@ -15,8 +15,7 @@
 // already use (`probe-fake`/`probe-fake-model`, `baseUrl: http://127.0.0.1:1`).
 //
 // Usage: node scripts/verify-rm-live-check.mjs (requires CARGO_TARGET_DIR set to the shared
-// build cache, or a prior `pnpm tauri build --debug --no-bundle` under `src-tauri/target`; no
-// machine-specific fallback path is hardcoded).
+// build cache; issue #946, no worktree-local src-tauri/target fallback).
 
 import { mkdirSync, existsSync, copyFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -24,11 +23,12 @@ import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { waitForCdpTarget, CdpSession, launchViaJobObject, stopLauncher } from './verify-tauri-cdp.mjs';
+import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const PORT = 9381;
 const CONFIG_DIR_NAME = process.env.PI_CONFIG_DIR || '.omp';
 
@@ -117,7 +117,7 @@ async function main() {
   const exeSrc = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
   if (!existsSync(exeSrc)) {
     throw new Error(
-      `built exe not found at ${exeSrc} (CARGO_TARGET_DIR=${CARGO_TARGET_DIR ?? '(unset)'}) -- run ` +
+      `built exe not found at ${exeSrc} (CARGO_TARGET_DIR=${process.env.CARGO_TARGET_DIR}) -- run ` +
         `CARGO_TARGET_DIR=<shared dir> CARGO_INCREMENTAL=0 pnpm tauri build --debug --no-bundle first`,
     );
   }

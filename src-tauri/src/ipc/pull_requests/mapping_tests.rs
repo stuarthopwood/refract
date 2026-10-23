@@ -46,6 +46,17 @@ fn map_pull_request_state_maps_draft_open_closed_merged() {
         map_pull_request_state("MERGED", false),
         PullRequestState::Merged
     ));
+    // Gate round 1 fix (#568 decision 6): a draft that was closed without being marked ready
+    // still carries `isDraft: true` on GitHub's own search surface, so `is_draft` alone must
+    // not override a non-OPEN state.
+    assert!(matches!(
+        map_pull_request_state("CLOSED", true),
+        PullRequestState::Closed
+    ));
+    assert!(matches!(
+        map_pull_request_state("MERGED", true),
+        PullRequestState::Merged
+    ));
 }
 
 fn check_run(status: Option<&str>, conclusion: Option<&str>, state: Option<&str>) -> GhCheckRun {
@@ -180,6 +191,14 @@ fn map_review_verdict_covers_none_and_every_submitted_state() {
         map_review_verdict(Some("COMMENTED")),
         Some(ReviewVerdict::Comment)
     );
+    // Gate round 2 fix (#568 decision 10 amendment): DISMISSED is a real, submitted review
+    // state, not a not-yet-submitted one like PENDING -- it keeps its own place in the
+    // Overview timeline with its own verdict.
+    assert_eq!(
+        map_review_verdict(Some("DISMISSED")),
+        Some(ReviewVerdict::Dismissed)
+    );
+    assert_eq!(map_review_verdict(Some("PENDING")), None);
 }
 
 /// `GhPrViewDetail` has no `Default`; this fills every field with a plausible value so each test

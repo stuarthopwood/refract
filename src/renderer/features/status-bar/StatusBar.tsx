@@ -1,41 +1,19 @@
-// Status bar (docs/DESIGN.md "Layout"): the T039 low-memory notice (contracts/ipc.md
-// `memory:warning`, FR-037) and the omp-version notice (readiness.ts, health-store.ts) are the
-// two always-visible controls here. The Approval mode switch this bar used to carry (T033)
-// moved to the ApprovalModePill above the message box (MessageInput.tsx, T098, FR-056):
-// Refract's Approval mode control lives there now, not here.
+// Status bar (docs/DESIGN.md "Layout"): the update-availability badge is the one always-visible
+// control left here. The Approval mode switch this bar used to carry (T033) moved to the
+// ApprovalModePill above the message box (MessageInput.tsx, T098, FR-056); the low-memory and
+// unverified-omp-version notices (issue #560, spec 001 FR-037/FR-072) moved to the quiet alert
+// rows directly under the profile item (ProfileAlertRows.tsx), replacing this footer's own
+// Popovers for both.
 import { useState } from 'react'
 import { AlertTriangleIcon, DownloadIcon } from 'lucide-react'
 import { badgeVariants } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { notify, useHealthStore, useMemoryStore, useSessionsStore, useUpdateStore } from '@/state'
+import { updateUnavailableReasonText } from '@/lib/updateStatus'
+import { notify, useUpdateStore } from '@/state'
+import { useUpdateNow } from '@/features/updates/useUpdateNow'
 import type { UpdateState } from '../../../shared/updates'
-
-function pluralAgents(count: number): string {
-  return `${count} agent${count === 1 ? '' : 's'} running`
-}
-
-/** FR-017/data-model.md "unavailableReason": `checker.rs`'s `Outcome::Unavailable` always
- * commits this alongside `phase: 'idle'`, never `'failed'` -- a GitHub-unreachable check is
- * "nothing new to report", not a failure, so it renders as its own idle-with-a-note badge below,
- * separate from the `'failed'` one. Plain-words explanation, never the raw enum value, matching
- * the Electron reference's `updateStatusText` (src/renderer/lib/updateActions.ts on
- * `origin/spec-006-impl`, mined/unfinished). */
-function updateUnavailableReasonText(reason: NonNullable<UpdateState['unavailableReason']>): string {
-  switch (reason) {
-    case 'not-installed':
-      return 'GitHub CLI is not installed.'
-    case 'not-signed-in':
-      // Gate finding (round 3, Medium): matches `readiness.rs`'s own `check_github_cli` hint --
-      // a portable-zip `gh` install may not be the `gh` a user's own terminal resolves, so
-      // "Run gh auth login" could sign a different `gh` in, or find no terminal at all. Refract's
-      // own sign-in flow (Manage accounts' "Sign in to GitHub…") always drives this exact binary.
-      return 'GitHub CLI is not signed in. Sign in via Manage accounts.'
-    case 'offline':
-      return 'Could not reach GitHub.'
-  }
-}
 
 /** Gate finding (round 2, Medium): the footer's own badge TEXT must stay short -- `lastError`
  * can be an arbitrary, sometimes-long capped string (a process failure detail); the full text
@@ -44,23 +22,17 @@ function updateBadgeShortLabel(state: UpdateState, unavailable: boolean): string
   if (state.phase === 'failed') return 'Update failed'
   if (unavailable) return 'Update check unavailable'
   if (state.phase === 'downloading') return 'Downloading update'
-  if (state.phase === 'downloaded') return 'Update ready: installs on quit'
+  if (state.phase === 'downloaded') return 'Update ready'
   return `Update available: v${state.availableVersion}`
 }
 
 export function StatusBar() {
-  const warning = useMemoryStore((state) => state.warning)
-  const ompVersionWarning = useHealthStore((state) => state.ompVersionWarning)
-  const sessions = useSessionsStore((state) => state.sessions)
-  const stopAgent = useSessionsStore((state) => state.stopAgent)
   const updateState = useUpdateStore((state) => state.state)
-  const [memoryOpen, setMemoryOpen] = useState(false)
-  const [ompOpen, setOmpOpen] = useState(false)
   const [updateOpen, setUpdateOpen] = useState(false)
+  const { requestUpdateNow, confirmDialog } = useUpdateNow(() => undefined)
   // Shared by the Download button (available phase) and the Retry button (failed phase) --
   // mutually exclusive phases, so one busy flag never collides between the two actions.
   const [actionBusy, setActionBusy] = useState(false)
-  const liveSessions = sessions.filter((session) => session.status !== 'stopped')
   // FR-017: the one other reachable "something's off" update state besides `'failed'` --
   // see `updateUnavailableReasonText`'s own doc comment for why this is `'idle'`, not `'failed'`.
   const updateUnavailable = updateState?.phase === 'idle' && updateState.unavailableReason !== undefined
@@ -69,62 +41,6 @@ export function StatusBar() {
   return (
     <footer className="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-divider bg-card px-3 text-xs text-muted-foreground">
       <div className="flex items-center gap-2">
-        {warning && (
-          <Popover open={memoryOpen} onOpenChange={setMemoryOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  badgeVariants({ variant: 'outline' }),
-                  'h-6 gap-1.5 border-state-needs-you/50 bg-state-needs-you/10 px-2.5 text-state-needs-you hover:bg-state-needs-you/20'
-                )}
-              >
-                <AlertTriangleIcon aria-hidden className="size-3" />
-                Low memory: {pluralAgents(warning.liveAgents)}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end">
-              <p className="font-medium text-foreground">Free up memory</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Refract never stops an agent on its own. Stop one below to free memory.
-              </p>
-              {liveSessions.length === 0 ? (
-                <p className="mt-3 text-xs text-muted-foreground">No running agents.</p>
-              ) : (
-                <ul className="mt-3 flex flex-col gap-1">
-                  {liveSessions.map((session) => (
-                    <li key={session.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate text-foreground">{session.name}</span>
-                      <Button size="xs" variant="outline" onClick={() => void stopAgent(session.id)}>
-                        Stop agent
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </PopoverContent>
-          </Popover>
-        )}
-        {ompVersionWarning && (
-          <Popover open={ompOpen} onOpenChange={setOmpOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  badgeVariants({ variant: 'outline' }),
-                  'h-6 gap-1.5 border-state-needs-you/50 bg-state-needs-you/10 px-2.5 text-state-needs-you hover:bg-state-needs-you/20'
-                )}
-              >
-                <AlertTriangleIcon aria-hidden className="size-3" />
-                omp {ompVersionWarning.found}: unverified version
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end">
-              <p className="font-medium text-foreground">Unverified omp version</p>
-              <p className="mt-1 text-xs text-muted-foreground">{ompVersionWarning.hint}</p>
-            </PopoverContent>
-          </Popover>
-        )}
         {updateState &&
           (updateState.phase === 'available' ||
             updateState.phase === 'downloading' ||
@@ -168,12 +84,24 @@ export function StatusBar() {
                     : updateUnavailable
                       ? updateUnavailableReasonText(updateState.unavailableReason!)
                       : updateState.phase === 'downloaded'
-                        ? 'Installs automatically the next time you quit Refract; a running agent is never interrupted.'
+                        ? 'Restart now to install it, or it installs automatically the next time you quit Refract.'
                         : updateState.phase === 'downloading'
-                          ? 'Downloading the update now; it installs the next time you quit, never interrupting a running agent.'
-                          : 'Downloads and verifies the installer now; it installs the next time you quit, never interrupting a running agent.'}
+                          ? 'Downloading the update now; it installs the next time you quit.'
+                          : 'Refract downloads and verifies the installer in the background.'}
                 </p>
                 <div className="mt-3 flex items-center gap-2">
+                  {updateState.phase === 'downloaded' && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => {
+                        setUpdateOpen(false)
+                        requestUpdateNow()
+                      }}
+                    >
+                      Update now
+                    </Button>
+                  )}
                   {updateState.phase === 'available' && (
                     <Button
                       size="xs"
@@ -220,6 +148,7 @@ export function StatusBar() {
               </PopoverContent>
             </Popover>
           )}
+        {confirmDialog}
       </div>
     </footer>
   )

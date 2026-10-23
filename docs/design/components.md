@@ -2,6 +2,12 @@
 
 This page covers the shared UI primitives: button, menus, tooltip, tabs and the right pane, cards and boxes, chips and pills, list rows, dialogs, toasts and notices, empty states, and the panel header. Decided by Stuart in the #474 grill, 2026-10-08, unless a rule says otherwise.
 
+## Reusable components first
+
+**Rule (Stuart, 2026-10-15, #934, ADR 0003):** "All UI elements should be re-usable components, enhanced when use cases add complexity." Every control a screen shows comes from a shared component in `src/renderer/components/`: a primitive in `components/ui/`, or a composed component that owns one recurring pattern (a screen header, a list toolbar, a search field, a session row). A new use case extends the shared component with a prop or slot; it never copies the markup into a feature folder or restyles a primitive in place (the hand-made selected class on Manage sessions' archive filter is the example that prompted the rule). The rule covers new UI and any UI a change touches; existing one-offs are inventoried in #935 and fixed one group per PR. Reviewers block a new one-off where a shared component exists or should exist.
+
+First shared components decided (#934, names are proposals): **ScreenHeader** (back button, heading, plain-text count, trailing actions), **ListToolbar** (Filter tabs, selects, SearchField, "Showing X of Y"), **SearchField** (leading magnifier, "Filter <things>…", Esc clears, a clear button once there is text -- **built** by issue #559 as `src/renderer/components/SearchField.tsx`, first used by the session list's own search; #934 adopts or extends it for Manage sessions rather than forking it), and one **Session row** shared by the Session list and Manage sessions. Toolbar controls are 32 px, including the Filter tabs strip.
+
 ## Button
 
 Button hierarchy settles which `Button` variant (`src/renderer/components/ui/button.tsx`) means what, where each is allowed, and sizes (agenda item 4).
@@ -12,9 +18,14 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | `default` (filled) | The single commit action in a dialog or form, and in first run (Add repository, Create, Save). One filled button per surface. |
 | `ghost` | Icon-only toolbar and row actions. |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
+| `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `secondary`, `link` | Not part of the design system. |
 
+**Composer exception (2026-10-15, issue #564, gate round 1 fix):** the message box's Stop and Send sit side by side and are BOTH filled at once while a turn runs -- the one documented exception to "one filled button per surface" above, since the two fills are visually distinct colours conveying different intents (stop vs. send), not a duplicated weight. Stop uses `invert`; Send uses `default`, but overridden with its OWN dedicated `--send`/`--send-foreground` token pair (chromatic/indigo in every built-in theme) rather than `--primary`, since `--primary` resolves to a near-white neutral in Dark and Dark (high contrast) -- almost identical to `invert`'s own fill there, failing "visibly distinct in weight". No other `default`-variant button anywhere else in the app is affected.
+
 Evidence (variant counts from the read-only audit at `origin/main` 9f23d22): `default` 14 uses, `outline` about 28, `ghost` 2, `destructive` 1, `secondary` and `link` 0. `secondary` and `link` already exist in `buttonVariants` but carry no documented use; do not add a new use without a decision. A live JSX-aware recount for the #580 quality-gate review found at least 7 single-line `ghost` uses plus several multi-line ones, some carrying a visible label (for example `RequestCard.tsx:415`'s Cancel, `ToolRow.tsx:107,131`'s "Show all"), which the new icon-only-only rule above does not yet cover live. "`ghost` 2" is Stuart's own decision-record audit figure, quoted verbatim rather than silently revised; the live count and the labelled-ghost cases are flagged for the #579 sweep.
+
+**Labelled ghost nav and footer entries (#567 decisions 18, 21):** a full-width left-nav entry (`SessionList.tsx`'s Pull requests button, `h-8`) and a full-width footer entry (the same file's Add repository button, `h-8`) are both `ghost` with a leading icon AND a visible label, one more sanctioned exception to "icon-only" above alongside the pre-existing labelled-ghost uses the #580 evidence note already flagged (`RequestCard.tsx`'s Cancel, `ToolRow.tsx`'s "Show all"). A selected nav entry additionally gets the shared 2px `--active-indicator` bar plus the fill, the same selected cue a Session row uses; the footer's Add repository entry has no selected state. Add repository is muted at rest, foreground on hover (gate round 2 fix, architect L-f: the previous "matching every other `ghost` use" wording overreached -- Pull requests stays foreground at rest whether selected or not, since it must read as a primary nav entry even while idle, unlike a footer action). Both share one hover fix the gate found missing: `hover:bg-sidebar-accent dark:hover:bg-sidebar-accent`, since ghost's own built-in `dark:hover:bg-muted/50` read half-strength against the fill both entries otherwise match.
 
 Open:
 
@@ -34,6 +45,21 @@ Open:
 
 `icon-sm` and `icon-xs` match a 24px minimum target (WCAG 2.5.8); see [accessibility.md](accessibility.md#targets). `icon-lg` exists in `buttonVariants` but has no documented role in this system.
 
+### Whitespace (horizontal padding)
+
+Decided (Stuart, 2026-10-21, #1144): one rule for the space between a control's edge and its text, scaled by control height, for every pill, chip, badge and text button.
+
+| Control | Padding each side |
+|---|---|
+| Text tokens inside running text (the composer's slash command pill, the inline attachment chips in the message box) | 6 px |
+| Pills, chips and badges up to 24 px tall, and `xs` buttons | 8 px |
+| Text buttons 28 px and taller (`sm`, `default`, `lg`) | 10 px |
+
+- The side next to a leading or trailing icon is 2 px tighter, through `has-data-[icon=inline-start]` and `has-data-[icon=inline-end]`. `Badge` and `Button` `xs`, `default` and `lg` already do this; `Button` `sm` does not yet (its icon side is 6 px, 4 px tighter than its 10 px) and moves to 8 px under #1144.
+- Use the primitive's own padding. A call-site `px-*`, `pl-*` or `pr-*` that breaks this table is a defect.
+- Composer text tokens sit in a mirror layer under the masked textarea, so their padding is drawn with `box-shadow`, never real `padding` (real padding would move the caret off the text).
+- Exceptions: icon-only buttons stay square (their padding comes from their fixed size), and inline code in prose keeps 4 px.
+
 ## Menus
 
 Menus and context menus (#471) follow one rule by menu type, not by menu mechanism (agenda item 5): the same rule applies to a `DropdownMenu`, a `ContextMenu`, or a right-click menu.
@@ -50,11 +76,11 @@ For both kinds:
 - The shortcut, when one exists, is a right-aligned `Kbd`.
 - Groups are split by separators.
 - The destructive item is last, after a separator, in the destructive colour.
-- Check marks and radio marks are allowed.
+- Check marks and radio marks are allowed. **A single-choice menu is a real radio group** (`DropdownMenuRadioGroup`/`DropdownMenuRadioItem`, `menuitemradio` with `aria-checked`) whose leading radio mark is the same ring-and-dot indicator the Ask card's radios use, filled for the selected item; never a trailing check standing in for a radio (Stuart, 2026-10-19, #1043).
 
 Evidence at `origin/main` 9f23d22: action-menu items carry no icons today (`SessionList.tsx:309-327` and `:420-422`, `ManageSessionRow.tsx:422-439`); the Profile and Approval mode menus already have a leading icon on nearly every item.
 
-Open: the Profile menu's theme submenu uses colour swatches, not icons, to be settled under tokens and theming (#456, #458).
+Decided (Stuart, 2026-10-19, #1043; swatch ruling amended 2026-10-20, ui-architect-v3): the Profile menu's theme submenu is a radio group; each theme's colour swatch is a small two-colour chip (the theme's own `--background` and `--primary`, split down the middle) after the name, never a round mark that could read as a radio. The swatch-versus-icon question for tokens and theming (#456, #458) is otherwise unchanged.
 
 ## Tooltip
 
@@ -96,20 +122,45 @@ The zero-box rule (#556, settled against the AI Studio mock review #549, agenda 
 - The composer.
 - Decision cards (approval, question).
 - Dialogs and floating layers.
-- Code blocks and tables.
-- Attachments and chips.
+- Code blocks, inline code, diffs and tables.
+- Rendered diagrams (code-block family, e.g. `Markdown.tsx`'s Mermaid `<img>`).
+- Attachments and chips, including the pasted-text preview dialog (`TextPreviewModal.tsx`, code-block family).
 
-Everything else — tool rows, thinking, notices, subagent rows, agent messages — is an unboxed row separated by spacing, with a left rail or a divider only when grouping is needed. No box inside a box: a nested card loses its own box and uses a soft divider instead. Attachments and queued-message chips inside the composer area are control affordances, not nested cards, so they keep their box (Stuart, 2026-10-08). This is the rule the #556 zero-box sweep applies across the codebase (tracked separately; not fixed by this documentation change).
+Everything else — tool rows, thinking, notices, subagent rows, agent messages — is an unboxed row separated by spacing, with a **Spine** (a neutral `border-divider` left rule hanging from a group header's own status icon, never coloured or animated, issue #565) or a divider only when grouping is needed. No box inside a box: a nested card loses its own box and uses a soft divider instead.
+
+Stuart's own "Self vs. other layout" rule (2026-10-04, in [product-chat.md](product-chat.md)) makes the user's own message bubble a standing exception: its fill marks authorship, not a card around content. **2026-10-16 delegated addition (Skippy, delegated by Stuart, #556):** it is never nested inside another box, and only Markdown's code-family surfaces (code blocks, inline code, tables, rendered diagrams) render inside it. **2026-10-18 delegated addition (Skippy, delegated by Stuart, #926, FR-035):** a file/folder attachment chip is a second written exception -- the sent bubble renders the SAME chip the composer strip already allows (line 112's own "Attachments and chips" bullet), never raw inlined text or a bare path line, so a 256 KB inlined file never floods the transcript.
+
+Attachments and queued-message chips inside the composer area are control affordances, not nested cards, so they keep their box (Stuart, 2026-10-08). Swept 2026-10-16, #556 (full account in PLAN.md's "Zero-box" decision).
 
 Depth between in-flow surfaces (cards, panes, rows, the composer) comes from the surface ladder (background, then surface 1, 2, 3, each a step lighter), never a shadow. See "Elevation and shadows" and "Surface ladder and edges" in [foundations-tokens-theming.md](foundations-tokens-theming.md).
 
+## Diff stat
+
+Issue #925: wherever a change-count stat ("N files changed +A -D") shows -- the composer status
+line's Changes readout, the Session details card's identical diff line, the Pull requests
+Changes tab's aggregate line and per-file diff header, and the chat transcript's own expanded
+diff header -- it renders through one shared `DiffStatCounts` component
+(`src/renderer/features/sessions/sessionDisplay.tsx`), never a per-surface copy. `+N` takes the
+`--diff-added` token once N is strictly positive, `-N` takes `--diff-removed` once N is strictly
+positive (see "Diff-stat colour tokens" in [foundations-tokens-theming.md](foundations-tokens-theming.md)
+for the tokens themselves); a count of exactly zero stays `--muted-foreground` in either
+direction, so a `-0` never reads as an error. The leading +/- glyph is the non-colour cue (WCAG
+1.4.1) in every case, unchanged by which colour (if any) the figure takes.
+
+A tool call's own edit stat (`ToolRow.tsx`/`toolRowLabels.tsx`'s `callMeta`, e.g. "bash +4 -2")
+is explicitly OUT of this rule: issue #570 decision 1/3 ("success/done stays neutral on tool
+rows") already governs it and this issue's own grill confirmed it is not reopened -- it keeps
+`tabular-nums` with no colour class regardless of sign.
+
 ## Chips and pills
 
-Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
+Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Their horizontal padding follows the whitespace rule under "Button" above (#1144). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
 
 ## List rows
 
 A list row (session row, repository row, subagent row) is an unboxed row under the zero-box rule, with a state icon or leading icon, its label, and trailing actions. Repeated row actions are icon-only with a tooltip (agenda item 1). The row's own action menu is an action menu (text only, see "Menus" above) reachable from an `⋮` trigger, a right-click, and the row's native context-menu keys (`Shift+F10`, the Menu key).
+
+**Selected-row bar (issue #1122, 2026-10-21, grilled, none deferred):** every persistent selected/active row or nav entry (the "Pull requests" nav entry, Session rows, the collapsed Project group header, the Settings nav, PR list rows, Explorer rows, Manage sessions rows, the Subagent panel) renders the one shared `ActiveIndicatorBar` component (`src/renderer/components/ActiveIndicatorBar.tsx`) -- a flush full-height (`inset-y-0`, no rounded caps) 2px `--active-indicator` bar with its own forced-colours fallback -- instead of a hand-copied `<span>`, following the "Reusable components first" rule above. Every site is square-cornered, but not all the same way: the "Pull requests" nav entry/Session rows/the Settings nav/Explorer rows/the Subagent panel join `globals.css`'s square-choice selector (`data-choice-item`/`role="treeitem"`); PR list rows and Manage sessions rows are square by omission (no rounding class was ever applied to either). Every site carries the shared accent fill except the collapsed group header (bar only, #735 decision 22, unaffected by this issue). See [product-look-and-feel.md](product-look-and-feel.md) "Active/selected indicator" for the full shape decision. The transient dropdown/menu keyboard-focus bar (issue #564) is a separate, narrower rule and keeps its own hand-written span.
 
 ## Dialogs
 
@@ -136,9 +187,11 @@ Colour only reinforces the icon and the word; it is never the only signal (WCAG 
 | Channel | Scope | Dismissal |
 |---|---|---|
 | Banner | A Session- or pane-scoped problem | Stays until the problem is fixed. |
-| Toast | A transient app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** |
+| Toast | A transient app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation state. |
 | Transcript notice | Agent-originated news | Stays in the transcript like any other row. |
+
+**Placement** (issue #980, decided Skippy, delegated by Stuart 2026-10-18, `ui-architect-v3` roundtable): `position="bottom-center"`, centred on the window on purpose — that is what clears the permanent full-height right rail (`IconRail.tsx`) and the Session list header, which both only ever sit at the window's left/right edges, never its centre, regardless of which pane is focused or how a split (spec 005) is divided. The protection this needs is vertical: the toast sits above whichever composer is currently tallest, tracked live (`composerHeightVar.ts`, a `ResizeObserver` per mounted composer plus a window-resize listener, published as a CSS custom property) rather than a fixed guess, since a composer's own textarea grows, split panes mount two independently-sized composers at once, and the measurement is each composer's own clearance to the viewport bottom (not just its height), so the status bar sitting below the whole chat workspace is folded in automatically. Below 600px window width, Sonner's own mobile breakpoint takes over positioning (`mobileOffset`), carrying the same live clearance for `bottom` plus a fixed `left`/`right` inset so the now-full-width toast still clears the right rail.
 
 ## Empty states
 

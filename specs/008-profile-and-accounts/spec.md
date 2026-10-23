@@ -28,6 +28,34 @@ Health check; What's new; About; Help center; and Sign out in red).
 - Q: Which extra items belong in the profile menu? -> A: Health check, What's new, and Manage
   sessions; not About, not Help center.
 
+### Session 2026-10-16
+
+- Q: Does the update entry's "otherwise" wording (FR-021) need its own busy state, given a
+  check/download/install can take a visible moment? -> A: Yes -- gate round 2 (issue #569):
+  "Check for updates" is reserved for the ready-to-act state; while one of those three is
+  actually running the entry instead shows its own verb ("Checking for updates…"/"Downloading
+  update…"/"Installing update…"), `aria-disabled`, matching the busy-state pattern the same
+  menu's "GitHub unavailable, Checking…" row already uses.
+
+### Session 2026-10-20
+
+- Q: The Theme submenu's round swatches read as radio buttons that are all unselected -- how
+  does the checked state actually show? -> A: #1043 -- the Theme list becomes a real radio
+  group (`menuitemradio`, `aria-checked`), drawn with the same leading ring-and-dot radio
+  indicator the Ask card's radios use (ring, filled dot when selected), never a round swatch
+  mistaken for a radio.
+- Q: Where does the colour swatch go instead? -> A: After the name, as a small two-colour chip
+  (`h-3 w-5 rounded-[3px]`, bordered, decorative) -- the theme's own `--background` and
+  `--primary`, split down the middle (ui-architect-v3 swatch ruling, amended 2026-10-20: a flat
+  single-colour square read too close to a status dot) -- never round, so it cannot read as a
+  second radio; the trailing "✓ Current" text is dropped, since the checked radio's filled dot
+  plus the screen reader's own "checked" state already carry that.
+- Q: Is this a Theme-submenu-only fix or does it touch the shared component? -> A: The shared
+  `DropdownMenuRadioItem` itself (ADR 0003): its trailing check becomes the leading radio mark,
+  so every single-choice dropdown menu shows radios the same way. The Theme submenu is the first
+  caller; the composer's Reasoning picker (the only other caller) picks up the new mark
+  automatically.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See who you are and reach Settings (Priority: P1)
@@ -179,9 +207,12 @@ confirm a list appears; open and close the menu, and move through it, using only
    shortcuts, the update entry, Health check, What's new, and Sign out, with Sign out visually set
    apart from the rest.
 2. **Given** the menu is open, **When** the developer points at or selects Theme, **Then** a
-   submenu opens listing every built-in dark preset, the currently active one marked with both a
-   check and text, and an "Appearance settings" entry that opens the Settings screen's Appearance
-   section (spec 007).
+   submenu opens as a real radio group (`menuitemradio`/`aria-checked`) listing every built-in
+   dark preset, the currently active one marked by a filled leading ring-and-dot indicator (the
+   Ask card's own radio mark), each preset's colour swatch shown as a small two-colour chip (the
+   theme's own `--background` and `--primary`, split down the middle) after its name, and an
+   "Appearance settings" entry that opens the Settings screen's Appearance section
+   (spec 007).
 3. **Given** the menu is open, **When** the developer selects Keyboard shortcuts, **Then** a
    read-only list of shortcuts opens; its entries come from the shortcut set tracked as backlog
    issue #6 once that work exists, and until then the list shows the shortcuts that exist today
@@ -311,15 +342,22 @@ a session, confirming each action's confirmation names what will be lost.
 - **FR-018**: The profile menu MUST list its items in this fixed order: the account header,
   Manage accounts, Manage sessions, Theme, Keyboard shortcuts, the update entry, Health check,
   What's new, and Sign out, with Sign out visually set apart from the rest.
-- **FR-019**: The Theme item MUST open a submenu listing every built-in dark preset, marking the
-  currently active one with both a check and text, plus an "Appearance settings" entry that opens
-  the Settings screen's Appearance section (spec 007).
+- **FR-019**: The Theme item MUST open a submenu listing every built-in dark preset as a real
+  radio group (`menuitemradio`, `aria-checked`), the currently active one marked by a leading
+  ring-and-dot radio indicator (FR-030), each preset's colour swatch shown as a small two-colour
+  chip (the theme's own `--background` and `--primary`, split down the middle) after its name
+  (never round, so it is never mistaken for a radio), plus an "Appearance
+  settings" entry that opens the Settings screen's Appearance section (spec 007).
 - **FR-020**: The Keyboard shortcuts item MUST open a read-only list of Refract's current keyboard
   shortcuts; its entries MUST come from the shortcut set defined by backlog issue #6 once that
   work exists, and MUST otherwise list the shortcuts already present in the app.
 - **FR-021**: The update entry MUST read "Restart to update" with the new version's number when an
-  update has downloaded and is waiting for the next quit, and "Check for updates" otherwise;
-  selecting it in the latter state MUST check again (spec 006).
+  update has downloaded and is waiting for the next quit, "Check for updates" when idle,
+  available, failed, or GitHub-CLI-unavailable (selecting it in these states MUST check again,
+  spec 006), and its own busy verb -- "Checking for updates…", "Downloading update…", or
+  "Installing update…" -- while a check, download, or install is already running (amended
+  2026-10-16, issue #569 decision 5: the busy sub-states were not distinguished in the original
+  wording).
 - **FR-022**: The Health check item MUST re-run the first-run readiness checks (spec 006) and show
   their result.
 - **FR-023**: The What's new item MUST open the installed version's release notes in the system
@@ -339,10 +377,13 @@ a session, confirming each action's confirmation names what will be lost.
   a sign-in or sign-out state) MUST be conveyed by an icon or text, never by colour alone.
 - **FR-028**: A display name too long to fit its container MUST truncate with an ellipsis rather
   than wrap or overflow.
-- **FR-029**: While the machine's free memory is low (spec 001 FR-037), the profile item MUST show a
-  badge, with a text cue and not colour alone, that opens a popover naming the running agents with
-  a Stop agent action for each; Refract MUST NOT stop any agent on its own. The badge replaces the
-  status bar's low-memory notice, because the app has no status bar (spec 001 FR-056).
+- **FR-029**: The low-memory and unverified-OMP-version alert rows under the profile item are specified in full by spec 001 FR-037 and FR-072; this spec only fixes their position, directly beneath the profile item, replacing the status bar's old low-memory notice (spec 001 FR-056).
+- **FR-030**: The shared `DropdownMenuRadioItem` component (ADR 0003 -- every single-choice
+  dropdown menu draws its checked state the same way, never a second hand-rolled mark) MUST draw
+  a leading ring-and-dot radio indicator matching `radio-group.tsx`'s own `RadioGroupIndicator`
+  (the Ask card's radio look: a ring, filled with a dot when checked), never a trailing check
+  standing in for a radio. The Theme submenu (FR-019) and the composer's Reasoning picker are its
+  two current callers.
 
 ### Key Entities
 

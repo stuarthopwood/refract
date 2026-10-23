@@ -57,7 +57,17 @@ On 2026-10-09 the user decided that a docs-only PR merges without asking, so the
 
 - A PR is docs-only when every file it touches is a doc (`*.md`, `docs/`, `AGENTS.md`, `CONTEXT.md`, `README.md` and the like) — no source, test, or config file changed.
 - Open the PR, confirm `git diff origin/main...HEAD --stat` touches docs only, confirm `gh pr view` reports it as mergeable and clean, then merge it (`gh pr merge --squash --delete-branch`) and report the PR number, merge commit, and a one-paragraph summary of what changed. Do not wait for a human to say "merge it."
-- This does not relax any other rule: still no new tests while prototyping (above), still ground every factual claim before writing it, still run the safe-deletion rules for the branch/worktree cleanup that follows a merge.
+- This does not relax any other rule: still no new tests while prototyping (above), still ground every factual claim before writing it, and still run the post-merge worktree reap (next section) after the merge.
+
+## Reap worktrees after every merge (HARD RULE, issue #658)
+
+Lane worktrees are created per lane and were never removed (49 worktrees, about 14 GB, measured 2026-10-11). The controller (whoever runs `gh pr merge`) owns the removal.
+
+- After every `gh pr merge`, the controller runs `pnpm worktrees:reap` (dry run), reviews the plan, then runs `pnpm worktrees:reap --apply`.
+- Lanes never delete their own worktree, folder, or branch.
+- Before each multi-lane wave, run `pnpm worktrees:reap --check`. It exits 1 when the worktrees folder holds more than 8 worktrees or its drive has under 20 GB free.
+- The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Everything else is skipped and reported (including open-PR worktrees and ignored files beyond rebuildable output). Exit codes: 0 success, 1 `--check` problem or `--apply` with at least one failure, 2 usage error or refusal (for example `--apply` with no registry file; `--no-registry` overrides).
+- Lane lifecycle: `.omp/skills/worktree-reap/SKILL.md`. Put this rule in every lane brief.
 
 ## Rust build is the main build (Stuart, 2026-10-13, epic #797)
 
@@ -98,6 +108,23 @@ The soft cap is 600 lines per source file (TypeScript, TSX, scripts, and the Rus
   consumer lives beside that consumer; it moves out only when it crosses a process/package/
   renderer-main boundary. A constant used by one consumer lives beside it too; it moves out only
   when two modules must agree on the same value.
+
+## Reusable UI components (HARD RULE)
+
+On 2026-10-15 the user decided (#934 grill, ADR 0003): "All UI elements should be re-usable
+components, enhanced when use cases add complexity." The Manage sessions screen and the Pull
+requests view had drifted into two different filters, search fields and headers for the same job.
+
+- Build every UI element from a shared component in `src/renderer/components/` (a primitive in
+  `components/ui/` or a composed one such as a screen header, list toolbar or search field). When a
+  new use case needs more, extend the shared component with a prop or slot; do not copy it into a
+  feature folder or hand-style a primitive in place.
+- This applies to all new UI and to any UI a change touches. Existing one-offs are listed in the
+  audit issue #935 and fixed one group per PR.
+- Reviewers (including `code-reviewer`, `accessibility-auditor` and the UI architect agents) block a
+  PR that adds a one-off control where a shared one exists or should exist.
+- See `docs/design/components.md` ("Reusable components first").
+- Put this rule in every delegation brief for UI work.
 
 ## The plan
 

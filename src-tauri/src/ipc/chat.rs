@@ -12,8 +12,8 @@ use crate::omp::images::{
     validate_image_attachment_decoded, validate_image_attachment_shape, ImageValidationError,
 };
 use crate::session::agent::{
-    classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
-    NATIVE_RESERVED_COMMANDS,
+    classify_slash_invocation, classify_unsupported_arguments, is_chat_answer, parse_slash_command,
+    SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 use crate::session::{model, SessionManager};
 
@@ -244,10 +244,20 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     ));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
-                    return Err(IpcError::new(
-                        "unsupported-arguments",
-                        format!("/{original_name} doesn't support arguments yet. Try /{original_name} on its own."),
-                    ));
+                    let message = match classify_unsupported_arguments(&name, &rest, &commands) {
+                        SubcommandRefusal::ExtraTextAfterSubcommand { subcommand } => {
+                            format!("/{original_name} {subcommand} doesn't take more text yet. Try /{original_name} {subcommand} on its own.")
+                        }
+                        SubcommandRefusal::UnrecognisedSubcommand { verified }
+                            if !verified.is_empty() =>
+                        {
+                            format!("/{original_name} takes one of: {}.", verified.join(", "))
+                        }
+                        SubcommandRefusal::UnrecognisedSubcommand { .. } => {
+                            format!("/{original_name} doesn't support arguments yet. Try /{original_name} on its own.")
+                        }
+                    };
+                    return Err(IpcError::new("unsupported-arguments", message));
                 }
                 SlashInvocationClassification::Supported => {
                     if name == "switch" {
@@ -258,6 +268,13 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                         return model::handle_switch_text(&agent, &rest)
                             .await
                             .map_err(map_chat_error);
+                    }
+                    // Issue #937, gate round 2 fix (decided): the user is already driving
+                    // `/advisor` themselves -- cancel any still-pending silent attach/resume
+                    // probe (`session::advisor`'s own header) so it can never swallow or race
+                    // this real, user-authored reply.
+                    if name == "advisor" {
+                        crate::session::advisor::cancel_pending_probe(&agent).await;
                     }
                     // Any other real OMP-side command (from `available_commands_update`): fall
                     // through and forward it as a normal prompt below.

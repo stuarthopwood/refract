@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ArrowDownIcon, BrainIcon, Loader2Icon } from 'lucide-react'
+import { ArrowDownIcon } from 'lucide-react'
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -8,26 +8,29 @@ import {
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
 import { Button } from '@/components/ui/button'
-import { cn } from 'cn'
-import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
-import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
-import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
-import { LinkContext, Markdown } from './Markdown'
-import { AgentMessageRow } from './AgentMessageRow'
-import { AdvisoryRow } from './AdvisoryRow'
-import { CollapsedLine } from './CollapsedLine'
-import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
-import { ToolGroupRow, SubagentRow } from './ToolRow'
+import { cn } from '@/lib/utils'
+import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
+import { type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
+import { isConversationStarted } from './isConversationStarted'
+import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
+import { LinkContext } from './Markdown'
+import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
+import { groupToolItems, isToolGroup } from './groupToolItems'
+import { groupThoughtItems } from './groupThoughtItems'
+import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
+import { SubagentChainRow } from './SubagentChainRow'
+import { UpNextList } from './UpNextList'
+import { formatElapsed } from './formatElapsed'
+import { ToolGroupRow } from './ToolRow'
+import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
-import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
-import { initials } from '@/lib/initials'
-import { NoticeRow } from './NoticeRow'
-import { SkillPromptRow } from './SkillPromptRow'
+import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
+import { type UserItem } from './UserMessageRow'
+import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
+import { JUMP_SCROLL_TOP_MARGIN_PX, JumpToStageContext, stageRowDomId } from './stageJump'
 
-type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
-type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
 // Cached per repository id for the renderer's lifetime (T072, FR-045): every AskQuestionRow in
 // every Session of the same repository shares one `repositories.userName` round trip.
@@ -58,24 +61,6 @@ function useRepositoryUserName(repositoryId: string | null): string | undefined 
   return name
 }
 
-function formatThinkingSeconds(ms: number): string {
-  return `${Math.max(1, Math.round(ms / 1000))}`
-}
-
-// "28s", "1m 14s", "2h 3m" (T076, FR-046). Exported for spec 004's Turn time chip (T013), which
-// must match this exact formatting.
-export function formatElapsed(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m ${seconds}s`
-  return `${seconds}s`
-}
-
-const THINKING_PREVIEW_CHARS = 120
-
 /** The nearest preceding `ask` tool item for a `request` item at `requestIndex`, scanning
  * backward only until an earlier `request` item (a different question) is hit (T072/T073). */
 function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): ToolItem | undefined {
@@ -85,33 +70,6 @@ function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): To
     if (candidate.kind === 'tool' && candidate.tool === 'ask') return candidate
   }
   return undefined
-}
-
-/** Every item's own best end-time estimate, read from whichever kind-specific timing field it
- * has (T076): absent for a kind with none at all (`assistant-text`, `notice`, `request`), which
- * is exactly why `receivedAt` (live arrival time) is tried first by the caller. */
-function itemEndTime(item: TranscriptItem): number | undefined {
-  if (item.kind === 'tool' || item.kind === 'subagent') {
-    return item.startedAt != null && item.durationMs != null ? item.startedAt + item.durationMs : undefined
-  }
-  if (item.kind === 'thinking') return item.endedAt
-  if (item.kind === 'user' || item.kind === 'agent-message') return item.at
-  return undefined
-}
-
-// Excludes the turn's own leading `user` item: its `at` always exists (even a sentinel `0` for a
-// history entry with no usable timestamp, FR-046), so including it would make `computeTurnEnd`
-// return a defined value for every turn and defeat the "omitted when no item carries usable
-// timing" rule below -- a reopened Conversation with no real timing would show "0s" instead of
-// nothing.
-function computeTurnEnd(turnItems: TranscriptItem[], receivedAt: Record<string, number>): number | undefined {
-  let maxEnd: number | undefined
-  for (const item of turnItems) {
-    if (item.kind === 'user') continue
-    const end = receivedAt[item.id] ?? itemEndTime(item)
-    if (end != null && (maxEnd === undefined || end > maxEnd)) maxEnd = end
-  }
-  return maxEnd
 }
 
 interface Turn {
@@ -137,128 +95,6 @@ function splitIntoTurns(items: TranscriptItem[]): Turn[] {
   return turns
 }
 
-interface TranscriptRowProps {
-  item: GroupedTranscriptItem
-  sessionId: string | null
-  pending: PendingRequest[]
-  userName: string | undefined
-  resolvedAskByRequestId: Map<string, ToolItem | undefined>
-}
-
-// Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
-// docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
-// pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
-// tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId }: TranscriptRowProps) {
-  if (isToolGroup(item)) {
-    return <ToolGroupRow group={item} />
-  }
-
-  switch (item.kind) {
-    case 'user': {
-      // Right-aligned bubble with a left indent, paired with a right-aligned avatar (docs/
-      // DESIGN.md "Self vs. other layout"): `Message align="end"` reverses the row and pushes it
-      // to the end; `w-fit max-w-[85%]` (replacing the old `w-full`) keeps the bubble sized to its
-      // own content and caps it well short of the transcript's left edge, so it never touches it
-      // regardless of message length.
-      const name = userName ?? 'You'
-      return (
-        <Message align="end">
-          <MessageAvatar aria-hidden className="text-xs font-medium">
-            {initials(name)}
-          </MessageAvatar>
-          <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
-            <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
-            <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
-          </MessageContent>
-        </Message>
-      )
-    }
-
-    case 'assistant-text':
-      return (
-        <Message>
-          <MessageContent className="w-full">
-            <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
-            {item.streaming && (
-              <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
-            )}
-          </MessageContent>
-        </Message>
-      )
-
-    case 'thinking': {
-      if (!item.text) return null
-      const duration = item.startedAt != null && item.endedAt != null ? item.endedAt - item.startedAt : undefined
-      const label = item.streaming ? 'Thinking' : duration != null ? `Thought for ${formatThinkingSeconds(duration)}s` : 'Thought'
-      return (
-        <CollapsedLine
-          icon={
-            item.streaming ? (
-              <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
-            ) : (
-              <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            )
-          }
-          label={label}
-          summary={item.streaming ? item.text.slice(-THINKING_PREVIEW_CHARS) : undefined}
-        >
-          {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): the ambient
-           * `--foreground` this inherited by default reads brighter than primary chat prose's own
-           * `--chat-foreground`, inverting the intended secondary/bookkeeping hierarchy for a
-           * Thinking block's full expanded text -- the same level its own collapsed summary above
-           * already uses. */}
-          <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-muted-foreground" />
-        </CollapsedLine>
-      )
-    }
-
-    case 'tool':
-      if (item.tool === 'ask') {
-        if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
-        return <AskQuestionRow item={item} userName={userName} />
-      }
-      // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
-      // normally occur: `groupToolItems` wraps every run, including a run of one, in a
-      // `ToolGroup` before this renders). Wrapped as a one-item group so this still renders
-      // through the same `ToolGroupRow` component type as the grouped path above.
-      return <ToolGroupRow group={{ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] }} />
-
-    case 'subagent':
-      return <SubagentRow item={item} />
-
-    case 'agent-message':
-      return <AgentMessageRow item={item} />
-
-    case 'advisory':
-      return <AdvisoryRow item={item} />
-
-    case 'request': {
-      const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined
-      if (live && !item.resolved) {
-        return <RequestCard sessionId={sessionId as string} request={live} />
-      }
-      if (item.resolved === 'answered' || item.resolved === 'cancelled') {
-        // Superseded by the matching `ask` tool item once it resolves (T072); until then (a brief
-        // race between the answer landing and that item's own `tool_execution_end`), fall back to
-        // the plain one-line summary so the question is never shown as still pending.
-        const askItem = resolvedAskByRequestId.get(item.id)
-        if (askItem && askItem.status !== 'running') return null
-      }
-      return <ResolvedRequestSummary resolved={item.resolved} />
-    }
-
-    case 'notice':
-      return <NoticeRow level={item.level} text={item.text} />
-
-    case 'skill-prompt':
-      return <SkillPromptRow item={item} />
-
-    default:
-      return null
-  }
-}
-
 interface TurnTotalLineProps {
   turn: Turn
   isLastTurn: boolean
@@ -273,9 +109,44 @@ interface TurnTotalLineProps {
 // the sentinel `0` fromHistory falls back to when the source message carried no timestamp at
 // all, which is not a real timing and must not be used to compute an elapsed time).
 function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTotalLineProps) {
+  // Settled is always `computeTurnEnd` (turnTiming.ts): pure/deterministic, so an unrelated
+  // command's own `command_output` reply (excluded from its own scan) can never affect it no
+  // matter how many times it cycles `isTurnRunning` true/false (gate round 1, live-confirmed 9s
+  // -> 14s fix). `lastSettledEnd` (state, set from an effect -- never written during render)
+  // remembers this turn's own last real settle so `hasNewerRealActivity` (turnTiming.ts) can
+  // tell a genuine resumption (an async subagent result, an advisor follow-up, a retry after
+  // compaction) apart from a bare command's own processing, which never satisfies it.
+  //
+  // `undefined` vs `null` (round 3 gate fix, Medium): `undefined` means "never settled yet";
+  // `null` means "no settle BASELINE yet" (never a permanent block -- round 4 fix M1 below).
+  // Round 4 gate fix (Main, 2026-10-18, decided: accept the rare remount-during-a-command
+  // flicker rather than a frozen clock -- add to #938): H1 -- the lazy initialiser used to seed
+  // `lastSettledEnd` from `settledEnd` whenever `settledEnd` was already defined, EVEN WHILE
+  // still genuinely running (a remount mid-turn, `react-virtuoso` windowing or a session switch,
+  // can see an already-partially-timed turn) -- that wrongly treated the turn's OWN current
+  // state as its "baseline", so nothing could ever look "newer" than itself and the clock froze
+  // on that value until a later item arrived. The initialiser now ignores `settledEnd` entirely
+  // while `isLastTurn && isTurnRunning`: always `undefined` (ticks live via `Date.now()`
+  // immediately) in that case, only seeding from `settledEnd` once genuinely not running. M1 --
+  // `null` must not block ticking forever either: once `settledEnd` itself later becomes defined
+  // (a genuine resumption's first real item appears) while `lastSettledEnd` is still `null`,
+  // there is no prior real baseline to compare against, so ANY defined `settledEnd` is itself the
+  // signal to resume ticking (a bare command's own reply can still never trigger this: its
+  // notice is excluded from `computeTurnEnd` exactly as before, so `settledEnd` stays `undefined`
+  // for a genuinely untimed turn regardless of how many unrelated commands run against it).
+  const settledEnd = computeTurnEnd(turn.items, receivedAt)
+  const [lastSettledEnd, setLastSettledEnd] = React.useState<number | null | undefined>(() =>
+    isLastTurn && isTurnRunning ? undefined : (settledEnd ?? null)
+  )
+  React.useEffect(() => {
+    if (!(isLastTurn && isTurnRunning)) setLastSettledEnd(settledEnd ?? null)
+  }, [isLastTurn, isTurnRunning, settledEnd])
   if (!turn.userItem || turn.userItem.at === 0) return null
-  const running = isLastTurn && isTurnRunning
-  const end = running ? Date.now() : computeTurnEnd(turn.items, receivedAt)
+  const running =
+    isLastTurn &&
+    isTurnRunning &&
+    (lastSettledEnd === undefined || (lastSettledEnd === null ? settledEnd !== undefined : hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd)))
+  const end = running ? Date.now() : settledEnd
   if (end === undefined) return null
   const elapsedMs = Math.max(0, end - turn.userItem.at)
   const elapsed = formatElapsed(elapsedMs)
@@ -288,88 +159,6 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
       <span className="sr-only">Turn took {elapsed}</span>
     </div>
   )
-}
-
-// Bookkeeping rows (docs/DESIGN.md "Transcript rhythm", Stuart 2026-10-04): a run of these reads
-// as compact, secondary material and must not inherit the full rhythm the turns/real messages
-// around it use. Deliberately excludes an answered `ask` question (kind stays plain `tool`, never
-// `tool-group` -- `groupToolItems` never merges `ask` calls) and a `request` card: both are a
-// direct user<->assistant exchange, not bookkeeping, so DESIGN.md's own enumeration leaves them out.
-const BOOKKEEPING_KINDS = new Set<GroupedTranscriptItem['kind']>([
-  'tool-group',
-  'thinking',
-  'advisory',
-  'notice',
-  'subagent',
-  'agent-message',
-  'skill-prompt'
-])
-
-function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
-  return BOOKKEEPING_KINDS.has(row.kind)
-}
-
-// Issue #457: two independent Settings-driven view filters. Neither toggle ever touches main's
-// `HIDDEN_TOOLS` path, which drops an item before it ever becomes a transcript row at all -- these
-// act as a pure *view* filter: turning one back on restores every hidden row immediately, including
-// past turns, with no reload, since the underlying `TranscriptItem[]` in the transcript store is
-// never touched. Filtering the array handed to `.map()` (the render loop below) rather than hiding
-// rows with CSS is what keeps a fully-hidden row out of the accessibility tree and tab order
-// entirely, and is also what makes a run of now-hidden rows leave no empty gap or stray margin:
-// `isFirstRow`/`previousRow` (the render loop's own gap-class bookkeeping) only ever see the rows
-// that are actually rendered with real content, so a hidden (or sr-only -- see below) row can never
-// become the "previous" row a later one measures its own margin against.
-//
-// "Never hide what needs the user or reports a problem" (issue #457): an answered/pending `ask`
-// question and a `request` card both survive untouched below, since neither is a `ToolGroup` or a
-// `subagent` row to begin with (`groupToolItems` never merges an `ask` call, and `request`/
-// `notice`/`advisory`/`agent-message` rows are never part of either filtered kind). A `ToolGroup`
-// or `subagent` row that reports a problem (an `error` or `interrupted` tool call; an `error` or
-// `exited` subagent) stays `'visible'` even with "Show tool calls" off, matching
-// `ChatDisplaySection.tsx`'s own copy ("failed or interrupted calls always show").
-//
-// Quality-gate fix (code review/a11y, Medium, round 2): EVERY hidden `thinking` item -- not only a
-// non-streaming one -- is stripped from the array before `groupToolItems` runs (the turn-map render
-// loop below builds `itemsForGrouping` for exactly this). A thinking part's own `streaming` flag is
-// the WHOLE assistant message's flag (`src/main/omp/transcript.ts`'s `buildAssistantItems`), so it
-// can still read `true` while that same message's later tool calls are already streaming in as
-// `running` -- a streaming thinking item is NOT always the newest item, so keeping it in the
-// grouping input (the round-1 design) could leave it sitting between two same-tool runs, merging
-// them the instant the message ends and losing the later run's own expanded/focus state. `thinking`
-// is therefore a plain `'visible'`/`'hidden'` toggle below; its own in-progress signal is announced
-// once per assistant message (the whole message shares one `streaming` flag -- see `announceThinking`
-// below), outside the grouped rows entirely (see the render loop's standalone sr-only span).
-//
-// Quality-gate fix (a11y, Medium, round 1): a `ToolGroup`/`subagent` row that is hidden by "Show
-// tool calls" off but still ACTIVE right now (a `running` call) returns `'sr-only'` as a BASE
-// candidate instead of `'hidden'` -- the render loop then promotes only the LAST such candidate in
-// the turn (round 3: not simply the turn's last row by position -- a finished, hidden row can sit
-// after the real running one, e.g. parallel subagents or a quick bookkeeping call that outraces a
-// still-running sibling) back to `'sr-only'`, downgrading every earlier candidate to `'hidden'` (a
-// group id is keyed off its first call, so a run of N sequential calls with tool calls hidden would
-// otherwise unmount-and-remount a fresh `'sr-only'` row between every pair of calls, each one a new
-// log addition and its own announcement -- one announcement per step, not per turn, if every
-// candidate were promoted instead of only the last one), and only while that row's own turn is the
-// one actually running. A visible `'sr-only'` row keeps its `MessageScrollerItem` (same key, same
-// position) but swaps its content for a one-line sr-only status span naming what is running -- the
-// transcript's `role="log"` gets one polite addition marking that a turn is in progress, instead of
-// a user whose screen reader has no visible `TurnTotalLine` text (it is `aria-hidden` while running)
-// losing every sign of life. A row that finishes without needing attention naturally falls back to
-// `'hidden'`.
-type RowVisibility = 'visible' | 'hidden' | 'sr-only'
-
-function rowVisibility(row: GroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
-  if (row.kind === 'thinking') return transcriptDisplay.thinking ? 'visible' : 'hidden'
-  if (transcriptDisplay.toolCalls) return 'visible'
-  if (isToolGroup(row)) {
-    if (row.items.some((item) => item.status === 'error' || item.status === 'interrupted')) return 'visible'
-    return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
-  }
-  if (row.kind === 'subagent') {
-    if (row.status === 'error' || row.status === 'exited') return 'visible'
-    return row.status === 'running' ? 'sr-only' : 'hidden'
-  }
-  return 'visible'
 }
 
 // `MessageScrollerContent` no longer sets a uniform `gap` (see message-scroller.tsx): every row
@@ -388,44 +177,16 @@ function shouldShowTimeGapDivider(previousAt: number, nextAt: number): boolean {
   return nextAt - previousAt > TIME_GAP_THRESHOLD_MS
 }
 
+// Gate round 3 a11y fix (Main, 2026-10-16): `role="separator"`+`aria-label` on the wrapper read as just "separator" on some screen readers; now a plain `div`, decorative lines stay `aria-hidden`, so the visible label reads once as plain text. `data-slot` (not a role) lets a live-check/test identify this row without re-adding an ARIA name.
 function TimeGapDivider({ at }: { at: number }) {
   const label = new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   return (
-    <div role="separator" aria-label={label} className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
+    <div data-slot="time-gap-divider" className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
       <span>{label}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
     </div>
   )
-}
-
-// Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
-// 2026-10-04; narrowed per code/test-reviewer round 2): the only transcript item a brand-new
-// agent process can produce before any real exchange is a `notice` (OMP's own unsolicited
-// startup banner -- a `command_output`/`notice` frame, same mechanism a user-run slash
-// command's own output uses, lists every mounted MCP tool verbatim). Hiding *every* `notice`
-// until a non-notice item exists was too broad: it also hid a start-failure notice, a rejected
-// first prompt's error notice, and a slash command's own output when run as the very first
-// action in a new Session -- none of which is the startup banner, and DESIGN.md's "never a
-// silent no-op" rule for slash commands means the last of those must always be visible. A
-// `notice` now counts as "conversation started" unless it is BOTH an info/warning-level notice
-// (an error is always a real outcome, never the unsolicited banner) AND tagged
-// `STARTUP_NOTICE_PREFIX` (`transcript.ts`'s `applyFrame`, keyed off `SessionAgent.hasUserActed`
-// -- the one case that is unambiguously the agent's own startup dump, not something the user
-// did). Suppressed notice(s) stay in `items` (never dropped -- they render normally the moment
-// real content exists) but are not displayed, replaced by a neutral placeholder instead.
-//
-// Gate-fix (code/a11y/verif High, round 3, Issue #618): exported (was a private inline
-// computation) so `ChatPane.tsx` can read the SAME predicate against the SAME transcript-store
-// items, instead of deciding where the start notice goes from its own, narrower `hasHistory`
-// alone. `hasHistory` (`session.currentConversation !== null`) only flips true at a settle,
-// which left a start that fails or crashes mid-first-turn -- real items already on screen,
-// `recordStartFailure`'s own error notice among them -- with NO notice and NO Keep
-// waiting/Cancel at all on the next Retry/Recover, because the centred placement required
-// `!hasConversationStarted` and the inline placement required `hasHistory`, and neither was
-// true. See `ChatPane.tsx`'s own `conversationStarted`/`showInline` for the fix.
-export function isConversationStarted(items: readonly TranscriptItem[]): boolean {
-  return items.some((item) => item.kind !== 'notice' || item.level === 'error' || !item.id.startsWith(STARTUP_NOTICE_PREFIX))
 }
 
 // The Session's transcript (T025, no props: reads the visible Session from the zustand stores).
@@ -439,20 +200,13 @@ export function Transcript({
 }: {
   sessionId: string
   // Issue #618: whether this Session has any real history for its CURRENT Conversation thread
-  // (ChatPane.tsx's own `hasHistory`, `session.currentConversation !== null`) -- a real signal,
-  // unlike this component's own items-based `hasConversationStarted` below, which can read empty
-  // for a Session that has real history but is still mid-snapshot-load. Gates whether "Ready…"
-  // can ever show at all: a Session with history never shows it, including while it loads or
-  // while its agent is starting.
+  // (`session.currentConversation !== null`) -- unlike items-based `hasConversationStarted`
+  // below, which can read empty while mid-snapshot-load. Gates whether "Ready…" can ever show.
   hasHistory: boolean
-  // Issue #618 gate-fix (round 3): ChatPane.tsx's own SessionStartNotice, pre-built with this
-  // pane's startProgress and picked random message, rendered here (centred, replacing "Ready…")
-  // for a brand-new Session while its agent is starting. ChatPane now decides WHETHER to pass
-  // this at all (its own `showInline`, reading the identical `isConversationStarted` predicate
-  // against the same store) -- Transcript no longer re-derives that decision, it just renders
-  // whatever it is given. Undefined whenever nothing is starting right now, or whenever ChatPane
-  // chose the inline placement instead.
-  startNotice?: React.ReactNode
+  // Amended #672: ChatPane.tsx's own SessionStartNotice, rendered centred over the empty area
+  // or existing history. This component decides whether to dim the transcript behind it
+  // (`dimTranscript` below) via `startNotice(dimmed)` (a render function).
+  startNotice?: (dimmed: boolean) => React.ReactElement
 }) {
   // Spec 005: generalised from a single store-wide field to per-session storage
   // (transcript-store.ts), so each pane's own Session's items can never be dropped or
@@ -460,13 +214,16 @@ export function Transcript({
   const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
   const sessions = useSessionsStore((state) => state.sessions)
   const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
+  // Issue #554 (FR-073): 'reading-column' caps at 64rem, centred, transcript only.
+  const chatWidth = useActiveChatWidth()
   const items = transcript.items
   const receivedAt = transcript.receivedAt
-  // Genuinely-empty detection: see `isConversationStarted`'s own doc comment above (module
-  // level) for the full "what counts as started" rule and why it was narrowed this way.
+  // Genuinely-empty detection: see `isConversationStarted`'s own doc comment (module level) for the full rule.
   const hasConversationStarted = isConversationStarted(items)
+  // Issue #672: the history (if any) behind the notice dims to ~40% opacity while a start runs; a genuinely empty Session has nothing to dim.
+  const dimTranscript = Boolean(startNotice) && (hasHistory || hasConversationStarted)
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
-  const pending = pendingBySession[sessionId] ?? []
+  const pending = pendingBySession[sessionId] ?? NO_PENDING
 
   const session = sessions.find((s) => s.id === sessionId)
   const userName = useRepositoryUserName(session?.repositoryId ?? null)
@@ -482,13 +239,19 @@ export function Transcript({
     return () => clearInterval(interval)
   }, [isTurnRunning])
 
-  const resolvedAskByRequestId = React.useMemo(() => {
-    const map = new Map<string, ToolItem | undefined>()
+  // Rows receive only their own link (never the whole map), so a patch re-renders only the row it changed.
+  const askLinks = React.useMemo(() => {
+    const askByRequestId = new Map<string, ToolItem | undefined>()
+    const requestIdByAskItemId = new Map<string, string>()
     items.forEach((item, index) => {
-      if (item.kind === 'request') map.set(item.id, findPrecedingAskItem(items, index))
+      if (item.kind !== 'request') return
+      const ask = findPrecedingAskItem(items, index)
+      askByRequestId.set(item.requestId, ask)
+      if (ask && !requestIdByAskItemId.has(ask.id)) requestIdByAskItemId.set(ask.id, item.requestId)
     })
-    return map
+    return { askByRequestId, requestIdByAskItemId }
   }, [items])
+  const handleAdvisoryReveal = React.useCallback(() => setSuppressLogAnnouncements(true), [])
 
   const turns = React.useMemo(() => splitIntoTurns(items), [items])
 
@@ -516,6 +279,26 @@ export function Transcript({
     [turns, revealedEarlier]
   )
 
+  // Issue #563 decision 3 + gate round 2 architect addendum A: Stage boundaries key on each
+  // `subagent` item's own `messageId` (groupSubagentStages.ts), not position, so "Show thinking"
+  // off can drop thinking items before grouping, matching groupToolItems' pre-#457 behaviour.
+  const turnsWithStages = React.useMemo(
+    () =>
+      visibleTurns.map((turn) => {
+        const viewItems = transcriptDisplay.thinking ? turn.items : turn.items.filter((item) => item.kind !== 'thinking')
+        // Issue #557: `groupThoughtItems` wraps every run of consecutive, non-empty thinking
+        // items (even a run of one) into a `ThoughtRun`; order against `groupToolItems` and
+        // `groupSubagentStages` does not matter, since each only rewrites items of its own kind.
+        // Issue #558: `groupAdvisoryItems` runs last, over every already-grouped item in the turn.
+        const groupedWithStages = groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems))))
+        return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
+      }),
+    [visibleTurns, transcriptDisplay.thinking]
+  )
+
+  // Gate fix (H3): the per-Stage settle announcement lives in its own hook (file-size baseline)
+  // -- the single out-of-log announcer, rendered as a sibling of `revealedAnnouncement` below.
+  const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
   // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
   // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
   // `isFirstRow` tracks the very first rendered row across the whole transcript (no margin at
@@ -550,17 +333,24 @@ export function Transcript({
   // Finding 6 (gate fixes 4): ref to the scrollable content so the ResizeObserver below can
   // recompute `isAtEnd` when content reflow changes `scrollHeight` without a `scroll` event.
   const contentRef = React.useRef<HTMLDivElement>(null)
-
+  const { isRecentGesture, resetGesture, gestureProps } = useScrollGestureTracking()
+  const lastScrollTopRef = React.useRef(0)
   // True from the moment a Session/Conversation switch's landing effect (below) starts until it
-  // has applied its own `scrollTop` -- while content-visibility rows are still being promoted
-  // from their placeholder size, the browser can clamp/adjust `scrollTop` on its own (the
-  // just-mounted content's placeholder-sized `scrollHeight` is smaller than the real one, so a
-  // leftover `scrollTop` from the PREVIOUS Session gets silently clamped down), firing a genuine
-  // `scroll` event that `handleViewportScroll` would otherwise misrecord as "the developer's
-  // position" -- corrupting the very memory the landing effect is about to read. Suppressing
-  // recording for this one settle window (never for real scrolling once it is over) was the
-  // fix for issue #485's restore-on-return silently losing the detached position every time.
+  // applies its own `scrollTop` -- while placeholder rows are still settling, the browser can
+  // clamp `scrollTop` on its own, firing a genuine `scroll` event that `handleViewportScroll`
+  // would otherwise misrecord as the developer's position, corrupting the memory the landing
+  // effect is about to read. Suppressing recording for this one window was the fix for #485's
+  // restore-on-return silently losing the detached position every time.
   const landingInProgressRef = React.useRef(false)
+
+  // Gate round 4 fix (M1): the in-flight JUMP's own `runScrollSettleLoop` cancel() (never the
+  // landing effect's own, kept in its own closure) -- a NEW landing, a NEW jump, a real
+  // "Scroll to end" click, or unmount each calls this first so only one settle loop ever
+  // touches `scrollTop` at a time.
+  const jumpCancelRef = React.useRef<(() => void) | null>(null)
+  // Bumped on every landing/jump start (gate round 4, M1): a jump's own `onAborted` no-ops if a
+  // newer landing/jump already took over -- defence in depth alongside `jumpCancelRef`.
+  const jumpTokenRef = React.useRef(0)
 
   // Mirrors `landingInProgressRef` into a real render value so `MessageScrollerProvider`'s own
   // `autoScroll` prop (below) can be turned off for the same settle window: the vendored
@@ -631,7 +421,7 @@ export function Transcript({
   const [prevLandingKey, setPrevLandingKey] = React.useState(landingKey)
   if (prevLandingKey !== landingKey) {
     setPrevLandingKey(landingKey)
-    landingInProgressRef.current = true
+    landingInProgressRef.current = true; resetGesture()
     if (!autoScrollSuppressed) setAutoScrollSuppressed(true)
     // Finding 6 (gate fixes 4): resets `isAtEnd` to match the NEW Session/Conversation's own
     // stored memory immediately, in this same render-phase block -- previously it kept
@@ -672,7 +462,8 @@ export function Transcript({
       clientHeight: viewport.clientHeight
     })
     useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-    if (atEnd && autoScrollSuppressed) setAutoScrollSuppressed(false)
+    const movedUp = viewport.scrollTop < lastScrollTopRef.current; lastScrollTopRef.current = viewport.scrollTop
+    if (atEnd !== !autoScrollSuppressed && (atEnd || (movedUp && isRecentGesture()))) setAutoScrollSuppressed(!atEnd)
     setIsAtEnd(atEnd)
   }
 
@@ -685,6 +476,10 @@ export function Transcript({
   function handleScrollToEnd() {
     const viewport = viewportRef.current
     if (!viewport) return
+    // Gate round 4 fix (M1): a real click always wins over a still-running jump -- this direct
+    // write bypasses the settle loop's own input listeners (not every activation method reaches them).
+    jumpCancelRef.current?.()
+    landingInProgressRef.current = false
     const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
     viewport.scrollTop = target
     useChatScrollStore.getState().record(sessionId, { atEnd: true, scrollTop: target })
@@ -703,11 +498,11 @@ export function Transcript({
     loadEarlierAnchorRef.current = viewport ? viewport.scrollHeight - viewport.scrollTop : null
     setRevealedAnnouncement(loadEarlierAnnouncement(hiddenCount))
     // Quality-gate fix (a11y, cycle 3, 2026-10-08): `MessageScrollerContent` renders
-    // `role="log"` by default (an implicit polite live region with `aria-relevant="additions"`),
-    // so revealing up to hundreds of hidden turns at once would otherwise queue the WHOLE
-    // revealed history as log-addition announcements, burying the one message that actually
-    // matters. Suppressed for this one reveal only; the layout effect below clears it again
-    // once the new turns have committed.
+    // `role="log"` by default -- an implicit polite live region whose real ARIA default is
+    // `aria-relevant="additions text"`, not merely "additions" -- so revealing up to hundreds
+    // of hidden turns at once would otherwise queue the WHOLE revealed history as log-addition
+    // announcements, burying the one message that actually matters. Suppressed for this one
+    // reveal only; the layout effect below clears it again once the new turns have committed.
     setSuppressLogAnnouncements(true)
     setRevealedEarlier(true)
   }
@@ -773,33 +568,13 @@ export function Transcript({
   // Lands the viewport at the end, or restores the remembered detached position, whenever this
   // Session's transcript is wholesale-replaced (`transcript.generation`, transcript-store.ts) --
   // a Session switch, a Conversation switch, or this pane's very first mount -- never on an
-  // ordinary streamed `items` update. Polls via `requestAnimationFrame`, re-applying the target
-  // `scrollTop` on EVERY frame (not just once at the end): a `content-visibility:auto` row above
-  // the target can keep growing `scrollHeight` after a single assignment would have landed, and
-  // Chromium's own scroll-anchoring can independently nudge `scrollTop` while that growth is in
-  // flight (#459's same root cause) -- a one-shot assignment loses the race either way. A long
-  // transcript's settling is NOT purely a `scrollHeight`-stability question either: scroll
-  // anchoring (and, while it is still catching up, `MessageScrollerProvider`'s own `autoScroll`,
-  // suppressed above for this exact window) can silently overwrite `scrollTop` again in the gap
-  // between two of this loop's own frames, leaving `scrollHeight` reading "stable" while the
-  // position itself keeps drifting toward the bottom -- so each frame also checks whether the
-  // PREVIOUS frame's own assignment actually stuck (`viewport.scrollTop` still reads what was
-  // last written) and resets the counter if not, the same as a genuine height change would.
-  // Bounded by `SCROLL_LANDING_MAX_FRAMES` so a layout that never truly settles cannot poll
-  // forever. `useLayoutEffect` (not `useEffect`) so the first re-assertion lands before paint, in
-  // the same commit as the DOM update. Gate-fix (quality-gate cycle 2, finding 1):
-  // `resolveLandingScrollTop` now clamps its result to `scrollHeight - clientHeight`, matching
-  // the clamp the browser itself applies to `scrollTop` -- an unclamped "land at end" target
-  // could never equal the browser-clamped `viewport.scrollTop` read back afterwards, so
-  // `notPerturbed` was never true and every at-end landing silently spent all
-  // `SCROLL_LANDING_MAX_FRAMES` fighting a gap that was never there. The loop now also stops the
-  // instant it sees real user input (wheel, keydown, pointerdown, touchstart) anywhere inside the
-  // `MessageScroller` root -- the viewport itself, or the app-owned sibling "Scroll to end" button
-  // (gate fixes 2, finding 2: that button lives outside `viewportRef`'s own subtree, so listeners
-  // scoped to just the viewport never saw a click/Enter/Space on it, and a developer using it to
-  // jump to the end mid-settle had to fight the loop's own re-assertion for up to
-  // `SCROLL_LANDING_MAX_FRAMES` frames) -- a developer taking over mid-settle must not keep
-  // fighting the loop's own re-assertion either way.
+  // ordinary streamed `items` update. `useLayoutEffect` (not `useEffect`) so the first
+  // re-assertion lands before paint, in the same commit as the DOM update. Gate round 2 (issue
+  // #1008): the actual poll-and-fight engine now lives in `runScrollSettleLoop`
+  // (`scrollLanding.ts`), shared with `jumpToStageRow` below -- this effect only supplies ITS OWN
+  // target (`resolveLandingScrollTop`, reading the scroll-memory store) and the React-state side
+  // effects (`landingInProgressRef`, `autoScrollSuppressed`, `isAtEnd`, the scroll-memory record
+  // on a real-input interrupt) the shared engine has no business knowing about.
   React.useLayoutEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) {
@@ -810,115 +585,118 @@ export function Transcript({
     // Falls back to the viewport itself only if the root ref somehow is not attached yet (it is
     // always rendered as the viewport's own parent below, so this is defensive, not expected).
     const root = scrollerRootRef.current ?? viewport
-    landingInProgressRef.current = true
-    let cancelled = false
-    let frame = 0
-    let stableFrames = 0
-    let lastHeight = -1
-    let lastAssignedScrollTop = -1
-
-    function removeInputListeners() {
-      root.removeEventListener('wheel', handleUserInput)
-      root.removeEventListener('keydown', handleKeyInput)
-      root.removeEventListener('pointerdown', handleUserInput)
-      root.removeEventListener('touchstart', handleUserInput)
-      root.removeEventListener('focusin', handleFocusInput)
-    }
-
-    // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
-    // over mid-settle: stop re-asserting, clear the in-progress flag (so the normal scroll
-    // handler resumes recording immediately), and record wherever they are now. `autoScroll`
-    // only resumes if that position is actually at the end -- a live check (quality-gate cycle
-    // 2, finding 1 re-verification) found that unconditionally clearing it here let the vendored
-    // scroller's own `autoScroll` re-engage while a still-unsettled `content-visibility:auto`
-    // row above was mid-collapse, overwriting a genuine upward wheel scroll caught very early in
-    // the settle window; the same "only unsuppress once actually at the end" rule the normal
-    // completion branch below already follows avoids that regression here too.
-    function handleUserInput() {
-      if (cancelled || !viewport) return
-      cancelled = true
-      removeInputListeners()
-      const atEnd = isAtScrollEnd({
-        scrollTop: viewport.scrollTop,
-        scrollHeight: viewport.scrollHeight,
-        clientHeight: viewport.clientHeight
-      })
-      useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-      landingInProgressRef.current = false
-      setAutoScrollSuppressed(!atEnd)
-      setIsAtEnd(atEnd)
-    }
-
-    // Quality-gate remediation (round 2, 2026-10-07, a11y): the vendored scroller only reacts to
-    // a handful of navigation keys itself (ArrowUp/ArrowDown/Home/End/PageUp/PageDown/Space); a
-    // bare `keydown` listener here used to treat EVERY key -- Shift, Ctrl, even Ctrl+C -- as "the
-    // developer took over", cancelling the landing settle loop on keystrokes that never move the
-    // viewport at all. Filtered to exactly the keys the library itself moves on.
-    const SCROLL_NAVIGATION_KEYS: Record<string, true> = {
-      ArrowUp: true, ArrowDown: true, Home: true, End: true, PageUp: true, PageDown: true, ' ': true
-    }
-    function handleKeyInput(event: KeyboardEvent) {
-      if (!SCROLL_NAVIGATION_KEYS[event.key]) return
-      handleUserInput()
-    }
-
-    // Finding 5 (gate fixes 4, a11y): focus moving INTO the viewport mid-settle (Tab reaching a
-    // focusable row, or a screen reader's virtual cursor driving `scrollIntoView`) is just as
-    // much "the developer took over" as a wheel/key/pointer event -- previously only those were
-    // watched, so an assistive-tech user navigating into the transcript had their own focus
-    // target fought by the loop's own re-assertion for up to `SCROLL_LANDING_MAX_FRAMES` frames.
-    // `focusin` bubbles (unlike `focus`), so one listener on `root` catches it from any
-    // descendant; scoped to `viewport.contains(target)` so focus landing on the sibling button
-    // (handled by its own click path, and by finding 1's focus-restoration effect) doesn't
-    // double-trigger this.
-    function handleFocusInput(event: FocusEvent) {
-      if (!viewport || !viewport.contains(event.target as Node)) return
-      handleUserInput()
-    }
-
-    root.addEventListener('wheel', handleUserInput, { passive: true })
-    root.addEventListener('keydown', handleKeyInput, { passive: true })
-    root.addEventListener('pointerdown', handleUserInput, { passive: true })
-    root.addEventListener('touchstart', handleUserInput, { passive: true })
-    root.addEventListener('focusin', handleFocusInput, { passive: true })
-
-    function step() {
-      if (cancelled || !viewport) return
-      const { scrollHeight, clientHeight } = viewport
-      const heightStable = scrollHeight === lastHeight
-      const notPerturbed = lastAssignedScrollTop === -1 || Math.abs(viewport.scrollTop - lastAssignedScrollTop) < SCROLL_PERTURBATION_TOLERANCE_PX
-      stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
-      lastHeight = scrollHeight
-      frame += 1
-      const memory = useChatScrollStore.getState().bySession[sessionId]
-      const target = resolveLandingScrollTop(memory, scrollHeight, clientHeight)
-      viewport.scrollTop = target
-      lastAssignedScrollTop = target
-      if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
-        cancelled = true
-        removeInputListeners()
+    // Gate round 4 fix (M1): a landing always wins over a still-running jump -- cancel it and
+    // bump the token so a stale `onAborted` cannot stomp this landing's own fresh state.
+    jumpCancelRef.current?.()
+    jumpTokenRef.current += 1
+    landingInProgressRef.current = true; resetGesture()
+    const cancel = runScrollSettleLoop(root, viewport, {
+      computeTarget: ({ scrollHeight, clientHeight }) => {
+        const memory = useChatScrollStore.getState().bySession[sessionId]
+        return resolveLandingScrollTop(memory, scrollHeight, clientHeight)
+      },
+      onSettled: (landedAtEnd) => {
         landingInProgressRef.current = false
-        // Quality-gate finding (code review, High): decided from where the viewport ACTUALLY
-        // landed (the same `isAtScrollEnd` check `handleViewportScroll`/`handleUserInput` use),
-        // not from `memory` directly -- a stale/incorrect memory entry (e.g. a scroll race the
-        // `inFlight` guard above did not fully close, or any future call site that forgets to
-        // set it) can then never leave auto-follow permanently suppressed for a Conversation
-        // that is actually sitting at its end.
-        const landedAtEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
         setAutoScrollSuppressed(!landedAtEnd)
         setIsAtEnd(landedAtEnd)
-        return
-      }
-      requestAnimationFrame(step)
-    }
-
-    requestAnimationFrame(step)
+      },
+      // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
+      // over mid-settle: record wherever they are now. `autoScroll` only resumes if that position
+      // is actually at the end (quality-gate cycle 2, finding 1): unconditionally clearing it let
+      // the vendored scroller's own `autoScroll` re-engage mid-collapse, overwriting a genuine
+      // upward wheel scroll.
+      onInterrupted: (atEnd) => {
+        useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
+        landingInProgressRef.current = false
+        setAutoScrollSuppressed(!atEnd)
+        setIsAtEnd(atEnd)
+      },
+      // Never fires here (no `shouldAbort` supplied); required by the interface (gate round 4, M1).
+      onAborted: () => {}
+    })
     return () => {
-      cancelled = true
-      removeInputListeners()
+      cancel()
       landingInProgressRef.current = false
     }
   }, [sessionId, transcript.generation])
+
+  // "Go to Stage N" (issue #1008 item 2; gate round 2, Main 2026-10-18, Decided -- falsified
+  // live): `ChainStageLine` is a SIBLING of the Stage row it targets, never its parent, so there
+  // is no React ref to use -- this callback, reached via `JumpToStageContext` (provided below),
+  // is the lever instead. The scroll/settle logic lives HERE (not `stageJump.ts`, whose own jsdoc
+  // has the full gate-round-2 history of why) because only this component holds
+  // `autoScrollSuppressed`: it goes true the instant the jump starts, and
+  // `runScrollSettleLoop`'s `onSettled`/`onInterrupted` only clear it once the viewport is
+  // ACTUALLY at the end again, or `handleViewportScroll` records a real user scroll back to the
+  // end -- the flag stays suppressed through every later streamed chunk, but on a turn that is
+  // STILL ACTIVELY STREAMING a jump made mid-stream can still be pulled back toward the end by a
+  // LATER Stage's own content regardless (issue #1021, jump-specific, filed not fixed here --
+  // `MessageScrollerProvider`'s own content-mutation-observer re-anchors to each newly-streamed
+  // item regardless of `autoScroll`; a genuine user wheel/touch/key action suppresses it, traced
+  // live, but this jump's own programmatic `scrollTop` writes do not replicate whatever internal
+  // signal that trips; several synthetic-dispatch fix attempts produced no measurable change, not
+  // something this PR's own scope stretches to debugging further in third-party, minified vendor
+  // internals -- the two settled-turn jump proofs this issue's own acceptance criteria actually
+  // ask for, Stage 3/Stage 4 below, are unaffected and hold correctly). No
+  // `prefers-reduced-motion` branch: `runScrollSettleLoop` never animates -- every frame is a
+  // plain instant `scrollTop =` assignment, the same as the landing effect above already uses.
+  const jumpToStageRow = React.useCallback(
+    (stageId: string) => {
+      const row = document.getElementById(stageRowDomId(sessionId, stageId))
+      if (!row) return
+      if (sessionId != null) useStageToggleStore.getState().setManualOpen(sessionId, stageId, true)
+      row.focus({ preventScroll: true })
+      const viewport = viewportRef.current
+      const root = scrollerRootRef.current ?? viewport
+      if (!viewport || !root) return
+      // Gate round 4 fix (M1): a new jump always wins over a still-running previous one -- cancel
+      // it first, then claim a fresh token this jump's own `onAborted` checks before touching
+      // shared state, so a stale abort can never stomp a landing or newer jump that took over.
+      jumpCancelRef.current?.()
+      const myToken = ++jumpTokenRef.current
+      landingInProgressRef.current = true; resetGesture()
+      setAutoScrollSuppressed(true)
+      const cancel = runScrollSettleLoop(root, viewport, {
+        // Gate round 2 fix (item 3, Medium): a Session/Conversation switch mid-loop can remove
+        // `row` from the DOM before the loop settles -- stop touching `scrollTop` for a gone
+        // target, and release this jump's claim via `onAborted` below (gate round 4, M1).
+        shouldAbort: () => !row.isConnected || !viewport.contains(row),
+        computeTarget: ({ scrollTop, scrollHeight, clientHeight }) => {
+          const rowRect = row.getBoundingClientRect()
+          const viewportRect = viewport.getBoundingClientRect()
+          const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
+          const raw = scrollTop + (rowRect.top - viewportRect.top) - JUMP_SCROLL_TOP_MARGIN_PX
+          return Math.max(0, Math.min(raw, maxScrollTop))
+        },
+        onSettled: (landedAtEnd) => {
+          landingInProgressRef.current = false
+          // Gate round 4 fix (M2): save position on settle too, like `onInterrupted` below --
+          // previously a jump that settled on its own left the scroll-memory store stale.
+          useChatScrollStore.getState().record(sessionId, { atEnd: landedAtEnd, scrollTop: viewport.scrollTop })
+          setAutoScrollSuppressed(!landedAtEnd)
+          setIsAtEnd(landedAtEnd)
+        },
+        onInterrupted: (atEnd) => {
+          useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
+          landingInProgressRef.current = false
+          setAutoScrollSuppressed(!atEnd)
+          setIsAtEnd(atEnd)
+        },
+        // Gate round 4 fix (M1, falsified live): previously `shouldAbort` stopped the loop
+        // silently, stuck `landingInProgressRef`/`autoScrollSuppressed` dead. Re-measures fresh
+        // and releases this jump's claim, guarded by the token in case a newer one took over.
+        onAborted: () => {
+          if (jumpTokenRef.current !== myToken) return
+          landingInProgressRef.current = false
+          const atEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight })
+          setAutoScrollSuppressed(!atEnd)
+          setIsAtEnd(atEnd)
+        }
+      })
+      jumpCancelRef.current = cancel
+    },
+    [sessionId]
+  )
 
   // Finding 6 (gate fixes 4): `isAtEnd` otherwise only updates from a real `scroll` event, the
   // render-phase reset above, or the settle loop's own completion -- a pane resize (e.g.
@@ -944,7 +722,11 @@ export function Transcript({
     })
     observer.observe(viewport)
     if (contentRef.current) observer.observe(contentRef.current)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      // Gate round 4 fix (M1): stop any still-running jump on unmount.
+      jumpCancelRef.current?.()
+    }
   }, [])
 
   return (
@@ -952,32 +734,35 @@ export function Transcript({
     // (`Markdown.tsx`'s `a`/inline-`code`/`FileLinkButton`, `ToolRow.tsx`, `DiffView.tsx`) via
     // `LinkContext` instead of a prop threaded through that whole call chain -- set here, not in
     // `ChatPane.tsx`, so this stays clear of #621's own changes to that file.
+    <JumpToStageContext.Provider value={jumpToStageRow}>
     <LinkContext.Provider value={sessionId}>
     <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
       <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
         <MessageScrollerViewport
           ref={viewportRef}
           onScroll={handleViewportScroll}
+          {...gestureProps}
           role="region"
           tabIndex={0}
           aria-label="Transcript"
-          // Quality-gate finding (code review, Low): an inset ring (`ring-inset`, `outline-none`
-          // on the base `focus-visible` ring instead) so the focus indicator this component's own
-          // `role="region" tabIndex={0}` relies on (the focus hand-off above, and plain Tab/click
-          // focus) is never clipped by this viewport's own `overflow-y-auto` + the root's
-          // `overflow-hidden` ancestor -- an outer ring drawn outside the scrollable box's own
-          // bounds would be cut off entirely rather than just visually tight.
-          className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          // Quality-gate finding (code review, Low): `ring-inset` so the focus ring this
+          // `role="region" tabIndex={0}` relies on is never clipped by `overflow-y-auto` +
+          // the root's `overflow-hidden`. `dimTranscript` fades this ~40% (round 1, stays
+          // interactive); `peer` (round 2) lets the sibling overlay hide on focus (WCAG 2.4.11).
+          className={cn(
+            'peer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            dimTranscript && 'opacity-40 focus-within:opacity-100'
+          )}
         >
           <MessageScrollerContent
             ref={contentRef}
-            className="mx-auto w-full max-w-4xl px-4 py-4"
-            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default
-            // (an implicit polite live region, `aria-relevant="additions"`) -- `off` for the one
-            // frame window `handleLoadEarlier`'s reveal needs, so revealing up to hundreds of
-            // hidden turns at once never queues the whole revealed history as log-addition
-            // announcements. `undefined` (the log's own default) the rest of the time, so
-            // ordinary streamed turns are still announced as they always were.
+            className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16')}
+            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default (an
+            // implicit polite live region; its ARIA default is `aria-relevant="additions text"`, not
+            // merely "additions") -- `off` for the one frame window `handleLoadEarlier`'s reveal
+            // needs, so revealing up to hundreds of hidden turns at once never queues the whole
+            // revealed history as log-addition announcements. `undefined` (the log's own default)
+            // otherwise, so ordinary streamed turns are still announced as before.
             aria-live={suppressLogAnnouncements ? 'off' : undefined}
           >
             {/* Issue #618 gate-fix (code/verif High): "Ready..." is now ALSO gated on
@@ -1006,7 +791,7 @@ export function Transcript({
               </div>
             )}
             {hasConversationStarted &&
-              visibleTurns.map((turn, turnIndex) => {
+              turnsWithStages.map(({ turn, groupedWithStages, stages }, turnIndex) => {
                 const previousTurn = turnIndex > 0 ? visibleTurns[turnIndex - 1] : undefined
                 const showTimeGapDivider =
                   previousTurn?.userItem != null &&
@@ -1015,14 +800,7 @@ export function Transcript({
                   turn.userItem.at !== 0 &&
                   shouldShowTimeGapDivider(previousTurn.userItem.at, turn.userItem.at)
 
-                let previousRow: GroupedTranscriptItem | undefined
-
-                // Issue #457 quality-gate fix (round 2): every hidden thinking item is stripped
-                // before grouping (not only a non-streaming one -- see `rowVisibility`'s own comment
-                // for why a streaming one isn't safe to keep here either).
-                const itemsForGrouping = transcriptDisplay.thinking
-                  ? turn.items
-                  : turn.items.filter((item) => item.kind !== 'thinking')
+                let previousRow: AdvisoryGroupedTranscriptItem | undefined
 
                 // Quality-gate fix (round 2, corrected round 3): only one row per turn may ever
                 // surface as `'sr-only'` -- a sequential run of same-tool calls would otherwise
@@ -1039,12 +817,12 @@ export function Transcript({
                 // candidate in the same turn downgrades to `'hidden'`. `rowVisibility` is still
                 // called exactly once per row (the `.map()` below), not again later in the render.
                 const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
-                const basePairs = groupToolItems(itemsForGrouping).map(
-                  (row): [GroupedTranscriptItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
+                const basePairs = groupedWithStages.map(
+                  (row): [AdvisoryGroupedTranscriptItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
                 )
                 const lastSrOnlyIndex = isActiveTurn ? basePairs.findLastIndex(([, visibility]) => visibility === 'sr-only') : -1
                 const rows = basePairs
-                  .map(([row, visibility], pairIndex): [GroupedTranscriptItem, RowVisibility] =>
+                  .map(([row, visibility], pairIndex): [AdvisoryGroupedTranscriptItem, RowVisibility] =>
                     visibility === 'sr-only' && pairIndex !== lastSrOnlyIndex ? [row, 'hidden'] : [row, visibility]
                   )
                   .filter(([, visibility]) => visibility !== 'hidden')
@@ -1081,17 +859,16 @@ export function Transcript({
                             messageId={row.id}
                             className="[content-visibility:visible] [contain-intrinsic-size:none]"
                           >
-                            {/* Quality-gate fix (round 3): no third branch -- `rowVisibility` only
-                                ever returns `'sr-only'` for a `ToolGroup` or a `'subagent'` row, so a
-                                row reaching here is always one of the two; a cast documents that
-                                instead of a dead-code fallback the type checker can't see is
-                                unreachable. */}
+                            {/* `rowVisibility` only ever returns `'sr-only'` for a `ToolGroup` or
+                                `StageGroup` now -- the final `undefined` only satisfies the type checker and never renders. */}
                             <span className="sr-only">
-                              {isToolGroup(row)
-                                ? row.items[0]!.skill
-                                  ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
-                                  : `${toolStatusLabel('running')} ${row.tool}`
-                                : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
+                              {isStageGroup(row)
+                                ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
+                                : isToolGroup(row)
+                                  ? row.items[0]!.skill
+                                    ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
+                                    : `${toolStatusLabel('running')} ${row.tool}`
+                                  : undefined}
                             </span>
                           </MessageScrollerItem>
                         )
@@ -1109,13 +886,17 @@ export function Transcript({
                             item={row}
                             sessionId={sessionId}
                             pending={pending}
-                            userName={userName}
-                            resolvedAskByRequestId={resolvedAskByRequestId}
+                            userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
+                            resolvedAsk={row.kind === 'request' ? askLinks.askByRequestId.get(row.requestId) : undefined}
+                            askRequestId={row.kind === 'tool' ? askLinks.requestIdByAskItemId.get(row.id) : undefined}
+                            onAdvisoryReveal={handleAdvisoryReveal} onQueuedAnnounce={setRevealedAnnouncement}
                           />
                         </MessageScrollerItem>
                       )
                     })}
                     {announceThinking && <span className="sr-only">Thinking</span>}
+                    <SubagentChainRow stages={stages} sessionId={sessionId} />
+                    <UpNextList sessionId={sessionId} stagesCount={stages.length} isLastTurn={turnIndex === visibleTurns.length - 1} />
                     <TurnTotalLine
                       turn={turn}
                       isLastTurn={turnIndex === visibleTurns.length - 1}
@@ -1127,22 +908,26 @@ export function Transcript({
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
-        {/* Issue #618 gate-fix (code/verif/a11y High): a sibling of the viewport, OUTSIDE
-            `MessageScrollerContent`'s own `role="log"` above -- same reasoning the
-            `revealedAnnouncement` status span just below already relies on. Nested inside the
-            log, this notice's own sr-only label was being read as a second announcement on top
-            of `announceStart`, each `startProgress.kind` change re-announced it again, and its
-            Keep waiting/Cancel buttons were focusable controls sitting inside a live log. This
-            file's `MessageScroller` root is `relative` (components/ui/message-scroller.tsx), so
-            this overlays centred over the empty transcript area exactly where "Ready..." would
-            otherwise sit. Gate-fix (round 3): no `hasHistory`/`hasConversationStarted` check
-            here any more -- `ChatPane.tsx` already decided whether this placement applies before
-            ever passing `startNotice` (its own `showInline`), so rendering it whenever given is
-            both simpler and correct; re-adding a second, narrower guard here is exactly what let
-            a Retry-after-failure start render NEITHER notice in round 2. */}
+        {/* Issue #618 gate-fix: sibling of the viewport, OUTSIDE `MessageScrollerContent`'s own
+            `role="log"`; centred over the empty area or the dimmed history (`dimTranscript`).
+            `items-center-safe`+`overflow-y-auto` (round 1) keep Keep waiting/Cancel reachable on
+            a short pane. `peer-focus-within:*` (round 2, corrected round 3: a SIBLING selector,
+            so it belongs here, not the inner wrapper) fades this on focus inside the viewport;
+            the wrapper's own arbitrary-variant selector stops it taking clicks while faded. */}
         {startNotice && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
-            <div className="pointer-events-auto">{startNotice}</div>
+          <div
+            data-start-overlay
+            className={cn(
+              'pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2 transition-opacity duration-150',
+              dimTranscript && 'peer-focus-within:opacity-0'
+            )}
+          >
+            <div
+              data-start-notice-wrapper
+              className={cn('pointer-events-auto', dimTranscript && '[.peer:focus-within~[data-start-overlay]_&]:pointer-events-none')}
+            >
+              {startNotice(dimTranscript)}
+            </div>
           </div>
         )}
         {/* Quality-gate fix (a11y, cycle 2/3, 2026-10-08): a sibling of the viewport, OUTSIDE
@@ -1153,6 +938,9 @@ export function Transcript({
             `handleLoadEarlier` sets it. */}
         <span role="status" aria-live="polite" className="sr-only">
           {revealedAnnouncement}
+        </span>
+        <span role="status" aria-live="polite" className="sr-only">
+          {stageAnnouncement}
         </span>
         <Button
           ref={buttonRef}
@@ -1175,5 +963,6 @@ export function Transcript({
       </MessageScroller>
     </MessageScrollerProvider>
     </LinkContext.Provider>
+    </JumpToStageContext.Provider>
   )
 }

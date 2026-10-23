@@ -248,9 +248,26 @@ window.__ready = true
   // Node's built-in TypeScript support: copied to a `.mts` path so Node treats it as ESM+TS
   // regardless of this package's own `"type": "commonjs"`. This is the SAME module Markdown.tsx's
   // `MermaidBlock` imports -- not a hand-copied duplicate that could silently drift from it.
+  // Gate-fix (#1074 round 1, discovered live): `mermaidTheme.ts` imports its own per-theme DATA
+  // from a sibling module, `./mermaidThemeData` (extracted out in #551/#806's file-size ratchet
+  // follow-up, after this script was last written) -- Node's native TS-stripping resolver needs
+  // an explicit extension for a relative specifier, so copying only `mermaidTheme.ts` left this
+  // script unable to even IMPORT its own subject (`ERR_MODULE_NOT_FOUND`), the real reason every
+  // `nordic-frost`/`cyber-amber` comment in `mermaidThemeData.ts` has called this check "deferred
+  // to this lane's build slot" ever since -- it was not merely unrun, it could never have run.
+  // `mermaidThemeData.ts` itself has no runtime imports (its two `import type` lines are erased
+  // by TS stripping), so copying it alongside and rewriting `mermaidTheme.mts`'s own specifier to
+  // the copy's real `.mts` extension is enough; no further transitive files are needed.
   const tsSourcePath = path.join(repoRoot, 'src/shared/mermaidTheme.ts')
   const mtsPath = path.join(workDir, 'mermaidTheme.mts')
-  cpSync(tsSourcePath, mtsPath)
+  const mermaidThemeDataSourcePath = path.join(repoRoot, 'src/shared/mermaidThemeData.ts')
+  const mermaidThemeDataMtsPath = path.join(workDir, 'mermaidThemeData.mts')
+  cpSync(mermaidThemeDataSourcePath, mermaidThemeDataMtsPath)
+  const mermaidThemeSource = readFileSync(tsSourcePath, 'utf-8').replace(
+    /(['"])\.\/mermaidThemeData\1/g,
+    "$1./mermaidThemeData.mts$1"
+  )
+  writeFileSync(mtsPath, mermaidThemeSource)
   const { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } = await import(pathToFileURL(mtsPath).href)
 
   const themeCSSByTheme = Object.fromEntries(

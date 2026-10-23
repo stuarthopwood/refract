@@ -4,6 +4,7 @@
 // (FR-015). Reached via the temporary gear control in SessionList.tsx (research.md decision 7)
 // until spec 008's profile-item cog supersedes it.
 import { useEffect, useRef } from 'react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeftIcon } from 'lucide-react'
@@ -105,12 +106,29 @@ export function SettingsScreen() {
                   type="button"
                   aria-current={section.id === settingsSection ? 'page' : undefined}
                   onClick={() => openSettings(section.id)}
+                  // Issue #1122: `relative` anchors the new shared bar below; `data-choice-item`
+                  // joins the square-choice selector (globals.css) -- the unlayered rule there
+                  // overrides this button's own `rounded-md` regardless of source order.
+                  // Gate round 1 fix (code/a11y, two reviewers, pixel-measured in dark-03): the
+                  // native button's own `border border-transparent` defaults to
+                  // `background-clip: border-box`, which left a 1px band between the fill and
+                  // the bar at the row's own top/bottom edges -- `bg-clip-padding` clips the
+                  // fill to the padding box instead, flush with the bar. Fill is now the shared
+                  // `bg-accent`/`text-accent-foreground` (not `bg-muted`), matching every other
+                  // main-content selected row (components.md).
+                  data-choice-item
                   className={cn(
-                    'block w-full rounded-md border border-transparent px-2 py-1.5 text-left text-sm outline-none',
+                    'relative block w-full rounded-md border border-transparent bg-clip-padding px-2 py-1.5 text-left text-sm outline-none',
                     'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
-                    section.id === settingsSection ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                    // Forced colours strips the box-shadow ring and the transparent border, so
+                    // draw a real outline there (same pattern as SessionList.tsx's Clear filter).
+                    'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
+                    section.id === settingsSection ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                   )}
                 >
+                  {/* Issue #1122: every other persistent selected surface gets this bar -- the
+                      Settings nav never had one at all. */}
+                  {section.id === settingsSection && <ActiveIndicatorBar />}
                   {section.label}
                 </button>
               </li>

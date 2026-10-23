@@ -512,3 +512,316 @@ simulated through `window.__refractStores`, the same route as every prior pass);
 (mouse `:hover`) display of the `title` tooltip itself was not captured (the attribute's presence
 and value were read directly from the DOM instead, which is what a screen reader/assistive
 technology also exposes, independent of mouse hover).
+
+## Phase 34: Convergence for issue #437
+
+**Goal**: close the gap between the amended FR-002/FR-003 (2026-10-15 grill: one shared
+lower-case `k`/`m`/`b` number formatter for the Changes Readout, the Context usage Readout, and
+the Session details card's diff line, replacing the upper-case/variable-decimal
+`Intl.NumberFormat(..., { notation: 'compact' })` helper `ReadoutChips.tsx` uses today only for
+the Changes chip) and the code, which still shows the old format in both places and has no
+shared module at all.
+
+- [X] T130 [US1] Add `src/renderer/lib/compactNumber.ts`: one `compactNumber(n: number): string`
+  export. Plain below 1,000; above it, abbreviate with lower-case `k`/`m`/`b` (English suffixes
+  regardless of locale), at most one decimal, trailing zero dropped (`1m`, never `1.0m`), round
+  half up; when rounding to one decimal would reach 1,000 of the current tier, carry into the
+  next larger tier instead (999,950 -> `1m`, never `1000k`).
+- [X] T131 [US1] `sessionDisplay.tsx`'s `formatDiffStat` uses `compactNumber` for `stat.files`,
+  `stat.additions`, and `stat.deletions` (singular/plural "file"/"files" still keyed off the RAW
+  `stat.files` value, unaffected by abbreviation). This is the Session details card's own figure
+  (`SessionDetailsCard.tsx`), so it now abbreviates there too, matching the status line.
+- [X] T132 [US1] `ReadoutChips.tsx`'s `ChangesChip` calls `formatDiffStat` unconditionally for the
+  real-`DiffStat` case (the separate large-count branch and the local `compact()`/
+  `COMPACT_NUMBER_FORMAT`/`COMPACT_THRESHOLD` helpers are removed entirely, now that
+  `formatDiffStat` itself abbreviates).
+- [X] T133 [US1] `ReadoutChips.tsx`'s `ContextUsageChip`: visible text becomes
+  `"{compactNumber(used)}/{compactNumber(window)} ({percent}%)"` (drops the word "tokens"); the
+  existing `NUMBER_FORMAT` constant is removed once nothing else in the file uses it. Both the
+  normal and the high-usage state get a real `sr-only` span carrying the full phrase ("Context
+  usage{ high|}: {used} of {window} tokens used, {percent} percent") next to the existing
+  `aria-hidden` visual span, the same pattern `CurrentTimeChip`/`TodoProgressChip` already use;
+  the chip's own `accessibleName` prop (passed to `ReadoutChip`'s role-less `<span>` fallback,
+  which several real screen readers ignore `aria-label` on) is dropped for this chip.
+
+**Verified 2026-10-15**: `compactNumber` checked in isolation against every decided example
+before wiring it in -- `842`->`"842"`, `128000`->`"128k"`, `44842`->`"44.8k"`, `180000`->`"180k"`,
+`200000`->`"200k"`, `1048576`->`"1m"`, `1500000000`->`"1.5b"`, `2000000000`->`"2b"`, and the
+rounding-carry case `999950`->`"1m"` (never `"1000k"`), plus `0`/`1`/`999` staying plain and a
+negative input keeping its sign -- all matched. `grep` confirms zero remaining references to
+`COMPACT_NUMBER_FORMAT`/`COMPACT_THRESHOLD`/the old module-level `NUMBER_FORMAT` anywhere under
+`src/renderer`. `pnpm typecheck` (`tsconfig.web.json`), `pnpm test` (148/148, unchanged -- no
+existing test touched this code), `pnpm check:indent` (0 odd-indent), and `pnpm check:file-size`
+(0 violations/311 files, the new module well under the cap) all pass. Live check (same isolated
+scratch Tauri instance pattern as the #564 live checks in this PR): appended 1,050 lines to a
+scratch Session's tracked file, forced a fresh `on_launch` via `sessions.recover` (no real model
+turn needed), **7/7 checks pass** -- the status line's Changes Readout shows `1 file changed
+\+1.1k -0` and, scoped strictly to the Session details card's own `[data-slot="hover-card-
+content"]` container (its own on-demand diffStat, separate from the cached readout, so this
+could not accidentally re-match the status line's span), the hover card shows the byte-identical
+string once its own "Counting changes…" loading state resolves. Screenshots in the PR body. Not
+independently driven: a real OMP agent reporting a context-window usage large enough to exercise
+the `m`/`b` tiers (the scratch harness's fake model never reports usage at all, so the Context
+usage chip stays hidden in every live check; `compactNumber`'s own tier logic is identical
+regardless of which Readout calls it, and is exercised directly above).
+
+## Phase 35: Convergence for gate round 5 (`agent://Arch877`)
+
+**Goal**: two Medium findings from the fifth gate on PR #877 (#564's composer restyle), scoped
+to this spec's own chips: the Subagents running state's emphasis was a no-op, and the Context
+usage high-warning threshold disagreed with the displayed percent.
+
+- [X] T131 [US1] `ReadoutChips.tsx`'s `SubagentsChip`: `className` changed from
+  `running === 0 ? 'text-muted-foreground' : undefined` to `running > 0 ? 'text-foreground' :
+  undefined` (FR-007 amended). `ReadoutChip.tsx`'s own base class already carries
+  `text-muted-foreground`, so the old condition never actually differed from the chip's resting
+  state in either branch -- flipped so the RUNNING state is the one with real visual weight.
+- [X] T132 [US1] `ReadoutChips.tsx`'s `ContextUsageChip`: `high` now tests the rounded, DISPLAYED
+  `percent` instead of the raw `contextUsage.percent` (FR-003 amended) -- a raw value of 89.5 to
+  89.99 rounds to the shown "90%" but was previously still under the raw 90 threshold, so the
+  warning silently disagreed with what the developer actually read.
+
+**Verified 2026-10-15**: `pnpm typecheck`, `pnpm test` (148/148, unchanged -- neither chip has a
+dedicated unit test, both are exercised live below), `pnpm check:indent`, and the full
+`node scripts/ci-local.mjs` (all 16 steps, including `cargo test`/`clippy`/`fmt` and the Tauri
+debug build) all pass. Live-checked on an isolated scratch Tauri instance alongside the rest of
+this PR's gate round 5 work: the status line's own screenshots (see spec 001's tasks.md Phase 37
+gate round 5 entry) show the Subagents chip's running state in the default foreground colour,
+visibly distinct from the muted Readouts beside it. The Context usage high-threshold fix itself
+was NOT independently live-exercised (same gap Phase 34 recorded: the scratch harness's fake
+model never reports context-window usage at all, so this chip stays hidden in every live check
+here) -- confirmed by direct inspection of the changed comparison instead (`percent` is computed
+one line above `high` and used identically by both).
+
+## Phase 36: Convergence (renumbered from Phase 34 during the #877/#437/#563 merge, 2026-10-15 --
+origin/main already used Phase 34/35 for issue #437 and gate round 5)
+
+- [X] T130 [US3] Rewrite the Subagent panel (`SubagentPanel.tsx`) as a keyboard-operable
+  `role="tree"` (FR-024 to FR-026) in a vertical `ResizablePanelGroup` over the selected agent's
+  live stream, the tree above the stream with a keyboard-operable `ResizableHandle` ("Resize
+  agent tree and stream"). One level deep today (`buildSubagentTree`/`flattenSubagentTree`,
+  honest about #712's not-yet-subscribed child-agent data -- no placeholder grandchild row): a
+  roving tab stop, Up/Down/Home/End, single-character type-ahead, and Left/Right already wired
+  for a child row that cannot exist yet (a one-line change once #712 lands, not a rewrite).
+  Indentation is 16px per level, visually capped at 3 levels, with `aria-level` carrying the
+  true depth regardless. The selected row is marked by the shared 2px `--active-indicator` bar
+  (`SessionList.tsx`/`ManageSessionRow.tsx` precedent) instead of `bg-muted`; its status icon and
+  word now come from the shared `subagentStatus.tsx` module (`SubagentStatusIcon`), replacing the
+  panel's own now-superseded local `SubagentStateIcon`/`STATE_LABEL`; its duration uses the same
+  `formatDuration` the chat transcript's own `SubagentRow` already imports from `toolStatus.tsx`,
+  never a second formatter. Opening the panel pre-selected on an agent focuses that row once
+  mounted (an effect keyed on the store's `selectedId`). (#563)
+- [X] T131 [US3] Extend `subagent-store.ts`'s `openPanel`/`closePanel` and
+  `hosted-panel-actions.ts`'s `openHostedPanel` with an additive
+  `{ selectSubagentId?, opener? }` contract (FR-027, issue #563): a new `openerEl` field records
+  whichever control opened the panel this time (replaced wholesale on every `openPanel` call,
+  cleared back to `null` everywhere `sessionId` itself is cleared); closing the panel focuses
+  `openerEl` first when it is still connected to the document, falling back to the Subagents
+  chip only when it is not. `selectSubagentId` pre-selects an agent through the existing
+  `selectSubagent` fetch/cache path (no duplicated fetch logic) -- the route the chat pane's new
+  Stage/chain rows (a sibling slice, different files) use to open the panel already pointed at a
+  specific agent. Every other field and method of both modules keeps its exact prior behaviour.
+  (#563)
+
+Built and verified both files above in isolation (the chat-side Stage/chain rows that actually
+call `openPanel` with `selectSubagentId`/`opener` are a sibling slice, different files, landing
+separately): `pnpm typecheck` (`tsc --noEmit` on both `tsconfig.node.json` and
+`tsconfig.web.json`) clean; `pnpm check:drag-regions` (0 violations across 114 files),
+`pnpm check:indent` (0 odd-indent lines), and `pnpm check:theme-contrast` (all 313 pairs PASS,
+3 themes) all clean after these changes; `pnpm check:file-size` confirms both edited files stay
+nowhere near the 600-line soft cap (`SubagentPanel.tsx` 252 lines, `subagent-store.ts` 271
+lines) -- the pre-existing `src/shared/model.ts` one-line-over-baseline flag this script also
+reports predates this pass (untouched by it) and is out of scope here. Not independently driven
+this round: `pnpm build`/`pnpm check:ui-text` (both need a full Rust build, left for the single
+combined verification pass after the sibling chat-side slice also lands, per this story's own
+assignment, to avoid two agents racing a heavy build at once) and any live Electron/CDP exercise
+of the new tree's keyboard behaviour or the opener-based focus return -- the latter's real
+end-to-end trigger (a chat Stage/chain row's own "Show subagents panel" button) does not exist
+until that sibling slice lands.
+
+## Phase 37: Convergence
+
+- [X] T132 [US1] #928 status line type (v0.3.0 feedback item 5, Decided, Skippy, delegated by
+  Stuart 2026-10-16 -- grilled, resolved on the issue): `ReadoutChip.tsx`'s shared baseline moves
+  from `text-xs`/`size-3` (12px/12px) to `text-readout`/`size-3.5` (13px/14px) at its three icon
+  render sites and its one shared `baseClasses` string -- every status-line readout (`ReadoutChip`
+  is used nowhere else today) picks this up automatically, read-only ones and interactive ones
+  alike. `globals.css` gains `--text-readout: 13px` in the theme-independent `@theme { ... }`
+  font-role block (generates the `text-readout` utility), the one new named type-scale step, not
+  a bare `text-[13px]` arbitrary value.
+- [X] T133 [US1] Update the docs: amended `specs/004-session-readout/spec.md`'s FR-023 and this
+  `### Session 2026-10-16 (status line type)` Clarifications entry; `docs/design/foundations-
+  typography-spacing.md` gains a new "Status line type" section documenting the 13px/14px step
+  and the `--text-readout` token; `docs/PLAN.md`'s "v0.3.0 feedback" row gets an in-flight note
+  (shipped together with #927, per its own "Suggested order" line).
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #928; a no-build prep
+lane, per `docs/PLAN.md`'s own working rules). `pnpm typecheck`, `pnpm vitest run` (148 tests)
+and `node scripts/check-indent.mjs` (0 odd-indent lines) all ran clean after this change; this
+ships in the same PR as #927 (`specs/001-core-session-workspace/tasks.md` Phase 50), which also
+records the no-build-lane items (`pnpm build`/`pnpm check:ui-text`/the new CDP live check) left
+for the build lane that picks the PR up.
+
+## Phase 38: Convergence
+
+- [X] T134 [US1] FR-028: `ReadoutChip.tsx` gains `pressed`/`controls` props (rendering real
+  `aria-pressed`/`aria-controls` on the interactive `<button>`, never changing the plain-span or
+  external-link branches); `ReadoutChips.tsx`'s `TodoProgressChip` becomes the pin-toggle control
+  -- a fixed accessible name ("Pin todo list (Todo d/t)") computed from the shared derive,
+  toggling a new per-Session, non-persisted `useTodoPinStore` (`pinnedBySession`), with a pin
+  glyph (`PinIcon`) and a rendered border (`aria-pressed:border`) replacing the default
+  `ListTodoIcon` while pinned -- never the hover/open-card background every other interactive
+  readout keeps. (#700/#701)
+- [X] T135 [US1] FR-029: a new `PinnedTodoPanel.tsx` (`src/renderer/features/chat/`), mounted in
+  `ChatPane.tsx` directly above the message box, reading `SessionReadout.todoTree` and
+  `useTodoPinStore`'s `pinned`/`collapsed` state. Header (`h-6`, the done/total figure plus the
+  current task, truncated), a Collapse chevron (`aria-expanded`) and an Unpin button (both ghost
+  icon buttons, fixed accessible names); the task list (`max-h-[min(12rem,30vh)]`, scrolling)
+  grouped by phase (header shown only for 2+ phases, a finished phase folded to one line); each
+  task shows a status icon/word (`CircleDotIcon`/working colour/`font-medium` for `in_progress`,
+  `CheckCircle2Icon`/muted for `completed`, `CircleSlashIcon`/muted/strike-through for
+  `abandoned`, `CircleAlertIcon`/amber plus a second "Blocked: <reason>" line for `blocked`,
+  `pending` and `completed`'s own words screen-reader only). The list follows the current
+  `in_progress` task, keeping it in view by setting the list's own `scrollTop` directly (never
+  `scrollIntoView`, which can scroll an ancestor), latched off only by a real wheel/pointer/key
+  event on the list itself, re-armed on mount, expand and re-pin. The panel unmounts entirely
+  once `hasTodoPlan` is false (pin survives), and auto-collapses (the task list itself hides,
+  not just the header text) once every open task completes, leaving the user free to expand it
+  again afterward. (#700/#701)
+
+  **Gate round 1 fixes (Main, consolidated five-reviewer findings on PR #1054):** the follow-
+  current effect used to latch on its OWN `onScroll` (the very first follow permanently
+  disabled every later one); `ChatPane.tsx` now renders this with `key={sessionId}` so latch/
+  scroll state never leaks between Sessions. Unpinning, or the plan vanishing, used to strand
+  focus on `<body>`; a `useLayoutEffect`-cleanup focus-intent (`isFocusStranded`, `@/lib/focus`,
+  the `useFocusSearchOnStrandedUnmount.ts`/#900 precedent) now redirects it to the pill
+  (`aria-controls`'s own target) or the composer. An unrecognised task status no longer crashes
+  the render (renderer falls back to the `pending` glyph; `readout_todo.rs`'s own
+  `parse_todo_phases` normalises an unknown/missing wire status to `"pending"` first). The panel
+  is now a real `<section aria-label="Todo list">` region; the Collapse control has a FIXED
+  name ("Todo list details") plus `aria-controls` to the list's own id (the permanently-pressed
+  ghost-button fill from `aria-expanded:bg-muted` is overridden off for this one button); both
+  Collapse and Unpin gained a Tooltip, `aria-describedby={undefined}`, and the forced-colours
+  focus class (`COMPOSER_BUTTON_FOCUS_CLASS`). The scrolling list is a keyboard Tab stop
+  (`tabIndex={0}`) only while it genuinely overflows. A folded phase header now shows a muted
+  check icon; a completed task's own text recedes (muted); the header's current-task text
+  carries a `title` attribute for when it truncates. `deriveCurrentTask` (`todoDerive.ts`) now
+  returns `{phase, task}` (replacing this file's own duplicate `findCurrentTask`); `hasTodoPlan`
+  is now a type guard, dropping every `as TodoPhase[]` cast.
+- [X] T136 [US1] FR-030: `UpNextList.tsx` reads `useTodoPinStore`'s `pinned` flag for its own
+  Session and hides (alongside its existing `isLastTurn`/`stagesCount`/empty-list guards) while
+  pinned, so the plan never shows twice. (#700/#701; amends spec 001 FR-079)
+- [X] T137 [US1] Shared pure derive: a new `src/shared/todo.ts` (`TodoTaskStatus`, `TodoTask`,
+  `TodoPhase`, standalone so neither `model.ts` -- at its own 656-line baseline -- nor the
+  renderer derive duplicate the wire shape) and a new
+  `src/renderer/features/chat/readout/todoDerive.ts` (`hasTodoPlan`, `deriveTodoTotals`,
+  `derivePhaseTotals`, `isPhaseFinished`, `deriveCurrentTask`, `isTodoAllDone`): `total` excludes
+  `abandoned` tasks, `done` counts only `completed`, a `blocked` task counts as open -- the ONE
+  place this math lives, ready for the Todo card (#700 slice (b)) and #526/#687 to import without
+  a second copy. (#700/#701)
+- [X] T138 [US1] Rust: `readout_todo.rs`'s `TodoTaskState` gains `content`/`blocker` alongside
+  `status` (`parse_todo_phases` reads both); a new `build_todo_tree` serialises the retained tree
+  to the wire shape. `readout.rs`'s `on_frame` now replaces the retained `todo_phases` tree from
+  the `todo` tool's own `tool_execution_end` `result.details.phases` the instant one arrives
+  (live, mid-turn), in addition to the existing `sync_from_state` resync at launch/Conversation
+  switch/settle; `build_readout_value`/`empty_readout` drop the old server-computed
+  `todoProgress: {done,total}` field entirely in favour of the raw `todoTree` (FR-028's shared
+  derive is now the only place that math runs). `compute_up_next`/`todoPhases` (Up next) are
+  unchanged. FINDINGS item 62 (`docs/spike/todo-tree-pin-probe-700.mjs`, live on `omp 18.12.2`)
+  confirms the exact shape and status vocabulary before this task relied on either. (#700/#701)
+- [X] T139 [US1] Docs: `specs/004-session-readout/spec.md` gains a 2026-10-19 Clarifications
+  entry, FR-028 to FR-030, a 12th User Story 1 acceptance scenario, three Edge Cases, a Pinned
+  todo panel Key Entity, and a deferred-to-slice-(b)/(c) Assumptions note; `data-model.md`'s
+  `SessionReadout` replaces `todoProgress` with `todoTree`; `specs/001-core-session-workspace/
+  spec.md`'s FR-079 gets a one-line amendment note for the new hide-while-pinned exception.
+  `docs/PLAN.md`'s "Current work banner"/"Todo and agents cards, todo pin" row records slice (a)
+  as shipped. (#700/#701)
+
+Built against the issue's own decision record (Skippy, delegated by Stuart 2026-10-19, away
+mode, `ui-architect-v3` ruling, full text on issue #700's latest comment), as a no-build lane
+(Rust/TS code only, no spawned live agent beyond the one-shot `docs/spike/todo-tree-pin-probe-
+700.mjs` FINDINGS probe): `pnpm typecheck` (both `tsconfig.node.json` and `tsconfig.web.json`)
+clean; `pnpm test` (148 tests, 11 files) all passing; `pnpm check:indent` (0 odd-indent lines
+across 415 files); `pnpm check:file-size` (0 cap violations -- `ChatPane.tsx` 1419/1445,
+`ReadoutChips.tsx` 511/600, `model.ts` 656/656, `readout.rs` 584/600, all within their recorded
+baselines or the 600-line soft cap); `pnpm check:theme-contrast` (all 829 pairs across 5 themes
+PASS -- every status icon/word uses an EXISTING checked token, `text-state-working`/
+`text-severity-warning`/`text-muted-foreground`, so no new `theme-contrast-pairs.mjs` entry was
+needed); `cargo fmt --check` clean on both touched Rust files. Not independently driven this
+round: `cargo check`/`clippy`/`test`, `pnpm build`, and the live CDP verify script
+(`scripts/verify-700-todo-pin.mjs`) -- left for the build-slot pass (one heavy build at a time
+across the concurrently-running lanes this session).
+
+## Phase 39: Convergence
+
+- [X] T140 [US1] FR-010/FR-031: `ReadoutChip.tsx` now forwards a ref and accepts
+  `onPointerEnter`/`onPointerLeave`/`onFocus`/`onBlur`, spread onto whichever of its three render
+  branches (button/anchor/span) is active -- the ref lets a Radix `PopoverAnchor asChild`
+  composition measure the chip directly, which the component could not support before (noted as
+  a known gap on `AdvisorChip`'s own comment, now closed). (#700)
+- [X] T141 [US1] FR-031: a new `useReadoutCard.ts` (`features/chat/readout/`) -- the one shared
+  hover/focus-open controller both cards below use: opens after a 400ms hover delay or on
+  `:focus-visible`, stays open while the pointer is over the anchor OR the content ("hoverable",
+  a 150ms grace window covers the travel between them), closes on Escape (a `window` keydown
+  listener, since the content holds no focusable element of its own to attach a React handler
+  to) or on losing both hover and focus, and accepts a `disabled` flag (the Todo card's own
+  "never opens while pinned"). (#700)
+- [X] T142 [US1] FR-031: the pinned panel's own row renderer (`TASK_STATUS_GLYPH`/
+  `statusGlyph`/`currentTaskKeyOf`/`TodoPhaseGroup`/`TodoTaskRow`) is extracted out of
+  `PinnedTodoPanel.tsx` into a new shared `TodoTree.tsx`, so the new `TodoCard.tsx` (the Todo
+  hover/focus card's own content -- every phase expanded, no scroll-follow/collapse/Unpin, a
+  plain capped scroll) renders the identical tree, never a second implementation of one task
+  row. (#700)
+- [X] T143 [US1] FR-032: a new `subagentDerive.ts` (`deriveSubagentPhrase`/
+  `deriveSubagentSettledPhrase`) extracts `SubagentsChip`'s own running/settled counting wording
+  so the new `AgentsCard.tsx` (one row per running agent -- its own `taskSummary` falling back to
+  `nameOrTask`, plus a ticking elapsed time -- a quiet settled-counts line, and an "Open
+  subagents panel" link reusing the chip's own `openHostedPanel` call) never counts a batch's
+  subagents a second, different way. (#700)
+- [X] T144 [US1] FR-031/FR-032: `ReadoutChips.tsx`'s `TodoProgressChip` and `SubagentsChip` each
+  wrap their existing `ReadoutChip` in a controlled `Popover`/`PopoverAnchor asChild`/
+  `PopoverContent side="top"`, wired to `useReadoutCard`'s own handlers and `TodoCard`/
+  `AgentsCard` as the content; `onOpenAutoFocus`/`onCloseAutoFocus` are both suppressed (the
+  content has nothing focusable, so focus must stay on the pill throughout); the Todo Popover's
+  `useReadoutCard({ disabled: pinned })` keeps the card closed while pinned (decision item 1).
+  (#700)
+- [X] T145 [US1] FR-032: Rust -- `subagents.rs`'s `SummaryEntry` gains `task_summary: Option<
+  String>`, computed by a new `subagent_task_summary` (first `.`/`!`/`?`-delimited sentence of
+  the spec's own `task` text, inclusive, else the whole string, capped at 100 chars with `...`),
+  set in `handle_task_start` alongside the existing `name_or_task`; `subagents_progress.rs`'s
+  `summaries_to_value` serialises it as `taskSummary` when present (the same conditional-insert
+  pattern `durationMs` already uses). `model.ts`'s `SubagentSummary` gains the matching
+  `taskSummary?: string` field, added at net-zero line cost against the file's own 656-line
+  baseline (a two-line doc comment reflowed to one elsewhere in the same interface). (#700)
+- [X] T146 [US1] Docs: `specs/004-session-readout/spec.md` gains a 2026-10-21 Clarifications
+  entry, FR-031/FR-032, a 13th User Story 1 acceptance scenario, three Edge Cases, two Key
+  Entities (Todo card, Agents card), and an Assumptions update recording slice (b) as shipped
+  (slice (c) still deferred); this Phase. (#700)
+
+Built against the issue's own decision record (full text on issue #700's latest comment,
+2026-10-19) as the no-build prep lane for slice (b) (Rust/TS code only, no spawned live agent,
+no new tests per the project's prototyping-phase rule). `pnpm typecheck` (both
+`tsconfig.node.json` and `tsconfig.web.json`) clean; `pnpm test` (148 tests, 11 files) all
+passing; `node scripts/check-indent.mjs` (0 odd-indent lines across 470 files); `node
+scripts/check-file-size.mjs` (0 cap violations across 535 files -- `model.ts` held at its own
+656/656 baseline, `ReadoutChips.tsx` 571/600, `PinnedTodoPanel.tsx` 286/600, `subagents.rs`
+567/600, all comfortably under or within their recorded baselines); `node
+scripts/check-theme-contrast.mjs` (all 892 pairs across 5 themes PASS -- every status icon/word
+and the Agents card's own plain text reuse EXISTING checked tokens, so no new
+`theme-contrast-pairs.mjs` entry was needed); `pnpm check:parity` (115/115 requests, 25/25
+events); `pnpm check:drag-regions` (0 violations across 156 files). Rust: `cargo check` clean;
+`cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` caught one real
+`manual_char_comparison` lint in the new `subagent_task_summary` (fixed: `task.find(['.', '!',
+'?'])` replaces the `|c: char| c == '.' || ...` closure), clean on the rerun. Not independently
+driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
+(`scripts/verify-700-pill-cards.mjs`, not yet written) -- left for the build-slot pass.
+
+
+
+## Phase 40: Convergence
+
+- [ ] T147 Add per-theme `--context-usage-0/-30/-70/-100` tokens to every built-in theme and colour the Context usage figures and the word "high" from an OKLCH blend of them (`contextUsageColor`), muted icon and "Not available" unchanged, per FR-033 (missing)
+- [ ] T148 Extend `check:theme-contrast` to sample the context-usage blend at every 10% step against the composer background in every theme at 4.5:1, tuning the stops until it passes, per FR-033 (missing)
+- [ ] T149 Add the 2px decorative context usage bar under the figures and the `showContextUsageBar` setting (Rust settings store, default on) with a "Show context usage bar" switch in Settings > Chat, per FR-034 (missing)
+- [ ] T150 Move `ContextUsageChip` out of `ReadoutChips.tsx` (at the 600-line cap) into its own module so the new code does not grow it, per Constitution (file-size rule, issue #806) (missing)

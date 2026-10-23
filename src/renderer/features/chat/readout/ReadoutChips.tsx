@@ -1,79 +1,65 @@
-// The chip row's individual readouts (spec 004 FR-002 to FR-007, FR-021), each built on
+// The status line's individual readouts (spec 004 FR-002 to FR-007, FR-021), each built on
 // ReadoutChip.tsx's shared baseline. Each takes an explicit `sessionId` prop (spec 005
 // convergence, tasks.md T030: generalised from a single implicit "the visible Session" to
-// per-session storage, so each pane's own chip row reads its own Session's data) and reads
+// per-session storage, so each pane's own status line reads its own Session's data) and reads
 // `useReadoutStore()`'s entry for that id, seeded from `SessionSnapshot.readout` and kept live
 // by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
-import { useEffect, useState } from 'react'
+// `ContextUsageChip` (#1082: gradient and bar) lives in its own module, `ContextUsageChip.tsx`.
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { MouseEvent, RefObject } from 'react'
 import {
   ClockIcon,
+  EyeIcon,
   FileDiffIcon,
-  GaugeIcon,
   GitPullRequestIcon,
   ListTodoIcon,
-  TriangleAlertIcon,
+  Loader2Icon,
+  PinIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
-import { formatDiffStat } from '@/features/sessions/sessionDisplay'
-import { formatElapsed } from '../Transcript'
-import { ReadoutChip } from './ReadoutChip'
+import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { DiffStatLine, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
+import { formatElapsed } from '../formatElapsed'
+import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
+import { AgentsCard } from './AgentsCard'
+import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
+import { TodoCard } from './TodoCard'
+import { deriveSubagentPhrase } from './subagentDerive'
+import { deriveTodoTotals, hasTodoPlan } from './todoDerive'
+import { useReadoutCard } from './useReadoutCard'
 
-const NUMBER_FORMAT = new Intl.NumberFormat()
-const COMPACT_NUMBER_FORMAT = new Intl.NumberFormat(undefined, { notation: 'compact' })
-/** FR-002: abbreviate past 1000, matching the Session details card's own figure past that size. */
-const COMPACT_THRESHOLD = 1000
-
-function compact(n: number): string {
-  return Math.abs(n) >= COMPACT_THRESHOLD ? COMPACT_NUMBER_FORMAT.format(n) : NUMBER_FORMAT.format(n)
-}
-
-/** FR-002: "N files, +A -D", matching the Session details card's `formatDiffStat` exactly for a
- * real `DiffStat`, abbreviated past 1000; "Not available" for the `'not-available'` literal;
- * hidden (`null`) otherwise. */
+/** FR-002: "N files, +A -D" (each figure abbreviated past 1,000 by the shared `compactNumber`
+ * formatter, issue #437), matching the Session details card's own diff line exactly -- both now
+ * render through the shared `DiffStatLine`, so neither can show or colour the figure a different
+ * way; "Not available" for the `'not-available'` literal; hidden (`null`) otherwise. Spec 018
+ * slice 1 (FR-021): activating it opens the Git changes panel for this pane's Session, the same
+ * explicit-activation pattern `SubagentsChip` below already uses -- this chip's own figure is
+ * read-only (`useReadoutStore`'s diff stat), the Git changes panel is the live, mutable view of
+ * the same worktree. */
 export function ChangesChip({ sessionId }: { sessionId: string }) {
   const changes = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.changes)
+  const onActivate = (event: MouseEvent<HTMLButtonElement>) =>
+    openHostedPanel('git-changes', sessionId, { opener: event.currentTarget })
   if (changes === null) return null
   if (changes === 'not-available') {
     return (
-      <ReadoutChip icon={FileDiffIcon}>
+      <ReadoutChip icon={FileDiffIcon} onActivate={onActivate} accessibleName="Open Git changes panel (Not available)">
         <span>Not available</span>
       </ReadoutChip>
     )
   }
-  const label =
-    changes.files >= COMPACT_THRESHOLD || Math.abs(changes.additions) >= COMPACT_THRESHOLD || Math.abs(changes.deletions) >= COMPACT_THRESHOLD
-      ? `${compact(changes.files)} ${changes.files === 1 ? 'file' : 'files'} changed +${compact(changes.additions)} -${compact(changes.deletions)}${changes.partial ? ' (partial)' : ''}`
-      : formatDiffStat(changes)
   return (
-    <ReadoutChip icon={FileDiffIcon}>
-      <span>{label}</span>
-    </ReadoutChip>
-  )
-}
-
-/** FR-003: "N/M tokens (P%)", hidden when `null`, "Not available" for the `'not-available'`
- * literal, a visible warning (icon + the word "high", never colour alone) once `percent >= 90`. */
-export function ContextUsageChip({ sessionId }: { sessionId: string }) {
-  const contextUsage = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.contextUsage)
-  if (contextUsage === null) return null
-  if (contextUsage === 'not-available') {
-    return (
-      <ReadoutChip icon={GaugeIcon}>
-        <span>Not available</span>
-      </ReadoutChip>
-    )
-  }
-  const percent = Math.round(contextUsage.percent)
-  const high = contextUsage.percent >= 90
-  return (
-    <ReadoutChip icon={high ? TriangleAlertIcon : GaugeIcon} accessibleName={high ? `Context usage high: ${percent}%` : undefined}>
-      <span>
-        {NUMBER_FORMAT.format(contextUsage.usedTokens)}/{NUMBER_FORMAT.format(contextUsage.windowTokens)} tokens ({percent}%)
-        {high && <span className="font-medium text-destructive"> high</span>}
-      </span>
+    <ReadoutChip
+      icon={FileDiffIcon}
+      onActivate={onActivate}
+      accessibleName={`Open Git changes panel (${formatDiffStatAccessible(changes)})`}
+    >
+      <DiffStatLine stat={changes} />
     </ReadoutChip>
   )
 }
@@ -105,7 +91,7 @@ export function TurnTimeChip({ sessionId }: { sessionId: string }) {
  * routine tick is never announced) and a static accessible name read only on focus. Defaults
  * hidden (DEFAULT_SESSION_READOUT); visibility is the row's own settings gate, not this
  * component's concern. */
-export function CurrentTimeChip() {
+export function CurrentTimeChip({ className }: { className?: string } = {}) {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined
@@ -121,7 +107,7 @@ export function CurrentTimeChip() {
   }, [])
   const formatted = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)
   return (
-    <ReadoutChip icon={ClockIcon}>
+    <ReadoutChip icon={ClockIcon} className={className}>
       {/* High remediation (a11y): a plain, non-interactive, role-less <span> cannot be named by
           aria-label per ARIA 1.2 -- several real screen readers (NVDA in browse mode, often
           Narrator/JAWS) read visible content instead, and this span's only content used to be
@@ -172,55 +158,390 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
 
 /** FR-007, FR-017; amended 2026-10-07 for issue #536: shows the running count while any of this
  * turn's subagents are still running, else a quiet comma-joined total of whichever of
- * `finished`/`exited`/`failed` are non-zero (gate fixes 2 finding 7: these are worded
- * distinctly -- "1 finished, 1 exited" -- never folded into one misleading "finished" bucket, and
- * a turn whose only subagents failed reads "1 failed", never a muted, misleading "0 finished");
- * hidden when the turn has started none. Activating it opens the Subagents panel (T021) with an
- * accessible name stating the shown count -- built from the SAME `phrase` the visible
- * `aria-hidden` text uses (gate finding 7 (round 1), WCAG 2.5.3 Label in Name): an accessible
- * name of "Open subagents panel (2 running)" does not CONTAIN the visible text "2 subagents
- * running", so a voice-control user saying the visible words could never target this chip;
- * reusing `phrase` verbatim inside the name makes that impossible to drift apart again. */
+ * `finished`/`exited`/`failed`/`cancelled` are non-zero (gate fixes 2 finding 7: these are
+ * worded distinctly -- "1 finished, 1 exited" -- never folded into one misleading "finished"
+ * bucket, and a turn whose only subagents failed reads "1 failed", never a muted, misleading
+ * "0 finished"; issue #563 decision 15: a cancelled/aborted subagent reads "1 cancelled", never
+ * folded into "failed"); hidden when the turn has started none. Activating it opens the
+ * Subagents panel (T021) with an accessible name stating the shown count -- built from the SAME
+ * `phrase` the visible `aria-hidden` text uses (gate finding 7 (round 1), WCAG 2.5.3 Label in
+ * Name): an accessible name of "Open subagents panel (2 running)" does not CONTAIN the visible
+ * text "2 subagents running", so a voice-control user saying the visible words could never
+ * target this chip; reusing `phrase` verbatim inside the name makes that impossible to drift
+ * apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
-  const onActivate = () => openHostedPanel('subagents', sessionId)
+  const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
+  // Issue #700/#701 slice (b): the Agents hover-focus card, same `useReadoutCard` controller
+  // the Todo pill below uses -- never a Radix `Tooltip`/`HoverCard` (decision item 1). Gate
+  // round 1 fix 2: disabled whenever no subagent is currently running this turn (AC: "No card
+  // appears when there is no todo list or no running agent") -- a finished/failed/cancelled-only
+  // turn still shows its quiet settled phrase on the pill itself, just never opens the card.
+  const card = useReadoutCard({ disabled: (subagentCount?.running ?? 0) === 0 })
+  // Issue #563, FR-027: records the chip itself as the opener when it is the control that
+  // opened the panel this time, so closing it returns focus here instead of always falling back
+  // to the generic rail/launcher fallback `hosted-panel-actions.ts`'s `closeHostedPanel` applies.
+  // Gate round 1 fix 10: also cancels any still-pending hover-open timer first, so a click that
+  // opens (or re-focuses) the Subagents panel can never have the card pop up over it a moment later.
+  const onActivate = (event: MouseEvent<HTMLButtonElement>) => {
+    card.close()
+    openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
+  }
+  // Gate round 1 fix 4: the card's own "Open subagents panel" link is pointer-only (a keyboard
+  // user's own route is the pill itself, already open-panel on Enter/Space via `onActivate`
+  // above) -- closes the card and returns focus to the pill it came from BEFORE opening the
+  // panel, so a click here never strands focus on `<body>` while the panel is already open.
+  const onOpenPanelFromCard = () => {
+    card.close()
+    card.anchorRef.current?.focus({ preventScroll: true })
+    openHostedPanel('subagents', sessionId, { opener: card.anchorRef.current })
+  }
   if (subagentCount === null) return null
-  const { running, finished, exited, failed } = subagentCount
-  const phrase = (() => {
-    if (running > 0) return `${running} subagent${running === 1 ? '' : 's'} running`
-    const parts: string[] = []
-    if (finished > 0) parts.push(`${finished} finished`)
-    if (exited > 0) parts.push(`${exited} exited`)
-    if (failed > 0) parts.push(`${failed} failed`)
-    return parts.join(', ')
-  })()
+  const phrase = deriveSubagentPhrase(subagentCount)
   return (
-    <ReadoutChip
-      icon={UsersIcon}
-      // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
-      // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
-      // focus-move retarget (research.md Decision 10).
-      onActivate={onActivate}
-      accessibleName={`Open subagents panel (${phrase})`}
-      className={running === 0 ? 'text-muted-foreground' : undefined}
+    <Popover
+      open={card.open}
+      onOpenChange={(next) => {
+        if (!next) card.close()
+      }}
     >
-      <span aria-hidden>{phrase}</span>
-    </ReadoutChip>
+      <PopoverAnchor asChild>
+        <ReadoutChip
+          ref={card.anchorRef}
+          icon={UsersIcon}
+          // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
+          // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
+          // focus-move retarget (research.md Decision 10).
+          onActivate={onActivate}
+          accessibleName={`Open subagents panel (${phrase})`}
+          // Gate round 5 fix (Layout/Visual Medium): `ReadoutChip`'s own base class already carries
+          // `text-muted-foreground` -- the old `running === 0 ? 'text-muted-foreground' : undefined`
+          // was a no-op in the finished-only case and never actually emphasised the running state,
+          // which FR-007's "quiet" wording for the finished total assumes exists. Flipped so the
+          // RUNNING state is the one that stands out instead.
+          className={subagentCount.running > 0 ? 'text-foreground' : undefined}
+          onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerLeave={card.anchorHandlers.onPointerLeave}
+          onFocus={card.anchorHandlers.onFocus}
+          onBlur={card.anchorHandlers.onBlur}
+        >
+          <span aria-hidden>{phrase}</span>
+        </ReadoutChip>
+      </PopoverAnchor>
+      {/* Decision item 1: content is inert text, nothing inside is ever focused -- both
+          auto-focus hooks are suppressed so keyboard focus stays on the pill the whole time. */}
+      <PopoverContent
+        data-slot="agents-card"
+        side="top"
+        align="start"
+        collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
+        className="w-auto p-3"
+        onPointerEnter={card.contentHandlers.onPointerEnter}
+        onPointerLeave={card.contentHandlers.onPointerLeave}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <AgentsCard subagents={subagents} counts={subagentCount} onOpenPanel={onOpenPanelFromCard} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
-/** FR-021: "Todo N/M", hidden when the agent has no task list at all. */
+/** FR-021, amended by issue #700/#701 slice (a), decision record item 1: "Todo N/M" is now the
+ * pin-TOGGLE pill -- a native `<button>` (`ReadoutChip`'s own `onActivate` branch), so a click
+ * or keyboard Enter/Space both toggle `useTodoPinStore`'s per-Session `pinned` flag, which
+ * mounts/unmounts `PinnedTodoPanel.tsx` in `ChatPane.tsx`. Hidden when there is no task list at
+ * all (`deriveTodoTotals` returns `null`, the one shared derive also used by the panel). The
+ * accessible name is FIXED regardless of pinned state (decision item 1: "clicking to pin...
+ * keeps focus on the pill" with no name change -- the panel's own header carries the separate
+ * Unpin control, so this pill never needs to say "Unpin"); the pinned LOOK is a pin glyph plus a
+ * rendered border (`aria-pressed:border`), never the hover/open-card background every other
+ * interactive chip already gets from `READOUT_CHIP_INTERACTIVE_ADDITIONS`. */
 export function TodoProgressChip({ sessionId }: { sessionId: string }) {
-  const todoProgress = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoProgress)
-  if (todoProgress === null) return null
+  const todoTree = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoTree)
+  const pinned = useTodoPinStore((s) => s.pinnedBySession[sessionId] ?? false)
+  const togglePinned = useTodoPinStore((s) => s.togglePinned)
+  // Decision item 1: "The card never opens while pinned" -- `disabled` forces `card.open` false
+  // and ignores every hover/focus trigger regardless of what the task list looks like.
+  const card = useReadoutCard({ disabled: pinned })
+  // Gate round 1 fix 10: cancels any still-pending hover-open timer before toggling the pin, so
+  // the card can never pop up over the pinned panel the click just mounted.
+  const onActivate = () => {
+    card.close()
+    togglePinned(sessionId)
+  }
+  if (!hasTodoPlan(todoTree)) return null
+  const totals = deriveTodoTotals(todoTree)
+  if (!totals) return null // unreachable given hasTodoPlan above; keeps TS narrowed without a cast
   return (
-    <ReadoutChip icon={ListTodoIcon}>
-      {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
-          sr-only fix. */}
-      <span className="sr-only">{`Todo: ${todoProgress.done} of ${todoProgress.total} tasks done`}</span>
-      <span aria-hidden>
-        Todo {todoProgress.done}/{todoProgress.total}
-      </span>
-    </ReadoutChip>
+    <Popover
+      open={card.open}
+      onOpenChange={(next) => {
+        if (!next) card.close()
+      }}
+    >
+      <PopoverAnchor asChild>
+        <ReadoutChip
+          ref={card.anchorRef}
+          icon={pinned ? PinIcon : ListTodoIcon}
+          onActivate={onActivate}
+          accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
+          pressed={pinned}
+          controls={`todo-panel-${sessionId}`}
+          pinHookId={sessionId}
+          className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
+          onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerLeave={card.anchorHandlers.onPointerLeave}
+          onFocus={card.anchorHandlers.onFocus}
+          onBlur={card.anchorHandlers.onBlur}
+        >
+          {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
+              sr-only fix. */}
+          <span className="sr-only">{`Todo: ${totals.done} of ${totals.total} tasks done`}</span>
+          <span aria-hidden>
+            Todo {totals.done}/{totals.total}
+          </span>
+        </ReadoutChip>
+      </PopoverAnchor>
+      <PopoverContent
+        data-slot="todo-card"
+        side="top"
+        align="start"
+        collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
+        className="w-auto p-3"
+        onPointerEnter={card.contentHandlers.onPointerEnter}
+        onPointerLeave={card.contentHandlers.onPointerLeave}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <TodoCard todoTree={todoTree} />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// Gate round 1 fix (High, #937): `chat.send` resolving while `/advisor off` turns out to fail
+// still leaves a live chip whose repeat clicks must work again -- bounded so a reply that never
+// arrives (a dropped `advisor:update`) cannot leave it stuck "Turning off..." forever either.
+// Gate round 2 fix (Medium): only armed for an IMMEDIATE (not `queued`) send -- a send accepted
+// while a turn is already running legitimately waits past this bound (the turn itself decides
+// how long), so arming it there would reset `turningOff` to false while `/advisor off` is still
+// genuinely pending, letting a second click queue a duplicate.
+const ADVISOR_TURN_OFF_TIMEOUT_MS = 10_000
+// Gate round 4 fix (Medium, decided): a `queued` send has no fixed bound of its own in
+// principle (it waits for the CURRENT turn, however long that takes) -- but a long, generous
+// ceiling still catches the pathological case (the queue entry silently vanishes with no
+// `advisor:update`, no dequeue, nothing) without firing on an ordinary, slow turn the way the
+// tight 10s bound above would. The queue-leaves and status-leaves-Working effects below both
+// restart the TIGHT 10s bound the moment either gives a real, earlier signal that the wait is
+// actually over.
+const ADVISOR_QUEUED_TIMEOUT_MS = 60_000
+
+/** Issue #937 (follow-up to #917/PR #923): a quiet Advisor readout, shown only while omp's
+ * advisor subsystem is on for this Session -- hidden entirely while off (no Settings toggle,
+ * per the issue's own decision); no cost, spend or token figures anywhere in it or its name.
+ * `advisorOn` comes from `session::advisor` (Rust): the authoritative signal is a typed or
+ * chip-sent `/advisor on|off` reply, plus a best-effort silent `/advisor status` probe at
+ * Session attach/resume (see that module's own header for why the probe's own reply is not
+ * trusted the same way). A plain gate component: `AdvisorChipButton` below only ever mounts
+ * while `advisorOn` is true, so it genuinely unmounts (not a render-to-`null` in place) the
+ * instant it turns off -- gate round 1 fix (High): the earlier single-component version kept
+ * rendering `null` from the SAME instance, so React cleared its button ref during the SAME
+ * commit that removed the button, before the `useLayoutEffect` cleanup keyed on `advisorOn`
+ * ever ran, and the focus handoff/announcement below silently never fired. `key={sessionId}`
+ * also gives every Session a fresh mount (a fresh `turningOff` state) rather than reusing one
+ * stuck from a different Session's own in-flight click. */
+export function AdvisorChip({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
+  const advisorOn = useAdvisorStore((s) => s.bySession[sessionId] ?? false)
+  if (!advisorOn) return null
+  return <AdvisorChipButton key={sessionId} sessionId={sessionId} textareaRef={textareaRef} />
+}
+
+function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
+  const [turningOff, setTurningOff] = useState(false)
+  // Gate round 4 fix (Low, decided): a SEPARATE flag from `turningOff` -- true only while the
+  // send is genuinely `queued` (waiting for the current turn), so the label/tooltip can say so
+  // specifically; always cleared together with `turningOff` everywhere below (see
+  // `resetBusy`), so it can never outlive the busy state itself.
+  const [queuedOff, setQueuedOff] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const timeoutRef = useRef<number | undefined>(undefined)
+  // Gate round 3 fix (Medium): mirrors `turningOff` for the unmount cleanup below, which runs
+  // inside a closure captured once at mount (an empty-deps `useLayoutEffect`) -- reading the
+  // state variable there would see its STALE, always-`false` mount-time value, never the
+  // current one at the moment this instance actually unmounts.
+  const turningOffRef = useRef(false)
+  turningOffRef.current = turningOff
+
+  function resetBusy() {
+    setTurningOff(false)
+    setQueuedOff(false)
+  }
+
+  // A REAL unmount now (see `AdvisorChip`'s own comment above): an empty dependency array is
+  // correct here, matching `RequestCard.tsx`'s `ResolvedRequestSummary`/`AskCard.tsx`'s own
+  // identical pattern -- the cleanup fires once, exactly when this button is actually removed
+  // from the DOM, while `buttonRef.current` still points at it (verified there against React
+  // 19.3's own commit order: a deleted subtree's refs are cleared no earlier than this).
+  useLayoutEffect(() => {
+    return () => {
+      window.clearTimeout(timeoutRef.current)
+      // Gate round 4 fix (High, decided): also requires the STORE's own `advisorOn` to have
+      // actually gone false for THIS session -- `turningOffRef` alone cannot tell a real
+      // toggle-off (which this button genuinely drove) apart from this same instance
+      // unmounting for an UNRELATED reason (a Session switch, a split closing) while a send
+      // was still in flight and the advisor is, as far as the store knows, still ON. Read
+      // directly from the store (not a hook) -- a cleanup closure cannot call hooks.
+      const stillOn = useAdvisorStore.getState().bySession[sessionId] ?? false
+      if (turningOffRef.current && !stillOn) {
+        useDraftStore.getState().announceAttachment(sessionId, 'Advisor off')
+      }
+      if (buttonRef.current?.contains(document.activeElement)) {
+        textareaRef.current?.focus()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Gate round 3 fix (High, "keep it simple"): watches THIS session's own queue for the exact
+  // moment the queued `/advisor off` text leaves it -- delivered (the normal path, settled by
+  // `advisor:update` already), removed (the user's own "Remove" on the chip), or dropped by an
+  // abort (Stop) -- restarting the TIGHT 10s fallback if `advisor:update` still hasn't arrived
+  // by then (down from the long queued bound), so a queued send whose own turn never finishes
+  // (removed, aborted) cannot leave the chip busy for the FULL long bound with no earlier
+  // reset. Also clears `queuedOff`: once the item has left the queue it is no longer "waiting
+  // for the current turn" in any sense this chip's own label should keep claiming.
+  const queue = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
+  const wasQueuedRef = useRef(false)
+  useEffect(() => {
+    const stillQueued = queue.followUp.includes('/advisor off') || queue.steering.includes('/advisor off')
+    if (stillQueued) {
+      wasQueuedRef.current = true
+      return
+    }
+    if (!wasQueuedRef.current) return
+    wasQueuedRef.current = false
+    if (turningOffRef.current) {
+      setQueuedOff(false)
+      window.clearTimeout(timeoutRef.current)
+      timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_TURN_OFF_TIMEOUT_MS)
+    }
+  }, [queue])
+
+  // Gate round 4 fix (Medium, decided): the OTHER, independent signal that the wait is over --
+  // the Session's own status leaving `working`. Catches the same "queued send now actually
+  // pending" moment as the queue effect above, but does not depend on the queue array itself
+  // having visibly updated yet (that effect and this one are deliberately redundant: whichever
+  // observes it first restarts the tight bound; the other is then a no-op, both idempotent).
+  const sessionStatus = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
+  const wasWorkingRef = useRef(false)
+  useEffect(() => {
+    const wasWorking = wasWorkingRef.current
+    wasWorkingRef.current = sessionStatus === 'working'
+    if (wasWorking && sessionStatus !== 'working' && turningOffRef.current) {
+      setQueuedOff(false)
+      window.clearTimeout(timeoutRef.current)
+      timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_TURN_OFF_TIMEOUT_MS)
+    }
+  }, [sessionStatus])
+
+  function handleActivate() {
+    if (turningOff) return
+    setTurningOff(true)
+    // Gate round 1 fix (High): bounded, so a reply that never arrives (a dropped
+    // `advisor:update`, an unexpected process exit) cannot leave the chip stuck "Turning
+    // off..." and unclickable forever -- it simply becomes retryable again.
+    timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_TURN_OFF_TIMEOUT_MS)
+    window.refract.chat
+      .send(sessionId, '/advisor off')
+      .then((result) => {
+        // Gate round 1 fix (High): `chat.send` resolves a `Result`, it does not reject on a
+        // refusal (`unknown-command`, `not-idle`, ...) -- an ordinary `{ ok: false }` refusal
+        // must still reset this, or a refused send leaves the chip stuck busy with no retry.
+        if (!result.ok) {
+          window.clearTimeout(timeoutRef.current)
+          resetBusy()
+          notify(result.error)
+          return
+        }
+        // Gate round 2 fix (Medium): `queued: true` means a turn was already running and
+        // `/advisor off` is now waiting its turn. Gate round 4 fix (Medium, decided): this
+        // callback can resolve AFTER the queue/status effects above have ALREADY observed the
+        // item leave the queue and restarted the tight 10s bound (a real ordering race, the
+        // queue-update event arriving before this promise settles) -- blindly overwriting with
+        // the long queued bound here would clobber that correct, earlier restart. Only acts if
+        // the item is STILL actually in the queue right now (a direct store read, not the
+        // possibly-stale `queue` closed over above).
+        if (result.value.queued) {
+          const live = useQueueStore.getState().bySession[sessionId] ?? EMPTY_QUEUE
+          if (live.followUp.includes('/advisor off') || live.steering.includes('/advisor off')) {
+            setQueuedOff(true)
+            window.clearTimeout(timeoutRef.current)
+            timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_QUEUED_TIMEOUT_MS)
+          }
+        }
+      })
+      .catch((err: unknown) => {
+        // Gate round 2 fix (Medium): the one path the `Result` handling above cannot cover -- a
+        // genuine IPC-layer throw (the channel itself failing), not an ordinary `{ ok: false }`
+        // refusal; left unhandled before, an unresolved rejection with no reset at all. Gate
+        // round 3 fix (Low): routed through the same `notify` as the `ok: false` path above,
+        // not a separate bare `toast.error` call.
+        window.clearTimeout(timeoutRef.current)
+        resetBusy()
+        notify({ code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) })
+      })
+  }
+
+  // Gate round 4 fix (Low, decided): a distinct wording while genuinely queued -- "Turning
+  // off…" alone would otherwise imply an imminent completion throughout a wait that may
+  // legitimately run for as long as the current turn does.
+  const label = queuedOff
+    ? 'Advisor on. Turning off after the current turn…'
+    : turningOff
+      ? 'Advisor on. Turning off…'
+      : 'Advisor on. Turn off'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild aria-describedby={undefined}>
+        <button
+          ref={buttonRef}
+          data-slot="readout-chip"
+          type="button"
+          onClick={handleActivate}
+          aria-label={label}
+          aria-disabled={turningOff}
+          className={cn(
+            READOUT_CHIP_BASE_CLASS,
+            READOUT_CHIP_INTERACTIVE_ADDITIONS,
+            turningOff && COMPOSER_DISABLED_OPACITY_CLASS,
+            turningOff && COMPOSER_DISABLED_HOVER_RESET_CLASS,
+            // Gate round 3 fix (Medium): `COMPOSER_DISABLED_HOVER_RESET_CLASS`'s own
+            // `aria-disabled:hover:text-current` resolves to the INHERITED colour (this status
+            // line's own ambient text colour), not this chip's own resting `muted-foreground`
+            // -- the exact bug `SessionList.tsx`'s own toolbar buttons already found and fixed
+            // (its own doc comment, lines ~34-39) the same way: an explicit, chip-specific
+            // override naming the real resting token, not relying on `currentColor`.
+            turningOff && 'aria-disabled:hover:text-muted-foreground'
+          )}
+        >
+          {/* Gate round 2 fix (Medium, decided): a keyboard user gets no OTHER pending cue once
+              focused (`:focus-visible` already overrides the dimmed opacity, and the tooltip
+              closes the moment focus leaves it on activation) -- a spinning icon is the one cue
+              that still shows either way. Gate round 3 fix: the comment here used to claim this
+              "matches ComposerPickers.tsx exactly" -- it does not: that trigger spins at
+              `size-3` with no `motion-reduce` variant; this one is `size-3.5` (this chip's own
+              icon size, #928) plus `motion-reduce:animate-none` (vestibular-motion sensitivity,
+              not present on that other trigger). Same SPIN APPROACH, deliberately adapted. */}
+          {turningOff ? (
+            <Loader2Icon aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : (
+            <EyeIcon aria-hidden className="size-3.5" />
+          )}
+          <span aria-hidden>Advisor</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }

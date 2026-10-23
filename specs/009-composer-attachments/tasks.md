@@ -779,3 +779,93 @@ see the PR body's own Gates section for this round's exact results. No live app 
 attempted this round (code-level fix plus a read-only probe only); scenarios 1-3 and 6-26 remain
 not completed; a manual pass by Stuart in a normal Session is still requested. Still open pending
 that manual pass.
+
+---
+
+## Phase 8: User Story 5 - Attach any file type, not only images (#926, Priority: P2)
+
+**Goal**: the Attach button, drag-and-drop, and a clipboard paste accept any file, not only
+images; a text file up to 256 KB inlines verbatim, everything else (binary, over-cap, or a folder)
+attaches as its own absolute path, reusing Story 1/3/4's shared attachment strip/remove/cap
+machinery end to end rather than a second pipeline.
+
+- [X] T024 [P] (#926) Write `src-tauri/src/ipc/file_attachments.rs`: `attachments.readFile`
+  classifies a resolved non-image path (inline text up to 256 KB, or path for binary/oversized/a
+  folder -- grill decisions 2/3) in one bounded open-stat-read (never a separate stat then read,
+  mirrors `attachments.rs`'s own `read_image_file` guard); `attachments.pickFiles` is the Attach
+  button's native multi-file dialog, no extension filter. Reuses `attachments.rs`'s own
+  `resolve_attachment_path` (made `pub(super)`) rather than a second containment/symlink walk.
+- [X] T025 (#926) Write `src-tauri/src/omp/file_attachment_markers.rs`: parses the
+  `[[refract-attachments]]` section Refract itself appends to the plain message text back into
+  `FileAttachmentRef`s (research.md Decisions 17-18); wired into `transcript.rs`'s own shared
+  `build_user_item`, called from both `apply_message_snapshot` and `items_from_history` so a live
+  turn and a reopened history build the same `TranscriptItem.fileAttachments` the same way.
+- [X] T026 [P] [US5] Write `src/renderer/features/chat/anyFileAttachments.ts`: `buildAnyPathAttachment`
+  routes a resolved path through the existing image reader (by extension, FR-031) or the new file
+  reader; `buildFileAttachmentText`/`appendFileAttachmentText` build the outgoing marker text
+  (FR-040's lead-in line and fence-length rule); `buildPastedFileAttachment` handles a non-image
+  clipboard `File` paste, inline-only (FR-037, no OS path available).
+- [X] T027 [US5] Wire `ComposerPickers.tsx`'s `AttachButton` to the native `attachments.pickFiles`
+  multi-file dialog (any type, replacing the old image-only `<input type="file">`); generalise
+  `ChatPane.tsx`'s drop wording and `attachDroppedPaths.ts`'s shared attach-loop (now
+  images-and-files, FR-039's shared cap) so `useTauriFileDrop.ts`'s existing drop path needs no
+  changes of its own.
+- [X] T028 [US5] Wire `MessageInput.tsx`'s paste handler (`attachPastedFiles`, `attachImage.ts`)
+  and send path: every pending file/folder attachment is appended to the OUTGOING message only
+  (`appendFileAttachmentText`), never the draft text itself, so `parseSlashCommand`/the `/new`
+  check keep reading just the developer's own typed text.
+- [X] T029 [US5] Write `AttachmentStrip.tsx`'s file/folder chips (icon, name, size, "sent as path")
+  and `UserMessageRow.tsx`'s sent-bubble chips (read from `TranscriptItem.fileAttachments`, FR-035);
+  share `removeAttachment.ts`'s own remove-with-focus-restoration core (PR #723's A11y2/A11y3
+  fixes) with the existing image chip rather than a second copy.
+- [ ] T030 Live click-path verification (`scripts/verify-926-attach-any-file.mjs`): attach a small
+  text file, a file over 256 KB, a binary file, an image, and a folder via the Attach picker and
+  via drag-and-drop; confirm each chip's wording, the sent bubble's own chips (never raw text or a
+  raw path line), keyboard Remove, and the transcript's `fileAttachments` on the sent item, in
+  Dark, Obsidian, and Dark high contrast. NOT done yet -- this lane built with no cargo available
+  (no-build prep lane); blocked on the build slot the same way T023 above was blocked on a live
+  pass. T024-T029's own `[X]` marks cover the code being written and non-build-gate-clean, not
+  this live pass.
+
+**Checkpoint**: `pnpm typecheck` (both tsconfigs), existing `vitest` (148/148, no new tests),
+`check:indent`, `check:file-size`, `check:parity --gate`, `check:drag-regions` all green on this
+head (see the PR body's own Gates section for the exact run). `check:theme-contrast` also green.
+`check:ui-text`, a cargo build, and T030's live check are still pending the lane's build slot.
+
+- [X] T031 (#926) Gate round 1 fixes (Code1/Test1/Sec1/A11y1/UI1): moved `file_attachment_markers.rs`
+  into `omp/transcript/` (E0583 fix); fixed image routing (`looksLikeImagePathToken` now tested
+  against the full resolved path, not a bare basename); new shared `FileAttachmentChip.tsx` (both
+  surfaces render icon/name/size/"sent as path" visibly, accessible name from content, sr-only
+  kind suffix); Remove control gained a Tooltip, 24px hit area, and stays visible at rest; D1
+  marker hardening (line-start, last-occurrence, >=1 parsed entry, renderer send-time refusal,
+  queue-chip display stripping); D2 per-session absolute-path allow-list (`attachments.pickFiles`/
+  new `attachments.recordDroppedPaths`) `readFile` now enforces; D3 untrusted-data lead-in wording
+  (TS builder and Rust parser updated together); D4 confirmed (`/btw`'s existing refusal already
+  covers files); FR-039 shared cap now also applied to path-paste and clipboard-file paste
+  (`remainingAttachmentSlots`); DRY: `read_bounded`/`resolve_session_worktree` shared helpers in
+  `attachments.rs`, reused by both readers instead of redeclared.
+
+- [X] T032 (#926) Gate round 2 fixes (Code2/Test2/Sec2/A11y2/UI2): fixed a Windows folder-open
+  bug (`read_file_attachment` now stats via path BEFORE ever calling `read_bounded`, since
+  `File::open` on a directory fails outright on Windows); path-sent attachments now report the
+  REAL on-disk `metadata.len()` for `byteLength`, never a buffer length capped at the inline
+  limit; `read_bounded` checks size against the cap BEFORE reading a single byte again (restoring
+  the pre-#926 guard) and the grow-mid-read check compares against the stat's own `metadata.len()`,
+  never the external cap constant; D1 corrected to the marker's FIRST line-start occurrence, not
+  last; D2 corrected wording (stops a confused renderer, not a defence against a compromised one)
+  plus Session-existence validation before recording, a surfaced error at the per-session cap, and
+  `forget_session` wired into `sessions_delete`; shared `FileAttachmentChip.tsx` gained an inline
+  Remove control (never absolutely positioned outside the Badge), corrected sr-only wording (no
+  longer duplicating the visible "sent as path" text), a `wrap` mode for the sent bubble (full
+  name visible to keyboard users, not title-only), and a `removeLabel` override for same-named
+  pending files ("N of M"); `attachResolvedPaths` now names every failed file with its own reason,
+  distinguishes picker vs drop wording, and counts folders separately from files; pasted-file
+  overflow now shows a visible toast, not only the sr-only region; a pasted image's own magic-byte
+  read failure no longer aborts the rest of a multi-file paste; a plain clipboard-image paste
+  respects the shared per-message cap too.
+
+## Phase 9: Convergence
+
+- [ ] T104 Add one shared `hasSendableContent` predicate (non-blank text or at least one pending image) and use it in `handleSend`, the Send button's `aria-disabled` and its `onClick` guard in `src/renderer/features/chat/MessageInput.tsx`, sending `message: ""` with the images for an image-only draft, per FR-041 (missing)
+- [ ] T105 Limit a working Session to one queued image-only follow-up: record the image names when an image-only send queues, label its chip "Image (<filename>)", and refuse a second image-only follow-up with a visible, announced reason, per FR-042 (missing)
+- [ ] T106 Carry an optional display `name` on `PendingImageAttachment` (the pasted `File.name` or the path's basename) so the FR-042 chip label can name the image, per FR-042 (missing)

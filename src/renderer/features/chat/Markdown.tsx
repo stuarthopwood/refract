@@ -2,7 +2,7 @@ import * as React from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 import type { Highlighter } from 'shiki'
 import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
@@ -18,6 +18,8 @@ import { toast } from 'sonner'
 import { useActiveThemeId, useSessionsStore } from '@/state'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { InlineDisclosure } from '@/components/InlineDisclosure'
+import { linkClassName, mutedLinkClassName } from './linkStyles'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -66,10 +68,7 @@ function getHighlighter(): Promise<Highlighter> {
 // language inference) a tool call's Arguments/Output (T083, FR-049/FR-050): the language's name
 // when it is both known and actually highlighted, else "text" -- including when `lang` was given
 // but Shiki failed to load or highlight it (the plain-fallback branch below), so the header never
-// claims a highlight the body does not show. Meets WCAG AA contrast in the app's current
-// dark-only theme (docs/DESIGN.md "Look and feel": "dark only, Stuart ... I don't think I want a
-// light mode"); same `bg-muted`/`text-muted-foreground` pairing as `DiffView`'s own path header --
-// unverified for a future light theme.
+// claims a highlight the body does not show. `bg-card` (#975: was `bg-muted`) now matches the body's own surface in every theme (see `CodeBlock`'s own effect for the neutralised Shiki background).
 // `copyText` is the full, untruncated value the Copy button puts on the clipboard -- distinct
 // from `label` (the language shown) so a caller whose visible body is capped (ToolRow.tsx's
 // "Show all" truncation) can still copy the complete original text (#524, PLAN.md "Code
@@ -82,7 +81,7 @@ function getHighlighter(): Promise<Highlighter> {
 // multiple blocks in one transcript are distinguishable in a screen reader's button list.
 function CodeBlockHeader({ label, copyText }: { label: string; copyText: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+    <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2.5 py-1 font-code text-xs text-muted-foreground">
       <span className="truncate">{label}</span>
       {copyText !== '' && (
         <CopyButton
@@ -160,7 +159,11 @@ export function CodeBlock({
           await highlighter.loadLanguage(lang as Parameters<Highlighter['loadLanguage']>[0])
         }
         if (cancelled) return
-        setHtml(highlighter.codeToHtml(code, { lang, theme: THEMES[activeThemeId].syntaxTheme }))
+        // #975: body now shares `bg-card` with the header/gutter; Shiki's own fixed root
+        // background is neutralised via `colorReplacements` (keyed on the theme's own `.bg`, probed against shiki@4.4.3 -- the one per-call override for background alone).
+        const syntaxTheme = THEMES[activeThemeId].syntaxTheme
+        const themeBg = highlighter.getTheme(syntaxTheme).bg.toLowerCase()
+        setHtml(highlighter.codeToHtml(code, { lang, theme: syntaxTheme, colorReplacements: { [themeBg]: 'transparent' } }))
       } catch {
         if (!cancelled) setHtml(null)
       }
@@ -207,10 +210,9 @@ export function CodeBlock({
   ) : null
 
   if (html) {
-    // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup),
-    // per the constitution's markdown/sanitisation rule. The `[&>pre]:` arbitrary-variant
-    // selectors apply to the `<pre>` Shiki's own `dangerouslySetInnerHTML` output contains,
-    // since a plain class on this wrapping `<div>` cannot reach inside raw injected HTML.
+    // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup,
+    // per the constitution's markdown/sanitisation rule). `bg-card` on this div (#975, matching
+    // the plain-fallback `<pre>` below) paints the body now Shiki's own bg is neutralised above.
     return (
       <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
         <CodeBlockHeader label={label} copyText={copyText ?? code} />
@@ -221,7 +223,7 @@ export function CodeBlock({
             role="region"
             aria-label={regionLabel}
             className={cn(
-              'min-w-0 flex-1',
+              'min-w-0 flex-1 bg-card',
               wrap ? wrapClassName : scrollableClassName,
               wrap ? '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:whitespace-pre-wrap [&>pre]:break-words' : '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:leading-[1.6]'
             )}
@@ -442,18 +444,14 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
           {result.desc}
         </span>
       )}
-      <button
-        type="button"
-        aria-expanded={showSource}
-        aria-controls={sourceId}
-        onClick={() => setShowSource((value) => !value)}
-        className="-mx-1 px-1 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      <InlineDisclosure
+        open={showSource}
+        onOpenChange={setShowSource}
+        contentId={sourceId}
+        label={showSource ? `Hide source for ${accessibleName}` : `Show source for ${accessibleName}`}
       >
-        {showSource ? `Hide source for ${accessibleName}` : `Show source for ${accessibleName}`}
-      </button>
-      <div id={sourceId} hidden={!showSource}>
         <CodeBlock code={code} lang="mermaid" />
-      </div>
+      </InlineDisclosure>
     </div>
   )
 }
@@ -495,16 +493,11 @@ const InsideLinkContext = React.createContext(false)
 // bubble's own composited `accent/50`-on-`background` fill (verified 4.69:1 in Dark, the binding
 // theme -- see that script's own `user-bubble` pair). `rounded-sm` plus the achromatic
 // `focus-visible` ring matches every other control in the app; `[overflow-wrap:anywhere]` stops a
-// long URL/path from forcing the row to scroll sideways.
-export const linkClassName =
-  'text-accent-text underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-
-// Issue #610, decision 9: `--accent-text` does not clear 4.5:1 on `bg-muted` (check-theme-
-// contrast.mjs's own TODO(#579) note records 4.00:1 Dark/4.28:1 Obsidian) -- every `bg-muted`
-// surface (inline code, `DiffView`'s header) gets the underline only, in whatever text colour it
-// already inherits, instead.
-export const mutedLinkClassName =
-  'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+// long URL/path from forcing the row to scroll sideways. Moved to `./linkStyles.ts` (issue #1077,
+// gate round 1 fix) so `InlineDisclosure` can reuse `mutedLinkClassName` without an import cycle
+// back through this file (which itself imports `InlineDisclosure` for `MermaidBlock`); re-exported
+// here unchanged so every existing caller of `./Markdown` keeps working with no other change.
+export { linkClassName, mutedLinkClassName }
 
 // Quality-gate fix (Verif Low, round 2): the streaming-inert state is plain text that cannot be
 // activated -- it must never carry the active state's `hover:`/`focus-visible:` classes, which
@@ -932,9 +925,9 @@ const components: Components = {
         </code>
       )
     }
-    if (lang === 'mermaid') {
-      return <MermaidBlock code={text} streaming={streaming} />
-    }
+    // #558 (FR-050 exception, gate round 3): the one fence that wraps instead of scrolling (the advisor's own quoted note); no `lang` to highlight.
+    if (lang === 'advisor-note') return <CodeBlock code={text} lang={null} wrap />
+    if (lang === 'mermaid') return <MermaidBlock code={text} streaming={streaming} />
     return <CodeBlock code={text} lang={lang} />
   }
 }
@@ -969,7 +962,7 @@ interface MarkdownProps {
 // comments above), so it is still called with no custom schema. `streaming` is threaded through
 // `StreamingContext` (read only by the `code`/`MermaidBlock` renderer) rather than via a per-flip
 // `components` map, so the rest of the component identities stay stable across the transition.
-export function Markdown({ text, id, streaming = false, className }: MarkdownProps) {
+function MarkdownImpl({ text, id, streaming = false, className }: MarkdownProps) {
   // Per-message footnote-id namespace (see `MarkdownProps.id` above). `id` is a UUID (`shared/
   // model.ts`'s `TranscriptItem.id`) but is sanitized defensively rather than assumed safe, since
   // it ends up inside an `id`/href-fragment pair. This REPLACES mdast-util-to-hast's own
@@ -995,3 +988,6 @@ export function Markdown({ text, id, streaming = false, className }: MarkdownPro
     </StreamingContext.Provider>
   )
 }
+
+// Memoised: a streamed patch re-renders only the row whose text changed, never re-parsing unchanged messages.
+export const Markdown = React.memo(MarkdownImpl)

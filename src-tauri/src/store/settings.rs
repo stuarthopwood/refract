@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::atomic_json::write_json_file;
+pub use super::chat_width::ChatWidth;
+pub use super::holiday_touches::HolidayTouches;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -19,13 +21,10 @@ pub enum ApprovalMode {
     Auto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ThemeId {
-    Dark,
-    DarkHighContrast,
-    Obsidian,
-}
+// `ThemeId` extracted to `theme_id.rs` (issue #551 gate round 1, #806 ratchet -- see that
+// file's own header comment): re-exported here so every existing caller keeps importing it
+// from `crate::store::settings::ThemeId`, unchanged.
+pub use super::theme_id::ThemeId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionReadout {
@@ -64,6 +63,17 @@ pub struct SplitLayout {
     pub focused_index: u8,
 }
 
+/// #735 data-model.md: only the DIFFERENCE from each group's default is stored -- a Repository
+/// id absent from `collapsed_repository_ids` is open (the default for a newly added Project),
+/// and `archived_open` defaults `false`. De-duplicated and validated in
+/// `parse_session_list_collapse` below.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListCollapse {
+    pub collapsed_repository_ids: Vec<String>,
+    pub archived_open: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptDisplaySettings {
     pub thinking: bool,
@@ -80,9 +90,21 @@ pub struct Settings {
     pub split: Option<SplitLayout>,
     pub theme: ThemeId,
     pub watermark_enabled: bool,
+    pub chat_width: ChatWidth,
+    /// Issue #1048 (Settings, Appearance "Holiday touches"): default `Full` -- see
+    /// `HolidayTouches`'s own doc comment. No raw/lazy-correction tracking needed, the same
+    /// plain-enum shape `chat_width` above uses.
+    pub holiday_touches: HolidayTouches,
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
+    /// Issue #1082 (spec 004 FR-034): the 2px context usage bar; default on.
+    pub show_context_usage_bar: bool,
+    /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
+    /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
+    /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
+    pub session_list_collapse: SessionListCollapse,
+    pub pull_requests_list_width_px: i64,
     /// Issue #772 (lane R6): the word-prediction ghost-text off switch -- Rust-only (Electron
     /// main-process features are frozen, epic #797), so this field has no TypeScript
     /// counterpart. Default `false`: the shared prediction daemon measured 463 MB private commit
@@ -97,42 +119,21 @@ pub struct Settings {
     /// broadcast with no code needed for it. `#[serde(flatten)]` reproduces that on the wire:
     /// every entry here is merged into the TOP-LEVEL serialised object (never nested under its
     /// own `"extra"` key), so a caller sees the exact same shape Electron's reply has. Never
-    /// overlaps a known field above (`SettingsStore::open` excludes all ten by name).
+    /// overlaps a known field above (`SettingsStore::open` excludes all twelve by name).
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
-/// Spec 005 data-model.md "Validation"/"Migration": a present-but-malformed `split` (hand-edited,
-/// or from a future/older build) is reset to `None` rather than trusted, the same lazy-correction
-/// pattern `settings.ts`'s own `isValidSplitLayout` uses. Rejects a JSON array explicitly (`typeof
-/// [] === 'object'` in JS let one slip through the old, weaker check) since `serde_json::Value`
-/// distinguishes `Array` from `Object` directly.
-fn parse_split_layout(value: &Value) -> Option<SplitLayout> {
-    let object = value.as_object()?;
-    let session_ids = object.get("sessionIds")?.as_array()?;
-    if session_ids.len() != 2 {
-        return None;
-    }
-    let first = session_ids[0].as_str()?;
-    let second = session_ids[1].as_str()?;
-    if first == second {
-        return None;
-    }
-    let divider_percent = object.get("dividerPercent")?.as_f64()?;
-    if !divider_percent.is_finite() || !(0.0..=100.0).contains(&divider_percent) {
-        return None;
-    }
-    let focused_index = match object.get("focusedIndex")?.as_i64()? {
-        0 => 0u8,
-        1 => 1u8,
-        _ => return None,
-    };
-    Some(SplitLayout {
-        session_ids: [first.to_string(), second.to_string()],
-        divider_percent,
-        focused_index,
-    })
-}
+// Lazy-correction parsers and clamps (issue #806, keeps this file under the 600-line cap): see
+// `settings_parse.rs` for `parse_split_layout`/`default_session_list_collapse`/
+// `parse_session_list_collapse`/`clamp_pull_requests_list_width_px`'s own doc comments.
+#[path = "settings_parse.rs"]
+mod settings_parse;
+pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
+use settings_parse::{
+    clamp_pull_requests_list_width_px, default_session_list_collapse, parse_session_list_collapse,
+    parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
+};
 
 pub struct SettingsStore {
     file: PathBuf,
@@ -205,6 +206,17 @@ impl SettingsStore {
         let raw_watermark_enabled = object.get("watermarkEnabled").and_then(Value::as_bool);
         let watermark_enabled = raw_watermark_enabled.unwrap_or(true);
 
+        let chat_width = object
+            .get("chatWidth")
+            .and_then(|v| serde_json::from_value::<ChatWidth>(v.clone()).ok())
+            .unwrap_or(ChatWidth::Full);
+
+        // Issue #1048: default `Full` -- a missing/malformed value is never trusted, the same
+        // lazy-correction pattern `chat_width` above uses.
+        let holiday_touches = object
+            .get("holidayTouches")
+            .and_then(|v| serde_json::from_value::<HolidayTouches>(v.clone()).ok())
+            .unwrap_or(HolidayTouches::Full);
         let raw_transcript_display = object.get("transcriptDisplay").and_then(Value::as_object);
         let transcript_display = TranscriptDisplaySettings {
             thinking: raw_transcript_display
@@ -224,6 +236,10 @@ impl SettingsStore {
             .get("detectImagePathsOnPaste")
             .and_then(Value::as_bool)
             .unwrap_or(true);
+        let show_context_usage_bar = object
+            .get("showContextUsageBar")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -232,17 +248,39 @@ impl SettingsStore {
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
-        const KNOWN_FIELDS: [&str; 10] = [
+        // #735 data-model.md: a missing/null key is the default (no migration needed, every
+        // pre-#735 settings.json simply lacks this key); a present-but-malformed value resets
+        // to the default rather than trusted, the same lazy-correction pattern every other
+        // object-shaped field in this function uses.
+        let session_list_collapse = match object.get("sessionListCollapse") {
+            Some(v) if !v.is_null() => {
+                parse_session_list_collapse(v).unwrap_or_else(default_session_list_collapse)
+            }
+            _ => default_session_list_collapse(),
+        };
+        // #930: one width for every Project; clamped rather than trusted.
+        let pull_requests_list_width_px = object
+            .get("pullRequestsListWidthPx")
+            .and_then(Value::as_i64)
+            .map(clamp_pull_requests_list_width_px)
+            .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
+
+        const KNOWN_FIELDS: [&str; 15] = [
             "version",
             "approvalMode",
             "sessionReadout",
             "split",
             "theme",
             "watermarkEnabled",
+            "chatWidth",
+            "holidayTouches",
             "transcriptDisplay",
             "showSampleData",
             "detectImagePathsOnPaste",
+            "showContextUsageBar",
             "wordPredictionEnabled",
+            "sessionListCollapse",
+            "pullRequestsListWidthPx",
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -257,10 +295,15 @@ impl SettingsStore {
             split,
             theme,
             watermark_enabled,
+            chat_width,
+            holiday_touches,
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
+            show_context_usage_bar,
             word_prediction_enabled,
+            session_list_collapse,
+            pull_requests_list_width_px,
             extra,
         };
 
@@ -309,6 +352,11 @@ impl SettingsStore {
         if let Some(enabled) = self.raw_watermark_enabled {
             map.insert("watermarkEnabled".to_string(), json!(enabled));
         }
+        map.insert("chatWidth".to_string(), json!(self.data.chat_width));
+        map.insert(
+            "holidayTouches".to_string(),
+            json!(self.data.holiday_touches),
+        );
         map.insert(
             "transcriptDisplay".to_string(),
             json!(self.data.transcript_display),
@@ -321,14 +369,24 @@ impl SettingsStore {
             json!(self.data.detect_image_paths_on_paste),
         );
         map.insert(
+            "showContextUsageBar".to_string(),
+            json!(self.data.show_context_usage_bar),
+        );
+        map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),
         );
-        // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
-        // never overwrites a known key above (by construction, `data.extra` excludes all ten of
-        // them), so a renderer feature's own not-yet-ported setting survives every save. Also now
-        // the same field `settings.get`/`settings:changed` flatten into the wire shape (see
-        // `Settings::extra`'s own doc comment).
+        map.insert(
+            "sessionListCollapse".to_string(),
+            json!(self.data.session_list_collapse),
+        );
+        map.insert(
+            "pullRequestsListWidthPx".to_string(),
+            json!(self.data.pull_requests_list_width_px),
+        );
+        // Re-inserts every key captured at `open()` with no slot here, verbatim (never overwrites
+        // a known key; `data.extra` excludes all twelve), so an unported setting survives every
+        // save, and `settings.get`/`settings:changed` flatten it onto the wire too.
         for (key, value) in &self.data.extra {
             map.insert(key.clone(), value.clone());
         }
@@ -413,6 +471,27 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
+    pub async fn set_chat_width(&mut self, width: ChatWidth) -> std::io::Result<Settings> {
+        let next = Settings {
+            chat_width: width,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setHolidayTouches(value)` (issue #1048): plain-replace shape, as `set_chat_width`
+    /// above uses -- no raw/lazy-correction tracking needed.
+    pub async fn set_holiday_touches(
+        &mut self,
+        value: HolidayTouches,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            holiday_touches: value,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
     /// `settings.setTranscriptDisplay(field, visible)` (issue #457): merges ONE field into
     /// `transcript_display`, never a whole-object replace (a quick second toggle built from a
     /// stale value must not revert the first).
@@ -458,6 +537,15 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
+    /// `settings.setShowContextUsageBar(enabled)` (issue #1082): plain boolean, like the one above.
+    pub async fn set_show_context_usage_bar(&mut self, enabled: bool) -> std::io::Result<Settings> {
+        let next = Settings {
+            show_context_usage_bar: enabled,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
     /// `settings.setWordPredictionEnabled(enabled)` (issue #772, lane R6): no raw/lazy-correction
     /// tracking needed, the same plain-boolean migration shape `set_detect_image_paths_on_paste`
     /// above uses.
@@ -467,6 +555,33 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             word_prediction_enabled: enabled,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setSessionListCollapse(value)` (#735, data-model.md): persists the whole
+    /// `SessionListCollapse` row -- the renderer's `session-list-store.ts` is the sole writer
+    /// and never reads a broadcast back (its own doc comment explains why), so there is no
+    /// raw/lazy-correction tracking here, the same plain-replace shape `set_split` uses.
+    pub async fn set_session_list_collapse(
+        &mut self,
+        value: SessionListCollapse,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            session_list_collapse: value,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setPullRequestsListWidth(px)` (#930): plain-replace shape, as `set_split` uses.
+    pub async fn set_pull_requests_list_width_px(
+        &mut self,
+        width_px: i64,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            pull_requests_list_width_px: clamp_pull_requests_list_width_px(width_px),
             ..self.data.clone()
         };
         self.persist_whole(next).await

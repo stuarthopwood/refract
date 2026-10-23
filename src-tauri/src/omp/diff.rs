@@ -110,14 +110,39 @@ pub fn merge_history_with_live(
     }
 }
 
+/// Which of the two reasons the OMP process just exited mid-turn (`SessionAgent::handle_exit`'s
+/// own `requested && stop_requested` vs everything else): #563 decision 15 splits `Cancelled`
+/// out of `Error` specifically so a user-initiated stop never reads as a failure, so finalize
+/// must settle a still-`running` row differently depending on which one happened. Issue #911
+/// extends this split to `Tool` rows too (it used to read "Tool rows have no `Cancelled`
+/// concept and always settle to `Error` regardless of `cause`" here -- no longer true).
+#[derive(Clone, Copy, Debug)]
+pub enum SubagentFinalizeCause {
+    /// `handle_exit`'s `requested && stop_requested` branch: the user asked this session to
+    /// stop. A still-`running` Subagent row settles to `Cancelled`, matching the live
+    /// progress-update path's own `map_progress_status` mapping for `"cancelled"`/`"aborted"`.
+    UserStop,
+    /// Every other exit (a genuine crash, or `launch()`'s own internal handshake-cleanup stop,
+    /// which is not a user request either): a still-`running` Subagent row settles to `Exited`,
+    /// matching the subagent tracker's own attach-time `Exited` convention (`subagents.rs`) --
+    /// strictly better than claiming `Error`/"Failed" for an exit nobody asked for but that
+    /// also was not confirmed cancelled.
+    Crash,
+}
+
 /// Settles any item the process that was updating it will now never finish: a still-`running`
-/// tool/subagent call becomes `status: 'error'`, and streaming assistant-text/thinking becomes
-/// `streaming: false`. Port of `finalizeLiveTranscript`. Without this, a crash, a `stop()`, or a
-/// mode-change `restart()` leaves those items spinning in the UI forever, and (per the TS doc
-/// comment) `merge_history_with_live`'s `is_unpersisted` check would keep mistaking them for
-/// still-live and re-append them onto every later `launch()`'s fresh history.
+/// tool call AND a still-`running` subagent call both settle per `cause` now (`UserStop` ->
+/// `Cancelled`, `Crash` -> `Error`/`Exited` respectively, #563 decision 15, extended to `Tool`
+/// by #911: a process that just exited because the user asked it to stop told this
+/// particular still-running call nothing about whether its own work was wrong); and
+/// streaming assistant-text/thinking becomes `streaming: false`. Port of `finalizeLiveTranscript`.
+/// Without this, a crash, a `stop()`, or a mode-change `restart()` leaves those items spinning in
+/// the UI forever, and (per the TS doc comment) `merge_history_with_live`'s `is_unpersisted`
+/// check would keep mistaking them for still-live and re-append them onto every later
+/// `launch()`'s fresh history.
 pub fn finalize_live_transcript(
     mut transcript: Vec<Arc<TranscriptItem>>,
+    cause: SubagentFinalizeCause,
 ) -> Vec<Arc<TranscriptItem>> {
     for item in transcript.iter_mut() {
         let needs_finalize = matches!(
@@ -143,8 +168,18 @@ pub fn finalize_live_transcript(
         // common case while this runs: nothing else holds these items), so this stays O(1)
         // allocation-wise per touched item, not a whole-transcript copy.
         match Arc::make_mut(item) {
-            TranscriptItem::Tool { status, .. } => *status = ToolStatus::Error,
-            TranscriptItem::Subagent { status, .. } => *status = SubagentStatus::Error,
+            TranscriptItem::Tool { status, .. } => {
+                *status = match cause {
+                    SubagentFinalizeCause::UserStop => ToolStatus::Cancelled,
+                    SubagentFinalizeCause::Crash => ToolStatus::Error,
+                }
+            }
+            TranscriptItem::Subagent { status, .. } => {
+                *status = match cause {
+                    SubagentFinalizeCause::UserStop => SubagentStatus::Cancelled,
+                    SubagentFinalizeCause::Crash => SubagentStatus::Exited,
+                }
+            }
             TranscriptItem::AssistantText { streaming, .. } => *streaming = false,
             TranscriptItem::Thinking { streaming, .. } => *streaming = false,
             _ => unreachable!("needs_finalize only set for the four variants matched above"),

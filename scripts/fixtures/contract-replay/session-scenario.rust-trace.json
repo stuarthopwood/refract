@@ -38,6 +38,7 @@
         "lastActivityAt": "<TIMESTAMP>",
         "lastMessageCount": null,
         "name": "<BRANCH_NAME>",
+        "pinnedModel": false,
         "repositoryId": "<REPO_ID>",
         "sessionDir": null,
         "worktreePath": "<WORKTREE_PATH>"
@@ -54,6 +55,7 @@
     "response": {
       "ok": true,
       "value": {
+        "advisorOn": false,
         "conversations": [],
         "readout": {
           "branch": null,
@@ -61,7 +63,8 @@
           "contextUsage": null,
           "pullRequest": null,
           "subagentCount": null,
-          "todoProgress": null,
+          "todoPhases": null,
+          "todoTree": null,
           "turnTime": null
         },
         "runtime": {

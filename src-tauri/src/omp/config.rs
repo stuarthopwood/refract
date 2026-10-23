@@ -413,20 +413,23 @@ fn parse_object_json(stdout: &str) -> Result<Value, OmpConfigError> {
     Ok(value)
 }
 
-/// `^[A-Za-z][A-Za-z0-9]*$` (`omp config`'s own dotted-key rejection means a key never contains
-/// `.` either): rejects anything that could reach `omp`'s argv looking like a flag (a key is
-/// always a fixed, short identifier -- `modelRoles`, `composer.predictions`-style dotted keys are
-/// already rejected by `omp` itself as "Unknown setting", confirmed live).
+/// `^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)*$`: rejects anything that could reach `omp`'s
+/// argv looking like a flag. Dotted segments are allowed since #1184: `omp config get/set`
+/// accepts real dotted setting keys such as `advisor.reviewMode` (confirmed live); a dotted path
+/// into a record (`modelRoles.advisor`) is still rejected by `omp` itself as "Unknown setting".
 fn validate_config_key(key: &str) -> Result<(), OmpConfigError> {
-    let mut chars = key.chars();
-    let valid = chars
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic())
-        && chars.all(|c| c.is_ascii_alphanumeric());
+    let valid = !key.is_empty()
+        && key.split('.').all(|segment| {
+            let mut chars = segment.chars();
+            chars
+                .next()
+                .is_some_and(|first| first.is_ascii_alphabetic())
+                && chars.all(|c| c.is_ascii_alphanumeric())
+        });
     if !valid {
         return Err(OmpConfigError::new(
             OmpConfigErrorCode::InvalidValue,
-            "omp config key must match ^[A-Za-z][A-Za-z0-9]*$.",
+            "omp config key must be dot-separated identifiers (^[A-Za-z][A-Za-z0-9]*$ each).",
         ));
     }
     Ok(())

@@ -1,6 +1,6 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import { Slot } from "radix-ui"
 
 const buttonVariants = cva(
@@ -9,6 +9,19 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        // 2026-10-15 grill (issue #564, decision 5): a solid neutral fill (inverted
+        // foreground-on-background), never red/destructive -- stopping a turn keeps the work,
+        // so it reads as the opposite of a destructive action, not one. Used so far only by the
+        // composer's Stop button (MessageInput.tsx), which sits beside Send's own dedicated
+        // `--send` accent fill (gate round 1, 2026-10-15: Send no longer shares `--primary`,
+        // which reads as a near-identical near-white neutral to THIS fill in two of the three
+        // built-in themes) -- the two are never the same colour, so they stay visually distinct
+        // even though both are solid. Hover mixes 15% of the page background into the fill (gate
+        // round 2 fix: a bare `hover:bg-foreground/85` opacity modifier violated the design
+        // rules' own "never a Tailwind opacity modifier on a token class", `secondary`'s own
+        // `color-mix` pattern below instead; before that, `hover:bg-foreground` with no modifier
+        // at all was identical to the resting fill, no hover feedback whatsoever).
+        invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

@@ -8,6 +8,8 @@ Decided by Stuart in the #474 grill, 2026-10-08.
 
 Motion always carries a function, never only decoration: every animated state keeps colour, icon, and `sr-only` text as its non-motion signal, so `prefers-reduced-motion: reduce` can remove the motion without losing information (agenda item 11). This expands the old `docs/DESIGN.md` Motion rule; it does not change it.
 
+**Exception, Holiday touches (Stuart, 2026-10-19, #1048):** seasonal artwork and its ambient loops (snow, pumpkin flicker, sparks) are decoration by design. They are allowed only behind the Appearance setting "Holiday touches" (Full / Artwork only / Off). Loops pause when the window is hidden or unfocused, after 60 s with no input, and under OS reduced motion (WCAG 2.2.2, 2.3.3). They never flash more than three times a second, never cover text or controls, are `aria-hidden`, and never replace a functional animation's non-motion signal (the holiday spinner keeps its colour, sr-only word and reduced-motion glyph).
+
 ## Durations
 
 - Hover and state fades: up to 150ms.
@@ -43,6 +45,8 @@ Every animation above, and any added later, follows these rules:
 ## Reduced motion
 
 Reduced motion removes all transitions and replaces every spinner with a static glyph plus the word (agenda item 11), intended to meet WCAG 2.3.3 Animation from interactions (Level AAA, adopted beyond AA; not met until the static-glyph replacement is built). Today, `globals.css`'s `prefers-reduced-motion: reduce` block collapses every animation and transition to a single 0.01ms iteration (`animation-duration`/`transition-duration: 0.01ms`, `animation-iteration-count: 1`, `scroll-behavior: auto`); replacing spinners with a static glyph is not built yet.
+
+The **Spine** (issue #565) never animates in any state, including reduced motion (there is nothing to reduce): it is a plain CSS border that appears or disappears instantly with its group's own collapse/expand, the same way the border itself draws with no transition.
 
 Pausing on a hidden window (Caps and pause rules above), the 3-row shimmer cap, and the `prefers-reduced-motion` OS preference are not, on their own, a user-controlled pause path for WCAG 2.2.2: none of them is a control the user can reach to stop a looping animation that is visible and running. The shimmer, the waiting three-dot animation, the streaming caret, `AgentSpinner` (`globals.css`, `animation-iteration-count: infinite`, issue #612, supersedes `BrandSpinner`/spec 011), every `animate-spin` icon — `Loader2Icon`/`LoaderCircleIcon` (sign-in, readiness, running tool rows, the streaming thinking row, running subagents, the New session button) — the spinning `CheckIcon` for pending PR checks (`PullRequestRow.tsx:74`, `PullRequestDetail.tsx:210`), the spinning `RefreshCwIcon` on pull-request refresh (`P…
 

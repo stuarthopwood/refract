@@ -8,7 +8,7 @@
 // requests show `reviewDisabledReason`/`mergeDisabledReason` next to each disabled action
 // (FR-019), and a not-mergeable pull request shows that reason instead of offering Merge (FR-020).
 import { useEffect, useRef, useState } from 'react'
-import { RefreshCwIcon } from 'lucide-react'
+import { ExternalLinkIcon } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,16 +22,36 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Textarea } from '@/components/ui/textarea'
 import { Markdown } from '@/features/chat/Markdown'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
-import { CHECK_STATE_DISPLAY, PULL_REQUEST_STATE_DISPLAY } from './PullRequestRow'
+import { CHECK_STATE_DISPLAY } from './PullRequestRow'
 import { Timeline } from './Timeline'
 import { ChangesTab } from './ChangesTab'
 import { ReviewDialog } from './ReviewDialog'
 import { MergeDialog } from './MergeDialog'
+import { StatePill } from './StatePill'
+import { RefreshButton } from './RefreshButton'
+import { ReviewConsensus } from './ReviewConsensus'
+
+// Gate round 1 fix (#568 decision 3 amended): the trigger's own base class already carries
+// `border border-transparent` (tabs.tsx), a 1px border on all four sides that `cn`'s tailwind-
+// merge never strips from a plain, non-merged className string -- `data-[state=active]:border-
+// accent-text` and `hover:border-border` then coloured all four sides into a box, not the
+// decided underline. `border-0` zeroes every side's width first; the more specific `border-b-2`
+// utility (and the bottom-only colour variants) still win the bottom edge in Tailwind's own
+// generated layer order, so only the bottom border ever paints. One shared constant (not two
+// pasted copies) so the Overview and Changes triggers can never drift apart again. Forced-
+// colors fallback mirrors the active-indicator bar's own pattern (StatePill.tsx, PullRequestRow
+// .tsx): the resting edge reads as `Canvas` (invisible, matching the surrounding chrome) and the
+// active edge reads as the system `Highlight` colour, so forced-colors mode can still tell the
+// two tabs apart once the box problem above is fixed.
+const PR_DETAIL_TAB_TRIGGER_CLASS =
+  'rounded-none border-0 border-b-2 border-transparent px-1 py-1.5 text-muted-foreground shadow-none data-[state=active]:border-b-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-b-border hover:text-foreground forced-colors:border-b-[Canvas] forced-colors:data-[state=active]:border-b-[Highlight]'
 
 // research.md "Polling interval and rate-limit headroom": re-calls `detail()` every 15s while
 // `checkState === 'pending'`, stops once checks finish or this view closes; `list()` is never
@@ -178,14 +198,19 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const title = `pull request #${detail.number}`
   const check = CHECK_STATE_DISPLAY[detail.checkState]
   const CheckIcon = check.icon
-  const state = PULL_REQUEST_STATE_DISPLAY[detail.state]
-  const StateIcon = state.icon
   // "Also fix" remediation: `mergeableState === 'unknown'` (GitHub still computing mergeability)
   // used to collapse into the same "not mergeable" message as a real conflict; it gets its own
   // "still checking" text instead, and only disables Merge when nothing else already explains why.
   const mergeStillChecking = detail.mergeDisabledReason === null && detail.mergeableState === 'unknown'
   const mergeDisabledReason = detail.mergeDisabledReason ?? (mergeStillChecking ? 'GitHub is still checking whether this pull request can merge.' : null)
   const mergeBlocked = detail.mergeDisabledReason !== null || detail.mergeableState !== 'mergeable'
+  // Issue #1131 (2026-10-21 decision): a state-only disable (draft, closed, merged) already
+  // shows its reason via the solid StatePill above this line -- a separate muted reason line
+  // would just repeat it. Keep the line only while the pull request is actually open
+  // (`reviewDisabledReason === null`) but blocked by a real conflict, a blocked merge, or GitHub
+  // still computing mergeability; the Merge/Review buttons' own tooltips keep every reason
+  // regardless (decision 3), unchanged.
+  const showMergeReasonLine = detail.reviewDisabledReason === null && mergeDisabledReason !== null
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -193,38 +218,46 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
       <div className="shrink-0 border-b border-border p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <h2 ref={headingRef} tabIndex={-1} className="truncate text-base font-semibold outline-none">
+            <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
             <p className="text-xs text-muted-foreground">
-              {detail.headBranch} into {detail.baseBranch} by {detail.author.name ?? detail.author.login}
+              <span className="font-code">{detail.headBranch}</span> into <span className="font-code">{detail.baseBranch}</span> by{' '}
+              {detail.author.name ?? detail.author.login}
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {/* High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged
-                was never visibly conveyed in the detail header at all. */}
-            <Badge variant="outline" className="gap-1">
-              <StateIcon aria-hidden className="size-3.5" />
-              {state.label}
-            </Badge>
-            <Badge variant="outline" className="gap-1">
+                was never visibly conveyed in the detail header at all. Issue #568 decision 5:
+                solid StatePill (not the outline Badge this used to be). */}
+            <StatePill state={detail.state} />
+            {/* Issue #1121 (2026-10-21 decision): check status now carries its own severity
+                colour, on both the icon and the word -- supersedes #568 decision 5's "turning
+                red only on failure" for PR checks only (`CHECK_STATE_DISPLAY.colorClass`, shared
+                with `PullRequestRow.tsx` so the two surfaces can't drift apart). */}
+            <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
               <CheckIcon aria-hidden className={cn('size-3.5', detail.checkState === 'pending' && 'animate-spin')} />
               {check.label}
-            </Badge>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => void load()}
-              disabled={loading}
-              aria-label="Refresh this pull request"
-              title="Refresh this pull request"
-            >
-              <RefreshCwIcon aria-hidden className={cn('size-4', loading && 'animate-spin')} />
-            </Button>
+            </span>
+            <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
+            {/* Issue #1132 (2026-10-21 decision): ghost icon-only link beside Refresh, reusing
+                the existing `detail.url` and `Button asChild` as a real anchor (correct link
+                role) so it opens in the system browser, matching `ChangesTab.tsx`'s own
+                plain-external-link pattern -- no new IPC. */}
+            <Tooltip>
+              <TooltipTrigger asChild aria-describedby={undefined}>
+                <Button asChild variant="ghost" size="icon-sm" aria-label="Open on GitHub (opens in browser)" className={COMPOSER_BUTTON_FOCUS_CLASS}>
+                  <a href={detail.url} target="_blank" rel="noreferrer noopener" data-open-on-github>
+                    <ExternalLinkIcon aria-hidden className="size-4" />
+                  </a>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open on GitHub</TooltipContent>
+            </Tooltip>
             <Button
               ref={newSessionButtonRef}
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={handleNewSessionClick}
               disabled={newSessionBusy || detail.state !== 'open'}
               title={detail.state !== 'open' ? 'Only an open pull request can start a Session.' : undefined}
@@ -234,7 +267,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             <Button
               ref={reviewButtonRef}
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={() => setReviewOpen(true)}
               disabled={detail.reviewDisabledReason !== null}
               title={detail.reviewDisabledReason ?? undefined}
@@ -252,7 +285,11 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             </Button>
           </div>
         </div>
-        {mergeDisabledReason && <p className="mt-1 text-xs text-muted-foreground">{mergeDisabledReason}</p>}
+        {showMergeReasonLine && (
+          <p data-merge-reason className="mt-1 text-xs text-muted-foreground">
+            {mergeDisabledReason}
+          </p>
+        )}
         {newSessionError && (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {newSessionError}
@@ -282,13 +319,28 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           </div>
         )}
       </div>
+      {/* Issue #568 decision 3: underline tabs as a call-site-local override only -- the
+          shared `tabs.tsx` primitive and its default pill classes stay untouched, since the
+          same primitive also renders the five filter tabs in `PullRequestList.tsx` (deferred
+          to #499). Focus-visible classes are left completely alone; only box/border/colour
+          utilities are overridden here. */}
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <TabsList className="mx-3 mt-2 w-fit shrink-0">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="changes">Changes</TabsTrigger>
+        {/* drag-regions-allow: the underline tab strip's own `border-b` (needed for the visual
+            underline look, decision 3) happens to match this script's window-chrome-header
+            heuristic (`border-b` + `shrink-0`), but this row sits deep in the content area, well
+            below `PullRequestsView.tsx`'s own separate `h-10` drag-region strip -- it never
+            touches `App.tsx`'s drag strip despite the coincidental shape; drag-regions-allow: see above. */}
+        <TabsList className="mx-3 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none border-b border-border bg-transparent p-0">
+          <TabsTrigger value="overview" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="changes" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
+            Changes ({detail.changedFilesCount} file{detail.changedFilesCount === 1 ? '' : 's'})
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="min-h-0 flex-1 overflow-auto">
           <div className="p-3">
+            <ReviewConsensus timeline={detail.timeline} authorLogin={detail.author.login} />
             <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} />
           </div>
           <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} onChanged={() => void load()} />

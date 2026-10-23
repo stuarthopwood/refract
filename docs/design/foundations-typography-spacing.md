@@ -27,6 +27,31 @@ The starter bundle (Latin subset, WOFF2, about 223 KB total) is Inter, Atkinson 
 
 Reserve the `Code` font for code-shaped data only: code, paths, commands, branch names, IDs, hashes, and token and file counts that must align in a column. Never use it for general metadata or labels — those stay in the `App`/`Chat` font at normal case (agenda item 10).
 
+## Session list type ladder
+
+Decided by the ui-architect-v3 roundtable, 2026-10-15 (issue #567, the type-scale open question): no 10px or 11px text anywhere in the session list, only Tailwind's own `text-sm`/`text-xs` steps.
+
+| Element | Classes |
+| --- | --- |
+| Row title | `text-sm font-normal text-sidebar-foreground` -- weight never changes when the row is selected, so the text never reflows. |
+| Row second line (Activity line) | `text-xs text-muted-foreground` |
+| Row time | `text-xs tabular-nums text-muted-foreground` |
+| Group header label | `text-xs font-medium text-muted-foreground` |
+
+Hand-measured reason for dropping the mock's own grey: muted text on a selected/hovered row's fill measures 5.8:1 (Dark), 5.1:1 (Obsidian) and 9.8:1 (Dark, high contrast) using `--muted-foreground`; the mock's own `#737373` measures 3.2:1 to 3.8:1 on the same fills, under the 4.5:1 text floor.
+
+## Status line type
+
+Decided 2026-10-16 (issue #928, v0.3.0 feedback item 5): the composer status line's chips (changes, context, elapsed, todo, subagents, pull request, current time) read 13px text and 14px icons, up from the original 12px/12px -- Stuart chose this over a 14px TEXT step, which would read "as loud as the chat". No existing Tailwind step is 13px (`text-xs` is 12px, `text-sm` is 14px), so this adds the one named step, `--text-readout` (globals.css), generating the `text-readout` utility rather than a bare `text-[13px]` arbitrary value.
+
+| Element | Classes |
+| --- | --- |
+| Status line chip text (`ReadoutChip.tsx`) | `text-readout text-muted-foreground` (13px) |
+| Status line chip icon (`ReadoutChip.tsx`) | `size-3.5` (14px) |
+
+Scoped to `ReadoutChip.tsx` alone, the status line's own shared baseline component -- nothing else reads `text-readout` today.
+
+
 ## Spacing grid
 
 Use a 4px grid with five allowed steps for padding, margin, and gap; control and icon sizes follow the control-height and icon-size ladders instead, not this grid. Never use an arbitrary pixel value in a component; the #474 audit found raw values (`p-1.5`, `p-0.5`, `gap-1.5`, `size-2.5`) outside this scale.
@@ -63,4 +88,4 @@ The agenda item 8 decision proposed 40px, pending a measurement against today's 
 
 ## Reading width
 
-Reading width is a Setting, defaulting to full width (#554, decided). Chat text already fills the full width of the transcript column, so the default needs no component change; a narrower reading width is a later Settings addition.
+Reading width is a Setting, defaulting to full width (#554, decided and shipped 2026-10-18). Full keeps the transcript unconstrained, filling the pane; the alternative, Reading column, caps the transcript at 64rem (`Transcript.tsx`'s `MessageScrollerContent`), centred, with a padding ladder (`px-6`/`@min-[40rem]:px-10`/`@min-[48rem]:px-14`/`@min-[64rem]:px-16`) keyed off the chat pane's own width via a container query, not the window -- see `docs/design/product-chat.md`'s own **Chat width** bullet for the full picture (Settings location, keyboard operation, live preview, persistence).

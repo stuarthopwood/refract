@@ -3,6 +3,7 @@
 // resume.ts -- a cycle). Shared by ChatPane, ConversationSwitcher, MessageInput's "not-started"
 // open-then-send path, and resume.ts.
 import {
+  useAdvisorStore,
   useQueueStore,
   usePendingRequestsStore,
   useReadoutStore,
@@ -25,6 +26,7 @@ function applySnapshotParts(sessionId: string, snapshot: SessionSnapshot, option
   // `readout.subagentCount` kept showing the real count the whole time); live updates still fold
   // on top via `subagents:update`.
   useReadoutStore.getState().reset(sessionId, snapshot.readout, snapshot.subagents)
+  useAdvisorStore.getState().reset(sessionId, snapshot.advisorOn)
   // Spec 004 FR-020: a Session switch leaves no stale subagent panel open for a different
   // Session's turn. Medium remediation (code-reviewer): only actually reset when this snapshot
   // is for a DIFFERENT Session than the panel was last open for -- a Settings round-trip (or any

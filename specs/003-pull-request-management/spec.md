@@ -24,31 +24,209 @@ header actions for New session, Review, and merge/checks status."
   detail, scoped to the selected repository.
 - Q: Should a pull request offer "New session" (User Story 4)? -> A: Keep it.
 
+### Session 2026-10-16
+
+- Q: Should the list row keep its bordered-button chrome? -> A: No - rows become a true
+  `divide-y` flat list (zero-box rule), with the shared `bg-active-indicator` left-edge bar (the
+  same selected cue `SessionRow.tsx`/`SessionList.tsx`/`GroupHeader.tsx` already use) marking the
+  selected row instead of a border/fill, and a new 3-line layout (title+number; a metadata line
+  of state, check, repository and time; an author line).
+- Q: Does the metadata line use the mock's literal monospace styling? -> A: No - the mock's
+  "mono line" instruction is rejected in favour of the written typography rule (monospace is
+  reserved for code-shaped data only); the metadata line and the author line render in the App
+  font. Mono stays reserved for the detail header's own branch tokens, which are genuinely
+  code-shaped.
+- Q: Does the pull request detail view need to surface a reviewer-consensus summary? -> A: Yes -
+  a new FR-031: the Overview tab shows counts of approved / changes-requested / commented above
+  the pull request body, whenever at least one review exists. Placement is the top of the
+  Overview tab; counts are derived client-side from the existing timeline review verdicts, using
+  each reviewer's standing opinionated verdict (approve/request-changes), never a later
+  comment-only review, and excluding the pull request's own author; no new IPC field is added.
+- Q: Should the pull request state badge change shape for this restyle? -> A: Yes - a solid-fill
+  `StatePill` replaces the outline `Badge` used today, adding a new `--pr-merged` purple token;
+  Open, Draft and Closed copy the matching severity/state token VALUES (not `var()` aliases to
+  them) rather than adding new colours.
+- Q: Is the `isDraft` search-field data bug (drafts showing as Open on the four relation tabs)
+  in scope? -> A: Yes - `SEARCH_FIELDS` is fixed to request `isDraft` so those four searches
+  correctly report Draft instead of silently Open; Draft only applies while the pull request's
+  own state is OPEN, so a closed or merged draft still reads as Closed/Merged.
+- Q: Should the list row's and detail view's two existing Refresh controls stay separate? -> A:
+  No - both call sites are unified behind one shared `RefreshButton` component.
+- Q: What does the larger detail title and the lighter action-button layout look like? -> A: The
+  title grows to `text-lg`, up to two lines; Merge stays the one filled/primary button, and New
+  session and Review become ghost buttons on the same row (no new row added) so the title leads.
+- Q: Should the Overview/Changes tab pair adopt an underline style, and does that affect the
+  five filter tabs? -> A: The Overview/Changes pair gets a local underline style scoped to this
+  view only; the five filter tabs keep their existing pill style unchanged (an app-wide tab
+  convention is deferred to issue #394, not #499 - #499 owns only the filter tabs' own
+  selection-mechanism redesign).
+- Q: Is the `PullRequestsView.tsx` header's `border-b` divider still needed? -> A: No - it is
+  removed, closing out a previously-flagged inconsistency with the rest of the app's panel
+  headers. The mock's "Done" close button is explicitly rejected, not built: Pull requests is a
+  permanent left-nav view entry with no dismissible-panel equivalent in Refract today.
+- Q: Does the Overview tab's commit row move out of the chronological timeline, matching the
+  mock's own separate placement? -> A: No - the commit row stays inside the existing
+  chronological `Timeline` component, with no structural change; the mock's separate-looking
+  placement most plausibly reflects its own single-commit example pull request, not a reordering
+  mandate.
+- Q: Do any of the restyled surfaces need their own forced-colors (Windows High Contrast)
+  handling? -> A: Yes - the `StatePill` and the selected row's active-indicator bar both get an
+  explicit `forced-colors:` fallback (matching the existing active-indicator-bar pattern), so
+  state is never carried by hue alone once the system repaints author colours away.
+
+#### Gate round 1 amendments (2026-10-16)
+
+The five-reviewer quality gate on the first build found the underline-tab decision's own class
+string produced a box, not an underline, plus several smaller departures. Amending this
+session's own record rather than re-opening earlier sessions:
+
+- Decision 3 (tab style), amended: the call-site override must ALSO zero the shared
+  `TabsTrigger`'s own base `border` (all four sides) before re-applying a bottom-only 2px border,
+  or the base class's 1px all-sides border wins visually. The corrected override is
+  `border-0 border-b-2 border-transparent data-[state=active]:border-b-accent-text
+  hover:border-b-border`, kept in one shared constant so the Overview and Changes triggers can't
+  drift apart; `tabs.tsx` itself stays untouched.
+- Metadata-line separators: the record's own `· ` (space-dot-space) instruction does not survive
+  being split across sibling flex items (each one's leading/trailing whitespace collapses) -
+  the separator is a bare, `aria-hidden` middle-dot span with a `gap-1` on the flex container
+  providing the visual spacing instead, and the line keeps `flex-wrap` so it still wraps at
+  narrow widths rather than clipping.
+- Decision 1's row hover, amended: `hover:bg-accent/50` (an opacity-modified token class)
+  contradicts the written rule against Tailwind opacity modifiers on token classes;
+  `hover:bg-surface-hover` is the correct token.
+- Decision 5, clarified further: the literal-value instruction for Open/Draft/Closed was not
+  followed in the first build (they were `var()` aliases); fixed to literal copies in all three
+  theme blocks.
+- Decision 6, amended: `isDraft` alone is not sufficient - GitHub keeps `isDraft: true` on a
+  draft that was later closed without being marked ready, so the fix also gates on the pull
+  request's own state being OPEN (see the Q/A entry above).
+- Decision 7's action row, amended: the header action cluster's `shrink-0` must become
+  `min-w-0` so its own `flex-wrap` can take over at narrow widths - otherwise the three action
+  buttons overflow the detail pane invisibly instead of wrapping.
+- FR-031, amended: "most recent review verdict" is read as the reviewer's most recent
+  OPINIONATED verdict (approve or request-changes); a later comment-only review never overrides
+  a standing approval or changes-requested, matching GitHub's own review semantics.
+
+#### Gate round 2 amendments (2026-10-16)
+
+Gate round 1's own dismissed-review handling (filtering a dismissed reviewer's reviews out of
+`build_timeline` entirely) regressed FR-008: it deleted that reviewer's whole review history
+from the Overview `Timeline` tab, not just from the consensus count.
+
+- FR-031 / decision 10, amended again: a dismissed review is now a real `Timeline` entry (a new
+  `dismissed` `ReviewVerdict`, shown in the Overview as "{author}'s review was dismissed" --
+  gate round 3 fix: not "{author} dismissed their review", which wrongly implies the reviewer
+  dismissed their own review rather than a maintainer or GitHub's stale-review automation doing
+  so; the original approve/request-changes verdict a dismissed review HAD isn't in this query's
+  data, so the wording stays generic rather than guessing which), never filtered out
+  server-side. `ReviewConsensus.tsx` alone decides what a dismissal means: folding each
+  reviewer's reviews in chronological order, a dismissal RESETS their standing verdict to
+  none (it does not let an earlier, different review resurface as current); only a later
+  approve or request-changes sets a new standing verdict.
+- New Clarification: `timelineItems(first: 100)` (the GraphQL query backing both the Overview
+  Timeline and FR-031's own consensus rollup) has no pagination -- a pull request with more than
+  100 combined commits/comments/reviews silently loses everything past the 100th item from both
+  surfaces. Pre-existing, not introduced by this story; tracked separately as issue #918, not
+  fixed here.
+
+#### Gate round 3 amendments (2026-10-16)
+
+- Decision 10's own "{author} dismissed their review" wording, amended: it reads as though the
+  REVIEWER dismissed their own review, which is never the case (a maintainer, or GitHub's own
+  stale-review-on-push automation, does the dismissing). Changed to "{author}'s review was
+  dismissed". The original approve/request-changes verdict a review had before being dismissed
+  isn't available from this query's data (GitHub overwrites `state` to `DISMISSED` outright), so
+  the wording stays generic rather than guessing which it was.
+- FR-031, amended again: a reviewer whose entire history is a single, now-dismissed review (no
+  comment ever submitted) has nothing to report and is left out of the consensus counts
+  entirely, rather than being folded into "commented" by default. "Commented" now means a
+  reviewer has no standing opinionated verdict AND has submitted at least one real comment
+  review.
+- `SubmitReviewInput.verdict` (contracts/ipc.md, data-model.md) narrowed to
+  `Exclude<ReviewVerdict, 'dismissed'>`: a dismissal is a real state an already-submitted review
+  can be in, never a choice a NEW submission can carry.
+
+### Session 2026-10-16 (#569 sidebar pull request count)
+
+- Q: What counts as the "active" pull request count shown next to the left-nav "Pull requests"
+  entry? -> A: The current/default repository only, reusing the existing per-repository
+  `involves`+`is:open` search (no new scope); never a cross-repository aggregate. Matches the
+  single-repository scoping already established by FR-001/FR-002.
+- Q: How does the count refresh? -> A: Event-driven only -- app start, default-repository
+  change, window focus (throttled), and active-account change, plus the view's own explicit
+  refresh -- never a timer/polling interval.
+- Q: How is the count rendered? -> A: Plain trailing text ("N active") with no box or chip,
+  matching the existing count-is-its-own-span convention; no new visual treatment.
+- Q: When is the count hidden? -> A: Whenever no positive count is known yet for the default
+  repository: before its first successful fetch, when the last fetch failed or is unavailable
+  (signed out, offline, erroring), or when the real count is zero. A background refresh of an
+  already-shown count keeps the last known value on screen instead of flickering to hidden
+  (amended 2026-10-16, gate round 2: the original wording said "hidden while loading", which
+  would have wrongly hidden an already-known count during every refresh).
+
+### Session 2026-10-16 (#499 filter redesign, #930 resizable column)
+
+Both issues' own decision records (not an interactive grill): recorded here to converge the spec,
+not re-litigated.
+
+- Decided (#499, 2026-10-16): inactive Filter tabs are ghost (no fill, no border), the active tab
+  gets a subtle background plus a non-colour shape cue (an underline bar, matching
+  `PanelTabBar.tsx`'s own established fix for the identical WCAG 1.4.11 contrast problem flagged
+  on this same issue by #568's gate round 1). One row that scrolls sideways with a soft fade at
+  the clipped edge, never wraps; the active tab scrolls into view. A ghost Filters button (funnel
+  icon) and the ghost Refresh icon sit pinned at the row's right end and never scroll. Filters
+  toggles a section holding the search field and the State control (Open, Closed incl. Merged,
+  All -- the 2026-10-07 decision); closing the section never resets either. The first tab is
+  renamed from "Open" to "All" (every pull request in the Project, narrowed by the separately
+  selected State, default Open); the Project selector and column-width questions are out of
+  scope here (#930).
+- Decided (#930, 2026-10-16): the Pull requests list column becomes resizable (the shared
+  `ResizablePanel`/`ResizableHandle` every other pane uses), 280px up to half the view, default
+  320px remembered across restarts (one width for every Project). The header's Project selector
+  shrinks and truncates to the column's own current width instead of the whole window's.
+
+### Session 2026-10-21 (#1131 reason line hidden for a state-only disable)
+
+Grilled (Stuart, grill-with-docs), recorded here to converge the spec, not re-litigated:
+
+- Decided: the muted reason line under the detail header is hidden when the pull request is
+  draft, closed, or merged -- its reason is already shown by the solid state pill above the
+  line, so a second copy of the same reason in plain text added nothing. The line stays visible
+  for a merge conflict, a blocked merge, or GitHub still computing mergeability (the three cases
+  the pill does not already explain).
+- Decided: the Merge and Review buttons' own tooltips keep showing every reason, unchanged --
+  only the separate visible line is affected.
+- Decided: the renderer decides from `detail.reviewDisabledReason === null` (open) rather than a
+  new Rust field, so the tooltip text and `MergeDialog.tsx`'s own use of the reason stay
+  untouched.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Browse pull requests (Priority: P1)
 
 A developer opens the "Pull requests" entry in the left nav for a repository already added to
 Refract. The main area switches to a list of that repository's pull requests, starting on the
-"Open" tab. The developer switches between tabs (Open, Authored by me, Assigned to me, Involves
-me, Review requested) to find the ones that matter to them, and can ask the list to refresh.
+"All" tab narrowed to the Open state. The developer switches between Filter tabs (All, Authored
+by me, Assigned to me, Involves me, Review requested) and the separate State control (Open,
+Closed, All) to find the ones that matter to them, and can ask the list to refresh.
 
 **Why this priority**: Without a list there is nothing to read or act on. This is the entry point
 for every other story.
 
 **Independent Test**: With a repository that has a GitHub remote and at least one open pull
-request, select "Pull requests" in the left nav, confirm the Open tab is shown with that pull
+request, select "Pull requests" in the left nav, confirm the All tab is shown with that pull
 request listed, switch tabs, and refresh the list.
 
 **Acceptance Scenarios**:
 
 1. **Given** a repository with a GitHub remote is selected and has open pull requests, **When**
    the developer selects "Pull requests" in the left nav, **Then** the list shows every open pull
-   request for that repository, the "Open" tab is active by default, and the view shows when the
-   list was last updated.
-2. **Given** the pull request list is open, **When** the developer selects a different filter tab
-   (for example "Review requested"), **Then** the list shows only pull requests matching that
-   tab, and pull requests that no longer match are removed from view.
+   request for that repository, the "All" tab is active by default with the State control
+   defaulting to Open, and the view shows when the list was last updated.
+2. **Given** the pull request list is open, **When** the developer selects a different Filter tab
+   (for example "Review requested") or State option (for example Closed), **Then** the list shows
+   only pull requests matching that tab and state, and pull requests that no longer match are
+   removed from view.
 3. **Given** the pull request list is open, **When** the developer asks it to refresh, **Then**
    the rows and the "last updated" indicator both reflect the current state of the pull requests
    on GitHub.
@@ -126,7 +304,9 @@ the corresponding actions with a reason.
    confirms, **Then** the app shows a confirmation naming the pull request and the chosen merge
    method, then merges it and reports the result.
 6. **Given** a draft, closed, or merged pull request, **When** the developer looks at the
-   available actions, **Then** merge and review actions are disabled, each with the reason shown.
+   available actions, **Then** merge and review actions are disabled, each with the reason in
+   its tooltip; no separate reason line repeats it below the header, since the state pill
+   already shown there is the reason for a state-only disable (amended 2026-10-21, issue #1131).
 7. **Given** a pull request with merge conflicts or failing required checks, **When** the
    developer attempts to merge it, **Then** the merge is refused and the reason is shown.
 8. **Given** a pull request open in the detail view, **When** it changes on GitHub before the
@@ -165,8 +345,12 @@ creation rules from spec 001.
   actionable message instead of an empty or broken list.
 - A pull request or its diff is too large to show in full: the view shows what it can, says so,
   and offers opening it in the browser.
-- The pull request is a draft, closed, or merged: review and merge actions are disabled, each
-  with the reason shown.
+- The pull request is a draft, closed, or merged: review and merge actions are disabled with the
+  reason in each button's tooltip; no separate reason line is shown below the header, since the
+  state pill already shown there is the reason (amended 2026-10-21, issue #1131).
+- The pull request is open but has merge conflicts, a blocked merge, or GitHub is still
+  computing mergeability: a visible reason line stays below the header, in addition to the
+  Merge button's own tooltip (issue #1131).
 - The pull request has merge conflicts or a failing required check: a merge attempt is refused
   with the reason shown.
 - The pull request changes on GitHub while it is open in the app: the view says it is out of date
@@ -190,11 +374,15 @@ creation rules from spec 001.
   area to a pull request list and detail view scoped to the currently selected repository.
 - **FR-002**: The view MUST require the selected repository to have a GitHub remote; when it does
   not, the view MUST say so instead of showing a list.
-- **FR-003**: The list MUST offer the filter tabs Open, Authored by me, Assigned to me, Involves
-  me, and Review requested, defaulting to Open, and switching tabs MUST re-filter the list to
-  match the chosen tab.
-- **FR-004**: The list MUST offer a way to narrow the current tab's results further (for example
-  by matching text against title or label).
+- **FR-003**: The list MUST offer the Filter tabs All, Authored by me, Assigned to me, Involves
+  me, and Review requested, defaulting to All, in one non-wrapping row that scrolls sideways when
+  too narrow for the column, with the active tab scrolled into view; switching tabs MUST re-filter
+  the list to match the chosen tab (issue #499, 2026-10-16 decision).
+- **FR-004**: The list MUST offer a way to narrow the current tab's results further (matching text
+  against title or label) and a State control (Open, Closed, All -- Closed includes Merged, as on
+  github.com) that narrows whichever tab is active, independent of it; both live behind a Filters
+  disclosure that keeps applying while closed, with an accessible indicator when either is set to
+  a non-default value (issue #499, 2026-10-16 decision).
 - **FR-005**: Each row MUST show the pull request's title, number, check status, repository, time
   since it was last updated, and author, with check status conveyed by an icon or text, never by
   color alone.
@@ -232,8 +420,12 @@ creation rules from spec 001.
   report success or the exact failure, and MUST NOT leave the view showing state that no longer
   matches the action's outcome.
 - **FR-019**: Draft, closed, and merged pull requests MUST have their Approve, Request changes,
-  and Merge actions disabled, each with the reason shown. The comment composer and each review
-  thread's Reply/Resolve/Unresolve controls remain available regardless of pull request state.
+  and Merge actions disabled, each with the reason in its tooltip. For these three state-only
+  reasons the view MUST NOT also show a separate reason line below the header -- the state pill
+  already shown there is the reason (amended 2026-10-21, issue #1131); a merge conflict, a
+  blocked merge, or GitHub still computing mergeability keeps that visible reason line. The
+  comment composer and each review thread's Reply/Resolve/Unresolve controls remain available
+  regardless of pull request state.
 - **FR-020**: A merge attempt MUST be refused, with the reason shown, when the pull request has
   merge conflicts or a failing required check.
 - **FR-021**: Before any action acts on a pull request that has changed since it was loaded, the
@@ -260,6 +452,37 @@ creation rules from spec 001.
   operable by keyboard, with a visible focus indicator at every step.
 - **FR-030**: Every status shown in the list or detail view (check status, pull request state,
   review outcome) MUST be conveyed by an icon or text, never by color alone.
+- **FR-031**: The pull request detail Overview tab MUST show a reviewer-consensus summary (counts
+  of approved / changes-requested / commented, derived from each reviewer's most recent
+  opinionated verdict -- approve or request-changes, never superseded by a later comment-only
+  review, and reset by a dismissal rather than reverting to an earlier verdict -- counting a
+  reviewer with no standing opinionated verdict as "commented" only if they have at least one
+  actual comment review, and excluding both the pull request's own author and a reviewer whose
+  entire history is a since-dismissed review with no comment) above the PR body, when at least
+  one review exists.
+- **FR-032**: The left-nav "Pull requests" entry MUST show a trailing count of open pull
+  requests involving the active account (author, assignee, mentioned, or review-requested) for
+  the default repository only (the focused pane's Session's repository, independent of the Pull
+  requests view's own repository dropdown) -- the same single-repository scoping as
+  FR-001/FR-002, never a cross-repository aggregate. The count MUST render as plain text with no
+  box, and MUST be shown only when a positive count is known for that repository: hidden before
+  the first successful fetch, when the last fetch failed or is unavailable, or when the real
+  count is zero -- a background refresh of an ALREADY-shown count MUST keep the last known value
+  on screen, never flicker to hidden while that refresh runs. The count MUST be refreshed only on
+  app start, a default-repository change, window focus (throttled), an active-account change, and
+  the view's own explicit refresh -- and MUST NOT be refreshed on a timer.
+- **FR-033**: The Filters disclosure's accessible indicator MUST name the number of active
+  filters (for example "Filters, 1 active") whenever the applied query is non-empty or the State
+  control is not at its default (Open), and MUST never rely on colour alone (issue #499).
+- **FR-034**: The list column MUST be resizable by a drag handle (280px to half the view, default
+  320px), remembered across restarts as one width for every Project; the handle MUST be
+  keyboard-operable (arrow keys resize it while focused) and a double-click on the handle MUST
+  reset it to the default (issue #930; amended 2026-10-18, Decided (Skippy, delegated by Stuart
+  2026-10-18): the issue's own decision record never asked for a keyboard-equivalent RESET, only
+  for arrow-key RESIZING as the handle's keyboard alternative to dragging -- `react-resizable-
+  panels` has no built-in reset key either; double-click stays the sole reset affordance).
+- **FR-035**: The Project selector in the header MUST shrink and truncate to the list column's
+  own current width, not only to the window's unrelated minimum width (issue #930).
 
 ### Key Entities
 

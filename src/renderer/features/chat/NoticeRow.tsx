@@ -1,21 +1,28 @@
 import * as React from 'react'
-import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react'
-import { cn } from 'cn'
+import { InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { TranscriptItem } from '../../../shared/model'
-import { CollapsedLine } from './CollapsedLine'
+import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 
 type NoticeLevel = Extract<TranscriptItem, { kind: 'notice' }>['level']
 
 const NOTICE_ICON = {
   info: InfoIcon,
   warning: TriangleAlertIcon,
-  error: CircleAlertIcon
+  // Gate round 1 (#997, Low): `components.md`'s own severity table calls the error shape an
+  // octagon (matching the Toaster's `OctagonXIcon`, `sonner.tsx`) -- `CircleAlertIcon` was the
+  // wrong shape for this severity, not just a different icon.
+  error: OctagonAlertIcon
 } as const satisfies Record<NoticeLevel, unknown>
 
 const NOTICE_CLASS = {
+  // Issue #997: these used to alias `--state-needs-you`/`--destructive` directly -- the same
+  // VALUES as `--severity-warning`/`--severity-error` in every theme (see `globals.css`), but
+  // the wrong NAME: a notice's colour is a severity, not a session state, and `ToolRow.tsx`/
+  // `subagentStatus.tsx` already use the `text-severity-*` tokens for the identical colour.
   info: 'text-muted-foreground',
-  warning: 'text-state-needs-you',
-  error: 'text-destructive'
+  warning: 'text-severity-warning',
+  error: 'text-severity-error'
 } as const satisfies Record<NoticeLevel, string>
 
 // Non-colour cue for severity (DESIGN.md: "including for screen readers"): the icon alone is
@@ -63,6 +70,11 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
         icon={icon}
         summary={text}
         summaryClassName={NOTICE_CLASS[level]}
+        // Issue #938 item 3/FR-082: lets a short notice sitting close to the length threshold
+        // wrap in place instead of losing text to the ellipsis -- no chevron, nothing to expand
+        // (ui-architect-v3 roundtable ruling, 2026-10-18: an expand control that reveals nothing
+        // beyond the same clause re-wrapped would misrepresent the row's own structure).
+        summaryWrap
       />
     )
   }
@@ -72,12 +84,14 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       icon={icon}
       summary={text}
       summaryClassName={NOTICE_CLASS[level]}
-      contentClassName="pl-7"
+      // #565 decision 10/7: the label column moved from 30px to 32px when `CollapsedLine`'s
+      // icon slot widened 14px -> 16px; `pl-7` (28px) becomes `pl-8` (32px) to stay aligned.
+      contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
        * summary above and the surrounding bookkeeping rows, instead of the ambient `--foreground`
        * this previously set explicitly, which reads brighter than primary chat prose. */}
-      <div className="max-h-60 overflow-y-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap text-muted-foreground">{text}</div>
+      <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</div>
     </CollapsedLine>
   )
 }

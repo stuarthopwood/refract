@@ -215,6 +215,11 @@ pub fn run() {
         std::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
     }
 
+    // Issue #880: also as early as possible, before any window exists -- see
+    // `shell::app_identity::set_process_app_user_model_id`'s own doc comment for why it must run
+    // before `tauri::Builder` ever shows a window.
+    shell::app_identity::set_process_app_user_model_id();
+
     let data_dir = data_dir();
     std::fs::create_dir_all(&data_dir).unwrap_or_else(|err| {
         panic!("refract-tauri: failed to create data directory {data_dir:?}: {err}")
@@ -277,6 +282,7 @@ pub fn run() {
     // agent-backed handler already shares, never a second store instance.
     let events = events::EventSink::new(app_handle_slot.clone(), registry.clone());
     let events_for_memory_monitor = events.clone();
+    let events_for_guard = events.clone();
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     shell::memory::start_monitor(session_manager.clone(), events_for_memory_monitor);
     let session_manager_for_exit = session_manager.clone();
@@ -388,6 +394,14 @@ pub fn run() {
                     // navigation away is a separate hole neither of those closes).
                     .on_navigation(is_allowed_navigation_url)
                     .build()?;
+            // Issue #880 (gate round 1): no explicit `.icon(...)` call -- Tauri's own built-in
+            // default-icon auto-apply already made it a no-op (`shell::app_identity::
+            // set_window_icons`'s own doc comment); `hwnd()` failing is logged, not fatal.
+            #[cfg(windows)]
+            match window.hwnd() {
+                Ok(hwnd) => shell::app_identity::apply_to_window(hwnd),
+                Err(err) => log::warn!("refract-tauri: #880 icon/AUMID skipped, no hwnd: {err}"),
+            }
 
             // Issue #623: reads and applies the saved position/size/maximised state (a
             // one-off, startup-only blocking wait, same justification as the registry/settings
@@ -416,29 +430,28 @@ pub fn run() {
             window.show()?;
 
             // contracts/ipc.md "Startup behaviour" (FR-020, SC-010): kicked off after the
-            // window is shown, never awaited before `window.show()` above -- the same
-            // fire-and-forget stance `shell::memory`'s own sampler timer already takes rather
-            // than blocking startup on it. Logic lives in `updates::run_startup_update_check`
-            // (`AGENTS.md` "No god files").
+            // window is shown, never awaited before `window.show()` above.
             {
                 let update_state = update_state_for_setup.clone();
                 let session_manager = session_manager_for_updates_startup.clone();
                 let app_handle = app.handle().clone();
+                let data_dir = data_dir_for_setup.clone();
                 tauri::async_runtime::spawn(async move {
                     let current_version = app_handle.package_info().version.to_string();
-                    let on_state = {
-                        let session_manager = session_manager.clone();
-                        move |state: &updates::state::UpdateState| {
-                            let payload =
-                                serde_json::to_value(ipc::updates::to_renderer_state(state))
-                                    .expect("UpdateState is always JSON-serialisable");
-                            session_manager.emit_updates_state_changed(&payload);
-                        }
-                    };
-                    updates::run_startup_update_check(&update_state, &current_version, &on_state)
-                        .await;
+                    ipc::updates::run_update_lifecycle(
+                        session_manager,
+                        update_state,
+                        data_dir,
+                        current_version,
+                    )
+                    .await;
                 });
             }
+            // #1184: reset drifted OMP token-cost settings at start (never blocks the window).
+            let events_for_guard = events_for_guard.clone();
+            tauri::async_runtime::spawn(async move {
+                omp::config_guard::run_at_startup(&events_for_guard).await;
+            });
             Ok(())
         })
         .build(tauri::generate_context!())

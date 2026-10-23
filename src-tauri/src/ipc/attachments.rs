@@ -26,9 +26,11 @@ pub fn register(d: &mut Dispatcher) {
     d.register("attachments.readImageFile", attachments_read_image_file);
 }
 
-const MAX_SESSION_ID_LENGTH: usize = 256;
+// Gate round 1 (Code1 Medium, DRY): `pub(super)` so `file_attachments.rs` reuses these instead
+// of redeclaring them.
+pub(super) const MAX_SESSION_ID_LENGTH: usize = 256;
 // Matches `files.ts`'s own `MAX_TOKEN_LENGTH` (a single path, not a whole prompt).
-const MAX_TOKEN_LENGTH: usize = 4096;
+pub(super) const MAX_TOKEN_LENGTH: usize = 4096;
 // Bounds how many link substitutions the walk below will follow before rejecting outright --
 // without this, a cycle (`a -> b`, `b -> a`) would loop forever.
 const MAX_LINK_HOPS: u32 = 32;
@@ -424,7 +426,7 @@ async fn resolve_in_worktree(worktree_root: &str, token: &str) -> Result<PathBuf
 /// Port of `attachments.ts`'s own `resolveAttachmentPath`: branches on whether `token` is
 /// absolute (walked with no worktree containment, #514's own "the resolved file may legitimately
 /// live anywhere on disk" decision) or relative (delegates entirely to `resolve_in_worktree`).
-async fn resolve_attachment_path(worktree_root: &str, token: &str) -> Option<PathBuf> {
+pub(super) async fn resolve_attachment_path(worktree_root: &str, token: &str) -> Option<PathBuf> {
     if is_unsafe_token(token) {
         return None;
     }
@@ -435,43 +437,54 @@ async fn resolve_attachment_path(worktree_root: &str, token: &str) -> Option<Pat
     }
 }
 
-/// Port of `attachments.ts`'s own `readImageFile`, the reader both #514 and #432 share. Never
-/// returns the resolved path or any other file metadata beyond the validated image bytes
-/// themselves. The size cap and the read both go through the SAME open handle (open -> stat ->
-/// one bounded read), never a separate stat followed by a separate read -- a file swapped or
-/// grown between those two calls could otherwise be read with no limit at all.
-async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcError> {
-    let Some(real_path) = resolve_attachment_path(worktree_root, token).await else {
-        return Err(not_found("That file could not be found."));
-    };
+/// Gate round 1 (Code1 Medium, DRY): the session-lookup-to-worktree-root sequence every
+/// `attachments.*`/`file_attachments.rs` handler that takes a `sessionId` repeats; pulled into
+/// one shared helper instead of each handler re-locking the registry and re-writing the same
+/// not-found mapping.
+pub(super) async fn resolve_session_worktree(
+    state: &AppState,
+    session_id: &str,
+) -> Result<String, IpcError> {
+    let registry = state.registry.lock().await;
+    match registry.get_session(session_id) {
+        Some(session) => Ok(session.worktree_path.clone()),
+        None => Err(not_found(format!("Session not found: {session_id}"))),
+    }
+}
 
-    let mut file = match fs::File::open(&real_path).await {
+/// Gate round 2 (Code2 HIGH): the open-handle/stat/bounded-read sequence both `read_image_file`
+/// (below) and `file_attachments.rs`'s own `read_file_attachment` need. Opens the file FIRST and
+/// reads every subsequent fact from THAT SAME handle's own `metadata()` -- a DIRECTORY is handled
+/// entirely by the CALLER via its own path-based stat BEFORE ever reaching here (`File::open` on
+/// a directory fails outright on Windows with no `FILE_FLAG_BACKUP_SEMANTICS`, so a folder could
+/// never reach this function's own `metadata()` call at all -- the round-1 version's `is_dir()`
+/// early return was unreachable dead code, removed here). Checks `metadata.len()` against `cap`
+/// BEFORE reading a single byte (restores the pre-#926 guard round 1's refactor dropped: an
+/// oversized file now costs one stat, never a wasted read); returns `None` for an
+/// already-oversized file (the caller uses `metadata.len()` for the real size) or
+/// `Some(buffer)` read up to `metadata.len() + 1` bytes, so the caller can detect the file
+/// growing mid-read by comparing `buffer.len()` against `metadata.len()` ITSELF -- never against
+/// the external `cap`, which a small file growing only slightly would never trip.
+pub(super) async fn read_bounded(
+    real_path: &Path,
+    cap: u64,
+) -> Result<(std::fs::Metadata, Option<Vec<u8>>), IpcError> {
+    let mut file = match fs::File::open(real_path).await {
         Ok(f) => f,
-        Err(_) => return Err(not_found("That file could not be read.")),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(not_found("That file could not be found."))
+        }
+        Err(_) => return Err(invalid_argument("That file could not be read.")),
     };
-    let metadata = match file.metadata().await {
-        Ok(m) => m,
-        Err(_) => return Err(not_found("That file could not be read.")),
-    };
-    if !metadata.is_file() {
-        return Err(not_found("That file could not be found."));
+    let metadata = file
+        .metadata()
+        .await
+        .map_err(|_| invalid_argument("That file could not be read."))?;
+    if metadata.len() > cap {
+        return Ok((metadata, None));
     }
-    // Checked BEFORE ever reading the file's bytes (#514's own requirement: "check the size
-    // before decoding"), against the real on-disk size from the SAME open handle.
-    if metadata.len() > MAX_IMAGE_INPUT_BYTES {
-        return Err(IpcError::new(
-            "image-too-large",
-            format!(
-                "Image is too large to attach (over the {} MiB limit); nothing was attached.",
-                MAX_IMAGE_INPUT_BYTES / (1024 * 1024)
-            ),
-        ));
-    }
-    // Sized from the real on-disk size (capped at the byte limit), `+ 1` so a file that GREW
-    // past the cap between the stat above and this read is caught by the `bytes_read > len`
-    // check below rather than silently truncated.
-    let cap = (metadata.len().min(MAX_IMAGE_INPUT_BYTES) + 1) as usize;
-    let mut buffer = vec![0u8; cap];
+    let read_cap = (metadata.len() + 1) as usize;
+    let mut buffer = vec![0u8; read_cap];
     let mut bytes_read = 0usize;
     loop {
         match file.read(&mut buffer[bytes_read..]).await {
@@ -482,15 +495,44 @@ async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcE
                     break;
                 }
             }
-            Err(_) => return Err(not_found("That file could not be read.")),
+            Err(_) => return Err(invalid_argument("That file could not be read.")),
         }
     }
-    if bytes_read as u64 > metadata.len() {
-        // The file changed size between the stat and this read -- refuse rather than trust a
-        // read that no longer matches what was size-checked.
+    buffer.truncate(bytes_read);
+    Ok((metadata, Some(buffer)))
+}
+
+/// Port of `attachments.ts`'s own `readImageFile`, the reader both #514 and #432 share. Never
+/// returns the resolved path or any other file metadata beyond the validated image bytes
+/// themselves. Gate round 2 (Code2 HIGH): the open-handle/stat/bounded-read sequence now lives
+/// in the shared `read_bounded` above; the size cap is checked there BEFORE any read, restoring
+/// #514's own original guard.
+async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcError> {
+    let Some(real_path) = resolve_attachment_path(worktree_root, token).await else {
+        return Err(not_found("That file could not be found."));
+    };
+    let (metadata, buffer) = read_bounded(&real_path, MAX_IMAGE_INPUT_BYTES).await?;
+    if !metadata.is_file() {
+        return Err(not_found("That file could not be found."));
+    }
+    // Checked BEFORE ever decoding the bytes (#514's own requirement: "check the size before
+    // decoding") -- `read_bounded` returns `None` without ever reading a byte once the STAT
+    // alone already proves the file over cap.
+    let Some(buffer) = buffer else {
+        return Err(IpcError::new(
+            "image-too-large",
+            format!(
+                "Image is too large to attach (over the {} MiB limit); nothing was attached.",
+                MAX_IMAGE_INPUT_BYTES / (1024 * 1024)
+            ),
+        ));
+    };
+    // Grew past its own stat'd size mid-read (gate round 2 Code2 HIGH: compared against
+    // `metadata.len()` itself, never the external cap, which a slight growth would never trip) --
+    // a file swapped or grown between the stat and this read is refused rather than trusted.
+    if buffer.len() as u64 > metadata.len() {
         return Err(not_found("That file could not be read."));
     }
-    buffer.truncate(bytes_read);
 
     // Identified purely by content, never by filename extension.
     let header_len = buffer.len().min(24);
@@ -541,13 +583,7 @@ pub fn attachments_read_image_file(state: AppState, args: Vec<Value>) -> Handler
                 "attachments.readImageFile rejected an oversized sessionId or path",
             ));
         }
-        let worktree_root = {
-            let registry = state.registry.lock().await;
-            match registry.get_session(session_id) {
-                Some(session) => session.worktree_path.clone(),
-                None => return Err(not_found(format!("Session not found: {session_id}"))),
-            }
-        };
+        let worktree_root = resolve_session_worktree(&state, session_id).await?;
         read_image_file(&worktree_root, token).await
     })
 }

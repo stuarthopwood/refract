@@ -92,7 +92,7 @@ export interface PullRequestDetail {
   headRepositoryOwner: string | null;
 }
 
-export type ReviewVerdict = 'comment' | 'approve' | 'request-changes';
+export type ReviewVerdict = 'comment' | 'approve' | 'request-changes' | 'dismissed';
 
 /** `findings` is non-empty only for an automated reviewer's review (FR-008); a human review's
  * `findings` is always `[]`. */
@@ -143,5 +143,12 @@ export type TimelineEntry =
   | { kind: 'review'; review: Review }
   | { kind: 'review-thread'; thread: ReviewThread };
 
-/** The five list tabs (FR-003), in the order the list shows them. */
-export type FilterTab = 'open' | 'authored' | 'assigned' | 'involves' | 'review-requested';
+/** The five Filter tabs (FR-003), in the order the list shows them -- `'all'` (every pull
+ * request in the Project, decided 2026-10-16 renaming the old 'open' tab) plus the four
+ * relation tabs. Narrowed further by `PullRequestStateFilter`, independent of which tab is
+ * active. */
+export type FilterTab = 'all' | 'authored' | 'assigned' | 'involves' | 'review-requested';
+
+/** Issue #499 (2026-10-16 decision): the State control narrowing whichever Filter tab is
+ * active, default `'open'`. `'closed'` includes Merged (decided 2026-10-07, as on github.com). */
+export type PullRequestStateFilter = 'open' | 'closed' | 'all';

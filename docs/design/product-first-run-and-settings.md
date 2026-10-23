@@ -18,7 +18,8 @@ This page covers the readiness checklist, first-run empty states, the product-le
 
 - Approval mode (a pill above the message box, spec 001 T098; no longer on the status bar).
 - Theme: shipped (spec 007) -- Appearance section, Dark / Dark (high contrast) presets, live preview. UI font, code font (family, ligatures, size): wanted, not yet built; tracked as issue #4.
-- Background watermark: shipped (spec 012) -- Appearance section, a switch below the theme picker with a live preview; on by default, applies immediately with no restart.
+- Background watermark: shipped (spec 012) -- Appearance section, a switch below Chat width (issue #554 inserted Chat width between the theme picker and this switch) with a live preview; on by default, applies immediately with no restart.
+- Chat width: shipped (issue #554) -- Appearance section, Full (default) / Reading column, Save/Cancel live preview, directly below the theme picker.
 
 Note: the canvas-colour decision (#474 agenda item 9) adds a built-in **Obsidian** preset alongside Dark and Dark (high contrast); see [foundations-tokens-theming.md](foundations-tokens-theming.md).
 

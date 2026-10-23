@@ -22,7 +22,9 @@ pub const COMMANDS_UPDATE: &str = "commands:update";
 pub const SETTINGS_CHANGED: &str = "settings:changed";
 pub const UI_OPEN_SESSION: &str = "ui:open-session";
 pub const MEMORY_WARNING: &str = "memory:warning";
+pub const OMP_GUARD_RESET: &str = "omp-guard:reset";
 pub const READOUT_UPDATE: &str = "readout:update";
+pub const ADVISOR_UPDATE: &str = "advisor:update";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
 pub const SUBAGENT_PATCH: &str = "subagent:patch";
 pub const SIDE_CHAT_PATCH: &str = "side-chat:patch";
@@ -30,6 +32,10 @@ pub const SIDE_CHAT_INTERRUPTED: &str = "side-chat:interrupted";
 pub const SIDE_CHAT_CONVERSATION_CHANGED: &str = "side-chat:conversation-changed";
 pub const FILE_EXPLORER_PATCH: &str = "file-explorer:patch";
 pub const FILE_EXPLORER_RESET: &str = "file-explorer:reset";
+// Spec 018 (issue #464): the Git changes panel's own watcher-driven refresh ping (FR-015b) --
+// no diff content, matching `FILE_EXPLORER_RESET`'s own minimal payload; the renderer always
+// calls `gitChanges.list` again itself rather than applying a patch.
+pub const GIT_CHANGES_REFRESH: &str = "git-changes:refresh";
 pub const ACCOUNTS_GITHUB_CHANGED: &str = "accounts:github-changed";
 pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
 // Lane R11b (issue #794, spec 006 "Installer and updates").
@@ -178,12 +184,28 @@ impl EventSink {
         );
     }
 
+    /// `omp-guard:reset` (#1184): one notice per OMP settings guard run that reset or failed a key.
+    pub fn emit_omp_guard_reset(&self, notice: &crate::omp::config_guard::GuardNotice) {
+        self.send(OMP_GUARD_RESET, notice);
+    }
+
     /// `readout:update` (lane R5, issue #788): the chip row's live `SessionReadout` bundle
     /// (`session::readout`'s own `assemble_readout`), debounced/single-flight there.
     pub fn emit_readout_update(&self, session_id: &str, readout: serde_json::Value) {
         self.send(
             READOUT_UPDATE,
             serde_json::json!({ "sessionId": session_id, "readout": readout }),
+        );
+    }
+
+    /// `advisor:update` (issue #937): the composer status line's Advisor chip on/off state,
+    /// session-scoped (`session::advisor`'s own state, sourced from `/advisor on|off`'s own
+    /// reply text plus a silent `/advisor status` probe at attach/resume -- see that module's
+    /// own header for why `/advisor status`'s own reply is not trusted the same way).
+    pub fn emit_advisor_update(&self, session_id: &str, advisor_on: bool) {
+        self.send(
+            ADVISOR_UPDATE,
+            serde_json::json!({ "sessionId": session_id, "advisorOn": advisor_on }),
         );
     }
 

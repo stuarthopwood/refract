@@ -2,6 +2,9 @@
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
 import type { ThemeId } from './themes';
+import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
+import type { TranscriptDisplaySettings } from './transcriptDisplay';
+import type { TodoPhase } from './todo';
 
 /** A local git project the developer has added to Refract. Owns zero or more Sessions. */
 export interface Repository {
@@ -109,31 +112,16 @@ export interface Settings {
   split: SplitLayout | null; // spec 005: null = single pane, no split open
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
+  chatWidth: ChatWidth; holidayTouches: HolidayTouches; // issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
-  // #514: lets the developer turn off path-based image-attach detection entirely (every pasted
-  // image path still works until turned off here); default true, immediate-apply, no migration.
-  detectImagePathsOnPaste: boolean;
+  detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on
   wordPredictionEnabled?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation.
+  sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; // #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
-
-/** Issue #457: two independent view filters for the chat transcript, applied in the renderer
- * (never main's `HIDDEN_TOOLS` path -- that path removes a tool call from the transcript
- * entirely, before it ever reaches the renderer, which would also hide the always-visible
- * exceptions this issue requires: approvals, answered/pending `ask` questions, and failed tool
- * calls). Hiding is a view filter only: hidden items stay in the persisted Conversation, so
- * turning a toggle back on restores them with no reload. The renderer consumer is
- * `Transcript.tsx`'s `rowVisibility`. */
-export interface TranscriptDisplaySettings {
-  thinking: boolean;
-  toolCalls: boolean;
-}
-
-/** Defaults (issue #457): both on, so nothing changes until the user opts out. */
-// Quality-gate fix (security-auditor, Low): frozen so this shared default object can never be
-// mutated in place by a future call site (every current reader already spreads it, never writes
-// through it, but a frozen object makes that the only option instead of an unenforced convention).
-export const DEFAULT_TRANSCRIPT_DISPLAY: Readonly<TranscriptDisplaySettings> = Object.freeze({ thinking: true, toolCalls: true });
+export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
+export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false });
+export { type TranscriptDisplaySettings, DEFAULT_TRANSCRIPT_DISPLAY } from './transcriptDisplay';
 
 /** OMP model-role ids (issue #455, `omp://models.md` "Role aliases and settings"): built-in chat
  * roles plus model-kind roles. A role's VALUE is a plain model selector OMP itself resolves
@@ -218,14 +206,14 @@ export function isModelRoleId(value: unknown): value is ModelRoleId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(ROLE_CATALOG_KIND, value);
 }
 
-/** One `omp models --kind <kind> --json` row (fields this feature needs; the CLI returns more --
- * `omp://models.md` "JSON includes provider, kind, id, selector, name, ..."). `selector` is the
- * exact `provider/modelId` string usable as a `modelRoles` value. */
+/** One `omp models --kind <kind> --json` row (fields this feature needs; `selector` is the exact
+ * `provider/modelId` string; `reasoning`/`thinking`, issue #1069, feed the reasoning radios). */
 export interface ModelCatalogEntry {
   provider: string;
   id: string;
   selector: string;
   name: string;
+  reasoning: boolean; thinking: string[] | null;
 }
 
 /** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the
@@ -335,8 +323,7 @@ export interface DiffStat {
 }
 
 /** Spec 004 FR-002 to FR-008, FR-021: the chip row's live data, assembled in main
- * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately
- * absent: it is a pure client clock the renderer computes itself (FR-005). */
+ * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately absent: it is a pure client clock the renderer computes itself (FR-005). */
 export interface SessionReadout {
   changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
@@ -345,9 +332,10 @@ export interface SessionReadout {
   // Gate fixes 2 finding 7: `finished`/`exited`/`failed` are separate counts, not folded
   // together -- the chip's own wording must be able to distinguish "1 finished, 1 exited" from
   // a plain "2 finished", and a turn whose only subagents failed must never read a misleading
-  // "0 finished" (SubagentsChip, ReadoutChips.tsx).
-  subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden)
-  todoProgress: { done: number; total: number } | null; branch?: { name: string; detached: boolean } | null; // todoProgress: null = no task list; branch (#724/R5): live branch or (detached) sha
+  // "0 finished" (SubagentsChip, ReadoutChips.tsx); `cancelled` (issue #563) is its own count too.
+  subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden)
+  todoTree: TodoPhase[] | null; branch?: { name: string; detached: boolean } | null; // todoTree: null = no task list; the shared pure derive (readout/todoDerive.ts) computes done/total/current task from it (decision record item 4, issue #700/#701); branch (#724/R5): live branch or (detached) sha
+  todoPhases: Array<{ name: string; pendingCount: number }> | null; // Issue #941 "Up next": pending Todo phases (name, outstanding task count); null = no task list or every phase finished (Rust-only field)
 }
 
 /** `get_state().contextUsage` (FINDINGS item 34): OMP reports `percent` itself, never derived here. */
@@ -358,9 +346,9 @@ export interface ContextUsage {
 }
 
 /** Spec 004 FR-007, FR-017 to FR-020: one row in the Subagents panel and the source the
- * Subagents chip's count is computed from. `id` is the subagent's own `name` from the batch
- * `task()` call's `tasks[]` entry, confirmed stable across every `tool_execution_update`
- * (FINDINGS item 36) -- the same value OMP's own `progress[].id` carries. */
+ * Subagents chip's count is computed from. `id` is `${toolCallId}:${nameOrTask}`, plus a `:N`
+ * suffix when two members of one call share an identical name (`subagents.rs::handle_task_start`'s
+ * `base_id`/occurrence logic) -- never the bare agent name alone. */
 export interface SubagentSummary {
   id: string;
   /** The owning `task()` call's own `toolCallId` (spec 004 remediation, HIGH): a turn with 2+
@@ -373,8 +361,7 @@ export interface SubagentSummary {
    * transcript's own `kind: 'subagent'` row (`subagent:<toolCallId>:<specIndex>`, transcript.ts)
    * derive from the SAME source array in the SAME order -- their respective `id` strings use
    * unrelated schemes and must never be compared directly, so `reconcileSubagentsOnAttach`
-   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex`
-   * instead. */
+   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex` instead. */
   specIndex: number;
   nameOrTask: string;
   /** `'exited'` (issue #489, FINDINGS item 45): Refract still remembered this subagent as
@@ -385,25 +372,37 @@ export interface SubagentSummary {
    * (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) -- so every surviving `running`
    * candidate `reconcileSubagentsOnAttach` finds is unconditionally resolved to `exited`, never
    * by asking OMP. Distinct from `failed`: nothing about the subagent's own work is known to
-   * have failed, only its process disappeared.
-   *
-   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, never
-   * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` genuinely
-   * CAN outlive it on Windows for a window, so "its process disappeared" is not simply assumed:
-   * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own
-   * process dies (primary defence), and `src/main/process/pidRecords.ts`'s `reapStale()` is the
-   * fallback for the rarer case Refract itself was killed too abruptly even for that -- run from
-   * `src/main/index.ts` at startup, awaited before any Session/`SessionAgent` ever attaches, so by
-   * the time `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for
-   * real, not merely assumed. */
-  status: 'running' | 'finished' | 'failed' | 'exited';
+   * have failed, only its process disappeared. Gate fixes 2 finding 9: that probe exercised two
+   * `omp` processes within one Node script, not
+   * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` CAN outlive
+   * it on Windows for a window, so "its process disappeared" is not simply assumed:
+   * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own process dies (primary defence), `src/main/process/pidRecords.ts`'s `reapStale()` is the
+   * fallback for the rarer case Refract itself was killed too abruptly -- run from
+   * `src/main/index.ts` at startup, awaited before any Session attaches, so by the time
+   * `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for real. */
+  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
+  taskSummary?: string; // Issue #700/#701 slice (b): first sentence of `task`, ~100 chars, inert text (Agents card) -- absent when the task had no text at all (subagents.rs's `subagent_task_summary`)
+  name?: string; // Gate round 1 fix 6 (#700/#701 slice b): the subagent's own given name (never falls back to `task`, unlike `nameOrTask`); absent when none was given (Agents card row header)
+}
+
+/** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
+ * paste, parsed back out of the plain message text at transcript-build time (never a separate
+ * OMP-side concept -- OMP's own `images` field never carries this kind of data). `byteLength` is
+ * 0 for a folder (not a meaningful count). The transcript bubble renders this as a chip, never
+ * the raw appended block text. */
+export interface FileAttachmentRef {
+  id: string;
+  name: string;
+  byteLength: number;
+  sentAs: 'inline' | 'path';
+  isDirectory: boolean;
 }
 
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
-  | { kind: 'user'; id: string; text: string; at: number }
+  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[] }
   | { kind: 'assistant-text'; id: string; text: string; streaming: boolean }
   | {
       kind: 'thinking';
@@ -426,8 +425,8 @@ export type TranscriptItem =
        * (terminationDetection.ts) confirms the writing process is actually gone -- same family as
        * `'exited'` on a `subagent` item below (#489), just file-tail-derived instead of
        * registry-derived, and never asserted for a Session that is genuinely still `working`
-       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. */
-      status: 'running' | 'done' | 'error' | 'interrupted';
+       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. `'cancelled'` (issue #911): the user's own Stop button cut a still-running call short, same family as a `subagent` item's own `'cancelled'` (#563 decision 15). */
+      status: 'running' | 'done' | 'error' | 'interrupted' | 'cancelled';
       /** Absent when built from history (no reliable wall clock to derive it from), matching
        * the `thinking` item's `startedAt`. */
       startedAt?: number;
@@ -461,13 +460,12 @@ export type TranscriptItem =
       specIndex: number; // this spec's position in the owning call's own `tasks[]` (issue #489 gate finding 1: the correlation key `reconcileSubagentsOnAttach` uses, since `id`'s scheme never matches `SubagentSummary.id`'s)
       name: string; // the task's own `name`, else its `task` text truncated
       task: string; // the full prompt text (`tasks[i].task`), shown on expansion
+      context?: string; // Issue #941: the batch `task()` call's own shared `context` (Stage's batch brief, names the Stage, `groupSubagentStages.ts`); absent for a flat call or pre-#941 history
       /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
        * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
        * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
-      status: 'running' | 'done' | 'error' | 'exited';
-      /** Absent when built from history (no reliable wall clock to derive it from), matching
-       * the `thinking` item's `startedAt`. */
-      startedAt?: number;
+      status: 'running' | 'done' | 'error' | 'cancelled' | 'exited';
+      startedAt?: number; // absent when built from history (no reliable wall clock to derive it from), matching the `thinking` item's `startedAt`
       durationMs?: number;
       /** The authoritative per-subagent result (FINDINGS item 22(e) `details.jobs[].schema.data`,
        * falling back to `.label`), shown as plain text on expansion once known. */
@@ -475,6 +473,7 @@ export type TranscriptItem =
       /** The batch call's own `details.progress[].id`/the later `details.jobs[].jobId`, used only
        * to correlate this row across the two frames; never rendered. */
       jobId?: string;
+      messageId: string; // owning assistant message's id (history `h{index}`, live real id); `groupSubagentStages` keys Stage membership on this, not timing (#563 gate round 2 addendum A)
     }
   | {
       /** An IRC-style message between a subagent and the main agent, or between subagents
@@ -484,7 +483,7 @@ export type TranscriptItem =
       from: string;
       to: string;
       text: string;
-      at: number;
+      at: number; fromParent?: boolean; replyTo?: string; // #838: OMP's `irc:incoming` `details.fromParent` (sent by the main agent) and `replyTo` (id answered), passed through by Rust
     }
   | {
       /** An OMP-injected `<advisory>` note (T084, FR-051), parsed out of a `role: 'custom'`
@@ -544,18 +543,18 @@ export const HIDDEN_TOOL_NOTICE_PREFIX = 'hidden-tool-error:';
  * regardless of this prefix, since an error is always a real outcome worth showing. */
 export const STARTUP_NOTICE_PREFIX = 'startup-notice:';
 
-/** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart. */
+/** One question of an `ask`-tool batch (`omp://rpc.md` "Extension UI Sub-Protocol"); `preview`
+ * is rich-dialog-only and never sent, so it is not represented here. */
+export interface AskQuestion { id: string; question: string; header?: string; options: { label: string; description?: string }[]; multi: boolean; recommended?: number; }
+
+/** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart.
+ * `kind: 'ask'` is the structured dialog (#572), built once `set_ask_dialog` is confirmed
+ * enabled for this process; `deadlineAt` is epoch ms from the frame's own `timeout` milliseconds
+ * (OMP's wire value is already ms, not seconds -- `rpc.md`'s own example shows `"timeout": 30000`). */
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
-  | {
-      kind: 'question';
-      requestId: string;
-      title: string;
-      message?: string;
-      options: string[];
-      optionDetails?: (string | undefined)[];
-      inputKind: 'choice' | 'text' | 'confirm';
-    };
+  | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }
+  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number };
 
 /** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Refract. */
 export interface ConversationInfo {
@@ -563,7 +562,7 @@ export interface ConversationInfo {
   id: string; // the UUID suffix of the file name
   createdAt: string; // ISO timestamp prefix of the file name (no file open needed)
   title: string; // `title` field of the first line of the file, may be empty
-  preview: string; // first user message, truncated to 120 characters
+  preview: string; // first user message, truncated to 120 characters; empty if none is found within the bounded scan (issue #862)
   isCurrent: boolean; // file === Session.currentConversation
 }
 
@@ -628,7 +627,7 @@ export type GitStatusMark = 'modified' | 'added' | 'untracked' | 'deleted' | 'ig
  * not ignored; `.git` itself is never a key (FR-007). Built for reuse, as-is, by the future
  * git-changes panel (#464, FR-011), not gated on that panel's own existence. */
 export type GitStatusMap = Record<string, GitStatusMark>;
-
+export type { GitChangesGroupKind, GitChangesFileEntry, GitChangesHeader, GitChangesSnapshot } from './model-git-changes';
 /** Spec 015 Slice 2 (data-model.md `FilePreview`, FR-012 to FR-015): the currently-selected
  * file's preview data. Replaced wholesale on every selection change; `kind: 'deleted'` when the
  * underlying file disappears while open (FR-021), never left showing stale content. `kind:

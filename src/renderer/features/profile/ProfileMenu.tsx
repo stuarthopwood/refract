@@ -12,20 +12,16 @@
 // of that. `ProfileItem.tsx` owns every dialog this menu can open (Manage accounts, Sign out,
 // Keyboard shortcuts, Health check) as siblings of the `DropdownMenu`, since a menu item unmounts
 // the moment the menu closes -- this component only calls the callbacks it is given for those.
-// The Theme submenu and What's new are the two exceptions: both are fully self-contained (reading
-// `useThemeStore`/`useViewStore` directly, the same way `ProfileItem.tsx`'s own cog button
-// already calls `useViewStore` inline), since neither needs a sibling dialog -- Theme only needs
-// `onThemeApplied` to reach ProfileItem's shared live region, and What's new only ever shows a
-// toast.
-//
-// One reserved slot, left as a comment rather than a disabled/stub item (a control that opens
-// nothing is worse than no control): the update entry lands between Keyboard shortcuts and
-// Health check once spec 006 ships `updates.get()`/`updates:changed` (tasks.md T024b) -- no
-// `updates` IPC, preload method, or store exists yet.
+// The Theme submenu, the update entry, and What's new are the three exceptions: each is fully
+// self-contained (reading `useThemeStore`/`useUpdateStore`/`useViewStore` directly, the same way
+// `ProfileItem.tsx`'s own cog button already calls `useViewStore` inline), since none needs a
+// sibling dialog -- Theme only needs `onThemeApplied` to reach ProfileItem's shared live region,
+// the update entry (issue #569, spec 008 FR-021, T024b) only ever shows a toast confirming or
+// reporting a check, and What's new only ever shows a toast too.
 import { useRef, useState } from 'react'
+import { toast } from 'sonner'
 import {
   ActivityIcon,
-  CheckIcon,
   DownloadIcon,
   ExternalLinkIcon,
   KeyboardIcon,
@@ -34,6 +30,7 @@ import {
   LogInIcon,
   LogOutIcon,
   PaletteIcon,
+  RefreshCwIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
   TriangleAlertIcon,
@@ -44,13 +41,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { initials } from '@/lib/initials'
-import { useAccountsStore, useActiveThemeId, useThemeStore, useViewStore } from '@/state'
+import { updateUnavailableReasonText } from '@/lib/updateStatus'
+import { useAccountsStore, useActiveThemeId, useThemeStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import { THEMES } from '../../../shared/themes'
 import type { ThemeId } from '../../../shared/themes'
@@ -84,22 +84,33 @@ export interface ProfileMenuContentProps {
   onThemeApplied(label: string): void
 }
 
-/** The Theme submenu (FR-019, T022): every built-in preset in `THEMES`' own declaration order,
- *  the active one marked by a check icon, the word "Current", AND the same shared 2px
- *  `--active-indicator` bar every other "current/selected" surface in the app uses
- *  (docs/DESIGN.md "Active/selected indicator"; never colour alone), with the exact
- *  swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already uses (each theme's own
- *  real `--background` value, not an invented accent). Choosing a DIFFERENT preset saves it
- *  immediately via `useThemeStore.getState().save` (a menu is a transient overlay -- Settings'
- *  own Appearance section is where a live preview with Save/Cancel belongs); choosing the
- *  already-active preset is a deliberate no-op, the same FR-002/FR-006 deviation note
- *  ThemePicker.tsx's own `choose` already documents. Selecting a preset closes the whole menu
- *  and returns focus to the profile item's name button via Radix's own default close-auto-focus
- *  (no `Trigger`-less dialog is opened here, so that default is exactly right); selecting
- *  "Appearance settings…" instead opens the Settings screen, which unmounts ProfileItem
- *  entirely, so focus goes to the Settings screen's own heading instead (SettingsScreen.tsx:66-68
- *  focuses it on mount, not any "first focusable control"). The submenu is
- *  controlled (`open`/`onOpenChange`) so that opening it moves focus to the active preset --
+/** The Theme submenu (FR-019/FR-030, T022, T031 -- #1043, grilled 2026-10-19): every built-in
+ *  preset in `THEMES`' own declaration order as a REAL `DropdownMenuRadioGroup`/`RadioItem`
+ *  (`menuitemradio`/`aria-checked`), bound to `activeId`. Replaces the former plain
+ *  `DropdownMenuItem` list whose only current-theme marker was a trailing check plus the word
+ *  "Current" -- every round swatch read as an unselected radio, including the active one, since
+ *  nothing on the row actually filled in when checked (#1043's reported bug). The shared
+ *  `DropdownMenuRadioItem` (`dropdown-menu.tsx`) now draws the Ask card's own leading
+ *  ring-and-dot mark, filled for the checked row, so THIS submenu carries no bespoke marker of
+ *  its own any more -- the colour swatch moves after the name as a small two-colour chip
+ *  (`h-3 w-5 rounded-[3px] border-border`, decorative, a `--background`/`--primary` gradient
+ *  split, never a round shape that could read as a
+ *  second radio), the exact swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already
+ *  uses (each theme's own real `--background` and `--primary` values, not an invented accent); "Current" is
+ *  dropped -- the checked radio's filled dot plus the screen reader's own "checked" state carry
+ *  that now. Gate round 5/6 history (`agent://Arch877`): in a DROPDOWN MENU specifically, the
+ *  2px `--active-indicator` bar follows focus, never selection (Stuart, 2026-10-15) -- unchanged by
+ *  this fix, still `DropdownMenuRadioItem`'s own `focus:shadow-[...]`, never a current-theme
+ *  cue. Choosing a DIFFERENT preset saves it immediately via `useThemeStore.getState().save` (a
+ *  menu is a transient overlay -- Settings' own Appearance section is where a live preview with
+ *  Save/Cancel belongs); choosing the already-active preset is a deliberate no-op, the same
+ *  FR-002/FR-006 deviation note ThemePicker.tsx's own `choose` already documents. Selecting a
+ *  preset closes the whole menu and returns focus to the profile item's name button via Radix's
+ *  own default close-auto-focus (no `Trigger`-less dialog is opened here, so that default is
+ *  exactly right); selecting "Appearance settings…" instead opens the Settings screen, which
+ *  unmounts ProfileItem entirely, so focus goes to the Settings screen's own heading instead
+ *  (SettingsScreen.tsx:66-68 focuses it on mount, not any "first focusable control"). The submenu
+ *  is controlled (`open`/`onOpenChange`) so that opening it moves focus to the active preset --
  *  but only when the submenu was opened by keyboard (the `contains` check below leaves a
  *  pointer-hover open alone, since a mouse user never wants focus silently stolen). Radix alone
  *  would otherwise focus the first item in `THEME_LIST`, which only happened to be the active
@@ -136,31 +147,39 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
         Theme
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent ref={subContentRef} sideOffset={4} alignOffset={-4} collisionPadding={8}>
-        {THEME_LIST.map((theme) => {
-          const isActive = theme.id === activeId
-          return (
-            <DropdownMenuItem
-              key={theme.id}
-              ref={isActive ? activeItemRef : undefined}
-              onSelect={() => chooseTheme(theme.id, theme.name)}
-              className={isActive ? 'focus:shadow-[inset_4px_0_0_0_var(--color-ring)]' : undefined}
-            >
-              {isActive && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-active-indicator" />}
-              <span
-                aria-hidden
-                className="size-4 shrink-0 rounded-full border border-border"
-                style={{ backgroundColor: theme.swatch }}
-              />
-              <span className="flex-1">{theme.name}</span>
-              {isActive && (
-                <span className="flex items-center gap-1 text-xs font-medium">
-                  <CheckIcon aria-hidden className="size-3.5" />
-                  Current
-                </span>
-              )}
-            </DropdownMenuItem>
-          )
-        })}
+        <DropdownMenuRadioGroup
+          value={activeId}
+          onValueChange={(value) => {
+            const theme = THEME_LIST.find((candidate) => candidate.id === value)
+            if (theme) chooseTheme(theme.id, theme.name)
+          }}
+        >
+          {THEME_LIST.map((theme) => {
+            const isActive = theme.id === activeId
+            return (
+              <DropdownMenuRadioItem
+                key={theme.id}
+                value={theme.id}
+                ref={isActive ? activeItemRef : undefined}
+              >
+                <span className="min-w-0 flex-1 truncate">{theme.name}</span>
+                {/* #1043 (ui-architect-v3 swatch ruling, 2026-10-20): a two-colour landscape
+                    preview -- the theme's own real `--background` (left half) and `--primary`
+                    (right half), never round, so it is never mistaken for the row's own leading
+                    radio mark. Decorative; the name plus the leading radio mark are the real
+                    identifiers. `forced-color-adjust-none` keeps the two real theme colours
+                    showing under Windows High Contrast (which otherwise flattens every author
+                    background to a system colour), with its own `forced-colors:border-[CanvasText]`
+                    edge so the chip still reads as a bordered control there. */}
+                <span
+                  aria-hidden
+                  className="h-3 w-5 shrink-0 rounded-[3px] border border-border forced-color-adjust-none forced-colors:border-[CanvasText]"
+                  style={{ background: `linear-gradient(90deg, ${theme.swatch} 50%, ${theme.swatchPrimary} 50%)` }}
+                />
+              </DropdownMenuRadioItem>
+            )
+          })}
+        </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => useViewStore.getState().openSettings('appearance')}>
           <SlidersHorizontalIcon aria-hidden />
@@ -170,6 +189,95 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
     </DropdownMenuSub>
   )
 }
+
+/** The update entry (spec 008 FR-021, T024b; issue #569 decision 5, amended gate round 2 --
+ *  recorded on #569): always present in the fixed order (FR-018), self-contained like
+ *  `ThemeSubmenu` above -- reads `useUpdateStore` directly rather than threading a new prop
+ *  through `ProfileItem.tsx`. Not the status bar's own fuller idle/checking/available/
+ *  downloading/downloaded/failed/unavailable detail (`StatusBar.tsx`, which keeps the Download/
+ *  Retry actions entirely to itself): "Restart to update" with a plain trailing version once a
+ *  download is waiting for the next quit, "Check for updates" otherwise -- the busy sub-states
+ *  get their own visible verb ("Checking for updates…"/"Downloading update…"/"Installing
+ *  update…") instead of the generic label, so the accessible name IS the visible text with no
+ *  separate `aria-label`; this departs from decision 5's original "text 'Check for updates',
+ *  one icon" wording, recorded as a departure on #569. Selecting "Restart to update" only
+ *  confirms with a toast -- it never quits or installs. Selecting "Check for updates" (gate
+ *  round 2 fix, M1 -- the status bar itself renders nothing for `checking`, and a real check can
+ *  take seconds): opens a `toast.loading` placeholder immediately and replaces it IN PLACE
+ *  (sonner's `{ id }`) with the outcome once `check()` settles, including a rejected promise
+ *  (`tauri-bridge`'s own IPC call can reject) -- never silent. Unavailable reasons use
+ *  `toast.warning` (matching the status bar's own amber treatment for the same state, not
+ *  `toast.info`); "available" is `toast.info`, not `toast.success` (which reads as "done" with
+ *  no next step), and names where to actually act; a check that resolves to downloading,
+ *  downloaded, or installing (the current state unchanged, `checker.rs`) still gets its own
+ *  neutral toast rather than silence. */
+function UpdateMenuItem() {
+  const updateState = useUpdateStore((state) => state.state)
+  const phase = updateState?.phase
+  const busy = phase === 'checking' || phase === 'downloading' || phase === 'installing'
+  const busyLabel = phase === 'checking' ? 'Checking for updates…' : phase === 'downloading' ? 'Downloading update…' : phase === 'installing' ? 'Installing update…' : 'Check for updates'
+
+  function handleCheckAgain(): void {
+    const id = toast.loading('Checking for updates…')
+    void window.refract.updates
+      .check()
+      .then((result) => {
+        if (!result.ok) {
+          toast.error(result.error.message, { id })
+          return
+        }
+        const next = result.value
+        if (next.phase === 'failed') {
+          toast.error(next.lastError ?? 'Update failed for an unknown reason.', { id })
+        } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
+          toast.warning(updateUnavailableReasonText(next.unavailableReason), { id })
+        } else if (next.phase === 'idle') {
+          toast.info('Refract is up to date.', { id })
+        } else if (next.phase === 'available') {
+          toast.info(`Refract v${next.availableVersion} is available. Download it from the status bar.`, { id })
+        } else if (next.phase === 'downloading') {
+          toast.info('An update is already downloading.', { id })
+        } else if (next.phase === 'downloaded') {
+          toast.info(`Refract v${next.availableVersion} is downloaded; it installs the next time you quit.`, { id })
+        } else if (next.phase === 'installing') {
+          toast.info('Refract is installing the update.', { id })
+        }
+      })
+      .catch(() => toast.error('Could not check for updates.', { id }))
+  }
+
+  if (phase === 'downloaded') {
+    return (
+      <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
+        <RefreshCwIcon aria-hidden />
+        <span className="flex-1">Restart to update</span>
+        {updateState?.availableVersion && (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            <span aria-hidden> </span>
+            <span className="sr-only"> version </span>v{updateState.availableVersion}
+          </span>
+        )}
+      </DropdownMenuItem>
+    )
+  }
+
+  return (
+    <DropdownMenuItem
+      aria-disabled={busy || undefined}
+      onSelect={(event) => {
+        if (busy) {
+          event.preventDefault()
+          return
+        }
+        handleCheckAgain()
+      }}
+    >
+      {busy ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <RefreshCwIcon aria-hidden />}
+      {busyLabel}
+    </DropdownMenuItem>
+  )
+}
+
 
 /** Keyboard shortcuts, Health check, and What's new: common to every GitHub sign-in state, so
  *  extracted here and rendered exactly once by `ProfileMenuContent` below, regardless of state. */
@@ -188,8 +296,9 @@ function CommonMenuItems({
         <KeyboardIcon aria-hidden />
         Keyboard shortcuts
       </DropdownMenuItem>
-      {/* Update entry slot (spec 006, tasks.md T024b): reserved here, between Keyboard shortcuts
-          and Health check, until spec 006 ships `updates.get()`/`updates:changed`. */}
+      {/* Update entry (issue #569, spec 008 FR-021, T024b): always present, fixed between
+          Keyboard shortcuts and Health check per FR-018. */}
+      <UpdateMenuItem />
       <DropdownMenuItem onSelect={onHealthCheck}>
         <ActivityIcon aria-hidden />
         Health check

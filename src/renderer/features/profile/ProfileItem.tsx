@@ -231,7 +231,10 @@ export function ProfileItem() {
   }
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-t border-sidebar-border px-2">
+    // #567 decision 20: own `border-t` removed -- `SessionList.tsx`'s footer div (rendered
+    // right above this component in `App.tsx`) now carries the one soft `border-divider` for
+    // the whole footer block, so the two surfaces no longer draw a double line.
+    <div className="flex h-12 shrink-0 items-center gap-1 px-2">
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} modal={false}>
         <Tooltip>
           <TooltipTrigger asChild>

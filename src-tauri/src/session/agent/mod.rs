@@ -60,15 +60,16 @@ mod lane_support;
 mod launch;
 mod launch_support;
 mod requests;
+mod status;
+mod sync_from_state;
 mod types;
-
 pub use commands::{
-    classify_slash_invocation, parse_slash_command, SlashInvocationClassification,
-    NATIVE_RESERVED_COMMANDS,
+    classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
+    SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 pub use requests::is_chat_answer;
 use types::should_apply_crash_exit_verdict;
-pub use types::{AgentError, PendingRequest, SessionStatus};
+pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 
 /// Mirrors `OmpProcess.ts`'s own `DEFAULT_REQUEST_TIMEOUT_MS`; not exported by `omp::process`
 /// (private there), so re-declared here with the same value for every `request()` call this
@@ -99,11 +100,16 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
+    // D1/D2 (#572): `set_ask_dialog` result, in-memory only (gate round 2, security Low) -- `send_set_ask_dialog`'s own return value drives the fallback (`launch.rs`); nothing else reads this field.
+    #[allow(dead_code)]
+    ask_dialog_enabled: bool,
     // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
     turn_generation: u64,
     stop_requested: bool,
     shutdown_generation: u64,
+    turn_abort_requested: bool, // issue #911: true while `chat.stop`'s own `abort` RPC is in flight for this turn
     // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
+    advisor: crate::session::advisor::State,
     #[allow(dead_code)]
     model: crate::session::model::State,
     #[allow(dead_code)]
@@ -193,9 +199,12 @@ impl SessionAgent {
                 pending: Vec::new(),
                 commands: Vec::new(),
                 process: None,
+                ask_dialog_enabled: false,
                 turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,
+                turn_abort_requested: false,
+                advisor: Default::default(),
                 model: Default::default(),
                 readout: Default::default(),
                 subagents: Default::default(),
@@ -266,56 +275,6 @@ impl SessionAgent {
     // -----------------------------------------------------------------------------------------
     // Status / events
     // -----------------------------------------------------------------------------------------
-
-    fn status_event_locked(&self, state: &AgentState) -> Value {
-        let mut payload = json!({
-            "sessionId": self.session_id,
-            "status": state.status,
-            "unread": state.unread,
-            "launchedMode": state.launched_mode,
-            "pendingMode": state.pending_mode,
-        });
-        let obj = payload
-            .as_object_mut()
-            .expect("status_event_locked payload is always a JSON object");
-        // `stopReason`/`stopDetail` are TS `?:` optional fields (the renderer checks
-        // `=== undefined`, ChatPane.tsx:205): omitted entirely when absent, not sent as JSON
-        // `null` (code-review finding, 2026-10-13).
-        if let Some(reason) = state.stop_reason {
-            obj.insert("stopReason".to_string(), Value::String(reason.to_string()));
-        }
-        if let Some(detail) = &state.stop_detail {
-            obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
-        }
-        // Lane R3 (issue #786): `terminatedUnexpectedly`/`pendingToolNames` (`session::
-        // termination`'s own `on_exit` hook) and `startProgress` (`session::start_queue`'s own
-        // `on_start_progress` hook), each omitted entirely while absent -- same gate rule as
-        // `stopReason`/`stopDetail` above.
-        Self::insert_termination_and_progress_fields(obj, state);
-        payload
-    }
-
-    /// Lane R3 (issue #786): shared by `status_event_locked` (the live `session:status` event)
-    /// and `runtime_view` (`SessionSnapshot.runtime`) so both wire shapes stay in lock-step --
-    /// `summary_fields` (registry-only `sessions.list` rows) deliberately does not call this: no
-    /// live agent computes a crash's tail detection for a Session nobody has opened this run.
-    fn insert_termination_and_progress_fields(
-        obj: &mut serde_json::Map<String, Value>,
-        state: &AgentState,
-    ) {
-        if state.termination.terminated_unexpectedly {
-            obj.insert("terminatedUnexpectedly".to_string(), Value::Bool(true));
-            if !state.termination.pending_tool_names.is_empty() {
-                obj.insert(
-                    "pendingToolNames".to_string(),
-                    json!(state.termination.pending_tool_names),
-                );
-            }
-        }
-        if let Some(progress) = state.start_queue.to_wire() {
-            obj.insert("startProgress".to_string(), progress);
-        }
-    }
 
     pub(super) async fn emit_status(&self) {
         let state = self.state.lock().await;
@@ -401,12 +360,11 @@ impl SessionAgent {
         }
     }
 
-    /// `sessions.list()`'s live-runtime fields (completes the registry-only placeholder Phase
-    /// 2(b) left, tasks.md T019's own "absent until the first `get_state`" default is simply
-    /// this method never having run for a Session with no agent this run -- `SessionManager`
-    /// only calls this for a Session that already has one).
+    /// `sessions.list()`'s live-runtime fields (#985): `startProgress` now included -- omitted,
+    /// an unrelated Session's refresh wiped this one's notice until its next status emit (no tick).
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
+        let pending_selection = crate::session::pending_selection::wire(self).await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "status": state.status,
@@ -415,11 +373,17 @@ impl SessionAgent {
             "pendingMode": state.pending_mode,
             "currentRole": current_role, "pinned": pinned,
         });
+        let object = payload
+            .as_object_mut()
+            .expect("summary_fields payload is always a JSON object");
+        if let Some(pending) = pending_selection {
+            object.insert("pendingSelection".to_string(), pending);
+        }
         if let Some(reason) = state.stop_reason {
-            payload
-                .as_object_mut()
-                .expect("summary_fields payload is always a JSON object")
-                .insert("stopReason".to_string(), Value::String(reason.to_string()));
+            object.insert("stopReason".to_string(), Value::String(reason.to_string()));
+        }
+        if let Some(progress) = state.start_queue.to_wire() {
+            object.insert("startProgress".to_string(), progress);
         }
         payload
     }
@@ -458,14 +422,6 @@ impl SessionAgent {
         payload
     }
 
-    pub async fn status(&self) -> SessionStatus {
-        self.state.lock().await.status
-    }
-
-    pub async fn available_commands(&self) -> Vec<Value> {
-        self.state.lock().await.commands.clone()
-    }
-
     // -----------------------------------------------------------------------------------------
     // Transcript
     // -----------------------------------------------------------------------------------------
@@ -473,7 +429,8 @@ impl SessionAgent {
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
         let before = state.transcript.items().to_vec();
-        state.transcript.apply_frame(frame);
+        let turn_abort_requested = state.turn_abort_requested;
+        state.transcript.apply_frame(frame, turn_abort_requested);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued while still holding `state.lock()` (code-review finding, 2026-10-13): otherwise
         // a concurrent `emit_patch_reset` (`SessionManager::set_visible`) can slip its own
@@ -575,6 +532,7 @@ impl SessionAgent {
     // named `async fn`, callable exactly as before; `with_termination_state` is already in real
     // use by `session::termination`, the rest stay `#[allow(dead_code)]` until their own lane
     // lands, same as before this macro existed).
+    with_lane_state!(with_advisor_state, advisor, crate::session::advisor::State);
     with_lane_state!(with_model_state, model, crate::session::model::State);
     with_lane_state!(with_readout_state, readout, crate::session::readout::State);
     with_lane_state!(

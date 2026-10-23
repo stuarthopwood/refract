@@ -8,14 +8,18 @@
 // Rust files"): each owns a no-op `on_frame` extension point `agent::frame`'s own `handle_frame`
 // calls, so a lane adds behaviour inside its own file only.
 
+pub mod advisor;
 pub mod agent;
 pub mod manager;
 pub mod model;
+pub mod pending_selection;
 pub mod readout;
+mod readout_head_watch;
 pub mod side_chat;
 pub mod start_queue;
 pub mod subagents;
 pub mod termination;
+pub mod thinking_level;
 
 pub use agent::{AgentError, SessionAgent, SessionStatus};
 pub use manager::SessionManager;

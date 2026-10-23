@@ -1,6 +1,8 @@
-// Approval mode pill (docs/DESIGN.md "Chat"; FR-015, FR-020, FR-054, FR-056): the single home for
-// the app-wide Approval mode, sitting as the first item in the chip row directly above the
-// message box (MessageInput.tsx). Replaces the old status-bar ToggleGroup (StatusBar.tsx, T098)
+// Approval mode pill (docs/DESIGN.md "Chat"; FR-015, FR-020, FR-054, FR-056; spec 001 FR-065):
+// the single home for the app-wide Approval mode, first in the composer box's own bottom row
+// (`MessageInput.tsx`; moved there from the status line above by #496, gate round 5 fix: this
+// comment still said "the chip row directly above the message box", stale since #564 moved it
+// INTO the box). Replaces the old status-bar ToggleGroup (StatusBar.tsx, T098)
 // and the chat header's pending-mode Badge (ChatHeader.tsx, T098) -- both read/wrote the exact
 // same `settings.approvalMode` / session `pendingMode`, so this is the one place left that does.
 // The pill's "current" mode is the Session's own `launchedMode` while its agent is actually LIVE
@@ -14,7 +16,6 @@
 // on a mode the app-wide setting has since moved on from (regression fixed here).
 import type { ComponentType } from 'react'
 import { CheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
-import { badgeVariants } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useSessionsStore, useSettingsStore } from '@/state'
+import { PICKER_TRIGGER_CLASS } from './pickerShared'
 import type { ApprovalMode } from '../../../shared/model'
 
 interface ModeItem {
@@ -74,10 +76,17 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`Approval mode: ${current.label}${pendingLabel ? `. ${pendingLabel}` : ''}`}
+          // Gate round 5 fix (Flow Medium #11): starts with the trigger's own visible text
+          // ("Ask"/"Edit freely"/"Auto"), matching the SAME fix on the Model and Reasoning
+          // pickers (WCAG 2.5.3, `docs/design/accessibility.md:16`).
+          aria-label={`${current.label}, approval mode${pendingLabel ? `. ${pendingLabel}` : ''}`}
           className={cn(
-            badgeVariants({ variant: 'outline' }),
-            'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted'
+            PICKER_TRIGGER_CLASS,
+            // Gate round 6 fix (`agent://Arch877` Visual N7): was a one-off duplicate of
+            // `pickerShared.tsx`'s own trigger class (including its stale `gap-1.5`, missed when
+            // that shared class moved to `gap-2`) -- now reads the shared class directly, so the
+            // two can never drift apart again. `COMPOSER_DISABLED_CLASS` folded in here never
+            // activates: this pill is never `aria-disabled`.
           )}
         >
           <CurrentIcon aria-hidden className="size-3" />

@@ -71,12 +71,17 @@ use subagents_progress::{
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
+/// Issue #700/#701 slice (b) decision item 1: "first sentence of `task`, ~100 chars" -- a SEPARATE budget from `NAME_OR_TASK_MAX_CHARS` above (the panel's own identity label).
+const TASK_SUMMARY_MAX_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SummaryStatus {
     Running,
     Finished,
     Failed,
+    /// Issue #563 decision 15: split out of `Failed` -- a cancelled/aborted subagent never did
+    /// anything wrong, so counting it as a failure overstated the batch's own result.
+    Cancelled,
     Exited,
 }
 
@@ -86,6 +91,7 @@ impl SummaryStatus {
             Self::Running => "running",
             Self::Finished => "finished",
             Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
             Self::Exited => "exited",
         }
     }
@@ -97,6 +103,10 @@ pub(super) struct SummaryEntry {
     tool_call_id: String,
     spec_index: u32,
     name_or_task: String,
+    /// Gate round 1 fix 6 (#700/#701 slice b): subagent's own given `name`; `None` falls back to `nameOrTask` on the card.
+    name: Option<String>,
+    /// Issue #700/#701 slice (b): Agents card's own one-line summary (`model.ts`'s `taskSummary`), independent of `name`.
+    task_summary: Option<String>,
     status: SummaryStatus,
     started_at: i64,
     duration_ms: Option<i64>,
@@ -202,7 +212,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
     }
 }
 
-/// Settles every `Running` summary to `Exited` immediately (not only on the next `launch()`'s own
+/// Settles every `Running` summary immediately (not only on the next `launch()`'s own
 /// `on_attach_reconcile`): a crash or a deliberate stop must clear the pill right away, matching
 /// the CRITICAL gate finding ("in on_exit, settle Running to exited"). Follow-up fix (#788): an
 /// earlier round gated the "No live output" notice to `on_attach_reconcile`'s own call only
@@ -212,10 +222,31 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
 /// nothing was ever left `Running` for it to seed a notice onto; the notice was effectively dead
 /// code. Fixed: both call sites now ALWAYS seed a notice for an empty-stream entry they settle,
 /// each with its own path-appropriate wording.
-pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
-    settle_running_to_exited(
+///
+/// Gate round 3 fix (`agent://Main`): `_requested` used to be ignored (hence the leading
+/// underscore), so a deliberate Stop and a crash both settled every `Running` summary to
+/// `Exited` -- the SAME agent the chat transcript's own `finalize_live_transcript` settles to
+/// `Cancelled` on a `UserStop` (`diff.rs`). The two pipelines disagreed on exactly the case
+/// decision 15 exists to tell apart. `requested && stop_requested` is `frame.rs`'s own
+/// `handle_exit` condition for `SubagentFinalizeCause::UserStop` verbatim (`requested` alone can
+/// also be true for `launch()`'s own internal handshake-cleanup stop, which is not a user
+/// request): matching it here picks `Cancelled` for exactly the same case the chat row settles
+/// to `Cancelled`, `Exited` for everything else (a crash, or that internal cleanup stop).
+pub(super) async fn on_exit(
+    agent: &SessionAgent,
+    _code: Option<i32>,
+    requested: bool,
+    stop_requested: bool,
+) {
+    let target = if requested && stop_requested {
+        SummaryStatus::Cancelled
+    } else {
+        SummaryStatus::Exited
+    };
+    settle_running_subagents(
         agent,
-        "No live output: the agent process exited before this subagent reported any.",
+        target,
+        "No live output: this subagent was still running when the agent process stopped.",
     )
     .await;
 }
@@ -228,27 +259,33 @@ pub(super) async fn on_start_progress(
     // No-op: the start-progress banner is `session::start_queue`'s own concern.
 }
 
-/// Settles every `Running` summary to `Exited` (gate finding ("in on_exit, settle Running to
-/// exited"). Seeds a one-row "No live output" notice (`notice_text`, caller-supplied so each of
-/// the two call sites below can word it for what actually happened) for any settled entry whose
-/// stream is still empty -- port of `reconcileSubagentsOnAttach`'s own placeholder (Electron gate
-/// finding 6). Scoped to exactly the `Running`->`Exited` transition this function performs; a
-/// summary that was already `Finished`/`Failed` before this call is untouched, and this does not
-/// re-derive historical candidates from the reattached transcript's own `subagent` rows the way
-/// TS's fuller version does (Electron gate finding 4, still disclosed as not ported -- see the PR
+/// Settles every `Running` summary to `target_status` (gate finding ("in on_exit, settle Running
+/// to exited"); gate round 3: generalised from a hardcoded `Exited` so `on_exit` can settle to
+/// `Cancelled` for a requested stop instead). Seeds a one-row "No live output" notice
+/// (`notice_text`, caller-supplied so each of the two call sites below can word it for what
+/// actually happened) for any settled entry whose stream is still empty -- port of
+/// `reconcileSubagentsOnAttach`'s own placeholder (Electron gate finding 6). Scoped to exactly
+/// the `Running`->`target_status` transition this function performs; a summary that was already
+/// `Finished`/`Failed` before this call is untouched, and this does not re-derive historical
+/// finished/failed candidates from the reattached transcript's own `subagent` rows the way TS's
+/// fuller version does (Electron gate finding 4, still disclosed as not ported -- see the PR
 /// body). Also schedules a readout update when anything changed: otherwise the chip can keep
 /// reading "1 running" after a crash/stop with no turn left to trigger a recompute. If the
 /// settled, notice-seeded subagent is the CURRENTLY visible one, the notice is also queued as a
 /// `subagent:patch` upsert -- replacing `streams` alone never reaches an already-open panel,
 /// which only ever learns of new rows through that patch channel.
-async fn settle_running_to_exited(agent: &SessionAgent, notice_text: &str) {
+async fn settle_running_subagents(
+    agent: &SessionAgent,
+    target_status: SummaryStatus,
+    notice_text: &str,
+) {
     let (summaries_value, visible_ops) = agent
         .with_subagents_state(|s| {
             let mut changed = false;
             let mut settled_ids = Vec::new();
             for entry in &mut s.summaries {
                 if entry.status == SummaryStatus::Running {
-                    entry.status = SummaryStatus::Exited;
+                    entry.status = target_status;
                     changed = true;
                     settled_ids.push(entry.id.clone());
                 }
@@ -299,8 +336,9 @@ async fn settle_running_to_exited(agent: &SessionAgent, notice_text: &str) {
 /// reattached transcript's own `subagent` rows the way TS's fuller version does (Electron gate
 /// finding 4) -- disclosed simplification, see the PR body's own "Open problems".
 pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
-    settle_running_to_exited(
+    settle_running_subagents(
         agent,
+        SummaryStatus::Exited,
         "No live output: this subagent had already exited when Refract reattached.",
     )
     .await;
@@ -399,12 +437,14 @@ pub(super) async fn subagent_count(agent: &SessionAgent) -> Option<Value> {
             let mut finished = 0u32;
             let mut exited = 0u32;
             let mut failed = 0u32;
+            let mut cancelled = 0u32;
             for entry in &s.summaries {
                 match entry.status {
                     SummaryStatus::Running => running += 1,
                     SummaryStatus::Finished => finished += 1,
                     SummaryStatus::Exited => exited += 1,
                     SummaryStatus::Failed => failed += 1,
+                    SummaryStatus::Cancelled => cancelled += 1,
                 }
             }
             Some(json!({
@@ -412,6 +452,7 @@ pub(super) async fn subagent_count(agent: &SessionAgent) -> Option<Value> {
                 "finished": finished,
                 "exited": exited,
                 "failed": failed,
+                "cancelled": cancelled,
             }))
         })
         .await
@@ -441,6 +482,62 @@ fn subagent_name_or_task(spec: &Value) -> String {
         format!("{truncated}...")
     } else {
         task.to_string()
+    }
+}
+
+/// Gate round 1 fix 6 (#700/#701 slice b): subagent's own given `name`; `None` on an empty or absent name.
+fn subagent_name(spec: &Value) -> Option<String> {
+    spec.get("name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Issue #700/#701 slice (b), decision item 1: one-line task summary (first sentence of `task`, ~100 chars, inert text). Gate round 1 fix 8: a "sentence" ends only at `.`/`!`/`?` followed by whitespace or end-of-text (`package.json`/`e.g.`/`v1.2`/`./x` no longer cut mid-token); whitespace runs collapse to one space, and a leading markdown heading marker is stripped.
+/// `None` once nothing remains. The 100-char cap uses `char_indices().nth(N)` (one O(n) scan, never a full `Vec<char>` copy), reserving the trailing `...` inside the cap, with any dangling trailing space trimmed first.
+fn subagent_task_summary(spec: &Value) -> Option<String> {
+    let raw = spec.get("task").and_then(Value::as_str).unwrap_or("");
+    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let without_heading = if collapsed.starts_with('#') {
+        collapsed.trim_start_matches('#').trim_start()
+    } else {
+        collapsed.as_str()
+    };
+    if without_heading.is_empty() {
+        return None;
+    }
+    let mut sentence_end = None;
+    for (i, c) in without_heading.char_indices() {
+        if c != '.' && c != '!' && c != '?' {
+            continue;
+        }
+        let after = i + c.len_utf8();
+        if without_heading[after..]
+            .chars()
+            .next()
+            .is_none_or(char::is_whitespace)
+        {
+            sentence_end = Some(after);
+            break;
+        }
+    }
+    let sentence = sentence_end
+        .map_or(without_heading, |end| &without_heading[..end])
+        .trim();
+    if sentence.is_empty() {
+        return None;
+    }
+    let char_count = sentence.chars().count();
+    if char_count > TASK_SUMMARY_MAX_CHARS {
+        let keep = TASK_SUMMARY_MAX_CHARS.saturating_sub(3);
+        let byte_end = sentence
+            .char_indices()
+            .nth(keep)
+            .map_or(sentence.len(), |(i, _)| i);
+        let truncated = sentence[..byte_end].trim_end();
+        Some(format!("{truncated}..."))
+    } else {
+        Some(sentence.to_string())
     }
 }
 
@@ -478,6 +575,8 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
             tool_call_id: tool_call_id.to_string(),
             spec_index: index as u32,
             name_or_task: subagent_name_or_task(spec),
+            name: subagent_name(spec),
+            task_summary: subagent_task_summary(spec),
             status: SummaryStatus::Running,
             started_at,
             duration_ms: None,

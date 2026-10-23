@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::omp::diff::diff_transcript;
+use crate::omp::diff::{diff_transcript, SubagentFinalizeCause};
 use crate::omp::process::OmpProcess;
 use crate::omp::transcript::RequestResolution;
 
 use super::commands::{filter_supported_commands, string_array};
 use super::requests::{classify_dialog, DialogClassification};
-use super::{SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
+use super::{PendingRequest, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
     pub(super) async fn handle_frame(&self, frame: Value) {
@@ -36,14 +36,25 @@ impl SessionAgent {
                     if state.turn_generation % 2 == 0 {
                         state.turn_generation = state.turn_generation.wrapping_add(1);
                     }
+                    // Issue #911 (gate-fix): every new turn starts clean -- also covers a
+                    // queued follow-up/steer starting its own next turn after a stop.
+                    state.turn_abort_requested = false;
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
-            "session_settled" => self.handle_turn_settled().await,
+            "session_settled" => {
+                self.handle_turn_settled().await;
+                // Issue #937, gate round 2 fix (decided): a settled turn is the one signal
+                // that is genuinely safe to retry the silent attach/resume probe on -- see
+                // `session::advisor`'s own header for why `on_launch` alone cannot tell "a
+                // prompt is in flight" from "truly idle".
+                crate::session::advisor::on_turn_settled(self).await;
+            }
             "prompt_result" => {
                 self.apply_transcript_frame(&frame).await;
                 if frame.get("sessionSettled").and_then(Value::as_bool) == Some(true) {
                     self.handle_turn_settled().await;
+                    crate::session::advisor::on_turn_settled(self).await;
                 }
             }
             "queue_update" => {
@@ -67,8 +78,18 @@ impl SessionAgent {
                     .emit_commands_update(&self.session_id, &commands_value);
             }
             "extension_ui_request" => self.handle_extension_ui_request(&frame).await,
-            "message_start" | "message_update" | "message_end" | "command_output" => {
+            "message_start" | "message_update" | "message_end" => {
                 self.apply_transcript_frame(&frame).await;
+            }
+            // Issue #937, gate round 1 fix: `session::advisor`'s own `handle_command_output`
+            // decides in one pass whether this frame is a silent probe reply to swallow (never
+            // reaching the transcript) or an authoritative `/advisor on|off` toggle to track on
+            // the way to rendering normally -- every OTHER `command_output` (`/usage show`,
+            // `/session info`, ...) renders exactly as before #937.
+            "command_output" => {
+                if !crate::session::advisor::handle_command_output(self, &frame).await {
+                    self.apply_transcript_frame(&frame).await;
+                }
             }
             "notice" => {
                 // Side-chat (`btw-history`) notices are out of scope (see this file's header);
@@ -122,25 +143,54 @@ impl SessionAgent {
                 self.append_notice(message, &level).await
             }
             DialogClassification::Cancel(target) => {
-                let became_working = {
+                let (became_working, cancelled_request) = {
                     let mut state = self.state.lock().await;
-                    if !state.pending.iter().any(|r| r.request_id() == target) {
+                    let Some(cancelled_request) = state
+                        .pending
+                        .iter()
+                        .find(|r| r.request_id() == target)
+                        .cloned()
+                    else {
                         return;
-                    }
+                    };
                     state.pending.retain(|r| r.request_id() != target);
-                    state.pending.is_empty() && state.status == SessionStatus::NeedsYou
+                    (
+                        state.pending.is_empty() && state.status == SessionStatus::NeedsYou,
+                        cancelled_request,
+                    )
                 };
                 self.upsert_request_row(&target, Some(RequestResolution::Cancelled))
                     .await;
-                self.append_notice(
-                    "Request withdrawn: the agent cancelled it.".to_string(),
-                    "info",
-                )
-                .await;
+                // D17 (#572): an `Ask` card closes WITHOUT this notice -- after a timeout it
+                // would be untrue, since the answer summary is built from the tool result
+                // instead. Every other pending-request kind keeps it exactly as before.
+                if !matches!(cancelled_request, PendingRequest::Ask { .. }) {
+                    self.append_notice(
+                        "Request withdrawn: the agent cancelled it.".to_string(),
+                        "info",
+                    )
+                    .await;
+                }
                 self.events.emit_request_resolved(&self.session_id, &target);
                 if became_working {
                     self.set_status(SessionStatus::Working, None, None).await;
                 }
+            }
+            DialogClassification::Malformed { id } => {
+                // D3 (#572): no `PendingRequest` was ever created for this frame, so Refract
+                // answers `{cancelled:true}` on the wire itself (instead of via
+                // `answer_request`, which requires an existing pending row) and surfaces the
+                // error notice in its place.
+                let proc = self.state.lock().await.process.clone();
+                if let Some(proc) = proc {
+                    let _ = proc
+                        .send_raw(
+                            json!({ "type": "extension_ui_response", "id": id, "cancelled": true }),
+                        )
+                        .await;
+                }
+                self.append_notice("Couldn't show the agent's question.".to_string(), "error")
+                    .await;
             }
             DialogClassification::Request(request) => {
                 // Port of `addPendingRequest` (SessionAgent.ts:1641-1644): push+`NeedsYou`+
@@ -166,6 +216,12 @@ impl SessionAgent {
                 return;
             }
             state.turn_generation = state.turn_generation.wrapping_add(1);
+            // Issue #911: this turn (whichever one it was) has now fully settled -- every
+            // `tool_execution_end` it will ever receive has already been applied (frames are
+            // handled strictly in arrival order, one at a time; a prompt_result/session_settled
+            // frame is always the LAST frame of its own turn). Safe to clear unconditionally:
+            // a no-op on a turn `stop()` was never called for (the flag was already false).
+            state.turn_abort_requested = false;
             (state.turn_generation, state.shutdown_generation)
         };
         self.settle_turn_pending().await;
@@ -254,12 +310,23 @@ impl SessionAgent {
         code: Option<i32>,
         requested: bool,
     ) -> (bool, bool, bool, u64) {
-        let (is_current, stop_requested, was_already_stopped, epoch_at_exit, exited_pid) = {
+        let (
+            is_current,
+            stop_requested,
+            was_already_stopped,
+            epoch_at_exit,
+            exited_pid,
+            turn_abort_requested,
+        ) = {
             let mut state = self.state.lock().await;
             let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
             let was_already_stopped = state.status == SessionStatus::Stopped;
+            let turn_abort_requested = state.turn_abort_requested;
             if is_current {
                 state.process = None;
+                // Issue #911 (gate-fix): this exit ends whatever turn the flag belonged to --
+                // clear it here so it can never leak into a later reattach/fresh launch.
+                state.turn_abort_requested = false;
             }
             (
                 is_current,
@@ -270,6 +337,7 @@ impl SessionAgent {
                 // later read left a race window open.
                 state.termination.epoch,
                 proc.pid(),
+                turn_abort_requested,
             )
         };
         if is_current {
@@ -288,11 +356,25 @@ impl SessionAgent {
         }
         // Finalizes every still-live row before settling pending requests (code-review finding,
         // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
-        // crash or `stop()` mid-turn leaves a streaming/running row spinning forever.
+        // crash or `stop()` mid-turn leaves a streaming/running row spinning forever. `cause` is
+        // `UserStop` either from the SAME `requested`/`stop_requested` session-level signal
+        // already captured above (#563 decision 15: "the user asked this session to stop"), OR
+        // (issue #911 gate-fix) from `turn_abort_requested` -- the user's own chat-pane Stop
+        // click was in flight for this turn when the process exited (a crash, or a race between
+        // the abort taking effect and the process otherwise going down) -- so a cut-short call
+        // still settles `Cancelled`, never `Error`/`Exited`, exactly as it would have had the
+        // abort settled normally instead. Anything else -- a genuine crash, or `launch()`'s
+        // internal handshake-cleanup stop, which is not a user request either -- settles a
+        // still-running Subagent/Tool row to `Exited`/`Error`.
+        let finalize_cause = if (requested && stop_requested) || turn_abort_requested {
+            SubagentFinalizeCause::UserStop
+        } else {
+            SubagentFinalizeCause::Crash
+        };
         {
             let mut state = self.state.lock().await;
             let before = state.transcript.items().to_vec();
-            state.transcript.finalize_live_items();
+            state.transcript.finalize_live_items(finalize_cause);
             let ops = diff_transcript(&before, state.transcript.items());
             if !ops.is_empty() {
                 self.coalescer.queue(ops);

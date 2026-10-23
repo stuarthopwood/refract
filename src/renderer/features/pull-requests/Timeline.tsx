@@ -25,10 +25,24 @@ function actorLabel(actor: PullRequestActor): string {
   return actor.name ?? actor.login
 }
 
-const VERDICT_LABEL: Record<Review['verdict'], string> = {
+// Gate round 2 fix (#568 decision 10 amendment): DISMISSED is now a real timeline entry (it no
+// longer shares PENDING's silent drop in `map_review_verdict`). Gate round 3 fix: a plain
+// `{actor} {label}` template read as "{author} dismissed their review", which gets the actor
+// wrong -- the REVIEWER doesn't dismiss their own review (a maintainer, or GitHub's own
+// stale-review automation, does). `reviewSentence` below builds the dismissed case as its own
+// possessive sentence instead of reusing the shared template. The original verdict (approve vs
+// request-changes) a dismissed review HAD before dismissal isn't in this query's data --
+// `state` is simply overwritten to `DISMISSED` by GitHub itself -- so this stays the generic
+// "review was dismissed" wording rather than claiming a specific one.
+const VERDICT_LABEL: Record<Exclude<Review['verdict'], 'dismissed'>, string> = {
   comment: 'commented',
   approve: 'approved',
   'request-changes': 'requested changes'
+}
+
+function reviewSentence(review: Review): string {
+  if (review.verdict === 'dismissed') return `${actorLabel(review.author)}\u2019s review was dismissed`
+  return `${actorLabel(review.author)} ${VERDICT_LABEL[review.verdict]}`
 }
 
 const SEVERITY_LABEL: Record<AutomatedFinding['severity'], string> = {
@@ -69,7 +83,7 @@ function ReviewRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'review' }
     <div className="rounded-md border border-border px-3 py-2">
       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
         <span className="font-medium text-foreground">
-          {actorLabel(review.author)} {VERDICT_LABEL[review.verdict]}
+          {reviewSentence(review)}
         </span>
         <span>{formatRelativeTime(review.submittedAt)}</span>
       </div>

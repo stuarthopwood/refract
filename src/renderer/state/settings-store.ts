@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
+import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
 import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
+import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX } from './pull-requests-layout-store'
 import { notify } from './notify'
 import { useChatScrollStore } from './scroll-store'
 
@@ -10,9 +11,11 @@ interface SettingsState {
   setApprovalMode(mode: ApprovalMode): Promise<void>
   setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<void>
   setWatermarkEnabled(enabled: boolean): Promise<void>
+  setHolidayTouches(value: Settings['holidayTouches']): Promise<void>
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
+  setShowContextUsageBar(enabled: boolean): Promise<void>
   setWordPredictionEnabled(enabled: boolean): Promise<void>
 }
 
@@ -25,9 +28,13 @@ export const DEFAULT_SETTINGS: Settings = {
   split: null,
   theme: 'dark',
   watermarkEnabled: true,
+  chatWidth: 'full',
+  holidayTouches: 'full',
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
-  detectImagePathsOnPaste: true
+  detectImagePathsOnPaste: true,
+  sessionListCollapse: DEFAULT_SESSION_LIST_COLLAPSE,
+  pullRequestsListWidthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX // #930: default and remembered-width floor; see `pull-requests-layout-store.ts`
   // Issue #772 (Rust build only, FINDINGS item 28): `wordPredictionEnabled` is deliberately
   // ABSENT here (not `false`) -- `MessageInput.tsx`'s own `!== false` read treats an absent
   // value as enabled, so this client-only placeholder never flickers ghost text off for
@@ -62,6 +69,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       notify(result.error)
     }
   },
+  setHolidayTouches: async (value) => {
+    const result = await window.refract.settings.setHolidayTouches(value)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
   setTranscriptDisplay: async (field, visible) => {
     const result = await window.refract.settings.setTranscriptDisplay(field, visible)
     if (result.ok) {
@@ -86,6 +101,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setDetectImagePathsOnPaste: async (enabled) => {
     const result = await window.refract.settings.setDetectImagePathsOnPaste(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setShowContextUsageBar: async (enabled) => {
+    const result = await window.refract.settings.setShowContextUsageBar(enabled)
     if (result.ok) {
       set({ settings: result.value })
     } else {

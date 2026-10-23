@@ -14,7 +14,9 @@
 
 use serde_json::Value;
 
-use crate::store::settings::{ApprovalMode, SplitLayout};
+use crate::store::settings::{
+    ApprovalMode, ChatWidth, HolidayTouches, SessionListCollapse, SplitLayout,
+};
 
 use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture};
 
@@ -45,9 +47,23 @@ pub fn register(d: &mut Dispatcher) {
     // every `settings.*` channel in one place, same reasoning `ipc/mod.rs`'s own module split
     // documents for every other per-area file.
     d.register(
+        "settings.setShowContextUsageBar",
+        settings_set_show_context_usage_bar,
+    );
+    d.register(
         "settings.setWordPredictionEnabled",
         settings_set_word_prediction_enabled,
     );
+    d.register(
+        "settings.setSessionListCollapse",
+        settings_set_session_list_collapse,
+    );
+    d.register(
+        "settings.setPullRequestsListWidth",
+        settings_set_pull_requests_list_width,
+    );
+    d.register("settings.setChatWidth", settings_set_chat_width);
+    d.register("settings.setHolidayTouches", settings_set_holiday_touches);
 }
 
 pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -213,6 +229,72 @@ pub fn settings_set_watermark_enabled(state: AppState, args: Vec<Value>) -> Hand
     })
 }
 
+/// `settings.setChatWidth(width)` (issue #554, FR-073): same enum-parse-then-persist shape as
+/// `settings_set_approval_mode` above.
+pub fn settings_set_chat_width(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let width = match args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(parse_chat_width)
+        {
+            Some(width) => width,
+            None => {
+                return Err(invalid_argument(
+                    "settings.setChatWidth expects one of 'full' | 'reading-column'",
+                ))
+            }
+        };
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_chat_width(width)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+fn parse_chat_width(value: &str) -> Option<ChatWidth> {
+    serde_json::from_value(Value::String(value.to_string())).ok()
+}
+
+/// `settings.setHolidayTouches(value)` (issue #1048): same enum-parse-then-persist shape as
+/// `settings_set_chat_width` above.
+pub fn settings_set_holiday_touches(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let value = match args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(parse_holiday_touches)
+        {
+            Some(value) => value,
+            None => {
+                return Err(invalid_argument(
+                    "settings.setHolidayTouches expects one of 'full' | 'artwork' | 'off'",
+                ))
+            }
+        };
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_holiday_touches(value)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+fn parse_holiday_touches(value: &str) -> Option<HolidayTouches> {
+    serde_json::from_value(Value::String(value.to_string())).ok()
+}
+
 /// Issue #457: `field` is one of the two known `TranscriptDisplaySettings` keys, validated here
 /// (`invalid-argument` for anything else) before ever reaching the store's own per-field merge.
 pub fn settings_set_transcript_display(state: AppState, args: Vec<Value>) -> HandlerFuture {
@@ -287,6 +369,91 @@ pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -
             .lock()
             .await
             .set_word_prediction_enabled(enabled)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// #735 contracts/ipc.md `settings.setSessionListCollapse`: basic-shape validation only --
+/// `{ collapsedRepositoryIds: string[], archivedOpen: boolean }` -- plus the shared
+/// `sanitize_collapsed_repository_ids` cap-and-dedupe pass (gate round 2 fix), mirroring
+/// `parse_split_arg`'s own validate-then-persist pattern above. Ids are de-duplicated silently,
+/// never rejected; an over-cap count or id length IS rejected as `invalid-argument`, since this
+/// is the renderer's own validated write path, unlike the disk loader's lazy-correction.
+const SESSION_LIST_COLLAPSE_SHAPE_MESSAGE: &str =
+    "settings.setSessionListCollapse expects { collapsedRepositoryIds: string[], archivedOpen: boolean }";
+
+fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse, super::IpcError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let ids_value = object
+        .get("collapsedRepositoryIds")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let collapsed_repository_ids =
+        crate::store::settings::sanitize_collapsed_repository_ids(ids_value)
+            .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let archived_open = object
+        .get("archivedOpen")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    Ok(SessionListCollapse {
+        collapsed_repository_ids,
+        archived_open,
+    })
+}
+
+pub fn settings_set_session_list_collapse(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let value = parse_session_list_collapse_arg(args.first().unwrap_or(&Value::Null))?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_session_list_collapse(value)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// #930 contracts/ipc.md `settings.setPullRequestsListWidth(px)`: one width for every Project,
+/// clamped (not rejected) by `SettingsStore` itself, the same shape `settings.setTheme` would
+/// use if it did not also track a raw value -- a plain-replace setter with no raw/lazy-correction
+/// tracking needed.
+pub fn settings_set_pull_requests_list_width(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let width_px = args.first().and_then(Value::as_i64).ok_or_else(|| {
+            invalid_argument("settings.setPullRequestsListWidth expects a number of pixels")
+        })?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_pull_requests_list_width_px(width_px)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// `settings.setShowContextUsageBar(enabled)` (issue #1082, spec 004 FR-034).
+pub fn settings_set_show_context_usage_bar(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let enabled = require_bool(&args, 0, "settings.setShowContextUsageBar", "enabled")?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_show_context_usage_bar(enabled)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");

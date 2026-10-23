@@ -142,6 +142,210 @@
 
 ---
 
+## Phase 8: Convergence -- #568 restyle (issue #568)
+
+**Goal**: converge the ui-architect-v3 roundtable's 12 decisions (#568, delegated by Stuart
+2026-10-16) into this feature's existing surfaces, folding in #529 (state pills), #531
+(title/button layout) and #532 (shared Refresh control) as part of the same restyle, without a
+new IPC field or any structural change to the Markdown-rendered PR body.
+
+**Independent test**: full live check per the issue's own decision record "Live checks" list.
+
+- [X] T031 [P] (#568) Row restyle: `divide-y` flat row shape replacing the rounded-md bordered
+  box, the shared active-indicator bar on the selected row, a 3-line layout (title; metadata
+  line of state, check, repo, time; author line), and the font split (App font for metadata and
+  author, mono reserved for branch names) (decisions 1-2).
+  -- Implemented (073ad12): `PullRequestRow.tsx` rewritten to a zero-box `divide-y` row with the
+  shared `bg-active-indicator` bar; live-verified (screenshot) via `scripts/verify-tauri-568.mjs`.
+- [X] T032 [P] (#568) `StatePill`: a new solid-fill pill component replacing the outline `Badge`
+  for pull request state, the new `--pr-open`/`--pr-draft`/`--pr-closed`/`--pr-merged` tokens
+  (already landed in `globals.css` and `theme-contrast-pairs.mjs`), and the `isDraft` search-field
+  data fix in `gh_pull_requests.rs`/`mod.rs` so the four relation-tab searches report Draft
+  instead of silently Open (decisions 5-6).
+  -- Implemented (073ad12): `StatePill.tsx` (new), tokens contrast-verified (433/433 pairs PASS,
+  `check:theme-contrast`); the `isDraft` fix is covered by the `map_pull_request_state` mapping
+  unit test (`mapping_tests.rs`, not the deserialisation fixture test, which only exercises the
+  Merged path), and gate round 2 live-verified a real draft PR rendering its StatePill correctly.
+- [X] T033 [P] (#568) Detail header title/button layout: larger title (`text-lg`, two-line clamp),
+  lighter secondary action buttons so the title leads (decision 7).
+  -- Implemented (073ad12): `PullRequestDetail.tsx` title `text-lg line-clamp-2`; New
+  session/Review now `variant="ghost"`; Merge stays the sole filled button.
+- [X] T034 [P] (#568) Shared `RefreshButton` component unifying the pull request list's and
+  detail view's two existing refresh call sites: ghost, icon-only, tooltip, spinning while
+  loading, disabled while loading (decision 8).
+  -- Implemented (073ad12): `RefreshButton.tsx` (new), wired into both `PullRequestList.tsx` and
+  `PullRequestDetail.tsx`.
+- [X] T035 [P] (#568) Overview/Changes tab pair: a local underline-style `className` override on
+  the shared `Tabs` primitive scoped to this view only, leaving the five filter tabs' default
+  pill styling untouched (decision 3); remove `PullRequestsView.tsx`'s header `border-b` divider
+  (decision 9).
+  -- Implemented (073ad12): underline classes applied only inside `PullRequestDetail.tsx`'s own
+  `TabsList`/`TabsTrigger`; `tabs.tsx` untouched (confirmed via `git diff --stat`); the five
+  filter tabs in `PullRequestList.tsx` keep their default shadcn pill classes unchanged; header
+  `border-b border-border` removed from `PullRequestsView.tsx`.
+- [X] T036 (#568) Reviewer-consensus rollup (FR-031): derive counts of approved /
+  changes-requested / commented from `Timeline.tsx`'s existing `review` entries, taking each
+  reviewer's latest verdict only, and render them above the PR body at the top of the Overview
+  tab; no new IPC field (decision 10) (depends on T015, T019).
+  -- Implemented (073ad12): `ReviewConsensus.tsx` (new), mounted at the top of the Overview tab's
+  own `p-3` wrapper, above `Markdown`; derives from `detail.timeline` client-side, no IPC change.
+  Gate round 2 fix: the "latest verdict" reducer is now a chronological per-reviewer fold
+  (standing verdict replaced by a later approve/request-changes, unaffected by a later comment,
+  reset to none by a dismissal) rather than a bare "last entry wins", matching GitHub's own
+  standing-review semantics; a dismissed review stays a real `Timeline` entry (new `dismissed`
+  `ReviewVerdict`) instead of being dropped server-side, so FR-008 (every review shown) still
+  holds.
+- [X] T037 (#568) Update `specs/003-pull-request-management/spec.md` (FR-031, Clarifications),
+  `CONTEXT.md` and `docs/PLAN.md` to record the convergence, then verify live: the issue's own
+  decision record "Live checks" list.
+  -- Docs updated (073ad12). Live-verified via `scripts/verify-tauri-568.mjs` against a scratch
+  Tauri debug build and a read-only shallow clone of `stuarthopwood/refract` for real PR data;
+  see the issue's decision record and the PR body for the full pass/fail breakdown and any
+  not-exercised items.
+
+**Gate rounds (five-reviewer quality gate on PR #914):**
+- Round 1 (2026-10-16): Critical/High fixes -- real underline tabs (not a box), `isDraft` only
+  applying to OPEN pull requests, consensus semantics, narrow-width action-row overflow,
+  metadata separators, `hover:bg-surface-hover`, literal `--pr-*` token values. See the issue's
+  own gate round 1 amendment comment.
+- Round 2 (2026-10-16): one High -- round 1's own dismissed-review handling deleted a dismissed
+  reviewer's whole review history from the Overview `Timeline` (FR-008 regression); moved to a
+  client-side standing-verdict fold instead (see T036's own note above). Also documented the
+  pre-existing `timelineItems(first: 100)` pagination gap (issue #918) and completed the PR's
+  own "Not exercised" disclosure list.
+- Round 3 (2026-10-16): two Medium -- decision 10's "{author} dismissed their review" wording
+  wrongly implied the reviewer dismissed their own review (never true: a maintainer or GitHub's
+  own stale-review automation does); reworded to "{author}'s review was dismissed"
+  (`Timeline.tsx`'s new `reviewSentence` helper). A reviewer whose entire history was a single,
+  now-dismissed review (no comment ever) was being miscounted as "commented" by
+  `ReviewConsensus.tsx`'s fold; fixed to track an explicit `hasComment` flag per reviewer and
+  leave such a reviewer out of every count. Also narrowed `SubmitReviewInput.verdict`
+  (`contracts/ipc.md`, `data-model.md`, `ReviewDialog.tsx`) to
+  `Exclude<ReviewVerdict, 'dismissed'>`, matching the Rust IPC handler's own existing
+  `comment`/`approve`/`request-changes`-only acceptance (`handlers.rs:271-277`, unchanged).
+
+**Checkpoint**: `pnpm typecheck` and `cargo build` pass; `node scripts/check-theme-contrast.mjs`
+passes; full live check per the issue's own decision record "Live checks" list (a selected row's
+active-indicator bar vs an unselected row; a draft PR on a non-Open filter tab shows "Draft", not
+"Open", after the `isDraft` fix; Merged / Open / Draft / Closed pills in Dark, Obsidian and High
+Contrast; failed-check icon turns red, passed/pending/none stay neutral; keyboard focus moved via
+arrow/Tab between rows; Overview tab reviewer-consensus line renders only when reviews exist,
+with mixed verdicts; underline tabs keyboard nav; `RefreshButton` spinner/disabled state at both
+call sites; 360px pane width and 400% zoom on the restyled row and detail header; reduced motion
+-- no unexpected row-selection transition).
+
+---
+
+## Phase 9: Convergence -- #569 sidebar pull request count (issue #569)
+
+- [X] T038 New `activeCountByRepository` store slice + `refreshActiveCount` action in
+  `pull-requests-store.ts` (FR-032).
+  -- Implemented: `activeCountByRepository`/`activeCountFor`/`refreshActiveCount`/
+  `clearActiveCounts` (own sequence counter, independent of the visible-tab `refreshSequence`);
+  gate round 1 fix: `clearActiveCounts` now bumps every existing sequence key too, so an
+  in-flight fetch started before a clear can never resurrect a stale count after it.
+- [X] T039 Shared default-repository-id hook extraction from `SessionList.tsx` (FR-032).
+  -- Implemented: `src/renderer/lib/defaultRepository.ts` (`useDefaultRepositoryId`/
+  `getDefaultRepositoryId`), imported directly from the individual store modules (never the
+  `@/state` barrel) to avoid a circular import with `init-stores.ts`.
+- [X] T040 `SessionList.tsx` trailing count render + `aria-label` for the left-nav "Pull
+  requests" entry (FR-032).
+  -- Implemented: a plain `tabular-nums` trailing span, shown only when `githubStatus === 'ready'`
+  and a positive count is known (gate round 1 hardening); `aria-label` becomes
+  "Pull requests, N active" the same way.
+- [X] T041 Update `specs/003-pull-request-management/spec.md` (new FR-032, Clarifications
+  Session 2026-10-16) and `specs/003-pull-request-management/contracts/ipc.md` (`pullRequests.list`
+  second non-polling caller note) to record the #569 decision record.
+- [X] T042 Live verification per the issue's own decision record "Live checks" list.
+  -- Live-verified (`scripts/verify-tauri-569.mjs`, isolated scratch Tauri debug instance, a
+  read-only clone of `stuarthopwood/refract`): the sidebar count matches an independent
+  `gh search prs --repo stuarthopwood/refract --involves @me -- is:open` run outside the app
+  (2 active, matched exactly); the count disappears (not a stale number) once the default
+  repository changes to one with no GitHub remote. NOT live-verified: the explicit "zero active
+  PRs" rendering (the signed-in account's real PR count was non-zero throughout this run) and the
+  60s window-focus throttle / active-GitHub-account-change cache-clear paths (code-verified only
+  -- see the issue's #650 comment for the full code-verified-only list).
+
+## Phase 10: Convergence -- #499 filter redesign, #930 resizable column (issues #499, #930)
+
+- [X] T043 [P] `FilterTab`/`PullRequestStateFilter` split (FR-003, FR-004): renamed `FilterTab`'s
+  `'open'` literal to `'all'` (`src/shared/github.ts`, `FilterTab::All` in Rust), added
+  `PullRequestStateFilter` (`'open' | 'closed' | 'all'`), threaded through `pullRequests.list`'s
+  new `state` arg, `list_pull_requests_by_state` (generalised from `list_open_pull_requests`),
+  and `search_pull_requests`'s new `state` arg (`gh_pull_requests.rs`).
+  -- Implemented (a359aca): `src/shared/github.ts`, `src/shared/ipc.ts`,
+  `src-tauri/src/ipc/pull_requests/{mod,handlers}.rs`, `src-tauri/src/github/gh_pull_requests.rs`;
+  `pull-requests-store.ts`'s `refreshActiveCount` (#569) now passes `state: 'open'` directly
+  instead of the old `query: 'is:open'` free-text hack.
+- [X] T044 (FR-003, FR-004, FR-033) `PullRequestList.tsx` redesign: one non-wrapping,
+  horizontally-scrollable ghost Filter tab row (soft edge fade, active tab scrolled into view,
+  underline shape cue on the active tab matching `PanelTabBar.tsx`'s own WCAG 1.4.11 fix for the
+  identical contrast problem #568's gate round flagged on this issue); a ghost Filters button
+  (dot plus "Filters, N active" when non-default) pinned with Refresh at the row's right end,
+  disclosing the search field and the State select, both applying while closed.
+  -- Implemented (a359aca): `PullRequestList.tsx` (`PR_FILTER_TAB_TRIGGER_CLASS`,
+  `TABS_FADE_MASK_CLASS`, the `tabsWrapRef` scroll-into-view effect).
+- [X] T045 (FR-034, FR-035) Resizable list column: `pull-requests-layout-store.ts` (new, mirrors
+  `split-store.ts`'s live-value/debounced-persist split), `Settings.pullRequestsListWidthPx`
+  end to end (`shared/model.ts`, `settings-store.ts`, Rust `store/settings.rs`/`ipc/settings.rs`,
+  new `settings.setPullRequestsListWidth` channel), `PullRequestsView.tsx`'s list/detail split as
+  a `ResizablePanel`/`ResizableHandle` (280px to 50%, default/remembered 320px -- plain pixel
+  `minSize`/`defaultSize` numbers, no percent conversion needed on `react-resizable-panels`
+  4.14.1; double-click reset and arrow-key resize are the library's own built-in `Separator`
+  behaviour). The header's heading+Project-selector wrapper now tracks the same live `widthPx`.
+  -- Implemented (a359aca).
+- [X] T046 Update `specs/003-pull-request-management/spec.md` (FR-003/FR-004 amended, new
+  FR-033 to FR-035, Clarifications Session 2026-10-16), `data-model.md` (`FilterTab`/
+  `PullRequestStateFilter`, `Settings.pullRequestsListWidthPx`) and `contracts/ipc.md`
+  (`pullRequests.list`'s `state` param, new `settings.setPullRequestsListWidth`) to record both
+  issues' own decision records; `CONTEXT.md`'s **Filter tab** entry was already updated for #499
+  in commit `62fe017` (pre-dating this PR).
+  -- Implemented (08f8453).
+- [ ] T047 Live verification per both issues' own decision records (tab geometry at 240/320/380/
+  520px, keyboard-only Filters/State/resize, a remembered width across a relaunch). NOT run this
+  pass (no-build prep lane): `scripts/verify-tauri-499-930.mjs` is written (modelled on
+  `verify-tauri-568.mjs`) but not executed; no Rust build was run either.
+
+**Checkpoint**: `pnpm typecheck`, `pnpm test` (148/148), `node scripts/check-indent.mjs`,
+`check-file-size.mjs`, `check-drag-regions.mjs`, `check-theme-contrast.mjs` and `check-parity.mjs`
+all pass. `check:ui-text` needs a built bundle (not run). `cargo build`/`test`/`clippy`/`fmt` not
+run (no-build prep lane) -- the Rust changes above are code-reviewed only, not compiled. Full
+live check (T047) left to the build lane.
+
+## Phase 11: Convergence -- #1131 reason line hidden for a state-only disable (issue #1131)
+
+- [X] T048 (FR-019 amended) `PullRequestDetail.tsx`: `showMergeReasonLine` derived from
+  `detail.reviewDisabledReason === null && mergeDisabledReason !== null` -- the visible reason
+  line under the header renders only while the pull request is open but blocked by a conflict,
+  a blocked merge, or GitHub still computing mergeability; hidden for draft, closed, or merged
+  (the state pill already shown there is the reason). The Merge and Review buttons' own
+  tooltips (`title`) are unchanged and keep every reason regardless.
+  -- Implemented (7a48ca41).
+- [X] T049 Update `specs/003-pull-request-management/spec.md` (Acceptance Scenario 6 amended,
+  Edge Cases amended, FR-019 amended, Clarifications Session 2026-10-21).
+  -- Implemented (7a48ca41).
+- [ ] T050 Live verification per the issue's own decision record (draft/closed/merged hide the
+  line, a conflict/blocked/still-checking merge keeps it, Merge/Review tooltips keep every
+  reason regardless) -- covered by `scripts/verify-1121-pr-polish.mjs`, which also covers
+  issues #1120, #1121 and #1132 landing in the same PR.
+- [X] T051 (#1120) `PullRequestList.tsx`: the State `SelectTrigger` drops `size="sm"` and its dead
+  `h-8` override, rendering at the default 32px height like the adjacent SearchField.
+  -- Implemented (7a48ca41).
+- [X] T052 (#1121) `PullRequestRow.tsx` `CHECK_STATE_DISPLAY.colorClass`: passed/failed/pending
+  colour the check icon AND word `text-severity-success`/`error`/`warning`; none stays
+  `text-muted-foreground`. Shared by the list row and the `PullRequestDetail.tsx` header.
+  -- Implemented (7a48ca41).
+- [X] T053 (#1132) `PullRequestDetail.tsx`: ghost icon-only "Open on GitHub" link (`Button
+  asChild` around a real `<a href={detail.url} target="_blank">`, accessible name "Open on GitHub
+  (opens in browser)", tooltip "Open on GitHub") placed right after Refresh in Tab order.
+  -- Implemented (7a48ca41).
+
+**Checkpoint**: `pnpm typecheck`, `pnpm test`, `node scripts/check-indent.mjs`,
+`check-file-size.mjs`, `check-drag-regions.mjs`, `check-theme-contrast.mjs` and
+`check-parity.mjs` (ci-local) all pass. Live check (T050) left to the build lane.
+
+---
+
 ## Dependencies & Execution Order
 
 - **Phase 1 (Setup/probes)**: no dependencies; T001 to T005 run in parallel.

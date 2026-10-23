@@ -189,6 +189,7 @@ fn make_session(id: &str, repository_id: &str, worktree_path: &str, branch: &str
         current_turn_subagents: None,
         stopped_on_request_conversation: None,
         stopped_on_request_at_size: None,
+        pinned_model: false,
     }
 }
 

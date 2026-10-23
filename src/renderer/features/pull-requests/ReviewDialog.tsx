@@ -44,7 +44,11 @@ export interface ReviewDialogProps {
   restoreFocusFallbackTo: RefObject<HTMLElement | null>
 }
 
-const VERDICTS: Array<{ value: ReviewVerdict; label: string }> = [
+// Gate round 3 fix (#568 decision 10 amendment): narrowed to match `SubmitReviewInput.verdict`
+// -- `'dismissed'` is a real `ReviewVerdict` for an already-submitted review that was later
+// dismissed, never a choice a user can submit a NEW review as.
+type SubmittableVerdict = Exclude<ReviewVerdict, 'dismissed'>
+const VERDICTS: Array<{ value: SubmittableVerdict; label: string }> = [
   { value: 'comment', label: 'Comment' },
   { value: 'approve', label: 'Approve' },
   { value: 'request-changes', label: 'Request changes' }
@@ -61,7 +65,7 @@ export function ReviewDialog({
   restoreFocusTo,
   restoreFocusFallbackTo
 }: ReviewDialogProps) {
-  const [verdict, setVerdict] = useState<ReviewVerdict>('comment')
+  const [verdict, setVerdict] = useState<SubmittableVerdict>('comment')
   const [body, setBody] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)

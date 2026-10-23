@@ -32,24 +32,26 @@ const MAX_STREAM_ROWS: usize = 500;
 /// Port of `transcript.ts`'s own `mapProgressStatus`, extended to settle a `SubagentSummary`
 /// (not just a chat-row `running|done|error`): every terminal status OMP sends (`"completed"`,
 /// `"finished"`, `"failed"`, `"cancelled"`, `"error"`, `"aborted"`, ...) maps to `Finished`/
-/// `Failed`; `"pending"`/`"running"`/absent stays `Running`. Critical gate fix (round 1): the
-/// previous version only ever recognised the literal string `"completed"` as terminal, so a real
-/// `omp`'s own `"finished"` (confirmed by `scripts/fixtures/omp-frames/subagents.jsonl`, written
-/// against the documented wire contract) was read as still-running forever.
+/// `Failed`/`Cancelled`; `"pending"`/`"running"`/absent stays `Running`. Critical gate fix
+/// (round 1): the previous version only ever recognised the literal string `"completed"` as
+/// terminal, so a real `omp`'s own `"finished"` (confirmed by
+/// `scripts/fixtures/omp-frames/subagents.jsonl`, written against the documented wire contract)
+/// was read as still-running forever. Issue #563 decision 15: `"cancelled"`/`"aborted"` used to
+/// fold into `Failed` -- split into their own `Cancelled` status, since neither means the
+/// subagent's own work went wrong.
 fn map_progress_status(status: &str) -> SummaryStatus {
     let lower = status.to_lowercase();
-    if lower.contains("fail")
-        || lower.contains("cancel")
-        || lower.contains("error")
-        || lower.contains("abort")
-    {
+    if lower.contains("cancel") || lower.contains("abort") {
+        return SummaryStatus::Cancelled;
+    }
+    if lower.contains("fail") || lower.contains("error") {
         return SummaryStatus::Failed;
     }
     if lower == "pending" || lower == "running" || lower.is_empty() {
         return SummaryStatus::Running;
     }
     // "completed", "finished", "done", or anything else OMP might send that isn't one of the
-    // recognised in-flight/failure words above: a terminal, successful status.
+    // recognised in-flight/failure/cancellation words above: a terminal, successful status.
     SummaryStatus::Finished
 }
 
@@ -306,6 +308,18 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
                     obj.as_object_mut()
                         .expect("summary entry serialises to a JSON object")
                         .insert("durationMs".to_string(), json!(duration));
+                }
+                // Gate round 1 fix 6 (#700/#701 slice b): the Agents card's own row header.
+                if let Some(name) = &e.name {
+                    obj.as_object_mut()
+                        .expect("summary entry serialises to a JSON object")
+                        .insert("name".to_string(), json!(name));
+                }
+                // Issue #700/#701 slice (b): the Agents hover-focus card's own one-line summary.
+                if let Some(task_summary) = &e.task_summary {
+                    obj.as_object_mut()
+                        .expect("summary entry serialises to a JSON object")
+                        .insert("taskSummary".to_string(), json!(task_summary));
                 }
                 obj
             })

@@ -2,9 +2,10 @@
 // Session, plus the persistent stopped-Session banner (docs/DESIGN.md "Feedback and errors").
 // Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
-import { AlertTriangleIcon, ImageIcon, MessageSquareIcon } from 'lucide-react'
+import { AlertTriangleIcon, MessageSquareIcon, PaperclipIcon } from 'lucide-react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -13,18 +14,18 @@ import { cn } from '@/lib/utils'
 import { focusPaneContent, focusSessionsNav, isFocusStranded } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import {
-  EMPTY_TRANSCRIPT,
   notify,
   useChatScrollStore,
   useCommandsStore,
   useDraftStore,
+  useHolidayStore,
   usePendingRequestsStore,
   useQueueStore,
   useReadoutStore,
   useSessionsStore,
+  useSettingsStore,
   useSplitStore,
-  useSubagentPanelStore,
-  useTranscriptStore
+  useSubagentPanelStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
@@ -35,11 +36,15 @@ import { closeChatPane } from './closeChatPane'
 import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
+import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'
+import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
+import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
+import { PinnedTodoPanel } from './PinnedTodoPanel'
 import { SessionStartNotice } from './SessionStartNotice'
 import { pickStartingMessageIndex, STARTING_MESSAGES, STARTING_MESSAGE_EMOJI } from './startingMessages'
-import { isConversationStarted, Transcript } from './Transcript'
+import { Transcript } from './Transcript'
 import { useTauriFileDrop } from './useTauriFileDrop'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -99,9 +104,13 @@ interface ChatPaneProps {
    * transcript container (the normal case) or its own `!session` Empty fallback, whichever
    * branch is active. */
   showWatermark?: boolean
+  /** Gate round 3 fix (High, item 2, FR-008 regression): true only for `paneIndex === 0`, mounts
+   * `<HolidayAmbientLoop />` in the transcript container ONLY (never the Empty fallback above,
+   * unlike `showWatermark` -- independent of it: that one goes to the RIGHT pane in a split). */
+  showAmbientLoop?: boolean
 }
 
-export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark }: ChatPaneProps) {
+export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark, showAmbientLoop }: ChatPaneProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   // bug report point 4 / Issue #618 gate-fix (code/verif/a11y High): while `sessions-store.ts`'s
   // `open()` is in flight for this Session (a fresh click, or a not-started Session cold-starting
@@ -120,6 +129,10 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const focusMoveSignal = useSplitStore((s) => s.focusMoveSignal)
   const focusPane = useSplitStore((s) => s.focusPane)
   const openInSplit = useSplitStore((s) => s.openInSplit)
+  // Issue #1048 (Holiday touches): reused by the empty-state's own decorative line below.
+  const holidayTouches = useSettingsStore((s) => s.settings.holidayTouches)
+  const activeHolidayId = useHolidayStore((s) => s.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   // Issue #512 requirement 2: whether the start-failed banner's "Details" disclosure (the
   // stderr/omp-log/memory text behind `startFailureDetails` below) is expanded.
@@ -137,26 +150,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const startProgress = session?.startProgress
   // Issue #618: `currentConversation` is null until `get_state` first reports `messageCount > 0`
   // at a settle (SessionAgent.ts `syncFromState`), and is cleared back to null by "New
-  // conversation" -- exactly the "no history yet for the CURRENT Conversation thread" signal,
-  // unlike `Transcript.tsx`'s own `hasConversationStarted` (loaded-items-based, so it can read
-  // empty for a Session that has real history but is still mid-snapshot-load -- the bug this
-  // issue reports). A Session with no `session` yet (row 629 below) never reaches the render
-  // that reads this, so the `true` fallback never actually shows.
+  // conversation" -- exactly the "no history yet for the CURRENT Conversation thread" signal. A
+  // Session with no `session` yet (row 629 below) never reaches the render that reads this, so
+  // the `true` fallback never actually shows. Issue #672: `Transcript.tsx` reads this (alongside
+  // its own items-based `hasConversationStarted`, which can read empty for a Session that has
+  // real history but is still mid-snapshot-load) to decide whether to dim the transcript behind
+  // the Session start notice -- a Session with real history or a conversation already under way
+  // gets the dim; a genuinely empty Session does not.
   const hasHistory = session ? session.currentConversation !== null : true
-  // Gate-fix (code/a11y/verif High, round 3, Issue #618): the SAME items-based predicate
-  // `Transcript.tsx` uses for its own `hasConversationStarted` (now exported as
-  // `isConversationStarted`), read here against the identical transcript-store items, so
-  // ChatPane can decide centred-vs-inline placement with BOTH signals instead of `hasHistory`
-  // alone. Round 2's bug: a brand-new Session whose first turn fails or crashes already has
-  // real items (the user's own message, or `recordStartFailure`'s error notice) before
-  // `currentConversation` ever settles -- `hasHistory` stays false, but `!hasConversationStarted`
-  // (the centred overlay's own guard) is ALSO false, so a Retry/Recover rendered NEITHER
-  // placement and silently dropped Keep waiting/Cancel. `showInline` covers both "has history"
-  // and "has items already, even without a settled history" -- the centred placement is only
-  // for the genuinely empty case Transcript's own Ready text would otherwise occupy.
-  const transcript = useTranscriptStore((s) => s.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
-  const conversationStarted = isConversationStarted(transcript.items)
-  const showInline = hasHistory || conversationStarted
   // Gate-fixes a11y High finding (cycle 3): hoisted above the announcement effect below, which
   // needs `showBanner` to gate its prompt-stage announcement. A Recover/Retry start reuses the
   // OLD stopReason (SessionAgent only clears it on success), so `showBanner` used to stay true
@@ -214,8 +215,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // X" for a Session that was not starting at all. `status === 'stopped'` is only true for a
   // cold start; `canAutoStartSession` also skips it for a stopped Session `open()` will not
   // actually auto-start (a real failure banner is about to show instead, once the snapshot
-  // resolves). Every notice (centred, inline) and the starting-message pick effect below read
-  // this instead of the raw `startProgress`; the announcement effect below deliberately does NOT
+  // resolves). The one notice (issue #672: there was a separate inline variant, now gone) and
+  // the starting-message pick effect below read this instead of the raw `startProgress`; the
+  // announcement effect below deliberately does NOT
   // read this -- see its own comment for why.
   const effectiveStartProgress: SessionStartProgress | undefined =
     startProgress ??
@@ -269,8 +271,20 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const activeStartingMessageRef = useRef<Map<string, number>>(new Map())
   const lastStartingMessageRef = useRef<Map<string, number>>(new Map())
   const [startingMessageIndex, setStartingMessageIndex] = useState<number | undefined>(undefined)
-  const startingMessageText = startingMessageIndex !== undefined ? STARTING_MESSAGES[startingMessageIndex] : undefined
-  const startingMessageEmoji = startingMessageIndex !== undefined ? STARTING_MESSAGE_EMOJI[startingMessageIndex] : undefined
+  // Issue #1048 (Holiday touches): in season (and with the setting not 'off'), the holiday's
+  // own lines/emoji join the base pool for this render -- never announced, same as every other
+  // entry (`startingMessages.ts`'s own header comment); `pickStartingMessageIndex` takes this
+  // pool's own length rather than assuming the base pool, so it picks from the combined set.
+  const startingMessagePool = useMemo(() => {
+    if (!holidayEntry) return { messages: STARTING_MESSAGES, emoji: STARTING_MESSAGE_EMOJI }
+    return {
+      messages: [...STARTING_MESSAGES, ...holidayEntry.startingMessages],
+      emoji: [...STARTING_MESSAGE_EMOJI, ...holidayEntry.startingMessages.map(() => holidayEntry.emoji)]
+    }
+  }, [holidayEntry])
+  // Gate round 1 fix (Low): a holiday-pool index toggled mid-start back to the base-only pool can land past its length -- `?? STARTING_MESSAGES[0]` falls back instead of rendering undefined.
+  const startingMessageText = startingMessageIndex !== undefined ? (startingMessagePool.messages[startingMessageIndex] ?? STARTING_MESSAGES[0]) : undefined
+  const startingMessageEmoji = startingMessageIndex !== undefined ? (startingMessagePool.emoji[startingMessageIndex] ?? STARTING_MESSAGE_EMOJI[0]) : undefined
   // Gate-fixes a11y finding: focuses the Cancel button once Keep waiting dismisses the prompt
   // (the Keep waiting button itself unmounts, since it only renders in the 'prompt' stage).
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
@@ -417,7 +431,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         setStartingMessageIndex(active)
       } else {
         const prevIndex = lastStartingMessageRef.current.get(sessionId)
-        const nextIndex = pickStartingMessageIndex(prevIndex)
+        const nextIndex = pickStartingMessageIndex(prevIndex, startingMessagePool.messages.length)
         activeStartingMessageRef.current.set(sessionId, nextIndex)
         lastStartingMessageRef.current.set(sessionId, nextIndex)
         setStartingMessageIndex(nextIndex)
@@ -474,7 +488,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       )
     }
     prevStartProgressKindRef.current = { sessionId, kind: startProgress?.kind }
-  }, [effectiveStartProgress, startProgress, session, announceStart, showBanner, recoveringId, startingNewId, resumingId, sessionId])
+  }, [effectiveStartProgress, startProgress, session, announceStart, showBanner, recoveringId, startingNewId, resumingId, sessionId, startingMessagePool])
 
   // Asks for a full snapshot whenever this pane's Session changes (contracts/ipc.md: "the
   // renderer ... asks for a full snapshot via sessions.open when it switches"). Also covers the
@@ -797,6 +811,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           </EmptyMedia>
           <EmptyTitle>No Session selected</EmptyTitle>
           <EmptyDescription>Select a Session or create one.</EmptyDescription>
+          <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
         </EmptyHeader>
       </Empty>
     )
@@ -1172,16 +1187,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           aria-hidden
           className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ring bg-background/90 text-sm font-medium text-foreground"
         >
-          <ImageIcon className="size-4" aria-hidden />
-          {composerDisabled ? 'This session is not accepting input right now' : 'Drop images to attach'}
+          <PaperclipIcon className="size-4" aria-hidden />
+          {composerDisabled ? 'This session is not accepting input right now' : 'Drop files to attach'}
         </div>
       )}
       {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
           SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
           "Focused" text badge so the marker is never colour alone. */}
-      {isSplit && isFocused && (
-        <span aria-hidden className="absolute inset-y-0 left-0 z-10 w-0.5 bg-active-indicator" />
-      )}
+      {isSplit && isFocused && <ActiveIndicatorBar />}
       <ChatHeader
         sessionId={sessionId}
         focused={isSplit ? isFocused : undefined}
@@ -1235,7 +1248,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           </>
         )}
       </div>
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
+      <div data-start-announcement aria-live="polite" aria-atomic="true" className="sr-only">
         {startAnnouncement}
       </div>
       {showBanner && (
@@ -1330,7 +1343,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
               Start new, and on expand the whole stderr/omp-log/memory text), interrupting the
               user mid-read. A sibling here never mutates a live region. */}
           {startFailureDetails && (
-            <div className="mt-2 pl-6">
+            <div className="mt-2 pl-8 pb-3">
               {/* Issue #512 requirement 2 (gate-fixes Medium finding, cycle 5): the stderr/
                   omp-log warnings-and-errors tails and memory figures `buildStartFailure`
                   appends, hidden behind a disclosure instead of always shown inline -- the
@@ -1362,7 +1375,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                 role="region"
                 tabIndex={0}
                 aria-label="Start failure details"
-                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words p-1 text-xs text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 {startFailureDetails}
               </pre>
@@ -1392,49 +1405,35 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       />
       <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
+        {showAmbientLoop && <HolidayAmbientLoop />}
         <Transcript
           sessionId={sessionId}
           hasHistory={hasHistory}
           startNotice={
-            !showInline && !showBanner && effectiveStartProgress ? (
-              <SessionStartNotice
-                variant="centered"
-                startProgress={effectiveStartProgress}
-                message={startingMessageText}
-                emoji={startingMessageEmoji}
-                cancelButtonRef={cancelButtonRef}
-                onKeepWaiting={() => void handleKeepWaitingForStart()}
-                onCancel={() => void handleCancelStart()}
-              />
-            ) : undefined
+            // Issue #672: one centred presentation for every Session, not only the genuinely
+            // empty case (the old `showInline` branch below `MessageInput` is gone) -- a render
+            // function (gate-fix UI round 2, not a plain element + `cloneElement`), so
+            // `Transcript.tsx` decides whether to dim the history behind this notice AND passes
+            // that decision straight in as the one argument.
+            !showBanner && effectiveStartProgress
+              ? (dimmed: boolean) => (
+                  <SessionStartNotice
+                    startProgress={effectiveStartProgress}
+                    message={startingMessageText}
+                    emoji={startingMessageEmoji}
+                    cancelButtonRef={cancelButtonRef}
+                    onKeepWaiting={() => void handleKeepWaitingForStart()}
+                    onCancel={() => void handleCancelStart()}
+                    dimmed={dimmed}
+                  />
+                )
+              : undefined
           }
         />
       </div>
-      {/* Issue #618: "a single quiet unboxed line at the bottom of the transcript above the
-          composer, so history does not move" -- placed here, directly above MessageInput, not
-          at the top of the pane (that was the OLD Alert's position, right under the header;
-          moving it down here is deliberate, not a leftover). Gate-fix (code/a11y/verif High,
-          round 3): gated on `showInline` (`hasHistory || conversationStarted`), not `hasHistory`
-          alone -- a brand-new Session whose first turn already has real items (its own first
-          message, or a start-failure notice) but no settled `currentConversation` yet now gets
-          THIS placement on its next Retry/Recover, instead of silently getting neither notice
-          (round 2's regression: `!hasHistory` for inline and `!hasConversationStarted` for the
-          centred overlay were both false at once, in exactly that state). The centred overlay
-          (`startNotice` above) is the ONLY other placement, for the genuinely empty case; the
-          two conditions are complements of each other, so never both, never neither. */}
-      {showInline && !showBanner && effectiveStartProgress && (
-        <SessionStartNotice
-          variant="inline"
-          startProgress={effectiveStartProgress}
-          message={startingMessageText}
-          emoji={startingMessageEmoji}
-          cancelButtonRef={cancelButtonRef}
-          onKeepWaiting={() => void handleKeepWaitingForStart()}
-          onCancel={() => void handleCancelStart()}
-        />
-      )}
+      <PinnedTodoPanel key={`todo-${sessionId}`} sessionId={sessionId} />
       <MessageInput
-        key={sessionId}
+        key={`composer-${sessionId}`}
         sessionId={sessionId}
         stopReason={effectiveStopReason}
         stopDetail={effectiveStopDetail}

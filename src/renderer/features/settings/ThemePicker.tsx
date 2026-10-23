@@ -19,7 +19,15 @@ import type { ThemeId } from '../../../shared/themes'
 
 const THEME_LIST = Object.values(THEMES)
 
-export function ThemePicker() {
+interface ThemePickerProps {
+  /** Issue #554 gate round 2 (L1): the group's accessible name/description now come from
+   * `AppearanceSection.tsx`'s own heading and hint `<p>`, matching `ChatWidthPicker`'s group --
+   * a bare `aria-label="Theme"` string duplicated the heading text instead of pointing at it. */
+  labelledBy: string
+  describedBy: string
+}
+
+export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   const activeId = useActiveThemeId()
   const preview = useThemeStore((state) => state.preview)
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -46,7 +54,7 @@ export function ThemePicker() {
   }
 
   return (
-    <div role="radiogroup" aria-label="Theme" className="flex flex-col gap-1">
+    <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
       {THEME_LIST.map((theme, index) => {
         const isActive = theme.id === activeId
         return (
@@ -58,6 +66,7 @@ export function ThemePicker() {
             type="button"
             role="radio"
             aria-checked={isActive}
+            aria-labelledby={`theme-option-${theme.id}-name`}
             tabIndex={isActive ? 0 : -1}
             onClick={() => choose(theme.id)}
             onKeyDown={(event) => handleKeyDown(event, index)}
@@ -75,9 +84,9 @@ export function ThemePicker() {
               )}
               style={{ backgroundColor: theme.swatch }}
             />
-            <span className="flex-1">{theme.name}</span>
+            <span id={`theme-option-${theme.id}-name`} className="flex-1">{theme.name}</span>
             {isActive && (
-              <span className="flex items-center gap-1 text-xs">
+              <span aria-hidden className="flex items-center gap-1 text-xs">
                 <CheckIcon aria-hidden className="size-3.5" />
                 <span>Current</span>
               </span>

@@ -20,3 +20,4 @@ Thumbs.db
 # (sessions, local settings, or credentials the agent may store here).
 .omp/*
 !.omp/commands/
+!.omp/skills/

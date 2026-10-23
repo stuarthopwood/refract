@@ -24,6 +24,18 @@ pub enum GitErrorCode {
     PathTooLong,
     BranchMissing,
     CheckoutFailed,
+    /// Issue #891: something external still holds the worktree folder (a named process via
+    /// Windows Restart Manager, or an unnamed one detected only by the rename-probe failing).
+    /// Never raised for anything this Session's own recorded `omp` pids hold.
+    WorktreeHeld,
+    /// 2026-10-20 security hardening (Skippy, delegated by Stuart): a pathspec this module was
+    /// about to pass to `git` (`changes_status::stage_files`/`unstage_files`,
+    /// `changes_diff::diff_text`) failed `changes_status::validate_pathspec`'s own containment
+    /// check -- refused before it ever reaches a `git` subprocess. Reuses the SAME wire code
+    /// `fs::resolve::ResolveReason::OutsideWorktree` already uses for the File explorer lane
+    /// (`src/shared/ipc.ts`'s `IpcErrorCode` already lists `'outside-worktree'`; no TS change
+    /// needed).
+    OutsideWorktree,
 }
 
 impl GitErrorCode {
@@ -37,6 +49,8 @@ impl GitErrorCode {
             Self::PathTooLong => "path-too-long",
             Self::BranchMissing => "branch-missing",
             Self::CheckoutFailed => "checkout-failed",
+            Self::WorktreeHeld => "worktree-held",
+            Self::OutsideWorktree => "outside-worktree",
         }
     }
 }
@@ -95,6 +109,11 @@ const GIT_ENV_VARS_TO_STRIP: &[&str] = &[
     "GIT_OBJECT_DIRECTORY",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_NAMESPACE",
+    // Gate round 2 item 1 (#464), defense-in-depth alongside `changes_diff.rs::diff_text`'s own
+    // `--no-ext-diff`: no current or plausible future caller in this module ever wants a user's
+    // own `GIT_EXTERNAL_DIFF` env var honoured by any of this app's own git calls, the same
+    // reasoning every other entry in this list already gives for its own var.
+    "GIT_EXTERNAL_DIFF",
 ];
 
 fn is_stripped_env_var(key: &str) -> bool {
@@ -112,17 +131,20 @@ fn is_stripped_env_var(key: &str) -> bool {
 static GIT_PATH: LazyLock<Result<PathBuf, String>> =
     LazyLock::new(|| which::which_global("git").map_err(|err| err.to_string()));
 
-/// Runs `git <args>` with no shell in `cwd`. Never fails on a non-zero exit; callers branch on
-/// `.code`.
-pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> GitRawResult {
+/// Builds a `git <args>` `Command` ready to run in `cwd` -- shared by `git_raw` and
+/// `git_raw_with_stdin` so the security-relevant setup (resolved git path, stripped env vars,
+/// `CREATE_NO_WINDOW`, `kill_on_drop`) exists in exactly one place. Returns the already-built
+/// `GitRawResult` failure directly when git's own path could not be resolved, since neither
+/// caller can usefully run a `Command` without one.
+fn build_git_command(cwd: &Path, args: &[&str]) -> Result<Command, GitRawResult> {
     let git_path = match GIT_PATH.as_ref() {
         Ok(path) => path,
         Err(err) => {
-            return GitRawResult {
+            return Err(GitRawResult {
                 stdout: String::new(),
                 stderr: err.clone(),
                 code: 1,
-            }
+            })
         }
     };
 
@@ -144,8 +166,94 @@ pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> Gi
         }
         command.env(key, value);
     }
+    Ok(command)
+}
+
+/// Runs `git <args>` with no shell in `cwd`. Never fails on a non-zero exit; callers branch on
+/// `.code`.
+pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> GitRawResult {
+    let mut command = match build_git_command(cwd, args) {
+        Ok(command) => command,
+        Err(result) => return result,
+    };
 
     let output_future = command.output();
+    let result = match timeout {
+        Some(duration) => match tokio::time::timeout(duration, output_future).await {
+            Ok(result) => result,
+            Err(_) => {
+                return GitRawResult {
+                    stdout: String::new(),
+                    stderr: "git command timed out".to_string(),
+                    code: 1,
+                }
+            }
+        },
+        None => output_future.await,
+    };
+
+    match result {
+        Ok(output) => GitRawResult {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            code: output.status.code().unwrap_or(1),
+        },
+        Err(err) => GitRawResult {
+            stdout: String::new(),
+            stderr: err.to_string(),
+            code: 1,
+        },
+    }
+}
+
+/// Runs `git <args>` with no shell in `cwd`, writing `stdin_data` to the child's stdin and
+/// closing it (EOF) before awaiting output -- for `git commit -F -` (the git-changes panel's
+/// commit path, spec 018 FR-011): the message is piped on stdin rather than passed as an argv
+/// `-m`, which has both a platform argument-length ceiling and a quoting/escaping surface for a
+/// multi-line message (spec 018 research.md decision 4). Additive alongside `git_raw` (same
+/// security posture via the shared `build_git_command`, never changes `git_raw`'s own signature
+/// or behaviour, so every existing caller is unaffected). Never fails on a non-zero exit;
+/// callers branch on `.code`, same as `git_raw`.
+pub async fn git_raw_with_stdin(
+    cwd: &Path,
+    args: &[&str],
+    stdin_data: &[u8],
+    timeout: Option<Duration>,
+) -> GitRawResult {
+    let mut command = match build_git_command(cwd, args) {
+        Ok(command) => command,
+        Err(result) => return result,
+    };
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            return GitRawResult {
+                stdout: String::new(),
+                stderr: err.to_string(),
+                code: 1,
+            }
+        }
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        if let Err(err) = stdin.write_all(stdin_data).await {
+            return GitRawResult {
+                stdout: String::new(),
+                stderr: err.to_string(),
+                code: 1,
+            };
+        }
+        // Dropping the handle closes the pipe's write end (EOF) -- `git commit -F -` reads to
+        // EOF before acting, so this must happen before the output is awaited below.
+        drop(stdin);
+    }
+
+    let output_future = child.wait_with_output();
     let result = match timeout {
         Some(duration) => match tokio::time::timeout(duration, output_future).await {
             Ok(result) => result,

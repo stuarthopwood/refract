@@ -6,8 +6,17 @@
 // (AppearanceSection.tsx), sharing the same mask-image/colour/opacity but not the responsive
 // clamp or corner anchor, and explicitly ignoring FR-011's full-screen suppression rule since
 // it is meant to render inside Settings (research.md decision 9).
+//
+// Issue #1048 (Holiday touches): in season, with the "Holiday touches" setting not `'off'`,
+// this renders the active holiday's own icon (`HOLIDAY_CONTENT`) INSTEAD of the plain Refract
+// mark -- same faint opacity/size/anchor/`aria-hidden` contract as the mark itself, just a
+// themed `<Icon>` element in place of the `mask-image` `<div>` (simpler than hand-drawing six
+// more SVG assets to mask, and every lucide icon is already a flat single-colour glyph). Colour
+// comes from `--muted-foreground` (the SAME token the plain mark's own `background-color`
+// already uses), never a new hex -- decision 5's "theme tokens only" rule.
 import { cn } from '@/lib/utils'
-import { useSettingsStore } from '@/state'
+import { useHolidayStore, useSettingsStore } from '@/state'
+import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 
 interface BrandWatermarkProps {
   /** 'live': the real, responsively-clamped corner mark. 'preview': a small, fixed-size
@@ -17,7 +26,10 @@ interface BrandWatermarkProps {
 
 export function BrandWatermark({ variant }: BrandWatermarkProps) {
   const watermarkEnabled = useSettingsStore((s) => s.settings.watermarkEnabled)
+  const holidayTouches = useSettingsStore((s) => s.settings.holidayTouches)
+  const holiday = useHolidayStore((s) => s.activeHoliday)
   if (!watermarkEnabled) return null
+  const holidayEntry = holidayTouches !== 'off' && holiday ? HOLIDAY_CONTENT[holiday] : null
   // Quality-gate remediation (code-reviewer/ui-architect, Medium): `-z-10` on the 'live' variant
   // (research.md decision 8 -- previously undone in code) so this absolutely-positioned mark
   // paints BEHIND its normal-flow sibling content (App.tsx's no-pane-open text, this ChatPane's
@@ -26,6 +38,26 @@ export function BrandWatermark({ variant }: BrandWatermarkProps) {
   // only style and size containment, not a stacking context), so the mark stays visibly behind
   // its own siblings rather than escaping up into an ancestor stacking context where any
   // background added there later would hide it.
+  if (holidayEntry) {
+    const HolidayIcon = holidayEntry.icon
+    return (
+      <div
+        aria-hidden
+        className={cn(
+          'watermark-mark-holiday pointer-events-none flex items-center justify-center',
+          variant === 'live' ? 'watermark-mark--live -z-10' : 'size-24'
+        )}
+      >
+        <HolidayIcon
+          aria-hidden
+          focusable={false}
+          className="size-full"
+          style={{ color: 'var(--muted-foreground)', opacity: 'var(--watermark-opacity)' }}
+          strokeWidth={1.5}
+        />
+      </div>
+    )
+  }
   return (
     <div
       aria-hidden

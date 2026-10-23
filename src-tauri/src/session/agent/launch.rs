@@ -9,19 +9,17 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use super::launch_support::{
+    append_ask_dialog_unavailable_notice, assert_conversation_file_exists, fetch_all_messages,
+    reattach_rebaseline_notice, registry_store_error_message, send_set_ask_dialog, to_process_mode,
+    verify_reattach,
+};
+use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
 use crate::session::side_chat::reset_after_start_with_conversation;
 use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
-
-use super::launch_support::{
-    assert_conversation_file_exists, fetch_all_messages, reattach_rebaseline_notice,
-    registry_store_error_message, to_process_mode, truncate, verify_reattach,
-};
-use super::{
-    AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH,
-};
 
 impl SessionAgent {
     /// `sessions.open`'s auto-start path and the initial `start()` call alike. Joins an
@@ -162,6 +160,13 @@ impl SessionAgent {
         // leave its `waiting`/`prompt` stage stuck on the wire the way a success-only clear did.
         let _stage_guard = crate::session::start_queue::guard_stage_for_attempt(self);
 
+        // #1184: reset drifted token-cost settings before `omp` reads its config; bounded, never fatal.
+        crate::omp::config_guard::run_before_launch(
+            self.events(),
+            Path::new(&session.worktree_path),
+        )
+        .await;
+
         let proc = match OmpProcess::connect(&opts).await {
             Ok(p) => p,
             Err(err) => {
@@ -180,6 +185,17 @@ impl SessionAgent {
         let spawned_guard = crate::session::start_queue::mark_spawned();
         if let Some(pid) = proc.pid() {
             crate::process::pid_records::record_process(pid, &self.session_id).await;
+        }
+        // Issue #937, gate round 3 fix (Critical): moved here, BEFORE the frame listener
+        // subscribes below -- `available_commands_update` arrives once near startup, and the
+        // OLD location (the per-life reset block further down, after `attach_and_verify`/
+        // `fetch_all_messages`) ran AFTER the listener had already started, so it could (and,
+        // live, likely would) silently wipe a list that frame had ALREADY populated for THIS
+        // life, leaving every OMP slash command (`/advisor` included) permanently
+        // `UnknownCommand` for the rest of the life. Clears a PREVIOUS life's stale list before
+        // anything can observe it, never a list this life's own frame just wrote.
+        {
+            self.state.lock().await.commands = Vec::new();
         }
         // Subscribed before `wait_ready` (code-review/perf finding, 2026-10-13): registers this
         // listener before any frame -- including ones the ready-wait itself observes -- can
@@ -238,6 +254,8 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.process = Some(proc.clone());
+            // Issue #911 (gate-fix): a brand-new process life starts with no turn in flight.
+            state.turn_abort_requested = false;
         }
 
         let state_data = match self.attach_and_verify(&proc, session).await {
@@ -265,6 +283,7 @@ impl SessionAgent {
                 return Err(AgentError::new("reattach-failed", detail));
             }
         };
+        let ask_dialog_enabled = send_set_ask_dialog(self, &proc).await;
         // Constitution v1.9.0 / FINDINGS item 44: computed from the PRE-launch `session`
         // parameter (the registry's last known `last_message_count`) vs the freshly observed
         // `state_data`, before `sync_from_state` re-baselines it below -- see
@@ -311,6 +330,8 @@ impl SessionAgent {
                 transcript.merge_from_history(&messages, terminated_unexpectedly);
             }
         }
+        // After the merge above, not right after `send_set_ask_dialog` (gate-fix round 1 High).
+        append_ask_dialog_unavailable_notice(self, ask_dialog_enabled).await;
         // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
         // and BEFORE `sync_from_state` re-baselines `last_message_count` to the observed value.
         if let Some(notice) = rebaseline_notice {
@@ -318,11 +339,14 @@ impl SessionAgent {
         }
         crate::session::subagents::on_attach_reconcile(self).await;
         crate::session::readout::on_launch(self).await;
+        crate::session::advisor::on_launch(self).await;
         self.sync_from_state(&state_data, None).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;
         self.emit_patch_reset().await;
+        // #766 part A: a choice made while the agent was stopped applies before the first prompt.
+        crate::session::pending_selection::drain(self).await;
         Ok(())
     }
 
@@ -402,81 +426,8 @@ impl SessionAgent {
         }
         Ok(data)
     }
-
-    /// Runs after the initial `get_state` and after every `session_settled` (port of
-    /// `SessionAgent.ts`'s own `syncFromState`): persists `sessionDir`/`currentConversation`/
-    /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`. `stale_if`
-    /// (settle-time callers) is checked by `settle_is_stale` both here and again right before the
-    /// write below, so a later settle/reset landing in the gap can never write stale data over it.
-    pub(super) async fn sync_from_state(&self, state: &Value, stale_if: Option<(u64, u64)>) {
-        if self.settle_is_stale(stale_if).await {
-            return;
-        }
-        let session_file = state
-            .get("sessionFile")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let message_count = state
-            .get("messageCount")
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-
-        let existing_session_dir = self
-            .registry
-            .lock()
-            .await
-            .get_session(&self.session_id)
-            .and_then(|s| s.session_dir.clone());
-
-        let mut patch = SessionPatch {
-            last_activity_at: Some(crate::ipc::now_iso8601()),
-            ..Default::default()
-        };
-        if existing_session_dir.is_none() {
-            if let Some(file) = &session_file {
-                if let Some(parent) = std::path::Path::new(file).parent() {
-                    patch.session_dir = Some(parent.to_string_lossy().into_owned());
-                }
-            }
-        }
-        if message_count > 0 {
-            patch.last_message_count = Some(Some(message_count));
-            patch.current_conversation = Some(session_file.clone());
-        }
-        if let Some(model) = state.get("model") {
-            if let (Some(provider), Some(id)) = (
-                model.get("provider").and_then(Value::as_str),
-                model.get("id").and_then(Value::as_str),
-            ) {
-                if !provider.is_empty() && !id.is_empty() {
-                    let name = model.get("name").and_then(Value::as_str);
-                    patch.last_model = Some(crate::store::registry::LastModel {
-                        provider: truncate(provider, MAX_MODEL_FIELD_LENGTH),
-                        id: truncate(id, MAX_MODEL_FIELD_LENGTH),
-                        name: name.map(|n| truncate(n, MAX_MODEL_FIELD_LENGTH)),
-                    });
-                    let thinking_level = state.get("thinkingLevel").and_then(Value::as_str);
-                    patch.last_thinking_level =
-                        Some(thinking_level.map(|t| truncate(t, MAX_MODEL_FIELD_LENGTH)));
-                }
-            }
-        }
-        // Gate-fix (#856, round 2): re-checked again, right before the write -- the entry check's only remaining gap.
-        if self.settle_is_stale(stale_if).await {
-            return;
-        }
-        if self
-            .registry
-            .lock()
-            .await
-            .update_session(&self.session_id, patch)
-            .await
-            .is_ok()
-        {
-            self.events.emit_session_list_changed();
-        }
-        crate::session::readout::on_sync_from_state(self, state).await; // lane R5 (#788)
-    }
+    // `sync_from_state` (used by `launch` above and the settle path) moved to its own sibling
+    // module, `sync_from_state.rs` (round 3, #806 600-line cap).
     pub(super) fn spawn_frame_listener(
         &self,
         proc: Arc<OmpProcess>,
@@ -515,8 +466,15 @@ impl SessionAgent {
                         // lane R5) bump `readout`'s `pr_poll_generation` a second time, which
                         // would silently kill the NEWER life's own PR-poll timer.
                         if is_current {
+                            crate::session::advisor::on_exit(&agent).await;
                             crate::session::readout::on_exit(&agent, code, requested).await;
-                            crate::session::subagents::on_exit(&agent, code, requested).await;
+                            crate::session::subagents::on_exit(
+                                &agent,
+                                code,
+                                requested,
+                                stop_requested,
+                            )
+                            .await;
                             crate::session::start_queue::on_exit(&agent, code, stop_requested)
                                 .await;
                             crate::session::termination::on_exit(

@@ -3,6 +3,8 @@ import type { Result, SessionSnapshot, SessionStatusEvent, SessionSummary } from
 import type { Session } from '../../shared/model'
 import { notify } from './notify'
 import { useSplitStore } from './split-store'
+import { useGitChangesStore } from './git-changes-store'
+import { useSessionListStore } from './session-list-store'
 
 interface SessionsState {
   sessions: SessionSummary[]
@@ -32,7 +34,11 @@ interface SessionsState {
    * already reported through `notify`'s own toast. */
   archive(id: string): Promise<boolean>
   restore(id: string): Promise<boolean>
-  stopAgent(id: string): Promise<void>
+  /** Matches `archive`/`restore`'s own pattern above: resolves `result.ok` so a caller can
+   * announce a genuine success -- never a failure already reported through `notify`'s own
+   * toast (#560 gate round-2 fix: a caller awaiting this unconditionally previously announced
+   * "Stopped" even when `result.ok` was false). */
+  stopAgent(id: string): Promise<boolean>
 }
 
 // Callers that arrive while an `open(id)` is already in flight JOIN that call instead of getting
@@ -97,6 +103,12 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // FR-016: a session only ever leaves this list via `sessions.delete` (archiving keeps it
       // listed); prune any pane still pointing at an id that is now gone.
       useSplitStore.getState().pruneDeleted(new Set(result.value.map((session) => session.id)))
+      // Gate round 3 fix (#1076 MEDIUM 3): the one place either a Session delete (it drops out
+      // of this list entirely) or an archive (it stays listed but `archivedAt` is now set) is
+      // already observed -- drops any `commitDraft` for a session that is neither currently
+      // listed nor active, so a half-typed commit message is never kept forever for a Session
+      // that can no longer be reopened the ordinary way.
+      useGitChangesStore.getState().pruneCommitDrafts(new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id)))
     } else {
       notify(result.error)
     }
@@ -168,6 +180,15 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       if (result.ok) {
         await get().refresh()
         useSplitStore.getState().replaceFocused(result.value.id)
+        // #735 decision 20, with an accepted departure (recorded on the issue): every create
+        // caller (the header "+", the branch picker, Ctrl+N, the row menu's "New session from
+        // {branch}") funnels through this one action, so opening the Repository's own group
+        // here covers all four at once -- but the same action also runs from the Manage
+        // sessions screen, where focus does not move into this group the way decision 20
+        // otherwise requires. Moving this call to each focus-moving caller individually would
+        // touch `useSessionRowActions.ts`'s own ~21-line headroom under its file-size cap
+        // (#811), judged out of proportion for this Low departure.
+        useSessionListStore.getState().openRepositoryGroup(repositoryId)
       }
       return result
     } finally {
@@ -186,12 +207,18 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     return result.ok
   },
   restore: async (id) => {
+    // #735 decision 20, same accepted departure as `create()` above: captured before the call
+    // -- the Session is still in `sessions` (archived or not) either way, and its
+    // `repositoryId` never changes across a restore.
+    const repositoryId = get().sessions.find((session) => session.id === id)?.repositoryId
     const result = await window.refract.sessions.restore(id)
     if (!result.ok) notify(result.error)
+    else if (repositoryId) useSessionListStore.getState().openRepositoryGroup(repositoryId)
     return result.ok
   },
   stopAgent: async (id) => {
     const result = await window.refract.sessions.stopAgent(id)
     if (!result.ok) notify(result.error)
+    return result.ok
   }
 }))

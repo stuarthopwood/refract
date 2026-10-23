@@ -333,6 +333,7 @@ const REQUEST_LANES = {
   SETTINGS_SET_SHOW_SAMPLE_DATA: 'R8',
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'R8',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'R6', // #772's off switch, registered in ipc/settings.rs
+  SETTINGS_SET_SESSION_LIST_COLLAPSE: 'R8', // #735, registered in ipc/settings.rs
   MODEL_ROLES_LIST: 'R8', // #791, "model roles" in R8's own work description
   MODEL_ROLES_SET: 'R8',
   MODEL_ROLES_LIST_CATALOG: 'R8',
@@ -362,6 +363,7 @@ const REQUEST_LANES = {
   MODEL_CYCLE_MODEL: 'RM',
   MODEL_APPLY_ROLE: 'RM',
   MODEL_LIST_ROLES: 'RM',
+  MODEL_SET_THINKING_LEVEL: 'RM', // #564, ipc/model.rs
 };
 
 const EVENT_LANES = {
@@ -375,6 +377,7 @@ const EVENT_LANES = {
   SETTINGS_CHANGED: 'R8', // #791
   UI_OPEN_SESSION: 'R10b', // #793, window shell/chrome
   MEMORY_WARNING: 'R5', // #788, "memory warning" in R5's own work description
+  OMP_GUARD_RESET: 'R5', // #1184, OMP settings guard notice
   READOUT_UPDATE: 'R5',
   SUBAGENTS_UPDATE: 'R5',
   SUBAGENT_PATCH: 'R5',

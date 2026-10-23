@@ -24,6 +24,7 @@ use crate::github::gh_mutations;
 use crate::github::gh_pull_requests::{self, GhStalenessCheck};
 
 use super::{not_found, AppState, Dispatcher, IpcError};
+use handlers::PullRequestStateFilter;
 
 use mapping::{
     build_timeline, compute_merge_disabled_reason, compute_review_disabled_reason, map_actor,
@@ -75,7 +76,7 @@ pub(super) fn stale_error(message: &str) -> IpcError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FilterTab {
-    Open,
+    All,
     Authored,
     Assigned,
     Involves,
@@ -84,7 +85,7 @@ pub(super) enum FilterTab {
 
 pub(super) fn parse_filter_tab(value: &str) -> Option<FilterTab> {
     match value {
-        "open" => Some(FilterTab::Open),
+        "all" => Some(FilterTab::All),
         "authored" => Some(FilterTab::Authored),
         "assigned" => Some(FilterTab::Assigned),
         "involves" => Some(FilterTab::Involves),
@@ -156,14 +157,20 @@ where
     results
 }
 
-pub(super) async fn list_pull_requests(
+pub(in crate::ipc::pull_requests) async fn list_pull_requests(
     repo_path: &Path,
     repo_label: &str,
     tab: FilterTab,
+    state_filter: PullRequestStateFilter,
     query: Option<&str>,
 ) -> Result<Vec<PullRequestSummary>, GhError> {
-    if tab == FilterTab::Open {
-        let entries = gh_pull_requests::list_open_pull_requests(repo_path).await?;
+    if tab == FilterTab::All {
+        let gh_state = match state_filter {
+            PullRequestStateFilter::Open => "open",
+            PullRequestStateFilter::Closed => "closed",
+            PullRequestStateFilter::All => "all",
+        };
+        let entries = gh_pull_requests::list_pull_requests_by_state(repo_path, gh_state).await?;
         let needle = query.map(str::to_lowercase).filter(|q| !q.is_empty());
         let mut items = Vec::new();
         for entry in entries {
@@ -195,10 +202,16 @@ pub(super) async fn list_pull_requests(
         FilterTab::Assigned => gh_pull_requests::SearchQualifierFlag::Assignee,
         FilterTab::Involves => gh_pull_requests::SearchQualifierFlag::Involves,
         FilterTab::ReviewRequested => gh_pull_requests::SearchQualifierFlag::ReviewRequested,
-        FilterTab::Open => unreachable!("Open is handled above"),
+        FilterTab::All => unreachable!("All is handled above"),
     };
-    let entries = gh_pull_requests::search_pull_requests(repo_path, qualifier, query).await?;
-    // The search surface has no `statusCheckRollup`; fetched per-row for these smaller, non-Open
+    let gh_state_arg = match state_filter {
+        PullRequestStateFilter::Open => Some("open"),
+        PullRequestStateFilter::Closed => Some("closed"),
+        PullRequestStateFilter::All => None,
+    };
+    let entries =
+        gh_pull_requests::search_pull_requests(repo_path, qualifier, gh_state_arg, query).await?;
+    // The search surface has no `statusCheckRollup`; fetched per-row for these smaller, non-All
     // tab result counts. `owner/repo` is resolved ONCE here, not per row.
     let (owner, repo) = gh::owner_repo_for(repo_path).await?;
     let owner_repo = format!("{owner}/{repo}");
@@ -228,9 +241,10 @@ pub(super) async fn list_pull_requests(
         .map(|(entry, check_state)| PullRequestSummary {
             number: entry.number,
             title: entry.title,
-            // The search surface has no `isDraft`/mergedAt distinction: a merged pull request may
-            // show here as 'closed' rather than 'merged' -- a documented, known simplification.
-            state: map_pull_request_state(&entry.state, false),
+            // Search results now carry `isDraft` directly (issue #529/#568 decision 6): a draft
+            // pull request maps to `PullRequestState::Draft` here exactly as it does on the All
+            // tab, instead of silently showing as `Open`.
+            state: map_pull_request_state(&entry.state, entry.is_draft),
             check_state: map_check_state(check_state.as_deref()),
             repository: repo_label.to_string(),
             updated_at: entry.updated_at,
@@ -395,7 +409,7 @@ mod tests {
 
     #[test]
     fn parse_filter_tab_accepts_every_valid_literal() {
-        assert_eq!(parse_filter_tab("open"), Some(FilterTab::Open));
+        assert_eq!(parse_filter_tab("all"), Some(FilterTab::All));
         assert_eq!(parse_filter_tab("authored"), Some(FilterTab::Authored));
         assert_eq!(parse_filter_tab("assigned"), Some(FilterTab::Assigned));
         assert_eq!(parse_filter_tab("involves"), Some(FilterTab::Involves));

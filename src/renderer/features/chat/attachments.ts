@@ -1,7 +1,12 @@
 // Composer attachments (spec 009): pending images and oversized-text chips held only in the
 // renderer's own memory for the draft currently being composed (data-model.md "Held in memory").
 // Pure types and helpers; MessageInput.tsx owns the actual state and wiring, AttachmentStrip.tsx
-// and the preview modals own the presentation.
+// and the preview modals own the presentation. `attachImageFile` (the validate-plus-commit
+// sequence a pasted image and the composer's Attach button both need) moved to its own module,
+// `attachImage.ts` (gate round 2, code-reviewer LOW): it needs `@/state` (`notify`,
+// `useDraftStore`), and `state/draft-store.ts` imports types FROM this file, so having it here
+// too made an import cycle -- harmless only because `@/state` happened to load first; any entry
+// point loading this file first (a future unit test, say) would hit a load-time ReferenceError.
 import type { ImageContent, SupportedImageMimeType } from '../../../shared/frames'
 import {
   LARGE_PASTE_CHIP_THRESHOLD,
@@ -18,6 +23,7 @@ export interface PendingImageAttachment {
   base64: string // exactly the payload sent as ImageContent.data
   byteLength: number // decoded size; already checked against MAX_IMAGE_INPUT_BYTES
   previewUrl: string // `data:${mimeType};base64,${base64}`, used for the thumbnail and the modal
+  name?: string // #744: display only (an image-only queue chip's label), never sent
 }
 
 export interface PendingTextChip {
@@ -27,12 +33,29 @@ export interface PendingTextChip {
   label: string // literal substring inserted into the textarea's own value at the paste position
 }
 
+/** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
+ * paste. `sentAs: 'inline'` carries the exact decoded text (`text` set, `path` unset); `sentAs:
+ * 'path'` (binary, over the 256 KB cap, or a folder) carries the resolved absolute path instead
+ * (`path` set, `text` unset) -- `buildFileAttachmentText` embeds whichever is present into the
+ * outgoing message. `byteLength` is 0 for a folder (not a meaningful count). */
+export interface PendingFileAttachment {
+  kind: 'file'
+  id: string // uuid, local only, never sent
+  name: string
+  byteLength: number
+  sentAs: 'inline' | 'path'
+  isDirectory: boolean
+  path?: string // present only when sentAs === 'path'
+  text?: string // present only when sentAs === 'inline'
+}
+
 export interface AttachmentsState {
   images: PendingImageAttachment[]
   textChips: PendingTextChip[]
+  files: PendingFileAttachment[]
 }
 
-export const EMPTY_ATTACHMENTS: AttachmentsState = { images: [], textChips: [] }
+export const EMPTY_ATTACHMENTS: AttachmentsState = { images: [], textChips: [], files: [] }
 
 function isSupportedImageMimeType(value: string): value is SupportedImageMimeType {
   return (SUPPORTED_IMAGE_MIME_TYPES as readonly string[]).includes(value)
@@ -130,7 +153,15 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
   // decoded or byte-checked -- only its MIME string and size are. Check the real magic bytes here
   // too (the freshly re-encoded PNG branch above also passes through this harmlessly, since a
   // browser-generated PNG blob always has a real PNG signature).
-  const signaturePrefix = await readBytePrefix(blob, 16)
+  // Gate round 2 (Code2 HIGH): caught -- an uncaught rejection here (a detached/revoked blob,
+  // a rare browser I/O error) used to propagate past `attachImageFile`/`attachPastedFiles`'s own
+  // multi-file loop uncaught, aborting every file still queued after this one in the same paste.
+  let signaturePrefix: Uint8Array
+  try {
+    signaturePrefix = await readBytePrefix(blob, 16)
+  } catch {
+    return { ok: false, reason: 'decode-failed' }
+  }
   if (!matchesImageSignature(signaturePrefix, mimeType as SupportedImageMimeType)) {
     return { ok: false, reason: 'decode-failed' }
   }
@@ -149,7 +180,8 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
       mimeType: mimeType as SupportedImageMimeType,
       base64,
       byteLength: blob.size,
-      previewUrl: dataUrl
+      previewUrl: dataUrl,
+      name: file.name || undefined
     }
   }
 }
@@ -167,7 +199,12 @@ export function toImageContent(attachment: PendingImageAttachment): ImageContent
 // every downstream piece (strip, remove, preview, announce) is shared, not duplicated.
 // ---------------------------------------------------------------------------
 
-const IMAGE_PATH_EXTENSION_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif)$/i
+// #926 gate round 1 (Code1 HIGH): exported so a clipboard-pasted `File` (no OS path at all, only
+// a bare `file.name`) can be routed to the image reader purely by its own extension --
+// `looksLikeImagePathToken` below REQUIRES a path separator/drive prefix/`file://` scheme before
+// it even looks at the extension, so a bare name like `photo.png` (no separator) always failed
+// it, silently routing every pasted image-named file to the general file reader instead.
+export const IMAGE_PATH_EXTENSION_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif)$/i
 
 /** Cheap, pre-IPC heuristic only -- the real decision is always `attachments.readImageFile`'s own
  * stat + magic-byte check. This only decides which pasted/typed tokens are even worth a round
@@ -176,7 +213,7 @@ const IMAGE_PATH_EXTENSION_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif)$/i
  * has an image-shaped extension AND looks like a path: an absolute Windows drive path, a
  * `file://` URL, or any token containing a path separator (#514: "an absolute Windows path...
  * a file:/// URL... a path relative to the Session's worktree... forward-slash Windows paths"). */
-function looksLikeImagePathToken(token: string): boolean {
+export function looksLikeImagePathToken(token: string): boolean {
   if (!IMAGE_PATH_EXTENSION_RE.test(token)) return false
   if (/^file:\/\//i.test(token)) return true
   if (/^[A-Za-z]:[\\/]/.test(token)) return true
@@ -397,7 +434,8 @@ export async function buildImagePathAttachment(sessionId: string, filePath: stri
       mimeType,
       base64,
       byteLength,
-      previewUrl: `data:${mimeType};base64,${base64}`
+      previewUrl: `data:${mimeType};base64,${base64}`,
+      name: filePath.split(/[\\/]/).pop() || undefined
     }
   }
 }

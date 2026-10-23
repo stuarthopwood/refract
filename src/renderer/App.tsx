@@ -3,11 +3,12 @@ import { ArrowLeftRightIcon } from 'lucide-react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
-import { BrandWatermark } from '@/features/chat/BrandWatermark'
+import { EmptyChatState } from '@/features/chat/EmptyChatState'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
 import { ManageSessionsScreen } from '@/features/profile/ManageSessionsScreen'
+import { ProfileAlertRows } from '@/features/profile/ProfileAlertRows'
 import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
@@ -29,22 +30,15 @@ import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/h
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
+import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
+import { announceQuickCreateFallback } from '@/features/sessions/quickCreateFallback'
+import { createdSessionAnnouncement } from '@/features/sessions/createdSessionAnnouncement'
 
 // Spec 005 (research.md Decision 6, FR-017): below this many pixels of chat-area width, two
 // minimum-width panes (360px each, matching the "chat" ResizablePanel's own existing floor) can
 // no longer both fit; the chat area shows one pane instead of two, with the other Session one
 // click away via ChatHeader's swap chip.
 const MIN_SPLIT_WIDTH_PX = 360 * 2
-
-// Shared by every window-wide keyboard chord below (Ctrl+Shift+\, Ctrl+W, Ctrl+,): a
-// destructive- or navigation-feeling chord must not fire while a Dialog/Sheet (`role="dialog"`, which Radix
-// sets despite the primitive never setting `aria-modal` -- confirmed in its installed
-// source, so matching the bare role is both correct and simpler), an AlertDialog
-// (`role="alertdialog"`), a DropdownMenu/ContextMenu (`role="menu"`), or a Select
-// (`data-slot="select-content"`, which sets no distinguishing role at all) is open. Radix
-// Popover also renders `role="dialog"` despite being non-modal, so it needs no separate
-// `data-slot` clause either (quality-gate remediation, PR #634/#636 gates).
-const OVERLAY_OPEN_SELECTOR = '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="select-content"]'
 
 // Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and the right region --
 // spec 004's Subagents panel is its first occupant (FR-017 to FR-020), always mounted but
@@ -283,11 +277,10 @@ export function App() {
         // silent no-op there, and the keypress has already been `preventDefault`ed. Checking
         // whether focus genuinely moved catches that (and the button being altogether absent)
         // in one condition, and announces instead of leaving the user with no feedback at all.
-        if (document.activeElement !== plus) {
-          useChatAreaAnnouncer
-            .getState()
-            .announce('Open the session list to choose a repository for the new session')
-        }
+        // Issue #559 decision 26, gate round 1 fix: `announceQuickCreateFallback` now decides
+        // purely by outcome (`features/sessions/quickCreateFallback.ts`) -- no longer reads
+        // `repositories.length` or the search query here.
+        if (document.activeElement !== plus) announceQuickCreateFallback()
         return
       }
 
@@ -338,13 +331,11 @@ export function App() {
           requestAnimationFrame(() => {
             const active = document.activeElement
             const stillHere =
-              !active ||
-              active === document.body ||
-              !active.isConnected ||
+              !active || active === document.body || !active.isConnected ||
               active === origin ||
               (originPaneContainer !== null && originPaneContainer.contains(active))
             if (!stillHere || !focusSessionPane(result.value.id)) {
-              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+              useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(result.value))
             }
           })
         })
@@ -528,6 +519,7 @@ export function App() {
                     <SessionList />
                   </div>
                   <ProfileItem />
+                  <ProfileAlertRows />
                 </div>
               </ErrorBoundary>
             </ResizablePanel>
@@ -540,27 +532,9 @@ export function App() {
                   // "Pull requests" is a left-nav entry, not a separate shell).
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : paneSessionIds.length === 0 ? (
-                  // Spec 012 (research.md decision 3): no pane open at all -- no composer exists
-                  // in this branch, so the mark anchors to this div's own full box.
-                  //
-                  // Quality-gate remediation (code-reviewer/ui-architect, Medium): `20cqw` needs
-                  // this root itself to be the query container (`[container-type:size]`), not the
-                  // window, matching ChatPane.tsx's own transcript container (research.md decision
-                  // 8) -- missing it here sized the mark off the WHOLE window instead of this box.
-                  // `isolate` plus the mark's own `-z-10` (BrandWatermark.tsx) then keeps the
-                  // absolutely-positioned mark painting BEHIND this normal-flow text instead of
-                  // over it: `isolate` is what creates the stacking context here (`container-type`
-                  // does not, it only applies style and size containment).
-                  <div
-                    data-chat-empty-state
-                    role="region"
-                    aria-label="Chat"
-                    tabIndex={-1}
-                    className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [container-type:size]"
-                  >
-                    <BrandWatermark variant="live" />
-                    Select a Session or create one.
-                  </div>
+                  // Spec 012 (research.md decision 3, extracted to EmptyChatState.tsx, gate
+                  // round 2 item 11): no pane open at all.
+                  <EmptyChatState />
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
                   <ChatPane
                     sessionId={frontSessionId as string}
@@ -568,6 +542,7 @@ export function App() {
                     reservesWindowControls={!paneShown}
                     otherSession={otherSessionForNarrowCollapse}
                     showWatermark
+                    showAmbientLoop
                   />
                 ) : (
                   <ResizablePanelGroup
@@ -590,7 +565,7 @@ export function App() {
                   >
                     <ResizablePanel id="split-pane-0" defaultSize={`${dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>
-                        <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} />
+                        <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} showAmbientLoop />
                       </ErrorBoundary>
                     </ResizablePanel>
                     <ResizableHandle withHandle aria-label="Resize chat panes" />

@@ -64,7 +64,7 @@
 
 ### Session 2026-10-09
 
-- Q: Issue #527: where do archived Sessions sit in the session list? → A: UX consult decision: one cross-repository **ARCHIVED** group below all repositories, its header styled exactly like a repository header (same size, case, chevron, padding) through one new shared `GroupHeaderTrigger` component both headers render through, so they cannot drift apart from each other again. A flat list, not sub-grouped by repository: each archived row additionally shows its own repository name as a secondary label (the same flat cross-repository convention the Manage sessions screen already uses) and keeps its own "Archived" accessible description, since it no longer sits under one. Collapsed by default, expand state kept only for the app session (not persisted across restarts), hidden entirely when no Session anywhere is archived. Restoring a Session moves keyboard focus to the restored row itself once it reappears under its repository, using the existing `focusSessionRow` helper (#621).
+- Q: Issue #527: where do archived Sessions sit in the session list? → A: UX consult decision: one cross-repository **ARCHIVED** group below all repositories, its header styled exactly like a repository header (same size, case, chevron, padding) through one new shared `GroupHeaderTrigger` component both headers render through, so they cannot drift apart from each other again. A flat list, not sub-grouped by repository: each archived row additionally shows its own repository name as a secondary label (the same flat cross-repository convention the Manage sessions screen already uses) and keeps its own "Archived" accessible description, since it no longer sits under one. Collapsed by default, expand state kept only for the app session (not persisted across restarts -- **superseded by issue #735, 2026-10-15: both the Repository and Archived groups' open/closed state now persist in `Settings.sessionListCollapse` and survive a restart**), hidden entirely when no Session anywhere is archived. Restoring a Session moves keyboard focus to the restored row itself once it reappears under its repository, using the existing `focusSessionRow` helper (#621).
 - Q: Issue #620 asks for a quick way to start a new session from a Session row's own repository without leaving the list. Where does it go and what does it do? → A: UX consult decision: a **New session from {repository.defaultBranch}** item in the Session row's "..." menu and its matching right-click menu (both the left-nav session list and the Manage sessions screen, through the shared action-list builder), first in the menu, followed by a separator, before Rename. Selecting it creates instantly in the row's own repository on its default branch -- the same `create(repository.id, repository.defaultBranch)` path FR-002's one-click **+** button already uses -- with no dialog and no Base branch choice; the branch picker stays the only way to choose a different Base branch. A per-repository in-flight guard is shared by the header **+**, this menu item, and the Base branch picker dialog, so a second create for the same repository while one is already running is refused rather than starting a second worktree (the same double-create class as issue #102). On the Manage sessions screen, where a row's repository is not (yet) present in the loaded repositories list, the item is left out of the menu entirely rather than shown disabled. Ctrl+N is not part of this change.
 
 ### Session 2026-10-11
@@ -75,6 +75,1168 @@
 
 - Q: Issue #543: a `read skill://<name>` tool call is drawn today as an ordinary grouped `read` row with no indication a skill loaded. How should it be shown? → A: First slice only (narrowed 2026-10-07): each such call becomes its own row reading "Using skill: <name>" (icon plus the usual running/done/failed status, FR-047's baseline), a grouping boundary so it is never folded into a run of ordinary `read` calls on either side, and expands to the same arguments/result view as any other `read` row (the "View full call" dialog, FR-061). The name is the whole path after `skill://` (a namespaced skill or a supporting-file read both show their full remainder unseparated); nesting a supporting-file read under its owning skill's row, and typed `/skill:` command support, stay out of scope.
 - Q: Issue #547: a user-invoked `/skill:<name>` arrives as a `skill-prompt` custom message and today shows as a generic muted notice with the skill's raw first line, no name, arguments, or size. How should it be shown? → A: Its own row reading "Skill invoked: <name>", with the arguments (when OMP sent any) and the line count as a one-line summary, the skill's injected text rendered as sanitised Markdown behind an explicit, collapsed-by-default expand (never auto-shown, since one real sample ran to about 3,900 characters). Gated on `customType === 'skill-prompt'` with `attribution === 'user'` and `display === true` together (an autoloaded, non-user-attributed skill message must never read as something the user invoked); a message that matches the type but whose `details` lacks a usable `name` falls back to the existing generic notice rather than guessing.
+
+### Session 2026-10-15
+
+- Q: Issue #563 (Decided, Skippy, delegated by Stuart 2026-10-15; ui-architect-v3 roundtable, full minutes on the issue): subagents started by the same turn's `task()` call(s) today each render as their own ungrouped collapsed line, with no indication of which ran together (a **Stage**) or in what order across a turn. How should they be shown? → A: The subagents started by one `task()` call (or by `task()` calls issued together with nothing else in the transcript between them -- see the **Stage** boundary rule below) form one **Stage**, rendered in place as one group row (FR-067): a header with a combined status icon, the agent count, a roll-up, and the duration, over the member rows (today's own per-subagent collapsed line, unchanged). A turn with two or more Stages also gets one **Subagent chain** row at the end of the turn, above the turn-total-time line (FR-068): a collapsed summary that expands to one line per Stage. A turn with exactly one Stage shows only that Stage's own group row, no chain row. Stage labels are "Stage N", never an invented name (the first agent's name or the task text), since true dependency names are not derivable from OMP's data -- only batch order and agent status/duration are.
+- Q: What exactly draws the line between "two `task()` calls in the same Stage" and "two `task()` calls in different, serial Stages"? → A: **Gate round 2 (architect addendum A)**: each `subagent` transcript item carries its own owning assistant message's id (`messageId`), stamped by the Rust transcript builder at construction time -- history replay stamps a stable `h{index}` ordinal; a live message carries its own real id, which still orders the same way. Two `task()` calls are the same Stage only when their subagent items share that id, never by transcript-order adjacency: the build's first cut keyed on adjacency (no intervening non-`subagent` item) instead, since the transcript then carried no explicit assistant-message field to key on directly, but that could merge two genuinely serial `task()` calls that happened to land with nothing else between them in the transcript, and a reopened history has no subagent timing at all to split them on a different signal. `messageId` fixes both.
+- Q: Does a Stage's own `cancelled` subagent status (issue #563 decision 15, split from `failed`) apply to the chat transcript's `subagent` row status, or only the Subagents panel/readout's summary? → A: Both: the same OMP wire statuses (`"cancelled"`/`"aborted"`) that used to fold into `error`/`failed` in each of the two existing status pipelines (the chat row's own `SubagentStatus` and the readout's own `SummaryStatus`) now map to a `cancelled` status in both, so the chat row, the Stage group roll-up, the chain roll-up, and the Subagents chip never disagree about whether a subagent failed or was simply cancelled.
+- Q: Issue #712's `subagent_lifecycle`/`subagent_progress` subscription (nested subagent-of-subagent events, and live updates for a subagent still running after its turn ends) is not yet wired up in this build (`src-tauri/src/session/subagents.rs`). Does #563 build a placeholder for either? → A: No. Both are out of scope for this story and left for #712's follow-up: the chat-side Stage/chain rendering uses only data the current per-turn `subagent` transcript items and `SubagentSummary` list already carry (status, duration, name/task, toolCallId/specIndex); no "Background" marking or post-turn live update is added.
+- Q: Stuart steered mid-build (2026-10-15, referencing issue #565 "guide rails"): should the Stage group's member spine and the chain's own stage-to-stage connector be one-off markup, or a shared primitive #565 can also use? → A: A shared primitive, `SpineList` (`src/renderer/features/chat/SpineList.tsx`): a neutral 1px `border-divider` left rule (`ml-4 border-l border-divider pt-1`; gate round 2 fix: each row supplies its own 8px gap from the line via its own `px-2`, not a `pl-2` on the list itself, which put each member's icon 17px right of the line instead of 8px), 4px row gap for members or 8px for stages; the group header's own status icon is the spine's visual "node" (drawn by the header, not this component). First used here for the Stage group's member rows and the chain's own stage list; #565 extends it for tool-group and thought-run spines without changing this file.
+- Q: Decision 1 says "a single stage is fully summarised by its own group header" but also "a single agent renders exactly like today's `SubagentRow`" -- which wins when a turn has exactly one Stage with two or more agents, or when a Stage with exactly one agent sits inside a multi-Stage turn? → A: **Gate round 2 (architect addendum B, supersedes the original answer below)**: agent count ALONE decides, with no Stage-count exception either way: a Stage with 2+ agents always gets the "Stage N" header, even the turn's only Stage; a Stage with exactly 1 agent always renders identically to today's bare `SubagentRow`, even inside a turn with 2+ Stages, stating its own position only in that row's `triggerAriaLabel` ("Stage N of M, ..."), never in the visible label, so nothing is ever relabelled under the reader as a sibling Stage starts or a second agent joins (decision 6). The original build's answer -- "agent count decides, not Stage count: a Stage group header renders whenever the Stage has 2+ agents (even the turn's only Stage), or whenever the turn has 2+ Stages (even a Stage with only 1 agent so far)" -- still relabelled a solo Stage's own row from its agent's name to "Stage N" the instant a sibling Stage arrived, the exact violation of decision 6 this gate round fixes.
+- Q: Issue #941 gate round 2 (Stuart's own `grill-with-docs` session, 2026-10-15; does FR-079's new per-Stage name/green/brief/"Uses:" treatment for a one-agent Stage conflict with the "renders identically to a bare `SubagentRow`" rule the Q immediately above and FR-067 both state)? → A: No conflict, both stand: the "renders identically" rule above governs STRUCTURE only (no group header element, no auto-expand, its own position stated only in the accessible name) and is unchanged by FR-079; FR-079 only changes what that same bare `SubagentRow` now shows for its label, colour, and (when it has its own captured `context`) an expandable brief and "Uses:" line, exactly as any other Stage now does. See FR-079's own full statement.
+- Q: Does activating an agent entry (decision 7, "Activating an agent entry opens the Subagent panel") apply to a Stage group's own member rows (today's `SubagentRow`, unchanged structurally), or only to the chain's own compact per-agent entries? → A: Only the chain's own compact entries gain a click-to-open-panel action. A Stage group's member rows stay exactly today's `SubagentRow` (expand/collapse to its own prompt and result inline, decision 1's "renders exactly like today"); adding a second click target there would overload the existing expand/collapse trigger with no accessible way to tell the two apart.
+- Q: Is the Subagent panel's tree root (the Session, decision 9) its own rendered `treeitem`, or only the agents it started? → A: Only the agents: the Session is the implicit root (never a rendered row of its own), since this story's panel is already scoped to one Session and a rendered-but-unselectable root row would add a tab stop with no action; #490's later cross-Session grouping is what actually needs a rendered Session-level row, and can add one without changing this story's own agent rows.
+- Q: Gate round 3 (architect M5/M6, PR #899): the architect addendum A wording above ("never by transcript-order adjacency") and FR-067's own wording both state Stage membership is decided by `messageId` ALONE -- but the actual code (`groupSubagentStages.ts`) also flushes a run on ANY intervening non-`subagent` item, even one sharing the same `messageId`, so two genuinely identical-message `task()` calls with something else between them (for example a `read` call) still land in separate Stages. Which is correct, and does this change behaviour? → A: No behaviour change; the wording was incomplete, not the code. The real, single rule (stated here once, the source every other mention should point back to): **a Stage is a maximal run of `subagent` items sharing the same `messageId`, where nothing else intervenes between them in the transcript except a hidden-bookkeeping-tool failure notice** (T086/FR-052, the one documented exception `groupToolItems` itself never flushes a run for either). `messageId` fixes the REOPENED-HISTORY case (no timing to split a later serial call on) and the two-genuinely-serial-calls-with-nothing-between-them case the original adjacency-only cut could merge; adjacency still matters for the opposite case -- two `task()` calls that share a message but have something else (a `read`, a `notice`) between them render as two Stages, not one, since nothing in the data otherwise orders an in-between call relative to either batch. Accepted as the shipped behaviour (no code change, #563); the architect's offered alternative (drop the adjacency check entirely, keying purely on `messageId`) was not taken, since it is an unreviewed behaviour change this late in the gate and the current split-on-anything-between rule has already been through two gate rounds without being flagged as wrong, only under-documented.
+- Q: Gate round 3 (architect M2, PR #899): a hard batch failure (`is_error`) on a `task()` call falls back every row that isn't already `Cancelled` to `Error` -- including a row that was genuinely cancelled by a user Stop rather than a real per-agent failure, since the batch-level `is_error`/abort signal and each row's own OMP-reported `progress[i].status` are two different, sometimes-disagreeing sources. Fixed this round? → A: No, accepted as a known Medium rather than rushed: determining "was this batch's own failure caused by the user's Stop" at the exact point one `tool_execution_end` frame is processed needs the turn's own abort/stop-requested state threaded into `apply_batch_task_result` (`subagent_items.rs`) from wherever `frame.rs`/`transcript.rs` already track it for the "Turn aborted." notice -- a genuine state-threading change with its own frame-ordering risk (the task's own `tool_execution_end` is not guaranteed to arrive strictly after the abort is known), not a one-line fix, and not re-reviewed this late in the gate. Left for a follow-up pass through the readout-side summary pipeline, same backlog as #650.
+
+### Session 2026-10-15 (quality-gate remediation)
+
+- Q: Decision 21 says a settled Stage's announcement reads "Stage N of M finished, ..." -- is "of M" safe to announce the instant an EARLIER Stage settles, before a later Stage has necessarily started? → A: No, drop it live. The out-of-log announcer (`Transcript.tsx`'s `useStageSettleAnnouncement`) reads "Stage N finished, ..." with no "of M": `M` (`totalStages`) can still grow after Stage 1 settles, so announcing it early would overstate certainty the moment it is read. "Of M" stays in the Stage's own static `aria-label` (decision 2), read at any instant once `M` is already known there.
+- Q: Does a cancelled agent belong in the Stage/chain `defaultOpen`/always-visible set alongside failed/exited (FR-068), even though decision 6/FR-068's original wording only lists failed/exited? → A: Yes, recorded here rather than left silently undocumented: a user-cancelled run is exactly the kind of outcome a developer wants visible without an extra click, the same as a failure or an exit. FR-068 above is amended to list it explicitly.
+- Q: #712's `Pending`/`CircleDashed` status (decision 14's table, #565 decision 29) still has no data source in this build -- is a placeholder branch added now so the UI "looks ready"? → A: No, left out entirely rather than built as dead code: OMP documents `pending` as still running (FINDINGS item 22(e)), so this build maps it to `Running` directly rather than adding an unreachable `Pending` UI branch no mapper could ever drive. Revisit if #712's own data ever distinguishes a genuinely-queued-but-not-yet-running state from an active one.
+- Q: The Stage/chain roll-up text names a mixed outcome ("4 agents, 3 finished, 1 failed") -- does a Stage where every agent simply finished also state "N finished", or stay the plain "N agents"? → A: Stays plain. `finished` is only named in the roll-up when at least one OTHER outcome (failed/cancelled/exited) is also present; a fully-finished Stage keeps the quiet "N agents" form decision 14 intends (a finished reviewer may still have returned a FAIL, so finishing is never itself announced as a loud success).
+- Q: Issue #572: the mock's active question card uses tick boxes for a multiple-choice question and a tab row for a batch of sequential questions; OMP's `set_ask_dialog` RPC command can make the `ask` tool send a structured, multi-question dialog request instead of one `select` per question. Should Refract build the richer card, and what happens where OMP does not support it? → A: Decided (Skippy, delegated by Stuart 2026-10-15, full roundtable record on issue #572). Refract requests the structured dialog once per OMP process at launch (`set_ask_dialog{enabled:true}`); when a live probe (`docs/spike/FINDINGS.md` item 59) confirmed the request frame actually arrives on the supported minimum OMP version, the richer card was built (FR-066): a tab per question (2 or more only), single-choice as full-width radio rows, multiple-choice as full-width tick-box rows, an always-visible "Other" free-text row, a recommended option shown as muted text only (never preselected), one Submit for the whole batch (reading "Next" until every question is answered), and a static (never counting down) deadline line when OMP reports a timeout. Where the request fails, errors, times out, or does not confirm `enabled`, Refract falls back to today's one-question-at-a-time cards with immediate-answer buttons (restyled to match the richer card's own row look, gate round 1 -- the behaviour of one question at a time with an immediate-answer button stays as decided here, only its visual styling changed), plus one explanatory notice per OMP process launch (one per Session's own agent process, not once for the whole app). The answered-question summary (FR-045) becomes one collapsed row per `ask` call (not per question), expanding to each question's own block.
+- Q: Issue #564 (composer restyle, child of #549): the chip row above the message box becomes one status line, the Approval mode pill moves into the box, and the box's bottom row gets model and reasoning pickers in place of the old read-only line. Full width or left-aligned for the status line, and where does the Current time readout sit? → A: Full chat width, as the mock's `AgentTelemetryDock` does (spec 004 FR-023); the Current time readout, when enabled, sits last at the row's right end. The mock's own "AUTO MODE" dot and git branch name have no item in the status line (2026-10-15 mockup-stories review): the branch already shows per-Session in the session list row (issues #307/#526), so repeating it here would be redundant.
+- Q: Does the Reasoning picker reach OMP's `set_thinking_level`, and how does it behave where the main process is frozen (rule 10, PLAN.md)? → A: In scope; a Rust IPC command (`model.setThinkingLevel`, lane RM) forwards it, refusing with `not-idle` while the Session is working or needs-you, the same rule `set_model` already follows. Electron was going to keep the level read-only there, but Stuart separately approved R13 (delete Electron) the same day, running concurrently -- this feature targets the Rust build only, and FR-064 below is written for that build; no Electron-specific path was built.
+- Q: Stop clearly distinct in weight from Send -- how? → A: `/grill-with-docs` session, 2026-10-15 (supersedes this same-day bullet's own original answer): Stop is a solid NEUTRAL fill (`variant="invert"`, inverted foreground-on-background) with a square icon, never red -- stopping keeps the work done so far, so it reads as the opposite of destructive, and red is reserved for destructive and error states; Send keeps its own accent fill (`variant="default"`) throughout.
+- Q: `/grill-with-docs` follow-up: what happens to the Model/Reasoning pickers when a Session has no running agent at all (stopped), not just mid-turn? → A: They show the last-known value but are ALSO disabled, with the reason named in the accessible name (for example "Start the agent to change the model."); nothing is stored for the next start, since a disabled picker never calls the underlying IPC.
+- Q: `/grill-with-docs` follow-up: which reasoning levels does the picker offer, and in what order? → A: Every level OMP exposes, in this order: Default (OMP's `inherit`, its own configured default), Off, Minimal, Low, Medium, High, Extra high, Max. What OMP does when a chosen level is one a given model does not support is unverified.
+- Q: `/grill-with-docs` follow-up: what does the Model picker's own menu look like, given the catalog has 91 chat models today? → A: A type-to-filter text field at the top with keyboard focus starting there, a Roles group first (the Session's roles from the omp config, applied through the existing `model.applyRole` action), then the filtered model list with the current one checked, scrolling once the list passes about 12 rows.
+- Q: `/grill-with-docs` follow-up: do the status line's readouts (spec 004) keep their boxed/pill look now that the Approval pill has moved into the box? → A: No -- plain text, no box (spec 004 FR-023, decision 1); CONTEXT.md's **Readout chip** term is retired, the row is the **Status line**, each entry a **Readout** (decision 2).
+- Q: Gate round 1 (code-reviewer/test-reviewer HIGH, 2026-10-15): the Model picker's type-to-filter field sat inside a native `role="menu"`, whose own typeahead moves focus to the first matching ITEM on every printable keystroke (Radix `DropdownMenu.Content`) -- a text field cannot coexist there. What replaces it? → A: A popover holding a type-to-filter combobox field (keyboard focus on open, via the popover's own public `onOpenAutoFocus`, no timer) plus a hand-built listbox driven by `aria-activedescendant` -- the identical pattern the slash-command menu already uses in the message box: ArrowUp/Down move the active option, Enter applies it, Escape closes the popover and returns focus to the trigger.
+- Q: Gate round 1 (code-reviewer HIGH): a picker menu left open while its Session's status changed (the agent exited to stopped, or started a turn) could never be closed -- blocking the trigger's own re-opening also blocked Escape, an outside click, and selecting an item. Fix? → A: Block only an attempt to OPEN while disabled; force-close an already-open menu the instant `disabled` itself becomes true, regardless of how the menu got left open.
+- Q: Gate round 1 (code-reviewer HIGH): how does the Reasoning picker expose the current level to a screen reader (a decorative, `aria-hidden` check icon is not)? → A: A radio group bound to the Session's current level, each option exposed as `aria-checked` by the underlying primitive -- never a plain menu item with a check icon alone.
+- Q: Gate round 1 (amended by Stuart, superseding this same-day bullet's own first answer): OMP's `get_state` leaves the reasoning level out of its response both for `inherit` itself and for any OTHER level on a model that does not report reasoning effort at all -- mapping every missing read-back to "Default" would misrepresent a real model's non-report as the inherit default, and a successful switch must never show as a failure. What does the picker show, and is the IPC contract affected? → A: Never an error toast for a successful switch. Requesting Default (`inherit`) always shows "Default", since that is what Default means regardless of whether the model echoes it back; requesting any OTHER level the model does not report shows an explicit "Reasoning not reported" state rather than presenting the requested level as confirmed. The contract becomes `{ thinkingLevel: string | null }` (`null` = not reported); `level` is validated in Rust against the closed 8-value set before being sent to OMP at all.
+- Q: Gate round 1 (Stuart, 2026-10-15): Send's own accent fill is chromatic only in the Obsidian preset -- Dark (the default theme) and Dark high contrast both resolve `--primary` to a near-white neutral, so Send and Stop read as two nearly identical light discs there, failing "visibly distinct in weight" in two of the three built-in themes. Fix? → A: A dedicated `--send`/`--send-foreground` token pair (the "#5A5EEE family"), chromatic in every built-in theme, used ONLY by the composer's Send button -- every other `variant="default"` button anywhere else keeps using `--primary` unchanged.
+- Q: Gate round 2 (code-reviewer HIGH): a confirmed "Default" (`inherit`, round 1's own fix) was being erased back to "Reasoning not reported" on the Session's very next turn or app relaunch -- the generic `sync_from_state` settle path unconditionally overwrote the registry with `None` whenever that same `get_state` call's own `thinkingLevel` was absent, which it always is for `inherit`. What's the fix, and does a never-touched Session now read as Default? → A: `sync_from_state` (launch.rs) no longer writes `last_thinking_level` AT ALL when `thinkingLevel` is absent -- only `thinking_level.rs`'s own explicit switch now ever writes that case, so a persisted "Default" survives every later settle and a full app relaunch. **Correction mid-round (Stuart, supersedes an initial wrong implementation of this same fix):** a Session where no level was EVER explicitly requested, and a non-Default request this model does not confirm, both still read as "Reasoning not reported" -- "Default" is shown ONLY once the developer has explicitly chosen it, never assumed for an untouched Session.
+- Q: Reviewing PR #877, the composer box's own text area grew a grey background whenever disabled (for example "The agent is stopped.") -- Stuart: "the disabled composer... looks bad." What replaces it? → A: The whole composer box dims as one unit while disabled (the text area and its bottom row together) with a single container `opacity-60` on the box, never a Tailwind colour-opacity modifier on any one element inside it; the text area's own vendored grey background/opacity is dropped, and any child control whose own dimming was driven by exactly the same disabled condition (the Attach button, and the Model/Reasoning pickers' own opacity specifically for the stopped-not-just-started case) drops its own opacity too, so the two never stack. A control dimmed for an unrelated reason the box does not cover (a picker or Send while the Session is merely mid-turn, not stopped) keeps its own opacity unchanged. Control behaviour is unchanged throughout: what was clickable stays clickable, and every `aria-disabled`/accessible-name state is exactly as FR-064 already describes. (Superseded in part by the gate round 4 entry below: the Approval pill and the box's own border and background never dim.)
+- Q: Gate round 4 (Stuart, 2026-10-15, reviewing PR #877): the Approval mode pill still works while the agent is stopped (FR-056) -- unlike the Model/Reasoning pickers, which are correctly disabled then -- so should it dim along with the rest of the box's bottom row? → A: No. Only the unusable parts (the text field, Send/Stop, the Model and Reasoning pickers, and the Attach button) dim as one `opacity-60` layer; the pill, and the box's own border and background, stay at full opacity in every state, since dimming a control that still works would misrepresent it as unusable. The pill also gets the same opaque `focus-visible:outline-ring` convention the Model/Reasoning picker triggers already use (gate round 1), dropping `badgeVariants`' own translucent `ring-ring/50` for this one trigger; both the pill's resting border and its new focus outline measure at or above 3:1 against `--composer-background` in every built-in theme (never below 4.37:1), satisfying WCAG 1.4.11 whether or not the rest of the box is dimmed.
+- Q: Gate round 5 (`agent://Arch877`, fifth-gate UI/UX review of PR #877): three specialists found 11 agreed Medium findings -- the model label cut at 160px with 400px of unused row, the filter popover jumping height as results changed, Roles staying keyboard-reachable while a filter narrowed the list to models only, the catalog showing one undifferentiated "Loading models…" for both "not loaded" and "loaded, empty", a cached catalog error never retried, no in-flight state while a change is applied, an unset role's fallback left unexplained, the current-choice check and focus treatment differing between the pill/Model picker/Reasoning menu, and an empty status line still taking a layout gap. Fix scope? → A: All 11 fixed in this round, none reversing a prior decision (confirmed by the review itself): visible model text drops to the bare `name` (provider/name moves to the Tooltip and the accessible name's parenthetical); the popover's height is fixed while open; Roles hide entirely once a filter is typed, and a role with no model AND no documented fallback is `aria-disabled` and arrow-key-skipped, reusing Settings' own "Inherited (...)" wording for one that does have a fallback; the catalog's loading/empty/no-match states render distinct text with a spinner, and a cached error force-reloads on open plus offers an explicit Retry; both pickers show a local pending state (spinner, `aria-busy`, blocked reopening) for the duration of a change; every composer control shares one opaque focus outline (`pickerShared.tsx`); every accessible name starts with its own visible text; the status line gains `empty:hidden`.
+- Q: Issue #735: the session list has no quick way to collapse or expand every Repository group (and Archived) at once, and a closed group hides which Sessions inside it need attention. What goes where, and what does a collapsed group show? → A: Decided (Skippy, delegated by Stuart 2026-10-15, full UX-architect roundtable record on issue #735). A pinned toolbar row sits above the session list's scroll area, below Pull requests (16px gap), with two icon-only ghost buttons in fixed order: Collapse all, then Expand all (`ChevronsDownUpIcon`/`ChevronsUpDownIcon`, `size="icon-xs"`), each with an accessible name and a right-side tooltip ("Collapse all groups"/"Expand all groups"); a button that would be a no-op (everything already collapsed, or already expanded) is `aria-disabled` (never natively disabled) with a second tooltip line stating so. "All" means every Repository group plus the Archived group while it is shown (#527's own "hidden entirely while nothing anywhere is archived" rule); while Archived is hidden its own saved flag is left untouched. Each Repository's collapsed state and Archived's own flag persist in a new `Settings.sessionListCollapse` field, restored once at startup alongside `settings.get`, debounce-persisted (~300ms) by a dedicated renderer store that is the field's sole writer; a Repository removed from Refract is pruned from the saved state. A closed group shows a single Waiting marker naming the most urgent state among its Sessions (Needs you, then Terminated unexpectedly, then Unread response, #731), and the group currently holding the visible Session shows a 2px active-indicator bar on its header while closed. A closed group reopens, and that open is saved, only when a create or a restore from Archived actually moves a row into it -- never for a plain selection, a notification, a Split restore, or a status change.
+- Q: Issue #731 (ui-architect-v3 roundtable, delegated by Stuart 2026-10-15): the session list's trailing amber unread dot duplicates needs-you's own amber, and idle is a bare hollow circle. What replaces them? → A: A new derived display status, **Unread response** (idle with an unseen reply, never a stored status -- `displayStatus()` in `sessionDisplay.tsx` returns it only when `status === 'idle' && unread`), drawn through the one shared `StateIcon`/`STATUS_LABEL` in place of Idle: `MessageSquareTextIcon` (a speech bubble with a tail and three lines) in a new `--state-unread-response` token aliasing the existing `--severity-info` role, distinct from needs-you's amber and from the three-dot glyph `foundations-motion.md` reserves for "waiting". Idle's own icon changes from a hollow circle to `CircleCheckIcon`, the same grey glyph the Subagent panel's "finished" icon already uses (#563). Precedence, highest first: the row's `startProgress` loader, then working/needs-you/stopped, then Unread response, then Idle. The trailing dot and its reserved row width are removed (reverses #482 item 6's trailing dot; #482 itself, the Dots-form Settings option, stays out of scope). Background investigation (icon only vs. a tinted disc vs. a row tint) chose icon only: a tinted disc needs a bigger container than the icon slot allows and fails `components.md`'s zero-box rule; a row tint drops the needs-you-tinted selected row to 2.70:1 in Dark, under the 3:1 floor, and clashes with the single hover/selected fill. No unit test added (spec 001 :357's prototyping rule); precedence is checked by typecheck and the live check instead.</content>
+
+### Session 2026-10-15 (connected-log spine)
+
+- Q: Issue #565 ("guide rails"): a multi-call tool group's own calls (FR-008), a multi-Stage Subagent chain, and #563's own Stage member list each needed a visual connector showing which rows belong to a header, with no established shared primitive or geometry. How should it be built? → A: Decided (Skippy, delegated by Stuart 2026-10-15; `ui-architect-v3` roundtable, full minutes on the issue). One shared primitive, **Spine** (`SpineList.tsx`): a neutral 1px `border-divider` left rule (`ml-4 border-l border-divider pt-1`, members keeping their own `px-2` so icons sit 8px right of the line), hanging visually from the group header's own status icon (the header draws that icon itself, as the Spine's node -- `SpineList` only ever renders the member list below it). It never changes by state or theme and never animates; it mounts only once a group has two or more members (a group of one keeps today's solo path, no Spine, no list) and unmounts the instant the group collapses. Scope: a multi-call tool group (`ToolGroupRow`), #563's Stage group and Subagent chain (already built against this primitive), tool groups reused inside the Subagent panel stream (automatic, through `ToolGroupRow`), and -- once #557 builds thought runs -- a run of consecutive thoughts the same way; phases (#571), the mock's own advisory/blocker accent bars, agent-to-agent messages (FR-048), and inner subagent calls are explicitly out of scope -- a Spine means only "these rows belong to this header".
+- Q: Does giving every `CollapsedLine` a Spine-ready icon slot change anything else about that shared row? → A: Two settled, unrelated fixes ride along since they touch the same file: the icon slot widens from 14px to 16px (icon itself stays 14px, centred) so every node centres on the 4px grid, and the root `Collapsible`'s own always-on `border border-transparent` (hover swapping it to `hover:border-border`) is deleted outright, along with the `rounded-b-none` it drove -- that border was a confirmed second nested box inside whatever ancestor box a row already sits in (issue #430); hover is now only the trigger's own ghost `hover:bg-muted`. Neither changes any row's wording, colour, or status logic.
+- Q: A member's and a solo group's own expanded body (a diff, an error line, "Wrote N lines", "View full call") used to start flush with the row's own `px-2` padding -- does the Spine change where that text starts? → A: Yes: it now starts at the label column, `pl-8` (8px row padding + 16px icon + 8px gap, now a round number), both for a solo group's body and for each member's own body nested under a Spine; `NoticeRow.tsx`'s own long-notice body moves from `pl-7` to `pl-8` to match the same new column.
+
+### Session 2026-10-15 (session list restyle)
+
+- Q: Issue #567 (ui-architect-v3 roundtable, delegated by Stuart 2026-10-15, full decision record and design-critique minutes on the issue): no type scale had been decided for the session list's own row and group-header text (the open question the roundtable was convened to settle), and the row itself had grown up to three lines with a stale, never-redrawn relative time. What is the session list's row, group-header, and footer layout? → A: Decided (29 numbered decisions; full record on the issue, not repeated here). No 10px/11px text anywhere -- title `text-sm font-normal`, second line and time `text-xs`, group header `text-xs font-medium`, all muted except the title. Each row is a two-line, 44px square-cornered choice item: line 1 is the status icon, the truncating title, and the time at the right; line 2 is one slot (start-progress text, "Terminated unexpectedly", an archived row's own Project name, or otherwise the branch, first match wins) -- the time hides and the row's own "..." menu takes its place on hover, focus inside the row, or an open menu. The time's own visible form is short ("now"/"5m"/"3h"/"2d", then a short date) and aria-hidden, redrawn by one shared app-level tick aligned to the minute instead of a per-row timer; the long "ago" form moves into the row's own accessible description alongside its activity text, branch and base, and worktree path. Group headers (a Project's and the cross-project Archived group) drop the uppercase/tracked styling for sentence case; the Archived header's count is a separate tabular-nums figure, never bracketed. A Group header's New-session, branch-picker, and actions buttons shrink to 24px ghost icons, hidden at rest and revealed by hover, focus, an open menu, a Session being created, or an empty group. The session list's footer becomes one block (Add repository, then the profile item, then any future alert rows) under one soft divider, replacing the double line the footer and the profile item each drew on their own before. Order of work: #811 (file split, moves only), then #731 and #735 (status icons, the collapse toolbar), land before this story; #526, #559, #748, #560, #867, and #869 fill the slots this story leaves for them afterward -- this story does not build search, status-line data, Hide, the collapse toolbar itself, the response-ready icon, the Add project flyout, Home, alert rows, a PR count, arrow-key navigation, a load-error state, or a header context menu.
+
+### Session 2026-10-16
+
+- Q: Issue #570 (Decided, Skippy, delegated by Stuart 2026-10-15; `ui-architect-v3` roundtable, full minutes on the issue): tool rows draw every state (running, done, failed, interrupted) the same colour, so a developer cannot tell a successful call from a running one without reading the status word, and a failed call's own error text is visible only once the row is expanded. How should a tool row's colour and a failed call's error be shown? → A: Success stays fully neutral (a `CheckCircle2` icon, no colour anywhere on the row) -- "failure loud, success quiet," since a chromatic success colour used outside its own meaning teaches the wrong meaning (`docs/PLAN.md` #768). Running keeps its existing `LoaderCircle` spin in the working colour, icon only, never a coloured label. A failed call's icon (`XCircle`) AND its label (the tool name, or "Using skill:") render in the error colour; its target stays muted. An interrupted or exited call stays fully neutral, never red, since nothing is known to have gone wrong. One shared status-icon map (`toolStatus.tsx`) now matches the one `subagentStatus.tsx` already shipped (issue #563): the two stay separate modules (a tool row's own `RowStatus` carries `interrupted`, a subagent's own status carries `cancelled` instead), but render the identical icon shape and colour per matching state.
+- Q: Should a failed call's error stay hidden until the row is expanded (today's `ToolCallBody` behaviour), per FR-061's wording? → A: No -- amended: a new **Error line** renders directly under the collapsed row itself, at the label column (`pl-8 pr-2`), whenever a call has failed, whether the row is collapsed or expanded; the expansion's own body no longer repeats it. The text is the call's own error output with ANSI control sequences stripped, split on newlines: the LAST non-empty line for a `bash` call (a live probe, `docs/spike/FINDINGS.md`, captured OMP's own bash wrapper always appending a `Wall time: ...`/`Command exited with code N` footer after the real stderr/stdout content -- including a literal `(no output)` placeholder line when the command printed nothing at all -- so the footer is stripped first and the last REMAINING line is taken, not literally the raw string's own last line, which the issue's own [INFERENCE] had assumed before this probe); the FIRST non-empty line for every other tool. Cut at 200 characters with an ellipsis; "Failed." only when nothing is left after stripping. Plain text, no markup, no links. The row's own trigger gets `aria-describedby` naming the Error line's id, and the line mounts inside the transcript's own existing `role="log"` region (`MessageScrollerContent`), so it is announced once as that log's own addition -- no second live region.
+- Q: How does a multi-call group (FR-008) show a failed member's error while the group itself stays collapsed? → A: The group header shows the LATEST failed call's own Error line while the group is collapsed; once expanded, the header's line is removed and each failed member shows its own Error line instead, never both at once. The group's "N failed"/"N interrupted" counts move from the summary text into the row's own never-shrinking meta slot, ahead of where a duration would sit; "N failed" renders in the error colour the instant any member fails, even mid-run, but the header's own label and icon turn red only once the group's SETTLED status is failed, matching FR-008's own existing worst-state order (running beats failed while any member is still in flight).
+
+### Session 2026-10-16 (gate round 1)
+
+- Q: Gate round 1 (code-reviewer/ui-architect-v3 High, G909Code/G909Arch): a `bash` call that fails with genuinely no stdout or stderr (`exit 9`) showed OMP's own `(no output)` placeholder as the Error line, stripping the one useful fact -- the exit code -- along with the footer it sat in. Fix? → A: Amended (FR-061 above): only OMP's own `Wall time: Ns` line is stripped from the end; its own exit-code or timeout line, read BEFORE that cut, becomes the fallback ("Exited with code N" / "Command timed out after N seconds") shown whenever a lone `(no output)` or nothing real is left, never the placeholder itself. "Failed." is now reserved for a call with neither real output nor exit/timeout information at all.
+- Q: Gate round 1 (code-reviewer/accessibility-auditor Medium): a settled multi-call group's own `aria-describedby` Error line names the LATEST FAILED member, but the header's own visible summary names the LAST call -- when the two differ, the collapsed header showed a red Error line directly under text for a call that actually succeeded. Fix? → A: Amended (FR-008 above): the Error line is prefixed, muted, with the failing call's own target whenever it differs from the last call's own target the summary already shows (for example "exit 9: Exited with code 9" under a header whose own visible target is the next, later, successful call).
+- Q: Gate round 1 (accessibility-auditor/code-reviewer Medium): a group's "N failed" and "N interrupted" meta spans sat adjacent with only a CSS margin between them, reading as one joined word ("1 failed2 interrupted") to a screen reader -- a regression from the pre-#570 summary text's own ", " separators. Fix? → A: Amended (FR-008 above): the two counts are joined by a visible middle dot (`aria-hidden`, decorative) plus an sr-only comma, matching the separator grammar #632 already uses elsewhere in this same meta slot.
+- Q: Gate round 1 (ui-architect-v3, decision 3 "one status map"): #563's `subagentStatus.tsx` landed its own icon/colour map first, but #570 wrote a second, hand-copied JSX map in `toolStatus.tsx` rather than reusing it -- matching today only because both were kept in sync by hand. Fix? → A: Both modules now read one shared icon/colour table (`src/renderer/features/chat/statusGlyph.ts`), keyed by a shape (`running`/`neutral-done`/`error`/`neutral-muted`/`cancelled`) rather than either module's own status union, so the two literally cannot drift apart again.
+- Q: Gate round 1 (ui-architect-v3 Medium, [INFERENCE] not probed): does a tool call the user Stops mid-flight (rather than one that is simply interrupted by the Conversation's own tail ending) risk rendering with the full failed/red treatment, since OMP may close an aborted call with `isError:true` and tool rows have no separate `cancelled` state the way subagents do (#563 decision 15)? → A: CONFIRMED live (`verify-570-tool-colours.mjs` turn (c), 2026-10-16): stopping a `bash` call mid-flight settles it to `error` -- red icon, red label, and an Error line reading "Command aborted" -- the full failed treatment, never a neutral `interrupted`. Not fixed here: `toolStatus.tsx`'s `interrupted`/`exited` branches are pre-existing code (#510) this story does not touch, and OMP mapping an aborted call to `isError:true` is a pre-existing gap for #510/#490 (tool rows have no `cancelled` state the way subagents do, #563 decision 15) to resolve, not a #570 regression. A follow-up issue has been filed against #510/#490.
+- Q: Gate round 1 (ui-architect-v3, decision 12): does "the group settles as failed" mean "every member has a final status" or "no member is currently running"? A live run showed the header read failed, then neutral, then failed again across one turn's own three-call group, at each boundary between one call ending and the next one starting. → A: Accepted as the correct, literal reading of decision 12's own "running beats failed" worst-state order: `status` is derived from `group.items.some(running)` at render time, which is genuinely `false` for the brief instant between one call's own end and the next one's own start -- this is not a mid-run violation, it is an accurate reflection of the data at that instant. Unchanged.
+
+### Session 2026-10-16 (thought runs)
+
+- Q: Issue #557 (Decided, Skippy, delegated by Stuart 2026-10-15; `ui-architect-v3` roundtable, full decision record on the issue): a busy agent turn shows several "Thought for Ns" lines back to back with nothing to show they belong together. How should a run of consecutive thinking rows be shown? → A: A run of two or more thinking items with no other item between them collapses into one row reading "Thought process" with the step count (for example "3 steps"), expandable to the individual thoughts, each still its own collapsed line, down a Spine (FR-047) exactly like a tool group's own members. A thought still streaming is a member of the run, not a separate row of its own: the header never spins itself, instead reading "Thinking" with the live member's own preview (the same text the pre-existing single-thought row already showed) while any member streams, settling to "Thought process" once every member is finished. The run's own total elapsed time is the union of the members' own timed intervals, never a plain sum (several thoughts inside one message share an end time, so a sum can exceed the turn total shown right below it), floored at 1 second so the total never reads lower than any one member's own duration (gate round 1, 2026-10-16), and is omitted -- showing the step count alone -- whenever any member still streams or is missing either timing bound (always true for a reopened conversation). A hidden bookkeeping tool's own failure notice (FR-052) does not end the run, the same documented exception already carved out of FR-008's own tool-call grouping. A run of exactly one thinking item is unchanged: today's single collapsed line, with no group wrapper and no Spine.
+- Q: Does giving every run a header change the individual thought row underneath it? → A: No. Each member keeps today's own wording unchanged ("Thought for Ns", "Thought", or "Thinking" with its preview); the run never relabels a member "Step N" -- FR-009's own per-thought wording still governs every member row, inside a run or on its own.
+
+### Session 2026-10-16 (blocker callout)
+
+- Q: Issue #558 (Decided, Skippy, delegated by Stuart 2026-10-16; `ui-architect-v3` roundtable, full decision record on the issue): a blocker advisory reads as one truncated line, same as a nit. How should an expanded blocker be shown? → A: Always expanded by default (live or reopened from history alike, with no focus steal -- a polite announcement only), with a 3px left accent bar in the error colour and no surrounding box, any `path:line` location(s) the note or guidance names as monospace copyable text, a Copy action (note, guidance and locations) and an "Ask agent to address this blocker" action that sends the note, guidance and locations to the agent through the same send path a user message takes, posted as a normal user turn; focus returns to the row's own trigger afterward.
+- Q: Does an expanded concern get the same treatment? → A: The same left accent bar, in the warning colour, and the same Copy/Ask-agent actions, but only while expanded (it is not expanded by default); a nit never gets any of this new treatment.
+- Q: What happens to a long run of concern advisories? → A: Every run of consecutive concern-severity advisories in one turn (nothing else between them), including a run of one, is grouped identically to a Tool group or Thought run (gate round 1 amendment below); a run of five or fewer renders unchanged with no control, and more than five collapse behind a "+ Show N more advisor concerns" control that permanently reveals the rest. Blockers and nits are never part of a run.
+
+- Q: Gate round 1 (code-reviewer/accessibility-auditor/ui-architect-v3, three independent reviewers): the blocker's own mount-time live region sat inside the transcript's `role="log"`, double-announcing a live arrival and re-announcing on every remount; "+ Show N more" unmounted on activation, dropping focus to `<body>`; a collapsed blocker lost its stripe; decision 10's "focus stability is a non-issue" was false once a sixth concern remounted every existing row. Fix? → A: Amended above: "+ Show N more" moves focus to the first newly revealed row in a `useLayoutEffect`; the stripe now shows on a blocker row at all times, collapsed or expanded; every concern run, including a run of one, is always wrapped (matching a Tool group/Thought run), so a sixth concern's own arrival never remounts rows 1-5. The blocker's own announcement fix (moving it to one out-of-log status span) turned out to be WRONG: that span still re-announced on a Session/Conversation switch and "Load earlier" (its `seenRef` was never reset, and it read the windowed turn list), and still double-read a live arrival alongside the transcript's own log addition. Gate round 2 (code-reviewer/accessibility-auditor/ui-architect-v3 unanimous): deleted the separate announcer entirely -- the blocker row's own mount into the transcript's `role="log"` IS decision 9's one polite announcement (matching #570's Error-line precedent), silent by construction on every remount (a switch, a history reopen, a reveal are never log ADDITIONS) and firing exactly once on a genuine live arrival, with no second channel to double it. Revealing a hidden concern run now also suppresses log announcements for one frame (the same mechanism "Load N earlier turns" uses), so N newly-revealed rows read as one reveal, not N separate announcements. Also fixed: the Ask-agent message's `<advisory>` tag wrapper was parsed as a raw CommonMark HTML block by the sanitised Markdown renderer and silently dropped from the posted user bubble (the agent still received it); replaced with a fenced code block, length-capped, with the advisor name moved inside it. The location regex gained `@`/`~`/`+` support and a `~/` prefix; its dedupe key now normalises `\` to `/`.
+
+### Session 2026-10-16 (session search)
+
+- Q: Issue #559 (Decided, Skippy, delegated by Stuart 2026-10-16; `ui-architect-v3` roundtable, full decision record on the issue): the session list has no way to filter it, and `#735`'s own decision record (decision 26) already reserved a slot for this story between Pull requests and the Collapse all/Expand all toolbar. What does the field do, and how does it interact with each group's own saved collapsed/expanded state? → A: A single text field (the shared `SearchField` component, `docs/design/components.md`), filtering live, case-insensitively, against a Session's own name, branch, or its Project's name. Filtering narrows what the list already shows -- it never reveals a Hidden Session (`#748`, not yet built) or an archived Session whose Project no longer resolves. A Project group renders only once at least one of its own non-archived Sessions matches, showing only the matching rows; the Archived group is searched the same way (name, branch, or Project name). While a query is active, every matching group is shown open regardless of the user's own saved collapse choice, through a new ephemeral, never-persisted override in `session-list-store.ts` -- every Group header and the Collapse all/Expand all toolbar stay fully interactive during a search (a toggle while searching only edits the override, not the saved layout), and the saved layout returns exactly unchanged the moment the query empties. A group a search hides still counts toward the toolbar's own "is this a no-op" computation (`#735` decision 11, unchanged). The query itself lives in `session-list-store.ts`, not `Settings` -- it is never persisted to disk, survives a Session switch and a Settings/Manage-sessions round trip within one app run, and is empty again after a relaunch. Zero matches show a compact empty state ("No sessions match", a Clear filter button); the result count is announced politely, debounced while typing, the same pattern `ManageSessionsScreen.tsx` already uses for its own, separate search. No new keyboard shortcut is added to focus the field in this story (Tab reaches it, second in the nav's own order per `#735` decision 13); Ctrl+N's existing "no repository resolved" fallback, when the search itself is the reason the quick-create button is not on screen, now focuses the search field and asks for the filter to be cleared instead of its older, now-inaccurate "open the session list" wording.
+
+### Session 2026-10-16 (advisor command)
+
+- Q: Issue #917 (Decided, Stuart, 2026-10-16): omp's advisor subsystem never reaches a Session
+  because `/advisor` is not in the slash-command allowlist, even though the advisor is already
+  real and reachable in Refract (a live blocker advisory arrived during the #558 live check,
+  since the Refract-launched omp profile already carries `advisor.enabled: true`). How should a
+  developer turn it on or off? → A: Option 1, a per-Session `/advisor` toggle, not a Settings
+  toggle: `/advisor on`, `/advisor off` and `/advisor status` are added to the supported
+  slash-command set (FR-032), session-scoped and not persisted; typing `/advisor on` enables the
+  advisor for that Session, `/advisor off` disables it, `/advisor status` shows its state as a
+  transcript notice, and the slash-command menu lists `advisor` with the short description OMP's
+  own `get_available_commands` supplies for it. No Settings toggle for now.
+- Q: Decided (Skippy, delegated by Stuart 2026-10-16; `ui-architect-v3` roundtable, full decision
+  record on the issue): does this toggle need any new UI (an indicator, a dedicated message kind,
+  a cost readout)? → A: No. `fast`, `slow` and `extended-context` -- the other session-scoped
+  on/off/status commands -- carry no indicator anywhere in Refract today, so `/advisor` needs no
+  parity addition; its reply already renders through the existing forwarded-command path (a
+  `command_output` frame becomes a transcript `notice` row, the same as `/usage show` or
+  `/session info`). No new component, store or message kind was added (cost readout decided
+  separately below).
+- Q: `/advisor` was one of the probe's own denylisted names (`docs/spike/slash-commands-probe.mjs`
+  `DENYLIST`), so the T092/18.5.1 run this allowlist is built from never sent it -- does FR-032's
+  "verified to run" bar still hold? → A: Yes, satisfied a different way: issue #917's own live
+  check against a real signed-in profile (`/advisor status`, `/advisor on`, a real turn, `/advisor
+  off`) stands in for the probe run, the same bar applied to every other entry just run by hand
+  once instead of through the probe script (`contracts/omp-usage.md` "Slash command
+  classification" records the detail).
+- Q: Decided (Stuart, 2026-10-16): no cost readout for `/advisor` (`advisor_cost_changed` stays
+  unread; `/advisor status`'s own reply surfaces spend on demand instead, which is sufficient).
+  A persistent on/off indicator for the advisor's Session-scoped state is a separate idea,
+  tracked as its own issue (#937), not part of #917.
+
+### Session 2026-10-16 (quiet alert rows)
+
+- Q: Issue #560 (Decided, delegated by Stuart; full decision record on the issue): FR-037's low-memory badge already describes a popover with a bare, unconfirmed Stop agent action, and the unverified-OMP-version notice (readiness.ts, health-store.ts) has no FR at all, still living in the status bar FR-056 says the app must not have. Where do both live now, and how does stopping an agent actually work? → A: Both become quiet, single-line alert rows directly under the profile item (FR-037, amended below), sharing one row shape, one dismiss-for-the-run control each, and reusing the same amber warning token the old badges used. Low memory keeps its Triage action but now opens a full list of idle-only Sessions (never one mid-turn or waiting on the user) with a confirmed Stop per Session and one Stop idle action for all of them at once; nothing is ever stopped without that confirmation. Per-agent memory figures are not shown -- no per-process memory API exists in src-tauri today, and none is added by this story.
+- Q: Does the unverified-OMP-version notice get its own requirement? → A: Yes, new FR-072 below; it did not have one.
+
+### Session 2026-10-17 (grouped and command-style calls)
+
+- Q: Issue #632 (supersedes #430; close #430 when this lands): a multi-call tool group's own
+  header names only its last call ("`cd …; gh pr merge 625 …` + 1 others"), implying the rest are
+  minor variants of it, and a bash/grep call's row shows the raw argument untouched, which read
+  as a path rather than a command. How should the group header and a command-style call's own
+  row read? → A: Decided (Skippy, delegated by Stuart 2026-10-17): the group header names the
+  tool and the run's own count ("bash ×2"), never a single call's command, with no separate
+  summary text; the failed/interrupted counts (#570 decision 12) and the group's own total time
+  (the sum of every member's own duration) join in the meta slot with the same "·" grammar. A
+  `bash` call's own row reads `$ <first line of the command>`; a `grep` call's reads `grep
+  "<pattern>"`, plus the search path when the call's own arguments carry one as a plain string.
+  `glob`/`find`/`read`/`write`/`edit` keep showing their own target untouched (a `read`'s target
+  already carries its own `:start-end` range when one was given; `glob`/`find`'s target is
+  already just the pattern). No count is shown for `grep`'s "N matches in M files", `glob`/
+  `find`'s "N files", or `read`'s "N lines": none of their own OMP output shapes is a documented,
+  fixture-backed contract in this codebase (unlike `bash`'s own gated `Wall time:`/exit-code
+  footer, FR-061), and the issue's own rule is "no count rather than a wrong one" -- a future
+  slice may add these once a real shape is probed and fixture-backed, the same way #570 probed
+  `bash`'s own footer first. An `edit` call's own row shows its "+N −M" line stat (already
+  diffed for its expanded body, #630) alongside its duration; `write` keeps its existing "Wrote N
+  lines" body text and gets no new row stat, since no cache of a prior read/edit's content exists
+  to diff it against (a separate, substantial piece of work, #630's own comment already flagged
+  this as the open part of that idea).
+- Q: Issue #632's own bug #2 ("the command is cut off twice"): a call's row truncates its
+  command with an ellipsis, and the only way to read the whole thing used to be the Arguments
+  block #628 already removed. How is the full command shown now that there is no boxed
+  Arguments? → A: A row's own summary text wraps instead of truncating once the user expands
+  it, through `CollapsedLine`'s own opt-in `wrapWhenOpen` prop (gate round 1, H4: every tool row
+  passes it explicitly, rather than every `CollapsedLine` consumer wrapping automatically while
+  open, which would have wrapped callers that never asked for it) -- only the FIRST line of a
+  multi-line command is ever shown this way; the full, exact multi-line command is read in the
+  "View full call" dialog (#628), which still exists for the exact raw arguments and output.
+- Q: Is the "Explored" supergroup (runs of different read-only tools collapsing into one line)
+  part of this slice? → A: No, per the issue's own "Open decision (default: not in the first
+  slice)": `groupToolItems`'s rule (same tool name only) is unchanged; a future issue may propose
+  the supergroup separately.
+
+### Session 2026-10-18 (chat reading width)
+
+- Q: Issue #554 (ui-architect-v3 roundtable, Decided, Skippy, delegated by Stuart 2026-10-18):
+  `Transcript.tsx`'s `MessageScrollerContent` already carries an unconditional `max-w-4xl
+  mx-auto` (56rem, centred, authored 2026-10-08) -- not literally edge to edge despite FR-049's
+  wording and the issue's own "default full width" framing. Does shipping #554 remove that
+  incidental cap for "Full" (true edge to edge) and make "Reading column" the new ~64rem cap, or
+  does "Full" keep the existing 56rem and "Reading column" become some other value? → A: "Full"
+  removes the cap entirely (edge to edge, the literal FR-049 reading); "Reading column" is 64rem
+  (`max-w-[64rem]`, the mock's own `max-w-5xl`), centred, with the mock's side-padding ladder
+  (`px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16` -- a Tailwind v4 container
+  query against the chat pane's own `[container-type:size]` ancestor, not the window, gate round
+  2 fix M1). A fixed rem cap, never a `ch` measure (code/diffs/tables
+  must share the exact same width as prose, which a font-relative `ch` cap cannot guarantee).
+- Q: Does the composer (and the status line) follow the Reading column cap? → A: No. The Status
+  line already spans "the chat column's full width" regardless of the transcript's own content
+  width (`product-layout.md`); the composer and status line stay full pane width in both Chat
+  width options -- transcript only.
+- Q: Control type for the two-option setting? → A: Reuse `ThemePicker`'s hand-rolled roving-
+  tabindex `role="radiogroup"` pattern unchanged (live-preview-on-arrow, Save/Cancel) -- the
+  issue asks for exactly that interaction model, not merely its visual shape; the shared
+  `components/ui/radio-group.tsx` primitive (Space-selects, Home/End-move-focus-only) is the
+  wrong precedent, same reason `ThemePicker` itself was never migrated to it.
+- Q: Does the brand watermark (spec 012 FR-001/FR-006) or the scroll-to-end button re-anchor to
+  the narrower capped column? → A: No, both stay anchored to the full pane as today -- spec 012
+  anchors the watermark to "the reading area -- the scrollable transcript region", the whole
+  scrollable region, not a narrower content column inside it; re-anchoring would need its own
+  FR-001/FR-006 amendment, which this issue does not ask for.
+- Q: App-wide or per-Project/Session? → A: App-wide, one `Settings.chatWidth` row, matching
+  Theme, Approval mode and every other Appearance control; no per-Project/Session override exists
+  anywhere else in the settings model and none is asked for here.
+- Q: Placement in Settings? → A: Appearance section, directly below the Theme picker, inside the
+  same Save/Cancel row (the `isDirty` gate now covers both pickers) -- above the `<hr>` divider
+  that separates the Save/Cancel-governed controls from the instant-apply watermark `Switch`.
+- Q: Narrow-window/split-pane behaviour? → A: No special-cased breakpoint. `max-w-[64rem]` is a
+  ceiling, not a floor: a pane narrower than 64rem (including the 360px split-pane minimum) shows
+  the column simply filling the available width with no visible centring and no horizontal
+  scroll, satisfying WCAG 1.4.4/1.4.10 by construction.
+
+### Session 2026-10-17 (gate round 1)
+
+- Q: Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a command-style row showed the
+  tool name twice ("grep grep \"<pattern>\" <path>"; "bash $ <command>" read as near-duplicates
+  too), since the row's own `label` (the tool name) and its `summary` (`commandRowText`) both
+  named the tool. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-17, per the issue's own
+  mockup "✓  $ cd …", which shows no separate tool word on a command-style row): a `bash` or
+  `grep` call's own row (solo or nested inside a group) drops the separate visible tool-name
+  label entirely; the summary text carries the tool identity alone. The row's own accessible
+  name is unaffected and still starts with the tool name, so this is a visual-only change. Every
+  other tool (`glob`, `find`, `read`, `write`, `edit`) keeps its separate label, since its own
+  summary (the raw target) never restates the tool name.
+- Q: Gate round 1 (code-reviewer Medium, M4): `formatToolCommand`'s own `bash` branch took the
+  command's literal FIRST line, which could itself be blank (a leading newline) and gave no
+  signal that further lines existed. Fix? → A: The first NON-EMPTY line is shown instead, and a
+  trailing " …" is appended whenever the command actually has more than one line (blank or not),
+  so the row never silently implies a one-line command was the whole thing.
+- Q: Gate round 1 (accessibility-auditor/code-reviewer Medium, M5): a multi-call group's own
+  collapsed Error line used to prefix the failing call's own (raw) target only when that call
+  was NOT the group's last member, reasoning the header's own visible summary named it otherwise
+  -- but #632 already removed that summary entirely (FR-061). Fix? → A: The Error line's own
+  prefix is now unconditional, naming whichever call actually failed every time, through the
+  SAME `commandRowText` grammar the row itself shows (not the raw target); only the most
+  recently failed member's own line shows while the group is collapsed, with the group's own
+  "N failed" meta text (FR-008) signalling that others also failed, never a second line.
+- Q: Gate round 1 (code-reviewer Medium, M6): a multi-call group's own total time summed every
+  member's own `durationMs`, treating a missing value as zero -- silently understating the real
+  total as a partial sum presented as complete whenever even one member lacked a duration (for
+  example a history item missing a timing bound). Fix? → A: The total is shown only when EVERY
+  member in the group carries its own `durationMs`; otherwise it is omitted entirely from the
+  meta slot (the same "no count rather than a wrong one" rule the issue's own derived-count
+  table already follows), never a guess built from the members that do have one.
+
+### Session 2026-10-17 (quiet alert rows, gate round 2)
+
+- Q: Issue #560, gate round 2 (Code/Tests FAIL): FR-037 states the low-memory row's text as "Low
+  memory ({N} agents)", but the shipped row already said just "Low memory" (round 1's own "honest
+  agent count" fix, since the system's live-agent count -- idle, working, AND waiting on the user
+  -- and Triage's idle-only list can legitimately differ, so a count on the row would promise a
+  number Triage could not match). Does the row gain the count back, or does the spec drop it? →
+  A: Decided (Skippy, delegated by Stuart 2026-10-17): the spec drops it. FR-037 reworded to match
+  the shipped row; Triage's own dialog now states the idle count explicitly instead (it did not
+  before, despite `ProfileAlertRows.tsx`'s own comment claiming it already did).
+
+### Session 2026-10-16 (quiet composer)
+
+- Q: Issue #927 (v0.3.0 feedback item 4, from a GitHub Copilot screenshot pasted into chat):
+  Stuart finds the message box reads too heavy against the page -- Copilot's own composer is the
+  same colour as its page, with a barely visible border and borderless text-only controls along
+  the bottom. Should Refract's composer adopt the same quiet treatment? → A: Yes, in Dark and
+  Obsidian: the field's fill becomes fully transparent (shows the chat background through it,
+  not merely "more transparent than the page surface" as FR-040 originally said) with a faint
+  border around the soft `--divider` tone (a new `--composer-border` token); the textarea's own
+  focus outline becomes muted too, the same new token family (`--composer-focus`); the Approval
+  mode, Model, Reasoning and Attach triggers lose their visible border and fill at rest (the
+  existing `ghost` variant, reused, never a new class), showing a hover fill and the same muted
+  focus outline on keyboard focus. Easing the WCAG 1.4.11 non-text-contrast rule for this one
+  surface is accepted (recorded in `docs/design/accessibility.md` "Accepted departures"); focus
+  must still be visible, never removed. This replaces the 2026-10-04 "Composer tone" rule
+  (`docs/design/product-chat.md`) that required the fill to be strictly darker than the page.
+- Q: Does Dark (high contrast) get the same quiet treatment? → A: No -- that theme exists
+  specifically for accessibility, so it keeps its existing opaque fill, opaque 3:1 border and
+  full focus ring completely unchanged; only the token VALUES differ by theme (same rule already
+  governing every other preset-only difference in this app), never the markup or the component.
+- Q: Does the layout change -- for example merging Model and Reasoning into one trigger? → A:
+  No. Stuart declined merging them; Approval mode, Model, Reasoning and Attach stay four separate
+  triggers, ghost style only (decision from the issue's own grill, item 5).
+### Session 2026-10-17 (fuzzy slash-command search)
+
+- Q: Issue #947 (Decided, Skippy, delegated by Stuart; away mode, no grill with Stuart,
+  2026-10-16): the slash menu today only matches the START of a command's name or alias
+  (`SlashMenu.tsx`'s old `filterSlashCommands`), so a skill (listed as `skill:<name>`) is found
+  only by typing `/skill:` plus the exact start of its own name -- what should fuzzy matching
+  cover, and how should it rank? → A: Every command Refract lists -- built-ins, project/user
+  `file` commands, and `skill:<name>` entries -- from one ranked list, not a separate rule per
+  source; a skill matches on its name WITH or WITHOUT the `skill:` prefix (`/rev` finds
+  `skill:code-review`, `/skill` lists every skill via an ordinary prefix match); ranking is
+  exact, then prefix, then word-start (right after `-`, `_`, `:` or a space), then substring,
+  then subsequence (fzy-style, letters in order with gaps), ties keeping the existing
+  built-ins-first order; the description is searched too, but a description-only match always
+  ranks below every name match; matched characters in the rendered name show in bold, the rest
+  at normal weight. A hand-rolled scorer (`src/shared/slashCommandSearch.ts`, pure, no DOM)
+  replaces the old prefix-only filter; no new dependency.
+
+### Session 2026-10-17 (slash subcommand step; command replies and turn time)
+
+- Q: Gate follow-ups agreed on PR #923 (#917, `/advisor` per Session), issue #938 items 1 and 4:
+  choosing a command with verified subcommands (`/advisor`, `/fast`, `/slow`,
+  `/extended-context`, and any other command `SUPPORTED_OMP_COMMANDS` lists subcommands for)
+  then pressing Enter twice sends the bare command, which can toggle blindly; separately, a
+  command reply arriving after its own turn has already settled stretched that turn's own shown
+  elapsed time (22s becoming "1m 17s" in the #917 live screenshots). → A: The slash menu gains a
+  second step: picking a command with verified subcommands leaves the box reading `/name `
+  instead of closing, and that text itself IS the subcommand step's own query (no separate step
+  state) -- Enter/Tab there completes the full `/name subcommand ` invocation instead. An
+  untyped subcommand step lists `status` first (present on every session-scoped on/off/status
+  command), the rest in their existing order; a typed query ranks the same way issue #947 does.
+  Separately, a `command_output` frame's own reply now gets a distinct `command-output:` id
+  prefix (`COMMAND_OUTPUT_NOTICE_PREFIX`, `src/shared/commandOutputNotice.ts`/`src-tauri/src/omp/transcript/notice_prefixes.rs`),
+  which `computeTurnEnd` (`turnTiming.ts`) skips entirely -- the reply still renders normally,
+  only the turn-time MATH leaves it out. The other #938 items (refusal-text wording, short-notice
+  wrapping, Settings text, and the suspected duplicate render) are untouched by this story and
+  remain open on the issue.
+
+### Session 2026-10-18 (change-count colour and reasoning gauge)
+
+- Q: Issue #925 (Stuart's own `grill-with-docs` session, 2026-10-16, resolved in the issue body,
+  no open questions left): wherever a change-count stat ("N files changed +A -D") shows,
+  additions should read green and deletions red, with a zero count staying muted. Which
+  surfaces, and new tokens or reused ones? → A: Three surfaces (the composer status line's
+  Changes readout, the Session details card's identical diff line, and the Pull requests
+  Changes tab, including a per-file header issue #919 was meant to add but never shipped) get
+  dedicated `--diff-added`/`--diff-removed` tokens, reusing `DiffView.tsx`'s own insert/delete
+  hue so the counts match the diff view exactly; a zero count (either `+0` or `-0`) stays muted
+  in every case.
+- Q: Does this reopen issue #570's "done is neutral on tool rows" rule -- `toolRowLabels.tsx`'s
+  own `callMeta` deliberately dropped colour from an `edit` call's own "+N −M" row stat for
+  exactly that reason (PR #950 gate round 1, ui-architect-v3 finding H5) -- and is a Pull
+  requests list ROW (as opposed to the Changes TAB) in scope? → A: Decided (Skippy, delegated by
+  Stuart 2026-10-18, ui-architect-v3 roundtable): no to both. #925's own grill never reopened
+  #570's tool-row rule, and colouring a tool call's own edit stat would re-litigate a closed,
+  previously-gated decision; there is no Pull requests list row showing a change count today,
+  only the Changes tab, which is in scope.
+- Q: `--diff-added`/`--diff-removed` -- a new, independently-tunable hue, or an alias? → A:
+  Decided (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3 roundtable): a layer-3
+  component-token alias of the SAME `--state-working`/`--destructive` values
+  `DiffView.tsx`/`diff-view.css` already colour the diff gutter and its own expanded-body stat
+  with (issue #630) -- never a second hue, matching the #550 "do not create a second set" rule
+  the existing `--severity-success`/`--severity-error` roles already follow the same way.
+- Q: Issue #919 (open, never implemented: `ChangesTab.tsx`'s own per-file diff header has no
+  +/- counts at all, a #568 acceptance-criterion gap) -- #925's own grill already folds "the
+  per-file header #919 adds" into its own scope. Build it now, or defer #925's own colouring of
+  that surface until #919 ships separately? → A: Decided (Skippy, delegated by Stuart
+  2026-10-18): build it now, as part of this same change -- `DiffViewFromPatch`'s header gains
+  the `additions`/`deletions` props the issue's own "Suggested fix" names, coloured the same way
+  as every other surface; #919 closes alongside #925 rather than staying open with nothing left
+  to do.
+- Q: Issue #924 (Stuart's own `grill-with-docs` session, 2026-10-16, resolved in the issue body):
+  the Reasoning picker's and the Session details card's gauge icon is a fixed glyph regardless
+  of the Session's actual reasoning level. What should move, and how is `inherit` (or no reported
+  level at all) drawn? → A: A custom inline SVG needle sweeping across 7 even steps (`off` far
+  left, `medium` upright, `max` far right) reusing lucide's own `gauge` arc in its stroke style;
+  `inherit` draws at "the resolved level omp reports", which in practice is always `medium`'s own
+  centred angle -- `Session.lastThinkingLevel` (the only field either caller reads) is already
+  the model's resolved value by the time `get_state` echoes it back (`ipc-model.ts`'s own
+  comment: OMP resolves `inherit` before it is ever reported), so no second "resolved level"
+  field exists to read separately; a Session with no level reported at all falls back to the
+  identical centred angle.
+- Q: Is a single shared angle-mapping function and one SVG viewBox, reused at both the picker's
+  `size-3` and the card's `size-3.5`, sharp enough at 12px to tell `low` from `minimal` or `high`
+  from `medium`? → A: Decided (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3
+  roundtable): yes -- one function, one viewBox; the icon is decorative (`aria-hidden`) in both
+  places, and the level itself is already in the trigger's own visible and accessible text, so
+  the icon is never the sole way to read the level.
+
+### Session 2026-10-18 (Stage naming, green finished state, dependencies, Up next)
+
+- Q: Issue #941 (Stuart's own `grill-with-docs` session, 2026-10-15, all 7 points resolved in
+  the issue body, none deferred): the Subagent chain's Stages read "Stage 1" through "Stage 5"
+  with no indication what each was for, every finished agent draws a flat neutral check
+  regardless of surface, and the turn's own pending Todo phases are invisible. What changes, and
+  where? → A: A finished agent or Stage (never a tool row/group, FR-061's own rule unchanged)
+  draws a green check icon and green name/label text, the success token. A Stage's own name is
+  the first line of its batch `task()` call's own `context` argument (Markdown heading markers
+  and "Goal:" prefixes stripped, truncated to about 60 characters -- "Stage 1 · Quality gate for
+  #923"); absent a captured `context`, the agents' own shared name prefix ("Stage 1 · G923");
+  absent both, a bare "Stage N". Expanding a Stage additionally shows its own full context as
+  rendered Markdown (capped to about 6 lines) and each member's own one-line result; a Stage's
+  own "Uses:" names only real `agent://<id>` references its context or tasks make to an agent an
+  EARLIER Stage in the same turn actually started (dropped when unmatched or pointing forward).
+  Below the Subagent chain, a muted "Up next" list shows the agent's own pending Todo phases
+  (OMP `get_state().todoPhases`, name and outstanding task count), live state only -- never shown
+  for a reopened Conversation. Renders once per turn in the chat transcript only (a sibling of
+  the Subagent chain row); never inside the Subagent panel tree.
+- Q: Is the "Up next" list itself a new kind of Stage, or something else entirely? → A: Neither
+  a Stage nor a tool: a **Todo phase** is the agent's own planned work (its todo list), distinct
+  from a **Stage** (one `task()` batch); the glossary gained both terms (`CONTEXT.md`, PR #942).
+- Q: Gate round 2 (code-reviewer/test-reviewer High): FR-079's first draft said "a multi-agent
+  Stage's own header MUST state a name", implying a one-agent Stage keeps the older #563/gate
+  round 2 architect addendum B rule ("renders identically to a bare `SubagentRow`", FR-067) and
+  so never gets a name, green text, a context brief, or "Uses:" at all. Does a one-agent Stage
+  really lose every one of those, or was the wording simply too narrow? → A: Too narrow --
+  amended above (FR-079): a one-agent Stage gets the SAME name/green/brief/"Uses:" treatment as
+  any other Stage (with no `context`, its own name IS the label, since there is only one agent
+  to name; with a `context`, the agent's own name shows alongside the context-derived label as
+  the row's summary). The one piece of the superseded rule that stays true: a one-agent Stage
+  still never auto-expands by itself (FR-067's own "renders collapsed by default"), independent
+  of its status.
+
+### Session 2026-10-18 (Stage row focus and toggle follow-ups)
+
+- Q: Issue #991 (gate follow-ups from the #941 lane's final gate, PR #979, four-round rule):
+  a running multi-agent Stage auto-closes on finish even when a keyboard user has focus inside
+  its content, Radix unmounts the content and focus falls to `<body>` (WCAG 2.4.3). Fix? → A:
+  ui-architect-v3 ruling (posted on the issue): the same "sync upward only, never auto-close"
+  rule already shipped for the per-turn Subagent chain row (FR-068, decision 2026-10-18) applies
+  to the Stage row too -- the "documented design" rationale for treating them differently did
+  not hold up: pre-#941 the row used an uncontrolled `defaultOpen` Radix never re-applied after
+  mount, so a Stage settling to green never actually auto-closed before #941's own mount-bug
+  fix introduced the bidirectional sync as a side effect, not a deliberately separate choice.
+  Removing the auto-close also resolves the focus-loss defect directly: the only way a Stage
+  row closes now is the user's own activation of its own trigger, which already holds focus.
+- Q: Does this also settle item 4 (a mouse user reading a Stage row while it auto-closes on an
+  all-success finish)? → A: Yes, the same change answers both: the row no longer auto-closes
+  on an all-success finish at all, for a mouse or a keyboard user.
+- Q: `userToggledRef`/`open` live in a plain `useRef`/`useState` pair for both the Stage row and
+  the Subagent chain row, so a manual toggle is forgotten if the row remounts (a session switch,
+  or the chain row's own `stages.length` dropping below 2 and later rising again)? → A: Moved to
+  a new `useStageToggleStore` (`src/renderer/state/stage-toggle-store.ts`), non-persisted,
+  keyed by session id plus the row's own stable id (a Stage's `group.id`, or `chain:<first
+  stage id>` for the chain row). Same convention as `alert-dismiss-store.ts`: reset only by a
+  full app restart, never written to `settings.json`/disk.
+- Q: `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` finds a Stage's own title
+  by a plain `document.querySelector`, which returns the FIRST matching element in the whole
+  document -- the per-turn chain row's own `ChainStageLine` repeats the same Stage label text
+  in its own `title` once the chain row is open (its default state), so this only ever found
+  the right element because Stage rows happen to render earlier in the DOM. Scope it? → A:
+  Yes -- scoped to an element whose closest ancestor is a real per-position row
+  (`data-slot="message-scroller-item"`, `MessageScrollerItem`); the chain row has no such
+  ancestor, so it can never match the chain row's own duplicate regardless of DOM order.
+- Q: Gate round 1 (ui-architect-v3/code-reviewer/test-reviewer, unanimous): the store above
+  persists BOTH the auto-open latch and the user's own manual choice together -- is that right?
+  → A: No, amended: the store holds ONLY the user's own manual choice. The auto-open latch
+  ("has this row ever been open while running/unsettled") moved into a new shared
+  `useStickyDisclosure` hook's own LOCAL component state (`useStickyDisclosure.ts`) -- it needs
+  no persistence, since recomputing it fresh on every mount is already correct; only a
+  deliberate user override needs to survive a remount. The two rows' duplicated toggle logic
+  folded into this one hook (code-reviewer, DRY).
+- Q: Gate round 1 (test-reviewer): does the live check's selector-scoping phase (item 3) prove a
+  genuine red/green regression? → A: No -- corrected: Stage rows always render BEFORE the
+  per-turn chain row in `Transcript.tsx`'s own DOM order, so even the OLD unscoped
+  `document.querySelector` would already resolve correctly in this exact fixture. The fix is
+  order-independent hardening (proved by the live-check's own count + ancestor checks), not a
+  demonstrable regression against this fixture's DOM shape; the live check records this
+  honestly rather than claiming a false red/green pass.
+- Q: Gate round 1 (accessibility-auditor): "no more path left that drops focus" (the original
+  wording) is an overclaim? → A: Yes -- corrected to "no more AUTO-CLOSE path": a solo Stage's
+  own body still swaps for a member list the instant a second agent streams into the same
+  Stage, which can still unmount whatever was focused inside it. That is a separate,
+  pre-existing defect from #941, not fixed here -- filed as its own follow-up (Main, gate round
+  1) rather than folded into this fix.
+
+- Q: Gate round 2 (code-reviewer): the decision above also claimed a manual toggle needed to
+  survive the chain row's own unmount "whenever a turn's Stage count drops back below 2" -- is
+  that a real remount? → A: No -- corrected: returning `null` from a React component does not
+  unmount it or reset its hooks; the only genuine remount this needs to survive is a session
+  switch (ordinary keyed-list reconciliation, a different Session's own row set).
+- Q: Gate round 2 (code-reviewer): `useStickyDisclosure`'s own `open` showed one stale closed
+  frame right as a Stage started running -- why? → A: The latch's own effect only commits on
+  the render AFTER `autoOpen` first turns true (effects run post-commit). Fixed:
+  `manualOpen ?? (latchedAutoOpen || autoOpen)`, ORing in the current value closes the lag.
+- Q: Gate round 2 (UI Lows): does a user's manual close on a Stage get overridden if it later
+  fails, and what happens to a toggle attempted before the chain row has a real row id? → A:
+  Decided (Skippy, delegated by Stuart 2026-10-18): the manual close wins permanently (the
+  failure still surfaces through the closed Stage's own header -- its red icon and "N done, M
+  failed" roll-up show regardless of expand state -- the chain row's own roll-up when the turn
+  has 2 or more Stages, and the screen-reader-only settle announcement; there is no toast);
+  the pre-row-id toggle (the row id is missing only while `stages` is empty) only ever happens
+  while `stages.length < 2` -- the chain row renders nothing at all for that whole range
+  (FR-068's own gate, which also covers a turn with exactly one Stage, where the row id IS
+  already defined), so there is never a visible trigger to have toggled either way.
+### Session 2026-10-18 (slash refusal text, notice wrap, advisor settings mention, duplicate-render investigation)
+
+- Q: Issue #938 item 2 (gate follow-up from PR #923/#917, still open after #954): the generic
+  unsupported-arguments refusal ("/{name} doesn't support arguments yet. Try /{name} on its
+  own.") shows for `/advisor dump`, `/advisor configure`, and any typo, even when the command
+  has verified subcommands. What should it say instead? → A: Decided (Skippy, delegated by
+  Stuart, 2026-10-18): when the matched builtin command has one or more verified subcommands
+  (FR-032), the refusal lists them instead: "/{name} takes one of: {sub1}, {sub2}, ...." (e.g.
+  "/advisor takes one of: on, off, status."). A command with no verified subcommands at all
+  (`/dump`, `/switch`'s free-form argument, an unknown name) keeps the existing generic
+  wording -- there is nothing to usefully list.
+- Q: Gate round 1 (UI/Code/A11y, decided by ui-architect-v3): when the first word after the
+  command IS a valid subcommand but extra text follows (`/advisor on now`), does the "takes one
+  of" listing still make sense, since `on` is already correct? → A: No -- that wording would
+  wrongly suggest the typed subcommand itself is unrecognised. The refusal instead reads
+  "/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own." (e.g.
+  "/advisor on doesn't take more text yet. Try /advisor on on its own."); "takes one of: ..." is
+  reserved for when the first word itself is not a recognised subcommand (FR-081).
+- Q: Issue #938 item 3 (still open after #954): a short notice (`NoticeRow.tsx`) can still lose
+  text to its own one-line ellipsis close to the 160-char threshold (`/advisor status`'s spend
+  clause). Wrap it in place (`summaryWrap`), or make every short notice expandable? → A:
+  `ui-architect-v3` roundtable ruling, 2026-10-18: `summaryWrap` -- the existing no-children
+  "wrap instead of truncate" escape hatch (`CollapsedLine.tsx`, already used by the Subagents
+  panel for the identical failure mode). Making every short notice expandable would add a
+  chevron/trigger that leads nowhere on the common case (nothing is actually hidden beyond the
+  same clause re-wrapped), misrepresenting the row's own structure.
+- Q: Issue #938 item 5 (still open after #954): should `ModelRolesSection.tsx`'s Advisor role
+  description mention how to turn the advisor on? → A: Decided (Skippy, delegated by Stuart,
+  2026-10-18): yes. Gate round 1 wording decided by ui-architect-v3: "Reviews a Session's turns
+  while the Advisor is on (/advisor on); falls back to Slow." The description renders as plain
+  text (no markdown), so the slash command shows as literal text, consistent with how a
+  refusal message or a notice already shows a literal command name elsewhere in the app.
+- Q: Issue #938 item 6 (possible duplicate render, not yet investigated as of #954): the
+  #917/#954 live-check screenshots show the assistant's own sentinel answer
+  ("t917turn"/"t947turn") appearing more than once in one turn. A duplicate render, or two real
+  text blocks from the model? → A: Investigated, not a bug (Skippy, delegated by Stuart,
+  2026-10-18; corrected, gate round 1 -- a first draft of this answer wrongly blamed the
+  live-check scripts' own wait condition alone): read against the real OMP session log, the
+  #917 screenshot's three occurrences are the user's own prompt (which deliberately contains
+  the sentinel word as an instruction) plus TWO separate, real assistant messages, each with
+  its own `message_id`: the model called the hidden `todo` tool, replied "t917turn", and
+  stopped; OMP's own incomplete-todo reminder ("You stopped with 1 incomplete todo item(s)")
+  made it continue, mark the todo done, and reply "t917turn" again. A second, independent
+  #954/#947 verify run's own session log shows the identical shape against "t947turn",
+  confirming this is the general mechanism, not a one-off.
+  `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
+  (`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot as a full replace
+  keyed by `message_id`/`message_id:index`, so no code path can render one message's own
+  content index twice -- each of the three rows is real, distinct, and announced once; not a
+  duplicate render. No change made.
+### Session 2026-10-18 (async-result Stage scoping, issue #989)
+
+- Q: Issue #989 (filed by the #941 lane from PR #979, 2026-10-18): `apply_async_result_jobs`
+  (`subagent_items.rs`) matches an async-result frame's `details.jobs[]` entries against EVERY
+  `subagent` item in the whole turn by bare `job_id`/`label` string, with no scoping to the
+  owning `tool_call_id` at all -- so when two Stages run a same-named subagent (fixture
+  `stages-941.jsonl`'s own "Story559" in both Stage 2 and Stage 5), a job whose own wire `id` is
+  just its `label` echoed back (never a session-unique value) can match an unrelated, already-
+  settled earlier Stage's row, overwriting its `status`/`duration_ms`/`result`/`job_id`. The
+  frame itself carries no `tool_call_id` to scope against directly (confirmed against every
+  `async-result` message in both the pre-existing `subagents*.jsonl` fixtures and
+  `stages-941.jsonl`: `details` is only ever `{ jobs: [{ id, label, status, resultText |
+  errorText, durationMs }] }`). What is the narrowest correct match key? → A: Scope to the
+  item's own resolution state, not a wire field that does not exist: an item whose `result` is
+  already set was resolved by an earlier async-result and MUST never be touched again by a
+  later one sharing its `job_id`/label, regardless of which Stage that later job belongs to;
+  among still-unresolved items (`result.is_none()`) a job_id match is tried first, falling back
+  to a label match, and if several unresolved items still race for the same job (two Stages
+  genuinely running concurrently) the most recently started one wins -- the issue's own
+  documented fallback ("prefer the latest unfinished entry with that label"). Each job claims at
+  most one item per call so two jobs in one frame can never land on the same row. Decided
+  (Skippy, delegated by Stuart 2026-10-18): matching stays a pure Rust-side scoping fix
+  (`apply_async_result_jobs`); no wire-format/omp change requested, since no `tool_call_id` is
+  available there to request.
+
+### Session 2026-10-18 (async-result Stage scoping, issue #989, gate round 2)
+
+- Q: Gate round 2 (code-reviewer Critical/Q1): the previous Clarification answer above (Scope
+  to `result.is_none()`, job_id tried before label, latest `started_at` as the ONLY tie-break)
+  reopens the exact #989 clobber through a different combination of unresolved rows -- a batch-
+  failed earlier Stage can pick up a `job_id` from its own progress read and, being merely
+  "unresolved" rather than genuinely still running, wrongly out-rank a later Stage that is still
+  actually in flight. The async-result message is also applied TWICE live (`message_start` then
+  `message_end`), risking the same job landing on two different rows across the two deliveries.
+  What is the corrected rule? → A: **The previous answer above is SUPERSEDED by this one.**
+  Two changes: (1) a custom `async-result` message's jobs are now applied exactly ONCE, on
+  `message_end` only (`apply_message_snapshot`'s `streaming` flag gates it) -- matching what
+  history replay already did -- so there is no second delivery to defend against at all; (2)
+  candidates are ranked by THREE tiers, each only a tie-break for the one before it: a still-
+  **Running** row beats one already ended by its own batch result (Error/Cancelled/Done without
+  ever getting a real async result); a `job_id` match beats a label-only match; the latest
+  `started_at` wins any remaining tie. A row still only becomes settled (permanently excluded)
+  once a job carrying REAL data (`resultText`/`errorText`/`schema.data`) resolves it -- a bare
+  label-echo fallback (the `wait` tool's shape with no text at all) never settles a row.
+  **Known, accepted limit (tracked on #712, not fixed here)**: any overlap of two same-name
+  jobs whose own async-result is still outstanding, both still Running when the shared-name job
+  arrives (tier 1 ties; tier 2 ties too, gate round 3 narrows it to a Running-only comparison) --
+  tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key, since this
+  frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. FR-085's
+  guarantee is narrowed accordingly: it holds for Stages that run one after another (including
+  this fixture's own Stage 2/Stage 5, which never overlap), not for two Stages the agent
+  genuinely runs at the same time with an identical subagent name.
+
+### Session 2026-10-18 (async-result Stage scoping, issue #989, gate round 3)
+
+- Q: Gate round 3 (code-reviewer FAIL, item 1): is `message_end` actually guaranteed for a
+  custom `async-result` message on the real omp RPC stream, or is that merely an assumption the
+  `stages-941.jsonl` fixture (itself SYNTHESIZED, not captured live, per its own header comment)
+  happens to satisfy? → A: Guaranteed, confirmed directly from the installed omp 18.11.1
+  binary's own embedded source (no separate npm/bun-global install exists to read source from;
+  the compiled binary's own bundled JS strings were extracted and read instead).
+  `packages/agent/src/agent-loop.ts`'s own `rt(e, t)` helper is the ONE place in the whole
+  binary that constructs a `message_start` frame, and it unconditionally pushes one immediately
+  followed by a `message_end` for the same message, with no code path anywhere that pushes one
+  without the other; an async-result message (built by `packages/coding-agent/src/session/
+  async-job-delivery.ts`'s own job-delivery function, confirmed matching this repo's own
+  fixture/Rust field shape) is appended the same way as any other message, through this exact
+  pair. The gate-round-2 design (apply at `message_end` only) is therefore grounded in real omp
+  behaviour, not a fixture coincidence.
+- Q: Gate round 3 (code-reviewer HIGH, item 2): the same real-omp source also confirms
+  `display: true` is always set on an async-result message -- does that leak a stray Notice row
+  into the transcript? → A: It did, on `message_start` specifically, before this fix: with job
+  application now skipped on `message_start` (gate round 2), that frame fell through every
+  other `custom` arm to the plain `display == true` Notice branch, leaving a permanent Notice
+  row (the raw job-summary text) that `message_end`'s own application never replaced or removed.
+  Fixed by short-circuiting on the `async-result` custom type itself, before any other `custom`
+  arm: it now never builds a Notice/advisory/agent-message item at any frame on the LIVE path
+  (history replay keeps its own, separate, unchanged fallthrough for a stored message with no
+  `details.jobs`).
+- Q: Gate round 3 (code-reviewer LOW, item 3, decided): should tier 2 (`job_id` beats
+  label-only) apply even when the `job_id`-matching row is NOT currently Running? → A: No --
+  narrowed to apply ONLY between two rows that are both still Running; a `job_id` match from a
+  row that is itself not running must never out-rank a label-only match just because it shares
+  this job's `job_id`. Among two not-running rows, tier 2 ties and tier 3 (`started_at`) decides
+  directly -- the known-limit sentence above is widened accordingly.
+- Q: Gate round 3 (code-reviewer MEDIUM, item 4): were the doc citations accurate? → A: No, two
+  were wrong, both corrected: the claim that `subagents.jsonl`/`subagents-background-turn.jsonl`
+  were "checked against every async-result message" was false (neither has any async-result
+  message at all; only `stages-941.jsonl` does), and the `msg-ar1` `message_start`/`message_end`
+  pair sits at the real fixture's own lines 66/67, not 19/20 (the earlier citation came from a
+  filtered, comment-and-blank-line-stripped array, not the real file).
+
+### Session 2026-10-18 (Conversation history hiding a long-first-message Conversation, issue #862)
+
+- Q: Issue #862: OMP now writes a `memory_recall` entry (about 8.6 KB) and eager todo/task
+  prelude entries before the first user message, so the Rust Conversation-history listing's old
+  fixed `PREVIEW_SCAN_BYTES = 8 * 1024` window never reaches it and silently skips the whole
+  Conversation. How should the listing find the first user message without reading whole
+  multi-megabyte Conversation files in full? → A: Decided (Skippy, delegated by Stuart,
+  2026-10-18): stream complete JSONL lines (so a record is never parsed out of a byte buffer
+  that can cut it off mid-line) up to a 64 KiB hard cap on total bytes read per file -- generous
+  headroom over the ~11 KB observed in the wild, while remaining far cheaper than reading a
+  14 MB file in full (research.md decision 21). Reading stops the instant the first `role:
+  'user'` message is found, so the common case (first message well inside the cap) is cheaper
+  still. A file whose cap is hit before any user message is found is still listed (its own
+  title, with an empty preview) rather than hidden; only a file that reaches genuine end-of-file
+  within the cap with no user message anywhere is skipped, unchanged from the existing rule.
+- Q: Does finding the title need its own, separately bounded read? → A: No -- `omp://session.md`
+  ("File Format"): OMP physically fixes the title at a 256-byte slot that is always the file's
+  first line, well inside the 64 KiB preview-scan cap either way, so the same single streaming
+  pass reads it for free; no separate read is needed.
+- Q: Does Electron's own identical `PREVIEW_SCAN_BYTES` bug (`src/main/conversations.ts`) need
+  the same fix? → A: No (per the issue's own acceptance criteria): Electron is being retired
+  (epic #797, R13) and gets no further fixes; only the Rust build (`src-tauri`) is fixed here.
+- Q: Gate round 1 (code-reviewer/test-reviewer, PR #1006): a Conversation whose first user
+  message is image-only (or otherwise has empty/missing `content`) currently returns `None` once
+  the scan reaches real end-of-file with no non-empty-text message ever found, hiding the row --
+  the same bug FR-086 exists to fix, under a different trigger. Does "found" require non-empty
+  text? → A: No (Decided, Skippy, delegated by Stuart 2026-10-18): any `role: 'user'` message
+  counts as found, whatever its content; `preview` is its first text part, or an empty string
+  when it has none. The scan stops there -- it never continues past the first user message
+  looking for a later one with non-empty text -- matching FR-086's "never hide a row" rule
+  exactly, not a narrower "find the first message with visible text" one.
+
+### Session 2026-10-18 (Stage rows defer running auto-open to the chain row, #1000)
+
+- Q: Issue #1000: in a turn with two or more Stages, every running Stage row auto-opens AND
+  stays open (FR-084's upward-only rule), while the per-turn Subagent chain row also lists the
+  same agents, so a turn can show each agent expanded twice over. Fix? → A: Decided (Skippy,
+  delegated by Stuart 2026-10-18, ruling by ui-architect-v3 at PR #999's own gate): once a turn
+  has two or more Stages, a Stage row auto-opens only on failed, cancelled, or exited -- no
+  longer merely on running; the chain row already carries the live running overview once a
+  turn reaches two Stages. A single-Stage turn is unaffected: it keeps today's running
+  auto-open (there is no chain row yet to carry an overview for it). Declined alternative:
+  collapsing an untouched previous-turn row on the next send -- brings back auto-close and the
+  focus drop FR-084/#991 removed, and risks a scroll shift from the `content-visibility` rows.
+- Q: What counts as "a turn has two or more Stages" while a later Stage has not started
+  streaming yet (so only one Stage currently exists)? → A: The turn's own live-grouped Stage
+  count so far (`StageGroup.totalStages`, recomputed on every grouping pass, the same number
+  "of N" in a Stage's own accessible name already states) -- there is no way for the renderer
+  to know in advance how many Stages a turn will eventually have, so a Stage currently alone
+  keeps today's single-Stage running auto-open until a second Stage's own first item actually
+  streams in, at which point every Stage in the turn (including one already auto-opened while
+  running) is reclassified multi-Stage.
+- Q: Does a Stage already auto-opened while running stay open once a second Stage appears and
+  reclassifies the turn as multi-Stage? → A: Yes, unconditionally -- FR-084's own upward-only
+  disclosure rule already guarantees this with no further change: the auto-open LATCH a Stage
+  row sets while running persists in its own local component state for the row's whole mount,
+  independent of any later recompute of the auto-open CONDITION itself.
+
+### Session 2026-10-18 (Stop-cut-short tool rows settle neutral, issue #911)
+
+- Q: Issue #911 (Decided, Skippy, delegated by Stuart 2026-10-18): confirmed live during #570's
+  own gate round 1 (`verify-570-tool-colours.mjs` turn (c), 2026-10-16, real signed-in `omp`;
+  flagged there as an [INFERENCE] by `ui-architect-v3`, then confirmed, not merely inferred) --
+  clicking Stop on a running tool call settles that row to `error`: red icon, red label, and an
+  Error line reading "Command aborted", the identical full failed treatment a genuine failure
+  gets, since OMP closes the cut-short call's own `tool_execution_end` with `isError:true` and
+  carries no field of its own that says why. Tool rows had no `cancelled` state the way
+  subagents already do (#563 decision 15). Fix? → A: A new tool-row `cancelled` status
+  (`ToolStatus::Cancelled` / `RowStatus` `'cancelled'`), reusing the SAME stop-circle icon and
+  neutral muted colour `subagentStatus.tsx`'s own subagent `cancelled` already uses
+  (`statusGlyph.ts`), with a muted "Stopped" label -- never "Failed", and never the `ask`
+  tool's own pre-existing "Cancelled" wording either (that stays reserved for a cancelled
+  question, unaffected, though the new tool status reads the same way there since an
+  unanswered question is an unanswered question either way). Distinguished by Refract's OWN
+  per-turn abort-request signal (`chat.stop`'s own `abort` RPC sets
+  `AgentState.turn_abort_requested`, cleared once the turn fully settles), never by matching
+  the call's own error text ("Command aborted" is OMP's wording, not a documented contract):
+  `apply_tool_execution_end` applies it only to a call that was genuinely still `running` when
+  the flag was set, so a genuine failure in the same or a later turn still settles `error`.
+  `finalize_live_transcript`'s process-exit path (a Session-level stop/crash, not the chat
+  pane's own Stop button) is extended the same way, mirroring the existing
+  `SubagentFinalizeCause::UserStop` split exactly (`Cancelled` vs. `Crash` -> `Error`) rather
+  than leaving Tool rows as the one remaining exception to that split.
+- Q: Does a multi-call group with one stopped member and no failed member settle to `error`,
+  `interrupted`, or something new? → A: A new `cancelled` group status, ranked between
+  `interrupted` and `done` in the group's own worst-state order (a genuine `error` anywhere in
+  the group still wins, unchanged); the group's own meta slot gains an "N stopped" count
+  alongside "N failed"/"N interrupted", in the same neutral (never red) colour "N interrupted"
+  already uses.
+- Q: Does "Show tool calls" off still force a cancelled-only group visible, the way a failed or
+  interrupted one already does (FR-008)? → A: No -- "nothing is known to have gone wrong" (the
+  issue's own wording) makes a user-stopped call exactly as unremarkable as a plain `done` one,
+  so it is governed by the same toggle, never force-shown.
+
+### Session 2026-10-18 (issue #911, gate round 1)
+
+- Q: Gate round 1 (code-reviewer/test-reviewer FAIL, item 1 High): `turn_abort_requested` was
+  only ever cleared by `handle_turn_settled`, so it could leak into a NEXT turn across a
+  settle-gap race, and was set whenever status was merely "not Idle" (also true `Stopped`
+  mid-launch, with no live turn to cut short). Fix? → A: Decided (Skippy, delegated by Stuart
+  2026-10-18): only SET while a turn is genuinely in flight (`Working`/`NeedsYou` status AND
+  `turn_generation` odd); clear it on every new turn (`agent_start`, covering a queued
+  follow-up/steer's own next turn too), on a fresh process launch/attach, on process exit
+  (`handle_exit`, same lock as `state.process = None`), and when `chat.stop`'s own `abort` RPC
+  errors, times out, or returns `success != true` (the stop never actually took effect).
+- Q: Gate round 1 (code-reviewer Medium, item 3): if the process exits (crash, or the session
+  itself is killed) WHILE a chat-pane Stop was already in flight for the current turn, does a
+  cut-short call still settle `Cancelled`, or does the process-exit path's own
+  `SubagentFinalizeCause` miss it (only `requested && stop_requested`, the session-level kill
+  signal, not the turn-level one)? → A: `turn_abort_requested` now also drives
+  `handle_exit`'s own `finalize_cause` (`(requested && stop_requested) || turn_abort_requested`
+  -> `UserStop`), so both Tool and Subagent rows still settle `Cancelled`/`Exited` correctly
+  either way.
+- Q: Gate round 1 (accessibility-auditor/code-reviewer Medium, item 4): a subagent still
+  running under a stopped `task` batch call only settled `Cancelled` when OMP's own per-agent
+  `progress[i].status` entry itself said `cancelled`/`aborted` -- a still-Running member with no
+  such entry (or a stale `pending`) fell back to `Error`, the exact bug #911 is about, just on
+  the Subagent side. Fix? → A: `apply_batch_task_result` now also settles a member `Cancelled`
+  when `turn_abort_requested` is set AND that member was genuinely still `Running`, regardless
+  of what (or whether) OMP's own progress entry says.
+- Q: Gate round 1 (UI+Code, item 5): reopening a Conversation from history re-derives every
+  tool row's status from the persisted `isError`/result shape alone -- there is no persisted
+  signal for "the user's Stop was in flight when this settled". A reopened history row for a
+  Stop-cut-short call therefore reads `error` (red), not `cancelled` (neutral), even though it
+  read neutral live. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): a KNOWN,
+  accepted limitation -- recorded here, in Phase 65, and as a live-check `notExercised` entry.
+  Explicitly NOT fixed by inventing a heuristic from the call's own error text (the entire
+  point of this issue is that matching text like "Command aborted" is not a reliable signal);
+  the real fix would need OMP to persist a distinguishable marker, which is out of scope here.
+- Q: Gate round 1 (UI Medium, item 6): one Stop click produces three different words across
+  three surfaces -- "Stopped" (tool row), "Cancelled" (subagent row), "Turn aborted." (the
+  `prompt_result{status:"aborted"}` notice). Unify? → A: Investigated whether subagent
+  `Cancelled` has any source OTHER than the user's own Stop: YES -- `map_progress_status`
+  (`subagent_items.rs`) maps OMP's own live per-agent `progress[i].status` string
+  (`"cancelled"`/`"aborted"`) to `Cancelled` unconditionally, independent of
+  `turn_abort_requested`, whenever OMP itself reports a subagent that way (for example a
+  parent task deciding to cancel one of its own children) -- so "Cancelled" for subagents is
+  NOT exclusively a Stop-click word and stays as-is. Decided (Skippy, delegated by Stuart
+  2026-10-18): the notice's own wording changes from "Turn aborted." to "Turn stopped." (OMP's
+  internal "aborted" term replaced with the chat pane's own Stop button word); the tool row's
+  "Stopped" word is unchanged (it IS exclusively a Stop-click word there, confirmed by
+  `apply_tool_execution_end`'s own `turn_abort_requested` gate). The `ask` tool's own
+  pre-existing "Cancelled" wording (`RequestCard.tsx`) also stays: an `ask` call can be
+  cancelled by the process/Conversation ending with no answer, independent of a Stop click, the
+  same "other sources exist" reasoning.
+- Q: Gate round 1 (Low, item 9): is the new "Stopped" status word ever shown VISIBLY, the way
+  "Failed"/"Done" already are? → A: Only where every other status word already is: `sr-only`
+  inside a solo/group header's icon slot (`StatusIcon`, never visible text there for ANY
+  status), and genuinely visible in two places that already show every other status word the
+  same way -- the group meta slot's "N stopped" count, and `ToolCallDialog.tsx`'s own small
+  "View full call" header. No new visible-label surface was added or is needed.
+
+### Session 2026-10-18 (Stage label colour and jump-to-Stage, #1008)
+
+- Q: Issue #1008 (ui-architect-v3 gate on PR #1007/#1000): a finished Stage's own label gets
+  green text (FR-079) but a failed Stage's own label stays default colour, only its icon
+  turning red -- `ToolRow.tsx` already applies `text-severity-error` to a failed tool row's
+  label the same way. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): apply
+  `text-severity-error` to a failed Stage's own label exactly the same way, on both the
+  in-place Stage row and the per-turn chain row's own terse per-Stage summary line.
+- Q: The chain row's own "Stage N" text (`ChainStageLine`) has no way to jump to the Stage row
+  it describes. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): make it a real,
+  keyboard-reachable button ("Go to Stage N") that scrolls that Stage's own row into view,
+  opens it (through the same persisted manual-open path FR-084/#991 already reads, so a jump
+  counts as the user's own deliberate open), and moves keyboard focus to that Stage row's own
+  trigger.
+
+### Session 2026-10-19 (One-agent to two-agent Stage focus-loss, #1001)
+
+- Q: Issue #1001 (found by the accessibility auditor at PR #999's own gate, filed 2026-10-18,
+  pre-existing since #941): a one-agent Stage renders a bare `SubagentBody`; the instant a
+  second agent streams into the same Stage, the content swaps to a `SpineList` of
+  `SubagentRow`s, unmounting whatever was focused inside the first member's own Prompt/Result
+  code block, which the browser then drops to `<body>` (WCAG 2.4.3). Decided (Skippy, delegated
+  by Stuart 2026-10-18): keep the one-agent body mounted as the first spine entry (no remount)
+  if the structure allows; otherwise move focus to the Stage trigger when focused content is
+  removed. Which did the structure allow? → A: Decided (Skippy, delegated by Stuart 2026-10-19):
+  the no-remount path does not allow it cleanly -- pre-wrapping the solo body in the same
+  `SpineList`/`SpineItem` shape a joining second member would need either draws the Spine's own
+  rail/indent for every solo Stage (a permanent, unrelated visual regression, since today's solo
+  Stage deliberately renders with no Spine chrome at all) or leaves the FIRST member looking
+  different from every later one forever (no `SubagentRow` header/chevron, contradicting FR-067's
+  own "never switch element type between solo and multi members" rule from #563). The fallback
+  is implemented instead: the Stage's own content wrapper tracks whether focus sits inside it via
+  a plain `focusin`/`focusout` listener (removing a focused node blurs it to `<body>`
+  synchronously in every real browser, so there is no later point at which the just-removed
+  element can be asked whether it held focus); the instant the one-to-two-member transition is
+  observed with focus known to have been inside, focus moves to the Stage's own trigger --
+  mirroring `Transcript.tsx`'s own established "move focus to a still-mounted anchor" remedy for
+  an analogous removed-while-focused control (its "Scroll to end" button going `inert`).
+
+### Session 2026-10-19 (Code-block background follows theme surface, #975)
+
+- Q: Issue #975 (follow-up from #551 gate round 1): a fenced code block's header (`bg-muted`)
+  and its Shiki-highlighted body (whatever fixed background the bundled syntax theme ships
+  with) never shared one literal surface, most visible as a genuine colour-family clash under
+  Cyber Amber (a warm amber header directly atop a cool blue-grey `github-dark` body -- the two
+  other `github-dark` presets, Nordic Frost and Dark, were less jarring only because their own
+  hue/temperature happens to sit closer to `github-dark`'s). Which surface should the body
+  follow, and how is Shiki's own fixed background actually removed, given it is reused by four
+  presets? -> A: Decided (Skippy, delegated by Stuart 2026-10-19): take the issue's own
+  proposal -- the header moves to `--card` (matching the body/gutter's existing `bg-card`, the
+  surface the issue's own title names), and Shiki's own root background is neutralised via
+  `codeToHtml`'s `colorReplacements` option (probed against the installed shiki@4.4.3: the one
+  per-call override that replaces a literal colour, including the root background, throughout
+  the rendered HTML; keyed on the loaded theme's own resolved `.bg`, never a hand-copied
+  literal). Every token colour the chosen `syntaxTheme` ships (keywords, strings, comments, its
+  own default text colour) MUST still clear 4.5:1 against the new `--card` background in every
+  preset; where one falls short, swap that preset's own `syntaxTheme` or retune its surface
+  token, never drop below the floor. `github-dark`'s own comment colour (`#6a737d`) cannot
+  clear 4.5:1 against ANY near-black background -- even literal pure black caps out at
+  ~4.36:1 -- so no surface retune could ever fix it: `dark`, `obsidian`, `nordic-frost` and
+  `cyber-amber` (all `github-dark`) move to `github-dark-default` (GitHub's own newer theme,
+  same vendor family), whose comment colour clears 4.5:1 against every one of those presets'
+  own `--card` with margin (worst case 5.35:1, Obsidian). `dark-high-contrast`'s own
+  `github-dark-high-contrast` is unaffected -- its comment colour already clears 11.31:1
+  against its own `--card`.
+
+### Session 2026-10-19 (Session delete: leftover summary and holder preflight, issue #891)
+
+- Q: Deleting a session whose worktree held a full `node_modules` tree (156k files, paths over 260 characters) dead-ended, and a worktree still held open by a terminal or File Explorer window left Delete stuck. What should the Delete dialog show, and when? → A: Decided (Stuart, 2026-10-19, issue #891): a background filesystem walk starts the instant the dialog opens. It lists generated folders (for example `node_modules`) by name with file counts, and other files by path, capped with "and N more"; the dialog shows "Checking files…" until it finishes, and Delete stays enabled throughout regardless of the walk's own state.
+- Q: Should Refract check for a program still holding the worktree open, and if so when relative to stopping the session's agent? → A: Decided (Stuart, 2026-10-19, issue #891): yes, and the check runs before the agent is stopped, so a refused Delete leaves the session running. Windows Restart Manager names a program and pid holding a file open, excluding this session's own recorded agent process ids; only if Restart Manager finds nobody does a safe rename probe (renaming the worktree folder to a sibling name inside the worktrees root and straight back) run, to catch a folder held only as a working directory, which Restart Manager cannot see. A named holder, or an in-use folder with no named holder, refuses the delete — naming the holder where known, otherwise "A program has this folder open, for example a terminal or File Explorer window. Close it, then Retry." — deleting nothing; a holder that cannot be detected does not block, and Retry is the same Delete button. The session's branch is still always deleted the same way as before.
+- Q: `git worktree remove --force` could not reliably remove a full Windows `node_modules` tree. What replaces it? → A: Decided (Stuart, 2026-10-19, issue #891): Refract's own long-path-safe recursive walker, not `git worktree remove` or `std::fs::remove_dir_all`. It uses verbatim `\\?\`-prefixed paths over 260 characters, clears read-only attributes, and removes a junction or symlink as a link without ever descending into or deleting its target. Only this worktree's own git admin entry is removed (never `git worktree prune`, which would also drop every other stale admin entry), and the result is verified with `git worktree list --porcelain`.
+### Session 2026-10-19 (Composer role chip, pin persistence, fallback signal, #741)
+
+- Q: Issue #741 (P0): the composer strip shows the current role, and the provider is dropped
+  from the model name. The code state was checked first (PR #836 already landed `currentRole`/
+  `pinned` in `sessions.list()`, and `ModelPicker.tsx` already strips the provider from its
+  VISIBLE text). What is still open, and how is each part decided? -> A: Decided (Stuart,
+  2026-10-19, grill before build; `issuecomment-6266024041`). Four points:
+  1. **Pinned reads Custom, and the pin survives a restart.** A hand-picked model
+     (`set_model`/`cycle_model`/a direct `/switch <model>` token) pins the Session; the chip
+     reads **Custom** while pinned. The pin is now persisted in the Session registry
+     (`registry.json`'s `pinnedModel` field, written on every pin/un-pin), not only in-memory --
+     before this, a restart reset a hand-picked model back to `role: "default"`, which a later
+     Settings role change would then silently move. An old registry with no `pinnedModel` field
+     reads as not pinned.
+  2. **Fallback is probed, then shipped code-verified either way.** If OMP marks a `model_change`
+     entry with `resolvedModelIsFallback: true` (FINDINGS item 51/341: the field exists, never
+     observed `true`), the chip reads **Fallback** with a tooltip explaining OMP switched models
+     after repeated failures. A dedicated isolated probe (FINDINGS item 61,
+     `docs/spike/fallback-probe-741.mjs`) could not force a genuine `true` within 90 seconds
+     against a connection-refused model; the rule ships code-verified against the documented
+     field regardless, and forcing/confirming the live transition is deferred to #650.
+  3. **Chip placement, look, and provisional icons.** The chip sits in the composer's bottom row
+     immediately before the Model picker, as a small ghost button: the role's name as text plus
+     a provisional per-role lucide icon (#717 makes the final choice by eye in screenshots); no
+     role colour yet (#714 adds it), and colour is never the only cue. It is inert today (no
+     click handler) -- #766 makes it the role switcher's own trigger. Role names, icons, and a
+     friendly provider map live in one new shared module (`src/renderer/lib/modelRoles.ts`) so
+     Settings (#714), #717, and #766 all reuse the same data instead of four local copies.
+  4. **The details card gets a provider line.** The model's display name shows with a muted
+     second line, "via GitHub Copilot" (the SAME friendly provider map, the raw id as fallback,
+     built from fields never a string split). Unchanged from the issue: an unestablished role
+     shows no chip at all, never a guess; no new IPC (the registry already carries
+     `currentRole`/`pinned`); the WCAG notes as written (icon `aria-hidden`, an `sr-only` "Role: "
+     prefix, a hoverable/focusable tooltip). Per the prototyping-phase rule, the issue's
+     requested unit tests are skipped; verification is the live CDP check this issue's own
+     acceptance criteria describe.
+
+### Session 2026-10-20 (Composer command pill, no spelling underline, #1050)
+
+- Q: Issue #1050 (UI polish, filed 2026-10-19 during away mode): a recognised command or skill
+  at the start of the composer's draft should get a subtle accent styling and stop triggering a
+  spelling underline. What counts as "recognised", how does spellcheck toggle, how is it drawn,
+  and what is the pill fill (since issue #610 already found `--accent-text` fails 4.5:1 on
+  `--muted` in some presets)? -> A: Decided (Skippy, delegated by Stuart 2026-10-19, away mode;
+  reversible on the issue). Six points:
+  1. **What counts.** Only a recognised command or skill token at the very start of the draft --
+     a name in the composer's own command list (built-ins, `/skill:<name>`, and custom commands
+     as they land with #760), read the same way `chat.send`'s own refusal path already matches
+     one (`parseSlashCommand`/`classifySlashInvocation` against the composer's own `commands`
+     list), never a hard-coded copy of either the list or its matching rules. An unknown `/zzz`
+     stays plain, so the styling doubles as a "this command exists" cue.
+  2. **Spelling.** While the draft starts with a recognised command, `spellCheck={false}` on the
+     whole box -- a `<textarea>` cannot exclude part of its own text, so the trade-off is that
+     arguments after a command (`/btw <text>`) go unchecked too; accepted, since command lines
+     are short and mostly names. Spellcheck returns the instant the leading token stops matching.
+  3. **Styling.** The recognised token gets a subtle pill: a neutral fill, a small radius
+     following `--radius`, the token text in `--accent-text`, no border, no line-height change,
+     no caret movement; arguments after the token stay normal text. **Fill, decided by
+     measurement (not #610's first-drafted `--muted`):** `--accent-text` still fails 4.5:1 on
+     `--muted` in Dark (4.00:1) and Obsidian (4.28:1), and clears only 6.60:1 on it in Dark (high
+     contrast) -- short of this issue's own enhanced 7:1 ask there. `--card` (the issue's own
+     named fallback) clears 4.5:1 in every preset and clears 7:1 in Dark (high contrast)
+     (8.46:1), so the pill's fill is `--card`, not `--muted`.
+  4. **Mechanism.** Reuses the composer's existing mirror pattern (the inert, scroll-synced,
+     `aria-hidden` overlay `ChipOverlaySegments`/the ghost-text overlay already use, T103/
+     FR-058), but as a "highlight-within-textarea" (gate round 1 HIGH correction, 2026-10-20):
+     the mirror sits UNDER the real `<textarea>` and renders the whole draft visibly, with the
+     real textarea going `[-webkit-text-fill-color:transparent]` (gate round 3 fix: NOT the
+     `color` property, which also hides anything else that reads it, such as an IME composition
+     underline) plus an explicit `caret-color` and a real `::selection` fill, so the native
+     caret, native selection highlight and IME composition keep painting on the real control, on
+     top of the mirror --
+     the first draft instead painted an opaque pill ON TOP of the textarea, which hid all three
+     for any character inside the token (found by all four reviewers in gate round 1, confirmed
+     from the round's own screenshot: the caret at offset 3 was gone). `MessageInput.tsx` is at
+     its file-size cap (working rule 11), so the logic lives in `CommandPillOverlay.tsx`.
+  5. **Scope.** The composer only; the same pill on the sent user bubble is a possible follow-up
+     (proposal), not part of this issue.
+  6. **Accessibility.** No change to the accessible name or value; the pill is a visual-only
+     `aria-hidden` overlay, so a screen reader reads the draft text exactly as today.
+
+### Session 2026-10-20 (Composer command pill, gate round 1 remediation, #1050)
+
+- Q: Gate round 1 (Code/Test/A11y/UI reviewers, all four independently; Sec passed) found one
+  HIGH: the opaque pill overlay painted over the real textarea, hiding the caret, native
+  selection highlight and IME composition inside the recognised token. What replaces it, and
+  what does the new dedicated pill-fill token resolve to, given `--card` cannot clear both the
+  existing accent-text floor AND a new "visibly distinct from the composer surface" floor in
+  every preset? -> A: Decided (the gate's own recorded fixes, confirmed against the measured
+  numbers): the mirror moves UNDER the textarea (the "highlight-within-textarea" technique,
+  FR-092's own amended text has the mechanism in full) so the native caret/selection/IME paint on
+  top as before this issue touched anything. The new `--command-pill-bg` token resolves to
+  `--muted` in Nordic Frost/Cyber Amber (clears both the >=1.4:1 "distinct from composer" floor
+  and the accent-text floor outright) and to `--card` in Dark/Obsidian/Dark (high contrast) (an
+  accepted, documented gap on the new 1.4:1 floor only: no single colour in those three presets
+  clears both floors at once, since `--accent-text`'s own luminance leaves too narrow a margin
+  above each preset's near-black background for any fill to sit far enough from one end without
+  falling short of the other -- proven analytically, not just by search; the WCAG-mandated
+  accent-text floor was kept over the newly-introduced visibility floor). Open for Stuart:
+  retune `--accent-text` in those three presets, or accept the gap as-is.
+
+### Session 2026-10-20 (Composer command pill, gate round 2 remediation, #1050)
+
+- Q: Gate round 1's accepted 3-theme gap (Dark/Obsidian/Dark (high contrast) could not clear the
+  new 1.4:1 "distinct from composer" floor without dropping `--accent-text` below its own 4.5:1
+  floor) was not accepted. The conflict is between `--accent-text` and the fill -- what gives the
+  pill its own text colour instead, so both floors clear in every preset? -> A: Decided (Main,
+  2026-10-20): a second dedicated token, `--command-pill-fg`, independent of `--command-pill-bg`.
+  `--command-pill-bg` is now a plain neutral step in every preset, chosen ONLY to clear 1.4:1
+  against the effective composer backdrop (measured 1.50-1.52:1 in all five, comfortable
+  margin) -- no text-contrast constraint on it at all. `--command-pill-fg` is the SAME hue as
+  `--accent-text` (the theme's own indigo/cyan/orange-amber family), lightened and desaturated
+  only as far as needed to clear 4.5:1 (7:1 in Dark high contrast) on THIS fill: Dark 4.66:1,
+  Obsidian 4.54:1, Dark (high contrast) 7.26:1, all measured. Nordic Frost and Cyber Amber need
+  no lightened step at all (`--muted` already clears both floors against the existing
+  `--accent-text`), so their `--command-pill-fg` is a plain alias of it. Both pairs
+  (`command-pill-fg`/`command-pill-bg` and `command-pill-bg`/background-or-composer-background)
+  are now enforced in `scripts/theme-contrast-pairs.mjs` in every preset -- no accepted gap
+  remains.
+
+### Session 2026-10-20 (Composer command pill, gate round 3 remediation, #1050)
+
+- Q: Round 2's delta gate (Sec PASS; Code/Test/A11y FAIL) found one CRITICAL (Send/Stop cannot
+  be clicked while a pill shows: the textarea's own `relative z-[1]` painted above the Send/Stop
+  button container, which had no z-index at all, proven live via `elementFromPoint`), two HIGHs
+  (the selection highlight painted nothing at all -- `selection:text-foreground` set only a text
+  colour with no background, and CSS gives an author `::selection` rule's own UNSET properties
+  the element's ordinary value, never the UA's special highlight; and the IME composition
+  underline would go invisible too, since masking via `color` hides anything else that reads
+  `color`, underlines included) and two MEDIUMs (a ~150ms flicker from the shared `Textarea`
+  primitive's own `transition-colors` fading the mask on/off out of sync with the mirror's
+  instant mount/unmount; Dark/Obsidian's `--command-pill-fg` hue had drifted 15-25 degrees off
+  `--accent-text`'s own real measured hue, reading as a visibly different blue) -- how to fix
+  all five without reopening round 2's already-enforced contrast floors? -> A: Decided (Main,
+  2026-10-20): (1) Send/Stop container gets its own `z-[3]`, above the textarea's `z-[1]` and the
+  ghost-text/chip mirrors' `z-[2]`, below `SlashMenu.tsx`'s `z-10`. (2) The masking property moves
+  from `color` to `-webkit-text-fill-color` (keeping `color` real, so anything that reads it
+  stays correct); `::selection` now also overrides `-webkit-text-fill-color` (not `color`, which
+  no longer needs masking) to a dedicated `--composer-selection-fg` AND paints a real
+  `--composer-selection-bg` fill -- both plain aliases of the existing, already-enforced
+  `accent-foreground`/`accent` pair, not new colour decisions; forced-colours gets its own
+  `Highlight`/`HighlightText` fallback pair on both the base and the selection rule (this
+  property is not one of the UA's own forced-colours overrides, unlike `color`, so the old
+  safety net had to be re-asserted explicitly). (3) The composer's own `<textarea>` narrows its
+  `transition-colors` down to `transition-[border-color,box-shadow]` (merged via `cn`'s
+  tailwind-merge, same class group) -- the shared `Textarea` primitive itself is untouched. (4)
+  `--command-pill-fg`'s hue is retuned to the real measured accent hue in both drifted presets
+  (Dark 264 -> 279, Obsidian 255 -> 280), re-lightened to keep clearing 4.5:1 (7:1 Dark high
+  contrast, unaffected): Dark 4.65:1, Obsidian 4.75:1, Dark (high contrast) 7.26:1 (corrects
+  round 2's own 7.23:1 transcription), all measured; the live theme loop now also asserts the
+  OKLCH hue difference from `--accent-text` is <=5 degrees in every preset. (5) UI Medium: the
+  pill's own fill now extends 2px past the token's glyph box on every side via `box-shadow`
+  (which never reserves layout space, unlike `padding`), so `/`/the token's own edge glyphs no
+  longer sit flush against the fill.
+
+### Session 2026-10-20 (Composer command pill, gate round 5 remediation, #1050)
+
+- Q: The test review found `--composer-selection-bg`'s round-3 opaque `var(--accent)` alias
+  measured EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber (both resolve `--accent`/
+  `--muted` to the same colour there), painting a completely invisible selection highlight over
+  a selected pill; the UI review separately found the live check's own "chip clickable" test
+  targeted the real, ABOVE-composer `AttachmentStrip` (nothing there could ever be occluded by
+  the pill) instead of the in-composer chip mirror that actually sits beside it; Obsidian's
+  `--command-pill-fg` (`oklch(0.715 0.166 280)`) was also found to sit outside the sRGB gamut.
+  How to fix all three? -> A: Decided (Main, 2026-10-20): (1) `--composer-selection-bg` becomes
+  a TRANSLUCENT accent-text tint, `color-mix(in oklab, var(--accent-text) 34%, transparent)`,
+  not a second opaque colour per theme that could drift the same way again -- a translucent fill
+  always lets whatever is underneath (the pill's own fill, or the plain composer surface) show
+  through, so it is visibly distinct from its own backdrop by construction. Applied
+  UNCONDITIONALLY now (`CommandPillOverlay.tsx`'s `COMPOSER_SELECTION_CLASS`, moved out of the
+  pill-only `COMMAND_PILL_TEXTAREA_CLASS`), so the selection never changes look the instant a
+  recognised command's own leading token appears or disappears. 34% clears every theme's own
+  `--composer-selection-fg`-on-highlight text floor (4.5:1, 7:1 in Dark high contrast) AND a new
+  >=1.5:1 "visibly distinct from the pill" floor at once (worst case Dark, 1.52:1; Dark high
+  contrast's own 7:1 floor is the other binding constraint, 7.22:1) -- both enforced in
+  `scripts/composer-selection-contrast.mjs`'s new `composerSelectionContrastRows` (a dedicated
+  module, not a `theme-contrast-pairs.mjs` PAIRS entry: that file sits at its own #806 baseline
+  with no headroom, and a plain two-operand pair cannot correctly composite a translucent `bg`
+  operand over a REAL backdrop rather than itself). Against the near-black `--background`/
+  `--composer-background` themselves, no alpha near this window reaches 3:1 without exceeding
+  the text floor above, so that comparison stays informational only, the same accepted-gap shape
+  this spec's `sidebarBorderContrastRows` precedent already uses. (2) The live check's chip-
+  clickable assertion now targets `ChipOverlaySegments`'s own `span[role="button"]` (the in-
+  composer mirror; the real strip only ever renders real `<button>`s, so the selector is
+  unambiguous) with both an `elementFromPoint` reachability check and a real dispatched click
+  that opens and closes its preview dialog. (3) Obsidian's `--command-pill-fg` chroma is lowered
+  from 0.166 to 0.14 (same lightness 0.715, same hue 280) -- comfortably inside gamut rather
+  than at its boundary, clearing 4.5:1 at 4.86:1 measured from a colour that needs no clipping;
+  the round-2/3 comment's claim that the check's own 4.75:1 was simply "measured" is corrected
+  to note that number was real for the CLIPPED colour, not the authored (unreachable) literal.
+
+### Session 2026-10-20 (Agent rows show only the goal, #1077)
+
+- Q: Issue #1077 (Stuart, `grill-with-docs`, 2026-10-20): expanding a Stage row or a solo
+  subagent row shows its full Prompt and Result inline, each in its own tall scrollable
+  `max-h-64` code block, crowding out the one thing worth a quick read -- the goal. Scope,
+  content, toggle shape and running-state wording? -> A: All four resolved, none deferred. (1)
+  Scope: every agent row in the chat wherever `SubagentBody` renders -- a Stage row (multi-agent
+  or solo), each member row inside a multi-agent Stage, and a row with no enclosing Stage goal
+  of its own. (2) Content: only the goal shows once expanded. A Stage (solo or multi-agent
+  member) shows the Stage's own existing Goal/context text (`StageContextBrief`); `SubagentBody`
+  itself never repeats it there. A row with no Stage goal to lean on shows its own goal instead
+  -- the first lines of its own task, clamped to 3 lines, with the full text reachable once the
+  toggle opens. (3) Toggle: a text link under the goal reading "See input & output" collapsed,
+  "Hide input & output" open, with `aria-expanded`/`aria-controls`; starts collapsed every time
+  its own row (re)expands, with no remembered state. (4) While running (no result yet) the label
+  drops "& output", matching whatever state actually exists (reusing `resultBlock`'s own
+  existing gate for today's "Result" heading). Reuses `Markdown.tsx`'s `MermaidBlock` "Show
+  source" disclosure shape (ADR 0003) rather than a new one; closing the toggle while focus
+  sits inside its own content returns focus to the toggle link, the same WCAG 2.4.3 hazard
+  issues #991/#1001 already fixed one level up for a Stage's own trigger.
+
+### Session 2026-10-20 (Agent rows show only the goal, gate round 1, #1077)
+
+- Q: Gate round 1 (Main, 2026-10-20; Sec/Test/A11y/UI PASS, Code FAIL on one High): a
+  context-less multi-agent Stage showed no goal anywhere (the member call was hardcoded
+  `showGoal={false}`); the goal preview's own 240-char cap, `.slice()`-based truncation and
+  first-line-only cleanup; Escape not covering a Tooltip's own dismiss nor the trigger itself;
+  `preventScroll` on the focus return; a missing 8px Prompt/Result gap and a one-off trigger
+  style instead of the shared link class; no visible failure reason for a failed solo Stage;
+  solo goal ordered after "Uses:" instead of before; identical visible link text per member;
+  an optional default and two unused props. Fix? -> A: All ten fixed in one round. A member's
+  own goal is suppressed only when its OWN task() call genuinely carried a context, correlated
+  by that call's own id (the wire stamps a shared context onto only a call's first-listed item,
+  so a later member of the SAME call must still resolve through that correlation, never through
+  checking its own item alone) -- a context-less multi-agent Stage's members now each show their
+  own goal, independently. The goal preview's cap rises to 1500 Unicode code points (a DOM-size
+  guard only, the visible clamp is `line-clamp-3` alone), truncated code-point-safe, with
+  heading markers and blank lines cleaned on every line, not only the first, via one shared
+  `findFirstContentLine` helper. `InlineDisclosure`'s Escape handler also bails on
+  `event.defaultPrevented` (a nested Tooltip's own dismiss wins the first press) and listens on
+  its own outer wrapper (Escape now works from the trigger itself, not only deep inside); its
+  focus-return call drops `preventScroll`; its content regains its own 8px gap; its trigger
+  reuses the shared `mutedLinkClassName` instead of a one-off style. A failed/cancelled/exited
+  solo Stage's own one-line failure reason (the same text a multi-agent member's own row already
+  shows) is restored next to its goal. A context-less solo Stage's own goal renders at the Stage
+  level, before "Uses:" -- the same position a context-bearing Stage's own goal already takes.
+  Each toggle's own label carries an `sr-only` suffix naming its agent. `showGoal` is required
+  (no implicit default); `InlineDisclosure`'s unused `className`/`buttonClassName` props are
+  dropped.
+
+### Session 2026-10-20 (Enter sends queued follow-up, #1067)
+
+- Q: Issue #1067 (Stuart, `grill-with-docs`, 2026-10-20, all resolved, none deferred): with a
+  blank composer and at least one queued follow-up, Enter does nothing useful today --
+  `handleSend()` runs against empty content, and the only way to send a queued follow-up is the
+  "Send now" chip button (FR-012, issue #540). What should Enter do? -> A: Enter (no Shift, not
+  composing) on a blank composer sends the OLDEST queued follow-up, exactly as if its own "Send
+  now" chip were clicked, matching OMP's FIFO `promote_queued_message`; a repeat Enter sends the
+  next one. Queued `steering` messages are skipped (follow-ups only, matching FR-012's existing
+  chip rule); if only steering is queued, Enter on a blank composer does nothing.
+- Q: How is "blank" defined for this rule, and is it discoverable? -> A: Blank means the
+  composer's text is the exact empty string, no pending images, no pending text chips, and no
+  pending file attachments (independent of, and not to be confused with, issue #744's still-open
+  `hasSendableContent` proposal, which asks the opposite question for the Send button). While the
+  rule applies (composer blank, at least one follow-up queued), the composer's hint reads "Enter
+  sends the next queued message", reachable through the textarea's existing `aria-describedby`
+  (an inert hint overlay is never read as a native `placeholder` by assistive tech, per issue
+  #533); sending this way announces "Sending now…", identical to the chip's own announcement. The
+  rule reuses `handleSendNow` and its existing `inFlightChips` single-flight guard rather than
+  reimplementing it, so a fast double Enter cannot double-send. Enter is never hijacked by this
+  rule while the slash menu is open, an IME composition is in progress, or a ghost-text
+  suggestion is showing; Shift+Enter is unaffected.
+
+### Session 2026-10-20 (Enter sends queued follow-up, gate round 1, #1067)
+
+- Q: Gate round 1 (Main, 2026-10-20; Sec/A11y/UI PASS, Code/Test FAIL): the original answer
+  above said "blank" means whitespace-only text, which left a gap -- the hint overlay only ever
+  renders for `text === ''` (issue #533's own gate), so a whitespace-only draft had the rule
+  genuinely applying (Enter would promote a queued follow-up) while the hint stayed hidden,
+  silently steering over what a developer could reasonably read as a real (if blank-looking)
+  draft. Redefine? -> A: DECIDED. "Blank" now means `text === ''` exactly, not merely
+  whitespace-only after trimming: a single space, or a newline inserted by Shift+Enter, is a real
+  draft, and Enter must never promote a queued follow-up over it -- it falls through to the
+  ordinary `handleSend()` (which refuses an all-whitespace send today, unchanged). This also pulls
+  the hint and the rule back into lockstep, since both now gate on the identical `text === ''`
+  check. Also folded in explicitly (already true structurally, now stated): the same guard
+  requires no attachment read still in flight (`pendingAttachmentReads`, PR #723's own guard) --
+  while a background path/drop image read for this session is pending, the draft is not blank
+  either, matching `handleSend`'s own existing refusal for that race.
+
+### Session 2026-10-20 (Model roles overhaul, #1069)
+
+- Q: Issue #1069 (Stuart, UI Polish, grilled 2026-10-20, all resolved, none deferred): every chat
+  role's model dropdown lists every provider's models with no filter, items repeat their own
+  provider in parens, and a suffixed or off-provider current value falls back to a raw, truncated
+  selector string; there is also no reasoning-level control at all. How should the Model roles
+  section work? -> A: One provider `ToggleGroup` row (ADR 0003, extending
+  `ManageSessionsToolbar.tsx`'s own segmented-filter pattern) sits above the chat-role list, one
+  segment per provider present in the loaded `chat` catalog; every chat role's own model dropdown
+  then lists only the selected provider's models, each item showing the model's name alone (no
+  provider in parens, since the list is already filtered to one). There is no "All" segment: the
+  switch starts selected on the provider of the Default role's current model (falling back to the
+  first provider in catalog order when Default is unset or unresolved -- the issue's own
+  documented fallback for that open technical note). A role whose current model belongs to a
+  different provider keeps showing that model's real name with a small muted "via {provider}" tag
+  beside it, never blanked or shown as a raw selector; picking a new model for that role still only
+  offers the selected provider's own list. Model-kind roles (Image, Web, Speech, Dictation, Judge)
+  are unaffected by the switch and keep their own unfiltered catalog and item labels (decision 6).
+- Q: How is the reasoning level chosen, and which levels are offered? -> A: Each of the 10 chat
+  roles (not the 5 model-kind roles) gets its own named `radiogroup` (`aria-labelledby` the role's
+  own label, `RadioGroup`/`RadioGroupItem`/`RadioGroupIndicator` plus the shared
+  `RADIO_RING_CLASS`/`RADIO_DOT_CLASS` from #1043/PR #1057, never `AskCard.tsx`/`MergeDialog.tsx`'s
+  own older inline ring) with seven options: Inherit, Off, Minimal, Low, Medium, High, Extra high.
+  Inherit is always enabled and writes no `:level` suffix; every other option is enabled only when
+  the role's CURRENT model itself supports it -- confirmed present in `omp models --kind chat
+  --json`'s own `reasoning`/`thinking` fields, previously dropped at the `ModelCatalogEntry`
+  type/struct boundary (`src/shared/model.ts`, `src-tauri/src/ipc/model_roles.rs`) and now threaded
+  through: Off whenever the model is `reasoning:true`; Minimal/Low/Medium/High/Extra high only when
+  present in that model's own `thinking` array. A disabled option states why (`aria-describedby`,
+  "Not supported by {model name}", or "Pick a model first" when the role has no resolvable current
+  model). Picking a level writes it as the role's existing `:level` suffix via `modelRoleSuffix.ts`'s
+  existing helpers; picking Inherit clears it. The trigger itself shows the model's display name
+  only -- no provider prefix, no `:level` suffix -- the chosen level shows only in the role's own
+  radio group.
+
+### Session 2026-10-22 (Agent-to-agent lines and `/models`, #838, #762)
+
+- Q: Issue #838 (Stuart 2026-10-13, grilled 2026-10-22, proposal accepted as written): every
+  agent-to-agent line draws the same right arrow, and the main agent steering a subagent shows as
+  a generic `write agent://<id>` tool row. How should these lines look? -> A: One bubble glyph per
+  direction (subagent to main `MessageSquareReplyIcon`, main to subagent `MessageSquareShareIcon`,
+  subagent to subagent and `agent://all` broadcasts `MessagesSquareIcon`), the glyph and the
+  "<sender> to <recipient>" label in one new violet `--agent-message` token defined for every
+  built-in theme (a hue no other meaning uses; 4.5:1 on the background and the row hover), the
+  preview and expanded text unchanged, "Main agent" as the one label for the parent, and an
+  sr-only "Agent message from X to Y" in place of the visible pair. The Rust transcript builder
+  recognises OMP's real `irc:incoming` custom type and passes `details.fromParent`/`replyTo`
+  through as optional item fields; the renderer decides the direction from `fromParent` first,
+  then the "Main"/"main agent" names. A `write agent://<id>` call renders as a main-to-subagent
+  line (outgoing glyph, preview from the written content, "View full call" on expansion), ends
+  any run of grouped tool calls, and is never hidden by "Show tool calls"; while running,
+  failed, interrupted or stopped it shows its status glyph instead, and a failed write reads
+  "failed" in the error colour, never violet.
+- Q: Issue #762 (narrowed 2026-10-21; `/switch` and `/model` already shipped in PR #836): what
+  does `/models` do? -> A: It is a Refract-native command: a bare `/models` opens Settings at the
+  Model roles section, clears the draft and sends nothing to OMP (OMP's own `models` opens its
+  role-writing hub). It is listed in the slash menu as "Open model role settings" and stays a
+  reserved name, so `chat.send` refuses it if it ever arrives and a custom command cannot take it.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -91,20 +1253,21 @@ A developer opens Refract, points it at a git repository, and creates a session,
 1. **Given** Refract has no sessions, **When** the developer adds a git repository and creates a session with the one-click New session button, **Then** a new worktree exists on disk on a new branch created from the repository's default branch, the session appears in the session list under an automatically generated name and is selected, and the chat pane is ready for a first message.
 2. **Given** an open session that is idle, **When** the developer sends a message, **Then** the agent's reply appears progressively as it is produced, along with visible indication of the tools the agent is running, and the session shows as idle again when the turn is finished.
 3. **Given** the agent runs one or more tools during a turn, **When** they appear in the chat pane, **Then** each is one compact row, collapsed by default, naming the tool, its target, status, and duration; expanding a row never reveals a boxed arguments/output block (see scenario 16), and a file-edit row's expanded view shows a diff of the change; consecutive calls to the same tool are grouped into one collapsed line that shows the last call's target and a count (for example "+ 2 others") and expands to the individual rows.
-4. **Given** the agent produces reasoning before its visible answer, **When** the turn is shown, **Then** the reasoning is a single collapsed line that the developer can expand: "Thinking" with a faint one-line preview while it streams, and "Thought for 5s" (its duration) once done. **Given** a turn has run, **When** it ends, **Then** its activity block ends with a muted line showing the turn's total time (for example "28s" or "1m 14s").
+4. **Given** the agent produces reasoning before its visible answer, **When** the turn is shown, **Then** the reasoning is a single collapsed line that the developer can expand: "Thinking" with a faint one-line preview while it streams, and "Thought for 5s" (its duration) once done. **Given** the agent produces two or more thoughts back to back with nothing else between them, **When** they are shown, **Then** they collapse into one row reading "Thought process" with the step count and, once every thought's own timing is known, the total elapsed time, expanding to each thought as its own row down a Spine. **Given** a turn has run, **When** it ends, **Then** its activity block ends with a muted line showing the turn's total time (for example "28s" or "1m 14s").
 5. **Given** a turn is in progress, **When** the developer presses stop, **Then** the turn ends, the session becomes idle, and a new message can be sent without an "already processing" error.
 6. **Given** a turn is in progress, **When** the developer types a message and sends it, **Then** it appears as a removable chip under the running turn instead of being sent immediately; when the turn ends the queued message is sent as the next turn unless the developer removed it first, and a separate "Send now" action on the chip steers the running turn with it instead of waiting.
 7. **Given** an open session with a conversation, **When** the developer starts a new conversation, **Then** the same session and worktree are kept, the previous conversation is added to that session's history, and the new one becomes current.
 8. **Given** a session's conversation history, **When** the developer opens an earlier conversation, **Then** it becomes the current conversation and the developer can continue it.
 9. **Given** the agent's reply contains markdown or code, **When** it is displayed, **Then** it renders as formatted GitHub-flavoured markdown (including tables, task lists, strikethrough, and footnotes), code blocks, and Mermaid diagrams, and never as executable content.
 10. **Given** a repository in the session list, **When** the developer uses the branch button next to the New session button, **Then** a picker opens below its field without covering it and lists the repository's branches in two groups, **Branches** (the default branch first and preselected) and **Sessions** (branches Refract created for sessions, each shown with the session's current display name, its branch id as secondary text, and an Archived tag when the session is archived), each group with its own icon, and confirming creates a session on a new branch from the chosen Base branch, selected and opened exactly as in scenario 1; cancelling creates nothing. **Given** a one-click creation is already in progress for that repository, **When** the developer clicks New session again, **Then** no second session is created.
-11. **Given** an open session, **When** the message box is shown, **Then** Send and Stop are round, icon-only buttons inside the field with no "Send" or "Stop" text, each with an accessible name and a tooltip on hover and keyboard focus that shows its shortcut as key-cap icons (Send: Enter; Stop: Ctrl+Shift+X); the field is visibly more transparent than the page surface with text still readable at WCAG AA contrast; and a readout inside the field shows the provider, the model name, and the reasoning effort, using the last known values when the agent is not running.
+11. **Given** an open session, **When** the message box is shown, **Then** Send and Stop are round, icon-only buttons inside the field with no "Send" or "Stop" text, each with an accessible name and a tooltip on hover and keyboard focus that shows its shortcut as key-cap icons (Send: Enter; Stop: Ctrl+Shift+X), with Stop shown as a solid neutral (never red) fill and Send keeping its own accent fill (gate round 1: a dedicated `--send` token, chromatic in every theme); the field is visibly more transparent than the page surface with text still readable at WCAG AA contrast; and the field's own bottom row shows the Approval mode pill, a Model picker and a Reasoning picker (each a labelled trigger naming the session's current value, using the last known values when the agent is not running, or "Reasoning not reported" for the Reasoning picker once a model is known but no level was reported for a non-Default request), and an Attach button for images (2026-10-15, issue #564). **Given** the session is working or needs-you, **Then** both pickers refuse to open, named "Available once the session is idle." in their accessible name; **Given** the session is stopped (no agent running), **Then** both pickers still show the last-known value but also refuse to open, named with the action needed (for example "Start the agent to change the model."). **Given** a picker's menu is open when its session's status changes to one of the above, **Then** the menu closes itself rather than staying stuck open (gate round 1). (Amended 2026-10-16, issue #927: in Dark and Obsidian the field's fill is fully transparent rather than merely "more transparent than the page surface", with a faint border and a muted focus outline, and the Approval mode/Model/Reasoning/Attach triggers lose their border and fill at rest, showing a hover fill and the same muted focus outline -- Dark (high contrast) keeps this scenario's original wording unchanged: an opaque field, an opaque border, and a full focus ring.)
 12. **Given** the message box has focus and the developer is typing a prose word at the end of a line, **When** a suggestion is available, **Then** it appears as dimmed, non-selectable ghost text right after the cursor, and pressing Tab accepts it, inserting exactly the suggested text; typing past a shown suggestion or moving the cursor clears it. **Given** the cursor sits mid-word, is not at the end of its line, or the draft looks like a file path or a slash command, **When** the developer types, **Then** no suggestion is requested or shown. **Given** the suggestion source is unavailable or fails, **When** the developer keeps typing, **Then** the composer stays fully responsive with no ghost text and no visible error.
 13. **Given** at least one repository already exists in the session list, **When** the developer clicks the persistent **Add repository** button in the list's footer, **Then** the same add-repository dialog opens with focus trapped inside it, the same validation and error notices apply as on the first-run screen, and on a successful add the new repository appears in the list at once as its own focusable group, with focus restored to the **Add repository** button once the dialog closes.
 14. **Given** a repository in the session list owns no Sessions, **When** the developer opens its header menu and chooses **Remove repository…**, **Then** a confirmation dialog names exactly what will happen (the entry in Refract is removed, the folder on disk is left untouched) and, on confirming, the repository's group disappears from the list at once and focus moves to another repository's header or, if none remain, to the first-run readiness screen. **Given** the same repository instead owns one or more Sessions, active or archived, **When** the developer opens the same menu and dialog, **Then** it states how many of each and offers no way to remove the repository, only to close the dialog; the repository stays listed and nothing is removed.
 15. **Given** a Session row's own repository, **When** the developer chooses **New session from {branch}** from that row's "..." menu or its matching right-click menu, **Then** a session is created instantly on that repository's default branch with no dialog, selected and opened exactly as the one-click **+** button creates one, and focus moves to its chat pane once ready, provided the developer has not moved focus elsewhere meanwhile. **Given** a create for that repository is already in progress (from the **+** button, this same menu item on another row, or the Base branch dialog), **When** the developer opens the menu again, **Then** the item shows as disabled rather than starting a second create.
 16. **Given** the agent runs a `write`, `read`, `bash`, or `edit` tool, **When** the developer expands its row, **Then** no boxed Arguments, Output, or content block appears; a failed call still shows its own error as plain text in the row, a successful `write` shows "Wrote N lines to `<path>`", and a "View full call" link always opens a dialog with Formatted and JSON tabs showing the exact arguments and output. **Given** an `edit` call's diff is taller than about 24rem, **When** the row is expanded, **Then** the diff is capped to that height with its own scroll and an Expand control that shows the whole diff and turns into Collapse; **Given** the diff fits inside that height, **Then** no Expand control is shown.
 17. **Given** the agent calls `read` on a `skill://<name>` URL, **When** the call appears in the chat pane, **Then** it renders as its own row reading "Using skill: <name>" with the usual running/done/failed status, never merged into a run of the surrounding `read` calls, and expands exactly like any other `read` row. **Given** a `skill-prompt` custom message arrives for a user-invoked skill, **When** it is shown, **Then** the row reads "Skill invoked: <name>" with its arguments and line count summarised, and the injected skill text stays collapsed behind an explicit expand.
+18. **Given** a tool call finishes successfully, **When** its row renders, **Then** the icon and label stay fully neutral with no colour; **Given** a tool call fails, **When** its row renders, **Then** the icon and label show in the error colour and an Error line appears directly under the row -- the call's own error text with control codes stripped (the last non-empty output line for a `bash` call, the first for any other tool) -- visible whether the row is collapsed or expanded, never only inside the expansion. **Given** a multi-call group has one or more failed members, **When** the group is collapsed, **Then** its header shows the most recently failed member's own Error line and an error-coloured "N failed" count in the meta slot; **When** the group is expanded, **Then** the header's own Error line disappears and each failed member shows its own line instead.
 
 ---
 
@@ -125,6 +1288,8 @@ While working, the agent may ask permission before running tools, depending on t
 5. **Given** a request is waiting in a session the developer is not looking at, **When** they open that session, **Then** the pending request is still there and can be answered.
 6. **Given** the developer has answered an agent question, **When** the transcript shows it, **Then** the question is one collapsed line ("Asked user:" followed by the question cut off with an ellipsis) that expands to the full question, and below it, indented, an "Answer:" line shows the answer with the user's name (the git `user.name` of the session's repository, or the Windows user name when git has none); a cancelled question shows "Cancelled" instead of an answer, and the same lines appear when the conversation is reopened later.
 7. **Given** the agent asks a multi-line question with a heading-worthy first line, a list, and inline code, **When** the question card renders, **Then** the first line shows as a short heading of medium weight, the rest renders as sanitised markdown body text at normal weight below it, the options stack vertically underneath, and a question long enough to overflow scrolls inside its own maximum-height region rather than pushing the options or Cancel off screen.
+8. **Given** the agent asks two or more questions in one call and the structured dialog is available on the connected OMP, **When** the question card renders, **Then** it shows one tab per question, a single-choice question as full-width radio rows and a multiple-choice question as full-width tick-box rows, an always-visible "Other" free-text row on every question, and a footer reading "Next" until every question is complete and "Submit" once it is; choosing an option alone sends nothing until Submit is pressed.
+9. **Given** the structured dialog is unavailable on the connected OMP, **When** the agent asks more than one question in a call, **Then** each question still arrives and is answered one at a time as today, and the developer sees one explanatory notice per OMP process launch, not one per card, saying questions on this build arrive separately.
 
 ---
 
@@ -169,16 +1334,18 @@ The developer runs a long task in one session, switches to another to start a se
 
 **Why this priority**: One-worktree-per-session exists so that parallel work is safe. It is the reason for the list, but the app is usable one session at a time, so it follows the core loop.
 
-**Independent Test**: Start a long-running request in session A, switch to session B and send a different request, then switch back to A. Confirm each conversation is intact, neither received the other's messages, and the list showed both as working while they ran. While viewing B, let A finish; confirm A shows an unread marker until opened, and, with Refract unfocused, confirm a Windows notification appeared for it.
+**Independent Test**: Start a long-running request in session A, switch to session B and send a different request, then switch back to A. Confirm each conversation is intact, neither received the other's messages, and the list showed both as working while they ran. While viewing B, let A finish; confirm A shows the Unread response status until opened, and, with Refract unfocused, confirm a Windows notification appeared for it.
 
 **Acceptance Scenarios**:
 
 1. **Given** two sessions, **When** both have turns in progress, **Then** each keeps streaming in the background and the list shows both as working.
 2. **Given** a background session needs an approval or an answer, **When** it does, **Then** the list marks that session as needing the developer.
 3. **Given** the developer switches between sessions, **When** they return to a session, **Then** its in-progress text and pending requests are as they left them, and the transcript is scrolled to the end unless the developer had scrolled away from the end before leaving, in which case it returns to that exact position (Clarification, issue #485).
-4. **Given** a session finishes while the developer is viewing a different session, **When** they return to the list, **Then** that session shows an unread marker, which clears once they open it.
+4. **Given** a session finishes while the developer is viewing a different session, **When** they return to the list, **Then** that session shows the Unread response status in place of Idle, which clears once they open it.
 5. **Given** Refract is not the focused window, **When** a session starts needing the developer or finishes, **Then** a Windows notification appears; clicking it opens that session. **Given** any other change happens in a session, **Then** no notification fires.
-6. **Given** a session in the list, **When** the developer hovers over it or focuses it with the keyboard, **Then**, after a short delay, a details card shows its status, the time since its last activity, its repository, its branch, the folder where its worktree lives, the model and reasoning effort (the last known values when its agent is not running), and the files changed with additions and deletions, with Copy path and Open in file explorer buttons; the card stays readable, can be hovered, and can be dismissed with Esc without moving the pointer. **Given** the same session, **When** the developer opens its row menu, **Then** the same two actions are available there, so they work from the keyboard.
+6. **Given** a session in the list, **When** the developer hovers over it or focuses it with the keyboard, **Then**, after a short delay, a details card shows its status, the time since its last activity, its repository, its branch, the folder where its worktree lives, the model name with a muted "via {provider}" line and the reasoning effort (the last known values when its agent is not running), and the files changed with additions and deletions, with Copy path and Open in file explorer buttons; the card stays readable, can be hovered, and can be dismissed with Esc without moving the pointer. **Given** the same session, **When** the developer opens its row menu, **Then** the same two actions are available there, so they work from the keyboard. **Given** a session whose current role is established, **When** the composer renders its bottom row, **Then** a role chip (text plus icon, no colour) sits immediately before the Model picker, reading the role's name, **Custom** while a model was hand-picked for this session, or **Fallback** with an explanatory tooltip once OMP reports it switched models after repeated failures; **Given** the role cannot be established, **Then** no chip is shown at all (issue #741).
+7. **Given** the session list, **When** the developer uses the Collapse all / Expand all toolbar above the list, **Then** every Repository group and the Archived group (while shown) collapse or expand together, the choice persists across an app restart, and a collapsed group whose non-archived Sessions include one needing the developer, or one that terminated unexpectedly, or one with an Unread response, shows a single marker naming the most urgent of those three states in that order (issue #735).
+8. **Given** the session list's search field, **When** the developer types a query matching a Session's name, branch, or Project name, **Then** only Project groups and Archived rows with a match remain visible, every matching group shows open regardless of its own saved collapsed state, and the result count is announced; **When** they clear the field (the in-field button or Esc), **Then** every group returns to exactly its own saved collapsed or expanded state (issue #559).
 
 ---
 
@@ -196,6 +1363,8 @@ A developer is done with a session for now, or permanently. Archiving gets it ou
 2. **Given** an archived session, **When** the developer restores it, **Then** it reappears in the main list exactly as it was.
 3. **Given** a session with uncommitted changes or unpushed commits, **When** the developer starts to delete it, **Then** the confirmation names those specific things before anything is removed.
 4. **Given** the developer confirms a delete, **When** it completes, **Then** the session's worktree and conversations are permanently removed and the session no longer appears anywhere.
+5. **Given** the Delete confirmation dialog opens for a session whose worktree contains generated folders such as `node_modules`, **When** the background filesystem walk finishes, **Then** the dialog shows those folders by name with their file counts and any other leftover files by path, capped with "and N more", having shown "Checking files…" while the walk ran, with Delete enabled throughout.
+6. **Given** a program has a file open inside the session's worktree, **When** the developer confirms delete, **Then** Refract's preflight refuses before stopping the agent, naming the holding program when Restart Manager finds one or else showing the generic "A program has this folder open, for example a terminal or File Explorer window. Close it, then Retry." message, nothing is removed, the session keeps running, and Retry is the same Delete action once the holder closes the file or folder.
 
 ---
 
@@ -219,6 +1388,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
 ### Edge Cases
 
 - The chosen folder is not a git repository, has no commits, or the chosen Base branch (including the default branch used by one-click creation) no longer exists: Refract refuses to create a session and says why.
+- A session with a hand-picked model (pinned) is reopened after a full app restart: the chip still reads **Custom**, not the role OMP's own Session file happens to record for the pin (`role: "default"`) -- the pin is persisted in the Session registry, not only held in memory for the process's life (issue #741).
+- OMP marks a `model_change` entry `resolvedModelIsFallback: true` for a Session the developer had already pinned to a hand-picked model: the chip reads **Fallback**, not Custom -- OMP's own automatic recovery after repeated failures is never the user's saved choice (issue #741).
 - The worktree cannot be created (name clash, disk full, path too long on Windows): no half-created session is left in the list, and the reason is shown.
 - The agent's answer is very long or contains extremely large tool output: the chat stays responsive and scrolls smoothly.
 - A question is a single short line: it renders as one line of normal weight, with no separate heading.
@@ -228,10 +1399,18 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - A session's worktree folder was deleted or moved outside Refract: it shows as stopped with the missing path as the reason, offers to recreate the worktree from its branch (only if that branch still exists), archive, or delete, and keeps its conversations readable; it is not silently dropped.
 - A session's details card opens while its worktree is missing or git is slow: the path still shows (muted, marked missing), Open in file explorer reports that the folder is missing, files changed shows "Not available", and the card never blocks the list.
 - A queued follow-up chip is removed before the running turn ends: nothing is sent for it.
+- The Model or Reasoning picker is activated while its Session is working or needs-you: the menu does not open, and the trigger's accessible name states that it is available once the session is idle, rather than opening the menu and letting the underlying `set_model`/`set_thinking_level` call fail silently (2026-10-15, issue #564).
+- The Model or Reasoning picker is activated on a stopped Session (no agent running at all): the menu does not open either, showing the last-known value and naming the action needed (for example "Start the agent...") rather than the not-idle wording, since nothing would be refused mid-turn here -- there is no turn (2026-10-15 grill, issue #564, decision 3).
+- A Model or Reasoning picker's menu is open when its Session's status changes to working, needs-you, or stopped: the menu closes itself immediately rather than staying stuck open with no way to close it (Escape, an outside click, and selecting an item all work) (gate round 1, 2026-10-15, issue #564).
+- `model.setThinkingLevel`'s requested level resolves successfully but OMP's own state does not report a level back: requesting Default (`inherit`) still shows "Default" and survives every later settle and a full app restart (gate round 2 fix); any OTHER requested level shows "Reasoning not reported" (same as a Session where nothing was ever explicitly requested) -- neither ever shows as an error, since the underlying switch itself succeeded (gate round 1, amended by Stuart; "Reasoning not reported" wording from gate round 2).
+- A right- or middle-click on a Model picker option (a role or a catalog entry): nothing is applied; selection applies only on a completed primary-button click (press AND release on the same option), never on press alone (gate round 2 fix, WCAG 2.5.2).
+- Tab is pressed while focus is in the Model picker's filter field: the popover closes and focus returns to the trigger, rather than leaving the popover open and carrying focus to whatever follows it in the DOM (gate round 2 fix).
 - Renaming a session while it is working: the display name changes immediately without affecting the running turn, its branch, or its folder.
 - An approval or question is pending and the developer closes Refract: on the next start the request is gone, and the session shows as needing a new turn rather than pretending to still wait.
 - The app's Approval mode is changed while every session is idle: it applies to each session's very next tool call, with no pending state or restart to wait for.
 - Deleting a session that has neither uncommitted changes nor unpushed commits: confirmation is still required, but without those specific warnings.
+- A holder of the session's worktree cannot be detected (not named by Restart Manager, and the rename probe succeeds): Delete proceeds; if an unseen holder still blocks part of the removal partway through, it stops there and Retry finishes it once the holder closes.
+- Deleting a session whose worktree is still full of generated files (for example a `node_modules` tree with paths over 260 characters): Refract's own long-path-safe walker removes it, clearing read-only attributes and removing a junction or symlink as a link without ever descending into or deleting its target.
 - Two Refract windows or instances point at the same repository: the second one warns rather than corrupting session state.
 - The agent is not installed or not signed in: Refract shows an actionable setup message rather than an empty or endlessly loading chat.
 - The machine runs low on free memory while several sessions are live: Refract warns the user, says how many agents it is running, and lets them stop agents; it does not stop any on its own.
@@ -244,6 +1423,14 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - An expanded tool call's result is long or multi-line (over 200 characters, or more than one line): the row shows nothing extra beyond the "View full call" link -- no partial or truncated line that could be read as the whole result.
 - A Session row's **New session from {branch}** menu item is chosen for a repository that already has a create in flight (from the header **+**, another row's same item, or the Base branch dialog): refused by the shared per-repository guard rather than starting a second worktree. On the Manage sessions screen, a row whose repository is not (yet) present in the loaded repositories list omits the item instead of showing it disabled.
 - A `read` call's `path` does not start with `skill://`, or a `skill-prompt` custom message's `details` is missing, is not an object, or carries no usable `name`: neither gets the skill-aware treatment -- the `read` renders as an ordinary row and the custom message falls back to the existing generic notice, never a row that claims a name it does not have.
+- An `ask` extension_ui_request frame Refract cannot parse (no questions, or a question with no id) is answered as cancelled automatically, and the developer sees a notice that the agent's question could not be shown, rather than a card with nothing in it.
+- OMP sends a `cancel` for a still-open structured-dialog question (for example once its own timeout fires): the card closes without the usual "Request withdrawn" notice, since what actually happened is the agent's own recorded answer, not a withdrawal; the answered-question summary (FR-045) is built from that recorded result.
+- A `bash` call fails with genuinely no stdout or stderr (for example `exit 9`): OMP's own wrapper still returns a placeholder `(no output)` line before its `Wall time:`/`Command exited with code N` footer; the Error line treats `(no output)` as wrapper chrome too and instead shows the exit code OMP itself reported ("Exited with code 9"), never the placeholder (amended issue #570, Clarifications 2026-10-16, gate round 1: the first cut kept the placeholder and dropped the exit code, the opposite of useful). "Failed." is reserved for when there is no output AND no exit/timeout information at all.
+- A tool call's error text contains ANSI colour/cursor control sequences (a terminal capture, not OMP's own bash wrapper): they are stripped before deriving the Error line, so a stray escape code never leaks into the plain-text row.
+- A multi-call group is still running with one member already failed: the group's own header stays the running (spinner) icon and a neutral label -- it does not turn red until the group settles -- but the error-coloured "N failed" count in the meta slot shows at once, so a mid-run failure is never hidden until the whole group finishes.
+- A session-list search query matches zero Sessions: the toolbar and its own scroll area stay mounted, and a compact empty state ("No sessions match", a Clear filter action) replaces the groups rather than leaving a blank scroll area. A Project group that still exists but currently owns no Sessions is never shown as a false match merely because its own Project name happens to match the query.
+- A Session is created while a search query is active and its generated name does not match: FR-069/decision 20's own "open the group" step produces no visible row at all (search narrows what is listed; it never reveals a row the list would not otherwise show, FR-071), so this is announced ("Created session {name}, hidden by the session filter") instead of leaving the user with no feedback that anything happened (amended issue #559, gate round 1, ui-architect-v3 finding 9, 2026-10-16: an amendment to decision 20's "auto-open" rule for exactly the case a query hides the newly-opened row).
+- A Session is renamed while a search query is active and the new name (together with its branch and Project name) no longer matches: the row unmounts on the next render once the rename lands; if focus was on that row, it moves to the search field rather than `<body>` (issue #559 gate round 2, the `useLayoutEffect`-cleanup-plus-one-`requestAnimationFrame` pattern issue #900 established for a parent-level removal taking focus with it). The same applies when a Project itself is renamed out of a Project-name query: the whole group unmounts, and a focused header rename input gets the identical redirect (issue #559 gate round 3, `useFocusSearchOnStrandedUnmount`, shared by both).
 
 ## Requirements *(mandatory)*
 
@@ -253,11 +1440,11 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-002**: Users MUST be able to create a session for a repository in one click from the repository's default branch, or by choosing another Base branch in a picker opened by a separate button, with the repository's default branch preselected there; the session's worktree MUST get a new branch created from that Base branch, and uncommitted edits in the developer's main checkout MUST NOT carry over into it. The picker MUST open below its field without covering it and MUST group branches as Branches and Sessions with distinct icons; a session's entry MUST show its current display name (so a rename is reflected), its branch id as secondary text, and an Archived tag when the session is archived. The new session MUST be selected and opened. Both buttons MUST have accessible names and tooltips, a failure MUST show its reason and leave no half-created session, and a second click while a one-click creation is in progress MUST NOT create a second session.
 - **FR-003**: Each new session MUST be given an automatically generated, readable adjective-noun display name; that name is the session's initial display name and also names its worktree's branch and folder, but from creation on the display name and the branch and folder name are independent values: the display name is never derived from or kept in step with the branch or folder.
 - **FR-004**: Users MUST be able to rename a session's display name at any time; renaming MUST NOT change its branch or its worktree's folder, which keep their original generated names for the life of the session. A rename MUST show immediately everywhere the session is shown (the session list, chat header, branch picker, details card, delete confirmation, notifications, and low-memory warning), all of which read the one display name.
-- **FR-005**: The session list MUST show, per repository, every non-archived session with its display name and a status of working, idle, needs you, or stopped.
-- **FR-006**: Refract MUST mark a session as unread when it finishes work while the developer is viewing a different session or a different app window, and MUST clear that marker the next time the developer opens the session.
+- **FR-005**: The session list MUST show, per repository, every non-archived session with its display name and a status of working, needs you, stopped, Unread response (idle with an unseen reply), or idle, drawn by the one shared status icon and its word, with no separate unread marker.
+- **FR-006**: Refract MUST mark a session's status as Unread response when it finishes work while the developer is viewing a different session or a different app window, and MUST clear it, returning the session to Idle, the next time the developer opens the session.
 - **FR-007**: Users MUST be able to send a message in a session and see the agent's reply appear progressively, including which tools the agent is running.
-- **FR-008**: Each tool call, except the hidden tools of FR-052, MUST render as one compact row, collapsed by default, naming the tool, its target, status, and duration; expanding a row MUST NOT reveal a boxed Arguments/Output/content block (superseded by FR-061, 2026-10-11: expanding instead shows a file-edit tool call's diff, a failed call's own error text, a successful write's one-line summary, or a short successful result, plus the "View full call" link FR-061 describes). Consecutive calls to the same tool MUST be grouped into one collapsed line that shows the last call's target and a count of the others (for example "echo 'hello world...' + 2 others"); the group's status MUST be running while any call runs and failed when any call failed, and expanding it MUST show each call as its own expandable row. A different tool, a thinking line, or a question between two calls ends a group, and a call that is waiting for approval (FR-016) is never folded into a group: it stays its own visible row until it is decided. A collapsed group that contains a failed call MUST say so in text (for example "+ 2 others, 1 failed"), never by colour alone. Each subagent MUST be its own single collapsed line, never grouped with other subagents; one call to the agent's task tool can start several subagents at once and MUST then show one line per subagent, each with that subagent's name or task, its own status, and its own duration, expanding to its prompt and result; once the Subagents panel of spec 004 exists, activating the line MUST open that subagent there.
-- **FR-009**: The agent's reasoning MUST be a single collapsed line that the developer can expand; it MUST NOT be shown inline with the visible answer. While the reasoning streams, the line MUST read "Thinking" with a faint one-line preview of its latest text; once done it MUST read "Thought for" and the duration (for example "Thought for 5s"). When a reopened conversation carries no timing for a thought, the line MUST read just "Thought" instead of showing a made-up duration.
+- **FR-008**: Each tool call, except the hidden tools of FR-052, MUST render as one compact row, collapsed by default, naming the tool, its target, status, and duration; expanding a row MUST NOT reveal a boxed Arguments/Output/content block (superseded by FR-061, 2026-10-11: expanding instead shows a file-edit tool call's diff, a failed call's own error text, a successful write's one-line summary, or a short successful result, plus the "View full call" link FR-061 describes). Consecutive calls to the same tool MUST be grouped into one collapsed line that shows the last call's target and a count of the others (for example "echo 'hello world...' + 2 others") (superseded by #632 below); the group's status MUST be running while any call runs and failed when any call failed, and expanding it MUST show each call as its own expandable row. A different tool, a thinking line, or a question between two calls ends a group, and a call that is waiting for approval (FR-016) is never folded into a group: it stays its own visible row until it is decided. A collapsed group that contains a failed call MUST say so in text (for example "+ 2 others, 1 failed"), never by colour alone (superseded by #632 below). Subagents started by the agent's task tool follow FR-067/FR-068 instead of this grouping rule (amended issue #563, Clarifications 2026-10-15: subagent rows are grouped into Stages, superseding this requirement's earlier "never grouped with other subagents"). Expanding a multi-call group MUST show its calls as an ordered list of rows down a neutral Spine (amended issue #565, Clarifications 2026-10-15: one 1px `border-divider` left rule hanging from the group header's own status icon, decorative, with no border on any row itself at any nesting depth); a group of exactly one call MUST show that call's own body directly, with no Spine. (amended issue #570, Clarifications 2026-10-16): a row's own LABEL MUST stay neutral for `running`, `done`, `interrupted`, and `exited` (the running icon alone keeps its own pre-existing working colour, unchanged by this amendment; `done`, `interrupted`, and `exited` stay fully neutral in both icon and label); only a failed (`error`) call's icon and label MUST render in the error colour, and FR-061's own Error line MUST show under that row whether collapsed or expanded. A multi-call group's own header follows the same neutral/error rule keyed to the group's SETTLED status (running still wins over a failed member per this requirement's own worst-state order above), while its "N failed"/"N interrupted" counts (moved from the summary text into the never-shrinking meta slot) show the error colour on "N failed" the instant any member fails, even mid-run; when both counts show they MUST be joined by a visible separator plus an sr-only comma, never bare adjacent text (amended issue #570, Clarifications 2026-10-16, gate round 1). The group's own Error line (FR-061) names the LATEST FAILED member, not necessarily the last call the summary names; when the failing member is not that last call, the line MUST be prefixed with the failing call's own target in muted text (capped short, so a long target never pushes the error text itself out of the two-line clamp) so it is never read as belonging to a call that actually succeeded (amended issue #570, Clarifications 2026-10-16, gate round 1). (amended issue #632, Clarifications 2026-10-17, supersedes this requirement's own "shows the last call's target and a count of the others" wording above): a multi-call group's own header MUST instead read the tool name and the run's own count, with no call's command shown in the header at all (for example "bash ×2"); the group's own total time (the sum of every member's own duration) MUST join the "N failed"/"N interrupted" counts in the meta slot, with the same visible-separator-plus-sr-only-comma grammar gate round 1 established for those two. A call's own row, solo or nested inside a group, MUST show a command-style form for `bash` (a leading `$` plus the first line of the command) and `grep` (`grep "<pattern>"`, plus the search path when the call's own arguments carry one as a plain string); every other tool (`glob`, `find`, `read`, `write`, `edit`) keeps showing its own target untouched. An `edit` call's own row MUST additionally show its own "+N −M" added/removed line stat (the same stat FR-061's dialog already computes from the call's own old/new text) alongside its duration; `write` gets no such stat (no prior content is cached to diff it against).
+- **FR-009**: The agent's reasoning MUST be a single collapsed line that the developer can expand; it MUST NOT be shown inline with the visible answer. While the reasoning streams, the line MUST read "Thinking" with a faint one-line preview of its latest text; once done it MUST read "Thought for" and the duration (for example "Thought for 5s"). When a reopened conversation carries no timing for a thought, the line MUST read just "Thought" instead of showing a made-up duration. (amended issue #557, Clarifications 2026-10-16): a run of two or more consecutive thinking items with nothing else between them MUST collapse into one row reading "Thought process" with the step count (for example "3 steps"), additionally showing the total elapsed time as the union of the members' own timed intervals -- never a plain sum, which can overstate the total past the turn total FR-046 shows below it -- whenever every member carries both timing bounds; the shown total MUST be floored at 1 second, the same floor every member's own duration already uses, so the header never reads a total shorter than any one of its own members (gate round 1 fix, 2026-10-16: several thoughts inside one message can genuinely total under 500ms, since Rust stamps each bound from wall-clock delivery time, not reasoning time). The time MUST be omitted, showing the step count alone, while any member still streams or is missing a bound. The run MUST expand to its individual thoughts, each still following this requirement's own per-thought wording above; a run of exactly one thinking item MUST show that thought's own row directly, with no group wrapper.
 - **FR-010**: Users MUST be able to stop a running turn, and MUST be able to send the next message as soon as the stop has taken effect. The Stop button MUST NOT show the keyboard chord beside it; the chord (Ctrl+Shift+X) MUST keep stopping the turn, MUST be named in the Stop button's tooltip on hover and on keyboard focus, and MUST be listed in the settings screen and the command palette when those exist.
 - **FR-011**: Sending a message while a turn is running MUST queue it as a removable chip shown under the running turn; the queued message MUST be sent as the next turn once the running turn ends, unless the developer removes it first.
 - **FR-012**: A queued follow-up chip MUST offer a "Send now" action that steers the currently running turn with that message instead of waiting for the turn to end.
@@ -266,7 +1453,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-015**: Approval mode MUST be a single app-wide setting with three levels — Ask (prompts for file changes and commands), Edit freely (prompts only for commands), and Auto (never prompts) — applying to every session; reads are never prompted; the default is Ask.
 - **FR-016**: A tool call the agent wants to run MUST be shown to the user with the tool and its target, and MUST NOT run until approved, whenever the current Approval mode requires approval for it.
 - **FR-017**: Users MUST be able to approve or deny each tool request that is shown; a denial MUST be reported back to the agent.
-- **FR-018**: When the agent asks a question (choice or free text), Refract MUST show it and return the user's answer or cancellation; no request may be left unanswered without the user being able to see it. The question text MUST render through the same sanitised-markdown renderer as the rest of chat (paragraphs, line breaks, lists, bold, inline code, and fenced code blocks; raw HTML stays unrendered), at normal weight, never inside a bold title. When the question has more than one line, its first line MUST show as a short heading of medium weight with the rest as body text with paragraph spacing, a single-line question MUST show as one line of normal weight with no separate heading. The heading split MUST be suppressed, rendering the whole question as body instead, when the first line itself starts a markdown block (a fence, a list item, a blockquote, a table row, an ATX heading, a thematic break, a setext heading underline on the next non-blank line, or a 4-space/tab indented code line) or when the remaining text would be blank. The question body MUST keep the full column width FR-049 already gives it (no narrower reading width of its own) and MUST have a maximum height with its own internal scrollbar, so a long question never pushes the options or Cancel off screen (WCAG 1.4.10). Options MUST stack vertically at full width, each with its label at medium weight and its optional description beneath it in muted text.
+- **FR-018**: When the agent asks a question (choice or free text), Refract MUST show it and return the user's answer or cancellation; no request may be left unanswered without the user being able to see it. The question text MUST render through the same sanitised-markdown renderer as the rest of chat (paragraphs, line breaks, lists, bold, inline code, and fenced code blocks; raw HTML stays unrendered), at normal weight, never inside a bold title. When the question has more than one line, its first line MUST show as a short heading of medium weight with the rest as body text with paragraph spacing, a single-line question MUST show as one line of normal weight with no separate heading. The heading split MUST be suppressed, rendering the whole question as body instead, when the first line itself starts a markdown block (a fence, a list item, a blockquote, a table row, an ATX heading, a thematic break, a setext heading underline on the next non-blank line, or a 4-space/tab indented code line) or when the remaining text would be blank. The question body MUST keep the full column width FR-049 already gives it (no narrower reading width of its own) and MUST have a maximum height with its own internal scrollbar, so a long question never pushes the options or Cancel off screen (WCAG 1.4.10). Options MUST stack vertically at full width, each with its label at medium weight and its optional description beneath it in muted text. This governs the question text of every question shown, whether it is the only one or one tab of a multi-question card (FR-066).
 - **FR-019**: Pending approvals and questions MUST stay visible and answerable for as long as the session lives, including while the user is viewing a different session.
 - **FR-020**: Changing the app's Approval mode while a session is mid-turn MUST show the new mode as pending on that session; the change MUST take effect only once that session is idle (its turn, any background work, and any pending approval or question have all finished), at which point Refract restarts that session's agent behind the scenes and reattaches the same conversation; an in-flight turn or a pending prompt MUST NOT be interrupted by a mode change.
 - **FR-021**: Agent-produced text, tool output, and file contents MUST be displayed as inert content and never executed or loaded as active content.
@@ -277,7 +1464,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-026**: Several sessions MUST be able to work at the same time without their messages, requests, or output mixing.
 - **FR-027**: While Refract is not the focused window, a Windows notification MUST fire only when a session becomes needs you or when it finishes; clicking it MUST open that session; no other session state change MUST trigger a notification.
 - **FR-028**: Users MUST be able to archive a session, hiding it from the main list while keeping its worktree and conversations intact; archiving MUST be reversible from an archived view.
-- **FR-029**: Users MUST be able to delete a session only after an explicit confirmation that names what will be lost — its uncommitted changes and unpushed commits — after which its worktree and conversations are permanently removed.
+- **FR-029**: Users MUST be able to delete a session only after an explicit confirmation that names what will be lost — its uncommitted changes and unpushed commits — after which its worktree and conversations are permanently removed. The confirmation dialog MUST additionally run a background filesystem walk of the worktree as soon as it opens and show a leftover-files summary — generated folders (for example `node_modules`) by name with file counts, and other files by path, capped with "and N more" — showing "Checking files…" until the walk finishes; Delete MUST stay enabled throughout, whether or not the walk has finished. Before the agent is stopped, Refract MUST preflight the worktree for a holder: Windows Restart Manager naming a program and pid holding a file open inside it (excluding this session's own recorded agent process ids), then, only if Restart Manager finds nobody, a safe rename probe (renaming the worktree folder to a sibling name inside the worktrees root and straight back) to catch a folder held only as a working directory. A named holder, or an in-use folder with no named holder, MUST refuse the delete with a message identifying the holder where known (otherwise the generic "A program has this folder open, for example a terminal or File Explorer window. Close it, then Retry." wording), delete nothing, and leave the session running so Retry is simply choosing Delete again; a holder that cannot be detected MUST NOT block the delete. Once the preflight passes and the agent and watcher are stopped, Refract MUST remove the worktree's files itself (never relying on a removal that cannot handle a full or long-path Windows tree) without ever following a junction or symlink out of the worktree, and the branch MUST always be deleted the same way as before.
 - **FR-030**: Refract's own git use MUST be limited to creating and deleting worktrees, listing branches, reading enough status to warn before a delete, and reading change counts (files changed, lines added and removed, read-only, never staging or altering anything), and reading the configured `user.name` (resolved in the main process, per repository), for the session details card (FR-039) and, in spec 004, the session readout; committing and pushing MUST be done by the user asking the agent in chat, not through dedicated Refract controls, and pull request browsing and review belong to spec 003.
 - **FR-031**: Closing Refract normally MUST NOT leave agent processes running. After Refract is force-killed, agent processes left over MUST be stopped no later than the next Refract start.
 - **FR-032**: When the user types `/`, Refract MUST list the slash commands the agent currently offers that Refract is verified to run, and MUST run the chosen one to a visible result (its output, its effect, or the question or approval it raises) without leaving the session stuck. A command that cannot work in Refract, including one OMP offers only for its own terminal interface and one that Refract has not verified on the supported OMP version, MUST NOT be listed. A native command that Refract has not built yet MUST NOT be listed either.
@@ -285,44 +1472,510 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-034**: When a session's agent stops unexpectedly, Refract MUST show the session as stopped with the reason if known, and offer a recover action that reattaches the saved conversation. When the saved conversation itself cannot be reattached (for example a missing or mismatched conversation file, issue #449), Refract MUST additionally offer a Start new conversation action, so the session is never left with no way forward.
 - **FR-035**: When a session's worktree folder is found missing, Refract MUST show the session as stopped with the missing path, MUST keep its conversations readable, and MUST offer to recreate the worktree from the session's branch (only if that branch still exists), archive the session, or delete it; it MUST NOT offer a recover action, because the agent cannot run without its worktree.
 - **FR-036**: Refract MUST show an actionable setup message when the agent cannot be started (not installed, not signed in, wrong version).
-- **FR-037**: Refract MUST warn the user when the machine's free memory falls below a low-memory threshold, stating how many agents Refract is running, and MUST NOT stop any agent on its own. The warning MUST be a badge on the profile item (spec 008) that opens a popover naming the running agents with a Stop agent action for each; the app has no status bar.
+- **FR-037**: Refract MUST show the low-memory condition as a quiet alert row directly under the profile item (FR-072 covers the unverified-OMP-version row the same surface also carries): one line with an icon, the text "Low memory", one text action "Triage", and a small control that dismisses the row for the rest of the run (it reappears only if the condition still holds the next time Refract starts). The row MUST NOT state an agent count of its own (amended 2026-10-17, gate round 2, Code FAIL: the system's own live-agent count includes every non-stopped agent -- idle, working, AND waiting on the user -- while Triage only ever lists idle ones, so a count on the row would promise a number Triage could not match). Triage MUST open a dialog listing every Session whose agent is idle -- MUST NOT list one that is mid-turn or waiting on the user -- stating how many idle Sessions it found, each with its own Stop action, plus one Stop idle action that targets every listed Session at once; stopping an agent MUST always require the user to confirm first, naming the Session, and MUST NOT happen automatically under any condition.
 - **FR-038**: Users MUST be able to stop a session's agent without archiving the session; the session stays listed, and reopening it reattaches its current conversation.
-- **FR-039**: The session list MUST show a details card for a session, on hover and on keyboard focus after a short delay, with its status, time since last activity, repository, branch, the absolute folder path of its worktree, the model and reasoning effort (the last known values while the agent is not running, FR-041), and the number of files changed with additions and deletions. The card MUST stay open while the pointer is over it, MUST be dismissible with Esc, and MUST NOT hide the row it describes. Files changed MUST count every file that differs from the session's Base branch (committed edits, uncommitted edits to tracked files, and new untracked files; ignored files are not counted) with the lines added and removed, where the lines of a new untracked text file count as added up to a size cap beyond which the card marks the count as partial; it MUST show a muted "Not available" when the worktree is missing or the count cannot be read within 3 seconds. The card is the only details surface; the chat header does not repeat it.
-- **FR-040**: The message box MUST use round, icon-only Send and Stop buttons placed inside the field, with no "Send" or "Stop" text; each button MUST have an accessible name and a tooltip on hover and on keyboard focus that shows its keyboard shortcut as key-cap icons. The field MUST be more transparent than the page surface while keeping text contrast at WCAG AA.
-- **FR-041**: The message box MUST show, inside the field, the session's model provider, model name, and reasoning effort, read from the agent while it runs and kept as last known values per session so they remain visible when the agent is not running; before any value has been seen it MUST show a muted "Model not known yet". A model role MUST be shown only once a verified source for it exists on the supported OMP version.
+- **FR-039**: The session list MUST show a details card for a session, on hover and on keyboard focus after a short delay, with its status, time since last activity, repository, branch, the absolute folder path of its worktree, the model and reasoning effort (the last known values while the agent is not running, FR-041), and the number of files changed with additions and deletions. The card MUST stay open while the pointer is over it, MUST be dismissible with Esc, and MUST NOT hide the row it describes. Files changed MUST count every file that differs from the session's Base branch (committed edits, uncommitted edits to tracked files, and new untracked files; ignored files are not counted) with the lines added and removed, where the lines of a new untracked text file count as added up to a size cap beyond which the card marks the count as partial; it MUST show a muted "Not available" when the worktree is missing or the count cannot be read within 3 seconds. The card is the only details surface; the chat header does not repeat it. (Amended 2026-10-15, issue #567 decisions 11, 16: the session list row's own relative time is a short, visually distinct form -- "now", "5m", "3h", "2d", then a short date from 7 days on -- redrawn by one shared app-level tick aligned to the minute rather than only when the row happens to redraw, and marked `aria-hidden`; the card above keeps the long "N ago" form. The row's own accessible description, read via `aria-describedby` rather than the row's visible text, states in order: the row's own activity text when its second line is not the branch, the branch and its Base branch, "Last active" with the long time form, and the worktree path.)
+- **FR-040**: The message box MUST use round, icon-only Send and Stop buttons placed inside the field, with no "Send" or "Stop" text; each button MUST have an accessible name and a tooltip on hover and on keyboard focus that shows its keyboard shortcut as key-cap icons. The field MUST be more transparent than the page surface while keeping text contrast at WCAG AA. (amended 2026-10-16, issue #927: in Dark and Obsidian the field's fill is fully transparent (shows the chat background through it) with a faint border around the soft divider tone, and the field's own focus outline and the Approval mode/Model/Reasoning/Attach triggers' resting chrome and focus outline are all muted to match -- an accepted WCAG 1.4.11 departure, `docs/design/accessibility.md` "Accepted departures"; Dark (high contrast) is explicitly excluded and keeps its prior opaque fill, opaque border and full focus ring unchanged. Send and Stop themselves are unaffected.)
+- **FR-041**: The message box MUST show, inside the field, the session's model provider, model name, and reasoning effort, read from the agent while it runs and kept as last known values per session so they remain visible when the agent is not running; before any value has been seen it MUST show a muted "Model not known yet". A model role MUST be shown only once a verified source for it exists on the supported OMP version. (superseded by FR-064, 2026-10-15, issue #564: the bottom row now offers model and reasoning pickers in place of this read-only line).
 - **FR-042**: The chat MUST render markdown in assistant text, user text, and the collapsed Thinking row as GitHub-flavoured markdown: headings, emphasis, lists, task lists (read-only checkboxes), strikethrough, tables, footnotes, autolinks, links, blockquotes, and syntax-highlighted code blocks. Raw HTML in markdown MUST NOT be rendered, and every markdown surface MUST go through the sanitiser.
 - **FR-043**: A fenced code block tagged `mermaid` MUST be drawn as a diagram by the MermaidJS library in strict security mode and shown as an inert image, never as inline SVG or other markup injected into the page. The library MUST load only when the first diagram appears, and a diagram MUST be drawn only once its fence is complete (the source shows as a code block while the reply streams). Each diagram MUST have an accessible description and a Show source toggle, and a diagram that is invalid, too large, or too slow MUST fall back to its source with a one-line reason.
 - **FR-044**: The details card MUST offer a Copy path button, which puts the worktree's absolute path on the clipboard and confirms it, and an Open in file explorer button, which opens the worktree folder in Windows Explorer or reports that the folder is missing. The session's row menu MUST offer the same two actions so they are reachable from the keyboard. Each button and menu item MUST have an accessible name, and Open in file explorer MUST open only a session's own worktree folder, never a path supplied by the interface.
-- **FR-045**: Once an agent question is answered or cancelled, the transcript MUST show it as a collapsed line starting "Asked user:" with the question cut off by an ellipsis when it does not fit, expandable to the full question and its options, with the answer below it, indented, as "Answer:" followed by the answer text and the user's name; a cancelled question MUST show "Cancelled". The name MUST be the git `user.name` of the session's repository, falling back to the Windows user name when git has none. The question and answer MUST be kept with the conversation, built from the agent's own recorded question call and its result so that reopening it, including after an app restart, shows them again. A question that is still pending MUST stay the interactive card of FR-018. Question and answer text MUST be displayed as inert text (FR-021).
-- **FR-046**: Each turn's activity block MUST end with a muted single line showing the turn's total elapsed time (for example "28s" or "1m 14s"); while the turn runs it MUST update without being announced to assistive technology on every tick. When a reopened conversation does not carry the timing needed for a turn, the line MUST be omitted for that turn rather than show a guess.
-- **FR-047**: Every kind of chat output other than the user's own messages, the agent's visible answer text, and a request still waiting for the user (FR-018) MUST render by the same baseline: one single line with an icon, a short label, and a one-line summary (plus a status or duration where the output has one), collapsed by default, expandable to the full detail as inert text. Tool calls, tool groups, thinking, answered questions, decided approvals, subagents, messages between agents (FR-048), notices, and command output all follow it, and each kind adds only the extras it needs (a diff for edits, a count for groups, an answer line for questions). Any new kind of output MUST start from this baseline. A warning or error line MUST show its message text in the collapsed line, with an icon or text cue and never colour alone.
+- **FR-045**: Once an `ask` tool call is answered or cancelled, the transcript MUST show it as one collapsed line per call, starting "Asked user:" followed by its first question cut off by an ellipsis when it does not fit, plus " and N more" when the call asked more than one question; expanding it MUST show each question as its own block (the question, its options, and an indented "Answer:" line with the answer text and the user's name), separated by spacing with no box. A question the call never answered MUST show "Cancelled" for a cancelled call, or "Question not answered" for a call interrupted before OMP recorded an answer. The name MUST be the git `user.name` of the session's repository, falling back to the Windows user name when git has none. The question(s) and answer(s) MUST be kept with the conversation, built from the agent's own recorded `ask` call and its result so that reopening it, including after an app restart, shows them again. A call that is still pending MUST stay the interactive card of FR-018/FR-066. Question and answer text MUST be displayed as inert text (FR-021).
+- **FR-046**: Each turn's activity block MUST end with a muted single line showing the turn's total elapsed time (for example "28s" or "1m 14s"); while the turn runs it MUST update without being announced to assistive technology on every tick. When a reopened conversation does not carry the timing needed for a turn, the line MUST be omitted for that turn rather than show a guess. (amended issue #938, Clarifications 2026-10-17): a `command_output` notice -- a user-run slash command's own reply -- MUST NOT count toward this total; a reply that arrives after a turn's other activity has already ended MUST NOT change that turn's own shown elapsed time, however long after the turn the reply happens to arrive -- including when the session itself becomes busy again processing that later command (gate round 1 fix, 2026-10-18: once a turn's own elapsed time has genuinely settled, a LATER unrelated command's own processing MUST NOT resume the live-ticking display for it).
+- **FR-047**: Every kind of chat output other than the user's own messages, the agent's visible answer text, and a request still waiting for the user (FR-018) MUST render by the same baseline: one single line with an icon, a short label, and a one-line summary (plus a status or duration where the output has one), collapsed by default, expandable to the full detail as inert text. Tool calls, tool groups, thinking, answered questions, decided approvals, subagents (grouped into Stages and, for a multi-Stage turn, a Subagent chain summary -- FR-067, FR-068), messages between agents (FR-048), notices, and command output all follow it, and each kind adds only the extras it needs (a diff for edits, a count for groups, an answer line for questions). Any new kind of output MUST start from this baseline. A warning or error line MUST show its message text in the collapsed line, with an icon or text cue and never colour alone. A tool group's, a Stage's, the Subagent chain's, and (amended issue #557, Clarifications 2026-10-16) a Thought run's (FR-009) own member rows MUST hang from one shared Spine per group (amended issue #565, Clarifications 2026-10-15: neutral, never coloured by state or theme); there is no turn-level Spine, and a group of exactly one member has none. (amended issue #570, Clarifications 2026-10-16): for a tool call or tool group specifically, this warning/error line is FR-061's own **Error line** -- derived from the call's error text (ANSI stripped, the LAST non-empty line for `bash`, the FIRST for any other tool, 200-character cap) and linked to the row's trigger by `aria-describedby`, never a second live-region announcement beyond mounting inside the transcript's own existing log region.
 - **FR-048**: Each message exchanged between a subagent and the main agent, or between subagents, MUST show as its own single collapsed line naming the sender and the recipient with a one-line preview, expandable to the full message as plain text. Messages MUST NOT be grouped or hidden.
-- **FR-049**: All text in the chat transcript (the agent's answer, the user's messages, thinking text, notices, and the question and approval cards) MUST fill the full width of the transcript column, with no narrower reading width of its own; code blocks, diffs, and tables use the same width and scroll sideways only when their content is wider.
-- **FR-050**: Every code block in the chat (a fenced block in markdown, and the arguments and output of a tool call) MUST show a language indicator in a small header: the language's name, or "text" when none is known. The code MUST be syntax highlighted when its language is known, JSON arguments and JSON output MUST be shown pretty-printed, and an unknown or failed language MUST fall back to plain text under the "text" label without an error. The indicator MUST be readable text and meet WCAG AA contrast. Code is displayed as inert text (FR-021).
-- **FR-051**: Advisory notes that OMP adds to the conversation (`<advisory>` elements with a severity of nit, concern, or blocker, and optionally an advisor name, a turns-ago marker, and guidance) MUST be parsed and shown as baseline lines (FR-047) styled by severity: a blocker in the error colour, a concern in the warning colour, and a nit muted, each also with an icon and the severity word so colour is never the only cue. A line MUST show the advisor name and the turns-ago marker when present and a one-line preview of the note, and expanding it MUST show the full note and its guidance as inert text. One message that carries several advisories MUST show one line each, and raw tag text MUST NOT be shown when parsing succeeds; text that cannot be parsed MUST show as a generic baseline line instead.
-- **FR-052**: The agent's own bookkeeping tool calls MUST NOT be shown in the chat. The list is fixed in one place and starts with `todo`; a hidden call that fails MUST still surface as an error notice, and hidden calls MUST NOT break up a group of consecutive calls to another tool (FR-008). This is the only exception to FR-008 and FR-047.
+- **FR-049**: All text in the chat transcript (the agent's answer, the user's messages, thinking text, notices, and the question and approval cards) MUST fill the full width of the transcript column, with no narrower reading width of its own; code blocks, diffs, and tables use the same width and scroll sideways only when their content is wider (amended 2026-10-18, issue #554: "the transcript column" is now whichever width FR-073's Chat width setting chooses, Full or Reading column -- in both, no element may add an even narrower measure of its own inside that column).
+- **FR-050**: Every code block in the chat (a fenced block in markdown, and the arguments and output of a tool call) MUST show a language indicator in a small header: the language's name, or "text" when none is known. The code MUST be syntax highlighted when its language is known, JSON arguments and JSON output MUST be shown pretty-printed, and an unknown or failed language MUST fall back to plain text under the "text" label without an error. The indicator MUST be readable text and meet WCAG AA contrast. Code is displayed as inert text (FR-021). (amended issue #558, gate round 3): a fence whose info string is the dedicated `advisor-note` token (used only by FR-051's "Ask agent" message, never emitted by any other caller) MUST wrap instead of scrolling sideways, so the advisor's own quoted note stays fully readable without a horizontal scrollbar hiding part of a sentence; every other code block, including an untagged `text` fence, keeps the scroll-sideways rule above unchanged. (amended issue #975, Decided 2026-10-19): a code block's header and body MUST share one literal background -- the active theme's own `--card` colour -- never a fixed colour the chosen Shiki syntax theme ships with; every token colour that syntax theme chooses (keywords, strings, comments, and its own default text colour) MUST still clear 4.5:1 against that `--card` background in every built-in preset, the same floor this app's other body text already meets.
+- **FR-051**: Advisory notes that OMP adds to the conversation (`<advisory>` elements with a severity of nit, concern, or blocker, and optionally an advisor name, a turns-ago marker, and guidance) MUST be parsed and shown as baseline lines (FR-047) styled by severity: a blocker in the error colour, a concern in the warning colour, and a nit muted, each also with an icon and the severity word so colour is never the only cue. A line MUST show the advisor name and the turns-ago marker when present and a one-line preview of the note, and expanding it MUST show the full note and its guidance as inert text. One message that carries several advisories MUST show one line each, and raw tag text MUST NOT be shown when parsing succeeds; text that cannot be parsed MUST show as a generic baseline line instead. (amended issue #558, Clarifications 2026-10-16, ui-architect-v3 roundtable decision record; corrected gate round 1 and gate round 2, 2026-10-16): an expanded blocker MUST be expanded by default (live or reopened from history alike, with no focus steal on auto-expansion). The row's own mount into the transcript's `role="log"` IS the one polite announcement decision 9 requires (gate round 2 correction: a gate round 1 attempt at a SEPARATE out-of-log status announcer still re-announced on a Session/Conversation switch and "Load earlier", and still double-read a live arrival alongside the log's own addition -- deleted rather than patched again, matching the existing Error-line precedent); a Session/Conversation switch, a history reopen, and revealing a hidden concern run MUST NOT announce anything (none of those are log additions; a concern-run reveal MUST suppress log announcements for the one frame the reveal commits in, the same mechanism "Load N earlier turns" uses). A blocker row MUST show a 3px left accent bar in the error colour AT ALL TIMES, collapsed or expanded, with no surrounding box; a concern row MUST show the same bar in the warning colour only while expanded. The expanded body, in order, MUST show the full note, the guidance, then any `path:line` (optionally `:column`) location(s) the note or guidance names as monospace, selectable text de-duplicated by path:line pair with `\` and `/` normalised to the same key (none shown when none is found), then a Copy action ("Copy advisory") that copies the note, guidance and every location, and an "Ask agent to address this blocker"/"...concern" action that sends the note, guidance and locations to the agent through the exact same send path a normal user message takes (gated on the Session's own status exactly as the composer's own send control is, including starting a not-yet-started Session first), bounded inside a fenced code block (strictly longer than any backtick run already in the payload, with a length cap) rather than an `<advisory>`-style tag -- which a sanitised Markdown renderer parses as a raw, dropped HTML block -- posted as a real user turn; focus MUST return to the row's own trigger once the send completes, unless the developer has since moved focus elsewhere. A nit MUST NOT get any of this treatment. Every run of consecutive concern-severity advisories in one turn, including a run of one, MUST be grouped identically to a Tool group or Thought run (FR-047): a run of five or fewer renders unchanged with no control; a run of six or more MUST collapse behind a "+ Show N more advisor concerns" control, placed above the rows, that permanently reveals the rest on activation and moves focus to the first newly revealed row. Blockers and nits are never part of a run.
+- **FR-052**: The agent's own bookkeeping tool calls MUST NOT be shown in the chat. The list is fixed in one place and starts with `todo`; a hidden call that fails MUST still surface as an error notice, and hidden calls MUST NOT break up a group of consecutive calls to another tool (FR-008) or a run of consecutive thinking items (FR-009, amended issue #557, Clarifications 2026-10-16). This is the only exception to FR-008, FR-009, and FR-047.
 - **FR-053**: Every scrollbar in the app (the transcript, tool arguments and output, code blocks, the session list, dialogs, menus, and panels) MUST be thin and use the active theme's colours instead of the system's default light scrollbar, so on a dark theme it is dark, with a thumb that keeps at least 3:1 contrast against its track and the page and is easier to see on hover and while dragging; scrolling with the keyboard, the wheel, and touch MUST behave as before. A list that has no reason to scroll sideways (the slash menu, pickers, and menus) MUST NOT show a horizontal scrollbar: long text truncates with an ellipsis instead.
-- **FR-054**: Items that show a choice or the active item MUST have square corners: the options in pickers and menus (including the slash menu), their hover, highlight, and checked states, the selected session row, selected tabs, and toggle segments. Buttons, inputs, popups, dialogs, cards, and chips keep their rounded corners. One shared rule MUST apply this, so a new picker or menu is square without extra work.
+- **FR-054**: Items that show a choice or the active item MUST have square corners: the options in pickers and menus (including the slash menu), the ask card's tick-box rows for a multiple-choice question, their hover, highlight, and checked states, the selected session row, selected tabs, and toggle segments. Buttons, inputs, popups, dialogs, cards, and chips keep their rounded corners. One shared rule MUST apply this, so a new picker or menu is square without extra work.
 - **FR-055**: Nothing the user can read in the app (labels, buttons, tooltips, menus, toasts, notices, errors, empty states, dialogs, notifications, and the window title) MAY refer to project terminology: requirement or task numbers (such as "FR-037" or "T040"), user stories, specs, issues, repository files, the constitution, or build state (such as "not implemented", "lands in a later task", or "wired up"). Text MUST use the product's own terms (Session, Repository, Conversation, Base branch). A feature that is not available MUST NOT be shown, or MUST say plainly in terms of what the user wants to do that it is not available. Code comments and developer documentation are not covered.
-- **FR-056**: The app MUST NOT have a status bar. The Approval mode (FR-015) MUST show as a pill directly above the message box, labelled with the current mode and its icon, that opens a menu of the three modes, each with an icon, its name, and a one-line description of what it prompts for, the current one marked by a check and text. A mode change that is waiting for the session to go idle (FR-020) MUST show on the pill (for example "Auto after this turn"). The pill and its menu MUST be operable by keyboard, with an accessible name that states the current mode.
+- **FR-056**: The app MUST NOT have a status bar. The Approval mode (FR-015) MUST show as a pill directly above the message box, labelled with the current mode and its icon, that opens a menu of the three modes, each with an icon, its name, and a one-line description of what it prompts for, the current one marked by a check and text. A mode change that is waiting for the session to go idle (FR-020) MUST show on the pill (for example "Auto after this turn"). The pill and its menu MUST be operable by keyboard, with an accessible name that states the current mode. (amended by FR-065, 2026-10-15, issue #564: the pill moves into the message box's own bottom row, so "directly above the message box" no longer describes where it sits).
 - **FR-057**: The window MUST NOT show a menu bar except while the developer holds Alt, when the File, Edit, View, and Window menu appears in the app's top row (as the native menu if the merged title bar still supports it, otherwise as an in-app menu with the same items). The title bar MUST be merged into the app's top row: the window's minimise, maximise, and close buttons MUST sit in the app's own top row in the active theme's colours, the top-right of the window MUST always leave room for those buttons (in a split view, spec 005, that is the header of the right-hand pane), the left nav MUST start at the very top of the window with the app's icon and name in its header, the top rows MUST be draggable to move the window (except their buttons), double-clicking a draggable area MUST maximise or restore the window, and every menu command that has a keyboard shortcut (copy, paste, zoom, reload in development) MUST keep working without the bar.
 - **FR-058**: The message box MUST offer inline ghost-text word completion while the developer types, sourced from the agent's own word-completion RPC command, gated to only a prose word at the end of a line (never mid-word, never on text shaped like a path or a slash command). A shown suggestion MUST be dimmed, non-selectable text distinct from the committed draft, and MUST NOT be exposed as part of the textarea's own accessible value; Tab MUST accept it, inserting exactly the suggested text, and any edit or cursor move that leaves a shown suggestion behind MUST clear it. Prediction MUST run only against a Session whose agent is already running, and MUST NOT itself start an agent or any background process for a stopped Session. A prediction failure (including the suggestion source being temporarily unavailable) MUST degrade silently to no ghost text, never a visible error.
 - **FR-059**: A repository MUST be removable only once it owns zero Sessions, archived ones included, since even an archived Session still owns a worktree on disk; attempting removal while it owns any MUST be refused with a `has-sessions` error and MUST change nothing. The removal entry point is a **Remove repository…** item in a menu on the repository's header in the session list, reachable by keyboard with an accessible name, following the pattern of a Session row's own menu. Choosing it MUST open a confirmation dialog whose focus is trapped while open: when the repository still owns Sessions, the dialog MUST state plainly how many are active and how many are archived and that they must be deleted first, and MUST offer no destructive action, only a way to close it; when it owns none, the dialog MUST name exactly what removal does -- the repository's entry in Refract is removed, its folder on disk is left untouched -- before asking for confirmation. On a successful removal the repository's group MUST disappear from the session list at once, and focus MUST move to another repository group's header if one remains or, if that was the last repository, to the first-run readiness screen that replaces the workspace once no repository remains (FR-001); on failure the error MUST be reported through the same notification surface used elsewhere and MUST leave the repository listed exactly as it was. No part of this flow MAY convey state through colour alone.
 - **FR-060**: A Session row's action menu (the "..." trigger and its matching right-click menu, on both the session list and the Manage sessions screen) MUST offer a **New session from {repository.defaultBranch}** item as its first entry, followed by a separator before Rename; selecting it MUST create a session instantly in that row's own repository on its default branch (the same path FR-002's one-click creation uses), with no dialog and no Base branch choice, and MUST move focus to the new session's chat pane once it is ready unless the developer has since moved focus elsewhere, in which case focus MUST be left where the developer put it. A per-repository in-flight guard MUST be shared by this item, the repository header's one-click **+** button, and the Base branch picker dialog so that only one create can run per repository at a time; while a create is in flight for a repository, every one of those three controls for that repository MUST show as busy (disabled, and the **+** button's spinner) rather than allowing a second concurrent create. A failure MUST return focus to the menu's origin (the "..." trigger, or, for a right-click/Shift+F10 open, the element inside the row that had focus when the menu opened, else the row's open button) unless the developer has since moved focus elsewhere, and MUST show an error that stays until dismissed via a close control; on the Manage sessions screen a successful create switches back to the chat view only while that screen is still showing and the developer has not since moved focus elsewhere (otherwise "Created session {name}" is announced and the view is left alone). On the Manage sessions screen, where a row's repository is not (yet) present in the loaded repositories list, the item MUST be left out of the menu entirely rather than shown disabled.
-- **FR-061**: A tool call's expanded row MUST NOT show a boxed Arguments, Output, or content block (2026-10-11, issues #628/#630, amends FR-008): a failed call MUST still show its own error as one or two lines of plain text in the row, since hiding Arguments/Output MUST NOT hide a failure; a successful `write` call MUST show "Wrote N lines to `<path>`"; any other successful call whose result is a single line of 200 characters or fewer MUST show that result verbatim; a longer or multi-line result MUST show nothing extra in the row. The row MUST always offer a "View full call" text link, with an accessible name including the tool and the target (truncated with an ellipsis, never dropped, once the combined name passes 80 characters), that opens a dialog with a Formatted tab (default: a header naming the tool, target, status and duration, then each argument as its own labelled section -- a string value shown exactly as written with real line breaks, except a `write` call's own `content` that is itself JSON, which MUST be re-parsed and pretty-printed, and a `bash` call's own `command`, which MUST be highlighted as bash; a non-string value is pretty-printed as JSON -- then the output) and a JSON tab (the exact arguments and output, pretty-printed in one block, with a Copy button that copies that exact text); Esc MUST close the dialog and return focus to the link; nothing shown in either tab MAY be rendered as markdown (FR-021). A file-edit tool call's expanded row MUST still show a diff of the change (unaffected by the rule above), capped to about 24rem tall with its own scroll while collapsed; the diff's header MUST show the path, a Copy diff action, and added/removed line counts; an Expand control MUST be offered only when the diff's content is actually taller than that cap, switching to Collapse once activated and showing the whole diff uncapped; a failed edit with no diff that could be built MUST show only its error text and the "View full call" link, never an empty body. This rule MUST NOT apply to the pull request Changes tab's own diff view (spec 003), which keeps showing a whole, uncapped diff.
+- **FR-061**: A tool call's expanded row MUST NOT show a boxed Arguments, Output, or content block (2026-10-11, issues #628/#630, amends FR-008): a failed call MUST still show its own error as one or two lines of plain text in the row, since hiding Arguments/Output MUST NOT hide a failure; a successful `write` call MUST show "Wrote N lines to `<path>`"; any other successful call, EXCEPT `bash` (amended issue #632, Clarifications 2026-10-17, gate round 1: an expanded `bash` call shows no output text at all, a failed call's own Error line aside), whose result is a single line of 200 characters or fewer MUST show that result verbatim; a longer or multi-line result MUST show nothing extra in the row. The row MUST always offer a "View full call" text link, with an accessible name including the tool and the target (truncated with an ellipsis, never dropped, once the combined name passes 80 characters), that opens a dialog with a Formatted tab (default: a header naming the tool, target, status and duration, then each argument as its own labelled section -- a string value shown exactly as written with real line breaks, except a `write` call's own `content` that is itself JSON, which MUST be re-parsed and pretty-printed, and a `bash` call's own `command`, which MUST be highlighted as bash; a non-string value is pretty-printed as JSON -- then the output) and a JSON tab (the exact arguments and output, pretty-printed in one block, with a Copy button that copies that exact text); Esc MUST close the dialog and return focus to the link; nothing shown in either tab MAY be rendered as markdown (FR-021). A file-edit tool call's expanded row MUST still show a diff of the change (unaffected by the rule above), capped to about 24rem tall with its own scroll while collapsed; the diff's header MUST show the path, a Copy diff action, and added/removed line counts; an Expand control MUST be offered only when the diff's content is actually taller than that cap, switching to Collapse once activated and showing the whole diff uncapped; a failed edit with no diff that could be built MUST show only its error text and the "View full call" link, never an empty body. This rule MUST NOT apply to the pull request Changes tab's own diff view (spec 003), which keeps showing a whole, uncapped diff. (amended issue #570, Clarifications 2026-10-16, corrected by gate round 1): the failed-call error text above is renamed the **Error line** and is no longer confined to the expanded row -- it MUST render directly under the collapsed row itself, unconditionally (collapsed or expanded), with ANSI control sequences, C0 control characters, and bidi-override characters stripped first. For a `bash` call, only OMP's own `Wall time: Ns` line (and nothing after it, which may include a notice OMP inserted before the exit-code line) is stripped from the end; the exit code or timeout OMP reports on that same trailing section MUST be read before the cut and used as a fallback ("Exited with code N" / "Command timed out after N seconds"), and a lone `(no output)` placeholder left after the cut MUST be treated as wrapper chrome, not content -- when nothing real remains, the fallback is shown instead of the placeholder. The LAST non-empty remaining line is then taken for `bash` (or the FIRST non-empty line for any other tool, unaffected by any of this), cut at 200 characters with an ellipsis; "Failed." is reserved for when there is no output AND no exit/timeout information at all. The expansion's own body MUST NOT repeat it. A multi-call group's own header shows the Error line of its most recently failed member while collapsed, replaced by each failed member's own line once expanded; the line MUST ALWAYS name which call it belongs to (amended issue #632, Clarifications 2026-10-17, gate round 1: the header's own visible summary no longer names any call at all, so this naming is unconditional -- not only "when that member is not the one the header's own visible summary names", which no longer applies to anything). (amended issue #632, Clarifications 2026-10-17): a row's own target text, which this requirement's "View full call" link already exists to show in full, MUST ALSO wrap instead of truncate once the row itself is expanded (the row's existing `summaryWrap` behaviour applied automatically while open, not only for a caller that opts into it for a narrow column), so the full command or path is readable directly in the row without opening the dialog; the dialog itself is unchanged.
 - **FR-062**: A `read` tool call whose target is a `skill://` URL MUST render as its own row reading "Using skill: <name>" (the URL's remainder after `skill://`, with any `?query`, `#fragment`, trailing `:<selector>` and trailing `/` removed and control and bidi override characters stripped), with the same status and duration FR-008 gives every tool row, and MUST be a grouping boundary: it MUST NOT be merged into a run of adjacent calls to the same tool on either side (2026-10-07, issue #543, first slice; amends FR-008's grouping rule). Expanding it MUST show the same content FR-061 gives any other `read` row.
 - **FR-063**: A `role: 'custom'` message whose `customType` is `skill-prompt`, whose `attribution` is `user`, and whose `display` is `true` MUST render as its own row reading "Skill invoked: <name>", with its arguments and line count (when present) summarised on the row and its injected text rendered as sanitised Markdown collapsed behind an explicit expand, never shown inline by default (2026-10-07, issue #547). A message that matches the type but carries no usable `name` in its `details` MUST fall back to FR-047's generic notice baseline instead of rendering with a guessed or missing name.
+- **FR-064**: The message box's bottom row MUST offer a Model picker and a Reasoning picker (2026-10-15, issue #564; rebuilt by gate round 1, 2026-10-15), each a labelled trigger naming the Session's current value -- the Model picker reads the same last-known `lastModel` value FR-041 did (provider and model name, "Model not known yet" before any value has been seen); the Reasoning picker reads the same last-known reasoning effort, labelled "Reasoning not known yet" before any value has been seen, or "Reasoning not reported" once a model is known but no non-Default level has ever been explicitly confirmed by this model -- covering BOTH a Session where nothing was ever explicitly requested and one where a non-Default request was made but not confirmed back (gate round 2, corrected by Stuart: "Default" is shown ONLY for an explicitly-confirmed-or-requested `inherit`, never assumed for an untouched Session). A confirmed "Default" MUST survive every later settle and a full app restart (gate round 2 fix, code-reviewer HIGH: the generic settle path previously overwrote it back to unreported on the Session's very next turn or relaunch). The Model picker MUST open as a popover with an accessible name ("Choose model", gate round 2 fix) holding a type-to-filter combobox field with keyboard focus on open and a listbox driven by `aria-activedescendant` (never a text field inside a native `role="menu"`, whose own typeahead cannot coexist with it, gate round 1 rebuild): ArrowUp/Down MUST move the active option, with the active option visibly distinct at 3:1+ (an opaque left border, not `bg-accent` alone, gate round 2 fix, accessibility-auditor HIGH); Enter MUST apply it; Escape and Tab MUST both close the popover and return focus to the trigger (gate round 2 fix: Tab previously left the popover open and carried focus elsewhere). Typing into the filter MUST reset the active option to the first matching catalog model, never a Roles entry the filter does not affect (gate round 2 fix, accessibility-auditor MEDIUM). Selecting an option with the pointer MUST apply on release (`click`), never on press (`mousedown`) alone (gate round 2 fix, WCAG 2.5.2). The listbox MUST show a **Roles** group first listing the Session's roles (`model.listRoles`) with the current one ticked (and named sr-only as current, never `aria-selected`, which belongs to the Models group alone in one listbox, gate round 2 fix), selecting one MUST call `model.applyRole`; below that, a **Models** group lists the catalog (`modelRoles.listCatalog`) filtered by the typed text, current one ticked BY IDENTITY (provider and id, never the display label, gate round 1 fix), selecting one MUST call `model.setModel`, scrolling once the list passes about 12 rows rather than growing unbounded (2026-10-15 grill, decision 6). The Reasoning picker's menu MUST list every one of OMP's thinking levels, in this order, as a radio group whose current level is exposed as `aria-checked` (never a plain item with a decorative check icon, gate round 1 fix): Default (OMP's `inherit`, its configured default), Off, Minimal, Low, Medium, High, Extra high, Max; selecting one MUST call `model.setThinkingLevel`, which Rust MUST refuse with `invalid-argument` for any `level` outside that closed set before sending anything to OMP (gate round 1). Neither picker's successful `set` call MAY ever show an error toast: OMP leaves the reported level out of its state for `inherit` (which still shows as "Default") and for any other level a non-reporting model was asked for (which shows the explicit "Reasoning not reported" state above) -- both are a successful outcome, never a failure (gate round 1, amended by Stuart). Both pickers MUST refuse to open while the Session is working or needs-you, with "Available once the session is idle." in the trigger's accessible name; both MUST ALSO refuse to open, showing the last-known value, while the Session is stopped (no agent running), with a reason naming the action needed (for example "Start the agent to change the model.") in the accessible name, ALSO shown as a visible Tooltip (gate round 2 fix) -- nothing is stored for the next start in that case (2026-10-15 grill, decision 3). A picker menu left open MUST close itself the instant its Session stops being idle or stops running, rather than blocking every close attempt (Escape, an outside click, selecting an item) the way blocking the trigger's own open once also blocked its close (gate round 1 fix). Neither picker MUST ever fail silently once the underlying call itself would have refused. **Gate round 5 amendments** (`agent://Arch877`): the Model picker's VISIBLE trigger text shows the model's bare `name` as the primary text (list rows additionally show the provider as muted secondary text beside it, never combined into one `provider/name` string); the combined `provider/name` form stays in the Tooltip and parenthetically in the accessible name; the popover's own height stays FIXED while open so the list, not the field, absorbs a changing result count; the Roles group is hidden entirely once the filter is non-empty (Roles First holds only with no filter), and a role whose own configured model is unset AND has no documented fallback (`omp://models.md`) is `aria-disabled` and excluded from arrow-key reach, reusing Settings' own "Inherited (...)" wording for a role that DOES have one; the catalog's three real states -- loading, loaded-but-empty, and filtered-to-no-match -- MUST render distinct text, a `Loader2Icon` on the loading row; a cached catalog load error MUST retry automatically on every open and offer an explicit Retry action too, rather than staying failed forever; both pickers MUST show a local pending state for the duration of a `setModel`/`applyRole`/`setThinkingLevel` call (`aria-busy`, the requested value with a `Loader2Icon`, reopening blocked) rather than appearing idle while a request is in flight; every picker's (and the Approval pill's) accessible name MUST start with its own visible text (WCAG 2.5.3, `docs/design/accessibility.md`). **Gate round 6 amendments** (`agent://G564Code`, `agent://Arch877`, `agent://G564A11y`): an unknown model reads the sentence-case "Model not known yet" (a gate round 5 regression showed a lowercase fragment instead), with the ", model" accessible-name suffix dropped when no model is known at all; the catalog-error row is Enter-activatable like every other option, never a `<button>` nested inside one (invalid and unreachable by keyboard), with its own "Retrying…" state, and it never closes the popover on activation; a role with neither a model nor a documented fallback states that reason directly ("Inherited (no fallback)"); `smol`/`slow`'s "Default" fallback wording now reads the exact SAME map Settings itself does (`ROLE_FALLBACK_LABEL`), so the two can no longer drift apart; the Reasoning picker's accessible name and Tooltip no longer double the word "Reasoning" when the trigger's own label already starts with it; the pending state's own parenthetical shows the value actually being applied (a model's provider, or a role's own id), never the stale previous one; the catalog list's height cap is raised to 30rem (24rem measured closer to 9 rows than decision 6's ~12).
+- **FR-065**: The Approval mode pill (FR-056) sits in the message box's own bottom row, first, followed by the Model picker, the Reasoning picker (both FR-064), and an Attach button that opens a native file picker for images, feeding each chosen file through the same attachment pipeline a pasted image already uses (spec 009). Send and Stop (FR-040) are unaffected by this row and keep their own position inside the field. Stop MUST be a solid, neutral fill (foreground-on-background inverted) with a square icon, visibly distinct in weight from Send in EVERY built-in theme (gate round 1 fix: Dark and Dark high contrast previously resolved Send's shared `--primary` fill to the same near-white neutral as Stop, so the two were barely distinguishable in 2 of 3 themes); Send's fill MUST instead come from a dedicated `--send`/`--send-foreground` token pair, chromatic (indigo) in every built-in theme and used only by this one button, never by changing `--primary` itself. Stop MUST NOT be the destructive/red colour, since stopping a turn keeps the work done so far and is not a destructive action, and red is reserved for destructive and error states (2026-10-15 grill, decision 5). While the message box is disabled (FR-064's stopped case), the unusable parts -- the text field, Send/Stop, the Model and Reasoning pickers, and the Attach button -- MUST dim as one `opacity-*` layer (2026-10-15, Stuart, reviewing PR #877: the message box's text field previously grew its own grey background while disabled, which "looks bad"), never a Tailwind colour-opacity modifier (for example `bg-x/50`) on any one element inside it; amended gate round 4 (2026-10-15, Stuart: the Approval pill still works while stopped, so dimming it would misrepresent it as unusable) so the box's own border and background, and the Approval pill specifically, are EXCLUDED from this dim and MUST stay at full opacity in every state. The text field's own disabled background and opacity MUST be suppressed so it no longer contributes a second fill under its own dim; any other dimmed control whose own dimming is driven by exactly this same disabled condition (the Attach button; the Model and Reasoning pickers' own opacity specifically for the stopped-and-not-just-started case) MUST apply the same `opacity-60` value directly, so the stopped-agent reason and the independent mid-turn `notIdle` reason never compound into a different-looking dim, while a control dimmed for a reason the box does NOT cover (a picker or Send refusing only because the Session is mid-turn, not stopped) MUST keep its own distinct opacity treatment unchanged. No control's clickability, `aria-disabled` state, or accessible name changes from this -- only the visual weight of the disabled state. The WCAG 1.4.11 3:1 control-edge rule continues to apply to the box's enabled border only; a disabled control is exempt from it. Every control in the row (the Approval pill, both pickers, Attach, Send, and Stop) MUST share ONE opaque 2px focus outline with a 2px offset (`pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS`/`COMPOSER_BUTTON_FOCUS_CLASS`, gate round 5, `agent://Arch877`) -- replacing the mix of `ring`/`outline`/`border-colour` treatments gate rounds 1 and 4 each drew independently -- and MUST each clear 3:1 against `--composer-background` in every built-in theme; the box's own `focus-within` ring is scoped to the TEXTAREA's own `:focus-visible` only (`has-[textarea:focus-visible]`, was any descendant focus), so a focused bottom-row control is never shown with two different focus indicators at once. The Attach button MUST name its own disabled reason (for example "Start the agent to attach images."), matching both pickers, rather than staying "Attach images" in both states. **Gate round 6 fix** (`agent://Arch877` Visual N4): Send and Stop's own gap widened to 8px (was 4px) so the shared 2px focus outline (2px offset) never reaches into the other button's own fill; Send's own refusal for a reason the box does NOT cover (starting, a pending attachment read, empty text) now uses the SAME shared opacity-plus-hover-reset treatment as the pill, both pickers, and Attach, instead of a one-off `opacity-50` with no hover reset.
+- **FR-066** (renumbered from FR-064 during the #877/#564 merge, gate round 2, 2026-10-15: #564 claimed FR-064/FR-065 first on `main`): On a build where OMP confirms its `ask` dialog is enabled (Refract requests this once per OMP process at launch; it counts as unavailable if the request fails, errors, times out, or does not answer `enabled: true`, and Refract never retries for that process's life), a question call with two or more questions MUST render as one Question card with a tab per question at its top, each labelled by the question's own short header or "Question N", wrapping at narrow widths, with an answered tab showing a check mark whose state is also readable by assistive technology; a single question MUST show no tab row. A single-choice question's options MUST be a set of full-width rows offering exactly one pick; a multiple-choice question's options MUST be full-width tick-box rows, any number of which, including none, may be ticked. Every question MUST also always offer a free-text "Other" row with an always-visible input, usable alongside ticked options on a multiple-choice question. A recommended option MUST show as muted text next to its own label and MUST NOT be preselected. The footer MUST offer an outline Cancel at one side and one filled primary button at the other that reads "Next" until every question is complete and "Submit" once it is; the primary button MUST never be disabled, and pressing it while a question is still incomplete MUST move to that question and, if it is already the open one, show an inline message that an option or free text is required. Answers for the whole call MUST be sent only once -- when Submit is pressed, or when OMP's own timeout auto-answers an unanswered question with its recommended (or otherwise first) option -- never when an option is merely chosen; when OMP reports a timeout, the footer MUST show the deadline as a static line, never a counting-down timer. On a build where the dialog is unavailable, a multi-question call MUST instead arrive and be answered one question at a time, exactly as a single question already is (FR-018), each option row answering immediately when chosen as today, with any trailing "(Recommended)" OMP appends to an option's own label removed from what is shown (but kept in what is sent back); Refract MUST show one explanatory notice per OMP process launch, not per card, that questions on this build arrive separately, naming no implementation or version detail (FR-055).
+- **FR-067** (renumbered from FR-064 during the #877/#563 merge, gate round 2, 2026-10-15 -- further renumbered from FR-066 once #572 also independently claimed that number on `main` for its own Ask card restyle, merged first): The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message (a **Stage**, Clarifications 2026-10-15; gate round 2 architect addendum A: keyed on that message's own id, not transcript adjacency), MUST render as one group row: a header combining a status icon, the agent count, a roll-up of non-zero running/finished/failed/cancelled/exited counts, and the Stage's own duration, over the member rows (each still FR-047's own per-subagent baseline line, unchanged). The label MUST read "Stage N" (plus the count and roll-up), never an invented name (the first agent's own name or the task text). A Stage with exactly one agent MUST always render identically to today's single-subagent row, with no group header, regardless of how many Stages the turn has (gate round 2 architect addendum B, supersedes the turn-scoped rule this build shipped with first): its own position ("Stage N of M") is stated only in that row's accessible name, never in the visible label, so nothing is relabelled under the reader as a sibling Stage starts. Every Stage with two or more agents MUST get its own group header (decision 1, Clarifications 2026-10-15), and that header MUST NOT change element type or remount as a second agent or a second Stage streams in.
+  > Amended 2026-10-18 by FR-079: one-agent Stages now show the Stage label and the agent's name.
+  > Amended 2026-10-18 by FR-087: while a turn has two or more Stages, a Stage row no longer
+  > auto-opens while merely running -- only failed, cancelled, or exited still do, as soon as
+  > one member settles failed, cancelled or exited (not only once the whole Stage settles).
+- **FR-068** (renumbered from FR-065, then from FR-067, see FR-067's own note): A turn with two or more Stages (FR-067) MUST additionally show one **Subagent chain** row at the end of the turn, above the turn-total-time line (FR-046): a collapsed summary line reading the Stage count, the agent count, and non-zero running/failed/cancelled/exited counts, expandable to one line per Stage with that Stage's own agent entries wrapped onto further lines as needed. The row MUST default open while any agent in the turn is running, failed, cancelled, or exited (Clarifications 2026-10-15: cancelled added to the default-open/always-visible set alongside failed/exited), and default collapsed once every agent has finished; activating an agent entry in the chain MUST open that agent in the Subagent panel (spec 004 FR-017) with it selected (Clarifications 2026-10-15: a Stage's own group row does not open the panel -- only the chain's entries do). The chain row MUST NOT show arrows or other connectors implying a dependency between Stages: OMP's data gives only Stage order and each agent's own status and duration, never a true dependency graph.
+- **FR-069** (issue #735, UX-architect-v3 roundtable decision record, 2026-10-15; final numbering confirmed once #899/#563 landed FR-067/FR-068 on `origin/main`): The session list MUST show a pinned toolbar row above its scroll area, below Pull requests, offering Collapse all and Expand all icon-only buttons in that order; each MUST collapse or expand every Repository group and the Archived group (while Archived is shown) at once, MUST be `aria-disabled` (never natively disabled) when it would be a no-op, and MUST be keyboard reachable with an accessible name and a tooltip naming its action and, when disabled, the no-op reason. Each Repository's own collapsed state and the Archived group's own collapsed state MUST be saved (`Settings.sessionListCollapse`) and restored on the next app start, so neither resets on restart; a Repository removed from Refract MUST be pruned from the saved state. A closed group whose non-archived Sessions include one needing the developer, or one that terminated unexpectedly, or one with an Unread response, MUST show a single marker naming the most urgent of those three states in that order; the session list MUST NOT otherwise mark a closed group as needing attention, and an archived Session MUST NOT drive this marker, nor the group's own active-session cue, in the Repository it was archived from. The Repository group currently holding the visible non-archived Session MUST show its own active-session cue even while closed. A closed group MUST reopen, and that open MUST be saved, only when a create or a restore from Archived moves a Session into it -- never for a plain selection, a notification, a Split restore, or a status change.
+- **FR-070** (new, 2026-10-15, issue #567, ui-architect-v3 roundtable decision record, renumbered from a provisional FR-075 once #570 confirmed FR-069 as the ceiling on origin/main): A Session row MUST be a two-line, 44px square-cornered choice item: line 1 MUST show the shared status icon, the session's display name (truncating; its weight MUST NOT change when the row is selected), and the row's own time at the row's right edge; line 2 MUST show exactly one of, in this order, start-progress text, "Terminated unexpectedly", an archived row's own Project name, or otherwise the session's branch. On hover, on focus inside the row, or while the row's own action menu is open, the time MUST hide and the row's own "..." menu button MUST take its place; under a pointer that cannot hover, both MUST show together. A Session shown in a pane MUST keep the existing 2px active-indicator bar plus its selected fill at all times a pane shows it; hover alone MUST add the fill only, never the bar. A Group header (a Project's own header and the cross-project Archived header) MUST use sentence case, never uppercase or letter-spaced text; the Archived header's own count MUST render as a separate `tabular-nums` figure after the word "Archived", never inside brackets. A Group header's own New-session, branch-picker, and actions buttons MUST be 24px ghost icon buttons, hidden at rest and shown by opacity on hover or focus anywhere in the header, while any of the three is open, while a session is being created in that group, whenever the group has no active Sessions, and always under a pointer that cannot hover. The session list's footer MUST read as one block -- the Add repository entry, then the profile item, then any future alert rows -- separated from the scrollable groups above it by exactly one soft divider.
+- **FR-071** (new, 2026-10-16, issue #559, ui-architect-v3 roundtable decision record): The session list MUST offer a search field, between Pull requests and the Collapse all/Expand all toolbar (FR-069), filtering live and case-insensitively against a Session's own name, branch, or its Project's name; a Project group MUST render only once at least one of its own non-archived Sessions matches, showing only the matching rows, and the Archived group MUST be searched the same way (name, branch, or Project name). While the field holds a non-empty query, every Project group with a match and the Archived group (while shown) MUST start open regardless of the user's own saved collapsed/expanded state (FR-069), through state that is never written to `Settings.sessionListCollapse`; the saved layout MUST return exactly unchanged once the query is cleared. Zero matches MUST show a compact empty state naming that nothing matches, with an action that clears the field; the shown-versus-total result count MUST be announced to assistive technology, debounced while the query is being typed. The field MUST be keyboard reachable (Tab reaches it after Pull requests and before the toolbar, per FR-069), clearable by an in-field button and by Esc, and MUST NOT persist its text to disk -- only within the running app, across a Session switch and a Settings/Manage-sessions round trip.
+- **FR-072** (new, 2026-10-16, issue #560): Refract MUST show a second quiet alert row, in the same place and shape as FR-037's low-memory row, whenever the running OMP is outside Refract's supported version range: the text "omp {version}: unverified version", one text action "Check", and the same per-row dismiss-for-the-run control FR-037 describes. Check MUST open the existing Health check dialog (spec 008 FR-022), whose own result text states which versions are verified; this row MUST stay visible across the whole session, not only on first run, since the OMP version can change after Refract's own first-run readiness screen has already passed.
+- **FR-073** (new, 2026-10-18, issue #554, ui-architect-v3 roundtable decision record): Settings, Appearance MUST offer a "Chat width" choice of Full (default) or Reading column, applying to the transcript only (never the message box, the status line, or any other chat-pane chrome). Full MUST leave the transcript's own column unconstrained, filling the pane; Reading column MUST cap it at 64rem, centred, with wider side padding as the chat pane's own container width (not the window) grows past 40rem/48rem/64rem than Full's own padding (gate round 2 fix M1: a Tailwind v4 container query against the pane's `[container-type:size]` ancestor, not a window media query). The cap is a maximum width, not a minimum: a pane narrower than 64rem (including a Split pane at or near its 360px minimum) MUST show the column simply filling the available width with no horizontal scrolling, never a special-cased breakpoint. The choice MUST be a keyboard-operable, live-previewed control (arrow keys/Home/End move the preview immediately, matching the Theme picker's own interaction model, FR-002/FR-003) committed only by Save, reverted by Cancel, Escape, or navigating away without saving, the same Save/Cancel model FR-004 (spec 007) already gives Theme. The brand watermark (spec 012 FR-001/FR-006) and the scroll-to-end button MUST stay anchored to the full reading area regardless of which width is chosen.
+- **FR-074** (new, 2026-10-17, issue #947, decided as delegated while Stuart was away; renumbered from a provisional FR-073 once #966/#554 landed the real FR-073 on `origin/main` first): Typing `/` or further text after it MUST rank every listed command (FR-032) by how well it matches what has been typed so far, not only by whether its name starts with it: an exact match first, then a prefix match, then a match starting right after `-`, `_`, `:` or a space, then a substring match anywhere in the name, then a subsequence match (the typed letters appearing in order with gaps); two commands tied on the same tier MUST keep the order they would otherwise be listed in. A skill command (`skill:<name>`) MUST match on its name with or without the `skill:` prefix, so a skill reachable only by its own name (for example `code-review`) is found without typing the prefix, and typing `skill` alone MUST list every skill. A command's description MUST also be searched, but only for a match starting right after a word boundary or anywhere as a substring (never a subsequence match, amended gate round 1: a subsequence hit against a whole prose sentence barely narrows anything); a description match, with no match in the name or any alias, MUST rank below every command with a name match. The characters of the name that were matched MUST be shown in a heavier weight than the rest of the name, without changing the option's own accessible name, and the shown-versus-total result count MUST be announced to assistive technology, debounced while typing.
+- **FR-075** (new, 2026-10-17, issue #938 item 1, gate follow-up from PR #923/#917; renumbered from a provisional FR-074 for the same reason as FR-074 above): Choosing a listed command that has one or more verified subcommands (FR-032) MUST NOT run the bare command immediately; the menu MUST instead show that command's own verified subcommands as a second step -- with `status` listed first when nothing has been typed for it yet, otherwise ranked as FR-074 describes -- and choosing one of those completes the full `name subcommand` invocation. Decided (Skippy, delegated by Stuart 2026-10-18): the subcommand step's own first row MUST always be "Run /<cmd>", which sends the bare command at once regardless of how it is activated (click, Enter, or Tab), restoring the pre-FR-075 "Enter, Enter" path deliberately instead of blindly; separately, when the typed subcommand text is an EXACT, case-insensitive match for one of the listed subcommands, Enter completes AND sends that full invocation at once, while Tab on the same exact match still only completes the text (no regression for a bare command with no subcommands, e.g. `/dump`, `/effort`, `/prewalk`, which are unaffected and still run on their own Enter/Tab exactly as before).
+- **FR-076** (new, 2026-10-18, issue #925, ui-architect-v3 roundtable decision record; renumbered
+  from a provisional FR-073, then FR-074, once #966/#554 and #954/#947 each merged first and
+  claimed those numbers on `origin/main` in turn; amends
+  spec 003-pull-request-management FR-009/FR-011 and spec 004-session-readout FR-002's own two
+  surfaces, folding in issue #919): Wherever a change-count stat ("N files changed +A -D")
+  renders -- the composer status line's Changes readout (spec 004 FR-002), the Session details
+  card's identical diff line, the Pull requests Changes tab's own aggregate line (spec 003
+  FR-009), its own per-file diff header (`DiffViewFromPatch`, issue #919: never shipped until
+  this issue folded it in), and the chat transcript's own expanded `DiffView` header (gate round
+  1, M1, Decided, Skippy, delegated by Stuart 2026-10-18: this header used its own raw
+  `text-state-working`/`text-destructive` spans before this amendment, a second colouring copy
+  that could drift from the rule below) -- the `+N` MUST take the diff view's own green hue once
+  N is strictly positive, the `-M` MUST take its own red hue once M is strictly positive, and
+  either figure MUST stay muted at exactly zero (a `-0` MUST NOT read as an error). Both hues are
+  dedicated `--diff-added`/`--diff-removed` component tokens (`globals.css`) that alias the SAME
+  `--state-working`/`--destructive` values `DiffView.tsx`'s own insert/delete gutter already
+  colours with (issue #630), never a second, independently-tunable hue; every surface above
+  renders through one shared `DiffStatCounts` component, including its own minus glyph (ASCII
+  `-`, never the Unicode minus sign the chat header used to draw), so no two surfaces can phrase
+  or colour the same figure a different way. The leading +/- glyph remains the non-colour cue in
+  every case (WCAG 1.4.1). A tool call's own edit stat (`ToolRow.tsx`/`toolRowLabels.tsx`'s
+  `callMeta`) and any Pull requests list row are explicitly OUT of this requirement's scope:
+  colouring the former would reopen issue #570 decision 1/3 ("done is neutral on tool rows"),
+  confirmed by a ui-architect-v3 ruling not to apply here, and no list row shows a change count
+  today.
+- **FR-077** (new, 2026-10-18, issue #924; renumbered from a provisional FR-074, then FR-075, the
+  same way; amends FR-064's Reasoning picker trigger icon and
+  this card's own identical thinking-level icon): The Reasoning picker's trigger icon (FR-064)
+  and the Session details card's own thinking-level icon MUST reflect the Session's current
+  reasoning level as a gauge needle rather than a fixed glyph: a custom inline SVG reusing
+  lucide's own `gauge` arc and stroke style, with the needle drawn at one of 7 even steps across
+  that arc -- `off` at its own left tip, `medium` upright (straight up), `max` at its own right
+  tip, `minimal`/`low`/`high`/`xhigh` falling evenly between. `inherit`, and a Session with no
+  reasoning level reported yet, both draw the same centred, upright needle as `medium` -- no
+  field exists, separate from the last-known value FR-064 already reads, to show "the resolved
+  level omp reports" for `inherit` specifically. The icon stays decorative (`aria-hidden`) and
+  uncoloured in both places, unchanged from FR-064's own rule; the status line's context-usage
+  readout (spec 004) keeps its own plain gauge glyph untouched, since it measures context, not
+  reasoning.
+- **FR-079** (new, 2026-10-18, issue #941, Stuart's own `grill-with-docs` session, 2026-10-15;
+  amends FR-067/FR-068's own Subagent chain and Stage rendering): A finished agent or Stage
+  (never a tool row or group, FR-061 unchanged) MUST show a green check icon and green name/
+  label text, the success token, on the Subagent chain, each Stage row, and the Subagent panel.
+  A Stage's own header MUST state a name, regardless of agent count (gate round 2 fix,
+  amending issue #563/Gate round 2 architect addendum B's "a one-agent Stage renders
+  identically to a bare `SubagentRow`" rule -- see FR-067): the first line of its batch
+  `task()` call's own `context` argument (Markdown heading markers and "Goal:" prefixes
+  stripped, truncated to about 60 characters), else, for a Stage with two or more agents, the
+  agents' own shared name prefix, else, for a Stage with exactly one agent, that agent's own
+  name, else (a multi-agent Stage with no context and no shared prefix) a bare "Stage N". A
+  one-agent Stage whose name came from its own captured `context` MUST additionally show the
+  agent's own name as the row's summary text and in its accessible name; a one-agent Stage
+  MUST NOT auto-expand regardless of status (unchanged from the superseded rule's own "renders
+  collapsed by default" -- only the header content changed, not this). Expanding ANY Stage with
+  a captured `context` MUST show its own full captured context as rendered Markdown (visually
+  capped to about 6 lines, a real expand/collapse control past the cap); a Stage with two or
+  more agents MUST additionally show each member's own one-line result;
+  a Stage's own "Uses:" line MUST name only real `agent://<id>` references its own context or
+  tasks make to an agent an EARLIER Stage in the same turn actually started, grouped by that
+  Stage, dropping any reference that matches nothing or points at the Stage's own agents or a
+  later Stage. Below the Subagent chain, Refract MUST show a muted "Up next" list of the agent's
+  own pending Todo phases (OMP `get_state().todoPhases`, name and outstanding task count)
+  whenever at least one phase has outstanding work, rendered once per turn in the chat
+  transcript only (never inside the Subagent panel tree); hidden entirely when there is no todo
+  list, every phase is finished, or the Conversation is reopened history (live state only).
+
+  > Deferred to part 2 (issue #941): the Subagent panel's own green state and Stage grouping,
+  > and the Up next list's own UI, are not yet built here -- only the Rust/TS wire data
+  > (`context`, `todoPhases`) is in place, unconsumed.
+
+  > Part 2 (issue #941, 2026-10-18): now built -- the Subagent panel groups its own
+  > `SubagentSummary[]` by `toolCallId` (its own only correlation key, research.md decision 17),
+  > shows green state uniformly (header and member rows alike), and the "Up next" list renders
+  > below the Subagent chain (a sibling, not nested inside its own expanded body), gated on
+  > `isLastTurn` and at least one Stage.
+
+  > Amended 2026-10-19 by spec 004 FR-030 (issue #700/#701 decision record item 2): the Up
+  > next list above is ALSO hidden while the Session's todo list is pinned (spec 004's new
+  > `PinnedTodoPanel.tsx`), so the agent's plan never shows twice at once.
+
+- **FR-078** (new, 2026-10-18, issue #937, follow-up to #917/PR #923; renumbered from a provisional FR-076 once #954 landed the real FR-074/FR-075 on `origin/main` first, and #967 claimed FR-076/FR-077): The composer status line MUST show an Advisor readout only while the Session's advisor is on, with no Settings toggle to show or hide it; it MUST NOT show any cost, spend, or token figure. Activating it MUST send `/advisor off`. The Session's advisor on/off state MUST be sourced from `/advisor on`'s and `/advisor off`'s own reply text (authoritative) and, as a best-effort hint only, a silent `/advisor status` probe run once at Session attach or resume; an ambiguous `/advisor status` reply MUST be treated as off/hidden, never guessed on.
+- **FR-080** (new, 2026-10-18, issue #672, follow-up to #618: "I like the *Summoning your agent*
+  message, but can it be placed centrally in the chat window, and made larger"; renumbered from a
+  provisional FR-079 once #941 claimed FR-079 on `origin/main` first): The Session
+  start notice MUST use one centred presentation for every Session, not only a brand-new one --
+  centred horizontally and vertically in the transcript viewport. For a Session that already has
+  history, the transcript behind the notice MUST dim to about 40% opacity while the notice
+  shows, returning to full opacity the instant the start ends or whenever keyboard focus moves
+  into the history; the dimmed transcript MUST stay fully interactive throughout (scrollable,
+  selectable, links still work) -- the notice itself gets a soft, borderless backing panel so
+  its own text stays readable against the dim. While keyboard focus is inside that dimmed
+  history, the notice itself MUST hide (not merely dim) so its panel never sits on top of a
+  focused control, reappearing the instant focus leaves the history (for example, by reaching
+  Keep waiting or Cancel). A brand-new Session's placement is unchanged (centred over the
+  otherwise-empty area, no backing panel needed). The randomly-picked joke
+  message and its leading emoji (unchanged pool and once-per-start
+  pick) MUST render at about `text-2xl` (24px) and `text-5xl` (48px) respectively, in the normal
+  foreground colour, the emoji on its own line above the text, with the elapsed-seconds counter
+  small and quiet after the text; on a narrow pane the sizes drop to about `text-xl` (20px) and
+  40px so a long message wraps to two lines without clipping instead of overflowing. The queued
+  and memory-deferred stages keep their plain truthful text and small spinner, shown at the same
+  centred position but at normal size (`text-base`). Keep waiting and Cancel (#512) stay
+  reachable, centred under the message with the existing guidance sentence, never pushed off
+  screen on a short window. An optional slow bob on the emoji (about a 2.4s loop, default on,
+  running a fixed 2 iterations then stopping, under WCAG 2.2.2's 5-second threshold) MUST be
+  disabled under
+  `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
+  static label and the two existing start/stop announcements are ever announced to screen
+  readers.
+- **FR-081** (new, 2026-10-18, issue #938 item 2, gate follow-up from PR #923/#917, still open after #954/#947 shipped items 1 and 4; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): When a slash command is refused as `UnsupportedArguments` (FR-032): if the first word after the command IS one of that command's own verified subcommands but further text follows it (for example `/advisor on now`), the refusal MUST read `/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own.`; otherwise, when the matched builtin command carries one or more verified subcommands at all, the refusal MUST list them by name instead of the generic wording: `/{name} takes one of: {sub1}, {sub2}, ....` (for example `/advisor takes one of: on, off, status.`). A command with no verified subcommands at all (an unknown name, or a command like `/switch` whose one argument is a free-form token rather than a fixed table) MUST keep the existing generic refusal (`/{name} doesn't support arguments yet. Try /{name} on its own.`).
+- **FR-082** (new, 2026-10-18, issue #938 item 3, gate follow-up from PR #923/#917, still open after #954/#947; ui-architect-v3 roundtable decision record): A short notice (`NoticeRow.tsx`, under the long-notice threshold and carrying no embedded line break) MUST let its one-line summary wrap across lines instead of truncating with an ellipsis, so a notice whose text happens to sit close to that threshold is never cut off; it MUST NOT gain a chevron/expand control (there is nothing behind one once the whole text is already visible wrapped).
+- **FR-083** (new, 2026-10-18, issue #938 item 5, gate follow-up from PR #923/#917, still open after #954/#947; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): The Settings screen's Advisor role description (`ModelRolesSection.tsx`) MUST mention how a Session's advisor is turned on (`/advisor on`), alongside its existing fallback-to-Slow wording: "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow."
+- **FR-084** (new, 2026-10-18, issue #991, gate follow-ups from #941 part 1/PR #979; amends
+  FR-067's Stage row; renumbered from a provisional FR-081 once #938/PR #996 claimed FR-081 to
+  FR-083 on `origin/main` first): A multi-agent Stage row (FR-067) MUST sync its disclosure open
+  **upward only** -- it MUST still auto-open while any of its own agents is running, failed,
+  cancelled, or exited, but once open (by that auto-open or by the user), it MUST NOT auto-close
+  itself again on settling all-success; only the user's own toggle may close it, matching the
+  existing per-turn Subagent chain row's rule (FR-068). This also guarantees a keyboard user's
+  focus already inside an open Stage's content is never silently dropped to `<body>` by this
+  specific automatic collapse (WCAG 2.4.3): the only way the row closes is the user's own
+  activation of its own trigger, which already holds focus at that moment. A SEPARATE,
+  pre-existing focus-loss path is explicitly OUT OF SCOPE here (gate round 1, 2026-10-18): a
+  solo Stage's own body swaps for a member list the instant a second agent streams into the
+  same Stage, which can still unmount whatever was focused inside it; tracked as a follow-up
+  (issue #1001), not fixed by this requirement. A Stage row's and the Subagent chain row's own
+  manual-toggle state MUST survive a remount of the row (a session switch, where a different
+  Session's own row set replaces this one through ordinary keyed-list reconciliation), keyed
+  per session and per row -- scoped to Stage and chain rows only; a tool-call group row and a
+  thought-run row still reset their own disclosure on remount, unchanged by this requirement. A
+  user's own manual CLOSE MUST NOT be overridden by that Stage later failing (the user's choice
+  wins permanently over any later auto-open condition; the failure still surfaces through the
+  closed Stage's own header -- its red icon and "N done, M failed" roll-up show regardless of
+  expand state -- the chain row's own roll-up when the turn has 2 or more Stages, and the
+  screen-reader-only settle announcement; there is no toast, decided gate round 2). A toggle
+  attempted on the chain row before it has mounted with a real row id (the row id is missing
+  only while the turn has no Stage at all yet) is dropped by design -- this only ever happens
+  while `stages.length < 2`, the same range the chain row renders nothing at all for (FR-068's
+  own gate, which also covers a turn with exactly one Stage, where the row id IS already
+  defined), so there is never a visible trigger to have toggled either way.
+- **FR-085** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979; amended gate
+  round 1, then gate round 2, then gate round 3, `agent://Main`, 2026-10-18): A subagent's
+  async-result frame (`details.jobs[]`) MUST only ever resolve the specific `subagent` item that
+  issued the matching tool call, never an unrelated item from a different Stage that happens to
+  share the same subagent `name`/job `label`/`id` string, for Stages that run one after another.
+  A custom `async-result` message's jobs MUST be applied exactly ONCE (on `message_end` only --
+  matching the already-once-per-message history replay path), not once per
+  `message_start`/`message_end` pair; a `message_end` IS guaranteed for every such message
+  (confirmed from the real installed omp binary's own source, not merely assumed from a
+  fixture). An async-result message MUST NOT build a Notice/advisory/agent-message item at any
+  frame (real omp always sets `display: true` on it, which would otherwise leak a stray Notice
+  row). A row only becomes **settled** (permanently ineligible for any further match) once a job
+  carrying a REAL result (`resultText`, `errorText`, or `schema.data`) resolves it -- a job with
+  none of those (the `wait` tool's bare completion shape) MUST NOT settle the row, so a later,
+  genuinely-real job for the same `job_id` can still apply. Among still-unsettled items,
+  candidates MUST be ranked by three tiers, each only a tie-break for the one before it: (1) a
+  still-Running row beats one already ended by its own batch result (Error/Cancelled/Done
+  without ever getting a real async result); (2) a `job_id` match beats a label-only match, but
+  ONLY between two rows that are BOTH still Running (a `job_id` match from a non-Running row
+  must never out-rank a label-only match); (3) the latest `started_at` wins any remaining tie. A
+  single job entry MUST resolve at most one item per async-result frame. **Known, accepted
+  limit**: any overlap of two same-name jobs whose own async-result is still outstanding, both
+  still Running (tiers 1 and 2 both tie), can still have their results swapped by tier 3's
+  best-effort `started_at` guess -- this frame carries no real correlation key to settle it for
+  certain; the real fix is #712's `parentToolCallId`, not yet wired up. This requirement's
+  guarantee therefore holds for sequential Stages only.
+- **FR-086** (new, 2026-10-18, issue #862, bug: the Rust Conversation history list hid any
+  Conversation whose first user message started past the build's old fixed 8 KB preview-scan
+  window; renumbered from a provisional FR-087 once #1003 claimed FR-085 on `origin/main`
+  first): Listing a Session's Conversations MUST show every Conversation file that has at least
+  one `role: 'user'` message, whatever byte offset that message starts at and whatever its
+  content -- an image-only message, or one with an empty or missing `content`, still counts as
+  "found" (Decided, Skippy, delegated by Stuart 2026-10-18, gate round 1): the row MUST still be
+  listed, with an empty `preview`, never with the scan instead continuing past it looking for a
+  later, text-bearing message. Finding it MUST stream complete JSONL lines (never parse a line
+  out of a fixed-size byte buffer that can cut it off mid-record) up to a bounded hard cap on
+  total bytes actually read from the file itself (64 KiB, Decided, Skippy, delegated by Stuart
+  2026-10-18; research.md decision 21), so a multi-megabyte Conversation file stays cheap to
+  list; reading MUST stop the instant the first user message is found rather than continuing on
+  to the cap, so the common case is cheaper still. A Conversation whose cap is reached before a
+  user message is found MUST still be listed -- its title (OMP's own fixed-width,
+  always-first-line `type: "title"` slot, well inside the cap) with an empty preview -- rather
+  than being hidden; only a Conversation that reaches real end-of-file within the cap with no
+  user message anywhere is skipped, unchanged from the existing "no user message" rule
+  (data-model.md). Electron (`src/main/conversations.ts`) is unaffected and gets no fix: it
+  is being retired (R13) and keeps its existing fixed-window behaviour.
+- **FR-087** (new, 2026-10-18, issue #1000, ui-architect-v3 ruling at PR #999's own gate;
+  amends FR-067/FR-084's Stage row; renumbered from a provisional FR-086 once #1006 claimed
+  FR-086 on `origin/main` first for issue #862): Once a turn has two or more Stages (FR-068's
+  own `totalStages`, read live -- the turn's own currently-known Stage count, which may still
+  grow), a Stage row (FR-067) MUST NOT auto-open merely because one of its own agents is
+  running. Only a failed, cancelled, or exited MEMBER still auto-opens it, and it MUST do so the
+  instant that member settles, even while a sibling member in the same Stage is still running --
+  waiting for the whole Stage to finish before opening is not sufficient (Decided, Skippy,
+  delegated by Stuart 2026-10-18, UI architect's suggested fix). The per-turn Subagent chain
+  row (FR-068) already carries the live running overview for the whole turn once it reaches
+  two Stages, so a turn's running agents are no longer shown expanded twice over (once in the
+  Stage row in place, again in the chain row). A turn that currently has only one Stage (a
+  later Stage has not started streaming yet) is unaffected and keeps FR-067's own existing
+  running auto-open, since no chain row exists yet to carry an overview for it; the instant a
+  second Stage's own first item streams in, every Stage in the turn, including one already
+  auto-opened while running, is reclassified multi-Stage, but FR-084's own upward-only rule
+  means an already-open Stage never closes because of that reclassification. Concretely: a
+  turn's first Stage always runs alone, so in a genuinely live turn it opens under the
+  single-Stage exception and then stays open for the rest of that mount's life once later
+  Stages arrive (the upward-only latch); a FRESH mount of the same turn (reopened history, a
+  remount) instead renders every Stage already knowing the turn's final Stage count in one
+  single render, so a first Stage that never itself had a failed/cancelled/exited member starts
+  CLOSED there, same as any other untouched Stage in that turn -- this is not a regression, it
+  is the same auto-open condition evaluated once against the turn's own already-known shape,
+  with no earlier single-Stage render to have latched anything from. A user's own manual toggle
+  on a Stage this requirement exempts from auto-open still opens and closes it exactly as
+  before (FR-084 unchanged), and once opened that way also never auto-closes.
+- **FR-088** (new, 2026-10-18, issue #911, confirmed live during #570's own gate round 1;
+  amends FR-008): A tool call the user Stops mid-flight -- its own `tool_execution_end`
+  reporting `isError:true` only because Refract's own per-turn abort-request signal was set
+  when it arrived, never because the call's own output happened to match stop-related wording
+  -- MUST settle to a NEW, separate `cancelled` status: a stop-circle icon (the same shape
+  `subagentStatus.tsx`'s own subagent `cancelled` already uses), a muted "Stopped" label, and
+  NO Error line, never FR-008's own `error` status or red treatment a genuine failure gets. A
+  multi-call group with a stopped member and no failed member MUST settle its own header to
+  the same neutral `cancelled` status (ranked between `interrupted` and `done` in FR-008's own
+  worst-state order; a genuine `error` anywhere in the group still wins), with an "N stopped"
+  count joining the existing "N failed"/"N interrupted" counts in the meta slot, in the same
+  neutral colour "N interrupted" already uses. "Show tool calls" off MUST hide a cancelled-only
+  group exactly as it hides a plain `done` one; FR-008's existing force-visible rule for a
+  failed/interrupted group is unchanged and does not extend to `cancelled`, since nothing is
+  known to have gone wrong. This status is reached only through Refract's own per-turn signal
+  (set only while a turn is genuinely in flight -- `Working`/`NeedsYou` status AND an odd
+  `turn_generation` -- when the user's own Stop click sends OMP's `abort` command; cleared on
+  every new turn, on process exit, on a fresh launch/attach, and if the abort itself failed);
+  a genuine tool failure in the same turn or any later turn MUST still settle `error`. A
+  subagent still running under a stopped `task` batch call MUST settle `Cancelled` the same
+  way (gate round 1, item 4), even when OMP's own per-agent progress entry says nothing of the
+  kind. **Known limitation** (gate round 1, item 5, Decided): reopening a Conversation from
+  history has no persisted signal for this and MUST NOT guess one from the call's own error
+  text -- a Stop-cut-short call reopened from history reads `error`, not `cancelled`. The
+  `prompt_result{status:"aborted"}` notice reads "Turn stopped." (gate round 1, item 6,
+  Decided), not OMP's own "aborted" term; the subagent `Cancelled` word and the `ask` tool's
+  own "Cancelled" wording are unchanged (both have sources other than the user's own Stop
+  click, confirmed by code: `map_progress_status`'s own direct OMP-wire-string mapping, and an
+  `ask` call cancelled by the process/Conversation ending with no answer, respectively).
+- **FR-089** (new, 2026-10-18, issue #1008, ui-architect-v3 gate on PR #1007/#1000; gate round 1
+  remediation 2026-10-18, Main; amends FR-079, FR-068): A Stage with ANY member settled `failed`
+  MUST show the same error-coloured label text a failed tool call already shows (FR-061's own
+  `text-severity-error` rule) -- even while a sibling member is still running (never derived
+  from the Stage's own overall running/failed/cancelled/exited priority order, which would
+  otherwise delay the red label until the whole Stage settles) -- on both the in-place Stage row
+  (FR-067) and the per-turn Subagent chain row's own terse per-Stage summary line (FR-068),
+  amending FR-079's green-only rule, which covered only the finished case and left a failed
+  Stage's own label the default colour. Each Stage's own "Stage N" text in the chain row
+  (FR-068) MUST additionally be a real, keyboard-reachable button with the accessible name "Go
+  to Stage N" (plus its own label when one was computed, e.g. "Go to Stage 5, Finish the
+  remaining Story559 polish and run the fail probe.") -- gate round 1 fix (item 6): the bare
+  "Go to Stage N" form alone did not distinguish two Stages a screen reader user has not yet
+  opened either one of. This button MUST render only while its own Stage row is currently
+  `'visible'` under the existing "Show tool calls"/"Show thinking" view filters (FR-008's own
+  `rowVisibility`) -- gate round 1 fix (item 1, High): "Show tool calls" off can drop a settled,
+  problem-free Stage's own row entirely, leaving nothing to jump to; a hidden Stage's own label
+  stays the original, non-interactive text instead. Activating the button (click or Enter) MUST
+  scroll ONLY the transcript's own scroll viewport (never any other scrollable ancestor) so that
+  Stage's own row lands near the viewport's own top edge (a small margin below it, never
+  centred -- gate round 1 decision, item 2), open it through the same persisted manual-open
+  mechanism FR-084/#991's upward-only disclosure already reads (so a jump counts as the user's
+  own deliberate open, surviving exactly as a manual toggle already does, including across an
+  unmount/remount the view filters above can themselves cause), and move keyboard focus to that
+  Stage row's own trigger without re-triggering the browser's own native focus-scroll.
+- **FR-090** (new, 2026-10-19, issue #1001, found by the accessibility auditor at PR #999's own
+  gate; amends FR-067): A Stage row (FR-067) that gains a second member while keyboard focus
+  sits inside its own one-agent content MUST NOT drop that focus to `<body>` once the content
+  swaps from a bare member body to the multi-member Spine list (WCAG 2.4.3). Decided (Skippy,
+  delegated by Stuart 2026-10-18, then 2026-10-19, Clarifications above): the Stage's own
+  trigger is the fallback focus target when the removed content held focus -- the issue's own
+  preferred no-remount alternative (pre-wrapping a one-agent Stage's body in the same Spine-list
+  shape a joining second member would need) was considered and rejected: it either draws the
+  Spine's own rail/indent for every one-agent Stage (a permanent, unrelated visual regression)
+  or leaves the first member looking different from every later one forever, contradicting this
+  same requirement's own "never switch element type between solo and multi members" rule. Focus
+  MUST be moved synchronously (no externally observable frame where `document.activeElement` is
+  `<body>`) the instant the transition is observed with focus known to have been inside the
+  removed content.
+- **FR-091** (new, 2026-10-19, issue #741, Stuart's own decision record,
+  `issuecomment-6266024041`; amends FR-041/FR-064): The message box's bottom row MUST show a
+  role chip immediately before the Model picker (FR-064): a small ghost button naming the
+  Session's current OMP model role as text plus a provisional per-role icon (`aria-hidden`, an
+  `sr-only` "Role: " prefix, a hoverable/focusable tooltip, colour never the only cue -- no role
+  colour at all until #714). The chip MUST read **Custom** while the Session is pinned to a
+  hand-picked model (`set_model`/`cycle_model`/a direct `/switch <model>` token), and that pin
+  MUST be persisted (the Session registry's own `pinnedModel` field, not only held in memory)
+  so it survives a full app restart with the same data directory; an old registry with no such
+  field reads as not pinned. The chip MUST read **Fallback**, with a tooltip stating OMP
+  switched models after repeated failures and this is not the user's saved choice, whenever the
+  Session's latest `model_change` entry carries `resolvedModelIsFallback: true` -- this MUST
+  outrank a stale pin (a Session OMP has since moved off its hand-picked model is no longer
+  showing the user's own choice, whatever the in-memory pin flag still says). The chip MUST
+  show nothing at all when the role cannot be established, never a guess. It MUST refresh after
+  any model change and after a fallback, not only at attach. It is inert today (no click
+  handler; #766 wires it up as the role switcher's own trigger). The Session details card's
+  model row (part of FR-041's last-known-values row) MUST additionally show a muted "via
+  {provider}" second line under the model name, a friendly map of known provider ids with the
+  raw id as fallback, built from the `provider` field, never by splitting a display string on
+  `/`. Role names, icons, and the provider map MUST live in one shared module so Settings
+  (#714), the icon choice (#717), and the role switcher (#766) read the same data Refract's
+  composer chip does, rather than four independent copies that could drift.
+- **FR-092** (new, 2026-10-20, issue #1050, Decided Skippy, delegated by Stuart 2026-10-19, away
+  mode; amends FR-032/FR-033, reuses FR-058's own mirror-overlay mechanism; gate round 1
+  remediation corrected the mechanism, gate round 2 corrected the fill/text tokens, gate round 3
+  corrected the masking property, the selection highlight and the stacking order, all below):
+  while the draft's own leading token (from `/` through the end of its name, including a
+  `skill:` prefix) is a command or skill the composer's own `commands` list recognises (the same
+  exact-match logic `chat.send`'s own refusal path already applies, never a hard-coded copy of
+  the list or its matching rules), the message box MUST show that token as a subtle pill -- a
+  dedicated `--command-pill-bg` fill (gate round 1 MEDIUM: the fill itself must also be visibly
+  distinct from the composer surface, >=1.4:1 against the effective composer backdrop; gate
+  round 2: `--command-pill-bg` is a plain neutral step in every preset, chosen only to clear
+  that floor, with NO text-contrast constraint on it), a small radius following `--radius`, the
+  token text in a SEPARATE `--command-pill-fg` token (gate round 2: the same hue as
+  `--accent-text`, lightened/desaturated only as far as needed to clear 4.5:1 on the fill, 7:1 in
+  Dark (high contrast); a plain alias of `--accent-text` itself in presets where that already
+  clears both floors; gate round 3: Dark/Obsidian's own hue had drifted 15-25 degrees off
+  `--accent-text`'s real measured hue, corrected), no border -- drawn by a mirror sitting UNDER
+  the real `<textarea>` (the "highlight-within-textarea" technique, gate round 1 HIGH: the
+  mirror renders the WHOLE draft visibly, the textarea itself goes `[-webkit-text-fill-color:
+  transparent]` (gate round 3 HIGH, IME: NOT the `color` property -- masking via `color` also
+  hid anything else that reads it, such as an IME composition underline; `color` itself stays
+  real) with an explicit `caret-color` and a real `::selection` fill (dedicated `--composer-
+  selection-bg`/`-fg` tokens; gate round 3 HIGH: round 1/2's `::selection` rule set only a text
+  colour with NO background, which left the highlight completely invisible -- an author
+  `::selection` rule leaves any UNSET property at the element's own ordinary value, never the
+  UA's special highlight; gate round 5, test review: `--composer-selection-bg` is a TRANSLUCENT
+  accent-text tint, not an opaque alias of `--accent` -- the opaque fill happened to measure
+  EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber, painting an invisible highlight over
+  a selected pill; `--composer-selection-fg` stays a plain alias of `--accent-foreground`,
+  restored via `color` plus `-webkit-text-fill-color: currentColor`) UNCONDITIONALLY, not only
+  while a token is present, so the native caret, the native selection highlight and IME
+  composition keep painting on the real control, on top of the mirror -- the original opaque-
+  overlay-on-top design hid all three. The Send/Stop button container MUST stay clickable while
+  the pill shows (gate round 3 CRITICAL: it previously had no `z-index`, so the textarea's own
+  positioned stacking context painted over it); it now carries its own `z-[3]`, above the
+  textarea's `z-[1]` and the ghost-text/chip mirrors' `z-[2]`. No line-height change and no caret
+  movement; text after the token (the command's own arguments) MUST stay plain. The message box
+  MUST also set `spellCheck={false}` for as long as that leading token is recognised, reverting
+  the instant it stops matching (deleted, edited into an unrecognised name, or the draft no
+  longer starts with `/`) -- a `<textarea>` cannot exclude part of its own text from spellcheck,
+  so a recognised command's own arguments go unchecked too while it shows. An unrecognised
+  leading token (e.g. `/zzz`) MUST show no pill and leave spellcheck unchanged. This is visual
+  only: the textarea's own accessible name and value are unaffected.
+- **FR-093** (new, 2026-10-20, issue #1077, Stuart's own grill session, 2026-10-20; amended
+  2026-10-20, gate round 1, Main, items 1-2/6-7/9; amends FR-067/FR-068's own Subagent chain and
+  Stage rendering, and `SubagentBody`'s own Prompt/Result rendering unchanged by FR-008/FR-061,
+  which never applied to subagents): Expanding a Stage row (solo or multi-agent) or a subagent
+  row's own member content, wherever `SubagentBody` renders, MUST show only the goal, not the
+  full Prompt/Result inline. Inside a Stage, a member's own goal is suppressed only when its OWN
+  task() call genuinely carried a batch context (correlated by that call's own id, not by
+  checking the member's own item alone -- the wire stamps a call's shared context onto only that
+  call's first-listed item, so a later member of the SAME context-bearing call must still
+  resolve to "has a context" through that correlation); a Stage with a context MUST show it once
+  via `StageContextBrief` (FR-067), ordered before its own "Uses:" line, never duplicated per
+  member. A context-less solo Stage's own goal instead renders at the Stage level, in that SAME
+  position (before "Uses:") -- the first lines of its own task, Markdown heading markers and a
+  leading "Goal:" prefix stripped on the first line, heading markers and blank lines stripped
+  throughout every later line, clamped visually to 3 lines (`line-clamp-3`) and capped at 1500
+  Unicode code points (a DOM-size guard only, never splitting a multi-code-unit character) --
+  with the untruncated task reachable once the toggle below is open. A context-less
+  multi-agent Stage's own member likewise shows its own goal, independently of its siblings. A
+  failed, cancelled or exited solo Stage MUST additionally keep its own one-line failure reason
+  visible next to its goal (the same result-summary text a multi-agent member's own row already
+  shows unconditionally), not only reachable behind the toggle. The Prompt and (once known)
+  Result MUST sit behind a text link reading "See input & output", "Hide input & output" once
+  open, each with an `aria-expanded` and `aria-controls` pointing at their container, and an
+  `sr-only` suffix naming the owning agent (every sibling link otherwise reads identical visible
+  text, ambiguous to a screen reader user) -- `Markdown.tsx`'s `MermaidBlock` "Show source"
+  toggle is the cited, reused disclosure shape (ADR 0003), and gains the same Escape-to-close
+  and correct focus ring as every other caller of it. While the agent still has no result, the
+  link reads "See input"/"Hide input" (no "& output") instead, matching `resultBlock`'s own
+  existing presence gate for the "Result" heading. The toggle MUST start collapsed every time
+  its own row (re)mounts, with no remembered state across a collapse-then-reopen. Closing the
+  toggle (Escape) while keyboard focus sits on the trigger itself OR deep inside its own content
+  MUST move focus back to the toggle link (the same WCAG 2.4.3 hazard issues #991/#1001 fixed
+  one level up, for a Stage's own trigger); a nested control's own Escape handling (a Tooltip's
+  own dismiss, WCAG 1.4.13) MUST win the first press.
+- **FR-094** (new, 2026-10-20, issue #1067, Stuart's own `grill-with-docs` session, 2026-10-20;
+  amends FR-011/FR-012; amended gate round 1, Main, 2026-10-20, DECIDED item 1: "blank" now means
+  `text === ''` exactly, not merely whitespace-only -- a space or a Shift+Enter-inserted newline
+  is a real draft, so Enter never promotes over it): With the composer blank (the exact empty
+  string, no pending images, text chips, or file attachments, and no attachment read still in
+  flight, PR #723's `pendingAttachmentReads` guard) and at least one queued `followUp` message,
+  Enter (no Shift, not composing) MUST send the oldest queued follow-up exactly as its own "Send
+  now" chip (FR-012) would, reusing the same single-flight guard so a fast double Enter cannot
+  double-send; a repeat Enter MUST send the next queued follow-up. Queued `steering` messages
+  MUST be skipped; with only steering queued, Enter on a blank composer MUST do nothing. This
+  rule MUST NOT apply while the slash menu is open, an IME composition is in progress, or a
+  ghost-text suggestion (FR-058) is showing. While the rule applies, the composer's hint MUST
+  read "Enter sends the next queued message" followed by the ordinary hint text, reachable
+  through the textarea's `aria-describedby`, and sending this way MUST announce "Sending now…"
+  exactly as the chip's own button does. The Send button's own `aria-keyshortcuts` and tooltip
+  MUST NOT claim Enter sends the (empty) draft while the rule applies. Shift+Enter is unaffected.
+- **FR-095** (new, 2026-10-20, issue #1069, Stuart's own `grill-with-docs` session, 2026-10-20):
+  The Model roles section of Settings MUST show one provider segmented control above the
+  chat-role list, built from the shared `ToggleGroup` (ADR 0003, the same segmented-filter pattern
+  `ManageSessionsToolbar.tsx` already uses), with one segment per provider present in the loaded
+  chat model catalog and no "All" segment. The switch MUST start selected on the provider of the
+  Default role's current model, or the first provider in catalog order when Default's model is
+  unset or not found in the catalog. Changing the selected provider MUST re-filter every chat
+  role's own model dropdown (FR-096) to that provider's models only; it MUST NOT affect the five
+  model-kind roles (Image, Web, Speech, Dictation, Judge), whose own dropdowns are unfiltered and
+  unchanged (FR-099).
+- **FR-096** (new, 2026-10-20, issue #1069): A chat role's model dropdown MUST list only the
+  selected provider's models (FR-095), each item showing the model's display name alone, with no
+  provider shown in parentheses, since the list is already filtered to one provider.
+- **FR-097** (new, 2026-10-20, issue #1069): A chat role whose current model belongs to a provider
+  other than the one selected on the switch (FR-095) MUST keep showing that model's real display
+  name, with a small muted "via {provider}" tag beside it; it MUST NOT be blanked, and MUST NOT
+  fall back to a raw, unresolved selector string the way an unrecognised value does today, whenever
+  that model can be resolved in the full (unfiltered) catalog. Picking a new model for that role
+  still only offers the selected provider's own list (FR-096).
+- **FR-098** (new, 2026-10-20, issue #1069; amends FR-041/FR-064's trigger text, Model roles
+  section only): Each chat role's model-picker trigger MUST show the model's display name only --
+  no provider prefix (superseding today's raw `provider/model:level` fallback for this section) and
+  no trailing `:level` suffix; the role's chosen reasoning level is shown only by its own radio
+  group (FR-099), never glued onto the trigger text.
+- **FR-099** (new, 2026-10-20, issue #1069): Each of the 10 chat roles (Default, Smol, Slow,
+  Vision, Plan, Commit, Tiny, Memory, Task, Advisor) -- never the 5 model-kind roles (Image, Web,
+  Speech, Dictation, Judge) -- MUST show its own named radiogroup (`aria-labelledby` the role's own
+  label) offering seven reasoning levels: Inherit, Off, Minimal, Low, Medium, High, Extra high.
+  Inherit MUST always be enabled and MUST write no `:level` suffix; every other level MUST be
+  enabled only when the role's current model itself supports it (`reasoning`/`thinking` fields read
+  from `omp models --kind chat --json`, threaded through `ModelCatalogEntry`): Off whenever the
+  model is `reasoning:true`, and each of Minimal/Low/Medium/High/Extra high only when that model's
+  own `thinking` array lists it. A disabled option MUST state why (`aria-describedby`), never a
+  silently-greyed control with no explanation. Picking an enabled level MUST write it as the role's
+  existing `:level` suffix via the existing suffix helpers (`modelRoleSuffix.ts`); picking Inherit
+  MUST clear it.
+- **FR-100** (new, 2026-10-22, issue #762): A bare `/models` typed in the message box MUST open
+  Settings at the Model roles section, clear the draft, and send nothing to the agent. The slash
+  menu MUST list it as a native command ("Open model role settings"); the name MUST stay reserved
+  so `chat.send` refuses it and no custom command can claim it.
+- **FR-101** (new, 2026-10-22, issue #838; amends FR-048): Each agent-to-agent line MUST show a
+  direction glyph (a reply bubble for subagent to main, an outgoing bubble for main to subagent, a
+  two-bubble glyph between subagents or for a broadcast) and its sender and recipient in the
+  `--agent-message` colour, with the main agent always named "Main agent" and an sr-only "Agent
+  message from X to Y" as its accessible label; the preview and expanded text keep their normal
+  colours. The direction MUST come from the message's own `fromParent` flag when OMP reports it
+  (`irc:incoming`), falling back to the sender and recipient names. A main-agent
+  `write agent://<id>` call with a message MUST render as a main-to-subagent line, ending any run
+  of grouped tool calls and never hidden by "Show tool calls"; its status glyph replaces the
+  bubble while running, failed, interrupted or stopped, a failed write reads "failed" in the
+  error colour, and expansion shows the full message and "View full call".
 
 ### Key Entities
 
 - **Repository**: A local git repository registered with Refract; has a path and owns zero or more sessions.
-- **Session**: One worktree together with the conversations held in it; has a display name (renamed independently of its branch and folder), a status of working, idle, needs you, or stopped, an archive state of active or archived, and the last known model and reasoning effort. A repository has many sessions; a session has exactly one worktree.
+- **Session**: One worktree together with the conversations held in it; has a display name (renamed independently of its branch and folder), a status of working, idle, needs you, or stopped, an archive state of active or archived, and the last known model and reasoning effort. A repository has many sessions; a session has exactly one worktree. Unread response (issue #731) is a display status derived from idle plus the unread flag, not a stored status: idle sessions whose unseen reply has not been opened show it in place of Idle.
 - **Worktree**: The isolated checkout created for a session; has a folder path, a branch name, and the base branch it was created from.
 - **Base branch**: The branch a new session's worktree branches from, chosen at creation; one-click creation uses the repository's default branch, and the picker preselects it; any local branch may be chosen, including the branch of an existing (even archived) session.
 - **Conversation**: One continuous exchange with the agent inside a session; a session has many conversations, one of which is current, and earlier ones stay reachable as history; stored so it survives restarts.
 - **Approval mode**: The single app-wide setting controlling how much the agent may do without asking — Ask, Edit freely, or Auto; applies to every session; a change made mid-turn is pending on that session until its turn ends.
 - **Approval request**: A pending request from the agent to run a tool, raised only when the current Approval mode requires it; shows the tool and target and has an Approve and Deny outcome.
-- **Question**: A pending request from the agent for a choice or free-text answer, with an answer or a cancel outcome.
+- **Question**: A pending request from the agent for one or more choice or free-text answers, submitted together as one card on a structured-dialog build or one at a time otherwise, with an answer or a cancel outcome.
+- **Stage**: The subagents started by one `task()` call, or by `task()` calls issued together with nothing else in the transcript between them, numbered in turn order (FR-067).
+- **Subagent chain**: The per-turn summary row listing a turn's Stages and their agents with status and duration, shown only for a turn with two or more Stages (FR-068).
 
 ## Success Criteria *(mandatory)*
 

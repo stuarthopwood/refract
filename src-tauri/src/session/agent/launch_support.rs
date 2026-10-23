@@ -12,7 +12,7 @@ use crate::omp::process::{ApprovalMode as ProcApprovalMode, OmpProcess};
 use crate::store::registry::Session;
 use crate::store::settings::ApprovalMode;
 
-use super::{DEFAULT_REQUEST_TIMEOUT_MS, MAX_MESSAGE_PAGES, MESSAGES_PAGE_SIZE};
+use super::{SessionAgent, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MESSAGE_PAGES, MESSAGES_PAGE_SIZE};
 
 /// `RegistryStoreError` has no `Display` impl (only its `Registry` variant's inner
 /// `RegistryError` does); mirrors `ipc::map_registry_error`'s own match for the message half.
@@ -189,6 +189,60 @@ async fn fallback_to_get_messages_core<R: MessagesPageRequester>(proc: &R) -> (V
         return (Vec::new(), false);
     }
     (messages.unwrap().clone(), true)
+}
+
+/// D1/D2 (#572): `set_ask_dialog{enabled:true}` probe, sent once per process right after
+/// `launch()`'s own reattach verification. Result lives only in `agent.state`'s
+/// `ask_dialog_enabled` (never persisted to the registry); anything but
+/// `{success:true, data:{enabled:true}}` -- an error, a timeout, or any other response shape --
+/// leaves Refract on the `select` fallback path for this process's life (D2), and only a later
+/// reattach/relaunch (a new process, hence a fresh `launch()` call) re-probes. Returns the
+/// resolved `enabled` value; the caller (not this function) decides whether and when to tell the
+/// user, since appending a notice here -- before the history merge -- was gate-fix round 1 High
+/// finding H3: `merge_from_history` keeps only unresolved requests and running/streaming items,
+/// so a notice appended before it is silently dropped on every launch where the history fetch
+/// completes.
+pub(super) async fn send_set_ask_dialog(agent: &SessionAgent, proc: &OmpProcess) -> bool {
+    let enabled = match proc
+        .request(
+            json!({ "type": "set_ask_dialog", "enabled": true }),
+            DEFAULT_REQUEST_TIMEOUT_MS,
+        )
+        .await
+    {
+        Ok(response) => {
+            response
+                .get("success")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                && response
+                    .get("data")
+                    .and_then(|data| data.get("enabled"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+        }
+        Err(_) => false,
+    };
+    agent.state.lock().await.ask_dialog_enabled = enabled;
+    enabled
+}
+
+/// D20 (#572): the one notice when `send_set_ask_dialog` above resolved `enabled: false`. Split
+/// out of `launch.rs` (which was sitting at the 600-line cap with no headroom) purely to keep
+/// that call site a one-liner; the caller still decides WHEN to call this (after the history
+/// merge, never right after `send_set_ask_dialog` itself -- gate-fix round 1 High: an earlier
+/// pass called `append_notice` before the merge, which silently dropped it every time).
+pub(super) async fn append_ask_dialog_unavailable_notice(agent: &SessionAgent, enabled: bool) {
+    if enabled {
+        return;
+    }
+    agent
+        .append_notice(
+            "This version of OMP can't show an agent's questions together, so they arrive one at a time."
+                .to_string(),
+            "info",
+        )
+        .await;
 }
 
 #[cfg(test)]

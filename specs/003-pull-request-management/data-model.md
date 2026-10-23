@@ -112,7 +112,11 @@ export interface ChangedFile {
 A reviewer's submitted verdict (FR-015), shown in the timeline. `findings` is non-empty only for an automated reviewer's review (FR-008); a human review's `findings` is always `[]`.
 
 ```ts
-export type ReviewVerdict = 'comment' | 'approve' | 'request-changes';
+// Gate round 3 fix (#568 decision 10 amendment): 'dismissed' covers an already-submitted review
+// that was later dismissed -- a real state a stored Review can be in, kept visible in the
+// Overview timeline (FR-008), but never a choice `submitReview`'s own input can carry (see
+// contracts/ipc.md's `SubmitReviewInput.verdict: Exclude<ReviewVerdict, 'dismissed'>`).
+export type ReviewVerdict = 'comment' | 'approve' | 'request-changes' | 'dismissed';
 
 export interface AutomatedFinding {
   severity: 'low' | 'medium' | 'high' | 'critical' | 'unknown'; // research.md decision 4
@@ -165,13 +169,22 @@ export type TimelineEntry =
   | { kind: 'review-thread'; thread: ReviewThread };
 ```
 
-### `FilterTab`
+### `FilterTab` and `PullRequestStateFilter`
 
-The five list tabs (FR-003), in the order the list shows them.
+The five Filter tabs (FR-003), in the order the list shows them -- `'all'` (every pull request in
+the Project; renamed from `'open'`, issue #499 2026-10-16 decision) plus the four relation tabs.
+Narrowed further by the independent State control (FR-004), default `'open'`.
 
 ```ts
-export type FilterTab = 'open' | 'authored' | 'assigned' | 'involves' | 'review-requested';
+export type FilterTab = 'all' | 'authored' | 'assigned' | 'involves' | 'review-requested';
+export type PullRequestStateFilter = 'open' | 'closed' | 'all';
 ```
+
+### `Settings.pullRequestsListWidthPx`
+
+Issue #930: the list column's resizable width, 280 to 50% of the view, default/remembered 320,
+one value for every Project -- not a new entity, a single `number` field on the existing app-wide
+`Settings` row (spec 001/005's own `settings.json`), the same place `Settings.split` lives.
 
 ## Derived state, not stored types
 

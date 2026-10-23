@@ -1,7 +1,9 @@
 import { HIDDEN_TOOL_NOTICE_PREFIX } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
+import { agentSteerTarget } from './agentMessageDirection'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
+type ThinkingItem = Extract<TranscriptItem, { kind: 'thinking' }>
 
 export interface ToolGroup {
   kind: 'tool-group'
@@ -10,10 +12,36 @@ export interface ToolGroup {
   items: ToolItem[]
 }
 
-export type GroupedTranscriptItem = TranscriptItem | ToolGroup
+// A run of consecutive, non-empty `thinking` items (issue #557, `groupThoughtItems.ts`): every
+// run -- including a run of one -- becomes a `ThoughtRun`, the same "always wrap" rule this
+// file's own `ToolGroup` follows (see `groupThoughtItems.ts`'s own comment for why). Declared
+// here, beside `ToolGroup`, so `GroupedTranscriptItem` is the one place every consumer
+// downstream of `groupToolItems` (`groupSubagentStages.ts`, `transcriptRowVisibility.ts`,
+// `Transcript.tsx`) already imports its grouped-item union from, with no changes needed in any
+// of those files to let a `ThoughtRun` pass through them untouched.
+export interface ThoughtRun {
+  kind: 'thought-run'
+  id: string
+  items: ThinkingItem[]
+}
 
-export function isToolGroup(item: GroupedTranscriptItem): item is ToolGroup {
+export type GroupedTranscriptItem = TranscriptItem | ToolGroup | ThoughtRun
+
+// Parameter widened to `{ kind: string }` (issue #558) rather than the narrower
+// `GroupedTranscriptItem` so a caller holding a STILL-WIDER union (`groupAdvisoryItems.ts`'s own
+// `AdvisoryGroupedTranscriptItem`, which also admits an `AdvisoryRun`) can call either guard
+// directly with no cast and no import cycle; the narrowing each performs is unaffected either way.
+export function isToolGroup(item: { kind: string }): item is ToolGroup {
   return item.kind === 'tool-group'
+}
+
+export function isThoughtRun(item: { kind: string }): item is ThoughtRun {
+  return item.kind === 'thought-run'
+}
+
+// #838: a one-call group holding a `write agent://<id>` steering call (always alone, see below).
+export function isAgentSteerGroup(item: { kind: string }): boolean {
+  return isToolGroup(item) && item.items.length === 1 && agentSteerTarget(item.items[0]!) !== undefined
 }
 
 // Merges runs of adjacent `tool` items that share the same `tool` name into one `ToolGroup`
@@ -49,7 +77,8 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
   }
 
   for (const item of items) {
-    if (item.kind === 'tool' && item.skill) {
+    // #838: a `write agent://<id>` steering call is an agent-to-agent line, a boundary like a skill.
+    if (item.kind === 'tool' && (item.skill || agentSteerTarget(item) !== undefined)) {
       flushRun()
       result.push({ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] })
       continue

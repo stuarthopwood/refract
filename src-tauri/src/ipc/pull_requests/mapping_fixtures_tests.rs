@@ -59,6 +59,7 @@ fn gh_search_entry_deserialises_camel_case() {
         "number": 9,
         "title": "Tidy docs",
         "state": "MERGED",
+        "isDraft": false,
         "author": {"login": "octocat", "name": null},
         "url": "https://github.com/stuarthopwood/refract/pull/9",
         "updatedAt": "2024-02-02T00:00:00Z",
@@ -67,7 +68,7 @@ fn gh_search_entry_deserialises_camel_case() {
     let entry: GhSearchEntry = serde_json::from_str(json).expect("GhSearchEntry fixture parses");
 
     assert!(matches!(
-        map_pull_request_state(&entry.state, false),
+        map_pull_request_state(&entry.state, entry.is_draft),
         PullRequestState::Merged
     ));
     assert_eq!(map_actor(Some(&entry.author)).login, "octocat");

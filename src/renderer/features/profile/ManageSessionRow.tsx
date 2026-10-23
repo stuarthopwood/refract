@@ -5,9 +5,11 @@
 // primary "open" button covers only the info area; the quick action and "..." menu are its
 // SIBLINGS, never nested inside it (a button must never contain another button).
 import { useEffect, useRef, useState } from 'react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import type { KeyboardEvent, RefObject } from 'react'
 import { toast } from 'sonner'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { createdSessionAnnouncement, wasHiddenByFilter } from '@/features/sessions/createdSessionAnnouncement'
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -34,7 +36,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { buildSessionRowActions } from '@/features/sessions/sessionActions'
-import { STATUS_LABEL, StateIcon, formatRelativeTime } from '@/features/sessions/sessionDisplay'
+import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
 import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
@@ -333,24 +335,23 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
           return
         }
         const finish = () => {
-          const stay = useViewStore.getState().view === 'manage-sessions' && isStillHere()
-          if (!stay) {
-            useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+          const announcement = createdSessionAnnouncement(result.value)
+          if (!(useViewStore.getState().view === 'manage-sessions' && isStillHere())) {
+            useChatAreaAnnouncer.getState().announce(announcement)
             return
           }
           useViewStore.getState().openChat(repository.id)
           requestAnimationFrame(() => {
             const { paneSessionIds, focusedIndex } = useSplitStore.getState()
             const focusedSessionId = paneSessionIds[focusedIndex]
-            // Gate round 4 (all four reviewers): do not ignore whether a pane was actually
-            // found -- `openChat` has already switched the view away from this (now unmounted)
-            // screen, so a missing pane must not be left silently unfocused; fall back to the
-            // same "always-connected" nav target `handleOpen` above implicitly relies on via
-            // `focusSessionPane`'s own internal fallback chain.
-            if (!(focusedSessionId && focusSessionPane(focusedSessionId))) {
-              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
-              focusSessionsNav()
-            }
+            // Gate round 4 (all four reviewers): check whether a pane was actually found --
+            // `openChat` already switched the view away from this (unmounted) screen, so a missing
+            // pane must not stay silently unfocused; fall back to the same "always-connected" nav
+            // target `handleOpen` relies on, via `focusSessionPane`'s own fallback chain.
+            const found = focusedSessionId && focusSessionPane(focusedSessionId)
+            // Gate round 5 (Main's finding 2): a found pane still needs this when hidden by filter.
+            if (!found || wasHiddenByFilter(announcement)) useChatAreaAnnouncer.getState().announce(announcement)
+            if (!found) focusSessionsNav()
           })
         }
         if (createRequestedRef.current) settledCreateRef.current = finish
@@ -475,11 +476,9 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   }
 
   return (
-    <li ref={rowRef} className="relative w-full hover:bg-muted/50">
-      {isVisible && <span aria-hidden className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-active-indicator" />}
-      {/* Post-build review fix (Phase7PostBuild, Medium): right-click/Shift+F10 opens the same
-          options the "..." trigger does, matching SessionList.tsx's own row (DESIGN.md "Session
-          list keyboard and focus model") -- the same object behaves identically on both screens. */}
+    <li ref={rowRef} className={isVisible ? 'relative w-full bg-accent text-accent-foreground' : 'relative w-full hover:bg-muted/50'}>
+      {isVisible && <ActiveIndicatorBar />}
+      {/* Post-build review fix (Phase7PostBuild, Medium): right-click/Shift+F10 opens the same options the "..." trigger does, matching SessionList.tsx's own row -- the same object behaves identically on both screens. */}
       <ContextMenu
         onOpenChange={(open) => {
           if (!open) return
@@ -526,7 +525,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                 // row instead of each shifting with its own content's length. Padding moved onto
                 // this button (off the wrapping `<li>`) so the hover fill below is entirely
                 // clickable, with no dead gutter.
-                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[6rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[8rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {/* Post-build review fix (Phase7PostBuild, HIGH, WCAG 2.5.3/4.1.2): no
                     `aria-label` here -- it previously replaced the button's whole content with
@@ -534,8 +533,8 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                     and last activity from screen-reader users entirely. The accessible name now
                     comes from this visible content, in the same order it is read. */}
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <StateIcon status={session.status} />
-                  <span className="truncate text-xs text-muted-foreground">{STATUS_LABEL[session.status]}</span>
+                  <StateIcon status={displayStatus(session)} />
+                  <span className="truncate text-xs text-muted-foreground">{STATUS_LABEL[displayStatus(session)]}</span>
                 </span>
                 {isVisible && <span className="sr-only">Shown in chat</span>}
                 <span className="flex min-w-0 flex-col">

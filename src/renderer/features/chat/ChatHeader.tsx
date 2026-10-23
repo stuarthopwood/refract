@@ -15,7 +15,7 @@
 // `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
 // before the double-click ever reaches the page's own JS, so a renderer-driven toggle was dead
 // code and has been removed.
-import { PanelRightCloseIcon, SplitSquareHorizontalIcon } from 'lucide-react'
+import { MessageSquareXIcon, SplitSquareHorizontalIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -62,8 +62,14 @@ export function ChatHeader({
           // `text-active-indicator` on `bg-active-indicator/15` composited to 2.69:1 against the
           // dark background -- below WCAG 1.4.3's 4.5:1 minimum for text, on the one marker this
           // spec relies on being readable without colour. `text-foreground` (near-white in the
-          // dark theme) against this same tinted background comfortably clears 4.5:1.
-          <span className="shrink-0 rounded-full border border-active-indicator/40 bg-active-indicator/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
+          // dark theme) against this same tinted background comfortably cleared 4.5:1 at the
+          // time. Gate round 3 fix (Main, #1074 follow-up, item 4): `--foreground` itself is
+          // now 90% alpha (#1074), and this badge's `active-indicator/20` fill is a coloured,
+          // non-neutral surface -- FR-023's "stays solid" exception, same category as
+          // `--send-foreground`/`--composer-selection-fg`, not the softened alias cascade. A
+          // re-verified ratio on the translucent value isn't the fix: moved to the dedicated
+          // `--active-indicator-foreground` token (plain solid white in every theme).
+          <span className="shrink-0 rounded-full border border-active-indicator/40 bg-active-indicator/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-active-indicator-foreground">
             Focused
           </span>
         )}
@@ -96,7 +102,7 @@ export function ChatHeader({
                 aria-label={`Close ${session.name} chat pane`}
                 aria-keyshortcuts="Control+W"
               >
-                <PanelRightCloseIcon aria-hidden className="size-4" />
+                <MessageSquareXIcon aria-hidden className="size-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>

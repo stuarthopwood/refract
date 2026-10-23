@@ -76,7 +76,7 @@ fn apply_frame_folded_over_live_frames_scenario_matches_live_frames_golden_json(
 
     let mut state = TranscriptState::new();
     for frame in &frames {
-        state.apply_frame(frame);
+        state.apply_frame(frame, false);
     }
     let items = serde_json::to_value(state.items()).expect("serialize live-frames items");
 

@@ -16,8 +16,10 @@
 // by actual job membership, not by a guessed ancestry chain.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, appendFileSync, readFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:net';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 /** Asks the OS for a free TCP port (binds to port 0, reads back the one actually assigned, then
  * releases it) instead of a fixed guess: a fixed port can already be held by another lane's own
@@ -146,7 +148,7 @@ export class CdpSession {
   async evaluate(expression) {
     const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) {
-      throw new Error(`evaluate failed: ${result.exceptionDetails.exception?.description ?? JSON.stringify(result.exceptionDetails)}`);
+      throw new Error(`evaluate failed: ${result.exceptionDetails.exception?.description ?? JSON.stringify(result.exceptionDetails)} | line=${result.exceptionDetails.lineNumber} col=${result.exceptionDetails.columnNumber} | EXPR>>>${expression}<<<EXPR`);
     }
     return result.result.value;
   }
@@ -289,6 +291,82 @@ $parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction
   }
   if (!parsed.owner) return false;
   return parsed.owner === targetPid || parsed.parent === targetPid;
+}
+
+/** The real OS-level executable path backing `pid`, via `Win32_Process.ExecutablePath` -- proves
+ * the process a CDP session is actually driving is the exact scratch copy a caller just built
+ * and hashed, not a stale instance or a substituted binary (gate round 2 fix, test-reviewer
+ * Medium: the exe hash used to be logged but never actually checked against anything). `null`
+ * if the process cannot be queried (already exited, insufficient permissions, etc). */
+export function getProcessExecutablePath(pid) {
+  const script = `
+$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue
+if (-not $p) { Write-Output '{}'; exit }
+@{ path = $p.ExecutablePath } | ConvertTo-Json -Compress
+`.trim();
+  const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true });
+  if (result.status !== 0 || !result.stdout) return null;
+  try {
+    return JSON.parse(result.stdout).path ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Combines `getProcessExecutablePath` with a fresh sha256 read of the file at that path, and
+ * throws if either has drifted from what the caller expects -- the actual check round 1's PR
+ * claimed but never ran (it only logged the hash once, at copy time). */
+export function assertExeMatchesProcess(pid, expectedExePath, expectedHash) {
+  const actualPath = getProcessExecutablePath(pid);
+  if (!actualPath || path.resolve(actualPath) !== path.resolve(expectedExePath)) {
+    throw new Error(`assertExeMatchesProcess: process ${pid}'s own exe path is ${actualPath ?? 'unknown'}, expected ${expectedExePath}`);
+  }
+  const actualHash = createHash('sha256').update(readFileSync(actualPath)).digest('hex');
+  if (actualHash !== expectedHash) {
+    throw new Error(`assertExeMatchesProcess: exe at ${actualPath} now hashes to ${actualHash}, expected ${expectedHash}`);
+  }
+}
+
+/** A tiny logger that both `console.log`s a line and appends it to `filePath`, so a run's own
+ * STEP PASS/FAIL trail survives on disk next to its screenshots -- not only as stdout a caller
+ * might not have captured (gate round 2 fix, test-reviewer Medium: no run record was kept). */
+export function createReportLogger(filePath) {
+  writeFileSync(filePath, `# verify run started ${new Date().toISOString()}\n`);
+  return function log(line) {
+    console.log(line);
+    appendFileSync(filePath, `${line}\n`);
+  };
+}
+
+/** Item 4 (M3, settled/resolved outline colours, `verify-927-928-quiet-composer.mjs`): the
+ * EXPECTED outline colour for a token like `--composer-focus`/`--ring` is resolved through a
+ * REAL probe element's own `getComputedStyle()` -- several theme presets resolve these through
+ * `color-mix()`/`var()` chains only the browser's own cascade can finish computing, so string-
+ * comparing the token's CSS text would be wrong.
+ *
+ * Gate round 3 fix (Low, Main): used to unconditionally read back `.outlineColor` regardless of
+ * `property`, relying on `outline-color`'s own `currentColor` default to coincidentally pick up
+ * whatever `property` (e.g. `color`) had actually been set -- a trick that only works for
+ * properties CSS itself happens to resolve through `currentColor`, silently wrong for anything
+ * else a future caller might pass (e.g. `background-color`, whose own initial value is
+ * `transparent`, never `currentColor`). Reads back the SAME property that was set, converted to
+ * its camelCase `CSSStyleDeclaration` key. */
+export async function resolveCssVarColor(cdp, varName, property = 'outline-color') {
+  return cdp.evaluate(`(() => {
+    const probe = document.createElement('div');
+    probe.style.position = 'fixed';
+    probe.style.top = '-9999px';
+    probe.style.left = '-9999px';
+    probe.style.pointerEvents = 'none';
+    probe.style.outlineStyle = 'solid';
+    probe.style.outlineWidth = '1px';
+    probe.style.setProperty('${property}', 'var(${varName})');
+    document.body.appendChild(probe);
+    const camel = '${property}'.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    const value = getComputedStyle(probe)[camel];
+    probe.remove();
+    return value;
+  })()`);
 }
 
 export { sleep };

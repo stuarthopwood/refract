@@ -8,23 +8,37 @@ import type { PanelId } from './panel-registry'
 // cleanup (today only `subagents` has one; a future panel with no store of its own falls through
 // to the generic store call alone).
 
-export function openHostedPanel(id: PanelId, sessionId: string | null): void {
-  if (id === 'subagents' && sessionId) useSubagentPanelStore.getState().openPanel(sessionId)
-  useRightPaneStore.getState().openPanel(id)
+export function openHostedPanel(
+  id: PanelId,
+  sessionId: string | null,
+  options?: { selectSubagentId?: string; selectSubagentKey?: string; opener?: HTMLElement | null }
+): void {
+  if (id === 'subagents' && sessionId) useSubagentPanelStore.getState().openPanel(sessionId, options)
+  // Issue #563 gate remediation: when the caller pre-selects an agent, `SubagentPanel.tsx`'s own
+  // `pendingFocusSubagentId` effect (set above, inside `openPanel`) is the ONLY thing that
+  // should move focus -- `right-pane-store.ts`'s own generic "focus the newly opened panel's
+  // content" effect runs in the SAME commit as a genuine open and, left unsuppressed, steals
+  // focus to its content wrapper a tick after this panel's own effect already landed it on the
+  // pre-selected tree row (child effects run before parent effects). `focus: false` sets
+  // `suppressNextContentFocus` (`RightPaneShell.tsx`'s own consuming effect), leaving that race
+  // with only one winner.
+  useRightPaneStore.getState().openPanel(id, { focus: !options?.selectSubagentId })
 }
 
 /** The explicit, user-driven close paths (title-row/tab Close button, Delete on a focused tab,
  * toggling an open-and-active rail icon off). `subagents` keeps its own existing `closePanel()`
  * unchanged (FR-015's regression guarantee): it clears the session binding, tells main to stop
  * forwarding the selected subagent's patches, keeps `right-pane-store.ts` in sync, and restores
- * focus to the Subagents chip whenever that chip is rendered this turn AND focus was inside the
- * panel -- the chip keeps first priority regardless of which control opened the panel (FR-015,
- * unchanged). Gate remediation (FR-024, round 3): the chip is not always rendered (no subagents
+ * focus to whichever control opened the panel THIS time (issue #563, FR-027) -- the Subagents
+ * chip is only the fallback now, used whenever no opener was recorded or it has since left the
+ * document, not a fixed first priority (FR-015's own regression guarantee is unaffected: nothing
+ * else opened the panel before issue #563, so the chip was always that fallback in practice).
+ * Gate remediation (FR-024, round 3): the chip is not always rendered (no subagents
  * this turn), so this generalises the fallback for every hosted panel: if focus is still
- * stranded afterwards (the chip didn't fire, or this isn't Subagents), it moves to that panel's
- * own rail button first, and only to the launcher's first row if the rail button itself cannot
- * be found (mirroring the containment checks `ChatPane.tsx`/`App.tsx` already use elsewhere in
- * this codebase).
+ * stranded afterwards (neither the opener nor the chip fired, or this isn't Subagents), it moves
+ * to that panel's own rail button first, and only to the launcher's first row if the rail button
+ * itself cannot be found (mirroring the containment checks `ChatPane.tsx`/`App.tsx` already use
+ * elsewhere in this codebase).
  *
  * Gate remediation (PR2's own gate, round 1, High): `options.skipFocusFallback` lets a caller
  * that is ABOUT to move focus itself -- `PanelTabBar.tsx`'s `closeTab`, when one or more other
@@ -74,9 +88,12 @@ export function resumeHostedPanels(ids: readonly PanelId[]): void {
 
 /** FR-005/FR-006: activating a panel's rail button opens it if the pane is collapsed, or it is
  * not already the open, active panel; it closes it (via the explicit-close path above) only when
- * the pane is open AND this panel is open and active. */
-export function toggleHostedPanelFromRail(id: PanelId, sessionId: string | null): void {
+ * the pane is open AND this panel is open and active. `opener` (issue #563, FR-027) is only
+ * relevant to the open branch -- a toggle-off close has no agent to pre-select, so nothing for
+ * closing from this control's own button to specially record over the generic rail/launcher
+ * fallback `closeHostedPanel` already applies. */
+export function toggleHostedPanelFromRail(id: PanelId, sessionId: string | null, opener?: HTMLElement | null): void {
   const { open, openPanelIds, activePanelId } = useRightPaneStore.getState()
   if (open && openPanelIds.includes(id) && activePanelId === id) closeHostedPanel(id)
-  else openHostedPanel(id, sessionId)
+  else openHostedPanel(id, sessionId, { opener })
 }

@@ -1,9 +1,17 @@
 import * as React from "react"
 import { type VariantProps } from "class-variance-authority"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import { ToggleGroup as ToggleGroupPrimitive } from "radix-ui"
 
 import { toggleVariants } from "@/components/ui/toggle"
+
+// Gate round 1 fix (#1114, Low): previously copied verbatim into both `ManageSessionsToolbar.tsx`
+// and `ProviderSwitch.tsx` (DESIGN.md's "Active/selected indicator" rule: a 2px left-edge bar,
+// overriding this file's own default `data-[state=on]:bg-primary` fill) -- exported from here
+// once, the one place every `ToggleGroup` consumer already imports from, so the two copies can
+// never drift apart again.
+export const SELECTED_SEGMENT_CLASS =
+  'data-[state=on]:bg-muted data-[state=on]:text-foreground data-[state=on]:hover:bg-muted data-[state=on]:shadow-[inset_2px_0_0_0_var(--color-active-indicator)]'
 
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants> & {

@@ -1,5 +1,232 @@
 # Changelog
 
+## v0.9.0 (2026-10-22)
+
+### Features
+
+- feat(design-system): one selected-item style + Explorer text/icon tone (https://github.com/stuarthopwood/refract/pull/1153)
+- feat(pull-requests): RAG check colours, State select height, state-only reason line, Open on GitHub button (https://github.com/stuarthopwood/refract/pull/1154)
+- feat(chat): agent-to-agent line styling, /models command, delete-wait timeout (https://github.com/stuarthopwood/refract/pull/1161)
+- feat(composer): image-only send, context-usage gradient, live branch label (https://github.com/stuarthopwood/refract/pull/1162)
+- feat(chat): close-pane chat glyph and ghost New conversation button (https://github.com/stuarthopwood/refract/pull/1167)
+- feat(installer): optional desktop shortcut on the finish page (https://github.com/stuarthopwood/refract/pull/1172)
+- feat(updates): periodic check, background download and restart to update (https://github.com/stuarthopwood/refract/pull/1174)
+- feat(rm): queue role, model and thinking changes while a turn runs (#766 part A) (https://github.com/stuarthopwood/refract/pull/1183)
+- feat(rm): combined Role·Model pill, one switcher and Ctrl+R role cycling (#766 part B) (https://github.com/stuarthopwood/refract/pull/1187)
+- feat(omp): OMP settings guard resets drifted token-cost settings (#1184) (https://github.com/stuarthopwood/refract/pull/1189)
+
+### Fixes
+
+- perf(chat): memoise transcript rows and markdown (https://github.com/stuarthopwood/refract/pull/1177)
+- fix(worktrees): remove pnpm node_modules junctions before git worktree remove (https://github.com/stuarthopwood/refract/pull/1182)
+
+### Other
+
+- docs(plan): file #1155 chat item references with hover card (https://github.com/stuarthopwood/refract/pull/1156)
+- docs(plan): 2026-10-22 priority review and p1 order (https://github.com/stuarthopwood/refract/pull/1160)
+- docs(plan): working rule 13 director model and 2026-10-22 token-cost decisions (https://github.com/stuarthopwood/refract/pull/1166)
+- docs(plan): place #1169 and #1170 (https://github.com/stuarthopwood/refract/pull/1171)
+- chore(worktrees): add pnpm worktrees:reap and the post-merge reap step (https://github.com/stuarthopwood/refract/pull/1179)
+- docs(plan): place #1184 OMP settings guard at priority 3 (https://github.com/stuarthopwood/refract/pull/1185)
+
+## v0.8.0 (2026-10-21)
+
+### Features
+
+- feat(chat): Enter sends oldest queued follow-up on a blank composer (#1067) (https://github.com/stuarthopwood/refract/pull/1100)
+- feat(1069): Model roles overhaul -- one provider switch, reasoning-level radios (https://github.com/stuarthopwood/refract/pull/1114)
+- feat(700): Todo and Agents hover/focus cards, Rust taskSummary (Closes #700, Refs #701) (https://github.com/stuarthopwood/refract/pull/1118)
+
+### Fixes
+
+- fix(1101): Git changes panel UI polish (counter, composer inputs, busy state, untracked diff, sticky back) (https://github.com/stuarthopwood/refract/pull/1109)
+- fix(1111): Git changes panel read-path hardening + polish (Closes #1111, Closes #1110) (https://github.com/stuarthopwood/refract/pull/1113)
+
+### Other
+
+- docs(plan): file Git changes panel feedback (#1101, #1102), amend #730 and #1060 (https://github.com/stuarthopwood/refract/pull/1103)
+- App-wide softer text via opacity (#1074) (https://github.com/stuarthopwood/refract/pull/1104)
+- docs(plan): #1113 gate follow-ups (#1115, #1116) (https://github.com/stuarthopwood/refract/pull/1117)
+- docs: place #1119-#1122 in the plan, amend #756's row (2026-10-21) (https://github.com/stuarthopwood/refract/pull/1123)
+- docs: place #1124-#1127 in the plan (2026-10-21) (https://github.com/stuarthopwood/refract/pull/1128)
+- docs: place #1129-#1132 and the #471 amendment in the plan (2026-10-21) (https://github.com/stuarthopwood/refract/pull/1133)
+- docs: record the 2026-10-21 backlog triage and epics #1134-#1137 in the plan (https://github.com/stuarthopwood/refract/pull/1138)
+- docs: record #1085 over #1098, dotted OMP keys (#691) and fold comments in the plan (https://github.com/stuarthopwood/refract/pull/1139)
+- docs: place the OMP 18.12.5 review, #1140 and #1141 in the plan (https://github.com/stuarthopwood/refract/pull/1142)
+- docs: close Phase R in the plan and qualify the Approve Once trap (https://github.com/stuarthopwood/refract/pull/1143)
+- docs: place #1144 and #1145 in the plan (https://github.com/stuarthopwood/refract/pull/1146)
+- docs: record the app-wide whitespace rule (#1144) in components.md and the plan (https://github.com/stuarthopwood/refract/pull/1147)
+- docs: correct the whitespace rule: Button sm icon side is not yet compliant (#1144) (https://github.com/stuarthopwood/refract/pull/1148)
+- docs: place #1149 and record the quiet placeholder contrast departure (https://github.com/stuarthopwood/refract/pull/1150)
+- docs(plan): #1069 and #700 slice (b) done, file #1151 follow-ups (https://github.com/stuarthopwood/refract/pull/1152)
+
+## v0.7.0 (2026-10-20)
+
+### Features
+
+- feat(#1050): composer command pill, spellcheck off for recognised commands (https://github.com/stuarthopwood/refract/pull/1064)
+- feat(#700,#701): slice (a) pinned todo panel + pin-toggle readout (https://github.com/stuarthopwood/refract/pull/1054)
+- feat(464): Git changes panel, slice 1 of 3 (changes list, stage/unstage, commit, auto-refresh) (https://github.com/stuarthopwood/refract/pull/1076)
+- feat(1077): collapse Stage/subagent rows to goal + See input & output toggle (https://github.com/stuarthopwood/refract/pull/1095)
+- feat(#1039): Cyber Amber retuned onto Default Dark's surfaces, vivid orange accent (https://github.com/stuarthopwood/refract/pull/1094)
+
+### Other
+
+- docs: PLAN.md row for #1067 Enter sends queued follow-up (https://github.com/stuarthopwood/refract/pull/1068)
+- docs: PLAN.md row for #1069 Model roles overhaul (https://github.com/stuarthopwood/refract/pull/1071)
+- docs: PLAN row for #1070 (Settings theme picker swatch chip) (https://github.com/stuarthopwood/refract/pull/1072)
+- docs: PLAN rows for #1073 (Settings dividers) and #1074 (app-wide text opacity) (https://github.com/stuarthopwood/refract/pull/1075)
+- docs: PLAN row for issue #1077 (agent rows show only the goal) (https://github.com/stuarthopwood/refract/pull/1078)
+- docs(gate): risk-tiered review gate design (https://github.com/stuarthopwood/refract/pull/1079)
+- docs(plan): place #1080 Tab indent, #1081 slash recents, #1082 context heatmap (https://github.com/stuarthopwood/refract/pull/1083)
+- docs(plan): place #1085 finished subagent cleanup (https://github.com/stuarthopwood/refract/pull/1086)
+- docs(plan): #766 combined Role·Model pill, Ctrl+R cycling, change any time (https://github.com/stuarthopwood/refract/pull/1088)
+- docs(plan): place #1089 Prism (https://github.com/stuarthopwood/refract/pull/1090)
+- docs(plan): #691 OMP settings in Settings (read live, curated rows) (https://github.com/stuarthopwood/refract/pull/1092)
+- docs(gate): review gate contracts and core implementation plan (https://github.com/stuarthopwood/refract/pull/1096)
+- docs: PLAN.md row for #1098 Agent list parked status (https://github.com/stuarthopwood/refract/pull/1099)
+
+## v0.6.0 (2026-10-20)
+
+### Features
+
+- feat(#741): composer role chip, pin persistence, provider-friendly details card (https://github.com/stuarthopwood/refract/pull/1037)
+- feat(#1048): Holiday touches -- framework + Halloween (https://github.com/stuarthopwood/refract/pull/1053)
+
+### Fixes
+
+- fix(#891): Delete handles full/long-path worktrees and holder preflight (https://github.com/stuarthopwood/refract/pull/1038)
+- fix(#1043): Theme submenu is a real radio list on the shared DropdownMenuRadioItem (https://github.com/stuarthopwood/refract/pull/1057)
+
+### Other
+
+- docs(plan): place #1039 (Cyber Amber retune, softer text) and amend the chat text colour rule (https://github.com/stuarthopwood/refract/pull/1040)
+- docs(plan): place #1041 Advisor source tag (https://github.com/stuarthopwood/refract/pull/1042)
+- docs(plan): place #1043 Theme submenu radios; record the menu radio rule (https://github.com/stuarthopwood/refract/pull/1044)
+- docs(plan): OMP 18.10.2-18.12.2 review; retarget #520 to 18.12.2 (https://github.com/stuarthopwood/refract/pull/1045)
+- docs(plan): #476 Session cleanup grilled; glossary Delete and Session cleanup (https://github.com/stuarthopwood/refract/pull/1046)
+- docs(plan): #456 amended, Markdown and syntax tokens take each theme's accent (https://github.com/stuarthopwood/refract/pull/1047)
+- docs(plan): place #1048 Holiday touches, add the decorative-motion exception and glossary term (https://github.com/stuarthopwood/refract/pull/1049)
+- docs(plan): place #1050 composer command pill (https://github.com/stuarthopwood/refract/pull/1051)
+- docs(plan): place #1055 Delete dialog follow-ups (https://github.com/stuarthopwood/refract/pull/1056)
+- docs: plan update for #1048 slice 1 and #1058 follow-ups (https://github.com/stuarthopwood/refract/pull/1059)
+- docs(plan): #464 slice map, slice 1 in-flight, #1060/#1061 rows (https://github.com/stuarthopwood/refract/pull/1062)
+- chore: move holiday IPC types out of ipc.ts to clear the file-size cap (https://github.com/stuarthopwood/refract/pull/1063)
+- docs(plan): #1043 done, #1065 follow-ups placed (https://github.com/stuarthopwood/refract/pull/1066)
+
+## v0.5.0 (2026-10-19)
+
+### Features
+
+- feat(chat): #1012 history dialog follow-ups (focus tooltip, focus ring, date truncate, verify-439) (https://github.com/stuarthopwood/refract/pull/1024)
+- feat(#975): code-block background follows each theme's own --card, not the bundled Shiki theme (https://github.com/stuarthopwood/refract/pull/1032)
+
+### Fixes
+
+- fix(991): Stage row focus, toggle memory, selector scoping (https://github.com/stuarthopwood/refract/pull/999)
+- fix(subagents): scope async-result job matching to unresolved Stage items (#989) [live-verified] (https://github.com/stuarthopwood/refract/pull/1003)
+- fix(862): stream bounded Conversation preview scan past OMP's new prelude entries (https://github.com/stuarthopwood/refract/pull/1006)
+- fix(439): Conversation history truncates with an ellipsis, no horizontal scroll (https://github.com/stuarthopwood/refract/pull/1011)
+- fix(1000): Stage rows defer running auto-open to the chain row once a turn has two or more Stages (https://github.com/stuarthopwood/refract/pull/1007)
+- fix(911): Stop-cut-short tool rows settle to a neutral cancelled status (https://github.com/stuarthopwood/refract/pull/1015)
+- fix(a11y): preserve focus when a solo Stage gains a second agent (https://github.com/stuarthopwood/refract/pull/1027)
+- fix(chat): notice severity tokens, non-dismissing unknown-command warning toast (https://github.com/stuarthopwood/refract/pull/1031)
+
+### Other
+
+- Slash refusal text, notice wrap, advisor settings mention (#938 items 2, 3, 5) (https://github.com/stuarthopwood/refract/pull/996)
+- docs(plan): add #1004 follow-ups from #991/#938 gates (https://github.com/stuarthopwood/refract/pull/1005)
+- docs(plan): add #1008 follow-up from #1007/#1000 ui gate (https://github.com/stuarthopwood/refract/pull/1009)
+- docs(plan): confirm #439 history-dialog truncation fix, record decision (https://github.com/stuarthopwood/refract/pull/1010)
+- docs: place #1012 follow-ups row in PLAN.md (https://github.com/stuarthopwood/refract/pull/1013)
+- docs: PLAN.md row for #1016 (#802 scrollbar follow-ups) (https://github.com/stuarthopwood/refract/pull/1017)
+- docs: PLAN.md row for #1018 (#911 gate follow-ups, PR #1015) (https://github.com/stuarthopwood/refract/pull/1019)
+- docs(plan): add #1021 and #1022 rows (https://github.com/stuarthopwood/refract/pull/1023)
+- UI polish: Stage rows - failed Stage label colour and jump to Stage from the chain row (#1008) (https://github.com/stuarthopwood/refract/pull/1020)
+- docs(plan): add #1025 row, mark #1008 done (https://github.com/stuarthopwood/refract/pull/1026)
+- chore(scripts): #1022 verify-563 targets selectable tree rows (https://github.com/stuarthopwood/refract/pull/1028)
+- docs(plan): add #1029 row (#1001 gate follow-ups) (https://github.com/stuarthopwood/refract/pull/1030)
+
+## v0.4.0 (2026-10-18)
+
+### Features
+
+- feat(chat): #917 allow /advisor (on, off, status) per Session (https://github.com/stuarthopwood/refract/pull/923)
+- feat(r559): session list search field (#559) (https://github.com/stuarthopwood/refract/pull/939)
+- feat(r560): quiet alert rows -- low memory opens a triage list, unverified omp version opens Health check (https://github.com/stuarthopwood/refract/pull/945)
+- feat(554): Settings chat reading width (Full default, Reading column 64rem) (https://github.com/stuarthopwood/refract/pull/966)
+- Feat: fuzzy slash-command search, subcommand step, command-reply turn time (#947, #938) (https://github.com/stuarthopwood/refract/pull/954)
+- feat(925,924): diff-stat colour and reasoning gauge needle (https://github.com/stuarthopwood/refract/pull/967)
+- Feat(#551): Nordic Frost and Cyber Amber dark presets; #552 HC decision + partial fix (red at 7:1) (https://github.com/stuarthopwood/refract/pull/973)
+- feat(937): advisor chip in the composer status line (https://github.com/stuarthopwood/refract/pull/972)
+- Feat: attach any file type, inlining text up to 256 KB (#926) (https://github.com/stuarthopwood/refract/pull/976)
+- feat(941): Stage naming, green finished state, real dependencies (part 1 of 2) (https://github.com/stuarthopwood/refract/pull/979)
+- feat(chat): centre and enlarge the Session start notice for every Session (https://github.com/stuarthopwood/refract/pull/978)
+- feat(941): Subagent panel Stage grouping, green state, Up next (part 2 of 2) (https://github.com/stuarthopwood/refract/pull/993)
+
+### Fixes
+
+- fix(#556): zero-box sweep for NoticeRow and ChatPane detail disclosures (https://github.com/stuarthopwood/refract/pull/944)
+- fix(renderer): annotate cn's type so typecheck passes on main (https://github.com/stuarthopwood/refract/pull/961)
+- fix(chat): collapsed tool group Error line prefix runs into the message (https://github.com/stuarthopwood/refract/pull/963)
+- fix(chat): toasts no longer cover the Send button (#980) (https://github.com/stuarthopwood/refract/pull/982)
+- fix(shell): set the window icon and AppUserModelID so the taskbar shows the Refract logo (#880) (https://github.com/stuarthopwood/refract/pull/987)
+- fix(session): include startProgress in sessions.list() summary rows (https://github.com/stuarthopwood/refract/pull/988)
+
+### Other
+
+- docs(plan): v0.3.0 feedback #924-#928, Composer tone rule replaced (#927) (https://github.com/stuarthopwood/refract/pull/929)
+- docs(plan): Pull requests list feedback, #499 amended and #930 filed (https://github.com/stuarthopwood/refract/pull/931)
+- docs(plan): place #932 Ask card notes (https://github.com/stuarthopwood/refract/pull/933)
+- docs: reusable UI components rule, ADR 0003; place #934 and #935 (https://github.com/stuarthopwood/refract/pull/936)
+- Profile menu update entry + sidebar Pull requests active count (#569) (https://github.com/stuarthopwood/refract/pull/920)
+- docs: place #941 Stage polish; glossary and status-colour amendment (https://github.com/stuarthopwood/refract/pull/942)
+- Chat: show the time above the user message, mark turn boundaries clearly (#555) (https://github.com/stuarthopwood/refract/pull/940)
+- docs(plan): place late 2026-10-16 issues (#937, #938, #943, #946, #947) (https://github.com/stuarthopwood/refract/pull/948)
+- Chore: require shared CARGO_TARGET_DIR in live-check scripts and ci-local (https://github.com/stuarthopwood/refract/pull/949)
+- docs(plan): place #952 zero-box gate follow-ups (https://github.com/stuarthopwood/refract/pull/955)
+- docs(plan): place #956 alert rows follow-ups (https://github.com/stuarthopwood/refract/pull/957)
+- Quiet composer (#927) and status line type (#928) (https://github.com/stuarthopwood/refract/pull/951)
+- docs(plan): place #959 quiet composer follow-ups (https://github.com/stuarthopwood/refract/pull/960)
+- Chat: borderless thread for grouped tool calls and command-style rows (#632) (https://github.com/stuarthopwood/refract/pull/950)
+- docs(plan): add #964 error-prefix follow-ups row (https://github.com/stuarthopwood/refract/pull/965)
+- Pull requests: filter redesign (#499) and resizable list column (#930) (https://github.com/stuarthopwood/refract/pull/953)
+- docs: file #980 toast-covers-Send bug in PLAN.md (https://github.com/stuarthopwood/refract/pull/981)
+- docs(plan): place #983 toast and quick-create follow-ups (https://github.com/stuarthopwood/refract/pull/984)
+- docs(plan): place #985 start prompt investigation (https://github.com/stuarthopwood/refract/pull/986)
+- docs(plan): place #989 async-result Stage row (https://github.com/stuarthopwood/refract/pull/990)
+- docs(plan): place #991 Stage row focus and toggle follow-ups (https://github.com/stuarthopwood/refract/pull/992)
+- docs(plan): file #994 verify-672 script follow-ups (https://github.com/stuarthopwood/refract/pull/995)
+- docs: add #997 notices/refusal toasts follow-ups to PLAN.md (https://github.com/stuarthopwood/refract/pull/998)
+
+## v0.3.0 (2026-10-16)
+
+### Features
+
+- feat(chat): composer restyle with status line and in-box pickers (#564) (https://github.com/stuarthopwood/refract/pull/877)
+- feat(chat): #572 Ask card restyle - tab row, tick boxes, structured dialog (https://github.com/stuarthopwood/refract/pull/900)
+- feat(sessions): Unread response status icon, new idle icon (#731) (https://github.com/stuarthopwood/refract/pull/902)
+- feat(chat,subagents): subagent stages, chain row and tree panel (#563) (https://github.com/stuarthopwood/refract/pull/899)
+- feat(chat): connected-log spine (guide rails) -- CollapsedLine geometry, ToolGroupRow on SpineList (https://github.com/stuarthopwood/refract/pull/906)
+- feat(chat): #570 tool row colour treatment -- neutral success, error icon/label/line, group meta counts (https://github.com/stuarthopwood/refract/pull/909)
+- feat(chat): #557 collapse consecutive thoughts into one Thought process row (https://github.com/stuarthopwood/refract/pull/912)
+- feat(chat): #558 blocker callout -- accent bar, locations, Copy, Ask agent to address this (https://github.com/stuarthopwood/refract/pull/916)
+
+### Other
+
+- docs(plan): place installer and updater feedback issues (https://github.com/stuarthopwood/refract/pull/884)
+- docs(plan): place the temp-folder leak issue (https://github.com/stuarthopwood/refract/pull/886)
+- docs(plan): place #887 Project colour; amend decorative-colour rule (https://github.com/stuarthopwood/refract/pull/888)
+- docs(design): allow a user-chosen Project colour in the colour rule (#887) (https://github.com/stuarthopwood/refract/pull/889)
+- docs(plan): place #891 Delete Session dead-end bug (A9) (https://github.com/stuarthopwood/refract/pull/892)
+- docs(plan): #891 git metadata contract (no repo-wide prune) (https://github.com/stuarthopwood/refract/pull/893)
+- docs(plan): place #877 review follow-ups (https://github.com/stuarthopwood/refract/pull/898)
+- refactor(sessions): split SessionList.tsx along its group/row seams (#811) (https://github.com/stuarthopwood/refract/pull/901)
+- UI polish: Session list collapse/expand toolbar + persisted state (#735) (https://github.com/stuarthopwood/refract/pull/905)
+- Session list restyle: rows, group headers and footer, to the mock (#567) (https://github.com/stuarthopwood/refract/pull/910)
+- Pull requests: restyle list rows, header, tabs and the detail layout to the mock (#568) (https://github.com/stuarthopwood/refract/pull/914)
+- docs: remove scratch copies of PLAN.md (https://github.com/stuarthopwood/refract/pull/922)
+
 ## v0.2.0 (2026-10-15)
 
 ### Features

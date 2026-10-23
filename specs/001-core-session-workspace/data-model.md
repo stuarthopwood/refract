@@ -58,10 +58,31 @@ Rules:
 interface Settings {
   version: 1;
   approvalMode: 'ask' | 'edit-freely' | 'auto';   // default 'ask'
+  chatWidth: 'full' | 'reading-column';           // FR-049/FR-073, default 'full'
+  sessionListCollapse: SessionListCollapse;       // default { collapsedRepositoryIds: [], archivedOpen: false }
 }
 ```
 
 Mapping to OMP's `--approval-mode`: `ask` = `always-ask`, `edit-freely` = `write`, `auto` = `yolo`.
+
+### `SessionListCollapse` (issue #735)
+
+```ts
+interface SessionListCollapse {
+  collapsedRepositoryIds: string[];
+  archivedOpen: boolean;
+}
+```
+
+Only the DIFFERENCE from each group's default is stored: a Repository id absent from
+`collapsedRepositoryIds` is open (a newly added Repository starts open); `archivedOpen` defaults
+`false`. Set whole via `settings.setSessionListCollapse(value)`; the renderer's
+`session-list-store.ts` is the sole writer -- it reads `Settings` once at startup (in the same
+`Promise.all` as `sessions.list`/`settings.get`, so the toolbar and groups render only once that
+has happened), persists every later toggle debounced by about 300ms (flushed on
+`beforeunload`/`pagehide`), and never re-reads its own setter reply or a later
+`settings:changed` broadcast. `collapsedRepositoryIds` is pruned to existing Repository ids only
+after a successful `repositories.list` load or a successful `repositories.remove`.
 
 ### `processes.json`
 
@@ -83,10 +104,10 @@ Read by scanning `Session.sessionDir` for `*.jsonl` files:
 | `id` | the UUID suffix of the file name |
 | `createdAt` | ISO timestamp prefix of the file name (no file open needed) |
 | `title` | `title` field of the first line of the file, may be empty |
-| `preview` | first user message, read from the first 8 KB of the file, truncated to 120 characters |
+| `preview` | first user message, found by streaming complete JSONL lines up to a 64 KiB hard cap (not a fixed byte window), truncated to 120 characters; empty if the cap is hit before a user message is found (issue #862: OMP's own `memory_recall`/prelude entries can push it well past 8 KB) |
 | `isCurrent` | `file === Session.currentConversation` |
 
-A Conversation's history is loaded by attaching an agent to it and calling `get_messages`, not by parsing the file, so its format stays OMP's business. Files with zero user messages are not listed.
+A Conversation's history is loaded by attaching an agent to it and calling `get_messages`, not by parsing the file, so its format stays OMP's business. A Conversation reaching real end-of-file within the scan cap with no user message anywhere is not listed; one whose cap is hit first (preview empty, title still read) is still listed, never hidden (research.md decision 21).
 
 ## Held in memory
 
@@ -138,10 +159,16 @@ Built in the main process from OMP frames (see [contracts/omp-usage.md](contract
 ```ts
 type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
-  | { kind: 'question'; requestId: string; title: string; options: string[]; optionDetails?: string[]; allowText: boolean };
+  | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }
+  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number };
+
+interface AskQuestion {
+  id: string; question: string; header?: string;
+  options: { label: string; description?: string }[]; multi: boolean; recommended?: number;
+}
 ```
 
-`requestId` is the `id` of the OMP `extension_ui_request`. Requests do not survive a process restart: on a restart they are dropped and the Session shows a notice.
+`requestId` is the `id` of the OMP `extension_ui_request`. Requests do not survive a process restart: on a restart they are dropped and the Session shows a notice. `kind:'ask'` (issue #572) is the structured multi-question dialog, built only once `set_ask_dialog` is confirmed enabled for this OMP process (contracts/omp-usage.md "Start-up sequence"); `kind:'question'` (`inputKind` tells `choice`/`text`/`confirm` apart) stays the one-question-at-a-time fallback, built the same way whether the dialog was never enabled or a given `select`/`input`/`editor`/`confirm` frame simply arrived outside an `ask` dialog (for example an extension's own prompt). `deadlineAt` is an epoch-ms value computed once, when the frame arrives, from OMP's own `timeout` (already milliseconds, not seconds -- `rpc.md`'s own example shows `"timeout": 30000`; gate-fix, round 1 High, a prior `secs * 1000` conversion made every deadline about 1000x too late); Refract never counts it down itself, only renders it as a static line.
 
 ## State transitions
 

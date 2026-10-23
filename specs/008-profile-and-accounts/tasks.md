@@ -176,7 +176,23 @@ correctly and are fully keyboard-accessible.
   note. Rather than add a disabled/stub item, its slot is left as a reserved, commented position
   in ProfileMenu.tsx between Keyboard shortcuts and Health check; the remaining work is split out
   as T024b below so this task itself can close.
-- [ ] T024b [US4] Wire the real update entry in `ProfileMenu.tsx` once spec 006 ships `updates.get()`/`updates:changed` (contracts/ipc.md "Update state (owned by spec 006)"): replace the reserved slot (between Keyboard shortcuts and Health check) with the real two-state label ("Check for updates" / "Restart to update <version>") against that shipped shape (FR-021). Depends on spec 006.
+- [X] T024b (#569) [US4] Wire the real update entry in `ProfileMenu.tsx` once spec 006 ships `updates.get()`/`updates:changed` (contracts/ipc.md "Update state (owned by spec 006)"): replace the reserved slot (between Keyboard shortcuts and Health check) with the real two-state label ("Check for updates" / "Restart to update <version>") against that shipped shape (FR-021). Depends on spec 006.
+  -- Spec 006's updates store/IPC shipped since this task was filed (R11, issue #794, PRs
+  #829/#832/#837/#853) -- the reserved-slot comment was stale. Implemented as a self-contained
+  `UpdateMenuItem` (reads `useUpdateStore` directly, like `ThemeSubmenu`), the FR-021
+  renderings (never the status bar's own idle/checking/available/downloading/failed/unavailable
+  detail, which stays StatusBar.tsx's alone): "Restart to update" plus a plain trailing version
+  when a download is waiting for the next quit (selecting it only confirms with a toast, never
+  quits or installs), "Check for updates" otherwise (`aria-disabled` while a check/download/
+  install is already running, matching the file's own "GitHub unavailable, Checking…" pattern).
+  `pnpm typecheck` passes. Live keyboard/visual verification done on `feat/569-profile-menu`
+  (PR #920, gitHead `d616816`, `scripts/verify-tauri-569.mjs`: all 6 seeded phases render
+  correctly, "Restart to update" shows its confirmation toast and the phase stays `downloaded`).
+  -- Gate round 2 fix: "Check for updates" is now reserved for the ready-to-act state; the three
+  busy phases (checking/downloading/installing) each show their own verb ("Checking for
+  updates…"/"Downloading update…"/"Installing update…") instead of the generic label, with no
+  separate `aria-label` (the visible text already starts the accessible name) -- see FR-021's
+  2026-10-16 amendment and Clarifications entry.
 - [X] T025 (#329) [US4] Update the docs and verify live: `docs/DESIGN.md` ("Keyboard" cross-reference, Settings/Backlog notes for the Theme submenu and update entry) and `quickstart.md` Story 4; then on the built app in an isolated instance: confirm the fixed order, open and check the Theme submenu's active entry, open Keyboard shortcuts, select Health check and read its result, select What's new and confirm the system browser opens, and operate the whole menu (including into and out of the Theme submenu) using only the keyboard with focus returning to the profile item on close.
   -- docs/DESIGN.md's Profile item bullet rewritten with the full built order and both reserved
   slots named; new Keyboard shortcuts dialog and Health check dialog bullets added; quickstart.md
@@ -252,6 +268,47 @@ correctly and are fully keyboard-accessible.
 
 ---
 
+## Phase 9: Bug fix -- Theme submenu radios (#1043)
+
+**Goal**: the Theme submenu (FR-019, FR-030) is a real radio group whose checked state is
+visible, drawn with the shared `DropdownMenuRadioItem`'s own leading ring-and-dot mark rather than
+a trailing check -- #1043's reported bug (every round swatch read as an unselected radio).
+
+**Independent test**: open the profile menu's Theme submenu in each built-in preset and confirm
+the active one shows a filled leading radio dot (never only a trailing "Current" word); confirm
+the composer's Reasoning picker (the shared component's other caller) still shows its own current
+level the same way.
+
+- [X] T031 (#1043) [grilled 2026-10-19, converged 2026-10-20] Fix the shared
+  `DropdownMenuRadioItem` (`dropdown-menu.tsx`) to draw a leading ring-and-dot radio indicator
+  (`radio-group.tsx`'s new `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, extracted from the Ask card's own
+  mark, ADR 0003) instead of a trailing `CheckIcon` (FR-030); rebuild `ThemeSubmenu`
+  (`ProfileMenu.tsx`) as a `DropdownMenuRadioGroup`/`RadioItem` bound to the active theme, moving
+  each preset's colour swatch to a small two-colour chip (the theme's own `--background` and
+  `--primary`, split down the middle, ui-architect-v3 ruling 2026-10-20) after its name and
+  dropping the trailing "Current" text (FR-019); add `foreground`/`popover` to
+  `scripts/theme-contrast-pairs.mjs` (WCAG 1.4.11, the new dot's real surface). The composer's
+  Reasoning picker (`ComposerPickers.tsx:114-120`) needed no code change -- it already built on
+  `DropdownMenuRadioGroup`/`RadioItem`, so it picks up the new mark automatically.
+  -- Gate round 1 fix (PR #1057, Code/Test/UI reviewers, High): the checked ring's own border
+  (`RADIO_RING_CLASS`, `radio-group.tsx`) was `border-primary`, matching the Ask card's look, but
+  `--primary`/`--popover` measures only 2.92-2.99:1 in Obsidian/Nordic Frost/Cyber Amber -- under
+  the 3:1 floor, and visibly INVERTED there (the checked row's own ring read FAINTER than an
+  unchecked row's, since `--primary`'s relative luminance is lower than `--muted-foreground`'s in
+  those three themes). This was never "the same pre-existing gap" an earlier cut of this task
+  claimed via the #572 decision D10 comment (which is about `RadioGroupIndicator`'s own dot
+  token, a different element): `primary`/`card` and `primary`/`background` both clear 3:1 with
+  margin; `--popover`, the surface this ring is NEW to, was the one failure. Fixed: the checked
+  ring now uses `border-foreground` instead; `foreground`/`popover` (already gated) and the newly
+  added `foreground`/`accent` (the row's own `focus:bg-accent` fill) both cover it.
+
+**Checkpoint**: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:file-size`,
+`pnpm check:theme-contrast`, `pnpm check:parity`, and `pnpm check:drag-regions` all pass; a live
+Tauri check per `scripts/verify-1043-theme-radio.mjs` confirms every preset's radio state, keyboard
+and mouse selection, the forced-colours override's real compiled CSS rule, and the Reasoning picker.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -265,6 +322,8 @@ correctly and are fully keyboard-accessible.
   - US4 (P2) depends on US1's `ProfileMenu.tsx` shell and references US2's Manage accounts item and US5's Manage sessions item by name, but its own Theme/Keyboard shortcuts/update/Health check/What's new items are independent of US2/US3/US5's internals.
   - US5 (P3) depends on US1's `view-store.ts` (T012) and, for its menu entry, US4's full menu (T021) — its own screen (T026) has no other story dependency and reuses only spec 001 IPC.
 - **Polish (Phase 8)**: depends on every story above being complete.
+- **Bug fix (Phase 9)**: independent of Phase 8 -- a post-ship fix to US4's own Theme submenu
+  (T021) and the shared `DropdownMenuRadioItem` primitive, not a new story.
 
 ### Parallel Opportunities
 

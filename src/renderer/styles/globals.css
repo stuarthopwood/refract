@@ -22,12 +22,23 @@
   --color-foreground: var(--foreground);
   --color-chat-foreground: var(--chat-foreground);
   --color-composer-background: var(--composer-background);
+  --color-composer-border: var(--composer-border);
+  --color-composer-focus: var(--composer-focus);
+  --color-composer-ring: var(--composer-ring);
+  --color-composer-control-border: var(--composer-control-border);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  /* 2026-10-15 grill (issue #564, decision 5, gate round 1 fix): Send's OWN accent fill -- NOT
+     `--primary`, since `--primary` resolves to a near-white neutral in both Dark and Dark (high
+     contrast), where it would read almost identically to Stop's `invert` fill. Chromatic
+     (indigo, "the #5A5EEE family") in every theme; used ONLY by the composer's Send button
+     (MessageInput.tsx) -- every other `variant="default"` button keeps using `--primary`. */
+  --color-send: var(--send);
+  --color-send-foreground: var(--send-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -40,6 +51,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-active-indicator: var(--active-indicator);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): Tailwind mapping for the new solid
+   * "Focused" badge foreground token -- see `.theme-dark`'s own `--active-indicator-foreground`
+   * comment. */
+  --color-active-indicator-foreground: var(--active-indicator-foreground);
   /* #550 (theme foundation, palette v2): PURELY ADDITIVE for Dark and Dark (high contrast) --
    * every token below is new (components keep their current classes unchanged; #579 migrates
    * most of them later, though #606 already migrated the panel separators ahead of that).
@@ -56,6 +71,10 @@
   --color-divider: var(--divider);
   --color-border-strong: var(--border-strong);
   --color-accent-text: var(--accent-text);
+  --color-command-pill-bg: var(--command-pill-bg);
+  --color-command-pill-fg: var(--command-pill-fg);
+  --color-composer-selection-bg: var(--composer-selection-bg);
+  --color-composer-selection-fg: var(--composer-selection-fg);
   --color-severity-success: var(--severity-success);
   --color-severity-warning: var(--severity-warning);
   --color-severity-error: var(--severity-error);
@@ -64,6 +83,8 @@
   --color-severity-warning-bg: var(--severity-warning-bg);
   --color-severity-error-bg: var(--severity-error-bg);
   --color-severity-info-bg: var(--severity-info-bg);
+  --color-diff-added: var(--diff-added);
+  --color-diff-removed: var(--diff-removed);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -87,20 +108,43 @@
   --color-state-working: var(--state-working);
   --color-state-working-foreground: var(--state-working-foreground);
   --color-state-idle: var(--state-idle);
+  --color-state-unread-response: var(--state-unread-response);
+  --color-agent-message: var(--agent-message);
   --color-state-needs-you: var(--state-needs-you);
   --color-state-needs-you-foreground: var(--state-needs-you-foreground);
   --color-state-stopped: var(--state-stopped);
   --color-state-stopped-foreground: var(--state-stopped-foreground);
+  /* Issue #568/#529: PR-domain-namespaced state tokens for the pull request StatePill --
+   * `--pr-open`/`--pr-draft`/`--pr-closed` resolve to the SAME colour values as the existing
+   * chat-domain `--severity-success`/`--state-idle`/`--destructive` tokens (never the raw
+   * chat variables themselves), so a future chat-only token change cannot silently drift the
+   * PR pill's own colours. `--pr-merged` is a genuinely new purple -- no purple existed
+   * anywhere in this app before this issue. */
+  --color-pr-open: var(--pr-open);
+  --color-pr-open-foreground: var(--pr-open-foreground);
+  --color-pr-draft: var(--pr-draft);
+  --color-pr-draft-foreground: var(--pr-draft-foreground);
+  --color-pr-closed: var(--pr-closed);
+  --color-pr-closed-foreground: var(--pr-closed-foreground);
+  --color-pr-merged: var(--pr-merged);
+  --color-pr-merged-foreground: var(--pr-merged-foreground);
 }
 
 /* Font family roles (docs/DESIGN.md "Look and feel"): theme-independent, so declared once as
  * real Tailwind theme values rather than through the light/dark indirection above. Generates
  * the `font-ui`, `font-code`, and `font-brand` utility classes. `font-brand` is the one
- * exception to the no-bundled-fonts default: the "Refract" wordmark and tagline only. */
+ * exception to the no-bundled-fonts default: the "Refract" wordmark and tagline only.
+ *
+ * `--text-readout` (issue #928, docs/design/foundations-typography-spacing.md "Status line
+ * type"): a new 13px step for the composer status line's chips, between Tailwind's own
+ * `text-xs` (12px) and `text-sm` (14px) -- 14px read "as loud as the chat" (Stuart's own
+ * wording, declined); generates the `text-readout` utility, the one sanctioned named step
+ * rather than a bare `text-[13px]` arbitrary value. */
 @theme {
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-code: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
   --font-brand: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --text-readout: 13px;
 }
 
 :root {
@@ -120,33 +164,81 @@
   --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
   --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  /* Chat prose colour (docs/DESIGN.md "Chat text colour", Stuart 2026-10-04): 0.90 lightness
-   * reads as a genuinely perceptible light grey against the dark background (contrast ratio
-   * ~14.7:1, computed via OKLab->linear-sRGB->WCAG relative luminance, comfortably above the
-   * 7:1 AAA threshold) while staying visibly dimmer than --foreground's 0.985 (~18.96:1, which
-   * reads as indistinguishable from pure white) and well short of --muted-foreground's 0.708
-   * (~7.6:1, reserved for secondary/meta text). */
-  --chat-foreground: oklch(0.90 0 0);
-  /* Composer fill (docs/DESIGN.md "Composer tone"; MessageInput.tsx): a literal, solid colour
-   * rather than an alpha composite over --card/--muted, matched exactly to this theme's previous
-   * hardcoded `bg-[oklch(0.09_0_0)]` so nothing visibly changes now that it is a token
-   * (MessageInput.tsx's own comment records why an alpha composite doesn't work here). Must stay
-   * strictly darker than --background (0.145) so the composer reads as the page's most recessive
-   * field; 0.09 clears that with room to spare. */
-  --composer-background: oklch(0.09 0 0);
+  /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at 90%
+   * alpha composited over this theme's own `--background` (`oklch(0.145 0 0)`) -- 15.93:1
+   * against it (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above the
+   * 4.5:1 AA floor, reading as a softer near-white rather than pure white. Supersedes #1039's
+   * own abandoned text-softening attempt (that issue's grill item 3, moved here instead).
+   * Every alias that resolves to `var(--foreground)` below (`--card-foreground`,
+   * `--popover-foreground`, `--secondary-foreground`, `--accent-foreground`,
+   * `--sidebar-foreground`, `--sidebar-accent-foreground`) picks up this same alpha
+   * automatically; a foreground that sits on a COLOURED fill instead
+   * (`--primary-foreground`, `--send-foreground`, `--destructive-foreground`,
+   * `--sidebar-primary-foreground`, the `--state-*-foreground` and `--pr-*-foreground`
+   * tokens) stays a solid, opaque literal, unaffected -- translucency there would risk
+   * dropping under 4.5:1 on a brighter fill. `.theme-dark-high-contrast` is untouched,
+   * keeping its own solid 7:1 text (#552). */
+  --foreground: oklch(1 0 0 / 90%);
+  /* Chat prose colour (docs/DESIGN.md "Chat text colour", Stuart 2026-10-04): dimmer than
+   * --foreground, reserved for body/chat prose. #1074: white at 78% alpha over this theme's
+   * own `--background` -- 11.97:1, comfortably above --muted-foreground's 60%-alpha 7.30:1
+   * (reserved for secondary/meta text) and visibly dimmer than --foreground's own 90%-alpha
+   * 15.93:1. Earlier history: an #1039 text-softening attempt (2026-10-19 to 2026-10-20)
+   * retuned this and the literal copies below to solid 0.90/0.86 lightness, then was reverted
+   * the same day when Stuart moved text softening to this new, separate, app-wide issue
+   * instead -- #1074 is that issue, landing the alpha-based version here. */
+  --chat-foreground: oklch(1 0 0 / 78%);
+  /* Composer fill: SUPERSEDED 2026-10-16 (#927 grill, "Composer tone" in product-chat.md) --
+   * this theme's old `oklch(0.09 0 0)` solid fill (kept strictly darker than --background, the
+   * original 2026-10-04 rule) is now transparent, so the composer shows the chat background
+   * straight through, like the GitHub Copilot composer Stuart's screenshot referenced. The
+   * field is now demarcated by `--composer-border` alone (faint, around the `--divider` tone)
+   * instead of a darker fill. */
+  --composer-background: transparent;
+  /* New #927 tokens. `--composer-border` is deliberately faint (the same soft tone `--divider`
+   * already uses for decorative edges elsewhere) -- the field's resting border is meant to sit
+   * below the WCAG 1.4.11 3:1 non-text floor on purpose (Stuart's accepted departure,
+   * docs/design/accessibility.md "Accepted departures"); `scripts/check-theme-contrast.mjs`
+   * marks this pair informational for this reason, never enforced. `--composer-focus` is the
+   * muted focus outline (decision 4a): a translucent, still-below-3:1 step up from the resting
+   * border, reused by the composer field's own focus-visible border AND by the ghost
+   * Approval/Model/Reasoning/Attach triggers' shared focus outline (`pickerShared.tsx`'s
+   * `GHOST_FOCUS_CLASS`/`GHOST_BUTTON_FOCUS_CLASS`) -- one token, one visual language. The
+   * composer field no longer draws an additional glow ring on top of the border change in this
+   * theme (`--composer-ring: transparent`): a quiet border-colour change is the whole focus
+   * cue, matching the mock's own quiet aesthetic; Send/Stop and every other control keep their
+   * existing full `--ring` treatment untouched (`pickerShared.tsx`'s own
+   * `COMPOSER_FOCUS_CLASS`/`COMPOSER_BUTTON_FOCUS_CLASS`, unchanged by this issue). */
+  --composer-border: var(--divider);
+  --composer-focus: oklch(1 0 0 / 35%);
+  --composer-ring: transparent;
+  /* U1/A1 (gate951UI/A11y High): Approval/Model/Reasoning triggers keep NO visible border in
+   * Dark/Obsidian (ghost, decision 4a) but Dark high contrast keeps its unchanged edges
+   * (decision 3) -- this token lets `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS` add an explicit
+   * `border` unconditionally while only Dark high contrast's own value ever paints it. */
+  --composer-control-border: transparent;
   --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
+  --card-foreground: var(--foreground);
   --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --popover-foreground: var(--foreground);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
+  /* 2026-10-15 grill decision 5, gate round 1 fix: Send's own indigo fill (lifted a touch
+     lighter than Obsidian's own `#5A5EEE` `--primary`, which this near-black composer floor
+     would otherwise bring too close to the WCAG 1.4.11 non-text-contrast floor) -- verified in
+     `scripts/check-theme-contrast.mjs`: fill-vs-composer-background and white-on-fill both clear
+     3:1 (the icon-without-text threshold, `docs/design/accessibility.md` "Contrast") with
+     comfortable margin. */
+  --send: #6D71F0;
+  --send-foreground: #FFFFFF;
   --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
+  --secondary-foreground: var(--foreground);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  /* #1074: white at 60% alpha over this theme's own `--background` -- 7.30:1, the dimmest of
+   * the three text tiers, reserved for low-emphasis/meta text. */
+  --muted-foreground: oklch(1 0 0 / 60%);
   --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent-foreground: var(--foreground);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
   /* Quality-gate remediation (HIGH, 3 independent reviewers + corrected check-theme-contrast.mjs):
@@ -165,27 +257,62 @@
   --input: oklch(1 0 0 / 36%);
   --ring: oklch(0.556 0 0);
   --active-indicator: oklch(0.58 0.22 264.376);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): the "Focused" badge's own
+   * `bg-active-indicator/20` tint is a coloured, non-neutral fill -- FR-023's "stays solid"
+   * exception, same category as `--send-foreground`/`--composer-selection-fg`, not the
+   * softened `--foreground` alias cascade. Plain solid white, same pattern every other
+   * `-foreground` token on a coloured fill already uses. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-foreground: var(--foreground);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-accent-foreground: var(--foreground);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 
   --state-working: oklch(0.696 0.17 162.48);
   --state-working-foreground: oklch(0.145 0 0);
   --state-idle: oklch(0.708 0 0);
+  /* Issue #731: Unread response (idle with an unseen reply) aliases `--severity-info`, the
+   * one existing "info" role -- not a second literal (#550's own "do not create a second set"
+   * rule). Contrast against sidebar/selected-or-hover row/chat background/details card: 8.35 /
+   * 7.05 / 9.23 / 8.35 (all clear the 3:1 non-text floor, `scripts/check-theme-contrast.mjs`). */
+  --state-unread-response: var(--severity-info);
   --state-needs-you: oklch(0.769 0.188 70.08);
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: oklch(0.704 0.191 22.216);
   --state-stopped-foreground: oklch(0.145 0 0);
+  /* Issue #568/#529: PR StatePill tokens. Gate round 1 fix (Code Medium): Open/Draft/Closed are
+   * now literal copies of the matching chat-domain fill values (not `var()` aliases), per
+   * decision 5's own wording ("resolve to the same colour values, NOT literal reuse of the
+   * chat variables themselves") -- the tokens below intentionally track `--state-working`/
+   * `--state-idle`/`--destructive` in VALUE only, so a future chat-only token change can never
+   * silently drift the PR pill's own colours. The pill text uses the already-verified
+   * foreground for each: Open matches `--state-working-foreground`, Closed matches
+   * `--destructive-foreground` -- both already gated at 4.5:1 in
+   * `scripts/theme-contrast-pairs.mjs`. Draft (an achromatic grey, same value as `--state-idle`)
+   * had no existing foreground pairing (it was only ever used as plain icon/text colour before
+   * this issue); near-black text measures 8.10:1 against it, comfortably over 4.5:1. Merged is a
+   * genuinely new purple (hue 300, distinct from `--accent-text`'s indigo hue 264) -- no purple
+   * existed anywhere in this app before this issue; L0.65/C0.18 measures 5.69:1 for near-black
+   * text and >=4.7:1 against `--background`/`--card` (hand-computed via the OKLab<->linear-sRGB
+   * matrices `check-theme-contrast.mjs` itself uses; run the script to reconfirm after any
+   * further edit here). */
+  --pr-open: oklch(0.696 0.17 162.48);
+  --pr-open-foreground: oklch(0.145 0 0);
+  --pr-draft: oklch(0.708 0 0);
+  --pr-draft-foreground: oklch(0.145 0 0);
+  --pr-closed: oklch(0.704 0.191 22.216);
+  --pr-closed-foreground: oklch(0.145 0 0);
+  --pr-merged: oklch(0.65 0.18 300);
+  --pr-merged-foreground: oklch(0.145 0 0);
 
   /* ---- #550 (theme foundation, palette v2) ----
    * PURELY ADDITIVE from here down: every property above this comment is byte-identical to
@@ -227,16 +354,80 @@
    * nothing token: a lighter indigo step that clears 4.5:1 against both this theme's existing
    * `--background` (5.24:1) and `--card`/`--popover` (4.74:1). */
   --accent-text: #7375F2;
+  /* Issue #1050 (composer command pill, gate round 2 remediation -- round 1's `--card`-aliased
+   * fill is superseded): `--accent-text` itself cannot be the pill's own text colour and still
+   * let ONE fill clear both the accent-text floor (4.5:1) and the gate's own "visibly distinct
+   * from the composer surface" floor (1.4:1 against the effective composer backdrop) -- proven
+   * in round 1 that no single colour here does both at once. Decided instead: two independent
+   * tokens. `--command-pill-bg` is a plain neutral step, lighter than `--card`/`--muted`,
+   * chosen ONLY to clear 1.4:1 against `--background` (1.50:1, comfortable margin) -- no accent-
+   * text constraint on it at all now. `--command-pill-fg` is the SAME hue as `--accent-text`
+   * (279, measured from its own hex `#7375F2` -- gate round 3 fix: round 2's hue 264 was a
+   * transcription drift, 15 degrees off the real accent hue, which read as a visibly different
+   * blue), lightened and desaturated only as far as needed to clear 4.5:1 on THIS fill (4.65:1,
+   * measured) -- a visibly lighter step of the same accent family, not a different colour. */
+  --command-pill-bg: oklch(0.31 0 0);
+  --command-pill-fg: oklch(0.695 0.162 279);
+  /* Gate round 5 fix (#1050, test review): translucent accent-text tint, not an opaque alias --
+   * round 3's `var(--accent)` fill (aliasing the SAME "highlighted row" surface as hover/active
+   * menu rows) happened to measure EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber (both
+   * alias `--muted`/`--accent` to the same resolved colour there), so selecting the pilled token
+   * itself painted a completely invisible highlight -- found in this round's test review, not
+   * caught before because Dark/Obsidian/Dark (high contrast) never had that exact coincidence.
+   * `color-mix(in oklab, var(--accent-text) 34%, transparent)`: translucent so the highlight
+   * always lets whatever is underneath (the pill's own fill, or the plain composer surface) show
+   * through, visibly distinct from it by construction in every theme, rather than needing a
+   * second, independently-tuned opaque colour per theme that could drift the same way again. Now
+   * applied UNCONDITIONALLY (`CommandPillOverlay.tsx`'s `COMPOSER_SELECTION_CLASS`, full
+   * reasoning there), not only while a pill shows, so the selection never changes look the
+   * instant a recognised command's own leading token appears or disappears. 34% clears every
+   * theme's own `--composer-selection-fg`-on-highlight text floor (4.5:1, 7:1 in Dark high
+   * contrast) AND a new >=1.5:1 "visibly distinct from the pill" floor at once -- the narrowest
+   * of the two windows this measurement found was roughly 33%-35.5% alpha (`scripts/composer-
+   * selection-contrast.mjs`'s own `composerSelectionContrastRows` has the full measured numbers,
+   * worst case here 1.52:1 against the pill). Against the near-black `--background` itself, no
+   * alpha anywhere near this window reaches a full 3:1 without exceeding the text-legibility
+   * floor above (even 50% alpha tops out at 3.41:1 in Cyber Amber, the best case) -- that
+   * comparison stays informational only (measured, never enforced), a clearly accent-hued tint
+   * rather than a WCAG-enforced one, the same accepted-gap shape this file already uses
+   * elsewhere. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+  /* #1074 DECIDED (gate round 1): this is text on a coloured tint, not ambient UI chrome, so
+   * FR-023's "stays solid on a coloured fill" rule applies -- a literal solid near-white, not
+   * `var(--accent-foreground)` (which now resolves through the translucent `--foreground`).
+   * Same value `--foreground` held before #1074 softened it. */
+  --composer-selection-fg: oklch(0.985 0 0);
   /* Severity roles (#550 item 2 + item 5): aliases of the EXISTING `--state-*`/`--destructive`
    * values above (not a second set, and not a value change -- #550's own "do not create a
-   * second set" rule). `--severity-info` is the one genuinely new colour (no existing OMP
-   * session state means "info" today), verified >=3:1 against both `--background` (9.24:1) and
-   * `--card`/`--popover` (8.36:1), the non-text floor every other severity/state colour here is
-   * already held to. */
+   * second set" rule). `--severity-info` was originally the one genuinely new colour with no
+   * existing OMP session state meaning "info" (verified >=3:1 against both `--background`
+   * (9.24:1) and `--card`/`--popover` (8.36:1), the non-text floor every other severity/state
+   * colour here is already held to) -- issue #731 now aliases `--state-unread-response` back
+   * onto it, the first session state this role covers. */
   --severity-success: var(--state-working);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.696 0.149 162.48);
+  --context-usage-70: oklch(0.769 0.163 70.08);
+  --context-usage-100: oklch(0.704 0.185 22.216);
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: #38BDF8;
+  /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
+  --agent-message: oklch(0.78 0.12 295);
+  /* #925: diff-stat "+A -D" colouring (composer status line, Session details card, PR Changes
+   * tab and its own per-file header #919, and the chat transcript's own expanded DiffView
+   * header, gate round 1 M1) -- aliases the SAME `--state-working`/`--destructive` values
+   * DiffView.tsx/diff-view.css already colour the diff gutter/stat with (#630), not a second,
+   * independently-tunable hue (#550 "do not create a second set") -- the coloured counts
+   * always match the diff view's own insert/delete tint. A zero count renders
+   * `text-muted-foreground` at the call site instead of either of these (`DiffStatCounts`,
+   * `sessionDisplay.tsx`). */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
   /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): each `-bg` is the
    * same severity hue as `color-mix(in oklab, …)`, 12% opaque mixed into transparent, and is
    * checked two ways by `scripts/check-theme-contrast.mjs`: the severity colour read as text
@@ -298,8 +489,22 @@
   /* ---- Layer 2: semantic roles. Canonical here (the opposite of Dark/HC above): --card/
    * --popover/--muted etc below alias INTO these, not the other way round. ------------------ */
   --background: #0F1014;
-  --foreground: #F8FAFC;
-  --muted-foreground: #94A3B8;
+  /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at
+   * 90%/78%/60% alpha composited over this theme's own `--background` (`#0F1014`) -- 15.39:1/
+   * 11.65:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
+   * the 4.5:1 AA floor; worst case among the `--foreground`/`--chat-foreground`/`--muted-
+   * foreground` ALIAS cascade itself is 6.26:1 against `--surface-2`/popover (the 60%-alpha
+   * `--muted-foreground` tier). Gate-fix (round 2, corrected again): the real binding case
+   * across this whole story is Obsidian's OWN `muted-foreground` on `sidebar-border`-hover,
+   * 5.64:1 (informational, `sidebarBorderContrastRows`) -- tighter than `--composer-selection-
+   * fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on its own selection
+   * highlight over the command pill, Nordic Frost 5.82:1, the tightest ENFORCED pair.
+   * Every alias that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
+   * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
+   * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
+   * `.theme-dark`'s own comment explains in full. */
+  --foreground: oklch(1 0 0 / 90%);
+  --muted-foreground: oklch(1 0 0 / 60%);
   --sidebar: #14161E;
   --surface-1: #1C1F28;
   --surface-2: #242834;
@@ -325,6 +530,29 @@
    * popover (4.78:1, the binding constraint -- the earlier `#7A7DF3` cleared only 4.24:1
    * there). */
   --accent-text: #8588F4;
+  /* Issue #1050 (gate round 2 remediation, see Dark's own comment for the full reasoning): two
+   * independent tokens. `--command-pill-bg` is a plain blue-grey neutral step clearing 1.4:1
+   * against `--background` (1.50:1). `--command-pill-fg` is the same hue as `--accent-text`
+   * (280, measured from its own hex `#8588F4` -- gate round 3 fix: round 2's hue 255 was a
+   * transcription drift, 25 degrees off the real accent hue, which read as a visibly different
+   * blue), lightened/desaturated only as far as needed to clear 4.5:1 on this fill. Gate round 5
+   * fix (test review): the round-3 chroma (0.166) put the computed oklch candidate outside the
+   * sRGB gamut -- `check-theme-contrast.mjs` CLIPS any out-of-gamut channel the same way a
+   * display would before computing a ratio (its own methodology note above says so), so its
+   * measured 4.75:1 was a real ratio for the CLIPPED colour, not for the authored literal, which
+   * the browser also silently clips to whatever in-gamut colour is nearest -- not guaranteed to
+   * be the one this comment's own chroma was chosen from. Chroma lowered to 0.14 (same lightness
+   * 0.715, same hue 280) -- comfortably inside gamut, not just at its boundary -- clearing 4.5:1
+   * on this fill at 4.86:1, computed from a colour that needs no clipping at all. */
+  --command-pill-bg: oklch(0.32 0.02 255);
+  --command-pill-fg: oklch(0.715 0.14 280);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+  /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
+   * -- text on a coloured tint stays solid per FR-023. This preset's own old solid `--foreground`
+   * value, before #1074 softened it. */
+  --composer-selection-fg: #F8FAFC;
   /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
    * app's `--state-*` already uses elsewhere (same meaning, not a second set); error is
    * retuned specifically for this preset (lightness 0.74 vs Dark/HC's shared 0.704/0.78) so it
@@ -334,9 +562,22 @@
    * All four also clear the >=3:1 non-text floor against `--background`/`--surface-1`/
    * `--surface-2`. */
   --severity-success: oklch(0.696 0.17 162.48);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.696 0.149 162.48);
+  --context-usage-70: oklch(0.769 0.163 70.08);
+  --context-usage-100: oklch(0.74 0.155 22.216);
   --severity-warning: oklch(0.769 0.188 70.08);
   --severity-error: oklch(0.74 0.191 22.216);
   --severity-info: #38BDF8;
+  /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
+  --agent-message: oklch(0.78 0.12 295);
+  /* #925: diff-stat colouring -- same alias as `.theme-dark`'s own comment above. */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
   /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 12%-into-
    * transparent tint as Dark/HC (see `.theme-dark`'s own comment for the floor/verification
    * method, the three checked surfaces, and why 12%) -- this preset's own binding case, and the
@@ -351,11 +592,29 @@
   --scrollbar-thumb: var(--muted-foreground);
   --scrollbar-thumb-hover: var(--foreground);
   --scrollbar-track: transparent;
-  --chat-foreground: #DFE0E2;
-  /* Composer fill: strictly darker than this canvas (0.0052 relative luminance) -- 0.0027
-   * clears that; near-black, as the design doc's "Canvas colour" section calls for on this
-   * preset specifically ("on Obsidian it will be near black"). */
-  --composer-background: #08090C;
+  /* #1074: white at 78% alpha over this theme's own `--background` -- 11.65:1, see
+   * `--foreground`'s own comment above for the full rationale and every tier's measured
+   * ratio. */
+  --chat-foreground: oklch(1 0 0 / 78%);
+  /* Composer fill: SUPERSEDED 2026-10-16 (#927 grill) -- this preset's old near-black
+   * `#08090C` solid fill (strictly darker than this canvas's 0.0052 relative luminance, the
+   * original "Canvas colour" rule) is now transparent, matching Dark's own #927 change; the
+   * field reads through to the chat background instead. See `.theme-dark`'s own comment just
+   * above for the full `--composer-border`/`--composer-focus`/`--composer-ring` rationale,
+   * identical here except for the actual muted values (tuned to this preset's own `--border`,
+   * `#6F7C9D`, rather than an achromatic literal). */
+  --composer-background: transparent;
+  --composer-border: var(--divider);
+  /* A1 (Low, gate951A11y; Decided, Skippy, delegated by Stuart 2026-10-17): the 55% mix
+   * measured ~2.20:1 against this theme's own `--background` -- noticeably weaker than Dark's
+   * equivalent `oklch(1 0 0 / 35%)` at ~3.14:1 -- so the muted focus cue read as a different
+   * strength per theme though both are meant to be the same "quiet border-colour change"
+   * departure. Raised to 75% to bring it to ~3.08:1, matching Dark's own strength (measured via
+   * `scripts/check-theme-contrast.mjs`'s informational Obsidian composer-focus/background row).
+   */
+  --composer-focus: color-mix(in oklab, var(--border) 75%, transparent);
+  --composer-ring: transparent;
+  --composer-control-border: transparent;
   --card: var(--surface-1);
   --card-foreground: var(--foreground);
   --popover: var(--surface-2);
@@ -363,6 +622,11 @@
   --surface-hover: var(--surface-3);
   --primary: #5A5EEE;
   --primary-foreground: #FFFFFF;
+  /* 2026-10-15 grill decision 5, gate round 1 fix: Send reuses this preset's own `--primary`
+     indigo verbatim -- it is already the "#5A5EEE family" Stuart's decision names, and already
+     verified against this theme's own composer-background. */
+  --send: #5A5EEE;
+  --send-foreground: #FFFFFF;
   --secondary: var(--surface-hover);
   --secondary-foreground: var(--foreground);
   --muted: var(--surface-hover);
@@ -378,6 +642,9 @@
    * decided here). */
   --ring: oklch(0.62 0 0);
   --active-indicator: var(--accent-text);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key for the full reasoning. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -398,10 +665,27 @@
   --state-working: var(--severity-success);
   --state-working-foreground: oklch(0.145 0 0);
   --state-idle: oklch(0.708 0 0);
+  /* Issue #731: Unread response aliases `--severity-info` (see `.theme-dark`'s own comment for
+   * the floor/method). Contrast against sidebar/selected-or-hover row/chat background/details
+   * card: 8.41 / 6.14 / 8.86 / 6.85. */
+  --state-unread-response: var(--severity-info);
   --state-needs-you: var(--severity-warning);
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: var(--severity-error);
   --state-stopped-foreground: oklch(0.145 0 0);
+  /* Issue #568/#529: PR StatePill tokens, same reasoning as `.theme-dark`'s own comment (gate
+   * round 1 fix: literal values, not `var()` aliases -- see that comment for why). Same literal
+   * purple as Dark (`L0.65/C0.18/H300`): 5.69:1 for near-black text, 5.47:1 against
+   * `--background` (#0F1014), 4.73:1 against `--surface-1`/card, 4.23:1 against
+   * `--surface-2`/popover -- all clear the >=3:1 non-text floor with margin. */
+  --pr-open: oklch(0.696 0.17 162.48);
+  --pr-open-foreground: oklch(0.145 0 0);
+  --pr-draft: oklch(0.708 0 0);
+  --pr-draft-foreground: oklch(0.145 0 0);
+  --pr-closed: oklch(0.74 0.191 22.216);
+  --pr-closed-foreground: oklch(0.145 0 0);
+  --pr-merged: oklch(0.65 0.18 300);
+  --pr-merged-foreground: oklch(0.145 0 0);
   /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
    * comment explains in full, including the round-5 A11y remediation to `#9A68E4`; this
    * preset's own contrast numbers are in `scripts/check-theme-contrast.mjs` and the PR body. */
@@ -432,26 +716,58 @@
    * "Composer tone"). Resolving that by inverting the technique instead of the darkness: the
    * composer reads as a raised surface (matching --card/--popover's own 0.14 "panel" tone, one
    * step lighter than the page) bounded by the field's existing visible border
-   * (border-muted-foreground/85 in MessageInput.tsx, itself >=3:1 against both this fill and
+   * (`--composer-border` below, token-ized by #927 -- itself >=3:1 against both this fill and
    * --background), so it still reads as a clearly bounded, recessive-from-the-content field --
    * just demarcated by a border against a lighter fill rather than by a darker fill against no
    * border, which pure black makes impossible. Picking a value darker than --card (0.08, versus
    * --card's 0.14) keeps the composer visually distinct from (not identical to) dialogs/popovers
    * while staying lighter than --background. */
   --composer-background: oklch(0.08 0 0);
+  /* #927 (quiet composer, Dark and Obsidian only): this preset is explicitly excluded --
+   * "Dark (high contrast) keeps its 3:1 edges and full ring", Stuart 2026-10-16 -- so every
+   * value below is a byte-for-byte token-ization of what MessageInput.tsx used to hardcode as
+   * literal Tailwind classes, not a new design: `--composer-border` replaces the literal
+   * `border-muted-foreground/85` (`color-mix(in oklab, var(--muted-foreground) 85%,
+   * transparent)` is exactly how Tailwind's own `/85` alpha modifier resolves a token colour);
+   * `--composer-focus` replaces `border-ring` (the focus-visible border colour);
+   * `--composer-ring` replaces `ring-ring/50` (the focus glow). Nothing this preset renders
+   * changes. */
+  --composer-border: color-mix(in oklab, var(--muted-foreground) 85%, transparent);
+  --composer-focus: var(--ring);
+  --composer-ring: color-mix(in oklab, var(--ring) 50%, transparent);
+  /* U1 (High, gate951UI/A11y): the Approval/Model/Reasoning triggers must keep a visible,
+   * enforced >=3:1 resting border in this theme (decision 3) -- `var(--border)` is already
+   * >=3:1 against `--composer-background` (see `scripts/theme-contrast-pairs.mjs`'s own new
+   * `composer-control-border`/`composer-background` pair, `onlyThemes: ['dark-high-contrast']`).
+   */
+  --composer-control-border: var(--border);
   --card: oklch(0.14 0 0);
   --card-foreground: oklch(1 0 0);
   --popover: oklch(0.14 0 0);
   --popover-foreground: oklch(1 0 0);
   --primary: oklch(1 0 0);
   --primary-foreground: oklch(0 0 0);
+  /* 2026-10-15 grill decision 5, gate round 1 fix: same lifted indigo as `.theme-dark` above
+     (not `--primary`, which is pure white here and would read identically to Stop's `invert`
+     fill) -- verified against this theme's own near-black composer-background floor. */
+  --send: #6D71F0;
+  --send-foreground: #FFFFFF;
   --secondary: oklch(0.26 0 0);
   --secondary-foreground: oklch(1 0 0);
   --muted: oklch(0.26 0 0);
   --muted-foreground: oklch(0.85 0 0);
   --accent: oklch(0.26 0 0);
   --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.78 0.17 22);
+  /* #552 fix (Skippy, delegated by Stuart 2026-10-18, gate round): the mock's own 0.78
+   * lightness measured only 6.65:1 against this theme's `--muted` hover fill (#570 decision 20,
+   * recorded on #552 2026-10-16) -- under this theme's OWN declared 7:1 high-contrast text
+   * floor (`docs/design/accessibility.md`/`foundations-tokens-theming.md` "High contrast
+   * preset"), though still clearing the ordinary 4.5:1 AA floor every preset is held to.
+   * Raised to 0.82 (same hue/chroma): 7.26:1 against `--muted` (the binding surface, lightest
+   * of background/card/popover/muted), 9.82:1 against `--background`, 9.30:1 against `--card`/
+   * `--popover`, `--destructive-foreground` (pure black) still clears 9.82:1 on the raised
+   * fill. */
+  --destructive: oklch(0.82 0.17 22);
   --destructive-foreground: oklch(0 0 0);
   /* Quality-gate remediation (round 2): `--input` at 30% measured 2.46:1 against this
    * theme's `--background` -- under the 3:1 floor, same real component-boundary token as the
@@ -460,6 +776,10 @@
   --input: oklch(1 0 0 / 38%);
   --ring: oklch(0.9 0 0);
   --active-indicator: oklch(0.75 0.17 264);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key -- same solid value, no change in behaviour here since this theme's own `--foreground`
+   * is already solid. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.75 0.17 264);
   --chart-2: oklch(0.8 0.17 162);
   --chart-3: oklch(0.85 0.17 70);
@@ -477,10 +797,34 @@
   --state-working: oklch(0.8 0.17 162);
   --state-working-foreground: oklch(0 0 0);
   --state-idle: oklch(0.85 0 0);
+  /* Issue #731: Unread response aliases `--severity-info` (see `.theme-dark`'s own comment for
+   * the floor/method). Contrast against sidebar/selected-or-hover row/chat background/details
+   * card: 12.21 / 9.21 / 12.45 / 11.80. */
+  --state-unread-response: var(--severity-info);
   --state-needs-you: oklch(0.85 0.17 70);
   --state-needs-you-foreground: oklch(0 0 0);
-  --state-stopped: oklch(0.78 0.17 22);
+  /* #552 gate round 1 fix: same retune as `--destructive`/`--severity-error` above -- this
+   * literal copy was still at the pre-fix 0.78 lightness, measuring the same under-floor
+   * 6.65:1 against `--sidebar-accent`/`--muted` (both `oklch(0.26 0 0)`). Raised to 0.82 (same
+   * hue/chroma): 7.26:1 on both. */
+  --state-stopped: oklch(0.82 0.17 22);
   --state-stopped-foreground: oklch(0 0 0);
+  /* Issue #568/#529: PR StatePill tokens, same reasoning as `.theme-dark`'s own comment (gate
+   * round 1 fix: literal values, not `var()` aliases), tuned brighter to match this preset's own
+   * lighter `state-*` lightness ladder (state-working here is L0.8, versus Dark's L0.696).
+   * `--pr-merged` at `L0.8/C0.17/H300` measures 10.26:1 for pure-black text and 9.72:1 against
+   * `--card`/popover (`oklch(0.14 0 0)`), both far over the 4.5:1/3:1 floors this preset's own
+   * other state fills already clear by similar margins. */
+  --pr-open: oklch(0.8 0.17 162);
+  --pr-open-foreground: oklch(0 0 0);
+  --pr-draft: oklch(0.85 0 0);
+  --pr-draft-foreground: oklch(0 0 0);
+  /* #552 gate round 1 fix: same retune as `--destructive`/`--severity-error`/`--state-stopped`
+   * above -- raised 0.78 -> 0.82 (same hue/chroma): 7.26:1 against `--muted`. */
+  --pr-closed: oklch(0.82 0.17 22);
+  --pr-closed-foreground: oklch(0 0 0);
+  --pr-merged: oklch(0.8 0.17 300);
+  --pr-merged-foreground: oklch(0 0 0);
 
   /* ---- #550 (theme foundation, palette v2) ----
    * PURELY ADDITIVE, same rule as `.theme-dark` above: every property before this comment is
@@ -512,13 +856,38 @@
    * ordinary 4.5:1 text floor (the enhanced 7:1 this preset's own design intent calls for is
    * also cleared, incidentally, but is not the floor this story enforces -- see above). */
   --accent-text: oklch(0.75 0.17 264);
+  /* Issue #1050 (gate round 2 remediation, see `.theme-dark`'s own comment for the full
+   * reasoning): two independent tokens. `--command-pill-bg` is a plain neutral step clearing
+   * 1.4:1 against `--composer-background` (1.52:1). `--command-pill-fg` is the same hue as
+   * `--accent-text` (264), lightened only as far as needed to clear this preset's own
+   * enhanced 7:1 floor on this fill (7.26:1, measured; gate round 3 fix: this comment's own
+   * number was stale at 7.23, drifted from the spec's recorded 7.26). */
+  --command-pill-bg: oklch(0.30 0 0);
+  --command-pill-fg: oklch(0.80 0.10 264);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+  --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: aliases of the EXISTING `--state-*`/`--destructive` values above (#550's
    * "do not create a second set" rule, same as Dark). `--severity-info` is the one new colour,
    * verified >=3:1 against `--background` (12.45:1) and `--card`/`--popover` (11.80:1). */
   --severity-success: var(--state-working);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.85 0.005 162);
+  --context-usage-30: oklch(0.8 0.170 162);
+  --context-usage-70: oklch(0.85 0.114 70);
+  --context-usage-100: oklch(0.82 0.097 22);
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: oklch(0.82 0.13 220);
+  /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
+  --agent-message: oklch(0.85 0.1 295);
+  /* #925: diff-stat colouring -- same alias as `.theme-dark`'s own comment above. */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
   /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 12%-into-
    * transparent tint as Dark (see `.theme-dark`'s own comment for the floor/verification
    * method and the three checked surfaces) -- this preset's margins are the widest of the three
@@ -530,6 +899,426 @@
   /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
    * comment explains in full, including the round-5 A11y remediation to `#9A68E4`; this
    * preset's own contrast numbers are in `scripts/check-theme-contrast.mjs` and the PR body. */
+  --agent-spinner-core: #9A68E4;
+}
+
+/* #551 (Nordic Frost / Cyber Amber dark presets, additive per spec 007 "a further dark preset
+ * adds a key, never removes" -- same rule #550 used for Obsidian): built from Stuart's mockup
+ * (`src/data/themes.ts` theme `nordic-frost`, zip on his machine, not in this repo) with the
+ * mock's own measured contrast failures corrected (issue #551's "Checked in the mock" section):
+ * the mock's strong border measured only 2.35:1 (under the 3:1 control-edge floor) and its own
+ * `--accent`/`--info` were the identical sky blue `#38BDF8` (not tellable apart). Built out in
+ * full, same depth as Obsidian (`.theme-obsidian` above), not a scaled copy of Dark -- canonical
+ * surface ladder here (`--card`/`--popover`/`--muted` alias INTO `--surface-1/2/3`, the opposite
+ * direction from Dark/HC's legacy alias), since there is no existing rendering to protect.
+ *
+ * **Decided (Skippy, delegated by Stuart 2026-10-18): `--border` retuned to clear 3:1** against
+ * every surface it renders on (`--background` 4.85:1, `--surface-1`/card 4.39:1, `--surface-2`/
+ * popover 3.82:1, `--surface-3`/muted 3.22:1 -- `scripts/check-theme-contrast.mjs`), fixing the
+ * mock's own under-floor value; the mock's soft literal lives on the new, floor-exempt
+ * `--divider` token instead (same split every other preset already makes).
+ * **Decided (Skippy, delegated by Stuart 2026-10-18): accent and info are no longer the same
+ * hue.** `--accent-text`/`--primary`/`--active-indicator` keep the mock's own cyan (hue 195,
+ * the preset's signature "cyan accent"); `--severity-info` moves to a cooler, 60-degree-distant
+ * periwinkle-blue (hue 255) reserved for the info role alone, so an accent link and an info
+ * banner are never the same colour. `--severity-success`/`--severity-warning`/`--severity-error`
+ * keep the same hue family every other built-in theme uses (green 162.48 / amber 70.08 / red
+ * 22.216, per #550's "do not create a second set" precedent), retuned in lightness only where
+ * this preset's own darker navy surfaces needed it (`--severity-error`/`--muted` is the binding
+ * case at 4.91:1, just over the 4.5:1 floor `--destructive`/`--muted` enforces).
+ */
+.theme-nordic-frost {
+  color-scheme: dark;
+  --scrollbar-thumb: var(--muted-foreground);
+  --scrollbar-thumb-hover: var(--foreground);
+  --scrollbar-track: transparent;
+
+  /* ---- Layer 2: semantic roles. Canonical here (same direction as Obsidian): --card/
+   * --popover/--muted etc below alias INTO these, not the other way round. ------------------ */
+  --background: #060f1e;
+  /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at
+   * 90%/78%/60% alpha composited over this theme's own `--background` (`#060f1e`) -- 15.50:1/
+   * 11.71:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
+   * the 4.5:1 AA floor; worst case among the `--foreground`/`--chat-foreground`/`--muted-
+   * foreground` ALIAS cascade itself is 6.34:1 against `--surface-2`/popover (the 60%-alpha
+   * `--muted-foreground` tier). Gate-fix (round 2, corrected again): the real binding case
+   * across this whole story is Obsidian's OWN `muted-foreground` on `sidebar-border`-hover,
+   * 5.64:1 (informational, `sidebarBorderContrastRows`) -- tighter than `--composer-selection-
+   * fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on its own selection
+   * highlight over the command pill, THIS preset 5.82:1, the tightest ENFORCED pair.
+   * Every alias that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
+   * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
+   * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
+   * `.theme-dark`'s own comment explains in full. */
+  --foreground: oklch(1 0 0 / 90%);
+  --muted-foreground: oklch(1 0 0 / 60%);
+  --sidebar: #0c1626;
+  --surface-1: #101b2b;
+  --surface-2: #1c2738;
+  --surface-3: #293342;
+  /* The real rendered control/container edge every un-migrated `border-border` call site draws
+   * with (cards, code blocks, menu bar, outline buttons) -- retuned from the mock's own
+   * under-floor value (2.35:1) with margin so it clears 3:1 against `--background` (4.85:1),
+   * `--surface-1` (4.39:1), `--surface-2`/popover (3.82:1, the binding dialog/menu surface) AND
+   * `--surface-3`/muted (3.22:1, the narrowest margin -- raising further would start reading as
+   * too light against the navy canvas). `--border-strong` is a plain alias, matching Obsidian. */
+  --border: #79818c;
+  --border-strong: var(--border);
+  /* The mock's own soft literal (~1.6:1, no floor -- `--divider` is exempt, see DIVIDER_PAIRS in
+   * `scripts/check-theme-contrast.mjs`), used by #606's panel separators. */
+  --divider: oklch(1 0 0 / 14%);
+  /* Accent: the mock's "cyan accent" (hue 195), corrected off the mock's own merged
+   * accent/info hue -- `--primary` (the one filled/"commit" button) is a deeper, saturated step
+   * so white text clears 4.5:1 (5.18:1, verified); `--accent-text`, the lighter text/link step,
+   * clears 4.5:1 against `--background` (10.07:1), `--surface-1`/card (9.12:1) AND
+   * `--surface-2`/popover (7.93:1, the binding case). */
+  --primary: #007a7c;
+  --primary-foreground: #ffffff;
+  --send: #007a7c;
+  --send-foreground: #ffffff;
+  --secondary: var(--surface-hover);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-hover);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--severity-error);
+  --destructive-foreground: oklch(0.145 0 0);
+  --input: oklch(1 0 0 / 38%);
+  /* Focus ring stays achromatic grey, same as every other built-in preset (Stuart 2026-10-09,
+   * "Focus ring colour -- achromatic, decided"), never this preset's own cyan accent. */
+  --ring: oklch(0.62 0 0);
+  --active-indicator: var(--accent-text);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key for the full reasoning. */
+  --active-indicator-foreground: oklch(1 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--foreground);
+  /* Purely decorative (not aliased to `--divider`, unlike Obsidian): an independent, own-tuned
+   * translucent edge, the same low-alpha-white approach Dark uses for this exact token. */
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: var(--ring);
+
+  --state-working: var(--severity-success);
+  --state-working-foreground: oklch(0.145 0 0);
+  --state-idle: oklch(0.708 0 0);
+  --state-unread-response: var(--severity-info);
+  --state-needs-you: var(--severity-warning);
+  --state-needs-you-foreground: oklch(0.145 0 0);
+  --state-stopped: var(--severity-error);
+  --state-stopped-foreground: oklch(0.145 0 0);
+  --pr-open: oklch(0.70 0.17 162.48);
+  --pr-open-foreground: oklch(0.145 0 0);
+  --pr-draft: oklch(0.708 0 0);
+  --pr-draft-foreground: oklch(0.145 0 0);
+  --pr-closed: oklch(0.76 0.191 22.216);
+  --pr-closed-foreground: oklch(0.145 0 0);
+  --pr-merged: oklch(0.70 0.18 300);
+  --pr-merged-foreground: oklch(0.145 0 0);
+
+  /* ---- Layer 2 continued: surface ladder, severity, accent-text ------------------------- */
+  --surface-hover: var(--surface-3);
+  --accent-text: #1ad1d1;
+  /* Issue #1050: `--muted` clears BOTH floors here -- 1.50:1 against `--background` (>=1.4)
+   * and 6.73:1 for `--accent-text` on it (>=4.5) -- so this preset's pill fill is visibly
+   * distinct from the composer surface with no Dark/Obsidian/Dark-HC-style conflict (gate round
+   * 2: `--command-pill-fg` is a plain alias of `--accent-text` itself -- already the right
+   * hue, lightness and contrast, no lightened step needed). */
+  --command-pill-bg: var(--muted);
+  --command-pill-fg: var(--accent-text);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+  /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
+   * -- text on a coloured tint stays solid per FR-023. This preset's own old solid `--foreground`
+   * value, before #1074 softened it. */
+  --composer-selection-fg: #eff7fb;
+  /* Severity roles: success/warning/error share the same hue every other built-in theme uses
+   * (#550's "do not create a second set"), lightness retuned for this preset's own darker navy
+   * surfaces. Info is deliberately NOT this preset's own cyan accent hue (195) -- a periwinkle
+   * blue (hue 255, roughly 60 degrees around the wheel) that clears 3:1 against `--background`
+   * (7.16:1), `--surface-1`/card (6.48:1) and `--surface-2`/popover (5.64:1), fixing the mock's
+   * "accent and info are the same sky blue" finding. */
+  --severity-success: oklch(0.70 0.17 162.48);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.70 0.150 162.48);
+  --context-usage-70: oklch(0.76 0.161 70.08);
+  --context-usage-100: oklch(0.76 0.140 22.216);
+  --severity-warning: oklch(0.76 0.188 70.08);
+  --severity-error: oklch(0.76 0.191 22.216);
+  --severity-info: oklch(0.70 0.15 255);
+  /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
+  --agent-message: oklch(0.78 0.12 295);
+  --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
+  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
+  --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
+  --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* #925 (post-#967-merge gap): this preset was built in a parallel branch before #967 added
+   * `--diff-added`/`--diff-removed` to Dark/Obsidian/HC -- same alias as `.theme-dark`'s own
+   * comment above, not a second, independently-tunable hue (#550 "do not create a second set"). */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
+
+  /* ---- Layer 3: component tokens ---------------------------------------------------------- */
+  /* #1074: white at 78% alpha over this theme's own `--background` -- 11.71:1, see
+   * `--foreground`'s own comment above for the full rationale and every tier's measured
+   * ratio. */
+  --chat-foreground: oklch(1 0 0 / 78%);
+  /* Quiet composer (#927 pattern, same as Dark/Obsidian): transparent fill, demarcated by
+   * `--composer-border` alone (faint, the `--divider` tone) -- the WCAG 1.4.11 departure Stuart
+   * accepted for Dark/Obsidian (`docs/design/accessibility.md` "Accepted departures") applies
+   * here too, so this pair is informational-only in `check-theme-contrast.mjs`. */
+  --composer-background: transparent;
+  --composer-border: var(--divider);
+  --composer-focus: color-mix(in oklab, var(--border) 75%, transparent);
+  --composer-ring: transparent;
+  --composer-control-border: transparent;
+  --card: var(--surface-1);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--foreground);
+  /* Agent-working spinner (issue #612, #616 review round 4): same brand violet as every other
+   * theme ("same brand violet in every theme for now"); clears 3:1 against `--sidebar` (4.72:1),
+   * `--sidebar-accent` (3.31:1, the binding case), `--card`/`--popover` (4.52:1 / 3.93:1) and
+   * `--background` (4.99:1). */
+  --agent-spinner-core: #9A68E4;
+}
+
+/* #551 (Nordic Frost / Cyber Amber dark presets, historical): this block originally shipped a
+ * warm BROWN canvas (`--background: #0f0703`, surfaces `#22160e`/`#2c221b`/`#382e28`) with a
+ * pale-peach accent (`#fcae93`, real hue 39.9) and a golden-amber warning (real hue ~73.8) --
+ * see this file's own git history for that cut's full gate-round rationale.
+ *
+ * **Retuned #1039 (Stuart, grilled 2026-10-19, "not what I was expecting, needs to be more
+ * like the default dark but with orange/amber accents"); amended #1039 THREE TIMES (Stuart,
+ * 2026-10-20, issue comments); then round-1 gate fix (Code HIGH, same day):** (1) every
+ * SURFACE made pure neutral; (2) every TEXT token made pure neutral too; (3) **the text-
+ * softening half of #1039 was reverted entirely** -- Stuart moved it to a new, separate
+ * app-wide text-opacity issue instead, so `--foreground`/`--chat-foreground`/
+ * `--muted-foreground` (and every token that aliases `--foreground`: `--card-foreground`/
+ * `--popover-foreground`/`--accent-foreground`/`--sidebar-foreground`/`--secondary-foreground`/
+ * `--sidebar-accent-foreground`) are back to Default Dark's CURRENT `origin/main` values
+ * (`oklch(0.985 0 0)`/`oklch(0.90 0 0)`/`oklch(0.708 0 0)`), not retuned by this issue at all.
+ * (4) **Gate round 1 fix:** `--ring` (Stuart's grill on the issue body: "Unchanged: the
+ * achromatic focus ring", matching the existing 2026-10-09 rule), `--input`,
+ * `--scrollbar-thumb`/`--scrollbar-thumb-hover` and `--composer-focus` were still their own
+ * distinct literals (an earlier draft of this comment wrongly called `--ring` "a different
+ * lightness, same [accent] family" -- it never was part of the accent family at all) -- all
+ * four are now byte-identical to Default Dark's own literals too. **#1039's final, settled
+ * shape:** every surface (`--background`, `--sidebar`, `--surface-1`/`--surface-2`/
+ * `--surface-3`, `--border`), every text token, and `--input`/`--scrollbar-thumb`/
+ * `--scrollbar-thumb-hover`/`--composer-focus`/`--ring`/`--sidebar-ring` are chroma 0,
+ * byte-identical to `.theme-dark`'s own literal -- the original BROWN canvas this preset
+ * shipped with (see this comment's own history note above) is gone, replaced by Default Dark
+ * exactly. `--card`/`--popover` collapse to one tier (0.205), the same two-tier-not-three
+ * structure `.theme-dark`'s own `--surface-1`/`--surface-2` comment already documents for that
+ * theme. The accent family (`--accent-text`/`--active-indicator`, `--primary`/`--send`,
+ * markdown links -- all of which already read `--accent-text`), the warning hue
+ * (`--severity-warning`), the error family (`--severity-error`/`--destructive`/
+ * `--state-stopped`/`--pr-closed`, all four kept equal, the #568/#529 decision 5 convention),
+ * and `themes.ts`'s own `swatchPrimary` still differ from Default Dark -- `--ring` is
+ * explicitly NOT part of this family and never has been (the achromatic-ring decision,
+ * 2026-10-09, applies to every built-in preset including this one).
+ *
+ * **Accent, per the grill's decided hex values (unaffected by any of the four 2026-10-20
+ * amendments):** `--accent-text`/`--active-indicator` move to the vivid orange `#fb923c` (real
+ * hue 55.9); `--primary`/`--send` move to the deeper, filled `#c2410c` (real hue 38.4) with
+ * white text. Measured against the pure-neutral surfaces: accent-text clears 4.5:1 against
+ * `--background` (8.75:1), `--card`/`--popover` (7.92:1) AND `--surface-hover`/muted (6.69:1,
+ * the binding case); white on `--primary`/`--send` clears 4.5:1 (5.18:1); the fill clears the
+ * 3:1 non-text floor against `--background` (3.82:1, the quiet-composer backdrop, #927).
+ * `--sidebar-primary` stays the shared indigo every other preset uses (never carried the old
+ * peach/orange, so it is out of this retune's "whatever else currently carries the peach or
+ * burnt orange" scope).
+ *
+ * **Warning stays golden amber, retuned apart from the new accent:** the new orange accent's
+ * real hue (55.9) sits closer to the OLD warning hue (73.8) than the old accent's did (39.9) --
+ * only ~18 degrees apart, under the ~30-degree margin this theme's own severity/accent pairs
+ * have held to since #551's gate rounds. `--severity-warning` moves from hue 75 to hue 88 (same
+ * lightness/chroma, `oklch(0.78 0.17 88)`, real hue 86.6) -- more yellow-gold, still clearly
+ * "amber", now ~30.7 degrees from the new accent's real hue. `--severity-success`/
+ * `--severity-info` are unchanged (green hue 162.48, cool teal hue 200).
+ * **Error family retuned (Main, 2026-10-20, round-2 gate decision):** `--accent-text`'s new
+ * real hue (55.9) closed the gap to `--severity-error` (hue 12, unchanged since #551) to
+ * 1.23:1, under the 1.5:1 distinctness floor #551's own gate established. The original grid
+ * search (L 0.655-0.675, chroma 0.15-0.24, hue 5-25) found no point clearing both that floor
+ * and the error-text-everywhere floor (>=4.5:1) at once; widened on hue (kept redder, same
+ * family the other themes use) and reran outside the original chroma band -- `oklch(0.665
+ * 0.12 22)` (`#d37472`) is the best accent-vs-error ratio achievable (1.42:1) while keeping
+ * every error-text pair >=4.5:1 (6.14:1 on `--background`, 5.56:1 on `--card`/`--popover`,
+ * 4.69:1 on `--muted`, 4.50:1 on the composited `destructive/80` hover fill over the dialog
+ * footer -- the binding case, margin confirmed live, `check-theme-contrast.mjs` re-run
+ * 872/872). The 1.5:1 distinctness floor is NOT met here -- a named accepted departure for
+ * Cyber Amber only, `docs/design/accessibility.md` "Accepted departures" (the error row
+ * always also carries its own icon and word, so colour is never the only cue, WCAG 1.4.1).
+ * `--destructive`/`--state-stopped` alias `--severity-error` already; `--pr-closed` is a
+ * literal copy (the same convention every other theme's own `--pr-closed` already follows)
+ * and is updated to the SAME value here, not left behind.
+ *
+ * **Text, foreground/chat/muted: byte-identical to Default Dark, not retuned by #1039 at
+ * all** (see the third 2026-10-20 amendment above) -- both themes' `--foreground`/
+ * `--chat-foreground`/`--muted-foreground` were further retuned by the separate, app-wide
+ * #1074 (alpha-based text softening, white at 90%/78%/60% alpha composited over each theme's
+ * own `--background`): since this theme's surfaces are themselves byte-identical to Dark's
+ * own (the retune above), the two themes' composited text colours stay identical too. Every
+ * pair re-verified by `scripts/check-theme-contrast.mjs`. */
+.theme-cyber-amber {
+  color-scheme: dark;
+  --scrollbar-thumb: #757575;
+  --scrollbar-thumb-hover: #8c8c8c;
+  --scrollbar-track: transparent;
+
+  --background: oklch(0.145 0 0);
+  /* #1074: see `.theme-dark`'s own `--foreground`/`--muted-foreground` comments for the full
+   * rationale -- byte-identical values and ratios here since this theme's background/card/
+   * popover are themselves byte-identical to Dark's own. */
+  --foreground: oklch(1 0 0 / 90%);
+  --muted-foreground: oklch(1 0 0 / 60%);
+  --sidebar: oklch(0.205 0 0);
+  --surface-1: oklch(0.205 0 0);
+  --surface-2: oklch(0.205 0 0);
+  --surface-3: oklch(0.269 0 0);
+  /* Clears 3:1 against `--background` (4.24:1), `--surface-1`/`--surface-2`/card/popover
+   * (3.84:1) AND `--surface-3`/muted (3.24:1, the binding case) -- byte-identical to
+   * `.theme-dark`'s own `--border` (2026-10-20 amendment: pure neutral, chroma 0). */
+  --border: oklch(0.56 0 0);
+  --border-strong: var(--border);
+  --divider: oklch(1 0 0 / 16%);
+  --primary: #c2410c;
+  --primary-foreground: #ffffff;
+  --send: #c2410c;
+  --send-foreground: #ffffff;
+  --secondary: var(--surface-hover);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-hover);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--severity-error);
+  --destructive-foreground: oklch(0.145 0 0);
+  --input: oklch(1 0 0 / 36%);
+  /* Gate round 1 fix (Code HIGH, #1039): the focus ring stays achromatic AND byte-identical to
+   * Default Dark's own literal -- Stuart's grill on the issue body says "Unchanged: the
+   * achromatic focus ring" (the existing 2026-10-09 rule), not merely "a different lightness,
+   * same family" as an earlier draft of this comment claimed. `--sidebar-ring` already aliases
+   * `--ring` via `var()`, so it follows automatically. */
+  --ring: oklch(0.556 0 0);
+  --active-indicator: var(--accent-text);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key for the full reasoning. */
+  --active-indicator-foreground: oklch(1 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: var(--ring);
+
+  --state-working: var(--severity-success);
+  --state-working-foreground: oklch(0.145 0 0);
+  --state-idle: oklch(0.708 0 0);
+  --state-unread-response: var(--severity-info);
+  --state-needs-you: var(--severity-warning);
+  --state-needs-you-foreground: oklch(0.145 0 0);
+  --state-stopped: var(--severity-error);
+  --state-stopped-foreground: oklch(0.145 0 0);
+  --pr-open: oklch(0.70 0.17 162.48);
+  --pr-open-foreground: oklch(0.145 0 0);
+  --pr-draft: oklch(0.708 0 0);
+  --pr-draft-foreground: oklch(0.145 0 0);
+  /* Gate round 2 fix (Main, Code HIGH): was still the old pre-retune literal
+   * (`oklch(0.72 0.191 12)`) -- every theme keeps `--pr-closed` equal to `--destructive`
+   * (#568/#529 decision 5); updated to the same `oklch(0.665 0.12 22)` literal `--severity-
+   * error`/`--destructive`/`--state-stopped` now share (see this block's own header comment). */
+  --pr-closed: oklch(0.665 0.12 22);
+  --pr-closed-foreground: oklch(0.145 0 0);
+  --pr-merged: oklch(0.70 0.18 300);
+  --pr-merged-foreground: oklch(0.145 0 0);
+
+  --surface-hover: var(--surface-3);
+  --accent-text: #fb923c;
+  /* Issue #1050, retuned for #1039 (2026-10-20): Cyber Amber's `--background` is now byte-
+   * identical to Default Dark's, so `--command-pill-bg` reuses Dark's own literal
+   * (`oklch(0.31 0 0)`, hex `#303030`, 1.50:1 against `--background`) instead of aliasing
+   * `--muted` -- the pre-#1039 brown `--muted` cleared this floor with margin (1.51:1 against
+   * the old brown background), but the new pure-neutral `--muted` (`#262626`) only clears
+   * 1.31:1 against the new pure-neutral `--background` (`#0a0a0a`), under the 1.4:1 floor.
+   * `--command-pill-fg` stays a plain alias of `--accent-text` (no lightened step needed): the
+   * vivid orange clears 4.5:1 on the new pill fill directly (5.83:1, measured). */
+  --command-pill-bg: oklch(0.31 0 0);
+  --command-pill-fg: var(--accent-text);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+  /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
+   * -- text on a coloured tint stays solid per FR-023. Same literal as Dark's own (#1039:
+   * Cyber Amber's surfaces/text are byte-identical to Default Dark's). */
+  --composer-selection-fg: oklch(0.985 0 0);
+  /* Severity roles: success/error keep the same green/red hue family every other built-in theme
+   * uses. `--severity-warning` is the theme's own golden amber, retuned apart from the new
+   * accent by #1039 (real hue 86.6, up from 73.8 -- see this block's own header comment for the
+   * measured hue distances). `--severity-info` stays the cool teal (real hue ~200.1), well
+   * clear of the warm family. `--severity-error` retuned (Main, 2026-10-20, round-2 gate
+   * decision; see this block's own header comment for the full grid-search/floor rationale):
+   * `oklch(0.665 0.12 22)` (`#d37472`) is the best accent-vs-error swatch ratio achievable
+   * (1.42:1) while every error-text pair stays >=4.5:1 (binding case 4.69:1 on `--muted`,
+   * 4.50:1 on the composited `destructive/80` hover fill) -- an accepted departure for Cyber
+   * Amber only, `docs/design/accessibility.md` "Accepted departures"; `scripts/verify-551-
+   * presets.mjs`'s own `CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR` is lowered to 1.4 for this one
+   * check, with a comment pointing there. Kept in the red family (hue 22) every other theme's
+   * own `--severity-error` uses, per #568/#529 decision 5 -- `--destructive`/`--state-stopped`
+   * alias it already; `--pr-closed` below is updated to the same literal too. */
+  --severity-success: oklch(0.70 0.17 162.48);
+  /* #1082 (spec 004 FR-033): Context usage figures blend in OKLCH between these stops (0, 30,
+   * 70, 100%); the 0% stop carries the green hue at near-zero chroma so the blend never
+   * swings through another hue. Chroma stays inside sRGB so the renderer's blend matches the gate's;
+   * each blend is gated at 4.5:1 (context-usage-contrast.mjs). */
+  --context-usage-0: oklch(0.72 0.005 162.48);
+  --context-usage-30: oklch(0.70 0.150 162.48);
+  --context-usage-70: oklch(0.78 0.157 88);
+  --context-usage-100: oklch(0.72 0.150 22);
+  --severity-warning: oklch(0.78 0.17 88);
+  --severity-error: oklch(0.665 0.12 22);
+  --severity-info: oklch(0.70 0.12 200);
+  /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
+  --agent-message: oklch(0.78 0.12 295);
+  --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
+  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
+  --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
+  --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* #925 (post-#967-merge gap): this preset was built in a parallel branch before #967 added
+   * `--diff-added`/`--diff-removed` to Dark/Obsidian/HC -- same alias as `.theme-dark`'s own
+   * comment above, not a second, independently-tunable hue (#550 "do not create a second set"). */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
+
+  /* #1074: see `.theme-dark`'s own `--chat-foreground` comment for the full rationale. */
+  --chat-foreground: oklch(1 0 0 / 78%);
+  --composer-background: transparent;
+  --composer-border: var(--divider);
+  --composer-focus: oklch(1 0 0 / 35%);
+  --composer-ring: transparent;
+  --composer-control-border: transparent;
+  --card: var(--surface-1);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--foreground);
   --agent-spinner-core: #9A68E4;
 }
 
@@ -560,11 +1349,102 @@
 }
 
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  .watermark-mark {
+  .watermark-mark,
+  .watermark-mark-holiday {
     display: none;
   }
 }
 /* ===== End spec 012: Brand watermark ===================================================== */
+
+/* ===== Issue #1048: Holiday touches (ambient loops + spinner glyph) ======================
+ * Per-holiday ambient loop layer (Full only, `HolidayAmbientLoop.tsx`): mounted in the SAME
+ * `-z-10`/`isolate` background layer `BrandWatermark.tsx`'s own 'live' variant uses. Gate round
+ * 3 fix (High, item 2, FR-008 regression): scoped to ONE pane's own transcript container
+ * (`ChatPane.tsx`'s `showAmbientLoop` prop) or `EmptyChatState.tsx`'s own box (no session open
+ * at all) -- never `ChatPane.tsx`'s own `!session` Empty fallback, and never the whole chat
+ * panel a round 2 hoist briefly spanned, which let it paint UNDER the composer. Painting BEHIND
+ * normal-flow content by construction satisfies "never over text or controls" and "never under
+ * the composer's input area" (the composer is a separate sibling outside the transcript
+ * container) without any manual z-index/pointer-events bookkeeping beyond what the watermark
+ * already set up. `aria-hidden` (set by the component itself); `data-paused` (set by the
+ * component's own pause-rule effect -- window hidden/unfocused, 60s idle, an overlay open) gates
+ * the JS-driven flight scheduling in `HolidayAmbientLoop.tsx` itself (no CSS
+ * `animation-play-state` rule left to pause -- see the bat rule below), the same way
+ * `prefers-reduced-motion`/forced-colors already do below for the whole layer. */
+.holiday-ambient-loop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Halloween: 3 bat silhouettes, almost always STATIC. Gate round 2 fix (High, item 1 fallback):
+ * a continuous CSS animation here, even `steps(26)`-timed at about 4 ticks/s, still measured
+ * about 3.2s of CPU per 60s above Artwork-only in the live budget check (budget 1.0s/60s) --
+ * three elements animating for the WHOLE window, however cheaply each tick costs, adds up over
+ * a sustained 60s. Switched to occasional flights instead (the ui-architect review's own
+ * fallback): one randomly-chosen bat flies for about 4s every 90-180s via a single
+ * `Element.animate()` call in `HolidayAmbientLoop.tsx` itself -- genuinely NO animation,
+ * CSS or JS, running between flights, so `document.getAnimations()` is empty almost all the
+ * time. Single colour (`--muted-foreground`, the same token the watermark itself uses), very
+ * low constant opacity. */
+.holiday-ambient-loop-bat {
+  color: var(--muted-foreground);
+  opacity: 0.1;
+}
+/* Gate round 4 fix (Main's decision on #1048, 2026-10-20): `position`/`:nth-child` placement
+ * moved onto this wrapper -- `HolidayAmbientLoop.tsx` now animates `transform`/`will-change` on
+ * this `<div>`, never the `<svg>` root (WebView2's own frame-production cost for any running
+ * animation, not specific to SVG, made the animated element itself irrelevant to that cost; this
+ * split is purely about which element the position rules live on). Gate round 3 fix (Low,
+ * do-if-cheap): on a short/narrow pane, `top: 12%` alone could sit bat 1 right under the
+ * header's own row -- `max(12%, 72px)` keeps it clear of that regardless of pane height. */
+.holiday-ambient-loop-bat-wrap {
+  position: absolute;
+}
+.holiday-ambient-loop-bat-wrap:nth-child(1) { top: max(12%, 72px); left: 8%; }
+.holiday-ambient-loop-bat-wrap:nth-child(2) { top: 32%; left: 55%; }
+.holiday-ambient-loop-bat-wrap:nth-child(3) { top: 58%; left: 22%; }
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .holiday-ambient-loop {
+    display: none;
+  }
+}
+
+/* The agent-working spinner's holiday glyph (`AgentSpinner.tsx`): a themed icon in place of the
+ * default split/rotate/merge core, same `--agent-spinner-core` colour token, same
+ * `--agent-spinner-cycle`/`--agent-spinner-delay` phase-locking the default core already sets
+ * inline (decision 5: "same colour, size, speed"). A plain, constant-speed spin -- deliberately
+ * NOT the default core's own split/rotate/merge choreography, since a single static icon has no
+ * "split" state to animate. */
+.agent-spinner-holiday {
+  display: inline-flex;
+  color: var(--agent-spinner-core);
+  animation: holiday-spinner-spin var(--agent-spinner-cycle, 10000ms) linear infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+@keyframes holiday-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-spinner-holiday {
+    /* Decision 5's own "reduced-motion static glyph": the same explicit `animation: none`
+     * posture `.agent-spinner-core-rotator`/`.agent-spinner-core-disc-group` already use above
+     * (not just the global 0.01ms-duration collapse), so the glyph rests upright rather than at
+     * whatever angle a near-instant single iteration happens to stop on. */
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .agent-spinner-holiday {
+    animation: none;
+    color: CanvasText;
+  }
+}
+/* ===== End issue #1048: Holiday touches ==================================================== */
 
 @layer base {
   * {
@@ -596,6 +1476,21 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Issue #672 (Stuart, 2026-10-11, follow-up to #618): a slow bob on the Session start notice's
+ * emoji (`SessionStartNotice.tsx`), in every sizing regime -- gate-fix (A11y round 2, WCAG
+ * 2.2.2): the class applying this keyframe runs it exactly 2 times (about 4.8s, under the 5s
+ * threshold), not forever, so it always stops on its own. The global `prefers-reduced-motion`
+ * rule above already collapses this to its 0% frame (no motion) regardless, the same way it
+ * neutralises the agent spinner below. */
+@keyframes session-start-emoji-bob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
   }
 }
 
@@ -782,7 +1677,14 @@
 [data-slot='message-scroller-viewport'] { scrollbar-width: auto; scrollbar-color: auto; }
 [data-slot='message-scroller-viewport'][data-autoscrolling]::-webkit-scrollbar-thumb { background: transparent; }
 
-:is([role='option'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='radio'], [role='tab'], [data-slot='toggle-group-item'], [data-choice-item]) { border-radius: 0; }
+/* #572 FR-054: `[role='checkbox']` added so the ask card's new tick-box rows are squared the
+ * same way every other choice/option/tab control already is -- a round dot against a square
+ * tick is the shape cue that tells single choice from multiple choice apart (decision D9). */
+/* Issue #1122 (one selected-item style): `role='treeitem'` joins this list so the Explorer tree
+ * (`FileExplorerPanel.tsx`) and the Subagent panel (`SubagentPanel.tsx`) -- both already
+ * `role="treeitem"` -- converge on the same square corners every other persistent selected
+ * surface uses, instead of keeping their own hand-rolled `rounded`/`rounded-md` shape. */
+:is([role='option'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='radio'], [role='checkbox'], [role='tab'], [role='treeitem'], [data-slot='toggle-group-item'], [data-choice-item]) { border-radius: 0; }
 
 /* The title bar merged into the app's own top row (spec 001 T100, FR-057): `.drag-region` marks
  * the left nav header and the chat header as the window's draggable area; `.no-drag-region`
@@ -790,3 +1692,36 @@
  * everywhere else in that row, matching Electron's `-webkit-app-region` contract. */
 .drag-region { -webkit-app-region: drag; }
 .no-drag-region { -webkit-app-region: no-drag; }
+
+/* Issue #499 gate-fix (M1, caught live 2026-10-18): the Pull requests Filter tab row's own edge
+ * fade (`PullRequestList.tsx`'s `tabsWrapRef`). A STATIC mask used to fade both edges always,
+ * even the start edge while already scrolled fully to the start -- nothing is clipped there to
+ * fade. `data-fade-left`/`data-fade-right` are toggled by that component's own effect, from real
+ * `scrollLeft`/`scrollWidth`/`clientWidth` measurements (on mount, every scroll, and every
+ * `ResizeObserver` tick), so only an edge with content actually clipped past it ever fades. `24px`
+ * here MUST match `PullRequestList.tsx`'s own `TABS_FADE_PX` constant -- the scroll-into-view
+ * margin that constant also drives assumes the fade is exactly this wide. */
+.pr-tabs-fade {
+  --pr-tabs-fade-mask: none;
+  mask-image: var(--pr-tabs-fade-mask);
+  -webkit-mask-image: var(--pr-tabs-fade-mask);
+}
+.pr-tabs-fade[data-fade-left] {
+  --pr-tabs-fade-mask: linear-gradient(to right, transparent, black 24px);
+}
+.pr-tabs-fade[data-fade-right] {
+  --pr-tabs-fade-mask: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+.pr-tabs-fade[data-fade-left][data-fade-right] {
+  --pr-tabs-fade-mask: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+}
+
+/* #1184 gate: sonner paints a near-black box-shadow (outline:none) on a focused action/close button,
+ * invisible on the dark toast. One shared ring for every toast; the extra [data-sonner-toaster]
+ * level out-ranks sonner's own rule regardless of stylesheet order. */
+[data-sonner-toaster] [data-sonner-toast] [data-button]:focus-visible,
+[data-sonner-toaster] [data-sonner-toast] [data-close-button]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: none;
+}
