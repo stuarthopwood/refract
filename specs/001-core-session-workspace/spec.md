@@ -1963,6 +1963,12 @@ The developer types a slash command and finds the ones the agent offers. If a se
   of grouped tool calls and never hidden by "Show tool calls"; its status glyph replaces the
   bubble while running, failed, interrupted or stopped, a failed write reads "failed" in the
   error colour, and expansion shows the full message and "View full call".
+- **FR-102** (new, 2026-10-23, issue #1200): Opening any pull request, however long its
+  description, comments, or review comments (including wide tables, code blocks, and unbroken
+  strings), MUST never change the app layout: the app frame MUST always fill the window with no
+  band below it, the pull request list column MUST always render, and only the detail column MUST
+  scroll, with exactly one vertical scrollbar. Keyboard scrolling MUST stay inside the detail
+  column. This MUST be checked on a long pull request at 1920x1080 and 1280x720.
 
 ### Key Entities
 

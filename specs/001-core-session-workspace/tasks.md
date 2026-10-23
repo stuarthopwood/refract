@@ -5234,3 +5234,25 @@ polish items the issue itself calls "not the fix" (the themed `scrollbar-thin` t
 `overscroll-contain` on the side-chat scroller) are intentionally NOT built in this change --
 root-cause fix only, no scope creep; filed nowhere else since the issue's own text already
 records them as open, undecided follow-ups.
+
+## Phase 77: Convergence (#1200 pull request detail layout)
+
+- [ ] T372 Reproduce issue #1200 by opening a long pull request containing a long description,
+  comments, review comments, wide tables, code blocks, and unbroken strings; use CDP to inspect
+  computed heights up the ancestor chain and identify the element that grows the document per
+  FR-102 (missing).
+- [ ] T373 Apply a CSS-only fix for the identified layout growth across
+  `src/renderer/App.tsx`, `src/renderer/features/pull-requests/PullRequestsView.tsx`, and
+  `src/renderer/features/pull-requests/PullRequestDetail.tsx`, using the necessary `min-h-0`,
+  `min-w-0`, overflow containment, and overflow-wrap rules so the app frame stays bounded, the
+  list column remains rendered, and only the detail column scrolls per FR-102 (missing).
+- [ ] T374 Apply any CSS-only overflow containment or wrapping adjustment needed in the pull
+  request comment markdown renderer so wide tables, code blocks, and unbroken strings cannot
+  widen or grow the document per FR-102 (missing).
+- [ ] T375 Verify the long pull request live at 1920x1080 and 1280x720: confirm the frame fills
+  the window with no band below it, the list column is present, exactly one vertical scrollbar
+  belongs to the detail column, horizontal overflow is contained, and keyboard scrolling stays
+  inside the detail column per FR-102 (missing).
+- [ ] T376 Run the required gates after the fix: `pnpm typecheck`, `pnpm test`, and every
+  `pnpm check:*` script, recording any failure before the change is considered complete per
+  FR-102 (missing).
