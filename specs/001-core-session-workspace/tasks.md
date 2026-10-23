@@ -5237,22 +5237,24 @@ records them as open, undecided follow-ups.
 
 ## Phase 77: Convergence (#1200 pull request detail layout)
 
-- [ ] T372 Reproduce issue #1200 by opening a long pull request containing a long description,
+- [x] T372 Reproduce issue #1200 by opening a long pull request containing a long description,
   comments, review comments, wide tables, code blocks, and unbroken strings; use CDP to inspect
   computed heights up the ancestor chain and identify the element that grows the document per
-  FR-102 (missing).
-- [ ] T373 Apply a CSS-only fix for the identified layout growth across
-  `src/renderer/App.tsx`, `src/renderer/features/pull-requests/PullRequestsView.tsx`, and
-  `src/renderer/features/pull-requests/PullRequestDetail.tsx`, using the necessary `min-h-0`,
-  `min-w-0`, overflow containment, and overflow-wrap rules so the app frame stays bounded, the
-  list column remains rendered, and only the detail column scrolls per FR-102 (missing).
-- [ ] T374 Apply any CSS-only overflow containment or wrapping adjustment needed in the pull
-  request comment markdown renderer so wide tables, code blocks, and unbroken strings cannot
-  widen or grow the document per FR-102 (missing).
-- [ ] T375 Verify the long pull request live at 1920x1080 and 1280x720: confirm the frame fills
-  the window with no band below it, the list column is present, exactly one vertical scrollbar
-  belongs to the detail column, horizontal overflow is contained, and keyboard scrolling stays
-  inside the detail column per FR-102 (missing).
-- [ ] T376 Run the required gates after the fix: `pnpm typecheck`, `pnpm test`, and every
-  `pnpm check:*` script, recording any failure before the change is considered complete per
-  FR-102 (missing).
+  FR-102. Reproduced on PR #1104: `html.scrollHeight` 6636 at 1920x1080 (9989 at 1280x720); the
+  culprit is the comment box's `sr-only` `role=alert` paragraph (`position: absolute`) at the
+  end of the Overview, which had no positioned ancestor and so laid out against the viewport.
+- [x] T373 Apply a CSS-only fix for the identified layout growth per FR-102: `relative` on the
+  app root in `src/renderer/App.tsx` and on the Overview and Changes `TabsContent` scrollers in
+  `src/renderer/features/pull-requests/PullRequestDetail.tsx`. No `min-h-0`, `min-w-0` or
+  `PullRequestsView.tsx` change was needed.
+- [x] T374 Apply any CSS-only overflow containment or wrapping adjustment needed in the pull
+  request comment markdown renderer per FR-102. Not needed: the markdown content did not grow
+  the document once the `sr-only` alert was contained (body width equals the window at both
+  sizes on PR #1104).
+- [x] T375 Verify the long pull request live at 1920x1080 and 1280x720 per FR-102. After the fix
+  `html.scrollHeight` equals the window height at both sizes, body width equals the window
+  width, the list column renders 50 rows, the document `scrollTop` stays 0 after End plus wheel
+  overscroll, and PageDown, Home and End scroll only the Overview.
+- [x] T376 Run the required gates after the fix per FR-102: `pnpm typecheck` passed,
+  `pnpm test` 148/148, and `check:indent`, `check:ui-text`, `check:theme-contrast`,
+  `check:drag-regions` and `check:file-size` all report 0 issues.
