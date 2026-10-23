@@ -338,7 +338,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             Changes ({detail.changedFilesCount} file{detail.changedFilesCount === 1 ? '' : 's'})
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="min-h-0 flex-1 overflow-auto">
+        {/* #1200: `relative` keeps the comment box's `sr-only` alert (absolute) inside this scroller. */}
+        <TabsContent value="overview" className="relative min-h-0 flex-1 overflow-auto">
           <div className="p-3">
             <ReviewConsensus timeline={detail.timeline} authorLogin={detail.author.login} />
             <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} />
@@ -363,7 +364,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             </div>
           </div>
         </TabsContent>
-        <TabsContent value="changes" className="min-h-0 flex-1 overflow-auto">
+        <TabsContent value="changes" className="relative min-h-0 flex-1 overflow-auto">
           <ChangesTab
             additions={detail.additions}
             deletions={detail.deletions}
