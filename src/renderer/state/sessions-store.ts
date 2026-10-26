@@ -11,6 +11,13 @@ interface SessionsState {
   /** Session ids with an `open()` call in flight (bug report point 4): lets a row/ChatPane show
    * "Starting the agent..." feedback and ignore a second click while the first is still opening. */
   openingIds: Set<string>
+  /** Issue #1205 (FR-106): Sessions with a forced `open(id, true)` in flight -- the only open
+   * that starts an agent, so the only one the "Starting agent" notice may cover. */
+  startingIds: Set<string>
+  /** Issue #1205 (FR-104): bumped when a forced open begins, so a pane already showing that
+   * Session re-fetches its snapshot (joining the forced call) and swaps saved history for the
+   * live transcript. */
+  startSeq: Record<string, number>
   // Issue #620, UX consult item 2 decision 6: per-repository in-flight guard, shared by every
   // `create()` caller (the header "+", the row's "New session from {branch}" menu item, and
   // `NewSessionDialog`) -- previously `SessionList.tsx`'s own `RepositoryGroup` kept this as a
@@ -22,10 +29,9 @@ interface SessionsState {
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
   refresh(): Promise<void>
-  /** `userAction` true bypasses `canAutoStart` exactly like `recover`/`restore` already do --
-   * for the one case that is a genuine explicit user request through this path: MessageInput's
-   * typed-send to a not-yet-started Session (quality-gate fix, issue #509). Omitted (the pane's
-   * own mount-time open) keeps the existing allow-list check. */
+  /** `userAction` true starts a stopped Session's agent (Start agent, a typed send, an advisory
+   * Ask). Omitted (every passive path: the pane's own mount-time open) never starts it: a
+   * stopped Session opens history-only (issue #1205, FR-103). */
   open(id: string, userAction?: boolean): Promise<SessionSnapshot | null>
   create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
@@ -59,6 +65,8 @@ const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
   openingIds: new Set(),
+  startingIds: new Set(),
+  startSeq: {},
   creatingRepositoryIds: new Set(),
   setSessions: (sessions) => set({ sessions }),
   applyStatus: (event) =>
@@ -139,6 +147,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     const existing = openPromises.get(key)
     if (existing) return existing
     set({ openingIds: new Set(get().openingIds).add(id) })
+    const forced = userAction === true
+    if (forced) set({ startingIds: new Set(get().startingIds).add(id), startSeq: { ...get().startSeq, [id]: (get().startSeq[id] ?? 0) + 1 } })
     const promise = (async () => {
       try {
         const result = await window.refract.sessions.open(id, userAction)
@@ -151,6 +161,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         const openingIds = new Set(get().openingIds)
         openingIds.delete(id)
         set({ openingIds })
+        if (forced) {
+          const startingIds = new Set(get().startingIds)
+          startingIds.delete(id)
+          set({ startingIds })
+        }
         openPromises.delete(key)
       }
     })()
@@ -179,6 +194,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const result = await window.refract.sessions.create({ repositoryId, baseBranch })
       if (result.ok) {
         await get().refresh()
+        // Issue #1205 (FR-104): creating a Session is an explicit action, so it starts the agent;
+        // started before the pane mounts so the pane's passive open joins this forced one.
+        void get().open(result.value.id, true)
         useSplitStore.getState().replaceFocused(result.value.id)
         // #735 decision 20, with an accepted departure (recorded on the issue): every create
         // caller (the header "+", the branch picker, Ctrl+N, the row menu's "New session from

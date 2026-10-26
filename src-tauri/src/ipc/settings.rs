@@ -51,6 +51,10 @@ pub fn register(d: &mut Dispatcher) {
         settings_set_show_context_usage_bar,
     );
     d.register(
+        "settings.setShowAgentStoppedBar",
+        settings_set_show_agent_stopped_bar,
+    );
+    d.register(
         "settings.setWordPredictionEnabled",
         settings_set_word_prediction_enabled,
     );
@@ -455,6 +459,23 @@ pub fn settings_set_show_context_usage_bar(state: AppState, args: Vec<Value>) ->
             .lock()
             .await
             .set_show_context_usage_bar(enabled)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// `settings.setShowAgentStoppedBar(enabled)` (issue #1205, FR-107).
+pub fn settings_set_show_agent_stopped_bar(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let enabled = require_bool(&args, 0, "settings.setShowAgentStoppedBar", "enabled")?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_show_agent_stopped_bar(enabled)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");

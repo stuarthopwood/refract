@@ -69,6 +69,7 @@ pub(crate) async fn build_snapshot(
             obj.remove("pendingToolNames");
         }
     }
+    inject_saved_history(&mut runtime, session).await;
     let conversations = list_conversations(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
@@ -84,6 +85,38 @@ pub(crate) async fn build_snapshot(
         "subagents": crate::session::subagents::current_summaries_value(agent).await,
         "advisorOn": crate::session::advisor::current_advisor_value(agent).await,
     })
+}
+
+/// Issue #1205 (FR-103): a `stopped` agent with no transcript of its own (never started this
+/// run) shows its current Conversation's saved history, read from the file with no `omp`
+/// process, through the unchanged `SessionSnapshot` shape -- or a plain notice when the file is
+/// missing or holds no messages. Once the agent starts, its live transcript replaces this.
+async fn inject_saved_history(runtime: &mut Value, session: &crate::store::registry::Session) {
+    use crate::session::saved_history::{notice_for, SavedHistory};
+    use crate::session::saved_history_cache::load_saved_history;
+    let stopped = runtime.get("status").and_then(Value::as_str) == Some("stopped");
+    let has_live = runtime
+        .get("transcript")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty());
+    if !stopped || has_live {
+        return;
+    }
+    let history = load_saved_history(
+        session.session_dir.as_deref(),
+        session.current_conversation.as_deref(),
+    )
+    .await;
+    let transcript = match notice_for(&history) {
+        Some(notice) => serde_json::json!([notice]),
+        None => match history {
+            SavedHistory::Items(items) => serde_json::json!(items),
+            _ => return,
+        },
+    };
+    if let Some(obj) = runtime.as_object_mut() {
+        obj.insert("transcript".to_string(), transcript);
+    }
 }
 
 pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {

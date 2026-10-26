@@ -565,7 +565,6 @@ async fn resume_session_core_swallows_a_rejected_agent_start() {
 
 struct FakeAttachableAgent {
     status: SessionStatus,
-    stop_reason: Option<String>,
     terminated_unexpectedly: bool,
     start_called: StdMutex<bool>,
     notify_called: StdMutex<bool>,
@@ -578,10 +577,6 @@ struct FakeAttachableAgent {
 impl AttachableAgent for FakeAttachableAgent {
     async fn status(&self) -> SessionStatus {
         self.status
-    }
-
-    async fn stop_reason(&self) -> Option<String> {
-        self.stop_reason.clone()
     }
 
     async fn resolve_termination(&self) -> TerminationDetectionResult {
@@ -602,14 +597,9 @@ impl AttachableAgent for FakeAttachableAgent {
     }
 }
 
-fn fake_attachable(
-    status: SessionStatus,
-    stop_reason: Option<&str>,
-    terminated_unexpectedly: bool,
-) -> FakeAttachableAgent {
+fn fake_attachable(status: SessionStatus, terminated_unexpectedly: bool) -> FakeAttachableAgent {
     FakeAttachableAgent {
         status,
-        stop_reason: stop_reason.map(str::to_string),
         terminated_unexpectedly,
         start_called: StdMutex::new(false),
         notify_called: StdMutex::new(false),
@@ -622,7 +612,7 @@ async fn attach_snapshot_decision_is_none_and_never_starts_when_not_stopped() {
     // Port of `attachSnapshot.test.ts`'s own "never reads the tail when the agent is not
     // stopped (no detection, no start)" (Main gate round 5 MEDIUM): asserts the tail read
     // itself never happens, not merely that `start` was never called.
-    let agent = fake_attachable(SessionStatus::Working, Some("agent-exited"), false);
+    let agent = fake_attachable(SessionStatus::Working, false);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(detection.is_none());
     assert!(!*agent.start_called.lock().unwrap());
@@ -634,7 +624,7 @@ async fn attach_snapshot_decision_is_none_and_never_starts_when_not_stopped() {
 
 #[tokio::test]
 async fn attach_snapshot_decision_force_start_restarts_even_an_agent_exited_reason() {
-    let agent = fake_attachable(SessionStatus::Stopped, Some("agent-exited"), false);
+    let agent = fake_attachable(SessionStatus::Stopped, false);
     let detection = attach_snapshot_decision(&agent, true).await;
     assert!(detection.is_some());
     assert!(
@@ -646,7 +636,7 @@ async fn attach_snapshot_decision_force_start_restarts_even_an_agent_exited_reas
 
 #[tokio::test]
 async fn attach_snapshot_decision_passive_open_never_auto_starts_an_agent_exited_session() {
-    let agent = fake_attachable(SessionStatus::Stopped, Some("agent-exited"), false);
+    let agent = fake_attachable(SessionStatus::Stopped, false);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(
         detection.is_some(),
@@ -659,12 +649,13 @@ async fn attach_snapshot_decision_passive_open_never_auto_starts_an_agent_exited
 }
 
 #[tokio::test]
-async fn attach_snapshot_decision_passive_open_auto_starts_when_nothing_is_wrong() {
-    let agent = fake_attachable(SessionStatus::Stopped, Some("not-started"), false);
+async fn attach_snapshot_decision_passive_open_never_starts_even_when_nothing_is_wrong() {
+    // Issue #1205 (FR-103): a passive open shows saved history and never starts the agent.
+    let agent = fake_attachable(SessionStatus::Stopped, false);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(detection.is_some());
-    assert!(*agent.start_called.lock().unwrap());
-    assert!(*agent.notify_called.lock().unwrap());
+    assert!(!*agent.start_called.lock().unwrap());
+    assert!(!*agent.notify_called.lock().unwrap());
 }
 
 #[tokio::test]
@@ -675,7 +666,7 @@ async fn attach_snapshot_decision_a_genuinely_crashed_session_with_the_same_stop
     // HIGH): `not-started` is normally allowed to auto-start, but a tail read proving it
     // actually died mid-turn (`terminated_unexpectedly: true`) must still block it -- and the
     // caller still gets the real detection back either way (threaded into `build_snapshot`).
-    let agent = fake_attachable(SessionStatus::Stopped, Some("not-started"), true);
+    let agent = fake_attachable(SessionStatus::Stopped, true);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(
         !*agent.start_called.lock().unwrap(),
@@ -691,12 +682,12 @@ async fn attach_snapshot_decision_a_genuinely_crashed_session_with_the_same_stop
 async fn attach_snapshot_decision_notifies_list_changed_only_when_the_agent_actually_starts() {
     // Port of `attachSnapshot.test.ts`'s own "notifies listChanged only when the agent actually
     // starts".
-    let not_stopped = fake_attachable(SessionStatus::Working, Some("agent-exited"), false);
+    let not_stopped = fake_attachable(SessionStatus::Working, false);
     attach_snapshot_decision(&not_stopped, false).await;
     assert!(!*not_stopped.notify_called.lock().unwrap());
 
-    let starts = fake_attachable(SessionStatus::Stopped, Some("not-started"), false);
-    attach_snapshot_decision(&starts, false).await;
+    let starts = fake_attachable(SessionStatus::Stopped, false);
+    attach_snapshot_decision(&starts, true).await;
     assert!(*starts.notify_called.lock().unwrap());
 }
 

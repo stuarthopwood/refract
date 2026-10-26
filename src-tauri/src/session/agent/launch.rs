@@ -52,26 +52,7 @@ impl SessionAgent {
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
-        // Lane R3 (issue #786), once R2 (#826) landed `worktree_is_valid`: replaces the plain
-        // `fs::metadata` existence check -- catches a worktree whose `.git` pointer was hand-
-        // deleted or that git no longer has registered, not merely "the folder is gone" (#729).
-        // `Unknown` (the underlying `git worktree list` call could not be made to settle within
-        // its own timeout) must never block a start -- a slow disk/antivirus scan is not
-        // evidence the worktree is actually missing, so this agent starts normally the same as
-        // `Valid` (matching `session::manager::summaries()`'s own documented `Unknown` policy).
-        let repo_path = {
-            let registry = self.registry.lock().await;
-            registry
-                .get_repository(&session.repository_id)
-                .map(|r| r.path.clone())
-        };
-        let validity = match repo_path {
-            Some(path) => {
-                worktree_is_valid(Path::new(&path), Path::new(&session.worktree_path)).await
-            }
-            None => WorktreeValidity::Invalid,
-        };
-        if validity == WorktreeValidity::Invalid {
+        if self.worktree_validity(&session).await == WorktreeValidity::Invalid {
             self.set_status(
                 SessionStatus::Stopped,
                 Some("worktree-missing"),
@@ -84,6 +65,57 @@ impl SessionAgent {
             ));
         }
         self.launch(&session, "").await
+    }
+
+    /// Lane R3 (issue #786), once R2 (#826) landed `worktree_is_valid`: replaces the plain
+    /// `fs::metadata` existence check -- catches a worktree whose `.git` pointer was hand-
+    /// deleted or that git no longer has registered, not merely "the folder is gone" (#729).
+    /// `Unknown` (the underlying `git worktree list` call could not be made to settle within
+    /// its own timeout) must never block a start -- a slow disk/antivirus scan is not
+    /// evidence the worktree is actually missing, so this agent starts normally the same as
+    /// `Valid` (matching `session::manager::summaries()`'s own documented `Unknown` policy).
+    async fn worktree_validity(&self, session: &Session) -> WorktreeValidity {
+        let repo_path = {
+            let registry = self.registry.lock().await;
+            registry
+                .get_repository(&session.repository_id)
+                .map(|r| r.path.clone())
+        };
+        match repo_path {
+            Some(path) => {
+                worktree_is_valid(Path::new(&path), Path::new(&session.worktree_path)).await
+            }
+            None => WorktreeValidity::Invalid,
+        }
+    }
+
+    /// Issue #1205 (FR-107): a passive open never calls `start()`, so a stopped Session whose
+    /// worktree is gone records `worktree-missing` here instead, keeping its stop banner in
+    /// place of the Agent stopped bar. Only a not-yet-explained stop is relabelled.
+    pub async fn mark_worktree_missing_if_invalid(&self) {
+        if self.status().await != SessionStatus::Stopped {
+            return;
+        }
+        let reason = self
+            .runtime_view()
+            .await
+            .get("stopReason")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if !matches!(reason.as_deref(), None | Some("not-started")) {
+            return;
+        }
+        let Ok(session) = self.require_session().await else {
+            return;
+        };
+        if self.worktree_validity(&session).await == WorktreeValidity::Invalid {
+            self.set_status(
+                SessionStatus::Stopped,
+                Some("worktree-missing"),
+                Some(session.worktree_path.clone()),
+            )
+            .await;
+        }
     }
 
     /// Port of `conversationSwitch.ts`'s `startStoppedSessionOnConversation` gate-fix (round 2

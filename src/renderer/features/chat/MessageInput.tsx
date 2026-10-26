@@ -276,7 +276,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   const isWorking = status === 'working'
-  const notStarted = status === 'stopped' && stopReason === 'not-started'
+  // Issue #1205 (FR-104): any stop without a stop banner (not started, or stopped on request)
+  // keeps the composer usable; a send starts the agent.
+  const notStarted = status === 'stopped' && (stopReason === 'not-started' || stopReason === undefined)
   const disabled = status === 'stopped' && !notStarted
 
   const { slashMatches, showSlashMenu, slashMenuKey, slashMenuViewProps, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey } = useSlashMenuCompletion({
@@ -510,13 +512,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       let snapshot
       try {
         setStarting(true)
-        // userAction true: bypass canAutoStart like recover/restore -- a typed send is the
-        // one genuine explicit user request through this path (quality-gate fix, issue #509).
+        // Issue #1205 (FR-104): a typed send is an explicit start -- `open(sessionId, true)`
+        // starts the stopped agent and resolves once it is ready, then this one send goes out.
         snapshot = await useSessionsStore.getState().open(sessionId, true)
       } finally {
         setStarting(false)
       }
-      if (!snapshot) return
+      // A failed start keeps the draft (it is only cleared after `chat.send` succeeds) and the
+      // stop banner shows from the live status event.
+      if (!snapshot || snapshot.runtime.status === 'stopped') return
     }
     // FR-013: every pending text chip's full original text is substituted back into the draft at
     // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever

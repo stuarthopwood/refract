@@ -44,20 +44,6 @@ pub struct SessionReadout {
     pub current_work: bool,
 }
 
-/// Matches `src/shared/model.ts`'s own `DEFAULT_SESSION_READOUT` exactly, field for field.
-fn default_session_readout() -> SessionReadout {
-    SessionReadout {
-        changes: true,
-        context_usage: true,
-        turn_time: true,
-        current_time: false,
-        pull_request: true,
-        subagents: true,
-        todo_progress: true,
-        current_work: true,
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SplitLayout {
@@ -103,6 +89,8 @@ pub struct Settings {
     pub detect_image_paths_on_paste: bool,
     /// Issue #1082 (spec 004 FR-034): the 2px context usage bar; default on.
     pub show_context_usage_bar: bool,
+    /// Issue #1205 (FR-107): the "Agent stopped" bar; default on (`agent_stopped_bar.rs`).
+    pub show_agent_stopped_bar: bool,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -135,8 +123,11 @@ mod settings_parse;
 pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
 use settings_parse::{
     clamp_pull_requests_list_width_px, default_session_list_collapse, parse_session_list_collapse,
-    parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
+    parse_session_readout, parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
 };
+// Issue #1205 (FR-107): the `showAgentStoppedBar` parse and setter (issue #806 cap).
+#[path = "agent_stopped_bar.rs"]
+mod agent_stopped_bar;
 
 pub struct SettingsStore {
     file: PathBuf,
@@ -170,25 +161,7 @@ impl SettingsStore {
             .and_then(|v| serde_json::from_value::<ApprovalMode>(v.clone()).ok())
             .unwrap_or(ApprovalMode::Ask);
 
-        let session_readout = object
-            .get("sessionReadout")
-            .and_then(Value::as_object)
-            .map(|o| {
-                let flag = |key: &str, default: bool| {
-                    o.get(key).and_then(Value::as_bool).unwrap_or(default)
-                };
-                SessionReadout {
-                    changes: flag("changes", true),
-                    context_usage: flag("context-usage", true),
-                    turn_time: flag("turn-time", true),
-                    current_time: flag("current-time", false),
-                    pull_request: flag("pull-request", true),
-                    subagents: flag("subagents", true),
-                    todo_progress: flag("todo-progress", true),
-                    current_work: flag("current-work", true),
-                }
-            })
-            .unwrap_or_else(default_session_readout);
+        let session_readout = parse_session_readout(object.get("sessionReadout"));
 
         let split = match object.get("split") {
             None | Some(Value::Null) => None,
@@ -237,6 +210,7 @@ impl SettingsStore {
             .get("showContextUsageBar")
             .and_then(Value::as_bool)
             .unwrap_or(true);
+        let show_agent_stopped_bar = agent_stopped_bar::parse(&object);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -262,7 +236,7 @@ impl SettingsStore {
             .map(clamp_pull_requests_list_width_px)
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
-        const KNOWN_FIELDS: [&str; 15] = [
+        const KNOWN_FIELDS: [&str; 16] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -275,6 +249,7 @@ impl SettingsStore {
             "showSampleData",
             "detectImagePathsOnPaste",
             "showContextUsageBar",
+            agent_stopped_bar::KEY,
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -298,6 +273,7 @@ impl SettingsStore {
             show_sample_data,
             detect_image_paths_on_paste,
             show_context_usage_bar,
+            show_agent_stopped_bar,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -369,6 +345,8 @@ impl SettingsStore {
             "showContextUsageBar".to_string(),
             json!(self.data.show_context_usage_bar),
         );
+        let show_bar = self.data.show_agent_stopped_bar;
+        map.insert(agent_stopped_bar::KEY.to_string(), json!(show_bar));
         map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),

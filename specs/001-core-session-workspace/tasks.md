@@ -5258,3 +5258,77 @@ records them as open, undecided follow-ups.
 - [x] T376 Run the required gates after the fix per FR-102: `pnpm typecheck` passed,
   `pnpm test` 148/148, and `check:indent`, `check:ui-text`, `check:theme-contrast`,
   `check:drag-regions` and `check:file-size` all report 0 issues.
+
+## Phase 78: Convergence (#1205 open stopped Sessions without starting the agent, FR-103 to FR-107)
+
+`/speckit.converge` against the amended spec (FR-103 to FR-107, the 2026-10-23 Clarifications
+entry, and plan.md "Amendment 2026-10-23"): eleven findings, all appended below; none of the
+issue's behaviour exists in the code yet. Evidence: a passive `sessions.open` still auto-starts
+through `can_auto_start` (`src-tauri/src/ipc/sessions_agent.rs:45-65`) in
+`attach_snapshot_decision` (`:383-407`); `build_snapshot` (`src-tauri/src/ipc/conversations.rs:47-93`)
+returns only the live agent's `runtime_view()` transcript; no `showAgentStoppedBar` setting,
+Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
+(`canAutoStartSession`) still drives the "Starting agent" notice on a passive open. No new tests
+(prototyping phase): verification is a live run with the fake-omp harness.
+
+- [x] T377 Confirm OMP's session-file record format on a real `.jsonl` (a file under a Session's
+  `sessionDir`, cross-checked with `omp://session.md` "File Format"): the `type: "title"` first
+  line, `type: "message"` records and their nested `message` shape (`user`, `assistant`,
+  `toolResult`, `toolCall` parts), the prelude entry types to skip, and whether one file can hold
+  more than one branch (`id`/`parentId`) and if so how the active branch is found. Record it as a
+  new item in `docs/spike/FINDINGS.md` before T378 starts, per Constitution IV and FR-103
+  (missing)
+- [x] T378 Add `src-tauri/src/session/saved_history.rs`: read the Session's
+  `current_conversation` file (`store/registry.rs:35-44`) line by line, skip malformed lines and
+  non-message records as `conversations.rs`'s `read_conversation_file` does, collect the
+  `message` objects in order (following the active branch if T377 found branches), and return
+  `omp::transcript::TranscriptState::from_history(&messages)` items; report a missing or empty
+  file as its own result per FR-103 and FR-024 (missing)
+- [x] T379 Make a passive `sessions.open` never start the agent: in
+  `src-tauri/src/ipc/sessions_agent.rs` `attach_snapshot_decision` starts only when `force_start`
+  (`userAction: true`, `sessions.recover`); keep `can_auto_start` only for choosing the stop
+  banner, and update its doc comment and `contracts/ipc.md`'s `sessions.open` row (already
+  amended) per FR-103 and FR-104 (contradicts)
+- [x] T380 In `src-tauri/src/ipc/conversations.rs` `build_snapshot`, when the agent stays
+  stopped, inject T378's items into `runtime.transcript` (and a plain missing-or-empty notice
+  when the file is absent) so the existing `SessionSnapshot` shape (`src/shared/ipc.ts:224-236`)
+  carries the history with no `omp` process; the live transcript replaces it once the agent
+  starts per FR-103 (missing)
+- [x] T381 Route every passive path through the history-only open and audit it: Session-row
+  click, Ctrl+click into a Split (`split-store.ts`), a notification click and startup pane
+  restore (`init-stores.ts` `onUiOpenSession`), all via `ChatPane.tsx`'s snapshot effect
+  (`useSessionsStore.getState().open(sessionId)`); none may pass `userAction: true` per FR-103
+  (partial)
+- [x] T382 Sending to a stopped Session: `MessageInput.tsx` keeps the draft and the pending
+  message while `open(sessionId, true)` starts the agent, waits for ready through the existing
+  `src-tauri/src/session/start_queue.rs` ready signal (no new queue), then sends exactly once;
+  a failed start keeps the draft and shows the existing stop banner per FR-104 (partial)
+- [x] T383 Add `src/renderer/features/chat/AgentStoppedBar.tsx` from shared `components/ui`
+  primitives: text "Agent stopped", a **Start agent** button (`open(sessionId, true)`) and a
+  **Don't show again** text button; not a live region, not colour alone, keyboard reachable;
+  shown only while the shown Session is stopped with no FR-034/FR-035 stop banner and
+  `showAgentStoppedBar` is on; mount it above the composer in `ChatPane.tsx` without growing
+  `ChatPane.tsx` past its file-size baseline (1,445; extract a block if needed) per FR-105 and
+  the #806 cap (missing)
+- [x] T384 Show the "Starting agent" notice only while a start is actually running: replace the
+  `isOpening && status === 'stopped' && canAutoStartSession` condition (`ChatPane.tsx` about
+  `:205-224`) with the real start signal, and announce the start once to assistive technology
+  per FR-106 (contradicts)
+- [x] T385 Add the `showAgentStoppedBar` setting (default `true`; an absent field reads `true`):
+  `src-tauri/src/store/agent_stopped_bar.rs` (new, beside `chat_width.rs`), `store/settings.rs`,
+  `ipc/settings.rs` registering `settings.setShowAgentStoppedBar`, and `Settings` plus the
+  setter in `src/shared/model.ts` and `src/shared/ipc.ts`, keeping `pnpm check:parity` green
+  per FR-107 and `contracts/ipc.md` (missing)
+- [x] T386 Add Settings > Sessions: `src/renderer/features/settings/SessionsSection.tsx` (new)
+  with the "Show the Agent stopped bar" toggle from a shared switch component, a `'sessions'`
+  `SettingsSectionId` in `view-store.ts`, and its `SECTIONS` entry in `SettingsScreen.tsx`; wire
+  **Don't show again** to turn the setting off with a `sonner` toast confirming it and an
+  **Undo** action that turns it back on per FR-107 (missing)
+- [x] T387 Verify live with the fake-omp harness (`scripts/verify-tauri.mjs`; add a stopped
+  Session fixture with a saved `.jsonl` under `scripts/fixtures/` if none fits; a fixture, not a
+  test) against quickstart.md Story 4 steps 5 to 8: history shows and no `omp` starts on each
+  passive path, no "Starting agent" notice until **Start agent** or a send, the queued send lands
+  once, the bar toggle and **Undo** work, and keyboard and screen reader checks pass; then run
+  `pnpm typecheck`, `pnpm test`, `check:indent`, `check:ui-text`, `check:theme-contrast`,
+  `check:drag-regions`, `check:file-size`, `check:parity`, and `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test` per FR-103 to FR-107 (missing)

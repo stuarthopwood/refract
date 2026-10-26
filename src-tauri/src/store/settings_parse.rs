@@ -6,7 +6,43 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use super::{SessionListCollapse, SplitLayout};
+use super::{SessionListCollapse, SessionReadout, SplitLayout};
+
+/// Matches `src/shared/model.ts`'s own `DEFAULT_SESSION_READOUT` exactly, field for field.
+fn default_session_readout() -> SessionReadout {
+    SessionReadout {
+        changes: true,
+        context_usage: true,
+        turn_time: true,
+        current_time: false,
+        pull_request: true,
+        subagents: true,
+        todo_progress: true,
+        current_work: true,
+    }
+}
+
+/// `sessionReadout`: each flag read on its own, a missing or non-boolean flag falling back to
+/// `default_session_readout`'s value; a missing or non-object row is the whole default.
+pub(super) fn parse_session_readout(value: Option<&Value>) -> SessionReadout {
+    value
+        .and_then(Value::as_object)
+        .map(|o| {
+            let flag =
+                |key: &str, default: bool| o.get(key).and_then(Value::as_bool).unwrap_or(default);
+            SessionReadout {
+                changes: flag("changes", true),
+                context_usage: flag("context-usage", true),
+                turn_time: flag("turn-time", true),
+                current_time: flag("current-time", false),
+                pull_request: flag("pull-request", true),
+                subagents: flag("subagents", true),
+                todo_progress: flag("todo-progress", true),
+                current_work: flag("current-work", true),
+            }
+        })
+        .unwrap_or_else(default_session_readout)
+}
 
 /// Spec 005 data-model.md "Validation"/"Migration": a present-but-malformed `split` (hand-edited,
 /// or from a future/older build) is reset to `None` rather than trusted, the same lazy-correction

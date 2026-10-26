@@ -186,6 +186,46 @@ No violations; the Complexity Tracking table stays empty.
 
 No violations; the Complexity Tracking table stays empty.
 
+## Amendment 2026-10-23: Open stopped Sessions without starting the agent
+
+**Summary**: closes issue #1205. Showing a stopped Session (a Session-row click, Ctrl+click into a Split, a notification click, or restoring saved panes at Refract start) no longer starts its agent. Its current Conversation is read from OMP's saved session file and shown through the normal transcript, with no `omp` process; a quiet "Agent stopped" bar above the composer offers **Start agent**, and sending a message starts the agent, waits for ready, then sends (spec.md FR-103 to FR-107, Clarifications 2026-10-23). The bar can be hidden with a new `showAgentStoppedBar` setting (Settings > Sessions, or **Don't show again** on the bar); the history-only behaviour cannot.
+
+**Evidence (read-only probe, 2026-10-23)**:
+- `src-tauri/src/ipc/sessions_agent.rs:45-65` (`can_auto_start`) and `:383-407` (`attach_snapshot_decision`) start the agent on a passive open; the passive path returns `conversations::build_snapshot` (`:439-460`) without loading any history. All renderer passive paths funnel through `ChatPane.tsx`'s snapshot effect (`useSessionsStore.getState().open(sessionId)`, about line 511); `MessageInput.tsx` already sends with `open(sessionId, true)` (about line 515). The renderer mirror is `ChatPane.tsx:205` (`canAutoStartSession`).
+- `src-tauri/src/ipc/conversations.rs:47-93` (`build_snapshot`) returns `agent.runtime_view()`, whose transcript only a live agent fills. TS shapes: `SessionSnapshot` at `src/shared/ipc.ts:224-236`, `SessionRuntimeView.transcript` at about `:200-220`.
+- `src-tauri/src/omp/transcript.rs` `TranscriptState::from_history` (about `:1642-1708`) already builds `TranscriptItem`s from OMP message objects (roles `user`/`assistant`/`toolResult`, `toolCall` content parts).
+- `Session.session_dir` and `Session.current_conversation` (`src-tauri/src/store/registry.rs:35-44`) locate the `.jsonl`; `conversations.rs`'s `read_conversation_file` already reads its `type: "title"` line and `type: "message"` records with a nested `message.role`, per `omp://session.md` "File Format".
+- Not confirmed: the full record format on a real file (no session file was on the probe machine), including whether a file can hold more than one branch (`id`/`parentId`), a FINDINGS open item. Per constitution Principle IV this is the first task, and the result is recorded in `docs/spike/FINDINGS.md`.
+
+**Files to change**:
+- `src-tauri/src/session/saved_history.rs` (new) -- reads the current Conversation's `.jsonl` (bounded, line by line, malformed lines skipped, as `read_conversation_file` does), collects the `message` objects, and returns `TranscriptState::from_history(&messages)` items. A new module because `sessions_agent.rs` (582 lines) and `transcript.rs` (baseline 1,813) are at or over the 600-line cap (#806).
+- `src-tauri/src/ipc/sessions_agent.rs` -- `attach_snapshot_decision` starts only on `force_start` (`userAction: true` or `sessions.recover`); `can_auto_start` stays for choosing the stop banner.
+- `src-tauri/src/ipc/conversations.rs` -- `build_snapshot` injects the saved-history items into `runtime.transcript` when the agent stays stopped, and reports a missing or empty file the same way the reattach path does (FR-024).
+- `src-tauri/src/session/start_queue.rs` -- reused unchanged for the explicit start; the queued send waits on its ready signal (no new queue).
+- `src-tauri/src/store/agent_stopped_bar.rs` (new, beside `chat_width.rs`/`holiday_touches.rs`), `src-tauri/src/store/settings.rs`, `src-tauri/src/ipc/settings.rs` -- the `showAgentStoppedBar` field (default `true`, absent reads `true`) and `settings.setShowAgentStoppedBar`.
+- `src/shared/model.ts`, `src/shared/ipc.ts` -- `Settings.showAgentStoppedBar`, the new setter channel; `pnpm check:parity` covers the Rust side.
+- `src/renderer/features/chat/AgentStoppedBar.tsx` (new) -- the bar ("Agent stopped", **Start agent**, **Don't show again**), built from shared `components/ui` primitives; not a live region.
+- `src/renderer/features/chat/ChatPane.tsx` -- mounts the bar, drops `canAutoStartSession`'s role in deciding the "Starting agent" notice (shown only while a start runs), and announces the start once. It is a cap-exempt offender (baseline 1,445), so it must not grow: extract a block to stay at or under the baseline.
+- `src/renderer/features/chat/MessageInput.tsx` -- sending to a stopped Session keeps the draft until the agent is ready, then sends (already `open(sessionId, true)`).
+- `src/renderer/features/settings/SessionsSection.tsx` (new), `SettingsScreen.tsx`, `src/renderer/state/view-store.ts` -- the Settings > Sessions section and its `SettingsSectionId`.
+- `specs/001-core-session-workspace/contracts/ipc.md`, `data-model.md`, `quickstart.md` -- already amended with this plan update.
+
+**Contract change**: `sessions.open(id, userAction?)` keeps its signature and `SessionSnapshot` shape; a passive call never starts the agent and, for a stopped Session, fills `runtime.transcript` from the saved file. New `settings.setShowAgentStoppedBar(value: boolean): Promise<Result<Settings>>`; `Settings` gains `showAgentStoppedBar: boolean`.
+
+**Constitution check (re-run)**:
+
+| Principle | Status | How this amendment meets it |
+|---|---|---|
+| I. OMP is the engine | Pass | Reading the saved file is a read-only display of a stopped Session; no behaviour OMP exposes over RPC is reimplemented, because there is no process to ask. Once the agent starts, `get_messages` stays the source of truth. |
+| II. RPC wire contract | Pass | Not touched; the queued send still waits for ready before `prompt`. |
+| III. Session and process lifecycle | Pass | Fewer processes: no `omp` starts on a passive open. The explicit start uses the existing `switch_session` reattach and its verification unchanged. |
+| IV. Evidence before design | Pass, with a gate | The session-file record format is confirmed on a real file and recorded in `docs/spike/FINDINGS.md` before the reader is built (first task of tasks.md Phase 78). |
+| V. Tauri security baseline | Pass | One new typed, allowlisted `Result<T>` setter; the renderer never reads the file system. |
+| Platform and Stack | Pass | No new dependency. |
+| Development Workflow | Pass | Verified by running the app with the fake-omp harness (`scripts/verify-tauri.mjs`), no new tests (prototyping phase). |
+
+No violations; the Complexity Tracking table stays empty.
+
 ## Complexity Tracking
 
 None.
