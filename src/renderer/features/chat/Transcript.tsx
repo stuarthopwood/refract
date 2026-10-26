@@ -36,7 +36,9 @@ import { JUMP_SCROLL_TOP_MARGIN_PX, JumpToStageContext, stageRowDomId } from './
 // A running group's live announcement reads its intent, cut to 80 characters with an ellipsis.
 const ANNOUNCEMENT_MAX_CHARS = 80
 function clampAnnouncement(text: string | undefined): string | undefined {
-  return text && text.length > ANNOUNCEMENT_MAX_CHARS ? `${text.slice(0, ANNOUNCEMENT_MAX_CHARS - 1)}…` : text
+  if (!text) return text
+  const chars = Array.from(text)
+  return chars.length > ANNOUNCEMENT_MAX_CHARS ? `${chars.slice(0, ANNOUNCEMENT_MAX_CHARS - 1).join('')}…` : text
 }
 
 

@@ -192,7 +192,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         <span
           aria-hidden="true"
           className="flex h-5 w-4 shrink-0 items-center justify-center"
-          onPointerEnter={() => {
+          onPointerEnter={(event) => {
+            // Radix's trigger ignores touch, so arming does too.
+            if (event.pointerType === 'touch') return
             setTooltipArmed(true)
             setTooltipDismissed(false)
             setTooltipHovered(true)
@@ -214,9 +216,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
             </span>
           </TooltipTrigger>
           <TooltipContent
-            onEscapeKeyDown={(event) => {
-              // Claim the Escape only when it closes this tooltip, so it never also closes a readout card.
-              if (tooltipOpen) event.preventDefault()
+            // An open readout card captures Escape at `window` first and stops it, so one Escape
+            // closes the card and a second closes this tooltip; never both at once.
+            onEscapeKeyDown={() => {
               setTooltipDismissed(true)
               setTooltipHovered(false)
             }}

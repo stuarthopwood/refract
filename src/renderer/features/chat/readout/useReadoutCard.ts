@@ -112,7 +112,7 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.key !== 'Escape') return
       event.preventDefault()
       event.stopPropagation()
       close()
