@@ -157,6 +157,7 @@
             "path": "note.txt"
           },
           "id": "tool-exec:call-1",
+          "intent": "Creating note.txt",
           "kind": "tool",
           "startedAt": "<TIMESTAMP_MS>",
           "status": "running",
@@ -219,6 +220,7 @@
           },
           "durationMs": "<TIMESTAMP_MS>",
           "id": "tool-exec:call-1",
+          "intent": "Creating note.txt",
           "kind": "tool",
           "output": "Successfully wrote 2 bytes to note.txt",
           "startedAt": "<TIMESTAMP_MS>",

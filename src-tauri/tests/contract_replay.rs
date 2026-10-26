@@ -372,6 +372,12 @@ fn scrub_known_divergences(value: &mut Value) {
             if map.contains_key("worktreePath") && map.contains_key("baseBranch") {
                 map.remove("pinnedModel");
             }
+            // Issue #469: a tool item's own `intent` (the model's one-line intent) is a
+            // brand-new, Rust-only transcript field -- Electron never carried it. Discriminated
+            // by `kind: "tool"`.
+            if map.get("kind") == Some(&json!("tool")) {
+                map.remove("intent");
+            }
             if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null))
             {
                 map.remove("value");

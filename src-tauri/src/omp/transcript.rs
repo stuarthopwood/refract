@@ -27,6 +27,8 @@ use serde_json::Value;
 
 use super::diff::{finalize_live_transcript, merge_history_with_live, SubagentFinalizeCause};
 
+mod tool_intent;
+use tool_intent::{read_history_intent, read_live_intent};
 mod subagent_items;
 use subagent_items::{
     apply_async_result_jobs, apply_batch_task_result, build_message_subagent_items,
@@ -107,6 +109,9 @@ pub enum TranscriptItem {
         edit: Option<EditField>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         write: Option<WriteField>,
+        /// The model's sanitised one-line intent (#469, `transcript/tool_intent.rs`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        intent: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Subagent {
@@ -349,7 +354,11 @@ fn truncate_chars(s: &str, max: usize) -> String {
 /// deviation, not a defect: this only affects the `target` label shown on an uncommon tool's row.
 fn first_string_arg(args: &Value) -> String {
     if let Some(map) = args.as_object() {
-        for value in map.values() {
+        // #469: the intent (`i`/`intent`) is the row's label, never its target.
+        for (key, value) in map {
+            if key == "i" || key == "intent" {
+                continue;
+            }
             if let Some(s) = value.as_str() {
                 return s.to_string();
             }
@@ -922,6 +931,7 @@ fn build_assistant_items(
                 );
                 let target = extract_target(&name, &arguments);
                 let write = build_write_field(&name, &arguments);
+                let intent = read_history_intent(&arguments);
                 match existing {
                     Some(TranscriptItem::Tool {
                         status,
@@ -932,6 +942,7 @@ fn build_assistant_items(
                         details,
                         edit,
                         write: old_write,
+                        intent: old_intent,
                         ..
                     }) => result.push(TranscriptItem::Tool {
                         id,
@@ -947,6 +958,7 @@ fn build_assistant_items(
                         details: details.clone(),
                         edit: edit.clone(),
                         write: write.or_else(|| old_write.clone()),
+                        intent: intent.or_else(|| old_intent.clone()),
                     }),
                     _ => result.push(TranscriptItem::Tool {
                         id,
@@ -962,6 +974,7 @@ fn build_assistant_items(
                         details: None,
                         edit: None,
                         write,
+                        intent,
                     }),
                 }
             }
@@ -1147,6 +1160,7 @@ fn apply_tool_execution_start(
     }
     let target = extract_target(&tool_name, &args);
     let write = build_write_field(&tool_name, &args);
+    let intent = read_live_intent(frame);
     let has_existing = items.iter().any(|item| {
         matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
@@ -1166,6 +1180,7 @@ fn apply_tool_execution_start(
             details: None,
             edit: None,
             write,
+            intent,
         }));
         return items;
     }
@@ -1174,10 +1189,13 @@ fn apply_tool_execution_start(
         .map(|mut item| {
             let is_target = matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id);
             if is_target {
-                if let TranscriptItem::Tool { tool, target: t, status, started_at, args: a, write: old_write, .. } =
+                if let TranscriptItem::Tool { tool, target: t, status, started_at, args: a, write: old_write, intent: old_intent, .. } =
                     Arc::make_mut(&mut item)
                 {
                     let merged_write = write.clone().or_else(|| old_write.clone());
+                    if old_intent.is_none() {
+                        *old_intent = intent.clone();
+                    }
                     *tool = tool_name.clone();
                     *t = target.clone();
                     *status = ToolStatus::Running;
@@ -1282,6 +1300,7 @@ fn apply_tool_execution_end(
             details: result_details.clone(),
             edit,
             write: None,
+            intent: None,
         }));
         return items;
     }
@@ -1519,6 +1538,7 @@ fn attach_tool_result(
             details: details.clone(),
             edit,
             write: None,
+            intent: None,
         }));
         return items;
     }

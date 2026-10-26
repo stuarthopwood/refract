@@ -14,8 +14,8 @@
 
 **Owns**: `src/renderer/features/chat/ToolRow.tsx`, `src/renderer/features/chat/SubagentRow.tsx` (new), `src/renderer/features/chat/SubagentChainRow.tsx` (import line only).
 
-- [ ] T001 Move `SubagentRowProps`, `SubagentBody` and `SubagentRow` with their comment blocks (`ToolRow.tsx:499-598`) unchanged into new `src/renderer/features/chat/SubagentRow.tsx`, carrying only the imports they use; drop imports `ToolRow.tsx` no longer needs.
-- [ ] T002 `SubagentChainRow.tsx:23`: import `SubagentBody` and `SubagentRow` from `./SubagentRow`. Grep `src/renderer` for any other importer of these names from `./ToolRow` and repoint it.
+- [x] T001 Move `SubagentRowProps`, `SubagentBody` and `SubagentRow` with their comment blocks (`ToolRow.tsx:499-598`) unchanged into new `src/renderer/features/chat/SubagentRow.tsx`, carrying only the imports they use; drop imports `ToolRow.tsx` no longer needs.
+- [x] T002 `SubagentChainRow.tsx:23`: import `SubagentBody` and `SubagentRow` from `./SubagentRow`. Grep `src/renderer` for any other importer of these names from `./ToolRow` and repoint it.
 
 **Checkpoint**: `pnpm typecheck`, `pnpm test`, `pnpm check:file-size`; `ToolRow.tsx` about 500 lines.
 
@@ -23,12 +23,12 @@
 
 **Owns**: `src-tauri/src/omp/transcript.rs`, `src-tauri/src/omp/transcript/tool_intent.rs` (new), `src-tauri/src/omp/diff.rs`, `src/shared/model.ts`, and any existing Rust test file that stops compiling because of the new field.
 
-- [ ] T003 [US2] Create `src-tauri/src/omp/transcript/tool_intent.rs` (research Decision 2): `read_live_intent(frame: &Value) -> Option<String>` (`intent`, then `args.i`, then `args.intent`), `read_history_intent(arguments: &Value) -> Option<String>` (`i`, then `intent`), and `sanitize_intent(&str) -> Option<String>` (strip C0 and C1 controls and U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069; collapse whitespace to one space; trim; cap 400 characters on a character boundary; empty is `None`). Register it with `mod tool_intent;` beside `mod subagent_items;` (`transcript.rs:30`). Keep it under 600 lines.
-- [ ] T004 [US2] `transcript.rs:84` `TranscriptItem::Tool`: add `#[serde(default, skip_serializing_if = "Option::is_none")] intent: Option<String>` (data-model). Set it at `apply_tool_execution_start` (`:1123`, push at `:1155`) from `read_live_intent(frame)`; when the item already exists, set it only if it is `None` today.
-- [ ] T005 [US2] `transcript.rs` history and snapshot `"toolCall"` branch (about `:890-960`; merges at `:926` and `:936`, new item at `:951`): read `read_history_intent(arguments)`; a new item takes it; a merge keeps the existing intent when the new value is `None` (data-model state table).
-- [ ] T006 [US2] Result-only constructions (`transcript.rs:1271`, `:1504`) and `omp/diff.rs:150`: `intent: None`. Fix every existing test literal that no longer compiles the same way.
-- [ ] T007 [US1] `transcript.rs:350` `first_string_arg`: skip the keys `i` and `intent` (research Decision 9).
-- [ ] T008 [US2] `src/shared/model.ts` tool item (about `:417-451`): add `intent?: string` with no net line growth (baseline 656); pay for the line by shortening a comment in the same file (for example merge two comment lines in the tool item block).
+- [x] T003 [US2] Create `src-tauri/src/omp/transcript/tool_intent.rs` (research Decision 2): `read_live_intent(frame: &Value) -> Option<String>` (`intent`, then `args.i`, then `args.intent`), `read_history_intent(arguments: &Value) -> Option<String>` (`i`, then `intent`), and `sanitize_intent(&str) -> Option<String>` (strip C0 and C1 controls and U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069; collapse whitespace to one space; trim; cap 400 characters on a character boundary; empty is `None`). Register it with `mod tool_intent;` beside `mod subagent_items;` (`transcript.rs:30`). Keep it under 600 lines.
+- [x] T004 [US2] `transcript.rs:84` `TranscriptItem::Tool`: add `#[serde(default, skip_serializing_if = "Option::is_none")] intent: Option<String>` (data-model). Set it at `apply_tool_execution_start` (`:1123`, push at `:1155`) from `read_live_intent(frame)`; when the item already exists, set it only if it is `None` today.
+- [x] T005 [US2] `transcript.rs` history and snapshot `"toolCall"` branch (about `:890-960`; merges at `:926` and `:936`, new item at `:951`): read `read_history_intent(arguments)`; a new item takes it; a merge keeps the existing intent when the new value is `None` (data-model state table).
+- [x] T006 [US2] Result-only constructions (`transcript.rs:1271`, `:1504`) and `omp/diff.rs:150`: `intent: None`. Fix every existing test literal that no longer compiles the same way.
+- [x] T007 [US1] `transcript.rs:350` `first_string_arg`: skip the keys `i` and `intent` (research Decision 9).
+- [x] T008 [US2] `src/shared/model.ts` tool item (about `:417-451`): add `intent?: string` with no net line growth (baseline 656); pay for the line by shortening a comment in the same file (for example merge two comment lines in the tool item block).
 
 **Checkpoint**: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `pnpm typecheck`, `pnpm check:file-size`, `pnpm check:omp-schema -- --check-pin`.
 
@@ -36,10 +36,10 @@
 
 **Owns**: `src/shared/transcriptDisplay.ts`, `src-tauri/src/store/settings.rs`, `src-tauri/src/store/settings_tests.rs` (only if it stops compiling), `src-tauri/src/ipc/settings.rs`, `src/renderer/features/settings/ChatDisplaySection.tsx`.
 
-- [ ] T009 [US3] `src/shared/transcriptDisplay.ts`: add `toolNames: boolean` to `TranscriptDisplaySettings` (`:11`) and `toolNames: false` to `DEFAULT_TRANSCRIPT_DISPLAY` (`:20`); update its comment.
-- [ ] T010 [US3] `src-tauri/src/store/settings.rs`: field `#[serde(rename = "toolNames", default)] tool_names: bool` beside `tool_calls` (`:69-70`), parse default `false` (`:190-196`), setter arm `"toolNames"` (about `:471-482`).
-- [ ] T011 [US3] `src-tauri/src/ipc/settings.rs:308-311`: accept `"toolNames"` alongside `"thinking"` and `"toolCalls"` and update the error message.
-- [ ] T012 [US3] `ChatDisplaySection.tsx`: a `SettingSwitchRow` "Show tool names on rows" after "Show tool calls" (`:64`), bound to `transcriptDisplay.toolNames` and `setTranscriptDisplay('toolNames', checked)`, with a one-line description (raw tool id shown muted after each row's label). Run `pnpm check:ui-text`.
+- [x] T009 [US3] `src/shared/transcriptDisplay.ts`: add `toolNames: boolean` to `TranscriptDisplaySettings` (`:11`) and `toolNames: false` to `DEFAULT_TRANSCRIPT_DISPLAY` (`:20`); update its comment.
+- [x] T010 [US3] `src-tauri/src/store/settings.rs`: field `#[serde(rename = "toolNames", default)] tool_names: bool` beside `tool_calls` (`:69-70`), parse default `false` (`:190-196`), setter arm `"toolNames"` (about `:471-482`).
+- [x] T011 [US3] `src-tauri/src/ipc/settings.rs:308-311`: accept `"toolNames"` alongside `"thinking"` and `"toolCalls"` and update the error message.
+- [x] T012 [US3] `ChatDisplaySection.tsx`: a `SettingSwitchRow` "Show tool names on rows" after "Show tool calls" (`:64`), bound to `transcriptDisplay.toolNames` and `setTranscriptDisplay('toolNames', checked)`, with a one-line description (raw tool id shown muted after each row's label). Run `pnpm check:ui-text`.
 
 **Checkpoint**: `pnpm typecheck`, `pnpm check:parity -- --gate` (no channel change), `cargo test`, `cargo clippy --all-targets -- -D warnings`.
 
@@ -47,9 +47,9 @@
 
 **Owns**: `src/renderer/features/chat/toolVerbs.ts`, `src/renderer/features/chat/toolDisplay.ts` (new), `src/renderer/components/ToolIcon.tsx` (new).
 
-- [ ] T013 [US1] `toolVerbs.ts` (research Decisions 3 and 4): each entry `{ icon, running, done, base }` with FR-003's values (lucide-react imports); `glob` shares `find`'s entry object; thinking keeps `{ running, done }`. `toolVerb(tool, status: RowStatus)` returns running, done, or base for `error`, `interrupted`, `cancelled`, `exited` (thinking falls back to done); unmapped tools return `sentenceCaseToolName(tool)`. Keep `toolAriaPrefix` and `toolRunningAnnouncement` behaviour. Confirm every icon export compiles; on a missing export, follow Decision 4's fallback and report it.
-- [ ] T014 [US1] New `toolDisplay.ts` (Decision 5): `resolveToolDisplay(tool, target)` returning `{ key, entryTool, icon, rawId }` for mapped, `mcp__*` (Plug; an empty name after `mcp__` reads "Tool"), `write` to `xd://<x>`, and unknown (Wrench) tools; `toolRowLabel(tool, target, intent, status)` returning the trimmed intent or the verb or sentence-case fallback.
-- [ ] T015 [US1] New `src/renderer/components/ToolIcon.tsx` (Decision 7): props `{ tool, target?, tone?: 'muted' | 'error', className? }`; renders the resolved glyph `aria-hidden`, `size-4 shrink-0`, `text-muted-foreground` or `text-severity-error`.
+- [x] T013 [US1] `toolVerbs.ts` (research Decisions 3 and 4): each entry `{ icon, running, done, base }` with FR-003's values (lucide-react imports); `glob` shares `find`'s entry object; thinking keeps `{ running, done }`. `toolVerb(tool, status: RowStatus)` returns running, done, or base for `error`, `interrupted`, `cancelled`, `exited` (thinking falls back to done); unmapped tools return `sentenceCaseToolName(tool)`. Keep `toolAriaPrefix` and `toolRunningAnnouncement` behaviour. Confirm every icon export compiles; on a missing export, follow Decision 4's fallback and report it.
+- [x] T014 [US1] New `toolDisplay.ts` (Decision 5): `resolveToolDisplay(tool, target)` returning `{ key, entryTool, icon, rawId }` for mapped, `mcp__*` (Plug; an empty name after `mcp__` reads "Tool"), `write` to `xd://<x>`, and unknown (Wrench) tools; `toolRowLabel(tool, target, intent, status)` returning the trimmed intent or the verb or sentence-case fallback.
+- [x] T015 [US1] New `src/renderer/components/ToolIcon.tsx` (Decision 7): props `{ tool, target?, tone?: 'muted' | 'error', className? }`; renders the resolved glyph `aria-hidden`, `size-4 shrink-0`, `text-muted-foreground` or `text-severity-error`.
 
 **Checkpoint**: `pnpm typecheck`; existing callers (`ThoughtRunRow.tsx`, `Transcript.tsx:870`, `ToolRow.tsx`) compile unchanged.
 
@@ -57,7 +57,7 @@
 
 **Owns**: `src/renderer/features/chat/CollapsedLine.tsx`.
 
-- [ ] T016 [US3] Add optional `iconTooltip?: string` (research Decision 8): when set, wrap the icon slot in the shared `Tooltip`/`TooltipTrigger asChild`/`TooltipContent` from `src/renderer/components/ui/tooltip.tsx` with a controlled `open` = Radix hover state OR the row trigger focused and matching `:focus-visible` (`onFocus`/`onBlur` on the trigger). No new tab stop; the icon wrapper stays `aria-hidden`. With no `iconTooltip`, output is unchanged for every existing caller.
+- [x] T016 [US3] Add optional `iconTooltip?: string` (research Decision 8): when set, wrap the icon slot in the shared `Tooltip`/`TooltipTrigger asChild`/`TooltipContent` from `src/renderer/components/ui/tooltip.tsx` with a controlled `open` = Radix hover state OR the row trigger focused and matching `:focus-visible` (`onFocus`/`onBlur` on the trigger). No new tab stop; the icon wrapper stays `aria-hidden`. With no `iconTooltip`, output is unchanged for every existing caller.
 
 **Checkpoint**: `pnpm typecheck`, `pnpm test`.
 
