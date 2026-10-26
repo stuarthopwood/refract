@@ -9,6 +9,12 @@ use serde_json::{json, Value};
 use super::super::agent::SessionAgent;
 use super::schedule_readout_update;
 
+// Issue #526: the per-Session `session:activity` emitter for the Session row Activity line.
+#[path = "readout_activity_emit.rs"]
+mod readout_activity_emit;
+pub use readout_activity_emit::current_activity;
+pub(super) use readout_activity_emit::emit_activity;
+
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
     if !ActivityState::is_activity_frame(frame_type) {
         return;
@@ -31,6 +37,8 @@ pub(super) struct ActivityState {
     latest_tool: Option<(String, Option<String>)>,
     retry: Option<(i64, i64)>,
     compacting: bool,
+    /// Issue #526: `session:activity` throttle bookkeeping; survives `reset`.
+    emit: readout_activity_emit::EmitState,
 }
 
 fn bounded(text: &str) -> Option<String> {
@@ -114,7 +122,10 @@ impl ActivityState {
             || self.latest_tool.is_some()
             || self.retry.is_some()
             || self.compacting;
-        *self = Self::default();
+        *self = Self {
+            emit: std::mem::take(&mut self.emit),
+            ..Self::default()
+        };
         changed
     }
 

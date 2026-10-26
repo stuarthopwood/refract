@@ -63,6 +63,7 @@ mod readout_todo;
 use readout_todo::{build_todo_tree, compute_up_next, parse_todo_phases, TodoPhaseState};
 #[path = "readout_activity.rs"]
 mod readout_activity;
+pub use readout_activity::current_activity;
 use readout_activity::ActivityState;
 
 /// Issue #788's own acceptance criterion: "the readout push does not exceed one event per 100 ms
@@ -369,6 +370,7 @@ pub(crate) fn schedule_readout_update(
 ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
     let agent = agent.arc();
     Box::pin(async move {
+        readout_activity::emit_activity(&agent).await;
         let should_spawn = agent
             .with_readout_state(|s| {
                 if s.timer_pending {

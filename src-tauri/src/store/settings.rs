@@ -87,6 +87,8 @@ pub struct Settings {
     /// `HolidayTouches`'s own doc comment. No raw/lazy-correction tracking needed, the same
     /// plain-enum shape `chat_width` above uses.
     pub holiday_touches: HolidayTouches,
+    /// Issue #526 (FR-111): the Session row Activity line's wording; default `Plain`.
+    pub activity_text: ActivityText,
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
@@ -129,8 +131,11 @@ use settings_parse::{
     parse_session_readout, parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
 };
 // Issue #1205 (FR-107): the `showAgentStoppedBar` parse and setter (issue #806 cap).
+#[path = "activity_text.rs"]
+mod activity_text;
 #[path = "agent_stopped_bar.rs"]
 mod agent_stopped_bar;
+pub use activity_text::ActivityText;
 
 pub struct SettingsStore {
     file: PathBuf,
@@ -190,6 +195,7 @@ impl SettingsStore {
             .get("holidayTouches")
             .and_then(|v| serde_json::from_value::<HolidayTouches>(v.clone()).ok())
             .unwrap_or(HolidayTouches::Full);
+        let activity_text = activity_text::parse(&object);
         let raw_transcript_display = object.get("transcriptDisplay").and_then(Value::as_object);
         let transcript_display = TranscriptDisplaySettings {
             thinking: raw_transcript_display
@@ -243,7 +249,7 @@ impl SettingsStore {
             .map(clamp_pull_requests_list_width_px)
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
-        const KNOWN_FIELDS: [&str; 16] = [
+        const KNOWN_FIELDS: [&str; 17] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -252,6 +258,7 @@ impl SettingsStore {
             "watermarkEnabled",
             "chatWidth",
             "holidayTouches",
+            activity_text::KEY,
             "transcriptDisplay",
             "showSampleData",
             "detectImagePathsOnPaste",
@@ -276,6 +283,7 @@ impl SettingsStore {
             watermark_enabled,
             chat_width,
             holiday_touches,
+            activity_text,
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
@@ -337,6 +345,8 @@ impl SettingsStore {
             "holidayTouches".to_string(),
             json!(self.data.holiday_touches),
         );
+        let activity_text = self.data.activity_text;
+        map.insert(activity_text::KEY.to_string(), json!(activity_text));
         map.insert(
             "transcriptDisplay".to_string(),
             json!(self.data.transcript_display),
