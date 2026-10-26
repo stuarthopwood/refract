@@ -68,6 +68,9 @@ pub struct TranscriptDisplaySettings {
     pub thinking: bool,
     #[serde(rename = "toolCalls")]
     pub tool_calls: bool,
+    /// Issue #469: show the raw tool id on tool rows. Default `false`.
+    #[serde(rename = "toolNames", default)]
+    pub tool_names: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,6 +200,10 @@ impl SettingsStore {
                 .and_then(|o| o.get("toolCalls"))
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
+            tool_names: raw_transcript_display
+                .and_then(|o| o.get("toolNames"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         };
 
         let raw_show_sample_data = object.get("showSampleData").and_then(Value::as_bool);
@@ -480,6 +487,7 @@ impl SettingsStore {
         match field {
             "thinking" => transcript_display.thinking = visible,
             "toolCalls" => transcript_display.tool_calls = visible,
+            "toolNames" => transcript_display.tool_names = visible,
             _ => return Ok(self.data.clone()),
         }
         let next = Settings {

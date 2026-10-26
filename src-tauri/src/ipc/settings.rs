@@ -300,15 +300,16 @@ fn parse_holiday_touches(value: &str) -> Option<HolidayTouches> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
-/// Issue #457: `field` is one of the two known `TranscriptDisplaySettings` keys, validated here
-/// (`invalid-argument` for anything else) before ever reaching the store's own per-field merge.
+/// Issues #457 and #469: `field` is one of the three known `TranscriptDisplaySettings` keys,
+/// validated here (`invalid-argument` for anything else) before ever reaching the store's own
+/// per-field merge.
 pub fn settings_set_transcript_display(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let field = match arg_str(&args, 0) {
-            Some(field @ ("thinking" | "toolCalls")) => field.to_string(),
+            Some(field @ ("thinking" | "toolCalls" | "toolNames")) => field.to_string(),
             _ => {
                 return Err(invalid_argument(
-                    "settings.setTranscriptDisplay expects field 'thinking' | 'toolCalls'",
+                    "settings.setTranscriptDisplay expects field 'thinking' | 'toolCalls' | 'toolNames'",
                 ))
             }
         };
