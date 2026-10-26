@@ -1,0 +1,58 @@
+# Rust build and live verification
+
+Moved from AGENTS.md to keep agent startup context small. AGENTS.md keeps the summary rules.
+
+## Rust build is the main build (Stuart, 2026-10-13, epic #797)
+
+The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron build (`src/main`,
+`src/preload`, electron-vite) was deleted (issue #796). `src/renderer` and `src/shared` continue
+normally.
+
+- Build, test and gate commands: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`,
+  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:file-size`, and `pnpm
+  check:parity` (generated IPC parity table, `src/shared/ipc.ts` against `src-tauri/src`).
+  For `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
+  (run with `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri`
+  first). CI (`.github/workflows/ci.yml`) runs all of these on every pull request to `main`.
+  `check:mermaid-contrast` is NOT in that list: it already had known failures tracked in #388,
+  and since #796 (the Electron build deleted) it can no longer run at all -- it `require('electron')`s
+  a real Electron renderer to capture Mermaid diagram colours, and there is no `electron` package
+  left in this repo to load. The script and its `check:mermaid-contrast` npm command stay
+  (an obvious entry point once someone picks this up), but need a Tauri/WebView2-based capture
+  rework, not just the pre-existing fixes, before it can run or join CI; see #388.
+- Security baseline for the Rust build: constitution Principle V ("Tauri Security Baseline",
+  ratified 3.0.0, 2026-10-15, #796) is binding. `specs/016-tauri-rust-build/
+  constitution-amendment-draft.md` is the superseded pre-ratification draft, kept for history
+  only.
+- Per-lane Rust file ownership (which lane owns which `src-tauri/src/**` module, so no two lanes
+  touch the same file) lives in `docs/PLAN.md`'s Phase R table, not duplicated here.
+
+## Verifying the Rust (Tauri) build (epic #797)
+
+The Rust build has its own shared build cache and its own live-verification mechanics, ported
+from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
+
+- Point `CARGO_TARGET_DIR` at the shared, already-populated cache for every `cargo`/`tauri`
+  command (disk space is tight); never let `src-tauri/target` get created inside a worktree.
+  Builds serialise on that cache's lock -- wait for a build in flight rather than starting a
+  second one, and never delete anything under the shared cache except a crate-scoped `cargo
+  clean -p <crate>` for a confirmed stale-path error.
+- `scripts/verify-tauri.mjs` (`pnpm verify:tauri`, issue #795) is the CDP harness: a scratch data
+  directory (`REFRACT_DATA_DIR`, debug builds only, since Tauri has no `--user-data-dir`
+  equivalent), a scratch git repository, and a recorded-frame fake `omp` on PATH ahead of the
+  real one, so a UI flow can be driven with no model cost and no network. Only `readiness` (US1)
+  and `session` (US4) are ever driven this way; `side-chat`/`subagents`/`failure`/`exit` are
+  fixtures for a lane to select directly once it ports the matching channel
+  (`scripts/fixtures/omp-frames/README.md`). Use the harness instead of a live real-`omp` CDP
+  session wherever the flow you need is already covered; fall back to a real `omp` only for a
+  flow the fixtures do not cover yet. **Not covered by this harness (R12b, #795 part 3 onward):**
+  ported Rust test cases, transcript golden tests, the cross-shell contract replay, generated
+  frame types, the performance/footprint proof.
+- **Never `pnpm dev` for a live check (2026-10-13 live-run convention).** It holds Vite's
+  fixed port 5174, and the running exe lives under the shared `CARGO_TARGET_DIR`, so two lanes'
+  own dev servers or running binaries collide. Instead: `pnpm exec tauri build --debug --no-bundle`
+  (bakes the renderer in, no dev server, no port), copy
+  `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to your own scratch dir, and run that copy with
+  your own `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` and
+  `REFRACT_DATA_DIR` pointing at a scratch data directory, never Stuart's real
+  `%APPDATA%\refract-tauri`. `scripts/verify-tauri.mjs` already does this.
