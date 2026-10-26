@@ -2,6 +2,7 @@ import * as React from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // #565 decision 10: the label column -- row `px-2` (8px) + the icon slot (`size-4`, 16px) +
 // `gap-2` (8px) = 32px -- is private to this file's own layout, so every consumer that wants a
@@ -15,6 +16,12 @@ export interface CollapsedLineProps {
    * cross, warning triangle, ...) so a warning or error is never signalled by colour alone
    * (T080, WCAG 2.1 AA). */
   icon: React.ReactNode
+  /** Spec 023 (FR-011, research Decision 8): supplementary tooltip text for the icon slot (a
+   * tool row's raw tool id). Opens while the pointer hovers the icon, or while the row's own
+   * focusable element matches `:focus-visible`; Escape dismisses it, it stays open while
+   * hovered, and the icon adds no tab stop and stays hidden from assistive technology (never
+   * the accessible name). Omit for no tooltip; output is then unchanged. */
+  iconTooltip?: string
   /** Short label (tool name, "Thinking", "Asked user", a subagent's name, ...); omit for a
    * line whose `summary` already carries the whole text (e.g. a notice). */
   label?: React.ReactNode
@@ -104,6 +111,7 @@ export interface CollapsedLineProps {
 export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(function CollapsedLine(
   {
     icon,
+    iconTooltip,
     label,
     summary,
     meta,
@@ -144,6 +152,30 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const detailMounted = detail !== undefined
   const detailVisuallyHidden = hideDetailWhenOpen && actualOpen
   const showDetail = detailMounted && !detailVisuallyHidden
+  // Spec 023 Decision 8: Radix opens a tooltip only on its own trigger's focus, and the icon must
+  // not become a tab stop, so the row's own focus-visible state drives `open` alongside hover.
+  // `tooltipDismissed` keeps an Escape-dismissed tooltip closed until the next focus or hover.
+  const [tooltipHovered, setTooltipHovered] = React.useState(false)
+  const [rowFocusVisible, setRowFocusVisible] = React.useState(false)
+  const [tooltipDismissed, setTooltipDismissed] = React.useState(false)
+  // Gate fix: a long transcript has hundreds of tool rows, so the Radix tooltip is mounted only
+  // once the row is armed (icon pointer enter or row focus); until then the icon is a plain span.
+  const [tooltipArmed, setTooltipArmed] = React.useState(false)
+  const tooltipOpen = iconTooltip !== undefined && !tooltipDismissed && (tooltipHovered || rowFocusVisible)
+  const focusHandlers =
+    iconTooltip === undefined
+      ? undefined
+      : {
+          onFocus: (e: React.FocusEvent<HTMLElement>) => {
+            if (e.target !== e.currentTarget) return
+            setTooltipArmed(true)
+            setTooltipDismissed(false)
+            setRowFocusVisible(e.currentTarget.matches(':focus-visible'))
+          },
+          onBlur: (e: React.FocusEvent<HTMLElement>) => {
+            if (e.target === e.currentTarget) setRowFocusVisible(false)
+          }
+        }
 
   const row = (
     <>
@@ -152,7 +184,49 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * Gate round 1 (Main, D1): the row is `items-start` (not `items-center`), so this slot's
        * own height must match the label's 20px line box (`h-5`) for the icon to sit centred on
        * it rather than flush against the top. */}
-      <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
+      {iconTooltip === undefined ? (
+        <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
+      ) : !tooltipArmed ? (
+        // The first pointer enter arms the row and opens the tooltip in the same update, so the
+        // first hover shows it; Radix's trigger then owns the pointer leave.
+        <span
+          aria-hidden="true"
+          className="flex h-5 w-4 shrink-0 items-center justify-center"
+          onPointerEnter={(event) => {
+            // Radix's trigger ignores touch, so arming does too.
+            if (event.pointerType === 'touch') return
+            setTooltipArmed(true)
+            setTooltipDismissed(false)
+            setTooltipHovered(true)
+          }}
+        >
+          {icon}
+        </span>
+      ) : (
+        <Tooltip
+          open={tooltipOpen}
+          onOpenChange={(next) => {
+            if (next) setTooltipDismissed(false)
+            setTooltipHovered(next)
+          }}
+        >
+          <TooltipTrigger asChild>
+            <span aria-hidden="true" className="flex h-5 w-4 shrink-0 items-center justify-center">
+              {icon}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent
+            // An open readout card captures Escape at `window` first and stops it, so one Escape
+            // closes the card and a second closes this tooltip; never both at once.
+            onEscapeKeyDown={() => {
+              setTooltipDismissed(true)
+              setTooltipHovered(false)
+            }}
+          >
+            {iconTooltip}
+          </TooltipContent>
+        </Tooltip>
+      )}
       {label !== undefined && (
         // Gate round 5 fix (issue #941, item 1, HIGH): `min-w-16` moved OUT of this shared
         // base class -- every other `CollapsedLine` caller (tool rows, advisory rows, notices)
@@ -236,6 +310,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         ref={ref as React.Ref<HTMLDivElement>}
         id={id}
         tabIndex={-1}
+        {...focusHandlers}
         // Gate round 3 (architect L-d): an inset `outline` (not a `ring`/box-shadow) so this row
         // still shows a focus indicator in forced-colours mode, matching the trigger below.
         className={cn('flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
@@ -257,6 +332,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           id={id}
           aria-label={triggerAriaLabel}
           aria-describedby={showDetail ? detailId : undefined}
+          {...focusHandlers}
           className={cn(
             // Gate round 3 (architect M-1, unanimous): this trigger sits inside
             // `MessageScrollerItem`'s own `content-visibility:auto` (`message-scroller.tsx`),

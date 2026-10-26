@@ -113,7 +113,7 @@ export interface Settings {
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
   chatWidth: ChatWidth; holidayTouches: HolidayTouches; // issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
-  transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
+  transcriptDisplay: TranscriptDisplaySettings; // issue #457: the two show toggles default true; #469's toolNames defaults false
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on
   wordPredictionEnabled?: boolean; showAgentStoppedBar?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation. showAgentStoppedBar (#1205, FR-107): the "Agent stopped" bar, absent = on
@@ -427,8 +427,7 @@ export type TranscriptItem =
        * registry-derived, and never asserted for a Session that is genuinely still `working`
        * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. `'cancelled'` (issue #911): the user's own Stop button cut a still-running call short, same family as a `subagent` item's own `'cancelled'` (#563 decision 15). */
       status: 'running' | 'done' | 'error' | 'interrupted' | 'cancelled';
-      /** Absent when built from history (no reliable wall clock to derive it from), matching
-       * the `thinking` item's `startedAt`. */
+      /** Absent when built from history (no reliable wall clock to derive it from), matching the `thinking` item's `startedAt`. */
       startedAt?: number;
       durationMs?: number;
       args: unknown;
@@ -442,6 +441,7 @@ export type TranscriptItem =
       edit?: { path: string; oldText: string; newText: string };
       /** From a `write` tool's args; the renderer diffs it against a cached prior read/edit of the same path (T025). */
       write?: { path: string; content: string };
+      intent?: string; // #469: the model's one-line intent, sanitised in Rust; render as plain text only.
       /** Set when this `read` call's target is a `skill://` URL (issue #543, first slice):
        * `name` is the URL's remainder after `skill://`. A grouping boundary -- `groupToolItems`
        * never folds this call into a run of adjacent `read` calls -- and the row's label reads

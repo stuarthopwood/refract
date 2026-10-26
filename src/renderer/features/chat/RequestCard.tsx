@@ -6,6 +6,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { ToolIcon } from '@/components/ToolIcon'
+import { resolveToolDisplay } from './toolDisplay'
 import { CollapsedLine } from './CollapsedLine'
 import { consumeAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { isFocusStranded } from '@/lib/focus'
@@ -34,9 +36,8 @@ const RESOLVED_LABEL: Record<ResolvedKind, string> = {
  * Medium, all reviewers: unconditional `.focus()` could steal focus on a later mount). */
 export function ResolvedRequestSummary({ resolved, detail, requestId, sessionId }: { resolved?: ResolvedKind; detail?: string; requestId?: string; sessionId?: string }) {
   const label = resolved ? RESOLVED_LABEL[resolved] : 'Resolved'
-  // Gate-fix (round 1, Low, D22): a user's own Cancel is not an error, so it keeps the muted
-  // `--muted-foreground` XIcon every other icon in this row already uses -- only an actual Deny
-  // (a real tool-approval refusal) still reads as destructive.
+  // Gate-fix (round 1, Low, D22): a user's own Cancel is not an error, so it keeps this row's muted
+  // `--muted-foreground` XIcon; only an actual Deny (a real tool-approval refusal) reads as destructive.
   const icon =
     resolved === 'denied' ? (
       <XIcon className="size-3.5 shrink-0 text-destructive" />
@@ -117,8 +118,7 @@ interface AskResultLike {
   timedOut?: unknown
 }
 
-/** D22: option labels joined with ", ", then "Other: <text>" last, or "None selected" when
- * nothing was picked and nothing was typed. */
+/** D22: option labels joined with ", ", then "Other: <text>" last, or "None selected" if none. */
 function formatAskAnswerText(selectedOptions: string[], customInput: string, fallbackOutput?: string): string {
   const parts: string[] = []
   if (selectedOptions.length > 0) parts.push(selectedOptions.join(', '))
@@ -404,7 +404,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
     return (
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Allow tool: {request.tool}</CardTitle>
+          <CardTitle className="flex items-center gap-2"><ToolIcon icon={resolveToolDisplay(request.tool).icon} />Allow tool: {request.tool}</CardTitle>
           <CardDescription className="truncate" title={request.target}>
             {request.target}
           </CardDescription>

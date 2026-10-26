@@ -104,6 +104,14 @@ _Avoid_: rail (taken by Icon rail), guide rail, thread, timeline, connector
 The one icon shape and colour per state, shared by tool rows, tool groups, **Stage** groups, the **Subagent chain**, and the **Subagent panel**, from one shared table both `toolStatus.tsx` and `subagentStatus.tsx` read (`statusGlyph.ts`, issue #570, gate round 1): done/finished is fully neutral, and only running and failed/error carry colour. A tool row's own label additionally takes the error colour on failure (tool rows and groups only; **Stage**, the **Subagent chain** and the **Subagent panel** colour only the icon, never their label), since a chromatic success colour used outside its own meaning teaches the wrong meaning.
 _Avoid_: state dot, badge
 
+**Tool icon**:
+The icon that leads a tool row, a **Tool group** row, the approval card and a subagent row, naming the kind of tool (FileText for `read`, Terminal for `bash`, Plug for any MCP tool, Wrench for an unknown tool), from the one shared verb map; the **Status icon** sits at the row's trailing end instead. Its tooltip shows the raw tool id (spec 023, issue #469).
+_Avoid_: tool badge, glyph
+
+**Tool label**:
+A tool row's visible label: the model's own intent for the call when it gave one ("Reading README.md"), otherwise the tool's verb from the shared verb map ("Reading" while running, "Read" when done). The raw tool id is never the label; it shows only in the **Tool icon**'s tooltip, or muted after the label when Settings > Chat "Show tool names on rows" is on (spec 022, spec 023).
+_Avoid_: tool name, tool title
+
 **Error line**:
 The first meaningful line of a failed tool call's own output, shown directly under its row whether collapsed or expanded, without needing to expand anything (the LAST line for a `bash` call, after OMP's own trailing `Wall time:` footer is stripped; the FIRST line for every other tool). For a silent `bash` failure (no stdout or stderr), the line is the exit code or timeout OMP itself reported ("Exited with code N"/"Command timed out after N seconds"), never OMP's bare `(no output)` wrapper text; "Failed." is reserved for when no output and no exit/timeout information exist at all (issue #570, gate round 1).
 _Avoid_: error preview, output tail

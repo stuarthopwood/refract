@@ -1,30 +1,19 @@
 import * as React from 'react'
 import type { TranscriptItem } from '../../../shared/model'
-import { CodeBlock, FileLinkButton, inferOutputBlock } from './Markdown'
+import { FileLinkButton } from './Markdown'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
-import { formatDuration, StatusIcon, type RowStatus } from './toolStatus'
-import { toolAriaPrefix, toolVerb } from './toolVerbs'
-import { formatElapsed } from './formatElapsed'
-import { COMMAND_STYLE_TOOLS, commandRowText, sanitizeLines } from './formatToolCommand'
+import { ToolIcon } from '@/components/ToolIcon'
+import { formatDuration, type RowStatus } from './toolStatus'
+import { resolveToolDisplay, toolRowLabel } from './toolDisplay'
+import { hasIntent, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, useShowToolNames } from './toolRowParts'
+import { commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
-import { cn } from '@/lib/utils'
-import {
-  chatRowStatus,
-  isSubagentSuccessStatus,
-  SUBAGENT_STATUS_LABEL,
-  SUBAGENT_SUCCESS_TEXT_CLASS,
-  SubagentStatusGlyph
-} from '../subagents/subagentStatus'
-import { extractResultSummary } from './stageMeta'
-import { InlineDisclosure } from '@/components/InlineDisclosure'
-import { SubagentGoalPreview } from './SubagentGoalPreview'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
-type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
 interface ToolCallBodyProps {
   item: ToolItem
@@ -184,38 +173,36 @@ interface ToolCallRowProps {
 // One compact row per tool call, used only for each call nested inside an expanded multi-call
 // group (never at the top-level tree position `ToolGroupRow` itself occupies).
 function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
-  // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a `bash`/`grep` member's own
-  // `summary` (`commandRowText`) already names the tool ("$ ..."/"grep \"...\""), so a separate
-  // `label` read as a duplicate word; dropped for exactly those two tools.
-  const isCommandStyle = COMMAND_STYLE_TOOLS.has(item.tool)
-  // Gate round 1 (accessibility-auditor Medium, M1): this row had no explicit accessible name
-  // (content-based, lost once `label` is dropped above, and prone to #570's doubled-space
-  // artifact) -- built explicitly from tool, status, `commandRowText` (M1), and duration.
-  // #1208 FR-006: the verb now leads the name, so `grep`'s old prefix skip (D3) is gone; a status
-  // word is kept only as a prefix for a failed/stopped call. (Main, D2): the edit stat's sr-only
-  // text folds in here instead -- an explicit `aria-label` makes a browser ignore every child.
+  // Spec 023 (FR-001, FR-007, FR-010, FR-011): the tool icon leads (raw id as its tooltip), the
+  // label is the intent or the verb for every tool (`bash` and `grep` included, superseding spec
+  // 022's label-free command rows), and the status icon trails in `meta`. Gate round 1 (a11y M1)
+  // and (Main, D2): an explicit accessible name (FR-015), with the edit stat and duration folded
+  // in, since an explicit `aria-label` makes a browser ignore every child.
+  const showToolNames = useShowToolNames()
+  const display = resolveToolDisplay(item.tool, item.target)
+  const rawId = showToolNames ? display.rawId : undefined
+  const label = toolRowLabel(item.tool, item.target, item.intent, item.status)
+  const target = commandRowText(item)
+  const failed = item.status === 'error'
   const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
-  const memberAriaLabel = [
-    [toolAriaPrefix(item.status, item.tool), toolVerb(item.tool, item.status), commandRowText(item)].filter(Boolean).join(' '),
+  const memberAriaLabel = joinAriaParts([
+    toolAriaHead(item.status, display.entryTool, hasIntent(item.intent), label, rawId, target),
     diffStatAriaText(editStatForItem(item)),
     memberDuration
-  ]
-    .filter((part): part is string => !!part)
-    .join(', ')
+  ])
   return (
     <CollapsedLine
-      icon={<StatusIcon status={item.status} />}
-      label={isCommandStyle ? undefined : toolVerb(item.tool, item.status)}
-      labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}
-      // Gate round 1 fix (H1/M2 interaction, found live): #570 decision 4 colours icon+label
-      // red on failure; a command-style row's dropped label left no coloured text -- restored here.
-      summary={commandRowText(item)}
-      summaryClassName={isCommandStyle && item.status === 'error' ? 'text-severity-error' : undefined}
+      icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
+      iconTooltip={display.rawId}
+      label={label}
+      // #570 decision 4, FR-020: a failed call's icon and label take the error colour.
+      labelClassName={failed ? 'text-severity-error' : undefined}
+      summary={toolRowSummary(rawId, target)}
       summaryWrap={summaryWrap}
       // Gate round 1 (code-reviewer High, H4): wrap-on-expand is opt-in now; a tool call's row
       // text (FR-061) wants it for every tool, not only the command-style ones.
       wrapWhenOpen
-      meta={callMeta(item)}
+      meta={toolRowMeta(item.status, callMeta(item))}
       triggerAriaLabel={memberAriaLabel}
       // #570 decisions 6, 9: a failed member's own Error line, shown whether this row is
       // collapsed or expanded -- no `hideDetailWhenOpen` here, that only applies to the GROUP
@@ -326,9 +313,9 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const last = group.items[group.items.length - 1]!
   // Issue #543, first slice: a solo `read` whose target is a `skill://` URL (groupToolItems
   // guarantees it is always solo -- it is exempted from every run, never merged with the calls
-  // around it) reads "Using skill <name>" ("Used skill" once settled, #1208) instead of the raw tool name; the icon and the usual
-  // running/done/failed status are unchanged (Accessibility note on #543: "status is icon plus
-  // text", the same convention every other row already uses).
+  // around it) reads "Using skill <name>" ("Used skill" once settled, #1208) instead of the raw tool name, with the
+  // skill's own icon (spec 023); the usual running/done/failed status is unchanged (Accessibility note on #543:
+  // "status is icon plus text", the same convention every other row already uses).
   const skillName = solo ? last.skill?.name : undefined
   // `toolLabel` is the tool's verb (#1208, `toolVerbs.ts`: FR-002, FR-005 no colon), read by the aria-label composition
   // below; `visibleLabel` is what the row itself shows -- for a multi-call group that folds the
@@ -341,13 +328,17 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // A multi-call group's verb tracks only running vs settled; its failed/stopped counts carry
   // the rest, so a group with one failed member still reads "Ran ×2", never "Failed Ran".
   const verbPhase: RowStatus = solo ? status : isRunning ? 'running' : 'done'
-  const toolLabel = toolVerb(skillName !== undefined ? 'skill' : solo ? last.tool : group.tool, verbPhase)
-  // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a solo command-style call's own
-  // `summary` already names the tool; the bare label repeated it, so it's dropped for those two
-  // tools only (`toolLabel` still feeds the accessible name, so this is visual-only).
-  const soloIsCommandStyle = solo && skillName === undefined && COMMAND_STYLE_TOOLS.has(last.tool)
-  const visibleLabel = soloIsCommandStyle ? undefined : solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
-  const summary = skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined
+  // Spec 023 (FR-007, FR-014): a solo row's label is its intent or verb; a multi-call group reads
+  // the shared tool's verb ×N (members share one display key, `groupToolItems`), never an intent.
+  // Every tool shows its label now, `bash` and `grep` included (supersedes spec 022's label-free
+  // command rows). The raw id leads the summary only while "Show tool names on rows" is on.
+  const first = group.items[0]!
+  const display = resolveToolDisplay(first.tool, first.target)
+  const rawId = useShowToolNames() ? display.rawId : undefined
+  const toolLabel = toolRowLabel(first.tool, first.target, solo ? last.intent : undefined, verbPhase)
+  const visibleLabel = solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
+  const failed = status === 'error'
+  const summary = toolRowSummary(rawId, skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined)
   // #632: a multi-call group's own total time -- the sum of every member's own `durationMs`,
   // matching the mockup's own worked example (11.8s + 4.1s = 15.9s) -- joins the failed/
   // interrupted counts below in the meta slot. Gate round 1 (code-reviewer Medium, M6): a
@@ -365,14 +356,17 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // meta reuses the same per-call stat `ToolCallRow` shows (an `edit`'s own "+N -M", #632,
   // alongside its duration) -- one function, so the two can never show a different stat for
   // what is otherwise the identical row.
-  const meta = solo
-    ? callMeta(last)
-    : joinMetaParts([
-        failedCount > 0 ? <span className="text-severity-error">{failedCount} failed</span> : undefined,
-        interruptedCount > 0 ? <span>{interruptedCount} interrupted</span> : undefined,
-        cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined,
-        totalDuration
-      ])
+  const meta = toolRowMeta(
+    status,
+    solo
+      ? callMeta(last)
+      : joinMetaParts([
+          failedCount > 0 ? <span className="text-severity-error">{failedCount} failed</span> : undefined,
+          interruptedCount > 0 ? <span>{interruptedCount} interrupted</span> : undefined,
+          cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined,
+          totalDuration
+        ])
+  )
 
   // Gate round 2 (Main, G909Arch): an explicit accessible name, matching decision 15's own
   // illustrated form ("Failed bash, 2 calls, 1 failed, 15.9 seconds"), bypassing the browser's
@@ -383,41 +377,38 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // coloured diff-stat span the aria string has no use for) so this never breaks if that JSX
   // shape changes.
   // Gate round 1 (accessibility-auditor Medium, M1, WCAG 2.5.3 Label in Name): a solo command-
-  // style call's own VISIBLE summary is `commandRowText` ("$ ..."/"grep \"...\""), but this
+  // style call's own VISIBLE summary is `commandRowText` (the bare command, or the quoted grep pattern), but this
   // accessible-name text used the raw, untransformed target -- the two could read completely
   // different text for the identical row. `commandRowText` here too, so the visible text and
   // the accessible name's own description of it can never diverge.
   const soloSummaryText = skillName !== undefined ? skillName : commandRowText(last)
   const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
-  // #1208 FR-006: verb first for every tool (no `grep` skip any more), status prefix only when
-  // `toolAriaPrefix` gives one; (Main, D2): the edit stat's aria text folds in here (never read off the visual `meta` JSX).
+  // Spec 023 FR-015 (on #1208 FR-006): status prefix only where the label cannot carry it, the
+  // label, the raw id while the setting is on, then the target; (Main, D2): the edit stat's aria
+  // text folds in here (never read off the visual `meta` JSX). A multi-call group keeps the count
+  // and failed/stopped words as their own parts, with a prefix only while running.
   const triggerAriaLabel = solo
-    ? [
-        [toolAriaPrefix(status, skillName !== undefined ? 'skill' : last.tool), toolLabel, soloSummaryText].filter(Boolean).join(' '),
+    ? joinAriaParts([
+        toolAriaHead(status, display.entryTool, hasIntent(last.intent), toolLabel, rawId, soloSummaryText),
         diffStatAriaText(editStatForItem(last)),
         soloDurationText
-      ]
-        .filter((part): part is string => !!part)
-        .join(', ')
-    : [
-        [isRunning ? toolAriaPrefix('running', group.tool) : undefined, toolLabel].filter(Boolean).join(' '),
+      ])
+    : joinAriaParts([
+        toolAriaHead(verbPhase, display.entryTool, false, toolLabel, rawId, undefined),
         `${group.items.length} calls`,
         failedCount > 0 ? `${failedCount} failed` : undefined,
         interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined,
         cancelledCount > 0 ? `${cancelledCount} stopped` : undefined,
         totalDuration
-      ]
-        .filter((part): part is string => !!part)
-        .join(', ')
+      ])
 
   return (
     <CollapsedLine
-      icon={<StatusIcon status={status} />}
+      icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
+      iconTooltip={display.rawId}
       label={visibleLabel}
-      labelClassName={status === 'error' ? 'text-severity-error' : undefined}
-      // See `ToolCallRow`'s own identical comment -- the solo branch needs the same restore.
+      labelClassName={failed ? 'text-severity-error' : undefined}
       summary={summary}
-      summaryClassName={soloIsCommandStyle && status === 'error' ? 'text-severity-error' : undefined}
       summaryWrap={summaryWrap}
       // Gate round 1 (H4): see `ToolCallRow`'s own comment -- the solo branch is a tool row too.
       wrapWhenOpen
@@ -492,107 +483,6 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
           ))}
         </SpineList>
       )}
-    </CollapsedLine>
-  )
-}
-
-interface SubagentRowProps {
-  item: SubagentItem
-  /** Issue #1077: true shows this row's own goal (`item.task`'s first lines, clamped to 3
-   * lines) above the toggle. Required (item 10: no implicit default) -- `SubagentChainRow.tsx`
-   * decides per item, correlated by `toolCallId` (a joined Stage can hold several task() calls,
-   * each with its own context or none, stamped only on that call's spec-index-0 item); a
-   * context-less solo Stage's own goal renders at the Stage level instead, before "Uses:"
-   * (item 7), so `false` for it. */
-  showGoal: boolean
-}
-
-// `SubagentGoalPreview` (own file, gate round 1 fix, item 7/file-size): the goal paragraph
-// alone, exported so `StageGroupRow` can render a context-less solo Stage's own goal before
-// "Uses:", not nested inside `SubagentBody`. The goal (when `showGoal`), then a "See input &
-// output" toggle (`InlineDisclosure`, ADR 0003, `MermaidBlock`'s "Show source" shape) -- split
-// out so `StageGroupRow` reuses it for its own solo-of-the-turn case without `SubagentRow`'s
-// own `CollapsedLine` wrapper (#563, H2/H3: never switch element type between solo and multi
-// members). Never stays mounted while collapsed, so re-expanding always starts fresh.
-export function SubagentBody({ item, showGoal }: SubagentRowProps) {
-  const taskBlock = React.useMemo(() => inferOutputBlock(item.task), [item.task])
-  const resultBlock = React.useMemo(() => (item.result != null ? inferOutputBlock(item.result) : null), [item.result])
-  const [open, setOpen] = React.useState(false)
-  const contentId = React.useId()
-  const hasResult = item.result != null
-  // Gate round 1 fix (item 9): an sr-only name suffix -- every sibling link reads identical text.
-  const label = (
-    <>
-      {open ? 'Hide' : 'See'} input{hasResult ? ' & output' : ''}
-      <span className="sr-only"> for {item.name}</span>
-    </>
-  )
-  return (
-    <div className="space-y-1">
-      {showGoal && <SubagentGoalPreview task={item.task} />}
-      <InlineDisclosure open={open} onOpenChange={setOpen} contentId={contentId} label={label}>
-        <div>
-          <div className="mb-1 text-xs text-muted-foreground">Prompt</div>
-          <div className="max-h-64 overflow-auto rounded-lg">
-            <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap />
-          </div>
-        </div>
-        {resultBlock != null && (
-          <div>
-            <div className="mb-1 text-xs text-muted-foreground">Result</div>
-            <div className="max-h-64 overflow-auto rounded-lg">
-              <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap />
-            </div>
-          </div>
-        )}
-      </InlineDisclosure>
-    </div>
-  )
-}
-
-// One collapsed line per subagent a batch `task()` call started (T078, docs/DESIGN.md "Chat"):
-// never grouped by `groupToolItems` (T074), identity is the stable `item.id` (so a later
-// activation can reopen the same subagent's full transcript panel, spec 004). Expanding shows
-// the prompt and (once known) the result as plain text.
-//
-// Quality-gate remediation (H1, unanimous): `icon=` is a `CollapsedLine` icon slot (a fixed
-// `size-4` box, #565 decision 7) -- `SubagentStatusGlyph` keeps its status word `sr-only` there
-// (never visible, it would overflow the box and paint over the label); the visible word is
-// rendered HERE instead, in `meta`, ahead of the duration, gated off for `finished` (decision 14:
-// a quiet icon-plus-duration row, never a loud "Finished" claim).
-export function SubagentRow({ item, showGoal }: SubagentRowProps) {
-  const status = chatRowStatus(item.status)
-  const duration =
-    item.status !== 'running' && item.durationMs != null ? (
-      <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
-    ) : undefined
-  // Gate round 2 (Low, double-word fix): the status word here duplicates the icon slot's own
-  // `SubagentStatusGlyph` `sr-only` word (both sit inside this row's computed accessible name,
-  // e.g. "Failed alpha Failed 3s") -- `aria-hidden` keeps the visible word sighted-only.
-  const meta = (
-    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-      {status !== 'finished' && <span aria-hidden="true">{SUBAGENT_STATUS_LABEL[status]}</span>}
-      {duration}
-    </span>
-  )
-  // Issue #941 grill item 4: a Stage expanding reveals each member's own one-line result right
-  // here, with no need to ALSO expand this row individually -- `extractResultSummary` (gate
-  // round 1 fix): first line, Markdown markers stripped, capped ~120 chars (a full multi-line
-  // result still needs this row's own expansion, `SubagentBody` below, for the rest).
-  const resultSummary = item.result != null ? extractResultSummary(item.result) : undefined
-  return (
-    // #565 decision 10: this row is always a `SpineList` member (its only caller,
-    // `SubagentChainRow.tsx`'s non-solo branch), so its own expanded body starts at the same
-    // label column `ToolCallRow`'s member body does -- one geometry for every Spine member.
-    <CollapsedLine
-      icon={<SubagentStatusGlyph status={status} />}
-      label={item.name}
-      labelClassName={cn(isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
-      summary={resultSummary}
-      meta={meta}
-      contentClassName={LABEL_COLUMN_CONTENT_CLASS}
-    >
-      <SubagentBody item={item} showGoal={showGoal} />
     </CollapsedLine>
   )
 }

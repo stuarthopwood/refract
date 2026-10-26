@@ -32,16 +32,6 @@ function stringField(args: unknown, key: string): string | undefined {
 // was given (the tool's own argument convention, not something this file adds), and `write`/`edit`
 // already show their own path. A tool with no special form (or an item outside this table) falls
 // back to its own raw `item.target`, matching #469's "no special form falls back to today's row".
-// Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a `bash`/`grep` row's own `summary`
-// text already names the tool (`$ <command>` reads as a shell prompt; `grep "<pattern>"`
-// literally repeats the word), so a caller's own separate `label` showing the bare tool name too
-// read as a duplicate ("grep grep \"...\""). Exported so `ToolRow.tsx`'s two command-style call
-// sites (the solo `ToolGroupRow` branch and each nested `ToolCallRow`) agree on exactly which
-// tools this applies to, matching this file's own reshaping table one-for-one.
-// Gate round 1 (Main, D3, Security Low): a plain object's `[item.tool]` lookup is vulnerable to
-// an inherited prototype property (e.g. `item.tool === 'toString'`); a `Set` with `.has` has no
-// such surface.
-export const COMMAND_STYLE_TOOLS: ReadonlySet<string> = new Set(['bash', 'grep'])
 export function commandRowText(item: ToolItem): string {
   if (item.tool === 'bash') {
     // The command can be (and often is) multi-line (`cd a; \n gh pr merge ...`); only the FIRST
@@ -59,7 +49,8 @@ export function commandRowText(item: ToolItem): string {
     // but able to visually reorder the row); `sanitizeLines` strips it the same way `errorLine`
     // strips the error text, so a spoofed command can never read differently from what it does.
     const firstNonEmptyLine = sanitizeLines(nonEmptyLines[0] ?? '')[0] ?? ''
-    return `$ ${firstNonEmptyLine}${nonEmptyLines.length > 1 ? ' …' : ''}`
+    // Spec 023 FR-006: no `$ ` prefix; the row's own label now names the tool's action.
+    return `${firstNonEmptyLine}${nonEmptyLines.length > 1 ? ' …' : ''}`
   }
   if (item.tool === 'grep') {
     // `item.target` is the pattern alone (`extract_target` in `transcript.rs`); the search path
@@ -69,7 +60,8 @@ export function commandRowText(item: ToolItem): string {
     const pattern = sanitizeLines(item.target)[0] ?? ''
     const path = stringField(item.args, 'path')
     const sanitizedPath = path ? sanitizeLines(path)[0] : undefined
-    return sanitizedPath ? `grep "${pattern}" ${sanitizedPath}` : `grep "${pattern}"`
+    // Spec 023 FR-006: no leading `grep `; the quoted pattern and the path only.
+    return sanitizedPath ? `"${pattern}" ${sanitizedPath}` : `"${pattern}"`
   }
   return item.target
 }

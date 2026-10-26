@@ -64,6 +64,14 @@ export function ChatDisplaySection() {
           checked={transcriptDisplay.toolCalls}
           onCheckedChange={(checked) => void setTranscriptDisplay('toolCalls', checked)}
         />
+        {/* Issue #469: off by default. */}
+        <SettingSwitchRow
+          id="transcript-display-tool-names"
+          label="Show tool names on rows"
+          description="The raw tool name, shown muted after each tool row's label."
+          checked={transcriptDisplay.toolNames}
+          onCheckedChange={(checked) => void setTranscriptDisplay('toolNames', checked)}
+        />
         <SettingSwitchRow
           id="detect-image-paths-on-paste"
           label="Attach images pasted as a file path"
