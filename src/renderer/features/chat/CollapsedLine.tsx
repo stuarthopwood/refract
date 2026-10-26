@@ -15,7 +15,7 @@ export interface CollapsedLineProps {
    * cross, warning triangle, ...) so a warning or error is never signalled by colour alone
    * (T080, WCAG 2.1 AA). */
   icon: React.ReactNode
-  /** Short label (tool name, "Thinking", "Asked user:", a subagent's name, ...); omit for a
+  /** Short label (tool name, "Thinking", "Asked user", a subagent's name, ...); omit for a
    * line whose `summary` already carries the whole text (e.g. a notice). */
   label?: React.ReactNode
   /** One-line summary that truncates with an ellipsis; omit for a line with nothing to summarise. */
