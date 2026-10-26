@@ -241,7 +241,6 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         icon={<Icon className={cn('size-3.5 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
-        summaryClassName={className}
         meta={meta || undefined}
       >
         <div className="space-y-2">
@@ -270,7 +269,6 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         icon={<Icon className={cn('size-3.5 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
-        summaryClassName={className}
         meta={meta || undefined}
         open={open}
         onOpenChange={setOpen}

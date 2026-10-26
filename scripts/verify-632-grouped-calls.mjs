@@ -101,7 +101,7 @@ const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   if (el.closest('ol.border-l')) return false;
   const l = el.querySelector('[data-slot="collapsed-line-label"]');
-  if (l) return /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
+  if (l) return /^(?:Ran|Running|Bash|Searched|Searching|Grep|Find|Glob|Read|Reading|Wrote|Writing|Write|Edited|Editing|Edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
   const s = el.querySelector('span.min-w-0.flex-1');
   const t = s ? (s.textContent || '').trim() : '';
   return /^\\$ /.test(t) || /^grep "/.test(t);

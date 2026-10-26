@@ -17,7 +17,7 @@ All line numbers are against `origin/main` at commit `4c973d43` (2026-10-26). Re
   - `TOOL_VERBS`: a frozen record from tool id to `{ running, done }`: `read` Reading/Read, `edit` Editing/Edited, `write` Writing/Wrote, `bash` Running/Ran, `grep` Searching/Searched, `find` Searching/Searched, `thinking` Thinking/Thought process, `skill` Using skill/Used skill.
   - `toolVerb(tool: string, phase: 'running' | 'done'): string`: the map entry, or the sentence-case fallback.
   - `sentenceCaseToolName(tool: string): string`: underscores and hyphens to spaces, repeated spaces collapsed, trimmed, first letter upper case, the rest unchanged; an empty result returns `'Tool'`.
-  - Phase rule: `running` maps to the running form; `done`, `error`, `exited`, `interrupted` and `cancelled` map to the done form.
+  - Phase rule: `running` maps to the running form and `done` to the done form; `error`, `exited`, `interrupted` and `cancelled` show the sentence-case tool name (gate amendment 2026-10-26, see spec Clarifications).
 - **Rationale**: FR-002 to FR-004; issue #469 needs to import the same map. A `Record` with `Object.hasOwn` (not `in`) avoids prototype keys such as `toString`, matching `formatToolCommand.ts:42-44`'s own reasoning for using a `Set`.
 - **Alternatives considered**: putting the map in `src/shared` (rejected: only the renderer uses it; the repo rule keeps a single-consumer module beside its consumer); extending `toolStatus.tsx` (rejected: it is about status, not verbs, and #469 would pull in the status icons).
 

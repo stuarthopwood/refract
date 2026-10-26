@@ -251,7 +251,7 @@ export function SessionList() {
         // `Button`'s base `outline-none` shows no focus change under forced colours (which strips
         // its box-shadow ring), so the forced-colors outline classes draw a real one there.
         className={cn(
-          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
+          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
           'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
           view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}

@@ -20,17 +20,27 @@ export function sentenceCaseToolName(tool: string): string {
   return text === '' ? 'Tool' : text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-// `phase` takes any `RowStatus`: `running` maps to the running form, every other status
-// (`done`, `error`, `exited`, `interrupted`, `cancelled`) to the done form. `Object.hasOwn`, not
-// `in`, so a prototype key such as `toString` falls through to the fallback.
+// `phase` takes any `RowStatus`: `running` maps to the running form and `done` to the done form.
+// A call that did not complete (`error`, `exited`, `interrupted`, `cancelled`) shows the tool name
+// in sentence case, so "Failed Searched grep" never claims work that did not happen (gate a11y
+// Medium). `Object.hasOwn`, not `in`, so a prototype key such as `toString` falls through.
 export function toolVerb(tool: string, phase: RowStatus): string {
-  if (!Object.hasOwn(TOOL_VERBS, tool)) return sentenceCaseToolName(tool)
+  if (!Object.hasOwn(TOOL_VERBS, tool) || (phase !== 'running' && phase !== 'done')) return sentenceCaseToolName(tool)
   const verbs = TOOL_VERBS[tool]!
   return phase === 'running' ? verbs.running : verbs.done
 }
 
 // FR-006: an accessible name starts with the verb; a status word is kept as a prefix only when
-// the verb alone would hide it (failed, interrupted, stopped, agent exited).
-export function toolAriaPrefix(status: RowStatus): string | undefined {
-  return status === 'running' || status === 'done' ? undefined : toolStatusLabel(status)
+// the verb alone would hide it (failed, interrupted, stopped, agent exited, or a running tool
+// shown by its own name, whose label has no tense to carry "Running").
+export function toolAriaPrefix(status: RowStatus, tool: string): string | undefined {
+  if (status === 'done') return undefined
+  if (status === 'running') return Object.hasOwn(TOOL_VERBS, tool) ? undefined : toolStatusLabel(status)
+  return toolStatusLabel(status)
+}
+
+// FR-015: the live announcement for a call that just started ("Reading", or "Running mcp_fetch"
+// for a tool shown by its own name).
+export function toolRunningAnnouncement(tool: string): string {
+  return [toolAriaPrefix('running', tool), toolVerb(tool, 'running')].filter(Boolean).join(' ')
 }

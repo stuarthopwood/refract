@@ -196,7 +196,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   // text folds in here instead -- an explicit `aria-label` makes a browser ignore every child.
   const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
   const memberAriaLabel = [
-    [toolAriaPrefix(item.status), toolVerb(item.tool, item.status), commandRowText(item)].filter(Boolean).join(' '),
+    [toolAriaPrefix(item.status, item.tool), toolVerb(item.tool, item.status), commandRowText(item)].filter(Boolean).join(' '),
     diffStatAriaText(editStatForItem(item)),
     memberDuration
   ]
@@ -338,7 +338,10 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // once, so a multi-call group's `summary` below is dropped entirely (no text between the
   // label and the meta slot, matching the issue's own mockup), not replaced with a different
   // single-call description.
-  const toolLabel = toolVerb(skillName !== undefined ? 'skill' : solo ? last.tool : group.tool, status)
+  // A multi-call group's verb tracks only running vs settled; its failed/stopped counts carry
+  // the rest, so a group with one failed member still reads "Ran ×2", never "Failed Ran".
+  const verbPhase: RowStatus = solo ? status : isRunning ? 'running' : 'done'
+  const toolLabel = toolVerb(skillName !== undefined ? 'skill' : solo ? last.tool : group.tool, verbPhase)
   // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a solo command-style call's own
   // `summary` already names the tool; the bare label repeated it, so it's dropped for those two
   // tools only (`toolLabel` still feeds the accessible name, so this is visual-only).
@@ -390,14 +393,14 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // `toolAriaPrefix` gives one; (Main, D2): the edit stat's aria text folds in here (never read off the visual `meta` JSX).
   const triggerAriaLabel = solo
     ? [
-        [toolAriaPrefix(status), toolLabel, soloSummaryText].filter(Boolean).join(' '),
+        [toolAriaPrefix(status, skillName !== undefined ? 'skill' : last.tool), toolLabel, soloSummaryText].filter(Boolean).join(' '),
         diffStatAriaText(editStatForItem(last)),
         soloDurationText
       ]
         .filter((part): part is string => !!part)
         .join(', ')
     : [
-        [toolAriaPrefix(status), toolLabel].filter(Boolean).join(' '),
+        toolLabel,
         `${group.items.length} calls`,
         failedCount > 0 ? `${failedCount} failed` : undefined,
         interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined,
