@@ -45,7 +45,7 @@ The collapsible header above one Project's Sessions in the session list, shared 
 _Avoid_: repository header, section header
 
 **Activity line**:
-The second line of a Session row: what the agent is doing right now while it is working or waiting (#526), otherwise the Session's branch.
+The second line of a Session row: what the agent is doing right now while it is working or waiting (#526), otherwise the Session's branch. Derived from the same activity as the composer's current-work banner (one shared derive), for every Session including the open one; the Settings > Appearance **Activity text** choice (Plain or Playful) applies to both. Playful only replaces the generic "Working…" line.
 _Avoid_: status line (from PR #877 on, **Status line** is the composer row), sub-line, codename.
 
 **Waiting marker**:

@@ -382,15 +382,14 @@ impl SessionManager {
                         WorktreeValidity::Invalid => "worktree-missing",
                     };
                     object.insert("status".to_string(), Value::String("stopped".to_string()));
-                    object.insert(
-                        "stopReason".to_string(),
-                        Value::String(stop_reason.to_string()),
-                    );
+                    object.insert("stopReason".to_string(), stop_reason.into());
                     object.insert("unread".to_string(), Value::Bool(false));
                     object.insert("launchedMode".to_string(), launched_mode.clone());
                     object.insert("pendingMode".to_string(), Value::Null);
                 }
             }
+            let activity = crate::session::readout::current_activity(agent.as_deref()).await;
+            object.insert("activity".to_string(), activity);
             if object.get("status").and_then(Value::as_str) == Some("stopped") {
                 let detection = match &agent {
                     Some(agent) => agent.resolve_termination().await,

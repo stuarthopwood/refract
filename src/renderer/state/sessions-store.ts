@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Result, SessionSnapshot, SessionStatusEvent, SessionSummary } from '../../shared/ipc'
 import type { Session } from '../../shared/model'
+import type { SessionActivity } from '../../shared/activity'
 import { notify } from './notify'
 import { useSplitStore } from './split-store'
 import { useGitChangesStore } from './git-changes-store'
@@ -28,6 +29,8 @@ interface SessionsState {
   creatingRepositoryIds: Set<string>
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
+  /** #526: patches only this row's `activity` from `session:activity`; never refetches the list. */
+  applyActivity(sessionId: string, activity: SessionActivity | null): void
   refresh(): Promise<void>
   /** `userAction` true starts a stopped Session's agent (Start agent, a typed send, an advisory
    * Ask). Omitted (every passive path: the pane's own mount-time open) never starts it: a
@@ -69,6 +72,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   startSeq: {},
   creatingRepositoryIds: new Set(),
   setSessions: (sessions) => set({ sessions }),
+  applyActivity: (sessionId, activity) => {
+    if (!get().sessions.some((session) => session.id === sessionId)) return
+    set({ sessions: get().sessions.map((session) => (session.id === sessionId ? { ...session, activity } : session)) })
+  },
   applyStatus: (event) =>
     set({
       sessions: get().sessions.map((session) =>

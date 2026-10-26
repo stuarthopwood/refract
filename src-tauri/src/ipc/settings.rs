@@ -15,7 +15,7 @@
 use serde_json::Value;
 
 use crate::store::settings::{
-    ApprovalMode, ChatWidth, HolidayTouches, SessionListCollapse, SplitLayout,
+    ActivityText, ApprovalMode, ChatWidth, HolidayTouches, SessionListCollapse, SplitLayout,
 };
 
 use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture};
@@ -69,6 +69,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("settings.setRightPane", settings_set_right_pane);
     d.register("settings.setChatWidth", settings_set_chat_width);
     d.register("settings.setHolidayTouches", settings_set_holiday_touches);
+    d.register("settings.setActivityText", settings_set_activity_text);
 }
 
 pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -299,6 +300,30 @@ pub fn settings_set_holiday_touches(state: AppState, args: Vec<Value>) -> Handle
 
 fn parse_holiday_touches(value: &str) -> Option<HolidayTouches> {
     serde_json::from_value(Value::String(value.to_string())).ok()
+}
+
+/// `settings.setActivityText(value)` (issue #526, FR-111): same enum-parse-then-persist shape as
+/// `settings_set_chat_width` above.
+pub fn settings_set_activity_text(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let value = args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(|v| serde_json::from_value::<ActivityText>(Value::String(v.to_string())).ok())
+            .ok_or_else(|| {
+                invalid_argument("settings.setActivityText expects one of 'plain' | 'playful'")
+            })?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_activity_text(value)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
 }
 
 /// Issues #457 and #469: `field` is one of the three known `TranscriptDisplaySettings` keys,

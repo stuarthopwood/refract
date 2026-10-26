@@ -5332,3 +5332,44 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `pnpm typecheck`, `pnpm test`, `check:indent`, `check:ui-text`, `check:theme-contrast`,
   `check:drag-regions`, `check:file-size`, `check:parity`, and `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test` per FR-103 to FR-107 (missing)
+
+## Phase 79: Convergence (#526 Session row Activity line, FR-108 to FR-111, spec 004 FR-041)
+
+- [ ] T388 Extend the shared derive in `src/shared/activity.ts`: an optional `pending` input
+  (first pending request: `{ kind: 'question', text }` or `{ kind: 'approval', tool, target }`)
+  giving "Needs your input: <text>" or "Waiting for approval: <tool> <target>" (sanitised,
+  target reduced to its base name), "Waiting for your answer" when `needsYou` has no pending; a
+  `SessionActivity` type (the ActivityInput fields minus `needsYou`/`pending`); and a pure
+  `playfulPhrase(sessionId, slot)` over a fixed list of about 12 phrases, per spec 004 FR-041
+  (partial)
+- [ ] T389 Add a Rust per-Session activity emitter (new module beside
+  `src-tauri/src/session/readout_activity.rs`) that builds `SessionActivity` from the existing
+  readout state (running subagent count, current todo `{ number, total, content }` matching
+  `deriveTodoTotals`/`deriveCurrentTask`, latest intent and tool, retry, compacting) and emits
+  `session:activity` for every live agent, not gated by visibility, at most once per second per
+  Session with a trailing update and only when the value changed; add `emit_session_activity`
+  to `events.rs` and never log the payload per FR-109 (missing)
+- [ ] T390 Add `activity: SessionActivity | null` to `SessionSummary` in `src/shared/ipc.ts` and
+  the Rust `sessions.list` builder, the `session:activity` event name and `onSessionActivity`
+  bridge, and patch the one row in the sessions store from `init-stores.ts` (no list refetch);
+  keep `pnpm check:parity` green per FR-109 and `contracts/ipc.md` (missing)
+- [ ] T391 Add the `activityText: 'plain' | 'playful'` setting (default `'plain'`, absent reads
+  `'plain'`): a Rust store module beside `chat_width.rs`, `store/settings.rs`, `ipc/settings.rs`
+  registering its setter, and `Settings` plus the setter in `src/shared/model.ts` and
+  `src/shared/ipc.ts`; add the "Activity text" Plain | Playful control to
+  `AppearanceSection.tsx` from a shared component per FR-111 (missing)
+- [ ] T392 Move the banner's 600 ms hold into one shared hook (with Playful 10 s rotation for the
+  `working` kind) used by `CurrentWorkBanner.tsx` and the row; pass the first pending request
+  from `usePendingRequestsStore` into the banner's derive per spec 004 FR-041 and FR-110
+  (partial)
+- [ ] T393 Add the `activity` case to `lineTwoKind` in `SessionRow.tsx` (after start-progress,
+  terminated and archived; only while working or needs-you), render the derived text as one
+  truncated muted line with no tooltip and no live region, and lead `activityDescription` and the
+  `SessionDetailsCard` with it, keeping `SessionRow.tsx` under the #806 cap per FR-108, FR-110,
+  US5/AC9 (missing)
+- [ ] T394 Verify live with the fake-omp harness (`scripts/verify-tauri.mjs`; add a
+  recorded-frame fixture under `scripts/fixtures/omp-frames/` if none fits; a fixture, not a
+  test) for a background and an open Session: subagents, todo, intent, tool verb, needs-you
+  question and approval, idle revert to the branch, Playful rotation, setting persistence,
+  keyboard and screen-reader description; then run `node scripts/ci-local.mjs` per FR-108 to
+  FR-111 and spec 004 FR-041 (missing)

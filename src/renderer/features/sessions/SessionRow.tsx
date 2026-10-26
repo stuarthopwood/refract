@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,7 @@ import { SessionDetailsCard } from './SessionDetailsCard'
 import { describeStartProgress, describeStartProgressLabel } from './startProgressDisplay'
 import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTimeShort } from './sessionDisplay'
 import { useSessionRowActions } from './useSessionRowActions'
+import { useSessionRowActivity } from './useSessionRowActivity'
 
 // Gate round 1 fix (High, code/a11y/architect): a `hidden` (display:none) trigger can never take
 // focus, so every keyboard close path (Escape, a dropdown item, Delete > Cancel, Shift+F10) that
@@ -75,10 +77,13 @@ const TRAILING_TIME_CLASS = cn(
   '[@media(hover:hover)]:group-has-[[data-slot="context-menu-trigger"][data-state="open"]]:invisible'
 )
 
-/** #567 decision 9: the row's line 2 is one slot; the first match among these wins. #526
- *  (activity text while working or needs-you) and #748 (a hidden row) both land after #567 and
- *  fill in their own case here -- neither exists yet, so this never returns them. */
-function lineTwoKind(session: SessionSummary): 'start-progress' | 'terminated' | 'archived' | 'branch' {
+/** #567 decision 9: the row's line 2 is one slot; the first match among these wins. #526 adds
+ *  the Activity line (only while working or needs-you, `useSessionRowActivity`); #748 (a hidden
+ *  row) lands later and fills in its own case here. */
+function lineTwoKind(
+  session: SessionSummary,
+  activityText: string | null
+): 'start-progress' | 'terminated' | 'archived' | 'activity' | 'branch' {
   if (session.startProgress) return 'start-progress'
   const terminated =
     session.status === 'stopped' &&
@@ -87,10 +92,11 @@ function lineTwoKind(session: SessionSummary): 'start-progress' | 'terminated' |
     session.stopReason !== 'start-failed'
   if (terminated) return 'terminated'
   if (session.archivedAt) return 'archived'
+  if (activityText && (session.status === 'working' || session.status === 'needs-you')) return 'activity'
   return 'branch'
 }
 
-export function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
+export const SessionRow = memo(function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   const {
     isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open,
     renaming, draftName, setDraftName, deleteOpen, setDeleteOpen, resuming,
@@ -107,7 +113,8 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
   // one thing that forces a render once a minute even when nothing else about the row changed.
   useMinuteTick()
 
-  const lineTwo = lineTwoKind(session)
+  const activityText = useSessionRowActivity(session)
+  const lineTwo = lineTwoKind(session, activityText)
   // Gate round 1 fix (Medium, a11y/architect): "focused pane" is only meaningful while a real
   // Split is open (decision 14 frames it that way; on `main` it was gated on `isSplitOpen` too)
   // -- in a single pane it is noise on every selected row, re-announcing what `aria-current`
@@ -133,7 +140,9 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
         ? 'Terminated unexpectedly'
         : lineTwo === 'archived'
           ? repository.name
-          : undefined
+          : lineTwo === 'activity'
+            ? (activityText ?? undefined)
+            : undefined
 
   return (
     <li ref={rowRef} data-choice-item className="group relative w-full">
@@ -211,6 +220,7 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
                 repository={repository}
                 worktreeMissing={worktreeMissing}
                 activityDescription={activityDescription}
+                activityText={lineTwo === 'activity' ? activityText : null}
               >
                 <button
                   ref={openButtonRef}
@@ -279,6 +289,18 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
                     <span className="flex min-w-0 items-center gap-1 pl-6 text-xs text-muted-foreground">
                       <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
                       <span className="truncate">{repository.name}</span>
+                    </span>
+                  ) : lineTwo === 'activity' ? (
+                    // #526: one truncated muted line; the full text is in the hover card and the
+                    // row's description, so no tooltip and no live region here.
+                    <span
+                      data-testid="session-activity-line"
+                      className={cn(
+                        'truncate pl-6 text-xs',
+                        session.status === 'needs-you' ? 'text-sidebar-foreground' : 'text-muted-foreground'
+                      )}
+                    >
+                      {activityText}
                     </span>
                   ) : (
                     <span className="truncate pl-6 font-code text-xs text-muted-foreground">{session.branch}</span>
@@ -425,4 +447,4 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
       />
     </li>
   )
-}
+})

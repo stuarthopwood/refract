@@ -1267,6 +1267,38 @@
   missing), does the Agent stopped bar also show? -> A: No. The existing banner replaces the
   bar; it already says the agent is stopped (Stuart, 2026-10-23).
 
+### Session 2026-10-26 (Activity line on the Session row, #526)
+
+- Q: Issue #526 (grilled with Stuart 2026-10-26): how does a background Session's activity reach
+  its row, when `readout:update` is only sent for visible Sessions? -> A: A new event,
+  `session:activity`, sent for every Session with a live agent, never gated by visibility. It
+  carries only the inputs spec 004's shared `deriveActivity()` needs (running subagent count,
+  the current todo task, the latest tool-call intent, the latest tool and target, retry and
+  compaction state), never a transcript. The renderer stores it per Session and derives the
+  text with the same function the composer banner uses (spec 004 FR-036).
+- Q: Which rows show it? -> A: Every Session row while it is working or needs you, including a
+  Session open in a chat pane, so a row never flips between activity and branch on a pane
+  switch.
+- Q: What does a needs-you row say? -> A: The shared derive is extended for both the row and the
+  banner: "Needs your input: <the question's start>" for a question, "Waiting for approval:
+  <tool> <target>" for an approval, built from the first pending request, which the renderer
+  already holds for every Session. With no pending request known, it keeps "Waiting for your
+  answer".
+- Q: Plain or Playful? -> A: Both, as an app-wide Settings > Appearance choice named "Activity
+  text" (Plain | Playful, default Plain). Playful replaces only the generic "Working…" fallback,
+  in the row and the banner alike, with a phrase from a fixed list of about 12, chosen per
+  Session and rotated every 10 seconds while the fallback holds. Every other line stays factual.
+  The phrases are drafted in the PR for Stuart's review.
+- Q: Does a pinned Todo panel hide the todo line on the row? -> A: No. The pin is inside the open
+  chat, so it affects the banner only; the row always shows "Task n of m · ..." when it applies.
+- Q: How often does the row change? -> A: Rust sends at most one `session:activity` per Session
+  per second, always with a trailing update so the last value lands. The row holds each text at
+  least 600 ms, the same hook the banner uses. A status change to idle or stopped reverts the
+  row to its branch at once.
+- Q: Where does the full text go? -> A: The line truncates with an ellipsis and never wraps. The
+  full text leads the Session details card and the row's accessible description (#567 decision
+  16). No live region and no separate tooltip on the line.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1377,7 +1409,7 @@ The developer runs a long task in one session, switches to another to start a se
 6. **Given** a session in the list, **When** the developer hovers over it or focuses it with the keyboard, **Then**, after a short delay, a details card shows its status, the time since its last activity, its repository, its branch, the folder where its worktree lives, the model name with a muted "via {provider}" line and the reasoning effort (the last known values when its agent is not running), and the files changed with additions and deletions, with Copy path and Open in file explorer buttons; the card stays readable, can be hovered, and can be dismissed with Esc without moving the pointer. **Given** the same session, **When** the developer opens its row menu, **Then** the same two actions are available there, so they work from the keyboard. **Given** a session whose current role is established, **When** the composer renders its bottom row, **Then** a role chip (text plus icon, no colour) sits immediately before the Model picker, reading the role's name, **Custom** while a model was hand-picked for this session, or **Fallback** with an explanatory tooltip once OMP reports it switched models after repeated failures; **Given** the role cannot be established, **Then** no chip is shown at all (issue #741).
 7. **Given** the session list, **When** the developer uses the Collapse all / Expand all toolbar above the list, **Then** every Repository group and the Archived group (while shown) collapse or expand together, the choice persists across an app restart, and a collapsed group whose non-archived Sessions include one needing the developer, or one that terminated unexpectedly, or one with an Unread response, shows a single marker naming the most urgent of those three states in that order (issue #735).
 8. **Given** the session list's search field, **When** the developer types a query matching a Session's name, branch, or Project name, **Then** only Project groups and Archived rows with a match remain visible, every matching group shows open regardless of its own saved collapsed state, and the result count is announced; **When** they clear the field (the in-field button or Esc), **Then** every group returns to exactly its own saved collapsed or expanded state (issue #559).
-
+9. **Given** a Session that is working or needs the developer, open or in the background, **When** the developer looks at the session list, **Then** the row's second line is its Activity line (for example "Waiting for 2 subagents", "Task 3 of 7 · Port the reader", "Needs your input: Which branch…") in place of the branch, truncated to one line, with the full text in the details card and the row's accessible description; **When** the Session goes idle or stops, **Then** the branch returns (issue #526).
 ---
 
 ### User Story 6 - Archive or delete a session (Priority: P2)
@@ -1437,6 +1469,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - A right- or middle-click on a Model picker option (a role or a catalog entry): nothing is applied; selection applies only on a completed primary-button click (press AND release on the same option), never on press alone (gate round 2 fix, WCAG 2.5.2).
 - Tab is pressed while focus is in the Model picker's filter field: the popover closes and focus returns to the trigger, rather than leaving the popover open and carrying focus to whatever follows it in the DOM (gate round 2 fix).
 - Renaming a session while it is working: the display name changes immediately without affecting the running turn, its branch, or its folder.
+- A Session is needs-you but the renderer holds no pending request for it (for example after a renderer reload): its Activity line reads "Waiting for your answer" rather than an empty or stale question (issue #526).
+- A Session's activity changes many times a second (a burst of tool calls across several background Sessions): each row changes at most about once a second and holds each text at least 600 ms, and no `session:list-changed` refetch is triggered (issue #526).
+- An agent's intent, todo text or question contains control characters, bidi marks or a very long line: the Activity line shows sanitised plain text capped at 160 characters, never live markup, and the text is never written to a log (issue #526, spec 004 FR-038).
 - An approval or question is pending and the developer closes Refract: on the next start the request is gone, and the session shows as needing a new turn rather than pretending to still wait.
 - The app's Approval mode is changed while every session is idle: it applies to each session's very next tool call, with no pending state or restart to wait for.
 - Deleting a session that has neither uncommitted changes nor unpushed commits: confirmation is still required, but without those specific warnings.
@@ -2030,6 +2065,27 @@ The developer types a slash command and finds the ones the agent offers. If a se
   **Undo** action that turns it back on. The setting MUST only hide the bar (FR-105); it MUST NOT
   change FR-103 or FR-104: a stopped session always opens history-only, and with the bar hidden,
   sending a message or the Session row's **Resume** action starts the agent.
+- **FR-108** (new, 2026-10-26, issue #526): While a session is working or needs the developer,
+  its session-list row's second line MUST be its **Activity line** in place of the branch, for
+  every session including one open in a chat pane; otherwise the line MUST show the branch as
+  before. Start progress, Terminated unexpectedly and Archived (#567 decision 9) keep their
+  precedence over it. The text MUST come from spec 004's shared `deriveActivity()` (FR-036),
+  with the todo line shown whatever the Todo panel's pin state.
+- **FR-109** (new, 2026-10-26, issue #526): Main MUST emit `session:activity` with `{ sessionId,
+  activity }` for every session with a live agent, not gated by visibility, at most once per
+  second per session with a trailing update, and include the same `activity` on
+  `SessionSummary` so the first `sessions.list()` is already correct. `activity` holds only
+  `runningSubagents`, `todo` (`{ number, total, content }` or `null`), `latestIntent`,
+  `latestTool`, `retry` and `compacting`; it MUST NOT carry transcript items, tool output or file
+  contents, MUST NOT be logged, and MUST NOT trigger a `session:list-changed` refetch.
+- **FR-110** (new, 2026-10-26, issue #526): The Activity line MUST be one line of muted text
+  that truncates with an ellipsis and never wraps, MUST hold each text at least 600 ms (shared
+  with the banner), MUST NOT be a live region, and MUST NOT animate when `prefers-reduced-motion`
+  is set. Its full text MUST lead the Session details card and the row's accessible description
+  (#567 decision 16). It MUST NOT rely on colour alone.
+- **FR-111** (new, 2026-10-26, issue #526): Settings > Appearance MUST gain "Activity text", a
+  Plain | Playful choice, default Plain, persisted in `settings.json` and applied live to both the
+  Activity line and spec 004's banner (spec 004 FR-041).
 
 ### Key Entities
 
@@ -2043,6 +2099,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **Question**: A pending request from the agent for one or more choice or free-text answers, submitted together as one card on a structured-dialog build or one at a time otherwise, with an answer or a cancel outcome.
 - **Stage**: The subagents started by one `task()` call, or by `task()` calls issued together with nothing else in the transcript between them, numbered in turn order (FR-067).
 - **Subagent chain**: The per-turn summary row listing a turn's Stages and their agents with status and duration, shown only for a turn with two or more Stages (FR-068).
+- **Activity line**: The second line of a Session row while the Session is working or needs the developer: one short derived sentence about what the agent is doing now, otherwise the branch (FR-108 to FR-111).
 
 ## Success Criteria *(mandatory)*
 

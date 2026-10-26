@@ -762,6 +762,14 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-040** (new, 2026-10-23, issue #687): A "Show current work above the composer" switch
   (readout kind `current-work`, default on) MUST sit beside the other readout toggles in
   Settings and hide the banner when off.
+- **FR-041** (new, 2026-10-26, issue #526; amends FR-036): The needs-you line MUST name the first
+  pending request: "Needs your input: <the question's start>" for a question or ask dialog,
+  "Waiting for approval: <tool> <target>" for an approval, and "Waiting for your answer" only
+  when no pending request is known. The text is sanitised like every other agent string
+  (FR-038). When spec 001 FR-111's "Activity text" setting is Playful, the generic "Working…"
+  line MUST instead show a phrase from a fixed list of about 12, chosen per Session and rotated
+  every 10 seconds while that fallback holds; every other line stays factual. The banner and
+  spec 001's Session-row Activity line (FR-108) MUST share this one derive and one hold hook.
 
 ### Key Entities
 

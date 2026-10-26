@@ -10,6 +10,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
+import type { SessionActivity } from '../shared/activity'
 import type {
   BranchEntry,
   ChatAnswer,
@@ -256,7 +257,8 @@ const refract: RefractApi = {
     setRightPane: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_RIGHT_PANE, value),
     setPullRequestsListWidth: (widthPx) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH, widthPx),
     setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width),
-    setHolidayTouches: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_HOLIDAY_TOUCHES, value)
+    setHolidayTouches: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_HOLIDAY_TOUCHES, value),
+    setActivityText: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ACTIVITY_TEXT, value)
   },
 
   debug: {
@@ -359,6 +361,8 @@ const refract: RefractApi = {
     installNow: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL_NOW)
   },
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
+  onSessionActivity: (handler) =>
+    on<{ sessionId: string; activity: SessionActivity | null }>(IPC_EVENTS.SESSION_ACTIVITY, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
   onTranscriptPatch: (handler) => on<{ sessionId: string; ops: TranscriptOp[] }>(IPC_EVENTS.TRANSCRIPT_PATCH, handler),
   onQueueUpdate: (handler) =>

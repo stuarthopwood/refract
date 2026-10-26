@@ -13,6 +13,7 @@ use crate::omp::diff::TranscriptOp;
 use crate::store::registry::RegistryStore;
 
 pub const SESSION_STATUS: &str = "session:status";
+pub const SESSION_ACTIVITY: &str = "session:activity";
 pub const SESSION_LIST_CHANGED: &str = "session:list-changed";
 pub const TRANSCRIPT_PATCH: &str = "transcript:patch";
 pub const QUEUE_UPDATE: &str = "queue:update";
@@ -104,6 +105,16 @@ impl EventSink {
             self.app_handle.clone(),
             self.registry.clone(),
             payload.clone(),
+        );
+    }
+
+    /// `session:activity` (issue #526, FR-108/FR-109): one Session row's Activity line inputs,
+    /// `null` when the Session is not working. Throttled by `session::readout`'s activity
+    /// emitter; the payload carries agent text, so it is never logged.
+    pub fn emit_session_activity(&self, session_id: &str, activity: serde_json::Value) {
+        self.send(
+            SESSION_ACTIVITY,
+            serde_json::json!({ "sessionId": session_id, "activity": activity }),
         );
     }
 

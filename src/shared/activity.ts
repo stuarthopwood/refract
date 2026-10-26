@@ -1,5 +1,5 @@
 // Issue #687 (spec 004 FR-035 to FR-040): the one pure derive behind the current-work banner's
-// line. #526's session-row status line reuses it later; neither re-derives priorities. Every
+// line and the Session row's Activity line (#526); neither re-derives priorities. Every
 // string that came from the agent (tool `intent`, todo task text, a target path) is untrusted:
 // it is reduced to plain text here, control characters stripped, and capped at
 // `ACTIVITY_TEXT_MAX_CHARS`, so no consumer can render a raw one.
@@ -15,8 +15,18 @@ export const ACTIVITY_TEXT_MAX_CHARS = 160
 
 export type ActivityKind = 'needs-you' | 'retrying' | 'compacting' | 'subagents' | 'todo' | 'intent' | 'tool' | 'working'
 
+/** #526 (spec 004 FR-041): the first pending request, reduced to what the needs-you line shows. */
+export type ActivityPending =
+  | { kind: 'question'; text: string }
+  | { kind: 'approval'; tool: string; target: string | null }
+
+/** #526 (FR-111): the app-wide "Activity text" setting; absent reads `'plain'`. */
+export type ActivityText = 'plain' | 'playful'
+
 export interface ActivityInput {
   needsYou: boolean
+  /** #526: the Session's first pending request, if known; only read when `needsYou`. */
+  pending?: ActivityPending | null
   runningSubagents: number
   /** The current todo task ("n of m" is derived by the caller's todo derive); `null` when there is
    * none or the todo panel is pinned (the pinned panel already shows it, issue #687 decision 2). */
@@ -27,9 +37,45 @@ export interface ActivityInput {
   compacting?: boolean
 }
 
+/** #526 (FR-109): the per-Session payload Rust pushes on `session:activity` and carries on
+ * `SessionSummary.activity` -- `ActivityInput` minus the renderer-side `needsYou`/`pending`. */
+export interface SessionActivity {
+  runningSubagents: number
+  todo: { number: number; total: number; content: string } | null
+  latestIntent: string | null
+  latestTool: { name: string; target: string | null } | null
+  retry: { attempt: number; maxAttempts: number } | null
+  compacting: boolean
+}
+
 export interface Activity {
   kind: ActivityKind
   text: string
+}
+
+/** #526 (FR-111): the Playful set, replacing only the `working` kind's "Working…". */
+export const PLAYFUL_PHRASES: readonly string[] = [
+  'On it…',
+  'Connecting the dots…',
+  'Chewing on it…',
+  'Piecing it together…',
+  'Turning it over…',
+  'Mulling it over…',
+  'Following the thread…',
+  'Doing the thing…',
+  'Gathering thoughts…',
+  'Working the problem…',
+  'Lining things up…',
+  'Having a good think…'
+]
+
+/** Pure: one phrase per Session (a stable hash of its id), advanced by `slot` (the 10 s tick). */
+export function playfulPhrase(sessionId: string, slot: number): string {
+  let hash = 0
+  for (let i = 0; i < sessionId.length; i++) hash = (hash * 31 + sessionId.charCodeAt(i)) >>> 0
+  const n = PLAYFUL_PHRASES.length
+  const index = (((hash + Math.trunc(slot)) % n) + n) % n
+  return PLAYFUL_PHRASES[index] ?? 'Working…'
 }
 
 // C0/C1 controls, bidi embedding/override/isolate marks, line and paragraph separators.
@@ -46,6 +92,8 @@ function baseName(target: string): string {
   const parts = target.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] ?? target
 }
+
+const FILE_TOOLS: ReadonlySet<string> = new Set(['read', 'edit', 'write', 'ast_edit', 'notebook'])
 
 // A plain verb for a tool call that carried no `intent`; never the raw tool name.
 const TOOL_VERBS: Record<string, [withTarget: string, without: string]> = {
@@ -82,7 +130,19 @@ function toolPhrase(tool: NonNullable<ActivityReadoutFields['latestTool']>): str
  * intent, a plain verb for the latest tool call, then "Working…". */
 export function deriveActivity(input: ActivityInput): Activity {
   const text = (kind: ActivityKind, line: string): Activity => ({ kind, text: sanitizeActivityText(line) })
-  if (input.needsYou) return text('needs-you', 'Waiting for your answer')
+  if (input.needsYou) {
+    const pending = input.pending
+    if (pending?.kind === 'question' && sanitizeActivityText(pending.text)) {
+      return text('needs-you', `Needs your input: ${sanitizeActivityText(pending.text)}`)
+    }
+    if (pending?.kind === 'approval') {
+      const full = pending.target ? sanitizeActivityText(pending.target) : ''
+      // Only file tools reduce to a base name; a shell command keeps its risky part visible.
+      const target = full ? ` ${FILE_TOOLS.has(pending.tool) ? baseName(full) : full}` : ''
+      return text('needs-you', `Waiting for approval: ${sanitizeActivityText(pending.tool)}${target}`)
+    }
+    return text('needs-you', 'Waiting for your answer')
+  }
   if (input.retry) return text('retrying', `Retrying · attempt ${input.retry.attempt} of ${input.retry.maxAttempts}`)
   if (input.compacting) return text('compacting', 'Compacting context…')
   if (input.runningSubagents > 0) {

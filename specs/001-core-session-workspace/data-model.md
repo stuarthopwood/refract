@@ -61,10 +61,11 @@ interface Settings {
   chatWidth: 'full' | 'reading-column';           // FR-049/FR-073, default 'full'
   sessionListCollapse: SessionListCollapse;       // default { collapsedRepositoryIds: [], archivedOpen: false }
   showAgentStoppedBar: boolean;                   // FR-105/FR-107 (issue #1205), default true
+  activityText: 'plain' | 'playful';              // FR-111 (issue #526), default 'plain'
 }
 ```
 
-`showAgentStoppedBar` only hides the "Agent stopped" bar; a stopped Session always opens history-only whatever its value (FR-103). A `settings.json` written before issue #1205 has no such field and reads as `true`.
+`showAgentStoppedBar` only hides the "Agent stopped" bar; a stopped Session always opens history-only whatever its value (FR-103). A `settings.json` written before issue #1205 has no such field and reads as `true`. A `settings.json` written before issue #526 has no `activityText` and reads as `'plain'`.
 
 Mapping to OMP's `--approval-mode`: `ask` = `always-ask`, `edit-freely` = `write`, `auto` = `yolo`.
 
@@ -132,6 +133,7 @@ interface SessionRuntime {
   transcript: TranscriptItem[];         // current Conversation, normalised
   queue: { followUp: string[]; steering: string[] };  // mirrors OMP queue_update
   pending: PendingRequest[];            // approvals and questions waiting for the user
+  activity: SessionActivity | null;     // FR-109 (issue #526), Activity line inputs, see contracts/ipc.md `session:activity`
 }
 ```
 
