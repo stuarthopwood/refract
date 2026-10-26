@@ -89,7 +89,8 @@ impl ActivityState {
                     .or_else(|| args.get("intent"))
                     .and_then(Value::as_str)
                     .and_then(bounded);
-                self.latest_tool = Some((name.to_string(), target_of(args)));
+                self.latest_tool =
+                    Some((name.chars().take(MAX_TEXT_CHARS).collect(), target_of(args)));
                 true
             }
             "auto_retry_start" => {

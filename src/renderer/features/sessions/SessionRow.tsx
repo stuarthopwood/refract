@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
@@ -95,7 +96,7 @@ function lineTwoKind(
   return 'branch'
 }
 
-export function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
+export const SessionRow = memo(function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   const {
     isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open,
     renaming, draftName, setDraftName, deleteOpen, setDeleteOpen, resuming,
@@ -440,4 +441,4 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
       />
     </li>
   )
-}
+})

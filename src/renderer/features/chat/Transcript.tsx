@@ -222,7 +222,7 @@ export function Transcript({
   // (transcript-store.ts), so each pane's own Session's items can never be dropped or
   // clobbered by the other pane's.
   const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
-  const sessions = useSessionsStore((state) => state.sessions)
+  const session = useSessionsStore((state) => state.sessions.find((s) => s.id === sessionId))
   const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
   // Issue #554 (FR-073): 'reading-column' caps at 64rem, centred, transcript only.
   const chatWidth = useActiveChatWidth()
@@ -235,7 +235,6 @@ export function Transcript({
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = pendingBySession[sessionId] ?? NO_PENDING
 
-  const session = sessions.find((s) => s.id === sessionId)
   const userName = useRepositoryUserName(session?.repositoryId ?? null)
   const isTurnRunning = session?.status === 'working' || session?.status === 'needs-you'
 

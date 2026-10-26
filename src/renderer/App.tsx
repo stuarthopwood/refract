@@ -74,7 +74,6 @@ export function App() {
   // `PullRequestsView`'s own header is the one reserving the window-controls corner there
   // instead of double-reserving it (FR-011).
   const paneShown = rightPaneOpen && view === 'chat'
-  const sessions = useSessionsStore((state) => state.sessions)
   const paneSessionIds = useSplitStore((state) => state.paneSessionIds)
   const focusedIndex = useSplitStore((state) => state.focusedIndex)
   const dividerPercent = useSplitStore((state) => state.dividerPercent)
@@ -124,14 +123,19 @@ export function App() {
   const [paneA, paneB] = paneSessionIds
   const frontSessionId = paneSessionIds.length > 0 ? paneSessionIds[Math.min(focusedIndex, paneSessionIds.length - 1)] : null
   const unfocusedSessionId = isSplit ? paneSessionIds[focusedIndex === 0 ? 1 : 0] : null
-  const unfocusedSession = unfocusedSessionId ? sessions.find((session) => session.id === unfocusedSessionId) : undefined
+  const unfocusedSessionName = useSessionsStore((state) =>
+    unfocusedSessionId ? state.sessions.find((session) => session.id === unfocusedSessionId)?.name : undefined
+  )
+  const unfocusedSession = unfocusedSessionName !== undefined && unfocusedSessionId ? { id: unfocusedSessionId, name: unfocusedSessionName } : undefined
   const otherSessionForNarrowCollapse =
     isSplit && !canShowSplit && unfocusedSession ? { id: unfocusedSession.id, name: unfocusedSession.name } : null
   // Quality-gate remediation (accessibility-auditor, High): the shared aria-live announcer used
   // to mount only inside the `showSplit` branch, so a narrow-window collapse (still `isSplit`,
   // just rendering one pane) never announced its own swap-chip focus changes. Driven by
   // `isSplit` throughout instead, regardless of whether both panes currently fit on screen.
-  const focusedSessionName = isSplit ? sessions.find((session) => session.id === paneSessionIds[focusedIndex])?.name : undefined
+  const focusedSessionName = useSessionsStore((state) =>
+    isSplit ? state.sessions.find((session) => session.id === paneSessionIds[focusedIndex])?.name : undefined
+  )
   // Quality-gate remediation (code-reviewer, LOW, PR #634): was called inline inside the JSX
   // below; moved up with the other hooks, which is where a hook call belongs.
   const chatAreaAnnouncement = useChatAreaAnnouncer((s) => s.text)

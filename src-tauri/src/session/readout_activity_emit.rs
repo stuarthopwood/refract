@@ -60,7 +60,10 @@ fn current_todo(phases: Option<&Vec<TodoPhaseState>>) -> Value {
         .find(|t| t.status == "in_progress")
         .or_else(|| open.iter().find(|t| t.status != "completed"));
     match current {
-        Some(task) => json!({ "number": done + 1, "total": open.len(), "content": task.content }),
+        Some(task) => {
+            let content = super::bounded(&task.content).unwrap_or_default();
+            json!({ "number": done + 1, "total": open.len(), "content": content })
+        }
         None => Value::Null,
     }
 }
