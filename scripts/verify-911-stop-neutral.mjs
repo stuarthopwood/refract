@@ -84,7 +84,7 @@ const TRANSCRIPT_BUTTONS = `Array.from(document.querySelectorAll('[aria-label="T
 // so it keeps its own visible label ("read", `ToolGroupRow`'s `visibleLabel`).
 function rowByLabelFinder(text) {
   return `(${TRANSCRIPT_BUTTONS}).find((el) => {
-    const label = el.querySelector('span.font-medium');
+    const label = el.querySelector('[data-slot="collapsed-line-label"]');
     return label ? label.textContent.trim() === ${JSON.stringify(text)} : false;
   })`;
 }

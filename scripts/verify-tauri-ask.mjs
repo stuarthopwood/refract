@@ -194,15 +194,15 @@ function assert(cond, message) {
 }
 
 /** Finds a `[role="radio"]`/`[role="checkbox"]` row by its own option label, reading the
- * label text from the row's `.font-medium` span's FIRST child text node only -- never the whole
+ * label text from the row's `.flex-1.break-words` span's FIRST child text node only -- never the whole
  * element's `textContent`, which for a described option (e.g. "Postgres"/"Relational") or the
  * recommended option (the " (Recommended)" suffix lives in a sibling span inside the same
- * `.font-medium` element) would otherwise concatenate unrelated text onto the label. */
+ * `.flex-1.break-words` element) would otherwise concatenate unrelated text onto the label. */
 function roleLabelFinder(role, label) {
   return `(() => {
     const els = Array.from(document.querySelectorAll('[role="${role}"]'));
     return els.find((el) => {
-      const labelSpan = el.querySelector('.font-medium');
+      const labelSpan = el.querySelector('.flex-1.break-words');
       const node = labelSpan && labelSpan.firstChild;
       return !!node && typeof node.nodeValue === 'string' && node.nodeValue.trim() === ${JSON.stringify(label)};
     });
@@ -237,7 +237,7 @@ async function getTabInfo(cdp, label) {
 }
 
 function askRowTriggerFinder() {
-  return `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.includes('Asked user:'))`;
+  return `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.includes('Asked user'))`;
 }
 
 /** Gate round 3: the REAL computed accessible name of `document.activeElement` via CDP
@@ -368,7 +368,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     await cdp.waitFor(
       `(() => {
         const els = Array.from(document.querySelectorAll('[role="checkbox"]'));
-        const el = els.find((e) => { const s = e.querySelector('.font-medium'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Auth'; });
+        const el = els.find((e) => { const s = e.querySelector('.flex-1.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Auth'; });
         return !!el && el.getAttribute('aria-checked') === 'true';
       })()`,
       { timeoutMs: 15_000, label: 'Auth checkbox becomes checked' },
@@ -377,7 +377,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     await cdp.waitFor(
       `(() => {
         const els = Array.from(document.querySelectorAll('[role="checkbox"]'));
-        const el = els.find((e) => { const s = e.querySelector('.font-medium'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Search'; });
+        const el = els.find((e) => { const s = e.querySelector('.flex-1.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Search'; });
         return !!el && el.getAttribute('aria-checked') === 'true';
       })()`,
       { timeoutMs: 15_000, label: 'Search checkbox becomes checked' },
@@ -386,7 +386,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     await cdp.waitFor(
       `(() => {
         const els = Array.from(document.querySelectorAll('[role="checkbox"]'));
-        const el = els.find((e) => { const s = e.querySelector('.font-medium'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Other'; });
+        const el = els.find((e) => { const s = e.querySelector('.flex-1.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Other'; });
         return !!el && el.getAttribute('aria-checked') === 'true';
       })()`,
       { timeoutMs: 15_000, label: 'Other checkbox becomes checked' },
@@ -429,7 +429,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
       label: 'Collapsed "Asked user: Which database? and 1 more" summary line rendered',
     });
     const summaryRowText = await cdp.evaluate(`(() => { const el = ${askRowTriggerFinder()}; return el ? el.textContent.replace(/\\s+/g, ' ').trim() : null; })()`);
-    assert(summaryRowText && summaryRowText.includes('Asked user:') && summaryRowText.includes('Which database? and 1 more'), `collapsed summary row text unexpected: ${JSON.stringify(summaryRowText)}`);
+    assert(summaryRowText && summaryRowText.includes('Asked user') && summaryRowText.includes('Which database? and 1 more'), `collapsed summary row text unexpected: ${JSON.stringify(summaryRowText)}`);
 
     // D17 (gate round 2): focus must land on the collapsed "Asked user:" row's own trigger, not
     // fall to <body> -- proves the ask-focus-intent handoff (AskCard -> ResolvedRequestSummary/

@@ -258,7 +258,7 @@ export async function assertSoloAgentName(cdp, findings, failures, themeName, no
   const measureNarrowTrigger = () => cdp.evaluate(`(() => {
     const trigger = ${stageTriggerSelector(STAGE6_SOLO_TITLE)};
     if (!trigger) return null;
-    const label = trigger.querySelector('span.font-medium');
+    const label = trigger.querySelector('[data-slot="collapsed-line-label"]');
     const summary = trigger.querySelector('[title="R8Solo"]');
     const svgs = trigger.querySelectorAll('svg');
     const chevron = svgs.length > 0 ? svgs[svgs.length - 1] : null;

@@ -43,19 +43,19 @@ const SHOTS_DIR =
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // Same finder `verify-632-grouped-calls.mjs` uses: every top-level tool-call group header button
-// (a multi-call group's own `span.font-medium` reads "bash \u00d72"; a solo command-style row has
+// (a multi-call group's own `[data-slot="collapsed-line-label"]` reads "Ran \u00d72"; a solo command-style row has
 // no label at all, recognised instead by its summary starting with the command grammar). Excludes
 // an expanded group's own member rows (inside `ol.border-l`), which match the same label-less
 // fallback.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   if (el.closest('ol.border-l')) return false;
-  const l = el.querySelector('span.font-medium');
+  const l = el.querySelector('[data-slot="collapsed-line-label"]');
   if (l) return /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
   const s = el.querySelector('span.min-w-0.flex-1');
   const t = s ? (s.textContent || '').trim() : '';
   return /^\\$ /.test(t) || /^grep "/.test(t);
 })`;
-const BASH_GROUP_LABEL = /^bash\s*\u00d72$/;
+const BASH_GROUP_LABEL = /^Ran\s*\u00d72$/;
 
 const TURN_A_PROMPT =
   "Make exactly TWO separate bash tool calls, strictly in this order, waiting for each one to finish before starting the next: first run exactly `sleep 1 && echo t962-one`, second run exactly `exit 9` (which deliberately fails with no output). After both finish, reply with exactly the single word 't962a' and nothing else.";
@@ -74,7 +74,7 @@ function groupDetailGeometry(index) {
   return `(() => {
     const h = (${GROUP_HEADERS}).at(${index});
     if (!h) return { error: 'no group header found' };
-    const label = h.querySelector('span.font-medium');
+    const label = h.querySelector('[data-slot="collapsed-line-label"]');
     const describedBy = h.getAttribute('aria-describedby');
     const detail = describedBy ? document.getElementById(describedBy) : null;
     if (!detail) return { error: 'no aria-describedby detail paragraph found', labelText: label ? label.textContent.trim() : null };

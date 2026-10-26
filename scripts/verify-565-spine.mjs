@@ -61,8 +61,8 @@ const TURN_B_SENTINEL = 'spine565b';
 // when its own summary span starts with the command-style grammar ($ `commandRowText` uses).
 const BASH_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
-    const label = el.querySelector('span.font-medium');
-    if (label) return /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
+    const label = el.querySelector('[data-slot="collapsed-line-label"]');
+    if (label) return /^Ran(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
     const s = el.querySelector('span.min-w-0.flex-1');
     return s ? /^\\$ /.test((s.textContent || '').trim()) : false;
   })`;
@@ -374,7 +374,7 @@ async function main() {
     // Gate round 1 (test-reviewer High, H1): #632 dropped the "+ N other(s)" summary text
     // entirely (the group header now folds the count into its own label, "bash ×2") -- a
     // multi-call group is detected by that "×N" suffix on the label instead.
-    const multiGroupIndex = await cdp.evaluate(`(${BASH_HEADER_FINDER}).findIndex((el) => /\\u00d7\\d+$/.test(el.querySelector('span.font-medium')?.textContent.trim() ?? ''))`);
+    const multiGroupIndex = await cdp.evaluate(`(${BASH_HEADER_FINDER}).findIndex((el) => /\\u00d7\\d+$/.test(el.querySelector('[data-slot="collapsed-line-label"]')?.textContent.trim() ?? ''))`);
     const groupExercised = multiGroupIndex !== -1;
     if (!groupExercised) {
       failures.push(`No bash header's own label shows the multi-call "bash ×N" count after turn (a) -- decision 8/10's multi-call Spine geometry, the "1 failed" meta text, and the member-body padding cannot be exercised; see turn-a-transcript.html.`);

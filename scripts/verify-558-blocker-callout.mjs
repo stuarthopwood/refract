@@ -61,7 +61,7 @@ const SEVERITY_RANK = { blocker: 3, concern: 2, nit: 1 };
 // Matches a CollapsedLine trigger (or the plain nit row) by its exact label text, never a
 // substring match against the whole row's textContent (the note itself could contain these words).
 const ADVISORY_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button, [aria-label="Transcript"] div[tabindex]')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && ['Blocker','Concern','Nit'].includes(label.textContent.trim()); })`;
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button, [aria-label="Transcript"] div[tabindex]')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); return label && ['Blocker','Concern','Nit'].includes(label.textContent.trim()); })`;
 
 function assertBundleContainsStory558Markers() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
@@ -88,7 +88,7 @@ async function countAdvisories(cdp) {
 }
 
 async function readAdvisorySeverities(cdp) {
-  return cdp.evaluate(`(${ADVISORY_FINDER}).map((el) => el.querySelector('span.font-medium').textContent.trim().toLowerCase())`);
+  return cdp.evaluate(`(${ADVISORY_FINDER}).map((el) => el.querySelector('[data-slot="collapsed-line-label"]').textContent.trim().toLowerCase())`);
 }
 
 // Gate round 1: the accent bar is drawn as an absolutely-positioned `::before` pseudo-element
