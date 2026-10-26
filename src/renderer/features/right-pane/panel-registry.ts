@@ -47,8 +47,15 @@ export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefin
 // data-model.md `PanelCount`: per-render, computed -- never stored on the descriptor itself.
 export type PanelCount =
   | { kind: 'running'; value: number }
-  | { kind: 'additions-deletions'; additions: number; deletions: number }
+  | { kind: 'additions-deletions'; files: number; additions: number; deletions: number }
   | null
+
+/** Spec 024 FR-010: the figure a rail badge shows and the phrase its accessible name carries. */
+export function railCountLabel(count: PanelCount): { value: number; phrase: string } | null {
+  if (!count) return null
+  if (count.kind === 'running') return { value: count.value, phrase: `${count.value} running` }
+  return { value: count.files, phrase: `${count.files} ${count.files === 1 ? 'file' : 'files'} changed` }
+}
 
 // Round 5 gate remediation (Low, Code4): one source for the count's text, split into its number
 // and its trailing word (if any) -- `formatPanelCount` (the full string, for the launcher row and
@@ -95,15 +102,19 @@ export function usePanelCount(id: PanelId, sessionId: string | null): PanelCount
   }
   if (id === 'git-changes') {
     if (!gitChangesSnapshot) return null
+    let files = 0
     let additions = 0
     let deletions = 0
     for (const entries of Object.values(gitChangesSnapshot.groups)) {
       for (const entry of entries) {
+        files += 1
         additions += entry.additions
         deletions += entry.deletions
       }
     }
-    return { kind: 'additions-deletions', additions, deletions }
+    // Spec 024 FR-008/FR-009: a clean tree shows no count (tested on files, so a binary-only
+    // change with 0/0 line counts still counts).
+    return files > 0 ? { kind: 'additions-deletions', files, additions, deletions } : null
   }
   return null
 }

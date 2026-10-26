@@ -224,7 +224,7 @@ _Avoid_: answered card, answer pill
 The option the agent marks as its default (issue #572). Shown as text, never preselected; OMP uses it if the question times out.
 
 **Panel**:
-A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**).
+A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**). The pane itself collapses and expands from the **Icon rail**'s top button or Ctrl+Shift+B; collapsing keeps every open panel, the tab order and the width, and all three survive a restart.
 _Avoid_: Sidebar, drawer
 
 **Pane**:

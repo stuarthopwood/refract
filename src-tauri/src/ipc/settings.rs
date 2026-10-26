@@ -66,6 +66,7 @@ pub fn register(d: &mut Dispatcher) {
         "settings.setPullRequestsListWidth",
         settings_set_pull_requests_list_width,
     );
+    d.register("settings.setRightPane", settings_set_right_pane);
     d.register("settings.setChatWidth", settings_set_chat_width);
     d.register("settings.setHolidayTouches", settings_set_holiday_touches);
     d.register("settings.setActivityText", settings_set_activity_text);
@@ -472,6 +473,31 @@ pub fn settings_set_pull_requests_list_width(state: AppState, args: Vec<Value>) 
             .lock()
             .await
             .set_pull_requests_list_width_px(width_px)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// Spec 024 contracts/ipc.md `settings.setRightPane(value)` (#538): a malformed shape is
+/// `invalid-argument`; width and the active tab are normalised by `right_pane::parse`.
+pub fn settings_set_right_pane(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let parsed = args
+            .first()
+            .and_then(crate::store::settings::right_pane::parse)
+            .ok_or_else(|| {
+                invalid_argument(
+                    "settings.setRightPane expects {open, widthPx, openPanelIds, activePanelId}",
+                )
+            })?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_right_pane(parsed)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");

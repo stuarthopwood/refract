@@ -71,28 +71,12 @@ Lane worktrees are created per lane and were never removed (49 worktrees, about 
 
 ## Rust build is the main build (Stuart, 2026-10-13, epic #797)
 
-The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron build (`src/main`,
-`src/preload`, electron-vite) was deleted (issue #796). `src/renderer` and `src/shared` continue
-normally.
+The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron build was deleted (#796). `src/renderer` and `src/shared` continue normally.
 
-- Build, test and gate commands: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`,
-  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:file-size`, and `pnpm
-  check:parity` (generated IPC parity table, `src/shared/ipc.ts` against `src-tauri/src`).
-  For `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
-  (run with `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri`
-  first). CI (`.github/workflows/ci.yml`) runs all of these on every pull request to `main`.
-  `check:mermaid-contrast` is NOT in that list: it already had known failures tracked in #388,
-  and since #796 (the Electron build deleted) it can no longer run at all -- it `require('electron')`s
-  a real Electron renderer to capture Mermaid diagram colours, and there is no `electron` package
-  left in this repo to load. The script and its `check:mermaid-contrast` npm command stay
-  (an obvious entry point once someone picks this up), but need a Tauri/WebView2-based capture
-  rework, not just the pre-existing fixes, before it can run or join CI; see #388.
-- Security baseline for the Rust build: constitution Principle V ("Tauri Security Baseline",
-  ratified 3.0.0, 2026-10-15, #796) is binding. `specs/016-tauri-rust-build/
-  constitution-amendment-draft.md` is the superseded pre-ratification draft, kept for history
-  only.
-- Per-lane Rust file ownership (which lane owns which `src-tauri/src/**` module, so no two lanes
-  touch the same file) lives in `docs/PLAN.md`'s Phase R table, not duplicated here.
+- GitHub Actions CI is disabled (2026-10-14). `pnpm ci:local` runs every `run:` step of `.github/workflows/ci.yml` locally and is the gate: typecheck, tests, the `check:*` scripts, `check:parity`, and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+- Constitution Principle V ("Tauri Security Baseline") is binding.
+- Per-lane Rust file ownership lives in `docs/PLAN.md`'s Phase R table.
+- Details, including why `check:mermaid-contrast` is not in the gate (#388): `docs/rust-build.md`.
 
 ## No god files (HARD RULE, issue #806)
 
@@ -132,60 +116,18 @@ requests view had drifted into two different filters, search fields and headers 
 
 ## Verifying the Rust (Tauri) build (epic #797)
 
-The Rust build has its own shared build cache and its own live-verification mechanics, ported
-from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
-
-- Point `CARGO_TARGET_DIR` at the shared, already-populated cache for every `cargo`/`tauri`
-  command (disk space is tight); never let `src-tauri/target` get created inside a worktree.
-  Builds serialise on that cache's lock -- wait for a build in flight rather than starting a
-  second one, and never delete anything under the shared cache except a crate-scoped `cargo
-  clean -p <crate>` for a confirmed stale-path error.
-- `scripts/verify-tauri.mjs` (`pnpm verify:tauri`, issue #795) is the CDP harness: a scratch data
-  directory (`REFRACT_DATA_DIR`, debug builds only, since Tauri has no `--user-data-dir`
-  equivalent), a scratch git repository, and a recorded-frame fake `omp` on PATH ahead of the
-  real one, so a UI flow can be driven with no model cost and no network. Only `readiness` (US1)
-  and `session` (US4) are ever driven this way; `side-chat`/`subagents`/`failure`/`exit` are
-  fixtures for a lane to select directly once it ports the matching channel
-  (`scripts/fixtures/omp-frames/README.md`). Use the harness instead of a live real-`omp` CDP
-  session wherever the flow you need is already covered; fall back to a real `omp` only for a
-  flow the fixtures do not cover yet. **Not covered by this harness (R12b, #795 part 3 onward):**
-  ported Rust test cases, transcript golden tests, the cross-shell contract replay, generated
-  frame types, the performance/footprint proof.
-- **Never `pnpm dev` for a live check (2026-10-13 live-run convention).** It holds Vite's
-  fixed port 5174, and the running exe lives under the shared `CARGO_TARGET_DIR`, so two lanes'
-  own dev servers or running binaries collide. Instead: `pnpm exec tauri build --debug --no-bundle`
-  (bakes the renderer in, no dev server, no port), copy
-  `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to your own scratch dir, and run that copy with
-  your own `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` and
-  `REFRACT_DATA_DIR` pointing at a scratch data directory, never Stuart's real
-  `%APPDATA%\refract-tauri`. `scripts/verify-tauri.mjs` already does this.
+- Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Wait for a build in flight rather than starting a second one. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error.
+- Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to a scratch dir, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR`, never `%APPDATA%\refract-tauri`. `pnpm verify:tauri` does this with a recorded-frame fake `omp` for no model cost.
+- Details: `docs/rust-build.md`.
 
 ## PR titles are Conventional Commits (HARD RULE)
 
-On 2026-10-14 the repo's squash-merge was set to use the PR TITLE as the squash commit subject.
-`pnpm release`'s version-bump reads every commit SUBJECT (and BODY, for a `BREAKING CHANGE`
-footer) on `main`'s own mainline since the last tag; `CHANGELOG.md` generation reads merged PR
-TITLES ONLY, via GitHub's own generated release notes (no PR-body/footer data is available
-there). A malformed title silently breaks both the version bump and the changelog grouping.
+Squash merges use the PR title as the commit subject, and `pnpm release` reads it for the version bump and `CHANGELOG.md`.
 
-- Format: `type(scope): subject`.
-- Types: feat, fix, perf, refactor, docs, chore, test, build, ci, style. The type is matched
-  case-insensitively (`Feat:`/`FEAT:`/`feat:` all count).
-- A breaking change adds `!` immediately before the colon -- after the scope if there is one
-  (`feat!: subject` with no scope, `feat(scope)!: subject` with one; never `feat!(scope):`) --
-  no `!` usage exists yet in this repo's own history to confirm placement against, so this
-  follows the standard Conventional Commits convention and `scripts/release-changelog.mjs`'s own
-  parser. A `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer in the commit/PR body also bumps major,
-  independent of the title. A breaking change bumps the major version.
-- Scope = the PR's lane in lower case (for example `feat(r5): ...`, `fix(rm): ...`).
-- `feat` bumps minor; `fix`/`perf` bump patch; every other type does not bump the version at all.
-- Non-conventional/legacy titles (the old `R3: ...`-style titles already in this repo's history)
-  are still accepted and land in `CHANGELOG.md`'s "Other" section verbatim, but they never bump
-  the version -- a real change needing a version bump MUST use a conventional type.
-- **A `BREAKING CHANGE` footer still only bumps the version, never the changelog grouping**: the
-  "Breaking changes" `CHANGELOG.md` section is built from PR titles only, so a major release can
-  ship with no Breaking changes section listed if the breaking PR's own title didn't also use
-  `!`. Use `!` in the title too whenever a change is actually breaking.
+- Format: `type(scope): subject`. Types: feat, fix, perf, refactor, docs, chore, test, build, ci, style. Scope = the lane in lower case.
+- `feat` bumps minor; `fix`/`perf` bump patch; other types do not bump.
+- A breaking change adds `!` before the colon (`feat(scope)!: subject`). Always put the `!` in the title, because the changelog's "Breaking changes" section reads titles only.
+- Details: `docs/pr-titles.md`.
 
 ## Grill first, then the full Spec Kit plan (HARD RULE)
 

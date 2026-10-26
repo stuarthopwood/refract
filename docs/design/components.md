@@ -115,7 +115,7 @@ These rules come from issue #538 (Stuart, 2026-10-07), decided the day before th
 - **Launcher list.** With the pane open and no panel open, a centred (both vertically and horizontally) list of every available panel, each row a button with its icon, name, and (when it has one) its count. Closing the last open panel closes only that panel; the pane stays open on the launcher list. This supersedes #394's "closing the last tab closes the panel."
 - **Counts.** Agents: the number running, with an agents icon, in the running colour. Git changes: `+additions` in green and `−deletions` in red, with a git icon. Counts are never colour alone — see [accessibility.md](accessibility.md).
 
-Open (per #538 itself, unresolved by the #474 grill): whether rail icons also carry counts while the pane is collapsed; persistence of open panels, order, and width across launches; a keyboard shortcut to toggle the pane; and whether this becomes a new spec or amends specs 004 and 005.
+Decided for #538 (spec 024, Skippy delegated by Stuart 2026-10-26, see the decision comment on #538): rail icons carry count badges while the pane is collapsed (a running Subagent count in the running colour, a neutral changed-file count, "9+" over nine, never colour alone); the rail's top button collapses and expands the pane (`aria-expanded`, Ctrl+Shift+B, which never fires while an overlay is open); open or collapsed, width, open panels in tab order and the active tab persist in `Settings.rightPane`, restored before first paint and written only by `right-pane-persistence.ts`. It amends spec 013 as spec 024 rather than reopening specs 004 and 005. Not in scope: dragging the rail to rearrange (#730), the header-row reorder (#674), and a View-menu item.
 
 ## Cards and boxes
 

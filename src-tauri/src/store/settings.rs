@@ -101,6 +101,8 @@ pub struct Settings {
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
     pub session_list_collapse: SessionListCollapse,
     pub pull_requests_list_width_px: i64,
+    /// Spec 024 (#538): the right pane's open/width/panels/active tab; see `right_pane.rs`.
+    pub right_pane: RightPaneState,
     /// Issue #772 (lane R6): the word-prediction ghost-text off switch -- Rust-only (Electron
     /// main-process features are frozen, epic #797), so this field has no TypeScript
     /// counterpart. Default `false`: the shared prediction daemon measured 463 MB private commit
@@ -136,6 +138,9 @@ mod activity_text;
 #[path = "agent_stopped_bar.rs"]
 mod agent_stopped_bar;
 pub use activity_text::ActivityText;
+#[path = "right_pane.rs"]
+pub(crate) mod right_pane;
+use right_pane::RightPaneState;
 
 pub struct SettingsStore {
     file: PathBuf,
@@ -248,6 +253,7 @@ impl SettingsStore {
             .and_then(Value::as_i64)
             .map(clamp_pull_requests_list_width_px)
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
+        let right_pane = right_pane::parse_from_disk(&object);
 
         const KNOWN_FIELDS: [&str; 17] = [
             "version",
@@ -267,6 +273,7 @@ impl SettingsStore {
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
+            right_pane::KEY,
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -292,6 +299,7 @@ impl SettingsStore {
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
+            right_pane,
             extra,
         };
 
@@ -376,6 +384,7 @@ impl SettingsStore {
             "pullRequestsListWidthPx".to_string(),
             json!(self.data.pull_requests_list_width_px),
         );
+        map.insert(right_pane::KEY.to_string(), json!(self.data.right_pane));
         // Re-inserts every key captured at `open()` with no slot here, verbatim (never overwrites
         // a known key; `data.extra` excludes all twelve), so an unported setting survives every
         // save, and `settings.get`/`settings:changed` flatten it onto the wire too.

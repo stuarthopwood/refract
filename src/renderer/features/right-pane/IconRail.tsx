@@ -12,12 +12,15 @@
 // own tabs).
 import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CountBadge } from '@/components/ui/count-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useRightPaneStore } from '@/state'
 import { TITLE_BAR_OVERLAY_HEIGHT } from '../../../shared/layout'
-import { HOSTED_PANELS, type PanelId } from './panel-registry'
+import { HOSTED_PANELS, railCountLabel, usePanelCount, type HostedPanelDescriptor, type PanelId } from './panel-registry'
 import { toggleHostedPanelFromRail } from './hosted-panel-actions'
+import { toggleRightPane } from './toggle-right-pane'
 
 interface IconRailProps {
   /** The focused chat pane's Session -- the default target a rail click binds a per-Session
@@ -55,44 +58,84 @@ export function IconRail({ sessionId }: IconRailProps) {
       {/* Stuart, 2026-10-10: the rail starts below a spacer matching the window's own
           `titleBarOverlay` height, so its top button never sits under the caption buttons. */}
       <div aria-hidden className="w-full shrink-0" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            data-rail-toggle
+            aria-label="Right pane"
+            aria-expanded={rightPaneOpen}
+            aria-keyshortcuts="Control+Shift+B"
+            className="mt-2"
+            onClick={() => toggleRightPane()}
+          >
+            {rightPaneOpen ? <PanelRightCloseIcon aria-hidden className="size-4" /> : <PanelRightOpenIcon aria-hidden className="size-4" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">{rightPaneOpen ? 'Collapse' : 'Expand'} right pane (Ctrl+Shift+B)</TooltipContent>
+      </Tooltip>
       <div role="toolbar" aria-label="Panels" aria-orientation="vertical" className="flex flex-col items-center gap-1 py-2">
-        {HOSTED_PANELS.map((panel) => {
-          const Icon = panel.icon
-          // Gate remediation (Medium): the pane's own open/collapsed state, not just whether this
-          // panel is among `openPanelIds` -- a collapsed pane with panels bound still shows every
-          // rail button unpressed, since nothing is actually visible right now (FR-023).
-          const pressed = rightPaneOpen && openPanelIds.includes(panel.id)
-          // Gate remediation (Medium): a toggle button's accessible name must not change with its
-          // own pressed state (the repeated anti-pattern this codebase already fixed once in
-          // ChatPane.tsx) -- `aria-pressed` alone carries the state.
-          const label = `${panel.name} panel`
-          return (
-            <Tooltip key={panel.id}>
-              <TooltipTrigger asChild>
-                <Button
-                  ref={(el) => {
-                    buttonRefs.current[panel.id] = el
-                  }}
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  data-rail-button={panel.id}
-                  aria-pressed={pressed}
-                  aria-label={label}
-                  tabIndex={panel.id === rovingId ? 0 : -1}
-                  className="aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground"
-                  onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
-                  onFocus={() => setRovingId(panel.id)}
-                  onKeyDown={(event) => handleKeyDown(event, panel.id)}
-                >
-                  <Icon aria-hidden className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left">{label}</TooltipContent>
-            </Tooltip>
-          )
-        })}
+        {HOSTED_PANELS.map((panel) => (
+          <RailButton
+            key={panel.id}
+            panel={panel}
+            sessionId={sessionId}
+            pressed={rightPaneOpen && openPanelIds.includes(panel.id)}
+            tabIndex={panel.id === rovingId ? 0 : -1}
+            buttonRef={(el) => {
+              buttonRefs.current[panel.id] = el
+            }}
+            onFocus={() => setRovingId(panel.id)}
+            onKeyDown={(event) => handleKeyDown(event, panel.id)}
+          />
+        ))}
       </div>
     </div>
+  )
+}
+
+interface RailButtonProps {
+  panel: HostedPanelDescriptor
+  sessionId: string | null
+  pressed: boolean
+  tabIndex: number
+  buttonRef: (el: HTMLButtonElement | null) => void
+  onFocus: () => void
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+}
+
+function RailButton({ panel, sessionId, pressed, tabIndex, buttonRef, onFocus, onKeyDown }: RailButtonProps) {
+  const Icon = panel.icon
+  const count = railCountLabel(usePanelCount(panel.id, sessionId))
+  // Gate remediation (Medium): a toggle button's accessible name must not change with its
+  // own pressed state (the repeated anti-pattern this codebase already fixed once in
+  // ChatPane.tsx) -- `aria-pressed` alone carries the state. Spec 024 FR-010: the count is part
+  // of the name, so it is announced while the pane is collapsed.
+  const label = `${panel.name} panel${count ? `, ${count.phrase}` : ''}`
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          ref={buttonRef}
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          data-rail-button={panel.id}
+          aria-pressed={pressed}
+          aria-label={label}
+          tabIndex={tabIndex}
+          className="relative aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground forced-colors:aria-pressed:border-[Highlight]"
+          onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
+          onFocus={onFocus}
+          onKeyDown={onKeyDown}
+        >
+          <Icon aria-hidden className="size-4" />
+          {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'working' : 'neutral'} />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="left">{label}</TooltipContent>
+    </Tooltip>
   )
 }

@@ -56,6 +56,12 @@ interface RightPaneState {
   closePanel(id: PanelId): void
   /** The drag handle and the (PR4) width-preset buttons both call this. */
   setWidth(widthPx: number): void
+  /** Spec 024 FR-001/FR-002: collapses an open pane or expands a collapsed one without touching
+   * `openPanelIds`/`activePanelId`; `App.tsx`'s layout effect and `onResize` do the rest. */
+  toggleCollapsed(): void
+  /** Spec 024 FR-005 to FR-007: replaces the whole state from the saved settings (already
+   * validated), never writing it back. */
+  restore(state: { open: boolean; widthPx: number; openPanelIds: PanelId[]; activePanelId: PanelId | null }): void
   /** Generalises `App.tsx`'s existing `onResize` desync guard (research.md decision 2) from the
    * Subagents-only case to any hosted panel; called from the shell's `ResizablePanel.onResize`,
    * never from a click handler. */
@@ -115,5 +121,7 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
     })
   },
   setWidth: (widthPx) => set({ widthPx }),
+  toggleCollapsed: () => set({ open: !get().open }),
+  restore: (state) => set(state),
   syncRenderedState: (open, widthPx) => set({ open, widthPx })
 }))

@@ -36,7 +36,18 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
-  const prevOpenPanelIdsRef = useRef<PanelId[]>([])
+  const paneOpen = useRightPaneStore((s) => s.open)
+  // Seeded from the store so a panel restored from settings (spec 024) is not mistaken for a
+  // genuine open and does not steal focus at launch.
+  const prevOpenPanelIdsRef = useRef<PanelId[]>(useRightPaneStore.getState().openPanelIds)
+
+  // A Subagents tab restored from settings has no Session binding yet; bind it to the shown
+  // Session once the pane is visible (spec 024 US2).
+  useEffect(() => {
+    if (paneOpen && sessionId && !subagentSessionId && openPanelIds.includes('subagents')) {
+      useSubagentPanelStore.getState().openPanel(sessionId)
+    }
+  }, [paneOpen, sessionId, subagentSessionId, openPanelIds])
 
   // Focus moves into the newly opened panel's own content -- but only for a genuine open (this
   // panel was not already one of the open tabs a moment ago), never for switching between two
@@ -59,7 +70,7 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
 
   if (openPanelIds.length === 0) {
     return (
-      <div className="flex h-full flex-col overflow-hidden">
+      <div data-right-pane-shell className="flex h-full flex-col overflow-hidden">
         <WindowControlsSpacerRow />
         <WidthPresetControl resize={resize} />
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -72,10 +83,11 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   const isTabBar = openPanelIds.length >= 2
 
   return (
-    <div id="right-pane-active-panel" className="flex h-full flex-col overflow-hidden">
+    <div id="right-pane-active-panel" data-right-pane-shell className="flex h-full flex-col overflow-hidden">
       <PanelTabBar sessionId={sessionId} resize={resize} />
       <div
         ref={contentRef}
+        data-right-pane-content
         tabIndex={-1}
         className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         role={isTabBar ? 'tabpanel' : 'region'}

@@ -27,6 +27,7 @@ import {
 import { IconRail } from '@/features/right-pane/IconRail'
 import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
+import { useRightPaneShortcut } from '@/features/right-pane/use-right-pane-shortcut'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
@@ -455,10 +456,13 @@ export function App() {
   useLayoutEffect(() => {
     const handle = rightPaneRef.current
     if (!handle) return
-    if (paneShown && handle.isCollapsed()) handle.expand()
-    else if (!paneShown && !handle.isCollapsed()) handle.collapse()
+    if (paneShown && handle.isCollapsed()) {
+      handle.expand()
+      handle.resize(useRightPaneStore.getState().widthPx) // expand() alone returns to the library's remembered size, not the restored width
+    } else if (!paneShown && !handle.isCollapsed()) handle.collapse()
   }, [paneShown, showReadiness, view])
 
+  useRightPaneShortcut(!showReadiness && view === 'chat')
   return (
     // #1200: `relative` makes this the containing block for every absolutely positioned descendant
     // (e.g. an `sr-only` node at the end of a long scroller); with `h-screen overflow-hidden` none can
