@@ -1,5 +1,5 @@
 // Issue #687 (spec 004 FR-035 to FR-040): the one pure derive behind the current-work banner's
-// line. #526's session-row status line reuses it later; neither re-derives priorities. Every
+// line and the Session row's Activity line (#526); neither re-derives priorities. Every
 // string that came from the agent (tool `intent`, todo task text, a target path) is untrusted:
 // it is reduced to plain text here, control characters stripped, and capped at
 // `ACTIVITY_TEXT_MAX_CHARS`, so no consumer can render a raw one.
@@ -55,18 +55,18 @@ export interface Activity {
 
 /** #526 (FR-111): the Playful set, replacing only the `working` kind's "Working…". */
 export const PLAYFUL_PHRASES: readonly string[] = [
-  'Thinking hard…',
+  'On it…',
   'Connecting the dots…',
-  'Rolling up sleeves…',
+  'Chewing on it…',
   'Piecing it together…',
   'Turning it over…',
   'Mulling it over…',
   'Following the thread…',
-  'Sketching a plan…',
+  'Doing the thing…',
   'Gathering thoughts…',
   'Working the problem…',
   'Lining things up…',
-  'Making progress…'
+  'Having a good think…'
 ]
 
 /** Pure: one phrase per Session (a stable hash of its id), advanced by `slot` (the 10 s tick). */
@@ -92,6 +92,8 @@ function baseName(target: string): string {
   const parts = target.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] ?? target
 }
+
+const FILE_TOOLS: ReadonlySet<string> = new Set(['read', 'edit', 'write', 'ast_edit', 'notebook'])
 
 // A plain verb for a tool call that carried no `intent`; never the raw tool name.
 const TOOL_VERBS: Record<string, [withTarget: string, without: string]> = {
@@ -134,7 +136,9 @@ export function deriveActivity(input: ActivityInput): Activity {
       return text('needs-you', `Needs your input: ${sanitizeActivityText(pending.text)}`)
     }
     if (pending?.kind === 'approval') {
-      const target = pending.target ? ` ${baseName(sanitizeActivityText(pending.target))}` : ''
+      const full = pending.target ? sanitizeActivityText(pending.target) : ''
+      // Only file tools reduce to a base name; a shell command keeps its risky part visible.
+      const target = full ? ` ${FILE_TOOLS.has(pending.tool) ? baseName(full) : full}` : ''
       return text('needs-you', `Waiting for approval: ${sanitizeActivityText(pending.tool)}${target}`)
     }
     return text('needs-you', 'Waiting for your answer')

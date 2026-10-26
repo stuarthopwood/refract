@@ -5,15 +5,15 @@ import { useHeldActivityText, usePendingActivity } from '@/features/chat/useHeld
 import { deriveActivity } from '../../../shared/activity'
 import type { SessionSummary } from '../../../shared/ipc'
 
-/** `null` unless the Session is working or needs you and there is something to say; going idle or
- * stopped clears at once, so line 2 reverts to the branch with no hold. */
+/** `null` unless the Session is working or needs you ("Working…" until readout data arrives);
+ * going idle or stopped clears at once, so line 2 reverts to the branch with no hold. */
 export function useSessionRowActivity(session: SessionSummary): string | null {
   const pending = usePendingActivity(session.id)
   const needsYou = session.status === 'needs-you'
   const live = session.status === 'working' || needsYou
   const readout = session.activity ?? null
   const activity =
-    live && (readout || needsYou)
+    live
       ? deriveActivity({
           needsYou,
           pending,

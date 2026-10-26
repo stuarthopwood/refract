@@ -293,7 +293,13 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                   ) : lineTwo === 'activity' ? (
                     // #526: one truncated muted line; the full text is in the hover card and the
                     // row's description, so no tooltip and no live region here.
-                    <span data-testid="session-activity-line" className="truncate pl-6 text-xs text-muted-foreground">
+                    <span
+                      data-testid="session-activity-line"
+                      className={cn(
+                        'truncate pl-6 text-xs',
+                        session.status === 'needs-you' ? 'text-sidebar-foreground' : 'text-muted-foreground'
+                      )}
+                    >
                       {activityText}
                     </span>
                   ) : (

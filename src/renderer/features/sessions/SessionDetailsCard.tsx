@@ -88,11 +88,13 @@ export function SessionDetailsCard({
         </HoverCardTrigger>
         <HoverCardContent>
           <div className="flex flex-col gap-2">
-            {activityText && <p className="break-words text-xs">{activityText}</p>}
-            <div className="flex items-center gap-1.5">
-              <StateIcon status={displayStatus(session)} />
-              <span>{STATUS_LABEL[displayStatus(session)]}</span>
-              <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <StateIcon status={displayStatus(session)} />
+                <span>{STATUS_LABEL[displayStatus(session)]}</span>
+                <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
+              </div>
+              {activityText && <p className="break-words pl-5 text-xs text-muted-foreground">{activityText}</p>}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <FolderIcon aria-hidden className="size-3.5 shrink-0" />

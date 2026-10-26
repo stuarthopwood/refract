@@ -242,7 +242,11 @@ export function AppearanceSection() {
       <div className="mt-6 flex items-center justify-between gap-4">
         <div className="flex flex-col gap-0.5">
           <span id="activity-text-label" className="text-sm">Activity text</span>
-          <span id="activity-text-description" className="text-xs text-muted-foreground">How a working Session describes itself while it has nothing more specific to say.</span>
+          <span id="activity-text-description" className="text-xs text-muted-foreground">
+            Shown for each Session in the Session list and in the banner above the composer when it has
+            nothing more specific to say. Plain shows &ldquo;Working…&rdquo;; Playful shows a friendly
+            phrase such as &ldquo;On it…&rdquo;.
+          </span>
         </div>
         <ToggleGroup
           type="single"

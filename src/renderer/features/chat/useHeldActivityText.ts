@@ -1,7 +1,7 @@
 // #526 (FR-110, spec 004 FR-041): the one hold-and-rotate hook behind both Activity surfaces --
 // the current-work banner (`CurrentWorkBanner.tsx`) and the Session row's line 2
-// (`SessionActivityLine.tsx`). Extracted from the banner's former private `useHeldText`, so the
-// two surfaces can never pace or phrase the same activity differently.
+// (`SessionRow.tsx` via `useSessionRowActivity.ts`). Extracted from the banner's former private
+// `useHeldText`, so the two surfaces can never pace or phrase the same activity differently.
 import { useEffect, useRef, useState } from 'react'
 import { usePendingRequestsStore, useSettingsStore } from '@/state'
 import { playfulPhrase } from '../../../shared/activity'
@@ -27,6 +27,7 @@ export function usePendingActivity(sessionId: string): ActivityPending | null {
   return toActivityPending(first)
 }
 
+// The slot is wall-clock based on purpose: every row rotates its Playful phrase in the same slot.
 function usePlayfulSlot(active: boolean): number {
   const [slot, setSlot] = useState(() => Math.floor(Date.now() / PLAYFUL_ROTATE_MS))
   useEffect(() => {
