@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.11.0 (2026-10-26)
+
+### Features
+
+- feat(1208): lighter font weights and sentence-case action verbs (https://github.com/stuarthopwood/refract/pull/1223)
+- feat(chat): tool-row icons, intent labels and raw-id tooltips (#469) (https://github.com/stuarthopwood/refract/pull/1227)
+- feat(right-pane): collapse toggle, Ctrl+Shift+B, rail count badges and persistence (#538) (https://github.com/stuarthopwood/refract/pull/1231)
+- feat(526): Session row Activity line with Plain/Playful activity text (https://github.com/stuarthopwood/refract/pull/1230)
+
+### Other
+
+- docs(plan): start #1208 and mark closed Priority order rows done (https://github.com/stuarthopwood/refract/pull/1221)
+- docs(plan): fold the OMP to Advanced Settings rework into #714 (https://github.com/stuarthopwood/refract/pull/1222)
+- docs(plan): #1208 done (PR #1223); place #1224 (https://github.com/stuarthopwood/refract/pull/1225)
+- docs: trim AGENTS.md startup context (https://github.com/stuarthopwood/refract/pull/1228)
+- docs: make CLAUDE.md import AGENTS.md (https://github.com/stuarthopwood/refract/pull/1229)
+
 ## v0.10.0 (2026-10-26)
 
 ### Breaking changes
