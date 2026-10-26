@@ -24,7 +24,7 @@ Every Technical Context item in the plan is resolved; there is no open NEEDS CLA
 
 ## Decision 4: lucide icon names
 
-- **Decision**: FileText, Pencil, FilePlus, Terminal, Braces, TextSearch, FolderSearch, ScanSearch, Replace, Waypoints, Users, MessageCircleQuestion, Globe, GitPullRequest, Bug, Database, Image, Hourglass, BookOpen, Plug, Wrench, all from `lucide-react` (1.49.0).
+- **Decision**: FileText, Pencil, FilePlus, Terminal, Braces, TextSearch, FolderSearch, ScanSearch, Replace, Waypoints, Users, MessageCircleQuestionMark (lucide-react 1.49.0 renamed MessageCircleQuestion), Globe, GitPullRequest, Bug, Database, Image, Hourglass, BookOpen, Plug, Wrench, all from `lucide-react` (1.49.0).
 - **Rationale**: these are the spec's names (FR-003 to FR-005). lucide-react has no GitHub brand icon, so `github` uses GitPullRequest. The implementing slice confirms each export compiles under `pnpm typecheck` (this worktree had no `node_modules` when planned); if an export is missing, it picks the nearest lucide glyph, records the swap in the slice report, and updates FR-003 in the same change.
 - **Alternatives considered**: custom SVGs. Rejected: reusable-components rule and maintenance cost.
 
