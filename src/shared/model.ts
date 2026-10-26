@@ -1,7 +1,7 @@
 // Data stored or held by Refract, and the shapes Refract derives from OMP.
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
-import type { ThemeId } from './themes'; import type { ActivityReadoutFields } from './activity';
+import type { ThemeId } from './themes'; import type { ActivityReadoutFields, ActivityText } from './activity';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
 import type { TodoPhase } from './todo';
@@ -112,7 +112,7 @@ export interface Settings {
   split: SplitLayout | null; // spec 005: null = single pane, no split open
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
-  chatWidth: ChatWidth; holidayTouches: HolidayTouches; // issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
+  chatWidth: ChatWidth; holidayTouches: HolidayTouches; activityText?: ActivityText; // #526 FR-111: absent reads 'plain'. issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: the two show toggles default true; #469's toolNames defaults false
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on

@@ -92,6 +92,9 @@ export function initStores(): void {
   window.refract.onSessionListChanged(() => {
     void useSessionsStore.getState().refresh()
   })
+  window.refract.onSessionActivity(({ sessionId, activity }) => {
+    useSessionsStore.getState().applyActivity(sessionId, activity)
+  })
   window.refract.onTranscriptPatch(({ sessionId, ops }) => {
     useTranscriptStore.getState().applyOps(sessionId, ops)
   })

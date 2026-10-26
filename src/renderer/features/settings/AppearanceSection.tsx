@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
 import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } from '@/state'
@@ -26,6 +27,8 @@ export function AppearanceSection() {
   const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
   const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
   const setHolidayTouches = useSettingsStore((state) => state.setHolidayTouches)
+  const activityText = useSettingsStore((state) => state.settings.activityText ?? 'plain')
+  const setActivityText = useSettingsStore((state) => state.setActivityText)
   const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
   const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -233,6 +236,30 @@ export function AppearanceSection() {
             <SelectItem value="off">Off</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+      {/* #526 (FR-111): applies live, same posture as Holiday touches. The shared segmented
+          `ToggleGroup` (ProviderSwitch, ManageSessionsToolbar) -- no one-off control. */}
+      <div className="mt-6 flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-0.5">
+          <span id="activity-text-label" className="text-sm">Activity text</span>
+          <span id="activity-text-description" className="text-xs text-muted-foreground">How a working Session describes itself while it has nothing more specific to say.</span>
+        </div>
+        <ToggleGroup
+          type="single"
+          value={activityText}
+          onValueChange={(value) => {
+            // Radix emits '' when the selected segment is clicked again; keep one selected.
+            if (value === 'plain' || value === 'playful') void setActivityText(value)
+          }}
+          variant="outline"
+          size="sm"
+          spacing={0}
+          aria-labelledby="activity-text-label"
+          aria-describedby="activity-text-description"
+        >
+          <ToggleGroupItem value="plain" className={SELECTED_SEGMENT_CLASS}>Plain</ToggleGroupItem>
+          <ToggleGroupItem value="playful" className={SELECTED_SEGMENT_CLASS}>Playful</ToggleGroupItem>
+        </ToggleGroup>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
 import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
+import type { ActivityText } from '../../shared/activity'
 import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX } from './pull-requests-layout-store'
 import { notify } from './notify'
 import { useChatScrollStore } from './scroll-store'
@@ -12,6 +13,7 @@ interface SettingsState {
   setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<void>
   setWatermarkEnabled(enabled: boolean): Promise<void>
   setHolidayTouches(value: Settings['holidayTouches']): Promise<void>
+  setActivityText(value: ActivityText): Promise<void>
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
@@ -73,6 +75,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setHolidayTouches: async (value) => {
     const result = await window.refract.settings.setHolidayTouches(value)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setActivityText: async (value) => {
+    const result = await window.refract.settings.setActivityText(value)
     if (result.ok) {
       set({ settings: result.value })
     } else {

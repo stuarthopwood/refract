@@ -15,8 +15,18 @@ export const ACTIVITY_TEXT_MAX_CHARS = 160
 
 export type ActivityKind = 'needs-you' | 'retrying' | 'compacting' | 'subagents' | 'todo' | 'intent' | 'tool' | 'working'
 
+/** #526 (spec 004 FR-041): the first pending request, reduced to what the needs-you line shows. */
+export type ActivityPending =
+  | { kind: 'question'; text: string }
+  | { kind: 'approval'; tool: string; target: string | null }
+
+/** #526 (FR-111): the app-wide "Activity text" setting; absent reads `'plain'`. */
+export type ActivityText = 'plain' | 'playful'
+
 export interface ActivityInput {
   needsYou: boolean
+  /** #526: the Session's first pending request, if known; only read when `needsYou`. */
+  pending?: ActivityPending | null
   runningSubagents: number
   /** The current todo task ("n of m" is derived by the caller's todo derive); `null` when there is
    * none or the todo panel is pinned (the pinned panel already shows it, issue #687 decision 2). */
@@ -27,9 +37,45 @@ export interface ActivityInput {
   compacting?: boolean
 }
 
+/** #526 (FR-109): the per-Session payload Rust pushes on `session:activity` and carries on
+ * `SessionSummary.activity` -- `ActivityInput` minus the renderer-side `needsYou`/`pending`. */
+export interface SessionActivity {
+  runningSubagents: number
+  todo: { number: number; total: number; content: string } | null
+  latestIntent: string | null
+  latestTool: { name: string; target: string | null } | null
+  retry: { attempt: number; maxAttempts: number } | null
+  compacting: boolean
+}
+
 export interface Activity {
   kind: ActivityKind
   text: string
+}
+
+/** #526 (FR-111): the Playful set, replacing only the `working` kind's "Working…". */
+export const PLAYFUL_PHRASES: readonly string[] = [
+  'Thinking hard…',
+  'Connecting the dots…',
+  'Rolling up sleeves…',
+  'Piecing it together…',
+  'Turning it over…',
+  'Mulling it over…',
+  'Following the thread…',
+  'Sketching a plan…',
+  'Gathering thoughts…',
+  'Working the problem…',
+  'Lining things up…',
+  'Making progress…'
+]
+
+/** Pure: one phrase per Session (a stable hash of its id), advanced by `slot` (the 10 s tick). */
+export function playfulPhrase(sessionId: string, slot: number): string {
+  let hash = 0
+  for (let i = 0; i < sessionId.length; i++) hash = (hash * 31 + sessionId.charCodeAt(i)) >>> 0
+  const n = PLAYFUL_PHRASES.length
+  const index = (((hash + Math.trunc(slot)) % n) + n) % n
+  return PLAYFUL_PHRASES[index] ?? 'Working…'
 }
 
 // C0/C1 controls, bidi embedding/override/isolate marks, line and paragraph separators.
@@ -82,7 +128,17 @@ function toolPhrase(tool: NonNullable<ActivityReadoutFields['latestTool']>): str
  * intent, a plain verb for the latest tool call, then "Working…". */
 export function deriveActivity(input: ActivityInput): Activity {
   const text = (kind: ActivityKind, line: string): Activity => ({ kind, text: sanitizeActivityText(line) })
-  if (input.needsYou) return text('needs-you', 'Waiting for your answer')
+  if (input.needsYou) {
+    const pending = input.pending
+    if (pending?.kind === 'question' && sanitizeActivityText(pending.text)) {
+      return text('needs-you', `Needs your input: ${sanitizeActivityText(pending.text)}`)
+    }
+    if (pending?.kind === 'approval') {
+      const target = pending.target ? ` ${baseName(sanitizeActivityText(pending.target))}` : ''
+      return text('needs-you', `Waiting for approval: ${sanitizeActivityText(pending.tool)}${target}`)
+    }
+    return text('needs-you', 'Waiting for your answer')
+  }
   if (input.retry) return text('retrying', `Retrying · attempt ${input.retry.attempt} of ${input.retry.maxAttempts}`)
   if (input.compacting) return text('compacting', 'Compacting context…')
   if (input.runningSubagents > 0) {

@@ -22,6 +22,7 @@ export function SessionDetailsCard({
   repository,
   worktreeMissing,
   activityDescription,
+  activityText,
   children
 }: {
   session: SessionSummary
@@ -31,6 +32,8 @@ export function SessionDetailsCard({
    *  or "Terminated unexpectedly" text `SessionRow.tsx` shows instead) -- leads the accessible
    *  description below so it is never silently dropped just because it does not fit on line 2. */
   activityDescription?: string
+  /** #526 (FR-110): the full Activity line text while line 2 shows it; leads the card itself. */
+  activityText?: string | null
   children: ReactElement<{ 'aria-describedby'?: string }>
 }) {
   // T069: fetched fresh each time the details card opens, never cached across opens.
@@ -85,6 +88,7 @@ export function SessionDetailsCard({
         </HoverCardTrigger>
         <HoverCardContent>
           <div className="flex flex-col gap-2">
+            {activityText && <p className="break-words text-xs">{activityText}</p>}
             <div className="flex items-center gap-1.5">
               <StateIcon status={displayStatus(session)} />
               <span>{STATUS_LABEL[displayStatus(session)]}</span>
