@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.10.0 (2026-10-26)
+
+### Breaking changes
+
+- feat(1212)!: token guard launch overlay, shake, hand off and Refract rules (https://github.com/stuarthopwood/refract/pull/1215)
+
+### Features
+
+- feat(687): current-work banner above the composer (https://github.com/stuarthopwood/refract/pull/1202)
+- feat(1205): open stopped Sessions without starting the agent (https://github.com/stuarthopwood/refract/pull/1218)
+
+### Fixes
+
+- fix(802): two vertical scrollbars in the Side chat panel when the answer is taller than the pane (https://github.com/stuarthopwood/refract/pull/1014)
+- fix(release): drop inherited PSMODULEPATH case variants before the signature check (https://github.com/stuarthopwood/refract/pull/1192)
+- fix(1200): contain sr-only alert so long PRs no longer scroll the document (https://github.com/stuarthopwood/refract/pull/1217)
+
+### Other
+
+- docs(plan): raise #513 to p1 (https://github.com/stuarthopwood/refract/pull/1191)
+- chore(deps): bump actions/setup-node from 7.0.0 to 7.1.0 (https://github.com/stuarthopwood/refract/pull/890)
+- docs(plan): place #1193 and #1194 (https://github.com/stuarthopwood/refract/pull/1195)
+- docs(plan): place #915 and #1196 (https://github.com/stuarthopwood/refract/pull/1197)
+- docs(plan): place #1198, #1199 and #1200; amend #915 and #1196 (https://github.com/stuarthopwood/refract/pull/1201)
+- docs(plan): place #1203, #1204 and #1205 (https://github.com/stuarthopwood/refract/pull/1206)
+- docs(plan): raise #1205 to p1 at priority 2 (https://github.com/stuarthopwood/refract/pull/1207)
+- docs(plan): place #1208 before #469 (https://github.com/stuarthopwood/refract/pull/1209)
+- docs(plan): place #1210 (https://github.com/stuarthopwood/refract/pull/1211)
+- docs(plan): place P0 #1212 token guard first (https://github.com/stuarthopwood/refract/pull/1213)
+
 ## v0.9.0 (2026-10-22)
 
 ### Features
