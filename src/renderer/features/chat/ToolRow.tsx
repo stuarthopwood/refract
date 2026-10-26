@@ -400,7 +400,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
         .filter((part): part is string => !!part)
         .join(', ')
     : [
-        toolLabel,
+        [isRunning ? toolAriaPrefix('running', group.tool) : undefined, toolLabel].filter(Boolean).join(' '),
         `${group.items.length} calls`,
         failedCount > 0 ? `${failedCount} failed` : undefined,
         interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined,

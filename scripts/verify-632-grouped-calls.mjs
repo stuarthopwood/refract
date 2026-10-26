@@ -393,12 +393,12 @@ async function main() {
     const member0Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(0)`);
     const member1Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(1)`);
     if (!member0Ax.name || !member0Ax.name.includes('Ran') || !member0Ax.name.includes('t632-one')) {
-      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include "bash" and "t632-one".`);
+      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include "Ran" and "t632-one".`);
     } else {
       findings.push(`First member's own accessible name includes both tool and command: "${member0Ax.name}".`);
     }
-    if (!member1Ax.name || !member1Ax.name.includes('Ran') || !member1Ax.name.includes('exit 9')) {
-      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to include "bash" and "exit 9".`);
+    if (!member1Ax.name || !/^Failed Bash\b/.test(member1Ax.name) || !member1Ax.name.includes('exit 9')) {
+      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to start "Failed Bash" (a failed call shows its tool name, #1208) and include "exit 9".`);
     } else {
       findings.push(`Second member's own accessible name includes both tool and command: "${member1Ax.name}".`);
     }
