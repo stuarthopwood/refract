@@ -19,6 +19,7 @@
 ### Session 2026-10-26 (clarify step run by a worker; Stuart was not reachable, so every answer is resolved from the issue and the code and flagged for review)
 
 - Q: What do `bash` and `grep` rows show, and what do screen readers hear? → A: Decided (worker, from code; flag for review): they keep no visible label (their command text is the summary, as today); their accessible name starts with the verb ("Ran npm test"). Every tool row's accessible name starts with its verb label; a status word stays as a prefix only when the tense cannot carry it (Failed, Interrupted, Cancelled, Agent exited), so a running row is never announced "Running Running".
+  - Superseded by spec 023 (issue #469, Stuart's grill 2026-10-26): `bash` and `grep` rows now show a verb ("Ran", "Searched text"); see `specs/023-tool-row-icons/spec.md`.
 - Q: What does a grouped row of calls to one tool read? → A: Decided (worker, from code; flag for review): "<verb> ×N" (for example "Ran ×3"), replacing "<tool> ×N"; the verb follows the group's own running or done state.
 - Q: What replaces the colon labels? → A: Decided (worker, from code; flag for review): "Using skill:" becomes "Using skill" while running and "Used skill" when done; "Skill invoked:" becomes "Skill invoked"; "Asked user:" becomes "Asked user".
 - Q: Do solo thought rows change? → A: Decided (worker, from code; flag for review): no. A solo thought row keeps "Thinking", "Thought for 3s" or "Thought"; the map supplies "Thinking" and "Thought process" for the run header and the solo "Thinking" label.
