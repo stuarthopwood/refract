@@ -82,7 +82,7 @@ function CappedCodeBlock({ code, lang }: { code: string; lang: string | null }) 
 function SectionBlock({ section }: { section: Section }) {
   return (
     <div>
-      <div className="mb-1 text-xs font-medium text-muted-foreground">{section.label}</div>
+      <div className="mb-1 text-xs text-muted-foreground">{section.label}</div>
       <CappedCodeBlock code={section.code} lang={section.lang} />
     </div>
   )

@@ -458,7 +458,7 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
 
 function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
   return function Heading({ className, ...props }: React.ComponentProps<typeof Tag> & ExtraProps) {
-    return <Tag className={cn('font-semibold', className)} {...props} />
+    return <Tag className={cn('font-medium', className)} {...props} />
   }
 }
 
@@ -828,7 +828,7 @@ const components: Components = {
     </div>
   ),
   th: ({ className, ...props }) => (
-    <th className={cn('border border-border bg-muted/50 px-2 py-1 font-semibold', className)} {...props} />
+    <th className={cn('border border-border bg-muted/50 px-2 py-1 font-medium', className)} {...props} />
   ),
   td: ({ className, ...props }) => <td className={cn('border border-border px-2 py-1 align-top', className)} {...props} />,
   // GFM footnotes: the default schema already allows the footnotes `<section>`, its `sr-only`

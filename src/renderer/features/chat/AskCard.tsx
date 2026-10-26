@@ -440,7 +440,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                     <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-[4px] border border-muted-foreground group-data-[state=checked]/checkbox-item:border-primary">
                       <CheckboxIndicator />
                     </span>
-                    <span id={labelId} className="min-w-0 flex-1 break-words font-medium">
+                    <span id={labelId} className="min-w-0 flex-1 break-words">
                       {option.label}
                       {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
                     </span>
@@ -464,7 +464,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                 <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-[4px] border border-muted-foreground group-data-[state=checked]/checkbox-item:border-primary">
                   <CheckboxIndicator />
                 </span>
-                <span className="min-w-0 flex-1 break-words font-medium">Other</span>
+                <span className="min-w-0 flex-1 break-words">Other</span>
               </span>
             </CheckboxItem>
             <Input
@@ -508,7 +508,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                       <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary">
                         <RadioGroupIndicator />
                       </span>
-                      <span id={labelId} className="min-w-0 flex-1 break-words font-medium">
+                      <span id={labelId} className="min-w-0 flex-1 break-words">
                         {option.label}
                         {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
                       </span>
@@ -526,7 +526,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                   <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary">
                     <RadioGroupIndicator />
                   </span>
-                  <span className="min-w-0 flex-1 break-words font-medium">Other</span>
+                  <span className="min-w-0 flex-1 break-words">Other</span>
                 </span>
               </RadioGroupItem>
             </RadioGroup>

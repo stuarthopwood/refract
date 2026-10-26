@@ -62,7 +62,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
                   aria-label={sendBusy ? `Sending now: ${displayText}` : `Send now: ${displayText}`}
                   aria-busy={sendBusy}
                   aria-disabled={anyBusy}
-                  className="rounded-full px-2 text-[0.7rem] font-medium aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  className="rounded-full px-2 text-[0.7rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   onClick={() => {
                     if (anyBusy) return
                     onSendNow(chip)

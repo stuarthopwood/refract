@@ -19,7 +19,7 @@ const DIRECTION_GLYPH: Record<AgentMessageDirection, LucideIcon> = {
   peer: MessagesSquareIcon
 }
 
-const AGENT_MESSAGE_LABEL_CLASS = 'font-medium text-agent-message'
+const AGENT_MESSAGE_LABEL_CLASS = 'text-agent-message'
 
 function DirectionGlyph({ direction, broadcast }: { direction: AgentMessageDirection; broadcast?: boolean }) {
   const Icon = broadcast ? MessagesSquareIcon : DIRECTION_GLYPH[direction]
@@ -70,7 +70,7 @@ export function AgentSteerRow({ item }: { item: ToolItem }) {
     <CollapsedLine
       icon={item.status === 'done' ? <DirectionGlyph direction="from-main" broadcast={broadcast} /> : <StatusIcon status={item.status} />}
       label={<AgentLabel from={MAIN_AGENT_LABEL} to={to} suffix={failed ? ' failed' : undefined} />}
-      labelClassName={cn('font-medium', failed ? 'text-severity-error' : item.status === 'done' ? 'text-agent-message' : undefined)}
+      labelClassName={cn(failed ? 'text-severity-error' : item.status === 'done' ? 'text-agent-message' : undefined)}
       summary={content.split('\n')[0]}
     >
       <div className="whitespace-pre-wrap text-sm">{content}</div>

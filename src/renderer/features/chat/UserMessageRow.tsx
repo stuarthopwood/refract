@@ -88,7 +88,7 @@ export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps
     <>
       <UserMessageTime at={item.at} hide={hideTime} />
       <Message align="end">
-        <MessageAvatar aria-hidden className="text-xs font-medium">
+        <MessageAvatar aria-hidden className="text-xs">
           {initials(name)}
         </MessageAvatar>
         <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
