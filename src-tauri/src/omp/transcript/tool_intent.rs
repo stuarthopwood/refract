@@ -34,12 +34,19 @@ fn is_stripped(c: char) -> bool {
     c.is_control()
         || matches!(
             c,
-            '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+            '\u{061C}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+                | '\u{E0000}'..='\u{E007F}'
         )
 }
 
-/// Drops C0/C1 controls and bidirectional formatting characters, collapses whitespace runs to
-/// one space, trims, and caps at 400 characters; `None` when nothing is left.
+/// Drops C0/C1 controls, bidirectional formatting characters, zero-width characters, and tag
+/// characters, collapses whitespace runs to one space, trims, and caps at 400 characters; `None`
+/// when nothing is left.
 pub(super) fn sanitize_intent(raw: &str) -> Option<String> {
     let mut out = String::new();
     let mut count = 0;

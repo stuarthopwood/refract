@@ -3,6 +3,7 @@ import type { TranscriptItem } from '../../../shared/model'
 import { cn } from '@/lib/utils'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { ToolIcon } from '@/components/ToolIcon'
+import { resolveToolDisplay } from './toolDisplay'
 import {
   chatRowStatus,
   isSubagentSuccessStatus,
@@ -78,7 +79,7 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
 // the prompt and (once known) the result as plain text.
 //
 // Quality-gate remediation (H1, unanimous) and spec 023 FR-017: `icon=` is the Delegate tool
-// glyph (`ToolIcon tool="task"`, Users); `SubagentStatusGlyph` sits in `meta`, ahead of the
+// glyph (`task`'s map icon, Users); `SubagentStatusGlyph` sits in `meta`, ahead of the
 // visible status word and the duration. The glyph's own word stays `sr-only` (the one spoken
 // word); the visible word is `aria-hidden` and gated off for `finished` (decision 14: a quiet
 // icon-plus-duration row, never a loud "Finished" claim).
@@ -107,7 +108,7 @@ export function SubagentRow({ item, showGoal }: SubagentRowProps) {
     // `SubagentChainRow.tsx`'s non-solo branch), so its own expanded body starts at the same
     // label column `ToolCallRow`'s member body does -- one geometry for every Spine member.
     <CollapsedLine
-      icon={<ToolIcon tool="task" />}
+      icon={<ToolIcon icon={resolveToolDisplay('task').icon} />}
       label={item.name}
       labelClassName={cn(isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
       summary={resultSummary}

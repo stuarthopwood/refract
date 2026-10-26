@@ -192,7 +192,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   ])
   return (
     <CollapsedLine
-      icon={<ToolIcon tool={item.tool} target={item.target} tone={failed ? 'error' : 'muted'} />}
+      icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={display.rawId}
       label={label}
       // #570 decision 4, FR-020: a failed call's icon and label take the error colour.
@@ -377,7 +377,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // coloured diff-stat span the aria string has no use for) so this never breaks if that JSX
   // shape changes.
   // Gate round 1 (accessibility-auditor Medium, M1, WCAG 2.5.3 Label in Name): a solo command-
-  // style call's own VISIBLE summary is `commandRowText` ("$ ..."/"grep \"...\""), but this
+  // style call's own VISIBLE summary is `commandRowText` (the bare command, or the quoted grep pattern), but this
   // accessible-name text used the raw, untransformed target -- the two could read completely
   // different text for the identical row. `commandRowText` here too, so the visible text and
   // the accessible name's own description of it can never diverge.
@@ -404,7 +404,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
 
   return (
     <CollapsedLine
-      icon={<ToolIcon tool={first.tool} target={first.target} tone={failed ? 'error' : 'muted'} />}
+      icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={display.rawId}
       label={visibleLabel}
       labelClassName={failed ? 'text-severity-error' : undefined}

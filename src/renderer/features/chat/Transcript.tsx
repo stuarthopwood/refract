@@ -26,11 +26,18 @@ import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
 import { toolRunningAnnouncement, toolVerb } from './toolVerbs'
+import { resolveToolDisplay } from './toolDisplay'
 import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
 import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 import { JUMP_SCROLL_TOP_MARGIN_PX, JumpToStageContext, stageRowDomId } from './stageJump'
+
+// A running group's live announcement reads its intent, cut to 80 characters with an ellipsis.
+const ANNOUNCEMENT_MAX_CHARS = 80
+function clampAnnouncement(text: string | undefined): string | undefined {
+  return text && text.length > ANNOUNCEMENT_MAX_CHARS ? `${text.slice(0, ANNOUNCEMENT_MAX_CHARS - 1)}…` : text
+}
 
 
 // Cached per repository id for the renderer's lifetime (T072, FR-045): every AskQuestionRow in
@@ -866,8 +873,11 @@ export function Transcript({
                               {isStageGroup(row)
                                 ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
                                 : isToolGroup(row)
-                                  ? row.items[0]!.intent?.trim() ||
-                                    [toolRunningAnnouncement(row.items[0]!.skill ? 'skill' : row.tool), row.items[0]!.skill?.name].filter(Boolean).join(' ')
+                                  ? clampAnnouncement(row.items[0]!.intent?.trim()) ||
+                                    [
+                                      toolRunningAnnouncement(row.items[0]!.skill ? 'skill' : resolveToolDisplay(row.tool, row.items[0]!.target).entryTool),
+                                      row.items[0]!.skill?.name
+                                    ].filter(Boolean).join(' ')
                                   : undefined}
                             </span>
                           </MessageScrollerItem>

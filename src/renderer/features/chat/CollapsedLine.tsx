@@ -158,6 +158,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const [tooltipHovered, setTooltipHovered] = React.useState(false)
   const [rowFocusVisible, setRowFocusVisible] = React.useState(false)
   const [tooltipDismissed, setTooltipDismissed] = React.useState(false)
+  // Gate fix: a long transcript has hundreds of tool rows, so the Radix tooltip is mounted only
+  // once the row is armed (icon pointer enter or row focus); until then the icon is a plain span.
+  const [tooltipArmed, setTooltipArmed] = React.useState(false)
   const tooltipOpen = iconTooltip !== undefined && !tooltipDismissed && (tooltipHovered || rowFocusVisible)
   const focusHandlers =
     iconTooltip === undefined
@@ -165,6 +168,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       : {
           onFocus: (e: React.FocusEvent<HTMLElement>) => {
             if (e.target !== e.currentTarget) return
+            setTooltipArmed(true)
             setTooltipDismissed(false)
             setRowFocusVisible(e.currentTarget.matches(':focus-visible'))
           },
@@ -182,6 +186,20 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * it rather than flush against the top. */}
       {iconTooltip === undefined ? (
         <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
+      ) : !tooltipArmed ? (
+        // The first pointer enter arms the row and opens the tooltip in the same update, so the
+        // first hover shows it; Radix's trigger then owns the pointer leave.
+        <span
+          aria-hidden="true"
+          className="flex h-5 w-4 shrink-0 items-center justify-center"
+          onPointerEnter={() => {
+            setTooltipArmed(true)
+            setTooltipDismissed(false)
+            setTooltipHovered(true)
+          }}
+        >
+          {icon}
+        </span>
       ) : (
         <Tooltip
           open={tooltipOpen}
@@ -196,7 +214,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
             </span>
           </TooltipTrigger>
           <TooltipContent
-            onEscapeKeyDown={() => {
+            onEscapeKeyDown={(event) => {
+              // Claim the Escape only when it closes this tooltip, so it never also closes a readout card.
+              if (tooltipOpen) event.preventDefault()
               setTooltipDismissed(true)
               setTooltipHovered(false)
             }}

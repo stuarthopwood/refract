@@ -1,18 +1,18 @@
+import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { resolveToolDisplay } from '@/features/chat/toolDisplay'
 
 export interface ToolIconProps {
-  tool: string
-  target?: string
+  /** The resolved glyph; feature code picks it (for a tool row, `resolveToolDisplay(tool, target).icon`). */
+  icon: LucideIcon
   tone?: 'muted' | 'error'
   className?: string
 }
 
-// Spec 023 FR-001, FR-015, FR-021 (research Decision 7): the one shared tool glyph, resolved from
-// the verb map through `resolveToolDisplay`. Decorative only: the label and the tooltip carry the
-// tool's meaning, so the glyph is hidden from assistive technology.
-export function ToolIcon({ tool, target, tone = 'muted', className }: ToolIconProps) {
-  const Icon = resolveToolDisplay(tool, target).icon
+// Spec 023 FR-001, FR-015, FR-021 (research Decision 7): the one shared tool glyph. The caller
+// resolves the icon from the verb map, so this component never imports feature code. Decorative
+// only: the label and the tooltip carry the tool's meaning, so the glyph is hidden from
+// assistive technology.
+export function ToolIcon({ icon: Icon, tone = 'muted', className }: ToolIconProps) {
   return (
     <Icon
       aria-hidden="true"
