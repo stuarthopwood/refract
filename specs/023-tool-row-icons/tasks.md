@@ -120,6 +120,21 @@
 
 - [x] T029 Follow [quickstart.md](./quickstart.md) steps 1 to 9 with a scratch debug build through `scripts/verify-tauri.mjs` (scratch `REFRACT_DATA_DIR`, own CDP port, recorded-frame `session` fixture, then one short real-`omp` session for failed, MCP, `xd://` and unknown tools, reopened from history). Report pass or fail per step with evidence (DOM text, accessible names, computed colours, screenshots).
 
+T029 results (2026-10-27). Run on a scratch debug exe, scratch `REFRACT_DATA_DIR`, recorded-frame fake `omp`, read through CDP. Screenshots and row dumps (`rows-*.json`) are kept in the session folder, not the repo.
+
+| Step | Result | Evidence |
+|---|---|---|
+| 1 Layout | Pass | DOM order icon, label, summary, status and duration; thought rows have no tool icon (`01-rows-dark-setting-off.png`) |
+| 2 Labels | Pass | Intent shown when present; running and done forms; failed `grep` reads "Search text", failed `bash` reads "Run"; no `$ ` or `grep` prefix (`rows-off-dark.json`, `12-running-rows-setting-on.png`) |
+| 3 Special tools | Pass | MCP shows Plug and humanised name; unknown shows Wrench; `xd://lsp` write shows the LSP icon and verb and does not group with plain writes; `wait` shows Hourglass (`13-tooltip-xd-lsp.png`) |
+| 4 Groups | Pass | "Read ×N" with FileText; members keep their own labels (`14-group-expanded.png`) |
+| 5 Tooltip | Pass | Hover shows the raw id; Tab focus opens it; tab-stop count unchanged; Escape closes it and keeps focus (`03-tooltip-hover.png`, `04-tooltip-focus.png`) |
+| 6 Contrast | Pass, partial | Icon 7.3:1 and 6.85:1 on Dark; Nordic Frost and Dark high contrast checked; `pnpm check:theme-contrast` 1039/1039. Forced colours not emulated |
+| 7 Setting | Pass | Off by default after "Show tool calls"; on adds the muted raw id at once; survives a relaunch with the same data dir (`06-settings-tool-names-on.png`, `07-rows-dark-setting-on.png`, `15-setting-after-restart.png`) |
+| 8 Accessible names | Pass | Failed rows start "Failed", then label, raw id (setting on) and target; icons are `aria-hidden` (`rows-on-dark.json`) |
+| 9 Other surfaces and history | Pass, partial | Approval card shows the icon beside "Allow tool: bash"; subagent rows show Users; dialog keeps the raw id (`02-subagents-approval-dark.png`, `05-full-call-dialog.png`). Not run: reopening a real-`omp` Conversation from history (SC-007) |
+
+The 360 px check had no horizontal scroll (`10-rows-360px-setting-on.png`). Refract has no light theme.
 ## Dependencies and execution order
 
 | Slice | Depends on | Parallel with |
