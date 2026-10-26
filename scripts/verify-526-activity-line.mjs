@@ -19,7 +19,7 @@ const LOG = 'verify-526';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_526_SHOTS_DIR || path.join(tmpdir(), 'refract-526-shots');
 
-const PLAYFUL = ['Thinking hard…', 'Connecting the dots…', 'Rolling up sleeves…', 'Piecing it together…', 'Turning it over…', 'Mulling it over…', 'Following the thread…', 'Sketching a plan…', 'Gathering thoughts…', 'Working the problem…', 'Lining things up…', 'Making progress…'];
+const PLAYFUL = ['On it…', 'Connecting the dots…', 'Chewing on it…', 'Piecing it together…', 'Turning it over…', 'Mulling it over…', 'Following the thread…', 'Doing the thing…', 'Gathering thoughts…', 'Working the problem…', 'Lining things up…', 'Having a good think…'];
 const BANNER_TEXT = `(document.querySelector('[data-testid="current-work-banner-text"]')?.textContent ?? null)`;
 
 const report = [];
