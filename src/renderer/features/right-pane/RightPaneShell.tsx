@@ -59,7 +59,7 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
 
   if (openPanelIds.length === 0) {
     return (
-      <div className="flex h-full flex-col overflow-hidden">
+      <div data-right-pane-shell className="flex h-full flex-col overflow-hidden">
         <WindowControlsSpacerRow />
         <WidthPresetControl resize={resize} />
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -72,10 +72,11 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   const isTabBar = openPanelIds.length >= 2
 
   return (
-    <div id="right-pane-active-panel" className="flex h-full flex-col overflow-hidden">
+    <div id="right-pane-active-panel" data-right-pane-shell className="flex h-full flex-col overflow-hidden">
       <PanelTabBar sessionId={sessionId} resize={resize} />
       <div
         ref={contentRef}
+        data-right-pane-content
         tabIndex={-1}
         className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         role={isTabBar ? 'tabpanel' : 'region'}
