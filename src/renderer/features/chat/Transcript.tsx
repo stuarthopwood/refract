@@ -25,6 +25,7 @@ import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
+import { toolVerb } from './toolVerbs'
 import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
 import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
@@ -865,9 +866,7 @@ export function Transcript({
                               {isStageGroup(row)
                                 ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
                                 : isToolGroup(row)
-                                  ? row.items[0]!.skill
-                                    ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
-                                    : `${toolStatusLabel('running')} ${row.tool}`
+                                  ? [toolVerb(row.items[0]!.skill ? 'skill' : row.tool, 'running'), row.items[0]!.skill?.name].filter(Boolean).join(' ')
                                   : undefined}
                             </span>
                           </MessageScrollerItem>

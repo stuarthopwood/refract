@@ -265,7 +265,7 @@ interface AskQuestionRowProps {
 }
 
 // The answered-question line (T073, FR-018, FR-045, docs/DESIGN.md "Chat"): a collapsed
-// "Asked user:" row (question cut to one line) on the T080 baseline, expanding to the full
+// "Asked user" row (question cut to one line) on the T080 baseline, expanding to the full
 // question through the same sanitised-markdown heading/body renderer the live card uses (FR-018,
 // issue #491), with an indented "Answer:" row below carrying a small round avatar of the user's
 // initials, their name, and the answer ("Cancelled" for a cancelled question). Built from the
@@ -290,7 +290,7 @@ export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQues
     <CollapsedLine
       ref={triggerRef}
       icon={<CircleQuestionMarkIcon className="size-3.5 shrink-0 text-muted-foreground" />}
-      label="Asked user:"
+      label="Asked user"
       summary={summary}
       meta={<AskStatusMeta status={status} />}
     >
@@ -325,13 +325,13 @@ export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQues
               <div className="flex items-start gap-2 pl-4">
                 <span
                   aria-hidden
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px]"
                 >
                   {initials(name)}
                 </span>
                 <div className="text-sm">
                   <span className="text-muted-foreground">Answer: </span>
-                  <span className="font-medium">{name}</span>
+                  <span>{name}</span>
                   <span className="text-muted-foreground">: {answer?.text ?? 'None selected'}</span>
                 </div>
               </div>
@@ -552,7 +552,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                    * never stretches), so without `w-full` here `break-words` has no constrained box
                    * to wrap inside and an unbreakable token (e.g. a long URL with no spaces) just
                    * overflows the button -- live-verified at 380px before this line was added. */}
-                  <span className="w-full min-w-0 break-words text-sm font-medium">
+                  <span className="w-full min-w-0 break-words text-sm">
                     {displayLabel}
                     {recommended && <span className="font-normal text-muted-foreground">, Recommended</span>}
                   </span>
