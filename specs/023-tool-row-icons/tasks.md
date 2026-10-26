@@ -118,7 +118,7 @@
 **Depends on**: Slice 10.
 **Owns**: no source files; screenshots go to the session folder, not the repo.
 
-- [ ] T029 Follow [quickstart.md](./quickstart.md) steps 1 to 9 with a scratch debug build through `scripts/verify-tauri.mjs` (scratch `REFRACT_DATA_DIR`, own CDP port, recorded-frame `session` fixture, then one short real-`omp` session for failed, MCP, `xd://` and unknown tools, reopened from history). Report pass or fail per step with evidence (DOM text, accessible names, computed colours, screenshots).
+- [x] T029 Follow [quickstart.md](./quickstart.md) steps 1 to 9 with a scratch debug build through `scripts/verify-tauri.mjs` (scratch `REFRACT_DATA_DIR`, own CDP port, recorded-frame `session` fixture, then one short real-`omp` session for failed, MCP, `xd://` and unknown tools, reopened from history). Report pass or fail per step with evidence (DOM text, accessible names, computed colours, screenshots).
 
 ## Dependencies and execution order
 
