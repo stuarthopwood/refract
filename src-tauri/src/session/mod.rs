@@ -16,6 +16,7 @@ pub mod pending_selection;
 pub mod readout;
 mod readout_head_watch;
 pub mod saved_history;
+pub mod saved_history_cache;
 pub mod side_chat;
 pub mod start_queue;
 pub mod subagents;

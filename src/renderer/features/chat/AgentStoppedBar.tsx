@@ -20,6 +20,7 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
     if (!(await setShowAgentStoppedBar(false))) return
     focusSessionPane(sessionId)
     toast.success('The Agent stopped bar is hidden. Turn it back on in Settings > Sessions.', {
+      duration: 10000,
       action: { label: 'Undo', onClick: () => void setShowAgentStoppedBar(true) }
     })
   }
@@ -43,7 +44,7 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
       <Button type="button" variant="outline" size="xs" onClick={handleStart}>
         Start agent
       </Button>
-      <Button type="button" variant="link" size="xs" onClick={() => void handleDontShowAgain()}>
+      <Button type="button" variant="link" size="xs" className="text-muted-foreground" onClick={() => void handleDontShowAgain()}>
         Don't show again
       </Button>
     </Alert>

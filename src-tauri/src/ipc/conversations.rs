@@ -92,7 +92,8 @@ pub(crate) async fn build_snapshot(
 /// process, through the unchanged `SessionSnapshot` shape -- or a plain notice when the file is
 /// missing or holds no messages. Once the agent starts, its live transcript replaces this.
 async fn inject_saved_history(runtime: &mut Value, session: &crate::store::registry::Session) {
-    use crate::session::saved_history::{notice_for, read_saved_history, SavedHistory};
+    use crate::session::saved_history::{notice_for, SavedHistory};
+    use crate::session::saved_history_cache::load_saved_history;
     let stopped = runtime.get("status").and_then(Value::as_str) == Some("stopped");
     let has_live = runtime
         .get("transcript")
@@ -101,7 +102,11 @@ async fn inject_saved_history(runtime: &mut Value, session: &crate::store::regis
     if !stopped || has_live {
         return;
     }
-    let history = read_saved_history(session.current_conversation.as_deref()).await;
+    let history = load_saved_history(
+        session.session_dir.as_deref(),
+        session.current_conversation.as_deref(),
+    )
+    .await;
     let transcript = match notice_for(&history) {
         Some(notice) => serde_json::json!([notice]),
         None => match history {
