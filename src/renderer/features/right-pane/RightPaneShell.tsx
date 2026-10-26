@@ -36,7 +36,18 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
-  const prevOpenPanelIdsRef = useRef<PanelId[]>([])
+  const paneOpen = useRightPaneStore((s) => s.open)
+  // Seeded from the store so a panel restored from settings (spec 024) is not mistaken for a
+  // genuine open and does not steal focus at launch.
+  const prevOpenPanelIdsRef = useRef<PanelId[]>(useRightPaneStore.getState().openPanelIds)
+
+  // A Subagents tab restored from settings has no Session binding yet; bind it to the shown
+  // Session once the pane is visible (spec 024 US2).
+  useEffect(() => {
+    if (paneOpen && sessionId && !subagentSessionId && openPanelIds.includes('subagents')) {
+      useSubagentPanelStore.getState().openPanel(sessionId)
+    }
+  }, [paneOpen, sessionId, subagentSessionId, openPanelIds])
 
   // Focus moves into the newly opened panel's own content -- but only for a genuine open (this
   // panel was not already one of the open tabs a moment ago), never for switching between two
