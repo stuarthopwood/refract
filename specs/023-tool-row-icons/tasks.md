@@ -78,10 +78,10 @@
 **Depends on**: Slices 1, 2, 3, 4, 5, 6.
 **Owns**: `src/renderer/features/chat/ToolRow.tsx`, `src/renderer/features/chat/toolRowParts.tsx` (new).
 
-- [ ] T019 [US1] New `toolRowParts.tsx` (Decision 6): helpers used by both row kinds: the label (`toolRowLabel`), a muted raw-id span placed at the start of the summary when `transcriptDisplay.toolNames` is on (read with `useSettingsStore`), the trailing `meta` (`StatusIcon` then duration), and the accessible name (`toolAriaPrefix(status)`, label, raw id when on, target; FR-015).
-- [ ] T020 [US1] `ToolCallRow` (about `:186-237`): `icon={<ToolIcon tool target tone/>}` (FR-001, FR-020), `iconTooltip={rawId}` (FR-011), label from T019 for every tool including `bash` and `grep` (stop hiding the label for `COMMAND_STYLE_TOOLS`), status icon moved into `meta`, aria name from T019; error label colour unchanged (`text-severity-error`).
-- [ ] T021 [US1] `ToolGroupRow` (about `:277-420`): shared tool's `ToolIcon` and tooltip; label `${toolVerb(entryTool, phase)} ×N` (FR-014); trailing status icon; aria name from T019; skill rows keep "Using skill"/"Used skill" through the map. Each member row uses T020.
-- [ ] T022 [US2] Confirm a row with an intent shows it as the label in every status and a `wait` row's summary is its target (FR-018). At 360 px (SC-005, FR-009) the tool icon and trailing status icon are `shrink-0`, the label truncates with an ellipsis, and the raw id and target truncate before it. Keep `ToolRow.tsx` at or under 600 lines.
+- [x] T019 [US1] New `toolRowParts.tsx` (Decision 6): helpers used by both row kinds: the label (`toolRowLabel`), a muted raw-id span placed at the start of the summary when `transcriptDisplay.toolNames` is on (read with `useSettingsStore`), the trailing `meta` (`StatusIcon` then duration), and the accessible name (`toolAriaPrefix(status)`, label, raw id when on, target; FR-015).
+- [x] T020 [US1] `ToolCallRow` (about `:186-237`): `icon={<ToolIcon tool target tone/>}` (FR-001, FR-020), `iconTooltip={rawId}` (FR-011), label from T019 for every tool including `bash` and `grep` (stop hiding the label for `COMMAND_STYLE_TOOLS`), status icon moved into `meta`, aria name from T019; error label colour unchanged (`text-severity-error`).
+- [x] T021 [US1] `ToolGroupRow` (about `:277-420`): shared tool's `ToolIcon` and tooltip; label `${toolVerb(entryTool, phase)} ×N` (FR-014); trailing status icon; aria name from T019; skill rows keep "Using skill"/"Used skill" through the map. Each member row uses T020.
+- [x] T022 [US2] Confirm a row with an intent shows it as the label in every status and a `wait` row's summary is its target (FR-018). At 360 px (SC-005, FR-009) the tool icon and trailing status icon are `shrink-0`, the label truncates with an ellipsis, and the raw id and target truncate before it. Keep `ToolRow.tsx` at or under 600 lines.
 
 **Checkpoint**: `pnpm typecheck`, `pnpm test`, `pnpm check:file-size`, `pnpm check:ui-text`.
 

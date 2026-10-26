@@ -866,7 +866,8 @@ export function Transcript({
                               {isStageGroup(row)
                                 ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
                                 : isToolGroup(row)
-                                  ? [toolRunningAnnouncement(row.items[0]!.skill ? 'skill' : row.tool), row.items[0]!.skill?.name].filter(Boolean).join(' ')
+                                  ? row.items[0]!.intent?.trim() ||
+                                    [toolRunningAnnouncement(row.items[0]!.skill ? 'skill' : row.tool), row.items[0]!.skill?.name].filter(Boolean).join(' ')
                                   : undefined}
                             </span>
                           </MessageScrollerItem>

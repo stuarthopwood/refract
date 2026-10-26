@@ -40,6 +40,8 @@
 - Q: What colour is the tool icon on a failed call? → A: Decided (worker, from #570 and spec 022; flag for review): the tool icon follows the label's colour, so it takes the error colour with the label on failure; the trailing status icon keeps its own #570 shape and colour. Every other state keeps the icon muted.
 - Q: How are `write` calls to `xd://<tool>` grouped and shown when the tool is unknown? → A: Decided (worker; flag for review): such a call is displayed as the target tool everywhere (icon, verb, group label) and never merges into a group with plain `write` calls or with a different target tool; an unknown target tool takes the Wrench icon and its sentence-case name. The tooltip reads `write xd://<tool>`.
 - Q: What does a `wait` row's summary say? → A: Decided (worker; flag for review): the call's target, the jobs or agents it waits for, shown where every other row shows its target; no new text is invented.
+- Q: What does the live "running" announcement for a hidden tool row say? → A: Decided (implement worker, from analyze; flag for review): the first call's intent when it has one, otherwise spec 022's running verb ("Reading", or "Running <name>" for a tool shown by its own name).
+- Q: Does a running call with an intent take spec 022's "Running" prefix in its accessible name? → A: Decided (implement worker; flag for review): no. The intent already reads as the call's progress, so the prefix is kept only for the statuses that did not complete (failed, interrupted, stopped, agent exited) and, with no intent, for a running tool shown by its own name.
 
 ## User Scenarios & Testing *(mandatory)*
 
