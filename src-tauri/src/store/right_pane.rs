@@ -13,7 +13,7 @@ use super::{Settings, SettingsStore};
 pub(super) const KEY: &str = "rightPane";
 pub(crate) const WIDTH_DEFAULT: i64 = 320;
 pub(crate) const WIDTH_MIN: i64 = 240;
-pub(crate) const WIDTH_MAX: i64 = 4000;
+pub(crate) const WIDTH_MAX: i64 = 520; // matches the renderer's RIGHT_PANE_MAX_WIDTH_PX
 // A floor under a hand-edited settings.json or a renderer bug, far above the six real panels.
 const MAX_IDS: usize = 16;
 const MAX_ID_BYTES: usize = 64;

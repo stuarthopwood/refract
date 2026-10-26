@@ -126,7 +126,7 @@ function RailButton({ panel, sessionId, pressed, tabIndex, buttonRef, onFocus, o
           aria-pressed={pressed}
           aria-label={label}
           tabIndex={tabIndex}
-          className="relative aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground"
+          className="relative aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground forced-colors:aria-pressed:border-[Highlight]"
           onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
           onFocus={onFocus}
           onKeyDown={onKeyDown}

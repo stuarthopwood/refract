@@ -452,8 +452,10 @@ export function App() {
   useLayoutEffect(() => {
     const handle = rightPaneRef.current
     if (!handle) return
-    if (paneShown && handle.isCollapsed()) handle.expand()
-    else if (!paneShown && !handle.isCollapsed()) handle.collapse()
+    if (paneShown && handle.isCollapsed()) {
+      handle.expand()
+      handle.resize(useRightPaneStore.getState().widthPx) // expand() alone returns to the library's remembered size, not the restored width
+    } else if (!paneShown && !handle.isCollapsed()) handle.collapse()
   }, [paneShown, showReadiness, view])
 
   useRightPaneShortcut(!showReadiness && view === 'chat')

@@ -4,23 +4,14 @@ import {
   RIGHT_PANE_MIN_WIDTH_PX,
   useRightPaneStore
 } from '../../state/right-pane-store'
-import type { PanelId } from './panel-registry'
+import { HOSTED_PANELS, type PanelId } from './panel-registry'
 
 // Spec 024 FR-005 to FR-007 (#538): the single writer of `Settings.rightPane`, mirroring
 // `pull-requests-layout-store.ts`'s debounced persist. `restoreRightPane` seeds the store from
 // the saved row without writing back; the subscription then saves only genuine changes.
 
-const PANEL_IDS: readonly PanelId[] = [
-  'subagents',
-  'fdb-knowledge',
-  'agent-builder',
-  'side-chat',
-  'file-explorer',
-  'git-changes'
-]
-
 function isPanelId(id: string): id is PanelId {
-  return (PANEL_IDS as readonly string[]).includes(id)
+  return HOSTED_PANELS.some((panel) => panel.id === id)
 }
 
 let lastSaved = ''
@@ -34,7 +25,7 @@ function snapshot(): RightPaneSettings {
 
 export function restoreRightPane(saved: RightPaneSettings | undefined): void {
   const source = saved ?? DEFAULT_RIGHT_PANE
-  const openPanelIds = source.openPanelIds.filter(isPanelId)
+  const openPanelIds = Array.isArray(source.openPanelIds) ? source.openPanelIds.filter(isPanelId) : []
   const active = source.activePanelId
   useRightPaneStore.getState().restore({
     open: source.open,
@@ -63,6 +54,11 @@ function save(): void {
 export function startRightPanePersistence(): void {
   if (started) return
   started = true
+  window.addEventListener('pagehide', () => {
+    if (timer === undefined) return
+    clearTimeout(timer)
+    save()
+  })
   useRightPaneStore.subscribe((state, prev) => {
     if (
       state.open === prev.open &&
