@@ -87,7 +87,7 @@ export function SessionDetailsCard({
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5">
               <StateIcon status={displayStatus(session)} />
-              <span className="font-medium">{STATUS_LABEL[displayStatus(session)]}</span>
+              <span>{STATUS_LABEL[displayStatus(session)]}</span>
               <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

@@ -98,7 +98,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
         <div className="flex min-w-0 flex-col gap-4 overflow-y-auto">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.heading} className="flex min-w-0 flex-col gap-2">
-              <h3 className="text-xs font-medium text-muted-foreground">{group.heading}</h3>
+              <h3 className="text-xs text-muted-foreground">{group.heading}</h3>
               <ul role="list" className="flex flex-col gap-2">
                 {group.rows.map((row) => (
                   <li key={row.action} className="flex min-w-0 items-center justify-between gap-3">

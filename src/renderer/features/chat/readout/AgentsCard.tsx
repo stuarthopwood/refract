@@ -51,7 +51,7 @@ export function AgentsCard({
 
   return (
     <div className="w-64" aria-label="Running subagents">
-      <div data-slot="agents-card-header" className="text-xs font-medium text-foreground">{running.length} running</div>
+      <div data-slot="agents-card-header" className="text-xs text-foreground">{running.length} running</div>
       {shown.length > 0 && (
         <ul className="mt-2 max-h-[min(16rem,40vh)] space-y-2 overflow-y-auto">
           {shown.map((agent) => (
@@ -62,7 +62,7 @@ export function AgentsCard({
                   {/* Gate round 1 fix 6: the agent's own NAME leads (never falls back to the
                       task text the way `nameOrTask` does), the one-line summary follows below
                       in muted text -- truncated, never a multi-line wrap. */}
-                  <span className="truncate font-medium">{agent.name ?? agent.nameOrTask}</span>
+                  <span data-slot="agents-card-name" className="truncate">{agent.name ?? agent.nameOrTask}</span>
                   <span className="shrink-0 tabular-nums text-muted-foreground">{formatElapsed(now - agent.startedAt)}</span>
                 </div>
                 {/* Decision record: "inert text" -- a plain span, never a live region or a focusable row. */}

@@ -162,7 +162,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                         data-choice-item
                         className="flex w-full min-w-0 flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left outline-none focus-visible:outline-hidden hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
                       >
-                        <span className="flex items-center gap-2 text-sm font-medium">
+                        <span className="flex items-center gap-2 text-sm">
                           <span className="min-w-0 truncate">{conversation.title || 'Untitled conversation'}</span>
                           {conversation.isCurrent && <Badge variant="secondary">Current</Badge>}
                         </span>
@@ -180,7 +180,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                       collisionPadding={8}
                       className="flex-col items-start [overflow-wrap:anywhere] max-w-[min(20rem,var(--radix-tooltip-content-available-width))]"
                     >
-                      <p className="font-medium">{conversation.title || 'Untitled conversation'}</p>
+                      <p>{conversation.title || 'Untitled conversation'}</p>
                       <p className="text-muted-foreground">{new Date(conversation.createdAt).toLocaleString()}</p>
                       {conversation.preview && <p className="text-muted-foreground">{conversation.preview}</p>}
                     </TooltipContent>

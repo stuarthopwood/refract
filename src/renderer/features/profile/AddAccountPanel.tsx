@@ -119,7 +119,7 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
                     twice. */}
                 <span aria-hidden className="text-xs text-muted-foreground">One-time code</span>
                 <div className="flex items-center gap-2">
-                  <span aria-hidden className="font-code text-xl font-semibold tracking-widest">
+                  <span className="font-code text-xl font-medium tracking-widest">
                     {formatDeviceCode(code)}
                   </span>
                   <span id="add-account-code-value" className="sr-only">One-time code: {spellOutCode(code)}</span>

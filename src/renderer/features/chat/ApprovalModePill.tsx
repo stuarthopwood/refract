@@ -102,7 +102,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
             <DropdownMenuItem key={item.value} onSelect={() => handleSelect(item.value)}>
               <ItemIcon aria-hidden className="size-4" />
               <div className="flex flex-col gap-0.5 py-0.5">
-                <span className="flex items-center gap-1.5 font-medium">
+                <span className="flex items-center gap-1.5">
                   {item.label}
                   {checked && (
                     <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">

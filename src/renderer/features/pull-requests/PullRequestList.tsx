@@ -49,7 +49,7 @@ const STATE_OPTIONS: Array<{ value: PullRequestStateFilter; label: string }> = [
 // the wrap's edge for the first or last visible tab; drawing both inward (`DiffView.tsx`'s own
 // established pattern for the identical overflow-clipping problem) keeps them visible.
 const PR_FILTER_TAB_TRIGGER_CLASS =
-  'relative flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset data-[state=active]:bg-muted data-[state=active]:font-semibold data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-2 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:rounded-full data-[state=active]:after:bg-foreground forced-colors:data-[state=active]:border forced-colors:data-[state=active]:border-[Highlight]'
+  'relative flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-2 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:rounded-full data-[state=active]:after:bg-foreground forced-colors:data-[state=active]:border forced-colors:data-[state=active]:border-[Highlight]'
 
 // Gate-fix (M1, caught live 2026-10-18): a STATIC mask used to fade both edges unconditionally,
 // even the start edge while already fully scrolled to the start (nothing clipped there to fade).

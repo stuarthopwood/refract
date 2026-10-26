@@ -43,7 +43,7 @@ export function RoleOption({
       }}
       className={cn(
         'flex min-w-0 shrink-0 cursor-default flex-col gap-0.5 rounded-md border border-border px-2 py-1 text-xs',
-        active && 'font-semibold outline-2 outline-solid outline-offset-[-2px] outline-active-indicator',
+        active && 'font-medium outline-2 outline-solid outline-offset-[-2px] outline-active-indicator',
         disabled && 'cursor-not-allowed opacity-60'
       )}
     >

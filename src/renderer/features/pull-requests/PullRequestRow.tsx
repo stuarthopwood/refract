@@ -84,7 +84,7 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
       {/* Issue #1122: the shared `ActiveIndicatorBar` (square, flush full-height, 2px) replaces
           this row's own hand-copied rounded-pill/inset span. */}
       {selected && <ActiveIndicatorBar />}
-      <span className="flex items-center gap-1.5 font-medium">
+      <span className="flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate">{pullRequest.title}</span>
         <span className="shrink-0 text-xs font-normal text-muted-foreground">#{pullRequest.number}</span>
       </span>

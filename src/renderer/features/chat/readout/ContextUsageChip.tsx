@@ -57,7 +57,7 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
       <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${usedFull} of ${windowFull} tokens used, ${percent} percent`}</span>
       <span aria-hidden data-context-usage-figures style={colour}>
         {used}/{windowSize} ({percent}%)
-        {high && <span className="font-medium"> high</span>}
+        {high && <span> high</span>}
       </span>
       {showBar && (
         <span aria-hidden data-context-usage-bar className="absolute inset-x-0 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-muted forced-colors:hidden">

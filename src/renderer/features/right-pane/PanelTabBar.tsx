@@ -199,7 +199,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
     return (
       <div className="flex shrink-0 flex-col">
         <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
-          <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-semibold">
+          <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-medium">
             {descriptor.name}
           </h2>
           <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">

@@ -329,7 +329,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             <div className="flex flex-col gap-4">
               {records.map((record) => (
                 <div key={record.id} className="flex flex-col gap-1">
-                  <p className="text-right text-sm font-medium">
+                  <p className="text-right text-sm">
                     <span className="sr-only">You asked: </span>
                     {record.question}
                   </p>

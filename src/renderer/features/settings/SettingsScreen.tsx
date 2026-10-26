@@ -171,7 +171,7 @@ export function SettingsScreen() {
                   return (
                     <div key={toggle.kind} className="flex items-center justify-between gap-4 py-3">
                       <label htmlFor={id} className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium">{toggle.label}</span>
+                        <span className="text-sm">{toggle.label}</span>
                         <span className="text-xs text-muted-foreground">{toggle.description}</span>
                       </label>
                       <Switch
