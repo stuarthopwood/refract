@@ -2,6 +2,7 @@ import * as React from 'react'
 import type { TranscriptItem } from '../../../shared/model'
 import { cn } from '@/lib/utils'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
+import { ToolIcon } from '@/components/ToolIcon'
 import {
   chatRowStatus,
   isSubagentSuccessStatus,
@@ -76,22 +77,22 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
 // activation can reopen the same subagent's full transcript panel, spec 004). Expanding shows
 // the prompt and (once known) the result as plain text.
 //
-// Quality-gate remediation (H1, unanimous): `icon=` is a `CollapsedLine` icon slot (a fixed
-// `size-4` box, #565 decision 7) -- `SubagentStatusGlyph` keeps its status word `sr-only` there
-// (never visible, it would overflow the box and paint over the label); the visible word is
-// rendered HERE instead, in `meta`, ahead of the duration, gated off for `finished` (decision 14:
-// a quiet icon-plus-duration row, never a loud "Finished" claim).
+// Quality-gate remediation (H1, unanimous) and spec 023 FR-017: `icon=` is the Delegate tool
+// glyph (`ToolIcon tool="task"`, Users); `SubagentStatusGlyph` sits in `meta`, ahead of the
+// visible status word and the duration. The glyph's own word stays `sr-only` (the one spoken
+// word); the visible word is `aria-hidden` and gated off for `finished` (decision 14: a quiet
+// icon-plus-duration row, never a loud "Finished" claim).
 export function SubagentRow({ item, showGoal }: SubagentRowProps) {
   const status = chatRowStatus(item.status)
   const duration =
     item.status !== 'running' && item.durationMs != null ? (
       <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
     ) : undefined
-  // Gate round 2 (Low, double-word fix): the status word here duplicates the icon slot's own
-  // `SubagentStatusGlyph` `sr-only` word (both sit inside this row's computed accessible name,
-  // e.g. "Failed alpha Failed 3s") -- `aria-hidden` keeps the visible word sighted-only.
+  // Gate round 2 (Low, double-word fix): the status word here duplicates `SubagentStatusGlyph`'s
+  // own `sr-only` word -- `aria-hidden` keeps the visible word sighted-only.
   const meta = (
     <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      <SubagentStatusGlyph status={status} />
       {status !== 'finished' && <span aria-hidden="true">{SUBAGENT_STATUS_LABEL[status]}</span>}
       {duration}
     </span>
@@ -106,7 +107,7 @@ export function SubagentRow({ item, showGoal }: SubagentRowProps) {
     // `SubagentChainRow.tsx`'s non-solo branch), so its own expanded body starts at the same
     // label column `ToolCallRow`'s member body does -- one geometry for every Spine member.
     <CollapsedLine
-      icon={<SubagentStatusGlyph status={status} />}
+      icon={<ToolIcon tool="task" />}
       label={item.name}
       labelClassName={cn(isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
       summary={resultSummary}

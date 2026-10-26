@@ -68,8 +68,8 @@
 **Depends on**: Slice 4.
 **Owns**: `src/renderer/features/chat/formatToolCommand.ts`, `src/renderer/features/chat/groupToolItems.ts`.
 
-- [ ] T017 [US1] `formatToolCommand.ts` (FR-006): `commandRowText` drops the `$ ` prefix for `bash` and the leading `grep ` for `grep` (summary is the command, or the quoted pattern and path). Keep the `COMMAND_STYLE_TOOLS` export so `ToolRow.tsx` still compiles until slice 7.
-- [ ] T018 [US1] `groupToolItems.ts:87` (Decision 11): compare `resolveToolDisplay(item.tool, item.target).key` with the run's first item's key instead of `item.tool`. Skill boundaries (#543) unchanged.
+- [x] T017 [US1] `formatToolCommand.ts` (FR-006): `commandRowText` drops the `$ ` prefix for `bash` and the leading `grep ` for `grep` (summary is the command, or the quoted pattern and path). Keep the `COMMAND_STYLE_TOOLS` export so `ToolRow.tsx` still compiles until slice 7.
+- [x] T018 [US1] `groupToolItems.ts:87` (Decision 11): compare `resolveToolDisplay(item.tool, item.target).key` with the run's first item's key instead of `item.tool`. Skill boundaries (#543) unchanged.
 
 **Checkpoint**: `pnpm typecheck`, `pnpm test` (update an existing assertion only if it pinned the old `$ ` or `grep ` text).
 
@@ -90,8 +90,8 @@
 **Depends on**: Slices 1 and 4.
 **Owns**: `src/renderer/features/chat/RequestCard.tsx`, `src/renderer/features/chat/SubagentRow.tsx`.
 
-- [ ] T023 [US4] `RequestCard.tsx:407`: `<ToolIcon tool={request.tool} />` beside the title; the text "Allow tool: {request.tool}" is unchanged (FR-016). The file is 600 lines and not baselined: free a line (merge or shorten a comment) for the import so it stays at or under 600.
-- [ ] T024 [US4] `SubagentRow.tsx`: leading `icon={<ToolIcon tool="task" />}` (Users); move `SubagentStatusGlyph` into `meta` ahead of the status word and duration, keeping its `sr-only` word out of double reading (FR-017). Stage and chain rows in `SubagentChainRow.tsx` are not changed.
+- [x] T023 [US4] `RequestCard.tsx:407`: `<ToolIcon tool={request.tool} />` beside the title; the text "Allow tool: {request.tool}" is unchanged (FR-016). The file is 600 lines and not baselined: free a line (merge or shorten a comment) for the import so it stays at or under 600.
+- [x] T024 [US4] `SubagentRow.tsx`: leading `icon={<ToolIcon tool="task" />}` (Users); move `SubagentStatusGlyph` into `meta` ahead of the status word and duration, keeping its `sr-only` word out of double reading (FR-017). Stage and chain rows in `SubagentChainRow.tsx` are not changed.
 
 **Checkpoint**: `pnpm typecheck`, `pnpm check:file-size`.
 

@@ -59,7 +59,8 @@ export function commandRowText(item: ToolItem): string {
     // but able to visually reorder the row); `sanitizeLines` strips it the same way `errorLine`
     // strips the error text, so a spoofed command can never read differently from what it does.
     const firstNonEmptyLine = sanitizeLines(nonEmptyLines[0] ?? '')[0] ?? ''
-    return `$ ${firstNonEmptyLine}${nonEmptyLines.length > 1 ? ' …' : ''}`
+    // Spec 023 FR-006: no `$ ` prefix; the row's own label now names the tool's action.
+    return `${firstNonEmptyLine}${nonEmptyLines.length > 1 ? ' …' : ''}`
   }
   if (item.tool === 'grep') {
     // `item.target` is the pattern alone (`extract_target` in `transcript.rs`); the search path
@@ -69,7 +70,8 @@ export function commandRowText(item: ToolItem): string {
     const pattern = sanitizeLines(item.target)[0] ?? ''
     const path = stringField(item.args, 'path')
     const sanitizedPath = path ? sanitizeLines(path)[0] : undefined
-    return sanitizedPath ? `grep "${pattern}" ${sanitizedPath}` : `grep "${pattern}"`
+    // Spec 023 FR-006: no leading `grep `; the quoted pattern and the path only.
+    return sanitizedPath ? `"${pattern}" ${sanitizedPath}` : `"${pattern}"`
   }
   return item.target
 }

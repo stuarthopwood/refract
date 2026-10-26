@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { ToolIcon } from '@/components/ToolIcon'
 import { CollapsedLine } from './CollapsedLine'
 import { consumeAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { isFocusStranded } from '@/lib/focus'
@@ -117,8 +118,7 @@ interface AskResultLike {
   timedOut?: unknown
 }
 
-/** D22: option labels joined with ", ", then "Other: <text>" last, or "None selected" when
- * nothing was picked and nothing was typed. */
+/** D22: option labels joined with ", ", then "Other: <text>" last, or "None selected" if none. */
 function formatAskAnswerText(selectedOptions: string[], customInput: string, fallbackOutput?: string): string {
   const parts: string[] = []
   if (selectedOptions.length > 0) parts.push(selectedOptions.join(', '))
@@ -404,7 +404,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
     return (
       <Card size="sm">
         <CardHeader>
-          <CardTitle>Allow tool: {request.tool}</CardTitle>
+          <CardTitle className="flex items-center gap-2"><ToolIcon tool={request.tool} />Allow tool: {request.tool}</CardTitle>
           <CardDescription className="truncate" title={request.target}>
             {request.target}
           </CardDescription>

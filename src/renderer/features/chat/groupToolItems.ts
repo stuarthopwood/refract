@@ -1,9 +1,14 @@
 import { HIDDEN_TOOL_NOTICE_PREFIX } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
 import { agentSteerTarget } from './agentMessageDirection'
+import { resolveToolDisplay } from './toolDisplay'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type ThinkingItem = Extract<TranscriptItem, { kind: 'thinking' }>
+
+function displayKey(item: ToolItem): string {
+  return resolveToolDisplay(item.tool, item.target).key
+}
 
 export interface ToolGroup {
   kind: 'tool-group'
@@ -84,7 +89,9 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
       continue
     }
     if (item.kind === 'tool' && item.tool !== 'ask' && !item.skill) {
-      if (run.length > 0 && run[0]!.tool === item.tool) {
+      // Spec 023 FR-013: group on the display key, so `write xd://a`, `write xd://b` and a plain
+      // `write` never share a run.
+      if (run.length > 0 && displayKey(run[0]!) === displayKey(item)) {
         run.push(item)
       } else {
         flushRun()
