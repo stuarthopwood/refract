@@ -20,6 +20,7 @@
 - Q: What do the approval card and subagent rows show? → A: The approval card shows the tool icon beside its raw id; its "Allow tool: bash" text is unchanged, consistent with spec 022. Subagent rows keep the agent's name as their label and gain the Delegate (`task`) icon.
 - Q: Does `wait` join the map? → A: Yes: the Hourglass icon, Waiting/Waited, and a summary that says what it waits for. Its animation stays with #566 and its colours with #570.
 - Q: What is the row's label when the model states its intent? → A: OMP sends a model-written intent on the tool start frame (for example "Reading README.md"), and history keeps it as the call's `i` argument. When a call has an intent, the row reads: tool icon, the intent, the muted target, then the trailing status icon. The verb is the fallback when there is no intent. The intent is untrusted model text: plain text only, never markup. The transcript does not carry the intent today, so this needs the session backend and the shared transcript model to carry it.
+- Q: When a failed, stopped or interrupted call has no intent, what does its label say? → A: A plain base form from the one verb map (for example "Search text", "Run", "Edit", "Run code"), so rows never show a raw tool name and never claim work that did not happen; the status prefix in the accessible name and the trailing status icon say what happened. Each map entry gains this third form; an unmapped tool still falls back to its sentence-case name. (Stuart, 2026-10-26; supersedes the clarify step's "sentence-case tool name" answer below and the visible-label part of spec 022's "What does a call that did not complete show?" answer.)
 
 ### Session 2026-10-26 (Skippy's own calls during the grill; not grilled, flag for review)
 
@@ -31,7 +32,7 @@
 ### Session 2026-10-26 (clarify step run by a worker; Stuart was not reachable, so every answer is resolved from the issue and the code and flagged for review)
 
 - Q: How does a row's tooltip open from the keyboard without adding a tab stop to every row? → A: Decided (worker, from code; flag for review): the row is already one focusable disclosure control, and a focusable control cannot nest inside it. The tooltip opens when the pointer hovers the tool icon and while the row's own control has keyboard focus; the icon adds no tab stop and is hidden from assistive technology, because the accessible name already carries the label.
-- Q: What does a call that did not complete show when it has no intent? → A: Decided (worker, from spec 022; flag for review, possible conflict with the grill's "never a raw tool name" rule): spec 022's rule stands. A failed, interrupted, cancelled or agent-exited call with no intent shows the tool's name in sentence case ("Grep", "Bash"), never a past-tense verb, so the row never claims work that did not happen. The tool icon and the status icon still show. A call with an intent shows the intent in every status.
+- Q: What does a call that did not complete show when it has no intent? → A: Superseded by Stuart's binding answer of 2026-10-26 (Clarifications, first block): the call shows its map entry's base form ("Search text", "Run"), not the tool's name in sentence case; only an unmapped tool still shows its sentence-case name. Unchanged from the original answer: never a past-tense verb, so the row never claims work that did not happen; the tool icon and the status icon still show; a call with an intent shows the intent in every status.
 - Q: How is an MCP tool's raw name humanised? → A: Decided (worker, from issue comments; flag for review): the leading `mcp__` is removed and the rest is put in sentence case with spec 022's rule (underscores and hyphens become spaces, first letter capitalised): `mcp__mcp_atlassian_jira_search` reads "Mcp atlassian jira search". The name is never split into server and tool (#1226).
 - Q: What icon and verb does the `github` tool get? → A: Decided (worker, from code; flag for review): the installed icon set (lucide-react 1.49.0) has no GitHub brand icon, so the fallback is the GitPullRequest icon the app already uses for GitHub surfaces, with Querying GitHub/Queried GitHub.
 - Q: Which icon does a skill read use? → A: Decided (worker, from code; flag for review): BookOpen, the icon the "Skill invoked" row already uses.
@@ -58,7 +59,7 @@ A developer scans a long transcript and recognises reads, edits, commands, searc
 4. **Given** a tool in the map (FR-003), **When** it renders, **Then** it shows its own icon and its running or done verb.
 5. **Given** an MCP tool `mcp__mcp_atlassian_jira_search`, **When** it renders, **Then** it shows the Plug icon and "Mcp atlassian jira search".
 6. **Given** a tool the map does not know, **When** it renders, **Then** it shows the Wrench icon and its name in sentence case.
-7. **Given** a failed call, **When** it renders, **Then** the trailing status icon shows the failed shape, so the state does not depend on colour.
+7. **Given** a failed call, **When** it renders, **Then** the trailing status icon shows the failed shape, so the state does not depend on colour; **and** when the call has no intent, its label is the base form (a failed `grep` reads "Search text", a failed `bash` reads "Run"), never the raw tool id.
 
 ### User Story 2 - Read what the agent meant to do (Priority: P1)
 
@@ -108,7 +109,7 @@ A developer sees the same tool icon on the approval card and on subagent rows, s
 ### Edge Cases
 
 - A call with an intent that later fails keeps its intent as the label; the status icon and the accessible name's status prefix ("Failed ...") carry the failure.
-- A call with no intent that does not complete shows the tool name in sentence case (spec 022's rule; see Clarifications).
+- A call with no intent that does not complete shows its map entry's base form ("Search text", "Run"); the status prefix in the accessible name ("Failed Search text ...") and the trailing status icon say what happened. An unmapped tool shows its sentence-case name (see Clarifications).
 - An intent longer than the row truncates with an ellipsis like the summary does; the full intent is in the accessible name and the expanded row.
 - An empty or whitespace-only intent counts as no intent, so the verb shows.
 - A `write` to `xd://<tool>` for an unknown tool shows the Wrench icon and that tool's sentence-case name; its tooltip reads `write xd://<tool>`.
@@ -124,12 +125,12 @@ A developer sees the same tool icon on the approval card and on subagent rows, s
 
 - **FR-001**: Every tool row and tool group row MUST show the tool's icon in the leading icon slot, and the status icon (running, done, failed, interrupted, cancelled, agent exited) in the trailing status and duration slot. Each status MUST keep a distinct shape, so status is never conveyed by colour alone.
 - **FR-002**: The tool's icon, running verb and done verb MUST come from the one shared verb map introduced by spec 022, extended with an icon per entry. The tool rows, group rows, tooltip, approval card and subagent rows MUST all read it; there MUST be no second map.
-- **FR-003**: The map MUST hold these entries (tool: icon, running form / done form): `read` FileText Reading/Read; `edit` Pencil Editing/Edited; `write` FilePlus Writing/Wrote; `bash` Terminal Running/Ran; `eval` Braces Running code/Ran code; `grep` TextSearch Searching text/Searched text; `find` and `glob` FolderSearch Finding files/Found files; `ast_grep` ScanSearch Searching code/Searched code; `ast_edit` Replace Rewriting code/Rewrote code; `lsp` Waypoints Querying code/Queried code; `task` Users Delegating/Delegated; `ask` MessageCircleQuestion Asking/Asked; `web_search` Globe Searching web/Searched web; `github` GitPullRequest Querying GitHub/Queried GitHub; `debug` Bug Debugging/Debugged; `recall` Database Recalling/Recalled; `retain` Database Remembering/Remembered; `reflect` Database Reflecting/Reflected; `generate_image` Image Generating image/Generated image; `wait` Hourglass Waiting/Waited; skill read BookOpen Using skill/Used skill. Thinking keeps spec 022's entry with no tool icon. These values replace spec 022's `grep` and `find` entries (Searching/Searched).
+- **FR-003**: The map MUST hold these entries (tool: icon, running form / done form / base form): `read` FileText Reading/Read/Read; `edit` Pencil Editing/Edited/Edit; `write` FilePlus Writing/Wrote/Write; `bash` Terminal Running/Ran/Run; `eval` Braces Running code/Ran code/Run code; `grep` TextSearch Searching text/Searched text/Search text; `find` and `glob` FolderSearch Finding files/Found files/Find files; `ast_grep` ScanSearch Searching code/Searched code/Search code; `ast_edit` Replace Rewriting code/Rewrote code/Rewrite code; `lsp` Waypoints Querying code/Queried code/Query code; `task` Users Delegating/Delegated/Delegate; `ask` MessageCircleQuestion Asking/Asked/Ask; `web_search` Globe Searching web/Searched web/Search web; `github` GitPullRequest Querying GitHub/Queried GitHub/Query GitHub; `debug` Bug Debugging/Debugged/Debug; `recall` Database Recalling/Recalled/Recall; `retain` Database Remembering/Remembered/Remember; `reflect` Database Reflecting/Reflected/Reflect; `generate_image` Image Generating image/Generated image/Generate image; `wait` Hourglass Waiting/Waited/Wait; skill read BookOpen Using skill/Used skill/Use skill. Thinking keeps spec 022's entry with no tool icon and needs no base form. These values replace spec 022's `grep` and `find` entries (Searching/Searched). The running form is used while running, the done form when done, and the base form for every status that did not complete (error, interrupted, cancelled, agent exited).
 - **FR-004**: An MCP tool (id starting `mcp__`) MUST show the Plug icon and its humanised raw name: the `mcp__` prefix removed, then spec 022's sentence-case rule. The name MUST NOT be split into server and tool (issue #1226).
 - **FR-005**: A tool not in the map and not an MCP tool MUST show the Wrench icon and its raw name in sentence case (spec 022's rule).
 - **FR-006**: When "Show tool names on rows" is off, no tool row or group row MUST show a raw tool id in its label or summary. A `bash` row's summary is the command with no `$` prefix; a `grep` row's summary is the quoted pattern and the path, with no leading `grep`.
-- **FR-007**: When a call has a non-empty intent, its row's label MUST be the intent; otherwise the label MUST be the verb for its status (FR-003), or, for a call that did not complete, the tool name in sentence case (spec 022's rule).
-- **FR-008**: The intent MUST be read from the live tool start frame and from the call's `i` argument in history, and MUST be carried by the shared transcript model so live and reopened rows show the same label. The intent field is not yet recorded in `docs/spike/FINDINGS.md`, so it MUST be verified on the supported OMP version and recorded there before the design relies on it (constitution Principle IV).
+- **FR-007**: When a call has a non-empty intent, its row's label MUST be the intent; otherwise the label MUST be the map form for its status (FR-003): the running form, the done form, or, for a call that did not complete, the base form. A tool with no map entry uses its sentence-case name in every status (FR-004, FR-005).
+- **FR-008**: The intent MUST be read from the live tool start frame (top-level `intent`, then `args.i`, then `args.intent`) and from the call's `arguments.i` (then `arguments.intent`) in a message snapshot or history, and MUST be carried by the shared transcript model so live and reopened rows show the same label. An empty or whitespace-only value counts as absent. Both field shapes are recorded in `docs/spike/FINDINGS.md` item 64 (verified 2026-10-26 on OMP 18.12.6 and on session files written by 18.12.x; constitution Principle IV); an OMP version that sends neither field shows the verb fallback.
 - **FR-009**: The intent MUST render as plain text only: never as markup or a link, on one line, with control characters and bidirectional override characters removed, trimmed, truncated with an ellipsis when it does not fit, and capped at 400 characters (the same cap the readout already applies to the intent).
 - **FR-010**: A row MUST read, left to right: the tool icon, the label (intent or verb), the raw tool id when the setting is on (muted), the muted target or summary, then the trailing status icon and duration.
 - **FR-011**: The tool icon MUST carry a tooltip whose text is the raw tool id (for a `write` to `xd://<tool>`, `write xd://<tool>`). It MUST open on pointer hover over the icon and while the row's own control has keyboard focus, MUST NOT add a tab stop, and MUST NOT be the only carrier of any information.
@@ -147,7 +148,7 @@ A developer sees the same tool icon on the approval card and on subagent rows, s
 
 ### Key Entities
 
-- **Tool display entry**: a tool id with its icon, running form and done form; one entry per tool in the shared verb map.
+- **Tool display entry**: a tool id with its icon, running form, done form and base form; one entry per tool in the shared verb map.
 - **Intent**: a short, model-written, untrusted description of one tool call, taken from the live start frame or the history `i` argument; optional per call.
 - **Tool names setting**: the "Show tool names on rows" switch; a boolean, off by default, persisted with the other chat display settings.
 
@@ -155,7 +156,7 @@ A developer sees the same tool icon on the approval card and on subagent rows, s
 
 ### Measurable Outcomes
 
-- **SC-001**: With the setting off, a session that uses every mapped tool, an MCP tool and an unknown tool shows zero raw tool ids in its rows' visible text, except the sentence-case names of unknown and MCP tools and of calls that did not complete.
+- **SC-001**: With the setting off, a session that uses every mapped tool, an MCP tool and an unknown tool shows zero raw tool ids in its rows' visible text, in every status, except the sentence-case names of unknown and MCP tools.
 - **SC-002**: Every tool in FR-003 shows its own icon; only `find`/`glob` and `recall`/`retain`/`reflect` share one by design.
 - **SC-003**: A user finds any row's raw tool id in one hover or one keyboard focus, with no added tab stops in the transcript.
 - **SC-004**: The tool icon meets 3:1 contrast against its row in all five built-in themes.
@@ -167,7 +168,7 @@ A developer sees the same tool icon on the approval card and on subagent rows, s
 
 - The five built-in themes are the ones in the theme picker today.
 - The icon names in FR-003 exist in the installed icon set (lucide-react 1.49.0, checked 2026-10-26); GitHub has no brand icon there, hence GitPullRequest.
-- OMP sends the intent on the tool start frame, as the session backend already reads it for the readout; history carrying it as the `i` argument is from Stuart's grill and still needs the FINDINGS probe (FR-008).
+- OMP sends the intent on the tool start frame, as the session backend already reads it for the readout, and history keeps it as the call's `arguments.i`; both are recorded in `docs/spike/FINDINGS.md` item 64 (FR-008).
 - The MCP server and tool split (#1226), the `wait` animation (#566) and the success and failure colours (#570) are separate issues.
 - The tool row source file is at 598 of its 600-line cap, so the map, the icon component and any new row logic live in their own modules (no-god-files rule, #806).
 - No new tests while prototyping (rule of 2026-10-08); behaviour is verified live.
