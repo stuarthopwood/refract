@@ -351,7 +351,7 @@ export function DeleteDialog({
                 (`aria-labelledby`, not just a visual heading), and keyboard-reachable/scrollable
                 (`tabIndex={0}` -- arrow keys and Page Up/Down scroll a focused, overflowing
                 element natively, no custom key handling needed). */}
-            <p id="leftover-files-label" className="text-sm font-medium">
+            <p id="leftover-files-label" className="text-sm">
               Files left in the worktree
             </p>
             {/* Issue #891 gate round (M4): leading Folder/File icons replace disc bullets, so

@@ -190,7 +190,7 @@ async function main() {
     const menuResult = await cdp.waitFor(
       `(() => {
         const items = Array.from(document.querySelectorAll('ul[aria-label="Slash commands"] li[role="option"]'));
-        const item = items.find((el) => (el.querySelector('span.font-medium')?.textContent ?? '').trim() === '/advisor');
+        const item = items.find((el) => (el.querySelector('[data-slot="collapsed-line-label"]')?.textContent ?? '').trim() === '/advisor');
         if (!item) return null;
         return { description: (item.querySelector('span.text-muted-foreground')?.textContent ?? '').trim() };
       })()`,
@@ -241,7 +241,7 @@ async function main() {
 
     // ---- A real turn, and whether a real advisory row arrives (never forced) ----
     const ADVISORY_FINDER =
-      `Array.from(document.querySelectorAll('[aria-label="Transcript"] button, [aria-label="Transcript"] div[tabindex]')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && ['Blocker','Concern','Nit'].includes(label.textContent.trim()); })`;
+      `Array.from(document.querySelectorAll('[aria-label="Transcript"] button, [aria-label="Transcript"] div[tabindex]')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); return label && ['Blocker','Concern','Nit'].includes(label.textContent.trim()); })`;
     const advisoriesBefore = await cdp.evaluate(`(${ADVISORY_FINDER}).length`);
     await clearComposer(cdp);
     await cdp.typeIntoByLabel('Message', "Reply with exactly the single word 't917turn' and nothing else.");
@@ -254,7 +254,7 @@ async function main() {
     try {
       await cdp.waitFor(`(${ADVISORY_FINDER}).length > ${advisoriesBefore}`, { timeoutMs: 60_000, label: 'New advisory row after the turn' });
       const severity = await cdp.evaluate(
-        `(() => { const items = (${ADVISORY_FINDER}); const el = items[items.length - 1]; return el.querySelector('span.font-medium')?.textContent?.trim() ?? null; })()`
+        `(() => { const items = (${ADVISORY_FINDER}); const el = items[items.length - 1]; return el.querySelector('[data-slot="collapsed-line-label"]')?.textContent?.trim() ?? null; })()`
       );
       findings.push(`A real advisory row arrived after the turn (severity "${severity}") -- the advisor is confirmed running for this Session.`);
       await cdp.screenshot(path.join(SHOTS_DIR, '05-advisory-arrived.png'));

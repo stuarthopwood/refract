@@ -62,7 +62,7 @@ export function ModelCatalogGroup({
 }) {
   return (
     <div role="group" aria-labelledby={modelsHeadingId}>
-      <div id={modelsHeadingId} role="presentation" className="px-2 py-1 text-xs font-medium text-muted-foreground">
+      <div id={modelsHeadingId} role="presentation" className="px-2 py-1 text-xs text-muted-foreground">
         Models
       </div>
       {catalogError && (
@@ -96,7 +96,7 @@ export function ModelCatalogGroup({
               retries." hint is gone, since the row is now directly Enter/click-activatable, not
               just reachable by closing and reopening the menu. */}
           <span className="min-w-0 flex-1 whitespace-normal break-words text-muted-foreground">{catalogError}</span>
-          <span className="flex shrink-0 items-center gap-1 text-xs font-medium">
+          <span className="flex shrink-0 items-center gap-1 text-xs">
             {retrying && <Loader2Icon aria-hidden className="size-3 animate-spin" />}
             {retrying ? 'Retrying…' : 'Retry'}
           </span>

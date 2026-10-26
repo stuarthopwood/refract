@@ -402,7 +402,7 @@ async function main() {
       const card = ${AGENTS_CARD_SELECTOR};
       const rows = Array.from(card.querySelectorAll('li')).map((li) => ({
         text: li.textContent.trim(),
-        name: li.querySelector('.font-medium')?.textContent?.trim() ?? null,
+        name: li.querySelector('[data-slot="agents-card-name"]')?.textContent?.trim() ?? null,
         summary: li.querySelector('.truncate.text-muted-foreground')?.textContent?.trim() ?? null,
         elapsed: li.querySelector('.tabular-nums')?.textContent?.trim() ?? null
       }));

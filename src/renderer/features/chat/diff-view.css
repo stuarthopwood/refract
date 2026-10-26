@@ -47,13 +47,13 @@
 .diff-view .diff-code-insert::before {
   content: '+ ';
   color: var(--state-working);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .diff-view .diff-code-delete::before {
   content: '\2212 ';
   color: var(--destructive);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .diff-view .diff {

@@ -81,10 +81,10 @@ const THEMES = [
 const TRANSCRIPT_BUTTONS = `Array.from(document.querySelectorAll('[aria-label="Transcript"] button'))`;
 
 // The `read` call's solo row is never command-style (`COMMAND_STYLE_TOOLS` is bash/grep only),
-// so it keeps its own visible label ("read", `ToolGroupRow`'s `visibleLabel`).
+// so it keeps its own visible label ("Read", `ToolGroupRow`'s `visibleLabel`, #1208 verb map).
 function rowByLabelFinder(text) {
   return `(${TRANSCRIPT_BUTTONS}).find((el) => {
-    const label = el.querySelector('span.font-medium');
+    const label = el.querySelector('[data-slot="collapsed-line-label"]');
     return label ? label.textContent.trim() === ${JSON.stringify(text)} : false;
   })`;
 }
@@ -100,7 +100,7 @@ function rowByCommandSubstringFinder(substring) {
   })`;
 }
 
-const READ_ROW = rowByLabelFinder('read');
+const READ_ROW = rowByLabelFinder('Read');
 const STOPPED_BASH_ROW = rowByCommandSubstringFinder('sleep 30');
 const FAILED_BASH_ROW = rowByCommandSubstringFinder('definitely-not-a-real-path-911');
 

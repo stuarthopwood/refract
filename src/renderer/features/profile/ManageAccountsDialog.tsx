@@ -488,7 +488,7 @@ export function ManageAccountsDialog({
             // signed in or not yet, so offering it would be a guess either way.
             <div className="flex min-w-0 items-center gap-2" aria-busy="true">
               <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />
-              <h3 id="github-accounts-heading" className="text-sm font-medium text-muted-foreground">
+              <h3 id="github-accounts-heading" className="text-sm text-muted-foreground">
                 Checking GitHub sign-in…
               </h3>
             </div>
@@ -578,11 +578,11 @@ export function ManageAccountsDialog({
                         </Avatar>
                         <div className="flex min-w-0 flex-1 flex-col leading-tight">
                           <div className="flex min-w-0 items-center gap-2">
-                            <span id={`account-name-${account.host}-${account.login}`} className="truncate text-sm font-medium">
+                            <span id={`account-name-${account.host}-${account.login}`} className="truncate text-sm">
                               {name}
                             </span>
                             {account.active && (
-                              <span className="flex shrink-0 items-center gap-1 text-xs font-medium">
+                              <span className="flex shrink-0 items-center gap-1 text-xs">
                                 <CheckIcon aria-hidden className="size-3.5" />
                                 Active
                               </span>
@@ -606,7 +606,7 @@ export function ManageAccountsDialog({
                               fix that), an expired/revoked credential (Sign in again can), or an
                               unknown `gh` error with no more specific cause to report. */}
                           {authProblem && (
-                            <span className="flex items-center gap-1 text-xs font-medium text-state-needs-you">
+                            <span className="flex items-center gap-1 text-xs text-state-needs-you">
                               <TriangleAlertIcon aria-hidden className="size-3" />
                               {unreachable
                                 ? "Couldn't reach GitHub."

@@ -90,7 +90,7 @@ const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // Every top-level TOOL-call group header button. A label matching issue #632's own closed tool
 // identifiers (OMP's own `tool` field, optionally with a " \u00d7N" multi-call suffix) excludes
 // a Thought run or Stage/subagent entry, which share the same `CollapsedLine` markup and
-// `span.font-medium` span (a real run showed `Thought for 1s` hijacking `.at(0)`). M2 (this same
+// `[data-slot="collapsed-line-label"]` span (a real run showed `Thought for 1s` hijacking `.at(0)`). M2 (this same
 // gate round) then drops the label for a solo `bash`/`grep` row -- accepted too when its own
 // summary starts with the command-style grammar (`$ `/`grep "`), confirmed live: without this,
 // `.at(-1)` fell back to the multi-call group's own empty spacer span for turn (b)'s grep row.
@@ -100,13 +100,13 @@ const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // could silently resolve to a member row once a group is expanded.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   if (el.closest('ol.border-l')) return false;
-  const l = el.querySelector('span.font-medium');
-  if (l) return /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
+  const l = el.querySelector('[data-slot="collapsed-line-label"]');
+  if (l) return /^(?:Ran|Running|Bash|Searched|Searching|Grep|Find|Glob|Read|Reading|Wrote|Writing|Write|Edited|Editing|Edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
   const s = el.querySelector('span.min-w-0.flex-1');
   const t = s ? (s.textContent || '').trim() : '';
   return /^\\$ /.test(t) || /^grep "/.test(t);
 })`;
-const BASH_GROUP_LABEL = /^bash\s*\u00d72$/;
+const BASH_GROUP_LABEL = /^Ran\s*\u00d72$/;
 
 // Gate round 1 (test-reviewer Medium, M7): now also reads the header's own SUMMARY span (never
 // just label/meta) so a caller can assert it is empty -- #632's own acceptance is that a
@@ -115,7 +115,7 @@ function groupHeaderInfo(index) {
   return `(() => {
     const h = (${GROUP_HEADERS}).at(${index});
     if (!h) return null;
-    const label = h.querySelector('span.font-medium');
+    const label = h.querySelector('[data-slot="collapsed-line-label"]');
     const summaryHost = h.querySelector('span.min-w-0.flex-1');
     const metaHost = h.querySelector('span.tabular-nums');
     return {
@@ -392,13 +392,13 @@ async function main() {
     // include its tool and command, not just the browser's own content-based concatenation.
     const member0Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(0)`);
     const member1Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(1)`);
-    if (!member0Ax.name || !member0Ax.name.includes('bash') || !member0Ax.name.includes('t632-one')) {
-      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include "bash" and "t632-one".`);
+    if (!member0Ax.name || !member0Ax.name.includes('Ran') || !member0Ax.name.includes('t632-one')) {
+      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include "Ran" and "t632-one".`);
     } else {
       findings.push(`First member's own accessible name includes both tool and command: "${member0Ax.name}".`);
     }
-    if (!member1Ax.name || !member1Ax.name.includes('bash') || !member1Ax.name.includes('exit 9')) {
-      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to include "bash" and "exit 9".`);
+    if (!member1Ax.name || !/^Failed Bash\b/.test(member1Ax.name) || !member1Ax.name.includes('exit 9')) {
+      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to start "Failed Bash" (a failed call shows its tool name, #1208) and include "exit 9".`);
     } else {
       findings.push(`Second member's own accessible name includes both tool and command: "${member1Ax.name}".`);
     }
@@ -493,7 +493,7 @@ async function main() {
     await cdp.click(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"], [role="tree"][aria-label="Subagents"] button')`);
     // `SubagentPanel.tsx`'s own stream pane has no `[role="tabpanel"]`/`<aside>` wrapper --
     // scoped to the stable `#right-pane-active-panel` host every hosted panel renders inside.
-    const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('#right-pane-active-panel button')).filter((el) => el.querySelector('span.font-medium'))`;
+    const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('#right-pane-active-panel button')).filter((el) => el.querySelector('[data-slot="collapsed-line-label"]'))`;
     // A plain one-shot `evaluate` right after the click raced the stream pane's own render in
     // two prior live runs (the screenshot a moment later always showed the row already there) --
     // polled instead, same as every other post-click assertion in this file.
@@ -501,9 +501,9 @@ async function main() {
     try {
       panelHeaderInfo = await cdp.waitFor(
         `(() => {
-          const h = (${PANEL_GROUP_HEADERS}).find((el) => { const l = el.querySelector('span.font-medium'); return l && /^bash(\\s*\\u00d72)?$/.test(l.textContent.trim()); });
+          const h = (${PANEL_GROUP_HEADERS}).find((el) => { const l = el.querySelector('[data-slot="collapsed-line-label"]'); return l && /^Ran(\\s*\\u00d72)?$/.test(l.textContent.trim()); });
           if (!h) return null;
-          const label = h.querySelector('span.font-medium');
+          const label = h.querySelector('[data-slot="collapsed-line-label"]');
           const metaHost = h.querySelector('span.tabular-nums');
           return { labelText: label.textContent.trim(), metaText: metaHost ? metaHost.textContent.replace(/^,\\s*/, '').trim() : null };
         })()`,

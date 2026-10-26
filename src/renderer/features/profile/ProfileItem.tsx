@@ -258,7 +258,7 @@ export function ProfileItem() {
                     )}
                   </AvatarFallback>
                 </Avatar>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{name ?? 'Sign in'}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">{name ?? 'Sign in'}</span>
                 {/* UI M4: icon plus text, never colour alone (the amber token used here matches
                     the dialog's own "Needs attention" rows) -- shown only for the ACTIVE
                     account's own auth problem, distinct from `githubError` above (the CLI itself

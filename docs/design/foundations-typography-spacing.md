@@ -21,7 +21,40 @@ The starter bundle (Latin subset, WOFF2, about 223 KB total) is Inter, Atkinson 
 ## Case and label style
 
 - Use sentence case for every label, heading, and group title. Never use an uppercase or letter-spaced ("tracked") label, even for a dense metadata header — this rejects the #549 mockup's `ORCHESTRATION DAG` style (agenda item 10).
-- Set section and group labels in the `App` font, small, medium weight, and the muted text colour, consistent with the sentence-case rule above.
+- Set section and group labels in the `App` font, small, regular weight, and the muted text colour, consistent with the sentence-case rule above.
+
+### Action labels
+
+Tool and thought rows show an action label: a sentence-case verb from the shared map in `src/renderer/features/chat/toolVerbs.ts`. Use the running form while the action is in progress and the done form once it finishes.
+
+| Tool | Running | Done |
+| --- | --- | --- |
+| `read` | Reading | Read |
+| `edit` | Editing | Edited |
+| `write` | Writing | Wrote |
+| `bash` | Running | Ran |
+| `grep`, `find` | Searching | Searched |
+| `thinking` | Thinking | Thought process |
+| `skill` | Using skill | Used skill |
+
+- A tool that the map does not know shows its own name in sentence case: underscores and hyphens become spaces, repeated spaces collapse, and only the first letter is capitalised. For example, `web_search` reads "Web search". An empty name reads "Tool".
+- Do not end a label with a colon. Write "Asked user", not "Asked user:". An inline name-value prefix that is followed by its value on the same line, such as "Answer:", keeps its colon.
+- Action labels use regular weight (400). Hierarchy comes from colour, not weight.
+
+## Font weight scale
+
+Use one weight scale on every theme. Do not add theme-specific weight tokens, and do not use a separate weight for dark themes. The scale applies to all built-in themes and to any theme added later.
+
+| Weight | Use |
+| --- | --- |
+| 400 (regular) | Body text, labels, metadata, muted section labels, badges, and ghost buttons |
+| 500 (medium) | Buttons, selected states, and in-chat headings |
+| 600 (semibold) | Page titles only, such as Settings section headings |
+| 700 (bold) | The Refract wordmark only |
+
+Do not use 450, or any other weight outside this table. The app font is Segoe UI Variable. Static Segoe UI on Windows 10 has no 450 weight, so a 450 label renders inconsistently across machines. Use 400 for a regular label and 500 for a medium one.
+
+The scale caps weights. It does not raise them: a heading or label that is lighter than its role's weight keeps its current weight.
 
 ## Monospace use
 
@@ -36,7 +69,7 @@ Decided by the ui-architect-v3 roundtable, 2026-10-15 (issue #567, the type-scal
 | Row title | `text-sm font-normal text-sidebar-foreground` -- weight never changes when the row is selected, so the text never reflows. |
 | Row second line (Activity line) | `text-xs text-muted-foreground` |
 | Row time | `text-xs tabular-nums text-muted-foreground` |
-| Group header label | `text-xs font-medium text-muted-foreground` |
+| Group header label | `text-xs font-normal text-muted-foreground` |
 
 Hand-measured reason for dropping the mock's own grey: muted text on a selected/hovered row's fill measures 5.8:1 (Dark), 5.1:1 (Obsidian) and 9.8:1 (Dark, high contrast) using `--muted-foreground`; the mock's own `#737373` measures 3.2:1 to 3.8:1 on the same fills, under the 4.5:1 text floor.
 

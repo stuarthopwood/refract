@@ -30,7 +30,7 @@ export function RightPaneSection() {
       </p>
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-col gap-0.5">
-          <label htmlFor="show-sample-data-toggle" className="text-sm font-medium">
+          <label htmlFor="show-sample-data-toggle" className="text-sm">
             Show sample data
           </label>
           <span id="show-sample-data-toggle-description" className="text-xs text-muted-foreground">

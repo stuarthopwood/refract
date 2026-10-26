@@ -440,13 +440,12 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                         name/label text alongside its icon's own `STATUS_GLYPH` colour -- applies
                         uniformly to a Stage header row (aggregate status) and an ordinary
                         member/solo row (its own status) alike. Gate round 1 fix (item 6,
-                        MEDIUM): a Stage header's own label is `font-medium` (matching the chat
-                        pane's own `CollapsedLine` label slot); an ordinary member/solo row stays
-                        unstyled text, unchanged from before #941 part 2. */}
+                        MEDIUM): a Stage header's own label matches the chat pane's own
+                        `CollapsedLine` label slot, which is regular weight since #1208; an ordinary
+                        member/solo row stays unstyled text, unchanged from before #941 part 2. */}
                     <span
                       className={cn(
                         'min-w-0 flex-1 truncate',
-                        row.node.isStage && 'font-medium',
                         // Gate round 4 fix (issue #941 part 2, item 1, MEDIUM): a Stage header's
                         // own label gets the same `min-w-16` floor `StageGroupRow`'s own
                         // `successLabelClass` call site already gives the chat pane's equivalent

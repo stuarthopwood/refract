@@ -92,7 +92,7 @@ export async function cycleRole(sessionId: string, direction: 1 | -1): Promise<v
   // Visual only: the debounced chat-area announcer is the one spoken result.
   toast.custom(
     () => (
-      <div aria-hidden className="rounded-lg border border-border bg-popover px-4 py-3 text-sm font-semibold text-popover-foreground shadow-lg">
+      <div aria-hidden className="rounded-lg border border-border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-lg">
         Role: {roleText(sessionId, role)}
       </div>
     ),

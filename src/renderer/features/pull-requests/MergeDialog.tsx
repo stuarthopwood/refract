@@ -173,7 +173,7 @@ export function MergeDialog({
                   <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary">
                     <RadioGroupIndicator />
                   </span>
-                  <span id={labelId} className="min-w-0 flex-1 break-words font-medium">{METHOD_LABEL[candidate]}</span>
+                  <span id={labelId} className="min-w-0 flex-1 break-words">{METHOD_LABEL[candidate]}</span>
                 </span>
                 <span id={descriptionId} className="w-full min-w-0 break-words pl-6 text-xs text-muted-foreground">
                   {METHOD_DESCRIPTION[candidate]}

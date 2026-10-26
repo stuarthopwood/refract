@@ -15,7 +15,7 @@ export interface CollapsedLineProps {
    * cross, warning triangle, ...) so a warning or error is never signalled by colour alone
    * (T080, WCAG 2.1 AA). */
   icon: React.ReactNode
-  /** Short label (tool name, "Thinking", "Asked user:", a subagent's name, ...); omit for a
+  /** Short label (tool name, "Thinking", "Asked user", a subagent's name, ...); omit for a
    * line whose `summary` already carries the whole text (e.g. a notice). */
   label?: React.ReactNode
   /** One-line summary that truncates with an ellipsis; omit for a line with nothing to summarise. */
@@ -40,7 +40,7 @@ export interface CollapsedLineProps {
    * the row regardless of the label's own length, at the cost of the summary no longer growing
    * to fill genuinely empty space the way the default behaviour does for every other caller. */
   summaryFixedWidth?: boolean
-  /** Overrides the label's default `font-medium` with no colour (e.g. a failed call's own
+  /** Extra label classes; the label defaults to regular weight (400) with no colour (e.g. a failed call's own
    * label and icon render in the error colour, #570 decision 4; the target stays muted). */
   labelClassName?: string
   /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in
@@ -160,7 +160,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // needed. Back to `min-w-0` here (still required so `truncate` can ever engage); the
         // Stage row passes its own `min-w-16` via `labelClassName`
         // (`SubagentChainRow.tsx`'s `successLabelClass` call site).
-        <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
+        <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
         </span>
       )}

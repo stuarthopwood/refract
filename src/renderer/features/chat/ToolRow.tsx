@@ -4,7 +4,8 @@ import { CodeBlock, FileLinkButton, inferOutputBlock } from './Markdown'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
-import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
+import { formatDuration, StatusIcon, type RowStatus } from './toolStatus'
+import { toolAriaPrefix, toolVerb } from './toolVerbs'
 import { formatElapsed } from './formatElapsed'
 import { COMMAND_STYLE_TOOLS, commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
@@ -190,15 +191,12 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   // Gate round 1 (accessibility-auditor Medium, M1): this row had no explicit accessible name
   // (content-based, lost once `label` is dropped above, and prone to #570's doubled-space
   // artifact) -- built explicitly from tool, status, `commandRowText` (M1), and duration.
-  // Gate round 1 (Main, D3): skip the `item.tool` prefix for `grep` -- `commandRowText` already
-  // starts with the literal word "grep", so the prefix read as "grep grep \"...\""; `bash`'s own
-  // text ("$ ...") never says "bash", so its prefix stays. (Main, D2): the edit stat's sr-only
+  // #1208 FR-006: the verb now leads the name, so `grep`'s old prefix skip (D3) is gone; a status
+  // word is kept only as a prefix for a failed/stopped call. (Main, D2): the edit stat's sr-only
   // text folds in here instead -- an explicit `aria-label` makes a browser ignore every child.
   const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
   const memberAriaLabel = [
-    item.tool === 'grep'
-      ? `${toolStatusLabel(item.status)} ${commandRowText(item)}`
-      : `${toolStatusLabel(item.status)} ${item.tool} ${commandRowText(item)}`,
+    [toolAriaPrefix(item.status, item.tool), toolVerb(item.tool, item.status), commandRowText(item)].filter(Boolean).join(' '),
     diffStatAriaText(editStatForItem(item)),
     memberDuration
   ]
@@ -207,7 +205,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   return (
     <CollapsedLine
       icon={<StatusIcon status={item.status} />}
-      label={isCommandStyle ? undefined : item.tool}
+      label={isCommandStyle ? undefined : toolVerb(item.tool, item.status)}
       labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}
       // Gate round 1 fix (H1/M2 interaction, found live): #570 decision 4 colours icon+label
       // red on failure; a command-style row's dropped label left no coloured text -- restored here.
@@ -328,24 +326,27 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const last = group.items[group.items.length - 1]!
   // Issue #543, first slice: a solo `read` whose target is a `skill://` URL (groupToolItems
   // guarantees it is always solo -- it is exempted from every run, never merged with the calls
-  // around it) reads "Using skill: <name>" instead of the raw tool name; the icon and the usual
+  // around it) reads "Using skill <name>" ("Used skill" once settled, #1208) instead of the raw tool name; the icon and the usual
   // running/done/failed status are unchanged (Accessibility note on #543: "status is icon plus
   // text", the same convention every other row already uses).
   const skillName = solo ? last.skill?.name : undefined
-  // `toolLabel` is the bare tool name (or "Using skill:"), read by the aria-label composition
+  // `toolLabel` is the tool's verb (#1208, `toolVerbs.ts`: FR-002, FR-005 no colon), read by the aria-label composition
   // below; `visibleLabel` is what the row itself shows -- for a multi-call group that folds the
-  // run's own count in (#632: "bash ×2", never the last call's own command). The group header
+  // run's own count in (#632, #1208 FR-013: "Ran ×2", never the last call's own command). The group header
   // used to show `${last.target} + N others` as its `summary`, which named one call and implied
   // the rest were minor variants of it; the fix is a header that is honestly about every call at
   // once, so a multi-call group's `summary` below is dropped entirely (no text between the
   // label and the meta slot, matching the issue's own mockup), not replaced with a different
   // single-call description.
-  const toolLabel = skillName !== undefined ? 'Using skill:' : solo ? last.tool : group.tool
+  // A multi-call group's verb tracks only running vs settled; its failed/stopped counts carry
+  // the rest, so a group with one failed member still reads "Ran ×2", never "Failed Ran".
+  const verbPhase: RowStatus = solo ? status : isRunning ? 'running' : 'done'
+  const toolLabel = toolVerb(skillName !== undefined ? 'skill' : solo ? last.tool : group.tool, verbPhase)
   // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a solo command-style call's own
   // `summary` already names the tool; the bare label repeated it, so it's dropped for those two
   // tools only (`toolLabel` still feeds the accessible name, so this is visual-only).
   const soloIsCommandStyle = solo && skillName === undefined && COMMAND_STYLE_TOOLS.has(last.tool)
-  const visibleLabel = soloIsCommandStyle ? undefined : solo ? toolLabel : `${group.tool} \u00d7${group.items.length}`
+  const visibleLabel = soloIsCommandStyle ? undefined : solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
   const summary = skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined
   // #632: a multi-call group's own total time -- the sum of every member's own `durationMs`,
   // matching the mockup's own worked example (11.8s + 4.1s = 15.9s) -- joins the failed/
@@ -388,20 +389,18 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // the accessible name's own description of it can never diverge.
   const soloSummaryText = skillName !== undefined ? skillName : commandRowText(last)
   const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
-  // Gate round 1 (Main, D3): skip the tool prefix for a solo `grep` too (same duplicate word);
-  // (Main, D2): the edit stat's aria text folds in here (never read off the visual `meta` JSX).
+  // #1208 FR-006: verb first for every tool (no `grep` skip any more), status prefix only when
+  // `toolAriaPrefix` gives one; (Main, D2): the edit stat's aria text folds in here (never read off the visual `meta` JSX).
   const triggerAriaLabel = solo
     ? [
-        soloIsCommandStyle && last.tool === 'grep'
-          ? `${toolStatusLabel(status)} ${soloSummaryText}`
-          : `${toolStatusLabel(status)} ${toolLabel} ${soloSummaryText}`,
+        [toolAriaPrefix(status, skillName !== undefined ? 'skill' : last.tool), toolLabel, soloSummaryText].filter(Boolean).join(' '),
         diffStatAriaText(editStatForItem(last)),
         soloDurationText
       ]
         .filter((part): part is string => !!part)
         .join(', ')
     : [
-        `${toolStatusLabel(status)} ${toolLabel}`,
+        [isRunning ? toolAriaPrefix('running', group.tool) : undefined, toolLabel].filter(Boolean).join(' '),
         `${group.items.length} calls`,
         failedCount > 0 ? `${failedCount} failed` : undefined,
         interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined,
@@ -533,14 +532,14 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
       {showGoal && <SubagentGoalPreview task={item.task} />}
       <InlineDisclosure open={open} onOpenChange={setOpen} contentId={contentId} label={label}>
         <div>
-          <div className="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
+          <div className="mb-1 text-xs text-muted-foreground">Prompt</div>
           <div className="max-h-64 overflow-auto rounded-lg">
             <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap />
           </div>
         </div>
         {resultBlock != null && (
           <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Result</div>
+            <div className="mb-1 text-xs text-muted-foreground">Result</div>
             <div className="max-h-64 overflow-auto rounded-lg">
               <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap />
             </div>

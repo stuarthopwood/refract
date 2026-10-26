@@ -241,14 +241,13 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         icon={<Icon className={cn('size-3.5 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
-        summaryClassName={className}
         meta={meta || undefined}
       >
         <div className="space-y-2">
           <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
           {item.guidance && (
             <div>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">Guidance</div>
+              <div className="mb-1 text-xs text-muted-foreground">Guidance</div>
               <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
             </div>
           )}
@@ -270,7 +269,6 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         icon={<Icon className={cn('size-3.5 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
-        summaryClassName={className}
         meta={meta || undefined}
         open={open}
         onOpenChange={setOpen}
@@ -280,13 +278,13 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
         {item.guidance && (
           <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Guidance</div>
+            <div className="mb-1 text-xs text-muted-foreground">Guidance</div>
             <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
           </div>
         )}
         {locations.length > 0 && (
           <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">{locations.length > 1 ? 'Locations' : 'Location'}</div>
+            <div className="text-xs text-muted-foreground">{locations.length > 1 ? 'Locations' : 'Location'}</div>
             {locations.map((location) => (
               <div key={location.raw} className="select-text font-mono text-xs [overflow-wrap:anywhere]">
                 {location.raw}

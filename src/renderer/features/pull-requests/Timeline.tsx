@@ -69,7 +69,7 @@ function CommentRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'comment'
   return (
     <div className="rounded-md border border-border px-3 py-2">
       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">{actorLabel(entry.author)}</span>
+        <span className="text-foreground">{actorLabel(entry.author)}</span>
         <span>{formatRelativeTime(entry.createdAt)}</span>
       </div>
       <Markdown id={entry.id} text={entry.body} />
@@ -82,7 +82,7 @@ function ReviewRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'review' }
   return (
     <div className="rounded-md border border-border px-3 py-2">
       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">
+        <span className="text-foreground">
           {reviewSentence(review)}
         </span>
         <span>{formatRelativeTime(review.submittedAt)}</span>
@@ -92,7 +92,7 @@ function ReviewRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'review' }
         <ul className="mt-2 space-y-1.5">
           {review.findings.map((finding, i) => (
             <li key={i} className="flex items-start gap-2 text-xs">
-              <span className="shrink-0 rounded border border-border px-1.5 py-0.5 font-medium">
+              <span className="shrink-0 rounded border border-border px-1.5 py-0.5">
                 {SEVERITY_LABEL[finding.severity]}
               </span>
               <Markdown id={`${review.id}-finding-${i}`} text={finding.body} className="text-xs" />
@@ -156,7 +156,7 @@ function ThreadRow({
           {thread.path}
           {thread.line !== null ? `:${thread.line}` : ''}
         </span>
-        <span className={cn('font-medium', thread.resolved ? 'text-muted-foreground' : 'text-foreground')}>
+        <span className={cn(thread.resolved ? 'text-muted-foreground' : 'text-foreground')}>
           {thread.resolved ? 'Resolved' : 'Unresolved'}
         </span>
       </div>
@@ -164,7 +164,7 @@ function ThreadRow({
         {thread.comments.map((comment) => (
           <div key={comment.id}>
             <div className="mb-0.5 flex items-center justify-between text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{actorLabel(comment.author)}</span>
+              <span className="text-foreground">{actorLabel(comment.author)}</span>
               <span>{formatRelativeTime(comment.createdAt)}</span>
             </div>
             <Markdown id={comment.id} text={comment.body} />

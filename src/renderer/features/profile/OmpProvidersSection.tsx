@@ -138,7 +138,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
                   <span className="truncate font-code text-xs" title={provider.id}>
                     {provider.id}
                   </span>
-                  <span className="flex shrink-0 items-center gap-1 text-xs font-medium">
+                  <span className="flex shrink-0 items-center gap-1 text-xs">
                     <CheckIcon aria-hidden className="size-3.5" />
                     Signed in
                   </span>
@@ -182,7 +182,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
 
       {status === 'error' && (
         <div className="flex flex-col gap-1 rounded-md border border-border p-2">
-          <span className="flex items-center gap-1 text-xs font-medium text-state-needs-you">
+          <span className="flex items-center gap-1 text-xs text-state-needs-you">
             <TriangleAlertIcon aria-hidden className="size-3.5" />
             Could not read OMP providers
           </span>

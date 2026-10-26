@@ -67,8 +67,8 @@ const TURN_B_SENTINEL = 't570b';
 // starts with "$ " (M2 drops the label for a solo/member command-style row; `commandRowText`).
 const BASH_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
-    const label = el.querySelector('span.font-medium');
-    if (label) return /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
+    const label = el.querySelector('[data-slot="collapsed-line-label"]');
+    if (label) return /^Ran(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
     const s = el.querySelector('span.min-w-0.flex-1');
     return s ? /^\\$ /.test((s.textContent || '').trim()) : false;
   })`;
@@ -99,7 +99,7 @@ async function readHeaderColours(cdp, index) {
     const header = (${BASH_HEADER_FINDER}).at(${index});
     if (!header) return null;
     const icon = header.querySelector('span.flex svg, span > svg');
-    const label = header.querySelector('span.font-medium');
+    const label = header.querySelector('[data-slot="collapsed-line-label"]');
     const summary = header.querySelector('span.min-w-0.flex-1');
     const describedby = header.getAttribute('aria-describedby');
     const detail = describedby ? document.getElementById(describedby) : null;
@@ -341,7 +341,7 @@ async function main() {
       const members = ol ? Array.from(ol.querySelectorAll('li')) : [];
       // M2 drops every (bash) member's own label; the error colour moved onto its summary span.
       const memberInfo = members.map((li) => {
-        const label = li.querySelector('span.font-medium');
+        const label = li.querySelector('[data-slot="collapsed-line-label"]');
         const summary = li.querySelector('span.min-w-0.flex-1');
         const btn = li.querySelector('button');
         const describedby = btn ? btn.getAttribute('aria-describedby') : null;
@@ -485,7 +485,7 @@ async function main() {
       await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
       const labelTransition = await cdp.evaluate(`(() => {
         const header = (${BASH_HEADER_FINDER})[0];
-        const label = header ? header.querySelector('span.font-medium') : null;
+        const label = header ? header.querySelector('[data-slot="collapsed-line-label"]') : null;
         return label ? getComputedStyle(label).transitionProperty : null;
       })()`);
       if (labelTransition && labelTransition !== 'none' && labelTransition.includes('color')) failures.push(`Failed-row label computed transitionProperty includes "color" (${labelTransition}) -- decision 13 requires an instant colour change, no transition.`);
@@ -521,7 +521,7 @@ async function main() {
       const stoppedRowInfo = await cdp.evaluate(`(() => {
         const h = (${BASH_HEADER_FINDER}).at(-1);
         if (!h) return null;
-        const label = h.querySelector('span.font-medium');
+        const label = h.querySelector('[data-slot="collapsed-line-label"]');
         const summary = h.querySelector('span.min-w-0.flex-1');
         const srWord = h.querySelector('span.sr-only');
         const describedby = h.getAttribute('aria-describedby');

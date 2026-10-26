@@ -220,7 +220,7 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
       className="shrink-0 border-t border-divider px-4 py-2"
     >
       <div className="flex h-6 items-center gap-1">
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" title={currentTask ? currentTask.content : undefined}>
+        <span className="min-w-0 flex-1 truncate text-xs text-foreground" title={currentTask ? currentTask.content : undefined}>
           {allDone ? `All ${totals.total} done` : currentTask ? `Todo ${totals.done}/${totals.total} \u00b7 ${currentTask.content}` : `Todo ${totals.done}/${totals.total}`}
         </span>
         <Tooltip>

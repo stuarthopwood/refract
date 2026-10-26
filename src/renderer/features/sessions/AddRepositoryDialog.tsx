@@ -64,7 +64,7 @@ export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-2" onSubmit={(event) => void handleSubmit(event)}>
-          <label htmlFor="repository-path" className="text-sm font-medium">
+          <label htmlFor="repository-path" className="text-sm">
             Repository path
           </label>
           <div className="flex gap-2">

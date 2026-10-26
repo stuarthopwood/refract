@@ -31,7 +31,7 @@ const SAMPLE_TOOLS: SampleRow[] = [
 function SampleSection({ heading, rows }: { heading: string; rows: SampleRow[] }) {
   return (
     <div>
-      <h3 className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">{heading}</h3>
+      <h3 className="mb-1 text-xs text-muted-foreground uppercase tracking-wide">{heading}</h3>
       <ul className="flex flex-col gap-1">
         {rows.map((row) => (
           <SampleDataRow key={row.text} icon={row.icon} text={row.text} />

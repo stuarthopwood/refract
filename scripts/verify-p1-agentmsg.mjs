@@ -184,7 +184,7 @@ async function main() {
     const failed = await cdp.evaluate(`(() => {
       const btn = ${rowByLabelExpr(FAILED_STEER_NAME)};
       if (!btn) return null;
-      const label = Array.from(btn.querySelectorAll('span')).find((s) => s.className.includes('font-medium'));
+      const label = Array.from(btn.querySelectorAll('span')).find((s) => s.getAttribute('data-slot') === 'collapsed-line-label');
       return { labelClass: label?.className ?? '', labelColor: label ? getComputedStyle(label).color : null, glyph: btn.querySelector('svg')?.getAttribute('class') ?? '', directionGlyph: !!btn.querySelector('[data-agent-message-direction]') };
     })()`);
     const errorColor = await resolveCssVarColor(cdp, '--severity-error', 'color');

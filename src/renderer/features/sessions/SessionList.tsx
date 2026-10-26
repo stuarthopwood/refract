@@ -233,7 +233,7 @@ export function SessionList() {
           dead code and has been removed. */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
-        <span className="text-sm font-semibold">Refract</span>
+        <span className="text-sm font-medium">Refract</span>
         {/* Issue #1048 (Holiday touches): a purely decorative accessory beside the wordmark --
             `aria-hidden`, the "Refract" accessible name above is unchanged either way. */}
         {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-3.5 shrink-0 text-muted-foreground" />}
@@ -251,7 +251,7 @@ export function SessionList() {
         // `Button`'s base `outline-none` shows no focus change under forced colours (which strips
         // its box-shadow ring), so the forced-colors outline classes draw a real one there.
         className={cn(
-          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
+          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
           'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
           view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}
@@ -412,7 +412,7 @@ export function SessionList() {
       <div className="shrink-0 border-t border-divider p-2">
         <AddRepositoryDialog
           trigger={
-            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent">
+            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm text-muted-foreground hover:text-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent">
               <FolderPlusIcon aria-hidden className="size-4" />
               Add repository
             </Button>

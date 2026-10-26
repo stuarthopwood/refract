@@ -124,7 +124,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           // button uses `py-1`, not `py-0.5` -- gate round 2 fix, item 4: the old comment here
           // claimed a match that was never true).
           className={cn(
-            'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 font-medium hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+            'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
             colorClass
           )}
           aria-label={`Go to ${speechHeading}`}
@@ -133,7 +133,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           {stageLabel}
         </button>
       ) : (
-        <span className={cn('min-w-0 max-w-full truncate font-medium', colorClass)} title={stageLabel}>
+        <span className={cn('min-w-0 max-w-full truncate', colorClass)} title={stageLabel}>
           {stageLabel}
         </span>
       )}

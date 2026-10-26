@@ -40,7 +40,7 @@ export function AgentBuilderPanel() {
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
       <div>
-        <h3 className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Cloud agents</h3>
+        <h3 className="mb-1 text-xs text-muted-foreground uppercase tracking-wide">Cloud agents</h3>
         <ul className="flex flex-col gap-1">
           {SAMPLE_AGENTS.map((agent) => (
             <SampleDataRow key={agent.name} icon={BotIcon} text={agent.name} meta={agent.status} />

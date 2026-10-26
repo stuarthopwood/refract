@@ -81,10 +81,10 @@ const TURN_B_SENTINEL = 'probe557b';
 // substring match against a button's whole textContent -- a streaming assistant-text bubble could
 // coincidentally contain those words).
 const THOUGHT_HEADER_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && label.textContent.trim() === 'Thought process'; })`;
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); return label && label.textContent.trim() === 'Thought process'; })`;
 // A solo thought row: label is "Thinking", "Thought for Ns", or "Thought" (never "Thought process").
 const SOLO_THOUGHT_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); const t = label && label.textContent.trim(); return t === 'Thinking' || t === 'Thought' || (t && t.startsWith('Thought for ')); })`;
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); const t = label && label.textContent.trim(); return t === 'Thinking' || t === 'Thought' || (t && t.startsWith('Thought for ')); })`;
 
 function assertBundleContainsStory557Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
@@ -336,7 +336,7 @@ async function main() {
         const root = header.closest('[data-slot="collapsible"]');
         const ol = root ? root.querySelector('ol.border-l') : null;
         const members = ol ? Array.from(ol.querySelectorAll('li')) : [];
-        const memberLabels = members.map((li) => li.querySelector('span.font-medium')?.textContent.trim());
+        const memberLabels = members.map((li) => li.querySelector('[data-slot="collapsed-line-label"]')?.textContent.trim());
         return { memberCount: members.length, memberLabels };
       })()`);
       if (expandedGeometry.memberCount < 2) {

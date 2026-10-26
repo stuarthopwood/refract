@@ -201,7 +201,7 @@ export function AppearanceSection() {
             the description in via `aria-describedby` (the same pattern as a native form hint)
             announces the title as the name and the description separately, once, as a hint. */}
         <div className="flex flex-col gap-0.5">
-          <label htmlFor="watermark-toggle" className="text-sm font-medium">Background watermark</label>
+          <label htmlFor="watermark-toggle" className="text-sm">Background watermark</label>
           <span id="watermark-toggle-description" className="text-xs text-muted-foreground">
             {holidayEntry ? 'A faint mark shown in the corner of the chat area — a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
           </span>
@@ -220,7 +220,7 @@ export function AppearanceSection() {
           "no Save/Cancel" posture spec 012's own control above uses. */}
       <div className="mt-6 flex items-center justify-between gap-4">
         <div className="flex flex-col gap-0.5">
-          <label htmlFor="holiday-touches-select" className="text-sm font-medium">Holiday touches</label>
+          <label htmlFor="holiday-touches-select" className="text-sm">Holiday touches</label>
           <span id="holiday-touches-description" className="text-xs text-muted-foreground">Seasonal artwork and ambient motion near a holiday.</span>
         </div>
         <Select value={holidayTouches} onValueChange={(value) => void setHolidayTouches(value as typeof holidayTouches)}>

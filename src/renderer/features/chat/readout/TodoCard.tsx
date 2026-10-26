@@ -43,7 +43,7 @@ export function TodoCard({ todoTree }: { todoTree: TodoPhase[] }) {
 
   return (
     <div className="w-64" aria-label="Todo list preview">
-      {totals && <div data-slot="todo-card-header" className="text-xs font-medium text-foreground">{`${totals.done} of ${totals.total}`}</div>}
+      {totals && <div data-slot="todo-card-header" className="text-xs text-foreground">{`${totals.done} of ${totals.total}`}</div>}
       <div ref={listRef} className="mt-2 max-h-[min(16rem,40vh)] overflow-y-auto">
         {todoTree.map((phase, phaseIndex) => (
           <TodoPhaseGroup

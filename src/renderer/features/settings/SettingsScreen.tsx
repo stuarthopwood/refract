@@ -104,7 +104,7 @@ export function SettingsScreen() {
         >
           <ArrowLeftIcon aria-hidden className="size-4" />
         </Button>
-        <span className="text-sm font-semibold">Settings</span>
+        <span className="text-sm font-medium">Settings</span>
       </div>
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Settings sections" className="w-48 shrink-0 overflow-y-auto border-r p-2">
@@ -171,7 +171,7 @@ export function SettingsScreen() {
                   return (
                     <div key={toggle.kind} className="flex items-center justify-between gap-4 py-3">
                       <label htmlFor={id} className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium">{toggle.label}</span>
+                        <span className="text-sm">{toggle.label}</span>
                         <span className="text-xs text-muted-foreground">{toggle.description}</span>
                       </label>
                       <Switch

@@ -66,7 +66,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 13 | #1082 | Context usage colour gradient | Composer strip, after #724; done (PR #1162) |
 | 14 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, done (PR #1202) |
 | 15 | #838 | Agent-to-agent lines | Grilled 2026-10-22; done (PR #1161) |
-| 16 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it. **In progress 2026-10-26** (Specify route, grilled 2026-10-23, none deferred) |
+| 16 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it. **In review 2026-10-26** (PR #1223; spec 022, six-reviewer gate PASS, live-checked; Specify route, grilled 2026-10-23, none deferred) |
 | 17 | #469 | Tool-row icons with verb tooltips | Transcript rows |
 | 18 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
 | 19 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |

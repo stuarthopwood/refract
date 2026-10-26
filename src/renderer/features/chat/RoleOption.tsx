@@ -43,13 +43,18 @@ export function RoleOption({
       }}
       className={cn(
         'flex min-w-0 shrink-0 cursor-default flex-col gap-0.5 rounded-md border border-border px-2 py-1 text-xs',
-        active && 'font-semibold outline-2 outline-solid outline-offset-[-2px] outline-active-indicator',
+        active && 'font-medium outline-2 outline-solid outline-offset-[-2px] outline-active-indicator',
         disabled && 'cursor-not-allowed opacity-60'
       )}
     >
       <span className="flex items-center gap-1">
         <Icon aria-hidden className="size-3 shrink-0" />
-        {label}
+        {/* #1208 SC-005: an invisible medium-weight copy reserves the highlighted width, so moving
+            the highlight never resizes the chip or shifts its neighbours. */}
+        <span className="grid *:col-start-1 *:row-start-1">
+          <span>{label}</span>
+          <span aria-hidden className="invisible font-medium">{label}</span>
+        </span>
         {current && <span className="font-normal text-muted-foreground">current</span>}
         {next && <span className="font-normal text-muted-foreground">next</span>}
       </span>

@@ -538,7 +538,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                 </span>
                 {isVisible && <span className="sr-only">Shown in chat</span>}
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate font-medium">
+                  <span className="truncate">
                     <span className="sr-only">Open </span>
                     {session.name}
                   </span>

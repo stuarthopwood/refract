@@ -108,7 +108,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
         </DialogHeader>
         <form className="flex flex-col gap-3" onSubmit={(event) => void handleSubmit(event)}>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="base-branch" className="text-sm font-medium">
+            <label htmlFor="base-branch" className="text-sm">
               Base branch
             </label>
             <Select value={baseBranch} onValueChange={setBaseBranch} disabled={loadingBranches}>

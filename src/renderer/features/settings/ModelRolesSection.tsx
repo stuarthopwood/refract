@@ -385,7 +385,7 @@ export function ModelRolesSection() {
       <div key={role} className="py-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-col gap-0.5">
-            <label id={labelId} htmlFor={selectId} className="text-sm font-medium">
+            <label id={labelId} htmlFor={selectId} className="text-sm">
               {label}
             </label>
             <span id={descriptionId} className="text-xs text-muted-foreground">
@@ -556,7 +556,7 @@ export function ModelRolesSection() {
         </Alert>
       ) : (
         <>
-          <h3 id="model-roles-chat-heading" className="mb-1 text-sm font-semibold">
+          <h3 id="model-roles-chat-heading" className="mb-1 text-sm font-medium">
             Chat roles
           </h3>
           <ProviderSwitch
@@ -573,7 +573,7 @@ export function ModelRolesSection() {
           <div role="group" aria-labelledby="model-roles-chat-heading" className="mb-6">
             {renderGroup(CHAT_ROLE_DESCRIPTORS)}
           </div>
-          <h3 id="model-roles-kind-heading" className="mb-1 text-sm font-semibold">
+          <h3 id="model-roles-kind-heading" className="mb-1 text-sm font-medium">
             Model-kind roles
           </h3>
           <div role="group" aria-labelledby="model-roles-kind-heading">

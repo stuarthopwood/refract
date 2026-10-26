@@ -25,6 +25,7 @@ import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
+import { toolRunningAnnouncement, toolVerb } from './toolVerbs'
 import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
 import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
@@ -865,9 +866,7 @@ export function Transcript({
                               {isStageGroup(row)
                                 ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
                                 : isToolGroup(row)
-                                  ? row.items[0]!.skill
-                                    ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
-                                    : `${toolStatusLabel('running')} ${row.tool}`
+                                  ? [toolRunningAnnouncement(row.items[0]!.skill ? 'skill' : row.tool), row.items[0]!.skill?.name].filter(Boolean).join(' ')
                                   : undefined}
                             </span>
                           </MessageScrollerItem>
@@ -894,7 +893,7 @@ export function Transcript({
                         </MessageScrollerItem>
                       )
                     })}
-                    {announceThinking && <span className="sr-only">Thinking</span>}
+                    {announceThinking && <span className="sr-only">{toolVerb('thinking', 'running')}</span>}
                     <SubagentChainRow stages={stages} sessionId={sessionId} />
                     <UpNextList sessionId={sessionId} stagesCount={stages.length} isLastTurn={turnIndex === visibleTurns.length - 1} />
                     <TurnTotalLine

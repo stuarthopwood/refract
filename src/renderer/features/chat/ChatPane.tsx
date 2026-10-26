@@ -1112,7 +1112,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       {isDraggingFiles && (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ring bg-background/90 text-sm font-medium text-foreground"
+          className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ring bg-background/90 text-sm text-foreground"
         >
           <PaperclipIcon className="size-4" aria-hidden />
           {composerDisabled ? 'This session is not accepting input right now' : 'Drop files to attach'}
@@ -1280,7 +1280,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                 aria-expanded={detailsOpen}
                 aria-controls={detailsId}
                 onClick={() => setDetailsOpen((open) => !open)}
-                className="inline-flex min-h-11 items-center px-1 text-xs font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="inline-flex min-h-11 items-center px-1 text-xs underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {/* Gate-fixes a11y Low finding (cycle 6): a constant label -- `aria-expanded`
                     already carries the toggle state; flipping the label TOO had a screen reader

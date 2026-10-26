@@ -356,7 +356,7 @@ export function ProfileMenuContent({
             <div className="flex min-w-0 flex-1 flex-col leading-tight">
               {/* UI M4 (quality-gate remediation): icon plus text, never colour alone, when the
                   ACTIVE account's own GitHub sign-in needs attention. */}
-              <span className="flex items-center gap-1 truncate text-sm font-medium">
+              <span className="flex items-center gap-1 truncate text-sm">
                 {account.state !== 'success' && (
                   <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-state-needs-you" />
                 )}

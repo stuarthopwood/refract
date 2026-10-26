@@ -5,6 +5,7 @@ import { Markdown } from './Markdown'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { formatElapsed } from './formatElapsed'
 import type { ThoughtRun } from './groupToolItems'
+import { toolVerb } from './toolVerbs'
 
 type ThinkingItem = ThoughtRun['items'][number]
 
@@ -34,7 +35,7 @@ function thoughtIcon(streaming: boolean) {
 
 function thoughtLabel(item: ThinkingItem): string {
   const duration = item.startedAt != null && item.endedAt != null ? item.endedAt - item.startedAt : undefined
-  return item.streaming ? 'Thinking' : duration != null ? `Thought for ${formatThinkingSeconds(duration)}s` : 'Thought'
+  return item.streaming ? toolVerb('thinking', 'running') : duration != null ? `Thought for ${formatThinkingSeconds(duration)}s` : 'Thought'
 }
 
 /** One member's own row inside a run of two or more, sitting on a `SpineList` `<li>` (decision
@@ -207,13 +208,13 @@ export function ThoughtRunRow({ group }: ThoughtRunRowProps) {
   // same content-based name the pre-#557 solo live row always relied on (label "Thinking" plus
   // the live member's own preview plus this row's own meta, each already readable in place).
   const triggerAriaLabel = allFinished
-    ? [`Thought process`, metaStepsText, totalText].filter((part): part is string => !!part).join(', ')
+    ? [toolVerb('thinking', 'done'), metaStepsText, totalText].filter((part): part is string => !!part).join(', ')
     : undefined
 
   return (
     <CollapsedLine
       icon={solo ? thoughtIcon(soloItem.streaming) : thoughtIcon(!allFinished)}
-      label={solo ? soloLabel : allFinished ? 'Thought process' : 'Thinking'}
+      label={solo ? soloLabel : toolVerb('thinking', allFinished ? 'done' : 'running')}
       summary={
         solo
           ? soloItem.streaming

@@ -69,7 +69,7 @@ export function TodoPhaseGroup({
   return (
     <div className="py-1">
       {showHeader && (
-        <div className="flex items-center gap-1 px-1 text-[11px] font-medium text-muted-foreground">
+        <div className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
           {folded && <CheckCircle2Icon aria-hidden className="size-3 shrink-0" />}
           <span>
             {phase.name} {phaseTotals.done}/{phaseTotals.total}
