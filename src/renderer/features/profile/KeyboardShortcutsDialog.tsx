@@ -63,6 +63,11 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     rows: [{ action: 'Close chat pane', keys: ['Ctrl', 'W'] }]
   },
   {
+    // Spec 024 FR-004 (#538): collapse or expand the right pane.
+    heading: 'Right pane',
+    rows: [{ action: 'Collapse or expand the right pane', keys: ['Ctrl', 'Shift', 'B'] }]
+  },
+  {
     heading: 'Split view',
     rows: [
       { action: 'Open a session in split view', keys: ['Ctrl', 'Click'] },

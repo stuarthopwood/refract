@@ -23,6 +23,7 @@ import { useFileExplorerStore } from './file-explorer-store'
 import { useGitChangesStore } from './git-changes-store'
 import { useSplitStore } from './split-store'
 import { usePullRequestsLayoutStore } from './pull-requests-layout-store'
+import { restoreRightPane, startRightPanePersistence } from '../features/right-pane/right-pane-persistence'
 import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
 import { useChatWidthStore } from './chat-width-store'
@@ -365,6 +366,8 @@ export function initStores(): void {
     // when `settings.get` itself failed.
     useSessionListStore.getState().restore(settingsLoad.value.sessionListCollapse)
     usePullRequestsLayoutStore.getState().restoreFromSettings(settingsLoad.value.pullRequestsListWidthPx)
+    restoreRightPane(settingsLoad.value.rightPane)
+    startRightPanePersistence()
     resolveRestored()
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either

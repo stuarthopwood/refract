@@ -55,6 +55,7 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 | Stop the running turn | Ctrl+Shift+X |
 | New session | Ctrl+N |
 | Close chat pane | Ctrl+W |
+| Collapse or expand the right pane (chat view) | Ctrl+Shift+B |
 | Open Settings | Ctrl+, |
 | Open in split (a session row) | Ctrl+click |
 | Move focus to the other pane (split open) | Ctrl+Shift+\ |

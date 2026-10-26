@@ -3,6 +3,7 @@
 // (where it has one) its live count. This is a valid, reachable, non-transient state: closing the
 // last open panel always lands here (FR-009), it never collapses the pane.
 import { cn } from '@/lib/utils'
+import { DiffStatCounts } from '../sessions/sessionDisplay'
 import { HOSTED_PANELS, formatPanelCount, usePanelCount, type HostedPanelDescriptor } from './panel-registry'
 import { openHostedPanel } from './hosted-panel-actions'
 
@@ -37,7 +38,11 @@ function LauncherRow({ panel, sessionId }: { panel: HostedPanelDescriptor; sessi
       <span className="min-w-0 flex-1 truncate">{panel.name}</span>
       {count && (
         <span className={cn('shrink-0 text-xs', count.kind === 'running' ? 'text-state-working' : undefined)}>
-          {formatPanelCount(count)}
+          {count.kind === 'additions-deletions' ? (
+            <DiffStatCounts added={count.additions} removed={count.deletions} accessibleLabel />
+          ) : (
+            formatPanelCount(count)
+          )}
         </span>
       )}
     </button>

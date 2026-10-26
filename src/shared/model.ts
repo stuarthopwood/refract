@@ -1,7 +1,7 @@
 // Data stored or held by Refract, and the shapes Refract derives from OMP.
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
-import type { ThemeId } from './themes'; import type { ActivityReadoutFields } from './activity';
+import type { ThemeId } from './themes'; import type { ActivityReadoutFields } from './activity'; import type { RightPaneSettings } from './rightPane';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
 import type { TodoPhase } from './todo';
@@ -117,7 +117,7 @@ export interface Settings {
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on
   wordPredictionEnabled?: boolean; showAgentStoppedBar?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation. showAgentStoppedBar (#1205, FR-107): the "Agent stopped" bar, absent = on
-  sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; // #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
+  sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings; // spec 024 right pane; #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
 export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false });

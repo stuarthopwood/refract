@@ -97,6 +97,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useRightPaneStore } from '@/state'
+import { DiffStatCounts } from '../sessions/sessionDisplay'
 import { formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
 import { WidthPresetControl } from './WidthPresetControl'
@@ -412,7 +413,13 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="min-w-0 shrink-[100] truncate">{descriptor.name}</span>
-      {countText && <span className={cn('shrink-0 tabular-nums', runningCls)}>{countNumber}</span>}
+      {count?.kind === 'additions-deletions' ? (
+        <span className="shrink-0 text-xs">
+          <DiffStatCounts added={count.additions} removed={count.deletions} accessibleLabel />
+        </span>
+      ) : (
+        countText && <span className={cn('shrink-0 tabular-nums', runningCls)}>{countNumber}</span>
+      )}
       {countWord && <span className={cn('min-w-0 shrink-[1000] truncate', runningCls)}>{countWord}</span>}
     </button>
   )
