@@ -106,9 +106,9 @@
 **Owns**: the `scripts/verify-*.mjs` files listed in research Decision 4. Depends on Phases A to E.
 
 - [X] T046 [P] Update the selectors in research Decision 4's table in place: `span.font-medium` becomes `[data-slot="collapsed-line-label"]`; `verify-632-grouped-calls.mjs:504` regex `/^bash(\s*×2)?$/` becomes `/^Ran(\s*×2)?$/`; `verify-700-pill-cards.mjs:405` selects `[data-slot="agents-card-name"]` (from T031). No script gains lines (`verify-570` and `verify-700` are at 600, `verify-632` is baselined at 673).
-- [ ] T047 Run `rg -n "font-(medium|semibold|bold)|font-weight" src/renderer` and confirm every remaining use matches a keep row in the research inventory (SC-003); semibold only on page titles, bold only at `Readiness.tsx:63`.
-- [ ] T048 Run `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:ui-text`, `pnpm check:theme-contrast`, `pnpm check:file-size`; all pass with no new contrast failure (FR-012, SC-004).
-- [ ] T049 Live check per [quickstart.md](./quickstart.md) on a scratch Tauri debug build (never `pnpm dev`): five themes, 360 px, screenshots; confirm SC-001, SC-002, SC-005, verbs, accessible names and row start position.
+- [X] T047 Run `rg -n "font-(medium|semibold|bold)|font-weight" src/renderer` and confirm every remaining use matches a keep row in the research inventory (SC-003); semibold only on page titles, bold only at `Readiness.tsx:63`.
+- [X] T048 Run `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:ui-text`, `pnpm check:theme-contrast`, `pnpm check:file-size`; all pass with no new contrast failure (FR-012, SC-004).
+- [X] T049 Live check per [quickstart.md](./quickstart.md) on a scratch Tauri debug build (never `pnpm dev`): five themes, 360 px, screenshots; confirm SC-001, SC-002, SC-005, verbs, accessible names and row start position.
 
 ## Dependencies
 
