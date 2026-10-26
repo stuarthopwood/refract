@@ -253,6 +253,7 @@ const refract: RefractApi = {
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
     // own doc comment.
     setWordPredictionEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED, enabled),
+    setRightPane: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_RIGHT_PANE, value),
     setPullRequestsListWidth: (widthPx) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH, widthPx),
     setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width),
     setHolidayTouches: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_HOLIDAY_TOUCHES, value)
