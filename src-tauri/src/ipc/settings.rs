@@ -306,17 +306,13 @@ fn parse_holiday_touches(value: &str) -> Option<HolidayTouches> {
 /// `settings_set_chat_width` above.
 pub fn settings_set_activity_text(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let value =
-            match args.first().and_then(|v| v.as_str()).and_then(|v| {
-                serde_json::from_value::<ActivityText>(Value::String(v.to_string())).ok()
-            }) {
-                Some(value) => value,
-                None => {
-                    return Err(invalid_argument(
-                        "settings.setActivityText expects one of 'plain' | 'playful'",
-                    ))
-                }
-            };
+        let value = args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(|v| serde_json::from_value::<ActivityText>(Value::String(v.to_string())).ok())
+            .ok_or_else(|| {
+                invalid_argument("settings.setActivityText expects one of 'plain' | 'playful'")
+            })?;
         let value = state
             .settings
             .lock()
