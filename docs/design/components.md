@@ -19,7 +19,9 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | `ghost` | Icon-only toolbar and row actions. |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
-| `secondary`, `link` | Not part of the design system. |
+| `secondary`, `link` | Not part of the design system, except the one decided `link` use below. |
+
+**Quiet dismiss text button (Stuart, 2026-10-26, #1205):** the "Agent stopped" bar's **Don't show again** is a `link` variant, muted at rest with `text-muted-foreground`, beside the bar's `outline` **Start agent**. A dismiss-forever action on a quiet bar reads as a text action, not a second button; the muted colour keeps **Start agent** the stronger action. Any other new `link` use still needs its own decision.
 
 **Composer exception (2026-10-15, issue #564, gate round 1 fix):** the message box's Stop and Send sit side by side and are BOTH filled at once while a turn runs -- the one documented exception to "one filled button per surface" above, since the two fills are visually distinct colours conveying different intents (stop vs. send), not a duplicated weight. Stop uses `invert`; Send uses `default`, but overridden with its OWN dedicated `--send`/`--send-foreground` token pair (chromatic/indigo in every built-in theme) rather than `--primary`, since `--primary` resolves to a near-white neutral in Dark and Dark (high contrast) -- almost identical to `invert`'s own fill there, failing "visibly distinct in weight". No other `default`-variant button anywhere else in the app is affected.
 
