@@ -67,7 +67,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 14 | #687 | Current-work banner above the composer | Raised to p1 2026-10-22; composer area; grilled 2026-10-23, done (PR #1202) |
 | 15 | #838 | Agent-to-agent lines | Grilled 2026-10-22; done (PR #1161) |
 | 16 | #1208 | Lighter font weights (labels 400, one scale) and sentence-case action verbs | Filed p1 2026-10-23 with the UX architect; its verb map feeds #469, so it goes straight before it. **Done** (PR #1223, merged 2026-10-26; spec 022, six-reviewer gate PASS, live-checked; the five worker decisions accepted by Stuart 2026-10-26) |
-| 17 | #469 | Tool-row icons with verb tooltips | Transcript rows. **In-flight** (grilled 2026-10-26; Specify route, spec 023 `specs/023-tool-row-icons`: specify, clarify, plan, tasks and analyze done 2026-10-26, implement next per its `tasks.md` slices). MCP server › tool naming split out to #1226 |
+| 17 | #469 | Tool-row icons with verb tooltips | Transcript rows. **In-flight** (grilled 2026-10-26; Specify route, spec 023 `specs/023-tool-row-icons`: specify, clarify, plan, tasks and analyze done 2026-10-26; implemented 2026-10-26 on branch `stuarthopwood-feat-469-tool-row-icons` (`tasks.md` slices 1 to 9), quality gate and live check (slices 10 and 11) pending, no PR yet). MCP server › tool naming split out to #1226 |
 | 18 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list |
 | 19 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730 |
 | 20 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |

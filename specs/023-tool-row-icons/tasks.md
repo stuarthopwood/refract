@@ -102,16 +102,16 @@
 **Depends on**: Slices 1 to 8.
 **Owns**: `docs/design/components.md`, `docs/PLAN.md`.
 
-- [ ] T025 Reusable-components check (FR-021): grep the diff for hand-styled icons, tooltips or switches outside `src/renderer/components/`; every tool icon comes from `ToolIcon`, every tooltip from `components/ui/tooltip.tsx`, the switch from `SettingSwitchRow`. Fix any one-off by routing it through the shared component (report any source file this touches).
-- [ ] T026 [P] `docs/design/components.md`: add `ToolIcon` (what it reads, tones) and `CollapsedLine`'s `iconTooltip` to the shared component list.
-- [ ] T027 [P] `docs/PLAN.md` row 17 (#469): status to implemented, pending live check and merge, with the PR number.
+- [x] T025 Reusable-components check (FR-021): grep the diff for hand-styled icons, tooltips or switches outside `src/renderer/components/`; every tool icon comes from `ToolIcon`, every tooltip from `components/ui/tooltip.tsx`, the switch from `SettingSwitchRow`. Fix any one-off by routing it through the shared component (report any source file this touches).
+- [x] T026 [P] `docs/design/components.md`: add `ToolIcon` (what it reads, tones) and `CollapsedLine`'s `iconTooltip` to the shared component list.
+- [x] T027 [P] `docs/PLAN.md` row 17 (#469): status to implemented, pending live check and merge, with the PR number.
 
 ### Slice 10: gate
 
 **Depends on**: Slice 9.
 **Owns**: only files a failing check points at (report each).
 
-- [ ] T028 Run `node scripts/ci-local.mjs` (typecheck, test, check:indent, check:theme-contrast, check:drag-regions, check:parity, check:file-size, check:versions, check:omp-schema, cargo fmt, test and clippy, tauri debug build, check:ui-text). Fix fallout in the owning files; update an existing test only where this change broke it.
+- [x] T028 Run `node scripts/ci-local.mjs` (typecheck, test, check:indent, check:theme-contrast, check:drag-regions, check:parity, check:file-size, check:versions, check:omp-schema, cargo fmt, test and clippy, tauri debug build, check:ui-text). Fix fallout in the owning files; update an existing test only where this change broke it.
 
 ### Slice 11: live verification
 
@@ -137,3 +137,7 @@
 | 11 Live verify | 10 | none |
 
 User story coverage: US1 (icons and verbs) slices 4, 6, 7; US2 (intent) slices 2, 7; US3 (raw id: tooltip and setting) slices 3, 5, 7; US4 (other surfaces) slice 8. The MVP is waves 1 and 2 through slice 7.
+
+## Open items
+
+- Known-stale live-check scripts, not in CI, left for a follow-up: `scripts/verify-632-grouped-calls.mjs`, `scripts/verify-error-prefix-space.mjs`, `scripts/verify-565-spine.mjs` and `scripts/verify-570-tool-colours.mjs` still match the old `$ ` and `grep "` summary prefixes and expect the spinner in the leading icon slot.
