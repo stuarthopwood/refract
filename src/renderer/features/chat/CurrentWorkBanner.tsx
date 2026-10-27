@@ -14,7 +14,6 @@ import { deriveActivity } from '../../../shared/activity'
 import { deriveCurrentTask, deriveTodoTotals } from './readout/todoDerive'
 import { useHeldActivityText, usePendingActivity } from './useHeldActivityText'
 
-
 export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
   const enabled = useSettingsStore((s) => s.settings.sessionReadout['current-work'])
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
