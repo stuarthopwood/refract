@@ -16,7 +16,7 @@ export function probeBubble(index) {
       const img = imgs[0];
       const grid = group.firstElementChild;
       const cols = grid && getComputedStyle(grid).display === 'grid' ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
-      const overlays = Array.from(group.querySelectorAll('button span')).map((el) => ({ text: el.textContent.trim(), tileIndex: tiles.indexOf(el.closest('button')) })).filter((o) => /^\\+\\d+$/.test(o.text));
+      const overlays = Array.from(group.querySelectorAll('button span')).filter((el) => !el.querySelector('span')).map((el) => ({ text: el.textContent.trim(), tileIndex: tiles.indexOf(el.closest('button')) })).filter((o) => /^\\+\\d+$/.test(o.text));
       const contentEl = bubble.querySelector('[data-slot="message-content"]') || bubble;
       const textNodes = Array.from(contentEl.querySelectorAll('p, div, span')).filter((el) => !group.contains(el) && !el.closest('[data-slot="message-header"]') && !el.querySelector('p, div, span, img, button') && el.textContent.trim() !== '');
       const emptyBlocks = Array.from(contentEl.querySelectorAll('p')).filter((el) => !group.contains(el) && el.textContent.trim() === '');

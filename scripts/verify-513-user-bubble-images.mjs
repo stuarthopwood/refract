@@ -30,10 +30,9 @@ const WIDE = { width: 1700, height: 1000 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MAX_ENV_B64_CHARS = 20_000;
 
-/** Tiles load lazily near the viewport: scroll the Nth group into view, then wait until none is loading and `imgs` images exist. */
+/** Tiles load lazily near the viewport: keep the Nth group scrolled into view (the transcript re-pins to the bottom while history settles), then wait until none is loading and `imgs` images exist. */
 async function revealGroup(cdp, groupIndex, imgs) {
-  await cdp.evaluate(`document.querySelectorAll('${GROUP_SEL}')[${groupIndex}]?.scrollIntoView({ block: 'center' })`);
-  await cdp.waitFor(`(() => { const g = document.querySelectorAll('${GROUP_SEL}')[${groupIndex}]; return !!g && g.querySelectorAll('button[aria-label*=", loading"]').length === 0 && g.querySelectorAll('img').length >= ${imgs}; })()`, { timeoutMs: 30_000, label: `group ${groupIndex} tiles loaded` });
+  await cdp.waitFor(`(() => { const g = document.querySelectorAll('${GROUP_SEL}')[${groupIndex}]; if (!g) return false; g.scrollIntoView({ block: 'center' }); return g.querySelectorAll('button[aria-label*=", loading"]').length === 0 && g.querySelectorAll('img').length >= ${imgs}; })()`, { timeoutMs: 30_000, label: `group ${groupIndex} tiles loaded` });
 }
 
 function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, pathPrepend, extraEnv = {}, logFile }) {
