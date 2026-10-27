@@ -16,7 +16,7 @@ Refract exposes three independent font roles, each with its own picker (#4).
 
 Use a bundled OFL font or an installed system font for any role; bundling was decided 2026-10-07 (#4) and supersedes the old `docs/DESIGN.md` Fonts rule (now in [product-look-and-feel.md](product-look-and-feel.md)) that Refract "uses fonts installed on the system and does not bundle any". Each picker lists a **Bundled** group (always available, identical on every machine) above an **Installed** group (searchable system fonts); a missing installed font falls back to the default stack silently, with a note in Settings.
 
-The starter bundle (Latin subset, WOFF2, about 223 KB total) is Inter, Atkinson Hyperlegible, and IBM Plex Sans for `App`/`Chat`, and JetBrains Mono, Fira Code, and Geist Mono for `Code`. None of the candidate `Code` fonts carry Nerd Font glyphs (checked: zero Private Use Area code points in their glyph tables); Nerd Font glyphs still need an installed Nerd Font.
+The starter bundle (Latin subset, WOFF2, about 223 KB total) is Geist (the default), Inter, Atkinson Hyperlegible, and IBM Plex Sans for `App`/`Chat`, and JetBrains Mono, Fira Code, and Geist Mono for `Code`. None of the candidate `Code` fonts carry Nerd Font glyphs (checked: zero Private Use Area code points in their glyph tables); Nerd Font glyphs still need an installed Nerd Font.
 
 ## Case and label style
 
@@ -47,12 +47,12 @@ Use one weight scale on every theme. Do not add theme-specific weight tokens, an
 
 | Weight | Use |
 | --- | --- |
-| 400 (regular) | Body text, labels, metadata, muted section labels, badges, and ghost buttons |
-| 500 (medium) | Buttons, selected states, and in-chat headings |
-| 600 (semibold) | Page titles only, such as Settings section headings |
-| 700 (bold) | The Refract wordmark only |
+| 300 (light, `ont-normal`) | Body text, labels, metadata, muted section labels, badges, and ghost buttons |
+| 400 (regular, `ont-medium`) | Buttons, selected states, and in-chat headings |
+| 500 (medium, `ont-semibold`) | Page titles, such as Settings section headings, and ``/`strong` |
+| 600 (semibold, `ont-bold`) | The Refract wordmark only |
 
-Do not use 450, or any other weight outside this table. The app font is Segoe UI Variable. Static Segoe UI on Windows 10 has no 450 weight, so a 450 label renders inconsistently across machines. Use 400 for a regular label and 500 for a medium one.
+Do not use 450, or any other weight outside this table. The scale is one step lighter than the Tailwind defaults: `@theme` in `globals.css` remaps `--font-weight-normal/medium/semibold/bold` to 300/400/500/600 (issue #1246), so write the usual utility, never a literal number. The default `App`/`Chat` font is Geist and the default `Code` font is Geist Mono, both variable (wght 100-900). Code ligatures follow the Settings > Chat "Code ligatures" switch.
 
 The scale caps weights. It does not raise them: a heading or label that is lighter than its role's weight keeps its current weight.
 
