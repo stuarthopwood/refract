@@ -369,8 +369,9 @@ impl SettingsStore {
         map.insert(agent_stopped_bar::KEY.to_string(), json!(show_bar));
         let animated = self.data.animated_status_text;
         map.insert(animated_status_text::KEY.to_string(), json!(animated));
-                let turn_times = self.data.show_finished_turn_times;
-                map.insert(finished_turn_times::KEY.to_string(), json!(turn_times));        map.insert(
+        let turn_times = self.data.show_finished_turn_times;
+        map.insert(finished_turn_times::KEY.to_string(), json!(turn_times));
+        map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),
         );

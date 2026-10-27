@@ -76,7 +76,7 @@ async function main() {
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-947-938-exe-'));
     launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-947-938-launcher-'));
     mkdirSync(SHOTS_DIR, { recursive: true });
-    writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
+    writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto', showFinishedTurnTimes: true }));
     const port = await getFreePort();
     gitHeadSha = gitHead(REPO_ROOT);
     const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });

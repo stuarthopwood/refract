@@ -43,7 +43,7 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
       data-slot="current-work-banner"
       data-testid="current-work-banner"
       aria-live="off"
-      className="mb-1 flex h-6 shrink-0 items-center gap-1.5 px-4 text-sm text-muted-foreground"
+      className="mb-1 flex h-6 shrink-0 items-center px-4 text-sm"
     >
       <Tooltip>
         <TooltipTrigger asChild>
