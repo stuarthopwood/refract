@@ -402,6 +402,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_AGENT_STOPPED_BAR: 'settings.setShowAgentStoppedBar',
   SETTINGS_SET_SHOW_AI_CREDITS: 'settings.setShowAiCredits',
   SETTINGS_SET_ANIMATED_STATUS_TEXT: 'settings.setAnimatedStatusText',
+  SETTINGS_SET_CODE_LIGATURES: 'settings.setCodeLigatures',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
@@ -683,9 +684,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * returns this call's own written value, the same race-safety pattern as
      * `setApprovalMode`/`setWatermarkEnabled` above. Pushes `settings:changed`, no new event. */
     setShowSampleData(enabled: boolean): Promise<Result<Settings>>;
-    /** #514 (contracts/ipc.md): persists the whole `Settings` row, same race-safety pattern as every other setter here. Pushes
-     * `settings:changed`; turns OFF path-based image-attach detection on paste entirely when
-     * `false` (pasting a clipboard image directly is never affected). */
+    /** #514 (contracts/ipc.md): whole-row persist; `false` turns OFF path-based image-attach detection on paste (a pasted clipboard image is never affected). */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setShowContextUsageBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1082 (spec 004 FR-034).
     setShowAiCredits(enabled: boolean): Promise<Result<Settings>>; // #1238.
@@ -694,6 +693,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
+    setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; // Issue #1246
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
     setActivityText(value: ActivityText): Promise<Result<Settings>>; // #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.

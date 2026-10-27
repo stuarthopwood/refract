@@ -38,6 +38,8 @@ export function ChatDisplaySection() {
   const setShowFinishedTurnTimes = useSettingsStore((state) => state.setShowFinishedTurnTimes)
   const wordPredictionEnabled = useSettingsStore((state) => state.settings.wordPredictionEnabled)
   const setWordPredictionEnabled = useSettingsStore((state) => state.setWordPredictionEnabled)
+  const codeLigatures = useSettingsStore((state) => state.settings.codeLigatures !== false)
+  const setCodeLigatures = useSettingsStore((state) => state.setCodeLigatures)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -90,6 +92,14 @@ export function ChatDisplaySection() {
           description={'A pasted path to an image file (for example, Explorer\'s "Copy as path") attaches the image above the message box.'}
           checked={detectImagePathsOnPaste}
           onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
+        />
+        {/* Issue #1246: on by default. */}
+        <SettingSwitchRow
+          id="code-ligatures"
+          label="Code ligatures"
+          description="Join characters such as => and != into single glyphs in code, diffs and the message box."
+          checked={codeLigatures}
+          onCheckedChange={(checked) => void setCodeLigatures(checked)}
         />
         {/* Issue #1082 (spec 004 FR-034): on by default. */}
         <SettingSwitchRow

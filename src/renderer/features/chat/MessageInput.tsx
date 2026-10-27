@@ -1378,7 +1378,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             // Gate round 3 fix (#1050, Medium, flicker): the shared `Textarea` primitive's own `transition-colors` fades a 150ms colour change on ANY toggle, including this textarea's own fill-colour swap the instant a pill mounts/unmounts -- while the mirror underneath mounts instantly, visibly desyncing the two for ~150ms. `transition-[border-color,box-shadow]` (merged over `transition-colors` by `cn`'s tailwind-merge, same class group) narrows this textarea to border/ring-only transitions, without touching the shared primitive.
             className={cn(
               COMPOSER_SELECTION_CLASS,
-              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
+              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 font-code shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
               commandToken && COMMAND_PILL_TEXTAREA_CLASS
             )}
           />
@@ -1423,7 +1423,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
+              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 font-code text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
               <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">

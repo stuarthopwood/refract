@@ -24,6 +24,7 @@ interface SettingsState {
   setShowAgentStoppedBar(enabled: boolean): Promise<boolean>
   setShowAiCredits(enabled: boolean): Promise<void>
   setAnimatedStatusText(enabled: boolean): Promise<void>
+  setCodeLigatures(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
 }
 
@@ -156,9 +157,22 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   },
+  setCodeLigatures: async (enabled) => {
+    const result = await window.refract.settings.setCodeLigatures(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
   setShowFinishedTurnTimes: async (enabled) => {
     const result = await window.refract.settings.setShowFinishedTurnTimes(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   }
 }))
+
+// Issue #1246: globals.css reads this root attribute to turn Code font ligatures off.
+function applyCodeLigatures(settings: Settings): void {
+  if (settings.codeLigatures === false) document.documentElement.dataset.codeLigatures = 'off'
+  else delete document.documentElement.dataset.codeLigatures
+}
+
+useSettingsStore.subscribe((state) => applyCodeLigatures(state.settings))

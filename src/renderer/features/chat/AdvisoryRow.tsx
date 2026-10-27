@@ -286,7 +286,7 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
           <div className="space-y-1">
             <div className="text-xs text-muted-foreground">{locations.length > 1 ? 'Locations' : 'Location'}</div>
             {locations.map((location) => (
-              <div key={location.raw} className="select-text font-mono text-xs [overflow-wrap:anywhere]">
+              <div key={location.raw} className="select-text font-code text-xs [overflow-wrap:anywhere]">
                 {location.raw}
               </div>
             ))}

@@ -56,7 +56,7 @@ const SEVERITY_LABEL: Record<AutomatedFinding['severity'], string> = {
 function CommitRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'commit' }> }) {
   return (
     <div className="flex items-start gap-2 rounded-md border border-border px-3 py-2 text-sm">
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">{entry.sha.slice(0, 7)}</span>
+      <span className="shrink-0 font-code text-xs text-muted-foreground">{entry.sha.slice(0, 7)}</span>
       <span className="min-w-0 flex-1 break-words">{entry.message}</span>
       <span className="shrink-0 text-xs text-muted-foreground">
         {actorLabel(entry.author)} &middot; {formatRelativeTime(entry.committedAt)}
@@ -152,7 +152,7 @@ function ThreadRow({
   return (
     <div className="rounded-md border border-border px-3 py-2">
       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="font-mono">
+        <span className="font-code">
           {thread.path}
           {thread.line !== null ? `:${thread.line}` : ''}
         </span>
