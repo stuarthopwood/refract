@@ -181,6 +181,11 @@ A list row (session row, repository row, subagent row) is an unboxed row under t
 - Confirm buttons repeat the verb ("Delete session"), never "OK" or "Yes" — see [patterns.md](patterns.md).
 - A destructive confirmation is never icon-only; it always carries a label (see "Destructive actions" in [patterns.md](patterns.md)).
 
+## Image viewer and message images
+
+- `ImageViewer` (`src/renderer/components/ImageViewer.tsx`) is the one full-size image dialog: controlled, with Previous/Next buttons, Left/Right arrow keys, Esc and the dialog close button, and a type/size/dimensions line. It resolves only the current image, so a long list never loads every image. `ImagePreviewModal` (pending pastes) is a thin wrapper over it.
+- `MessageImageGrid` (`src/renderer/components/MessageImageGrid.tsx`) shows a user message's images: one image at natural size (never upscaled, 320 px tall at most), several in a 2-across grid (3 when the bubble is 28rem or wider) with `+N` past four tiles. Each tile is a button named `Image N of M, TYPE, size. Open larger view`; a missing image is an `Image no longer available` placeholder. Bytes load through `images.get` and `lib/messageImageCache.ts` (16-entry LRU).
+
 ## Toasts and notices
 
 Status and feedback (agenda item 7) define one severity set across notices and toasts, and one set of channels:

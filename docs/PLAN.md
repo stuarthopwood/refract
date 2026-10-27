@@ -71,7 +71,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 18 | #526 | Session row live status line | Raised to p1 2026-10-22; Session list. **PR #1230 open, awaiting merge** (grilled 2026-10-26, nine decisions; Converge route on spec 001 FR-108 to FR-111 and spec 004 FR-041; branch `stuarthopwood-feat-526-session-row-live-status`) |
 | 19 | #538 | Right-pane behaviour rules | Raised to p1 2026-10-22; before #730. **In-flight** (grilled 2026-10-27 by Skippy, delegated by Stuart; spec 024 `specs/024-right-pane-toggle-persistence`: collapse toggle in the rail, Ctrl+Shift+B, rail count badges, coloured git count, persisted open/width/tabs; PR open, awaiting the gate and Stuart's merge call). The rest of #538 was already built by spec 013 |
 | 20 | #730 | Right-pane rail drag to rearrange | Raised to p1 2026-10-22; needs #538 |
-| 21 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/` |
+| 21 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/`; grilled 2026-10-27, spec `026-user-bubble-images`, PR open (not merged) |
 | alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
 
 p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
