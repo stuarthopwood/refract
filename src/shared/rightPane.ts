@@ -7,11 +7,15 @@ export interface RightPaneSettings {
   widthPx: number
   openPanelIds: string[]
   activePanelId: string | null
+  /** Issue #730: the saved panel order. Empty means the default; may hold ids this build does
+   * not register, which the renderer keeps and merges (`mergePanelOrder`). */
+  panelOrder: string[]
 }
 
 export const DEFAULT_RIGHT_PANE: RightPaneSettings = {
   open: false,
   widthPx: 320,
   openPanelIds: [],
-  activePanelId: null
+  activePanelId: null,
+  panelOrder: []
 }

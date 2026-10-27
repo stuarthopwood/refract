@@ -22,6 +22,9 @@ interface RightPaneState {
   openPanelIds: PanelId[]
   /** Which open panel is shown; `null` only when `openPanelIds` is empty (the launcher). */
   activePanelId: PanelId | null
+  /** Issue #730 (FR-112 to FR-114): the saved panel order, raw -- empty means the default, ids
+   * this build does not register are kept. Read through `useOrderedPanels` (merged), not directly. */
+  panelOrder: string[]
   /** Gate-fix (round 2, A11y2 Medium, spec 014 FR-013): bumped every time `openPanel('side-chat')`
    * runs, whether or not it was already the active panel -- `SideChatPanel` watches this id and
    * moves focus into its own composer whenever it changes, covering the rail, the launcher, and
@@ -61,7 +64,9 @@ interface RightPaneState {
   toggleCollapsed(): void
   /** Spec 024 FR-005 to FR-007: replaces the whole state from the saved settings (already
    * validated), never writing it back. */
-  restore(state: { open: boolean; widthPx: number; openPanelIds: PanelId[]; activePanelId: PanelId | null }): void
+  restore(state: { open: boolean; widthPx: number; openPanelIds: PanelId[]; activePanelId: PanelId | null; panelOrder: string[] }): void
+  /** Issue #730: replaces the saved panel order (a user move, or `[]` for Reset). */
+  setPanelOrder(order: string[]): void
   /** Generalises `App.tsx`'s existing `onResize` desync guard (research.md decision 2) from the
    * Subagents-only case to any hosted panel; called from the shell's `ResizablePanel.onResize`,
    * never from a click handler. */
@@ -73,6 +78,7 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   widthPx: RIGHT_PANE_DEFAULT_WIDTH_PX,
   openPanelIds: [],
   activePanelId: null,
+  panelOrder: [],
   sideChatFocusRequestId: 0,
   suppressNextContentFocus: false,
   openPanel: (id, options) => {
@@ -123,5 +129,6 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   setWidth: (widthPx) => set({ widthPx }),
   toggleCollapsed: () => set({ open: !get().open }),
   restore: (state) => set(state),
+  setPanelOrder: (panelOrder) => set({ panelOrder }),
   syncRenderedState: (open, widthPx) => set({ open, widthPx })
 }))

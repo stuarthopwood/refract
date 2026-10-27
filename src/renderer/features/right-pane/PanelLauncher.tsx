@@ -4,18 +4,20 @@
 // last open panel always lands here (FR-009), it never collapses the pane.
 import { cn } from '@/lib/utils'
 import { DiffStatCounts } from '../sessions/sessionDisplay'
-import { HOSTED_PANELS, formatPanelCount, usePanelCount, type HostedPanelDescriptor } from './panel-registry'
+import { formatPanelCount, usePanelCount, type HostedPanelDescriptor } from './panel-registry'
 import { openHostedPanel } from './hosted-panel-actions'
+import { useOrderedPanels } from './panel-order'
 
 interface PanelLauncherProps {
   sessionId: string | null
 }
 
 export function PanelLauncher({ sessionId }: PanelLauncherProps) {
+  const panels = useOrderedPanels()
   return (
     <div className="flex h-full flex-col items-center justify-center overflow-auto p-4">
       <ul data-panel-launcher className="flex w-full max-w-xs flex-col gap-1" aria-label="Available panels">
-        {HOSTED_PANELS.map((panel) => (
+        {panels.map((panel) => (
           <li key={panel.id}>
             <LauncherRow panel={panel} sessionId={sessionId} />
           </li>

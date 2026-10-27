@@ -18,14 +18,15 @@ export interface HostedPanelDescriptor {
   hasCount: boolean
 }
 
+// Issue #730 (FR-112): the literal order below IS the default panel order (Git changes, File
+// explorer, Subagents, Side chat, FDB Knowledge, Agent Builder); `panel-order.ts` applies the
+// user's saved order on top for the rail and the launcher.
 export const HOSTED_PANELS: HostedPanelDescriptor[] = [
-  { id: 'subagents', name: 'Subagents', icon: BotIcon, hasCount: true },
-  { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false },
-  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false },
-  // Spec 014 research.md decision 5: a single-bubble icon, distinct from the three above, chosen
-  // over MessagesSquareIcon (closer to "messaging app" than "one aside conversation"). No live
-  // count is asked for by either issue.
-  { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false },
+  // Spec 018 slice 1 research.md decision 5: distinct from `FolderTreeIcon` below (that one
+  // already means "browse this worktree's files"); the branch glyph reads as "this worktree's
+  // Git state" specifically. `hasCount: true`: the `additions-deletions` shape below, already
+  // defined for this purpose, previously unused.
+  { id: 'git-changes', name: 'Git changes', icon: GitBranchIcon, hasCount: true },
   // Spec 015 research.md decision 8: distinct from every icon already in use on a right-pane
   // rail button or an existing file-system action (`FolderOpenIcon` already means "open the OS
   // file explorer" elsewhere in this codebase, e.g. `AddRepositoryDialog.tsx`'s Browse button
@@ -33,11 +34,13 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   // containing a nested tree" shape avoids conflating "open this panel" with that action. No
   // live count is asked for by the issue.
   { id: 'file-explorer', name: 'File explorer', icon: FolderTreeIcon, hasCount: false },
-  // Spec 018 slice 1 research.md decision 5: distinct from `FolderTreeIcon` above (that one
-  // already means "browse this worktree's files"); the branch glyph reads as "this worktree's
-  // Git state" specifically. `hasCount: true`: the `additions-deletions` shape below, already
-  // defined for this purpose, previously unused.
-  { id: 'git-changes', name: 'Git changes', icon: GitBranchIcon, hasCount: true }
+  { id: 'subagents', name: 'Subagents', icon: BotIcon, hasCount: true },
+  // Spec 014 research.md decision 5: a single-bubble icon, distinct from the others, chosen
+  // over MessagesSquareIcon (closer to "messaging app" than "one aside conversation"). No live
+  // count is asked for by either issue.
+  { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false },
+  { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false },
+  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false }
 ]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {

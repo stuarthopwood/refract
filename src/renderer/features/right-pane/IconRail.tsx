@@ -13,12 +13,16 @@
 import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { CountBadge } from '@/components/ui/count-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useRightPaneStore } from '@/state'
 import { TITLE_BAR_OVERLAY_HEIGHT } from '../../../shared/layout'
-import { HOSTED_PANELS, railCountLabel, usePanelCount, type HostedPanelDescriptor, type PanelId } from './panel-registry'
+import { REORDER_MARKER_CLASS, useReorderable, type ReorderItemProps } from '@/components/reorder/use-reorderable'
+import { ReorderAnnouncer } from '@/components/reorder/ReorderAnnouncer'
+import { railCountLabel, usePanelCount, type HostedPanelDescriptor, type PanelId } from './panel-registry'
+import { savePanelOrder, useOrderedPanels } from './panel-order'
 import { toggleHostedPanelFromRail } from './hosted-panel-actions'
 import { toggleRightPane } from './toggle-right-pane'
 
@@ -31,7 +35,13 @@ interface IconRailProps {
 export function IconRail({ sessionId }: IconRailProps) {
   const rightPaneOpen = useRightPaneStore((s) => s.open)
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
-  const [rovingId, setRovingId] = useState<PanelId>(HOSTED_PANELS[0]?.id ?? 'subagents')
+  const panels = useOrderedPanels()
+  const [rovingId, setRovingId] = useState<PanelId>(panels[0]?.id ?? 'subagents')
+  const { containerRef, getItemProps, announcement } = useReorderable({
+    ids: panels.map((panel) => panel.id),
+    labelFor: (id) => panels.find((panel) => panel.id === id)?.name ?? id,
+    onReorder: savePanelOrder
+  })
   const buttonRefs = useRef<Partial<Record<PanelId, HTMLButtonElement | null>>>({})
 
   function focusButton(id: PanelId): void {
@@ -40,15 +50,17 @@ export function IconRail({ sessionId }: IconRailProps) {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, id: PanelId): void {
-    const index = HOSTED_PANELS.findIndex((panel) => panel.id === id)
+    // Alt+Shift+Arrow is the reorder chord (handled first, by the reorder hook), not focus movement.
+    if (event.altKey && event.shiftKey) return
+    const index = panels.findIndex((panel) => panel.id === id)
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const delta = event.key === 'ArrowDown' ? 1 : -1
-      const next = HOSTED_PANELS[(index + delta + HOSTED_PANELS.length) % HOSTED_PANELS.length]
+      const next = panels[(index + delta + panels.length) % panels.length]
       if (next) focusButton(next.id)
     } else if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault()
-      const next = event.key === 'Home' ? HOSTED_PANELS[0] : HOSTED_PANELS[HOSTED_PANELS.length - 1]
+      const next = event.key === 'Home' ? panels[0] : panels[panels.length - 1]
       if (next) focusButton(next.id)
     }
   }
@@ -76,12 +88,22 @@ export function IconRail({ sessionId }: IconRailProps) {
         </TooltipTrigger>
         <TooltipContent side="left">{rightPaneOpen ? 'Collapse' : 'Expand'} right pane (Ctrl+Shift+B)</TooltipContent>
       </Tooltip>
-      <div role="toolbar" aria-label="Panels" aria-orientation="vertical" className="flex flex-col items-center gap-1 py-2">
-        {HOSTED_PANELS.map((panel) => (
+      <div
+        ref={(el) => {
+          containerRef.current = el
+        }}
+        role="toolbar"
+        aria-label="Panels"
+        aria-orientation="vertical"
+        aria-keyshortcuts="Alt+Shift+ArrowUp Alt+Shift+ArrowDown"
+        className="flex flex-col items-center gap-1 py-2"
+      >
+        {panels.map((panel) => (
           <RailButton
             key={panel.id}
             panel={panel}
             sessionId={sessionId}
+            reorderProps={getItemProps(panel.id)}
             pressed={rightPaneOpen && openPanelIds.includes(panel.id)}
             tabIndex={panel.id === rovingId ? 0 : -1}
             buttonRef={(el) => {
@@ -91,6 +113,7 @@ export function IconRail({ sessionId }: IconRailProps) {
             onKeyDown={(event) => handleKeyDown(event, panel.id)}
           />
         ))}
+        <ReorderAnnouncer text={announcement.text} serial={announcement.serial} />
       </div>
     </div>
   )
@@ -99,6 +122,7 @@ export function IconRail({ sessionId }: IconRailProps) {
 interface RailButtonProps {
   panel: HostedPanelDescriptor
   sessionId: string | null
+  reorderProps: ReorderItemProps
   pressed: boolean
   tabIndex: number
   buttonRef: (el: HTMLButtonElement | null) => void
@@ -106,7 +130,7 @@ interface RailButtonProps {
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
 }
 
-function RailButton({ panel, sessionId, pressed, tabIndex, buttonRef, onFocus, onKeyDown }: RailButtonProps) {
+function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonRef, onFocus, onKeyDown }: RailButtonProps) {
   const Icon = panel.icon
   const count = railCountLabel(usePanelCount(panel.id, sessionId))
   // Gate remediation (Medium): a toggle button's accessible name must not change with its
@@ -126,10 +150,17 @@ function RailButton({ panel, sessionId, pressed, tabIndex, buttonRef, onFocus, o
           aria-pressed={pressed}
           aria-label={label}
           tabIndex={tabIndex}
-          className="relative aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground forced-colors:aria-pressed:border-[Highlight]"
+          className={cn(
+            'relative aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
+            REORDER_MARKER_CLASS
+          )}
           onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
           onFocus={onFocus}
-          onKeyDown={onKeyDown}
+          {...reorderProps}
+          onKeyDown={(event) => {
+            reorderProps.onKeyDown(event)
+            if (!event.defaultPrevented) onKeyDown(event)
+          }}
         >
           <Icon aria-hidden className="size-4" />
           {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'working' : 'neutral'} />}

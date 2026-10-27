@@ -235,6 +235,10 @@ The option the agent marks as its default (issue #572). Shown as text, never pre
 A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**). The pane itself collapses and expands from the **Icon rail**'s top button or Ctrl+Shift+B; collapsing keeps every open panel, the tab order and the width, and all three survive a restart.
 _Avoid_: Sidebar, drawer
 
+**Panel order**:
+The user's saved order of the **Panel**s, shared by the **Icon rail** and the launcher (not the tab bar, which keeps open order). Default: Git changes, File explorer, Subagents, Side chat, FDB Knowledge, Agent Builder. Changed by dragging a rail button or Alt+Shift+Up/Down on it, restored by "Reset panel order" in Settings (issue #730).
+_Avoid_: Rail order, button order
+
 **Pane**:
 An unboxed, resizable region of the main content area, one of possibly several side by side, each independently scrollable (for example, a **Chat pane**). Inside a **Split**, say **Chat pane**, not the bare word, per that entry's own _Avoid_ note.
 _Avoid_: Panel (a distinct, secondary tool or view, not this region), split view (for the arrangement itself -- see **Split**)
