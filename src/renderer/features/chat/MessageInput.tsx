@@ -1423,7 +1423,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
+              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 font-code text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
               <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">

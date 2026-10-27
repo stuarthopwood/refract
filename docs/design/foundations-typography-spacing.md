@@ -11,7 +11,7 @@ Refract exposes three independent font roles, each with its own picker (#4).
 | Role | Covers |
 | --- | --- |
 | `App` | Chrome: session list, headers, menus, dialogs, Settings. |
-| `Chat` | Message prose in the transcript and the composer's text area. |
+| `Chat` | Message prose in the transcript. The composer's text area uses the `Code` font (issue #1246). |
 | `Code` | Code blocks, inline code, tool output, diffs, and diff/PR file headers. |
 
 Use a bundled OFL font or an installed system font for any role; bundling was decided 2026-10-07 (#4) and supersedes the old `docs/DESIGN.md` Fonts rule (now in [product-look-and-feel.md](product-look-and-feel.md)) that Refract "uses fonts installed on the system and does not bundle any". Each picker lists a **Bundled** group (always available, identical on every machine) above an **Installed** group (searchable system fonts); a missing installed font falls back to the default stack silently, with a note in Settings.

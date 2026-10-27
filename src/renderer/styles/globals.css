@@ -157,6 +157,7 @@
   --font-ui: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-code: 'Geist Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
   --font-brand: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-weight-*: initial;
   --font-weight-normal: 300;
   --font-weight-medium: 400;
   --font-weight-semibold: 500;
@@ -1500,7 +1501,7 @@
     font-variant-ligatures: normal;
   }
 
-  :root[data-code-ligatures='off'] :is(code, pre, kbd, .font-code) {
+  :root[data-code-ligatures='off'] :is(code, pre, kbd, .font-code, .diff-view) {
     font-variant-ligatures: none;
   }
 }
