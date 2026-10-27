@@ -16,7 +16,10 @@ pub(super) fn parse(object: &Map<String, Value>) -> bool {
 impl SettingsStore {
     /// `settings.setShowFinishedTurnTimes(enabled)`: plain boolean, the same shape
     /// `set_animated_status_text` uses.
-    pub async fn set_show_finished_turn_times(&mut self, enabled: bool) -> std::io::Result<Settings> {
+    pub async fn set_show_finished_turn_times(
+        &mut self,
+        enabled: bool,
+    ) -> std::io::Result<Settings> {
         let next = Settings {
             show_finished_turn_times: enabled,
             ..self.data.clone()
