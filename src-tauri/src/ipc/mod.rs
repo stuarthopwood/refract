@@ -46,6 +46,7 @@ pub mod sessions_agent;
 pub mod sessions_lifecycle;
 pub mod settings;
 pub mod settings_animated_status_text;
+pub mod settings_code_ligatures;
 pub mod settings_finished_turn_times;
 pub mod side_chat;
 pub mod subagents;
@@ -172,6 +173,7 @@ impl Dispatcher {
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings::register(dispatcher);
     settings_animated_status_text::register(dispatcher);
+    settings_code_ligatures::register(dispatcher);
     settings_finished_turn_times::register(dispatcher);
     debug::register(dispatcher);
     readiness::register(dispatcher);

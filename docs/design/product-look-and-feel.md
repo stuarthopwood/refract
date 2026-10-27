@@ -11,7 +11,7 @@ This page covers Refract's old `docs/DESIGN.md` "Look and feel" section, reprodu
 - **Fonts**: two independent, user-customisable settings.
   - **UI font** for the app chrome.
   - **Code font** for code blocks, tool output, diffs, and the message box: monospaced, with Nerd Font glyph support and a ligatures on/off choice, and a size setting.
-  - **(default)** Refract uses fonts installed on the system and does not bundle any; glyphs missing from the chosen font fall back to another installed font.
+  - **(default)** The UI font defaults to bundled Geist and the Code font to bundled Geist Mono (issue #1246); otherwise Refract uses fonts installed on the system; glyphs missing from the chosen font fall back to another installed font.
   - **Exception**: the "Refract" wordmark and tagline on the Readiness screen's brand header use one bundled display font (Geist, `src/renderer/assets/fonts/`): the wordmark at weight 700/48px, the tagline lighter. It is not a UI font or Code font setting and is never used for body text. The app icon itself (`build/icon.ico`) is a separately authored image asset, not rendered from this font.
 
   _Superseded by #4 (2026-10-07): the two-font split (UI, Code) above is replaced by three roles (App, Chat, Code); see [foundations-typography-spacing.md](foundations-typography-spacing.md#font-roles)._

@@ -196,6 +196,10 @@ _Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists)
 The app-wide Settings, Appearance choice between Full (default, the transcript column fills the pane) and Reading column (caps it at 64rem, centred); applies to the chat transcript only, never the message box or the status line. Save/Cancel live preview, the same interaction model as **Theme**.
 _Avoid_: reading width, line width (ambiguous with a font/measure setting, which does not exist)
 
+**UI font / Code font** (issue #1246, grilled 2026-10-27):
+The two default typefaces: **UI font** is bundled Geist and **Code font** is bundled Geist Mono (Segoe UI Variable and Cascadia stacks stay as fallbacks). **Weight scale** is one set of theme tokens, shifted down one step from #1208: normal 300 (body), medium 400, semibold 500, bold 600; 200 is rejected for stroke contrast and there is no weight setting. Every literal 400 left by #1208 (diff headers, row labels) follows the scale to 300. The **composer** textarea uses the Code font (pulling #839's font rule into this issue). **Code ligatures** (Geist Mono `liga`) are on by default; a Settings > Chat switch turns them off app-wide. User font pickers stay with #4.
+_Avoid_: font weight setting, font slider (neither exists)
+
 ### UI vocabulary
 
 Decided by Stuart in the #474 grill, 2026-10-08. Glossary only -- implementation detail (icon, button, and tooltip rules) lives in `docs/design/`, not here.
