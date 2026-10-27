@@ -35,6 +35,7 @@ pub mod file_attachments;
 pub mod file_explorer;
 pub mod files;
 pub mod git_changes;
+pub mod images;
 pub mod model;
 pub mod model_roles;
 pub mod pull_requests;
@@ -178,6 +179,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     clipboard::register(dispatcher);
     file_explorer::register(dispatcher);
     git_changes::register(dispatcher);
+    images::register(dispatcher);
     files::register(dispatcher);
     pull_requests::register(dispatcher);
     accounts::register(dispatcher);

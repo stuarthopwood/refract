@@ -51,6 +51,7 @@ import type { ChatWidth } from './chatWidth';
 import type { HolidayTouches } from './holidayTouches';
 import type { ActivityText, SessionActivity } from './activity';
 import type { UpdatesApi } from './updates';
+import type { ImagesApi } from './ipc-images';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
@@ -346,6 +347,7 @@ export const IPC_REQUESTS = {
   ATTACHMENTS_READ_FILE: 'attachments.readFile',
   ATTACHMENTS_PICK_FILES: 'attachments.pickFiles',
   ATTACHMENTS_RECORD_DROPPED_PATHS: 'attachments.recordDroppedPaths',
+  IMAGES_GET: 'images.get',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
@@ -491,7 +493,7 @@ export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 /** An unsubscribe function returned by every `on*` event subscription. */
 export type Unsubscribe = () => void;
 
-export interface RefractApi extends UpdatesApi {
+export interface RefractApi extends UpdatesApi, ImagesApi {
   repositories: {
     /** Issue #528, gate round 3 fix (Medium): returns immediately with `remote: { kind:
      * 'unknown' }` on every entry -- the per-repository remote check used to run inline here

@@ -40,6 +40,7 @@ import type {
 } from '../shared/ipc'
 import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-attachments'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
+import type { MessageImageData } from '../shared/ipc-images'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
@@ -158,6 +159,10 @@ const refract: RefractApi = {
     diffStat: (id) => request<DiffStat | null>(IPC_REQUESTS.SESSIONS_DIFF_STAT, id),
     revealWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE, id),
     revealFile: (sessionId, path) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_FILE, sessionId, path)
+  },
+
+  images: {
+    get: (imageId) => request<MessageImageData>(IPC_REQUESTS.IMAGES_GET, imageId),
   },
 
   attachments: {

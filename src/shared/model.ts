@@ -4,7 +4,7 @@
 import type { ThemeId } from './themes'; import type { ActivityReadoutFields, ActivityText } from './activity'; import type { RightPaneSettings } from './rightPane';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
-import type { TodoPhase } from './todo';
+import type { TodoPhase } from './todo'; import type { TranscriptImageRef } from './ipc-images';
 
 /** A local git project the developer has added to Refract. Owns zero or more Sessions. */
 export interface Repository {
@@ -402,7 +402,7 @@ export interface FileAttachmentRef {
 
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
-  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[] }
+  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[]; images?: TranscriptImageRef[] }
   | { kind: 'assistant-text'; id: string; text: string; streaming: boolean }
   | {
       kind: 'thinking';
