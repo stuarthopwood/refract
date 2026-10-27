@@ -238,6 +238,21 @@ field whose bottom bar shows the mode, model, and agent.
   FR-039); a Setting turns it off (FR-040).
 - Q: Untrusted text? -> A: Plain text, controls stripped, 160 characters (FR-038).
 
+### Session 2026-10-27 (AI credits, issue #1238; grilled by Stuart)
+
+- Q: What is a "credit"? -> A: OMP's session cost in dollars x 100 (1 AI credit = $0.01), read
+  from `get_session_stats().cost` (FR-050).
+- Q: Which allowance? -> A: The user's INDIVIDUAL Copilot plan, as a percentage used ("Plan: P%
+  used", as Copilot's own readout), never the org-pooled Business allowance (FR-051).
+- Q: Where does the plan figure come from? -> A: A new read-only Rust command calls GitHub's
+  `GET /copilot_internal/user` with the active github.com `gh` account's token (the same
+  token-handling discipline as the profile fetch, Principle V); probed 2026-10-27, the `gh`
+  token is accepted and `quota_snapshots.premium_interactions` carries `percent_remaining`,
+  `entitlement` and `quota_remaining` (FR-051). Not reported -> session credits alone, with a
+  "usage unavailable" tooltip (FR-052).
+- Q: A new chip? -> A: No, folded into `ContextUsageChip` (FR-050); a "Show AI credits" Setting
+  hides the part (FR-053).
+
 ### User Story 4 - Know what the agent is doing right now (Priority: P2, issue #687)
 
 A user glancing at a working Session sees one muted line above the composer saying what it is
@@ -770,6 +785,29 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   line MUST instead show a phrase from a fixed list of about 12, chosen per Session and rotated
   every 10 seconds while that fallback holds; every other line stays factual. The banner and
   spec 001's Session-row Activity line (FR-108) MUST share this one derive and one hold hook.
+- **FR-050** (new, 2026-10-27, issue #1238): The Context usage readout MUST also show the
+  Session's AI credits as visible text ("12 credits", rounded, "<1 credit" below one), where
+  credits = the Session's OMP cost in dollars x 100 (1 credit = $0.01), read in Rust from
+  `get_session_stats().cost` after each settle and sent as `aiCredits` on the existing coalesced
+  `readout:update` (`null` = not reported, the part is hidden). It stays inside the one
+  `ContextUsageChip` (no new chip); the `sr-only` phrase gains the credits.
+- **FR-051** (new, 2026-10-27, issue #1238): A read-only `copilot.planUsage` command MUST fetch
+  the user's individual Copilot plan usage from `GET https://api.github.com/copilot_internal/user`
+  (`quota_snapshots.premium_interactions`: percent used = 100 x (1 - `quota_remaining` /
+  `entitlement`), else 100 - `percent_remaining`; `unlimited` or missing = unavailable) using the
+  ACTIVE github.com `gh` account's token, held only for that one request, never logged, stored or
+  sent to the renderer; non-github.com accounts are refused before their token is read; the
+  response is size-capped, redirects are never followed, the timeout is 10 s, and the result is
+  cached in Rust for 5 minutes. The tooltip shows "Plan: P% used" ("Plan: <1% used" below 1%),
+  and the figure takes the FR-033 colour with the 90%+ warning wording at 90% and over.
+- **FR-052** (new, 2026-10-27, issue #1238): When the plan usage is not reported (no `gh`
+  account, not a Copilot seat, offline, unlimited), the readout MUST show session credits alone
+  and its tooltip MUST say "Plan usage unavailable". The credits tooltip is reachable by
+  keyboard focus; nothing is conveyed by colour alone.
+- **FR-053** (new, 2026-10-27, issue #1238): A "Show AI credits" switch (`showAiCredits`,
+  default on, Rust settings store) MUST sit beside "Show context usage bar" in Settings > Chat
+  and hide the credits part and the plan fetch when off. The credits part is also hidden for a
+  Session whose model provider is not GitHub Copilot.
 
 ### Key Entities
 

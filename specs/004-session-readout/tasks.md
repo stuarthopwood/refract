@@ -833,3 +833,11 @@ driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
 - [X] T153 Add `CurrentWorkBanner` and `ComposerAboveStack` (one line, no spinner or stop control, Tooltip for full text, held 600 ms, fade honouring reduced motion, Todo line dropped when pinned), per FR-035, FR-039
 - [X] T154 Add the `current-work` readout kind (default on) to the Rust settings store, `READOUT_KINDS`, `model.ts` and a "Show current work above the composer" Settings switch, per FR-040
 - [ ] T155 Add `scripts/verify-687-current-work-banner.mjs`, a live check that drives priority states, idle hiding, the Setting off and the pinned-Todo case, per FR-035 to FR-040
+
+## Phase 50: Convergence for issue #1238 (AI credits)
+
+- [ ] T240 Read `get_session_stats().cost` x 100 after each settle for a `github-copilot` Session in `session/readout.rs` and expose it as `aiCredits` on the coalesced `readout:update` (`null` when not reported), per FR-050
+- [ ] T241 Add `github/copilot_plan.rs` (`GET /copilot_internal/user`, active github.com `gh` account, bounded, no redirects, 5 minute cache) and the read-only `copilot.planUsage` IPC channel through `ipc.ts`, the bridge, the dispatcher and `check:parity`, per FR-051
+- [ ] T242 Add the `showAiCredits` setting (Rust settings store, `model.ts`, settings store) and a "Show AI credits" switch in Settings > Chat, per FR-053
+- [ ] T243 Extend `ContextUsageChip` with the credits text, a keyboard-reachable tooltip ("Plan: P% used" or "Plan usage unavailable"), the FR-033 colour on the plan figure and the extended `sr-only` phrase, per FR-050 to FR-052
+- [ ] T244 Add `scripts/verify-1238-ai-credits.mjs`, a live check with the fake omp covering credits, plan available and unavailable, and the Setting off, per FR-050 to FR-053
