@@ -378,7 +378,8 @@ impl SettingsStore {
         ai_credits::write(&mut map, self.data.show_ai_credits);
         let animated = self.data.animated_status_text;
         map.insert(animated_status_text::KEY.to_string(), json!(animated));
-        map.insert(code_ligatures::KEY.to_string(), json!(self.data.code_ligatures));
+        let ligatures = self.data.code_ligatures;
+        map.insert(code_ligatures::KEY.to_string(), json!(ligatures));
         let turn_times = self.data.show_finished_turn_times;
         map.insert(finished_turn_times::KEY.to_string(), json!(turn_times));
         map.insert(
