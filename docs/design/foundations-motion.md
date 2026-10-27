@@ -30,6 +30,7 @@ Five animations, adopted from #566:
 | 3 | Running-subagent shimmer | At most 3 rows shimmer at once; when more subagents run, the 3 most recently started shimmer and the rest show the static state icon. Paused when the window is hidden. Confirmed by Stuart 2026-10-08: the cap is 3, most recently started first. |
 | 4 | Smooth panel collapse and expand | 200ms; never changes the chat pane's own size or scroll, matching the existing rule for the Subagent panel's collapse. |
 | 5 | Streaming caret | While the answer is written; a static caret under reduced motion. |
+| 6 | Status-text shimmer (#1242) | The composer status text (`CurrentWorkBanner` label) sweeps a lighter band across its accent text colour, about 1.6 s, only while the Session is working. Static in needs-you, under reduced motion or forced colours, when the window is hidden, or with Settings > Appearance "Animated status text" off. Shared utility `.text-shimmer` in `globals.css` via `ShimmerText`; #1210 reuses it. Deviation: it animates `background-position` (paint-only, one short line, no layout) because the gradient is clipped to the glyphs, so it is not transform or opacity driven. |
 
 ## Caps and pause rules
 

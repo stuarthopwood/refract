@@ -97,6 +97,7 @@ A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue comma
 | `settings.setSessionListCollapse(value)` | `Settings`. Sets the whole `SessionListCollapse` value (FR-069); `invalid-argument` unless `value` is an object with `collapsedRepositoryIds` an array of strings (at most 1,000 entries, each at most 256 bytes -- duplicate ids are silently REMOVED, not rejected) and `archivedOpen` a boolean. |
 | `settings.setChatWidth(width)` | `Settings`. Persists `'full'` or `'reading-column'` (FR-049, FR-073); `invalid-argument` for any other value. |
 | `settings.setShowAgentStoppedBar(value)` | `Settings`. Persists the boolean `showAgentStoppedBar` (FR-105, FR-107, issue #1205), used by both the Settings > Sessions toggle and the bar's **Don't show again** (and its toast's **Undo**); `invalid-argument` for a non-boolean. Same whole-row, race-safe pattern as `setChatWidth`; emits `settings:changed`. |
+| `settings.setAnimatedStatusText(value)` | `Settings`. Persists the boolean `animatedStatusText` (default on; spec 004 FR-042, issue #1242), used by the Settings > Appearance "Animated status text" switch that turns the composer status-text shimmer on or off; `invalid-argument` for a non-boolean. Same whole-row, race-safe pattern as `setShowAgentStoppedBar`; emits `settings:changed`. |
 
 ### Model (lane RM, issues #454/#740/#741/#762/#766/#760/#564)
 

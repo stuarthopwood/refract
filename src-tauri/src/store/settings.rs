@@ -64,16 +64,6 @@ pub struct SessionListCollapse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TranscriptDisplaySettings {
-    pub thinking: bool,
-    #[serde(rename = "toolCalls")]
-    pub tool_calls: bool,
-    /// Issue #469: show the raw tool id on tool rows. Default `false`.
-    #[serde(rename = "toolNames", default)]
-    pub tool_names: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub version: u8,
@@ -97,6 +87,8 @@ pub struct Settings {
     /// Issue #1205 (FR-107): the "Agent stopped" bar; default on (`agent_stopped_bar.rs`).
     pub show_agent_stopped_bar: bool,
     pub show_ai_credits: bool,
+    /// Issue #1242 (FR-042): the shared status-text shimmer switch; default on.
+    pub animated_status_text: bool,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -141,6 +133,13 @@ mod agent_stopped_bar;
 #[path = "ai_credits.rs"]
 mod ai_credits;
 pub use activity_text::ActivityText;
+// Issue #1242 (FR-042): the `animatedStatusText` parse and setter; `transcriptDisplay` moved out
+// to make room (issue #806 cap).
+#[path = "animated_status_text.rs"]
+mod animated_status_text;
+#[path = "transcript_display.rs"]
+mod transcript_display;
+pub use transcript_display::TranscriptDisplaySettings;
 #[path = "right_pane.rs"]
 pub(crate) mod right_pane;
 use right_pane::RightPaneState;
@@ -204,21 +203,7 @@ impl SettingsStore {
             .and_then(|v| serde_json::from_value::<HolidayTouches>(v.clone()).ok())
             .unwrap_or(HolidayTouches::Full);
         let activity_text = activity_text::parse(&object);
-        let raw_transcript_display = object.get("transcriptDisplay").and_then(Value::as_object);
-        let transcript_display = TranscriptDisplaySettings {
-            thinking: raw_transcript_display
-                .and_then(|o| o.get("thinking"))
-                .and_then(Value::as_bool)
-                .unwrap_or(true),
-            tool_calls: raw_transcript_display
-                .and_then(|o| o.get("toolCalls"))
-                .and_then(Value::as_bool)
-                .unwrap_or(true),
-            tool_names: raw_transcript_display
-                .and_then(|o| o.get("toolNames"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        };
+        let transcript_display = transcript_display::parse(&object);
 
         let raw_show_sample_data = object.get("showSampleData").and_then(Value::as_bool);
         let show_sample_data = raw_show_sample_data.unwrap_or(false);
@@ -233,6 +218,7 @@ impl SettingsStore {
             .unwrap_or(true);
         let show_agent_stopped_bar = agent_stopped_bar::parse(&object);
         let show_ai_credits = ai_credits::parse(&object);
+        let animated_status_text = animated_status_text::parse(&object);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -275,6 +261,7 @@ impl SettingsStore {
             "showContextUsageBar",
             agent_stopped_bar::KEY,
             ai_credits::KEY,
+            animated_status_text::KEY,
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -302,6 +289,7 @@ impl SettingsStore {
             show_context_usage_bar,
             show_agent_stopped_bar,
             show_ai_credits,
+            animated_status_text,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -379,6 +367,8 @@ impl SettingsStore {
         let show_bar = self.data.show_agent_stopped_bar;
         map.insert(agent_stopped_bar::KEY.to_string(), json!(show_bar));
         ai_credits::write(&mut map, self.data.show_ai_credits);
+        let animated = self.data.animated_status_text;
+        map.insert(animated_status_text::KEY.to_string(), json!(animated));
         map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),

@@ -253,6 +253,16 @@ field whose bottom bar shows the mode, model, and agent.
 - Q: A new chip? -> A: No, folded into `ContextUsageChip` (FR-050); a "Show AI credits" Setting
   hides the part (FR-053).
 
+### Session 2026-10-27 (banner styling, issue #1242; grilled by Stuart)
+
+- Q: Where does the shimmer come from? -> A: One shared utility and one Settings > Appearance
+  switch, shared with #1210; #1210 had not landed, so #1242 adds both (FR-042).
+- Q: Colour and size? -> A: Label `--accent-text`, elapsed time muted; both `text-sm` (FR-039,
+  FR-042).
+- Q: Position? -> A: Keep `h-6`, add about 4px bottom margin (FR-039).
+- Q: When does it move? -> A: Only while working; static when needs-you, reduced motion, hidden
+  window, or switch off (FR-042).
+
 ### User Story 4 - Know what the agent is doing right now (Priority: P2, issue #687)
 
 A user glancing at a working Session sees one muted line above the composer saying what it is
@@ -770,10 +780,22 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   `tool_execution_start` only, because OMP's `tool_execution_update` carries no intent.
 - **FR-038** (new, 2026-10-23, issue #687): Agent text is untrusted. The banner MUST render it as
   plain text only, strip control characters, and cap it at 160 characters.
-- **FR-039** (new, 2026-10-23, issue #687): The banner MUST be one ~24px line of ~12px muted text,
-  no box, no spinner, no stop control, `aria-live="off"`, truncated with the full text in the
-  shared Tooltip. It updates at most about twice a second, holds each text at least 600 ms, and
-  fades over 100-150 ms unless `prefers-reduced-motion`.
+- **FR-039** (new, 2026-10-23, issue #687; amended 2026-10-27, issue #1242 -- see FR-042): The
+  banner MUST be one ~24px line of ~14px text, no box, no spinner, no stop control,
+  `aria-live="off"`, truncated with the full text in the shared Tooltip. It updates at most about
+  twice a second, holds each text at least 600 ms, and fades over 100-150 ms unless
+  `prefers-reduced-motion`. It sits about 4px higher above the composer (a 4px bottom margin).
+- **FR-042** (new, 2026-10-27, issue #1242): The banner's activity label MUST use `--accent-text`
+  (a themed fallback token in any theme where it misses 4.5:1 at 14px against the background);
+  the elapsed time stays `text-muted-foreground`. While the Session is working, the label MUST
+  carry the one shared shimmer utility (`.text-shimmer`, `globals.css`; about 1.6 s per pass, a
+  gradient band clipped to the text, `transform`-driven, band colour the accent text colour). The
+  shimmer is a decorative `aria-hidden` layer: the label text, `aria-live="off"` and the tooltip
+  are unchanged. It MUST be static when the Session needs you, under `prefers-reduced-motion`,
+  while the window is hidden, and when the Settings > Appearance switch "Animated status text"
+  (`animatedStatusText`, default on, persisted in the Rust settings store) is off. The same
+  utility and switch are reused by issue #1210's transcript-row shimmer (the first to land adds
+  them).
 - **FR-040** (new, 2026-10-23, issue #687): A "Show current work above the composer" switch
   (readout kind `current-work`, default on) MUST sit beside the other readout toggles in
   Settings and hide the banner when off.
