@@ -5376,25 +5376,25 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 
 ## Phase 80: Convergence (#730 right pane rail drag to rearrange, FR-112 to FR-116)
 
-- [ ] T395 Add the generic reorder pieces in `src/renderer/components/reorder/`: a `useReorderable`
+- [X] T395 Add the generic reorder pieces in `src/renderer/components/reorder/`: a `useReorderable`
   hook (pointer drag after 6 px, Esc cancels, `Alt+Shift+Up/Down` keyboard move, polite
   announcement "<name>, position N of M", moved item keeps focus, reduced motion respected), an
   insertion marker, and no list-specific code so #638 can reuse it, per FR-113 and FR-116
   (missing)
-- [ ] T396 Add `panelOrder: string[]` to `RightPaneSettings` (`src/shared/rightPane.ts`, default
+- [X] T396 Add `panelOrder: string[]` to `RightPaneSettings` (`src/shared/rightPane.ts`, default
   `[]` meaning default order), validate and persist it in `src-tauri/src/store/right_pane.rs`
   (tolerate an absent field in old files; cap length and id length), and keep
   `pnpm check:parity` green per FR-114 (missing)
-- [ ] T397 Reorder `HOSTED_PANELS` to the default order, add `DEFAULT_PANEL_ORDER`, a pure
+- [X] T397 Reorder `HOSTED_PANELS` to the default order, add `DEFAULT_PANEL_ORDER`, a pure
   `mergePanelOrder(saved, registered)` (unregistered ids kept, missing panels inserted at their
   default slot) and `useOrderedPanels()` in `panel-registry.ts`/`right-pane-store.ts`; persist it
   through `right-pane-persistence.ts`; the rail and `PanelLauncher.tsx` read the ordered list, the
   tab bar is untouched, per FR-112 and FR-114 (missing)
-- [ ] T398 Make `IconRail.tsx` use the reorder hook: drag a button, `Alt+Shift+Up/Down`, roving
+- [X] T398 Make `IconRail.tsx` use the reorder hook: drag a button, `Alt+Shift+Up/Down`, roving
   tabindex and the toggle click preserved, per FR-113 (missing)
-- [ ] T399 Add "Reset panel order" to `RightPaneSection.tsx` from the shared `Button` per FR-115
+- [X] T399 Add "Reset panel order" to `RightPaneSection.tsx` from the shared `Button` per FR-115
   (missing)
-- [ ] T400 Update `docs/design/components.md` (the reorder pieces), `docs/PLAN.md` row 20, then
+- [X] T400 Update `docs/design/components.md` (the reorder pieces), `docs/PLAN.md` row 20, then
   verify live on the built app with a scratch `REFRACT_DATA_DIR` (default order, drag, keyboard
   move, restart persistence, launcher agreement, Reset, screenshots viewed), then run
   `node scripts/ci-local.mjs` per FR-112 to FR-116 (missing)
