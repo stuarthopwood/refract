@@ -785,9 +785,12 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   `aria-live="off"`, truncated with the full text in the shared Tooltip. It updates at most about
   twice a second, holds each text at least 600 ms, and fades over 100-150 ms unless
   `prefers-reduced-motion`. It sits about 4px higher above the composer (a 4px bottom margin).
+  (amended 2026-10-27, issue #1250): the banner MUST show the activity text only, with no elapsed
+  time and no "·" separator; the Session's elapsed time lives in the turn-time readout chip and the
+  transcript's turn total (spec 001 FR-046, FR-119).
 - **FR-042** (new, 2026-10-27, issue #1242): The banner's activity label MUST use `--accent-text`
   (a themed fallback token in any theme where it misses 4.5:1 at 14px against the background);
-  the elapsed time stays `text-muted-foreground`. While the Session is working, the label MUST
+  the banner shows no elapsed time (FR-039). While the Session is working, the label MUST
   carry the one shared shimmer utility (`.text-shimmer`, `globals.css`; about 1.6 s per pass, a
   gradient band clipped to the text, `transform`-driven, band colour the accent text colour). The
   shimmer is a decorative `aria-hidden` layer: the label text, `aria-live="off"` and the tooltip

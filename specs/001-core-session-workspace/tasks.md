@@ -5413,3 +5413,18 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T404 Verify live with the fake-omp harness (a multi-tool turn with mid-turn prose; check the
   collapse, the streaming switch, the clamp, the final reply untouched), update `docs/PLAN.md`,
   then run `node scripts/ci-local.mjs` per FR-117 and FR-118 (missing)
+
+## Phase 82: Convergence (#1250 turn timers, FR-046, FR-119; spec 004 FR-039)
+
+- [x] T405 Remove the elapsed time and "·" from `CurrentWorkBanner.tsx` (delete `useElapsedMs` and the
+  `formatElapsed` import), per spec 004 FR-039 (missing)
+- [x] T406 Add the `showFinishedTurnTimes` setting (default off) through Rust `store/`, `ipc/`
+  (`settings.setShowFinishedTurnTimes`), `shared/ipc.ts`, `model.ts`, the bridge and
+  `settings-store.ts`, per FR-119 (missing)
+- [x] T407 Gate the settled branch of `TurnTotalLine` (visual and sr-only) on the setting, keep the
+  running line always shown, and add a "Show finished turn times" switch to Settings > Chat from
+  `SettingSwitchRow`, per FR-046 and FR-119 (missing)
+- [x] T408 Verify live with the fake-omp harness (banner has no time; a settled turn shows no total
+  with the switch off and "Turn took Ns" with it on; the running line always ticks; the switch
+  applies live and persists), update `docs/PLAN.md`, then run `node scripts/ci-local.mjs` per
+  FR-046 and FR-119 (missing)

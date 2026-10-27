@@ -24,6 +24,7 @@ interface SettingsState {
   setShowAgentStoppedBar(enabled: boolean): Promise<boolean>
   setShowAiCredits(enabled: boolean): Promise<void>
   setAnimatedStatusText(enabled: boolean): Promise<void>
+  setShowFinishedTurnTimes(enabled: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -152,6 +153,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setAnimatedStatusText: async (enabled) => {
     const result = await window.refract.settings.setAnimatedStatusText(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
+  setShowFinishedTurnTimes: async (enabled) => {
+    const result = await window.refract.settings.setShowFinishedTurnTimes(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   }
