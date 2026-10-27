@@ -5398,3 +5398,18 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   verify live on the built app with a scratch `REFRACT_DATA_DIR` (default order, drag, keyboard
   move, restart persistence, launcher agreement, Reset, screenshots viewed), then run
   `node scripts/ci-local.mjs` per FR-112 to FR-116 (missing)
+
+## Phase 81: Convergence (#1236 mid-turn assistant prose as a row, FR-117, FR-118)
+
+- [x] T401 Add `groupMidTurnProse.ts` (a pass after `groupToolItems`: an `assistant-text` followed
+  later in the turn by a `tool-group`, `subagent` or `assistant-text` becomes a `mid-turn-prose`
+  group of one) and wire it into the `Transcript.tsx` grouping chain, per FR-117 (missing)
+- [x] T402 Extend `CollapsedLine` with a `clampLines` prop and a shared Show more clamp, per FR-118
+  (missing)
+- [x] T403 Add `MidTurnProseRow.tsx` (a "Note" `CollapsedLine`, first-line summary, icon distinct
+  from the thought row's, clamp at 8 lines) and render it from `TranscriptRow.tsx`; the row needs no
+  entry in `transcriptRowVisibility.ts` (prose is not bookkeeping and "Show tool calls" never
+  hides it), per FR-117 and FR-118 (missing)
+- [x] T404 Verify live with the fake-omp harness (a multi-tool turn with mid-turn prose; check the
+  collapse, the streaming switch, the clamp, the final reply untouched), update `docs/PLAN.md`,
+  then run `node scripts/ci-local.mjs` per FR-117 and FR-118 (missing)

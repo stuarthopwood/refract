@@ -1299,6 +1299,23 @@
   full text leads the Session details card and the row's accessible description (#567 decision
   16). No live region and no separate tooltip on the line.
 
+### Session 2026-10-27 (Mid-turn assistant prose as a row, #1236)
+
+- Q: Issue #1236 (grilled with Stuart 2026-10-27): what reads like thinking but is not? -> A:
+  Assistant prose written between tool calls (narration and plans). It renders at full weight like
+  the final reply, so a long turn reads as a wall of reasoning.
+- Q: Which assistant text collapses? -> A: Within a turn, an assistant text that is followed, later
+  in the same turn, by a tool call, a subagent row, or another assistant text (Stuart 2026-10-27:
+  "any assistant text that isn't the turn's last"; thinking alone after it does not collapse it).
+  The turn's last assistant text keeps the full chat style.
+- Q: What does the row look like? -> A: The shared `CollapsedLine`, closed by default, labelled
+  "Note", with the text's first line (Markdown markers stripped) as the summary and an icon
+  distinct from the thought row's.
+- Q: Streaming? -> A: A block renders as a normal reply while it streams, and collapses the moment a
+  later item follows it.
+- Q: Long bodies? -> A: An expanded mid-turn body over about 8 lines clamps, with a keyboard-reachable
+  Show more button. The final reply never clamps. The subagent panel is unchanged.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -2107,6 +2124,16 @@ The developer types a slash command and finds the ones the agent offers. If a se
   announcement, insertion marker) MUST be one list-agnostic hook and component set in
   `src/renderer/components`, so #638 (rearrange repositories) reuses it rather than a second
   implementation. The rail is its first consumer.
+- **FR-117** (new, 2026-10-27, issue #1236): In the chat transcript, an assistant text that is
+  followed later in the same turn by a tool call, a subagent row, or another assistant text MUST
+  render as a closed `CollapsedLine` row labelled "Note", its first line (Markdown markers
+  stripped) as the summary, with an icon distinct from the thought row's. The turn's last assistant
+  text, and any text with only thinking after it, renders as a normal reply. The subagent panel's
+  own rendering is unchanged.
+- **FR-118** (new, 2026-10-27, issue #1236): A block renders as a normal reply while it streams and
+  becomes the row when a later item follows it, without moving focus or re-announcing its text. An
+  expanded row body over about 8 lines MUST clamp with a keyboard-reachable Show more button
+  (`aria-expanded`); the final reply MUST never clamp.
 
 ### Key Entities
 

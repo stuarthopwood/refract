@@ -473,7 +473,9 @@ const LABEL_FIRST_LINE_MAX = 40
  * means `base` and `base, #2` diverge at the character right after the shared prefix (`)` vs `,`),
  * so neither can ever be a literal prefix of the other, structurally, not just by convention. */
 export function buildChipLabel(text: string, existingLabels: ReadonlySet<string>): string {
-  const firstLine = text.split('\n', 1)[0] ?? ''
+  // Split on CR too: a Windows clipboard uses CRLF, and the textarea rewrites a CR in the label to
+  // LF, so a label carrying one would stop matching the draft after the next keystroke (#1235).
+  const firstLine = text.split(/\r\n|\r|\n/, 1)[0] ?? ''
   const truncated = firstLine.length > LABEL_FIRST_LINE_MAX ? `${firstLine.slice(0, LABEL_FIRST_LINE_MAX)}…` : firstLine
   const base = `${truncated} (${text.length} chars)`
   if (!existingLabels.has(base)) return base

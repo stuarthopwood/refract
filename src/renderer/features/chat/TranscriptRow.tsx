@@ -7,6 +7,8 @@ import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
 import { isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 import { isAgentSteerGroup, isToolGroup, isThoughtRun } from './groupToolItems'
 import { ThoughtRunRow } from './ThoughtRunRow'
+import { MidTurnProseRow } from './MidTurnProseRow'
+import { isMidTurnProse } from './groupMidTurnProse'
 import { isStageGroup } from './groupSubagentStages'
 import { StageGroupRow } from './SubagentChainRow'
 import { ToolGroupRow } from './ToolRow'
@@ -82,6 +84,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, as
   if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
   if (isToolGroup(item)) return isAgentSteerGroup(item) ? <AgentSteerRow item={item.items[0]!} /> : <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
+  if (isMidTurnProse(item)) return <MidTurnProseRow group={item} />
 
   switch (item.kind) {
     case 'user':
