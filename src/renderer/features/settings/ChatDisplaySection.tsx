@@ -32,6 +32,8 @@ export function ChatDisplaySection() {
   const setDetectImagePathsOnPaste = useSettingsStore((state) => state.setDetectImagePathsOnPaste)
   const showContextUsageBar = useSettingsStore((state) => state.settings.showContextUsageBar !== false)
   const setShowContextUsageBar = useSettingsStore((state) => state.setShowContextUsageBar)
+  const showFinishedTurnTimes = useSettingsStore((state) => state.settings.showFinishedTurnTimes === true)
+  const setShowFinishedTurnTimes = useSettingsStore((state) => state.setShowFinishedTurnTimes)
   const wordPredictionEnabled = useSettingsStore((state) => state.settings.wordPredictionEnabled)
   const setWordPredictionEnabled = useSettingsStore((state) => state.setWordPredictionEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -71,6 +73,14 @@ export function ChatDisplaySection() {
           description="The raw tool name, shown muted after each tool row's label."
           checked={transcriptDisplay.toolNames}
           onCheckedChange={(checked) => void setTranscriptDisplay('toolNames', checked)}
+        />
+        {/* Issue #1250 (spec 001 FR-119): off by default; the running turn's live total always shows. */}
+        <SettingSwitchRow
+          id="show-finished-turn-times"
+          label="Show finished turn times"
+          description="How long each turn took, shown under it (and read out by screen readers) once it finishes. A turn that is still running always shows its timer."
+          checked={showFinishedTurnTimes}
+          onCheckedChange={(checked) => void setShowFinishedTurnTimes(checked)}
         />
         <SettingSwitchRow
           id="detect-image-paths-on-paste"
