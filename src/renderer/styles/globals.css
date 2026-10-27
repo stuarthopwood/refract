@@ -2,14 +2,22 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Brand display font (Geist, SIL OFL-1.1, see src/renderer/assets/fonts/OFL.txt): the one
- * bundled font, used only for the "Refract" wordmark and tagline on the Readiness screen's
- * brand header (docs/DESIGN.md "Look and feel"). Never used for app chrome or code, which stay
- * on the user's installed-font settings. A variable font (100-900), so one file covers both the
- * bold headline and the lighter tagline weight via ordinary font-weight utilities. */
+/* Geist (SIL OFL-1.1, see src/renderer/assets/fonts/OFL.txt) is the default UI font and the
+ * brand display font; Geist Mono (same licence) is the default code font (issue #1246). Both are
+ * variable fonts (100-900), so one file each covers every step of the weight scale below. The
+ * Geist Mono file comes from vercel/geist-font `fonts/GeistMono/webfonts`, not the npm `geist`
+ * package, whose copy has no `liga` feature. */
 @font-face {
   font-family: 'Geist';
   src: url('../assets/fonts/Geist-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('../assets/fonts/GeistMono-Variable.woff2') format('woff2-variations');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -132,8 +140,13 @@
 
 /* Font family roles (docs/DESIGN.md "Look and feel"): theme-independent, so declared once as
  * real Tailwind theme values rather than through the light/dark indirection above. Generates
- * the `font-ui`, `font-code`, and `font-brand` utility classes. `font-brand` is the one
- * exception to the no-bundled-fonts default: the "Refract" wordmark and tagline only.
+ * the `font-ui`, `font-code`, and `font-brand` utility classes (Geist for UI and brand, Geist Mono
+ * for code since #1246, each with the earlier Segoe or Cascadia stack as fallback).
+ *
+ * The weight scale (issue #1246, docs/design/foundations-typography-spacing.md "Font weight
+ * scale") is declared once here: overriding Tailwind's `--font-weight-*` tokens moves every
+ * `font-normal`, `font-medium`, `font-semibold` and `font-bold` utility down one step (300, 400,
+ * 500, 600), so no call site changes. 200 is rejected: thin strokes lose effective contrast.
  *
  * `--text-readout` (issue #928, docs/design/foundations-typography-spacing.md "Status line
  * type"): a new 13px step for the composer status line's chips, between Tailwind's own
@@ -141,9 +154,13 @@
  * wording, declined); generates the `text-readout` utility, the one sanctioned named step
  * rather than a bare `text-[13px]` arbitrary value. */
 @theme {
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-code: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+  --font-ui: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-code: 'Geist Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
   --font-brand: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-weight-normal: 300;
+  --font-weight-medium: 400;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 600;
   --text-readout: 13px;
 }
 
@@ -1463,16 +1480,28 @@
   }
 
   body {
-    @apply bg-background text-foreground font-ui;
+    @apply bg-background text-foreground font-ui font-normal;
+  }
+
+  /* Preflight sets `bolder`, which from a 300 body lands on 400; strong text takes the
+   * semibold step instead (issue #1246). */
+  b,
+  strong {
+    font-weight: var(--font-weight-semibold);
   }
 
   /* Code font with ligatures (docs/DESIGN.md "Look and feel"): tool output, diffs, and the
-   * message box render in the monospaced code font. */
+   * message box render in the monospaced code font. Settings > Chat "Code ligatures" sets
+   * `data-code-ligatures="off"` on the root (issue #1246), which wins on specificity. */
   code,
   pre,
   kbd {
     @apply font-code;
     font-variant-ligatures: normal;
+  }
+
+  :root[data-code-ligatures='off'] :is(code, pre, kbd, .font-code) {
+    font-variant-ligatures: none;
   }
 }
 

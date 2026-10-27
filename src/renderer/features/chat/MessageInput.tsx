@@ -1378,7 +1378,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             // Gate round 3 fix (#1050, Medium, flicker): the shared `Textarea` primitive's own `transition-colors` fades a 150ms colour change on ANY toggle, including this textarea's own fill-colour swap the instant a pill mounts/unmounts -- while the mirror underneath mounts instantly, visibly desyncing the two for ~150ms. `transition-[border-color,box-shadow]` (merged over `transition-colors` by `cn`'s tailwind-merge, same class group) narrows this textarea to border/ring-only transitions, without touching the shared primitive.
             className={cn(
               COMPOSER_SELECTION_CLASS,
-              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
+              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 font-code shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
               commandToken && COMMAND_PILL_TEXTAREA_CLASS
             )}
           />

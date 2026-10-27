@@ -88,6 +88,8 @@ pub struct Settings {
     pub show_agent_stopped_bar: bool,
     /// Issue #1242 (FR-042): the shared status-text shimmer switch; default on.
     pub animated_status_text: bool,
+    /// Issue #1246: code ligatures on the Code font; default on (`code_ligatures.rs`).
+    pub code_ligatures: bool,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -134,6 +136,8 @@ pub use activity_text::ActivityText;
 // to make room (issue #806 cap).
 #[path = "animated_status_text.rs"]
 mod animated_status_text;
+#[path = "code_ligatures.rs"]
+mod code_ligatures;
 #[path = "transcript_display.rs"]
 mod transcript_display;
 pub use transcript_display::TranscriptDisplaySettings;
@@ -215,6 +219,7 @@ impl SettingsStore {
             .unwrap_or(true);
         let show_agent_stopped_bar = agent_stopped_bar::parse(&object);
         let animated_status_text = animated_status_text::parse(&object);
+        let code_ligatures = code_ligatures::parse(&object);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -257,6 +262,7 @@ impl SettingsStore {
             "showContextUsageBar",
             agent_stopped_bar::KEY,
             animated_status_text::KEY,
+            code_ligatures::KEY,
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -284,6 +290,7 @@ impl SettingsStore {
             show_context_usage_bar,
             show_agent_stopped_bar,
             animated_status_text,
+            code_ligatures,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -362,6 +369,7 @@ impl SettingsStore {
         map.insert(agent_stopped_bar::KEY.to_string(), json!(show_bar));
         let animated = self.data.animated_status_text;
         map.insert(animated_status_text::KEY.to_string(), json!(animated));
+        map.insert(code_ligatures::KEY.to_string(), json!(self.data.code_ligatures));
         map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),

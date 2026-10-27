@@ -23,6 +23,7 @@ interface SettingsState {
   /** Issue #1205 (FR-107): resolves `true` on success, so **Don't show again** only toasts a real change. */
   setShowAgentStoppedBar(enabled: boolean): Promise<boolean>
   setAnimatedStatusText(enabled: boolean): Promise<void>
+  setCodeLigatures(enabled: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -148,5 +149,18 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const result = await window.refract.settings.setAnimatedStatusText(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
+  },
+  setCodeLigatures: async (enabled) => {
+    const result = await window.refract.settings.setCodeLigatures(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
   }
 }))
+
+// Issue #1246: globals.css reads this root attribute to turn Code font ligatures off.
+function applyCodeLigatures(settings: Settings): void {
+  if (settings.codeLigatures === false) document.documentElement.dataset.codeLigatures = 'off'
+  else delete document.documentElement.dataset.codeLigatures
+}
+
+useSettingsStore.subscribe((state) => applyCodeLigatures(state.settings))
