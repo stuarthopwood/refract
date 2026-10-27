@@ -41,7 +41,7 @@ const MAX_AVATAR_REDIRECTS: u32 = 5;
 /// Built once: redirects are NEVER followed automatically (`fetch_avatar` re-validates every hop
 /// against `AVATAR_HOST` itself before requesting it), and a blanket 10s timeout matches both
 /// callers' own `REQUEST_TIMEOUT`.
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+pub(super) static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(REQUEST_TIMEOUT)
@@ -108,7 +108,7 @@ impl std::error::Error for AvatarFetchError {}
 
 /// Describes a `reqwest` transport failure for an error message, without ever including response
 /// body content (there may not be one yet at this point in either caller).
-fn describe_request_error(err: &reqwest::Error, context: &str) -> String {
+pub(super) fn describe_request_error(err: &reqwest::Error, context: &str) -> String {
     if err.is_timeout() {
         format!("{context} request timed out")
     } else {
@@ -120,7 +120,7 @@ fn describe_request_error(err: &reqwest::Error, context: &str) -> String {
 /// malicious response can never be buffered in full. Deliberately uses `Response::chunk()` rather
 /// than `.bytes()`/`.text()`, which buffer the whole body unconditionally before any cap could
 /// ever apply.
-async fn collect_bounded(
+pub(super) async fn collect_bounded(
     mut response: reqwest::Response,
     max_bytes: usize,
 ) -> Result<Vec<u8>, String> {

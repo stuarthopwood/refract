@@ -15,6 +15,7 @@
 // own doc comment that it is unmodified by the spec-003 `gh.ts` module.
 
 pub mod cli;
+pub mod copilot_plan;
 pub mod gh;
 pub mod gh_mutations;
 pub mod gh_pull_requests;

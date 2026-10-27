@@ -7,9 +7,24 @@
 // and word carry the state.
 import type { CSSProperties } from 'react'
 import { GaugeIcon, TriangleAlertIcon } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { compactNumber } from '@/lib/compactNumber'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
 import { ReadoutChip } from './ReadoutChip'
+import { useCopilotPlanUsage } from './useCopilotPlanUsage'
+
+/** #1238 (FR-050): "12 credits", "1 credit", "<1 credit" for a tiny non-zero spend. */
+function creditsText(credits: number): string {
+  const whole = Math.round(credits)
+  if (whole < 1) return credits > 0 ? '<1 credit' : '0 credits'
+  return `${FULL_NUMBER_FORMAT.format(whole)} ${whole === 1 ? 'credit' : 'credits'}`
+}
+
+/** The plan figure, `null` when the lookup reported nothing. */
+function planText(percentUsed: number | null): string {
+  if (percentUsed === null) return 'Plan usage unavailable'
+  return percentUsed > 0 && percentUsed < 1 ? 'Plan: <1% used' : `Plan: ${Math.round(percentUsed)}% used`
+}
 
 // Full, un-abbreviated figures for the `sr-only` phrase below (gate round 4, #437 LOW): the
 // visible text abbreviates past 1,000 via `compactNumber`, but "7,500" is unambiguous read aloud.
@@ -35,11 +50,35 @@ export function contextUsageColor(percent: number): string {
 export function ContextUsageChip({ sessionId }: { sessionId: string }) {
   const contextUsage = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.contextUsage)
   const showBar = useSettingsStore((s) => s.settings.showContextUsageBar !== false)
+  const aiCredits = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.aiCredits ?? null)
+  const creditsOn = useSettingsStore((s) => s.settings.showAiCredits !== false)
+  const planUsed = useCopilotPlanUsage(creditsOn && aiCredits !== null, aiCredits)
   if (contextUsage === null) return null
+  const planHigh = planUsed !== null && Math.round(planUsed) >= 90
+  const credits = creditsOn && aiCredits !== null && (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} data-ai-credits className="rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-ring">
+          <span className="sr-only">{`, ${creditsText(aiCredits)} this session. ${planText(planUsed)}${planHigh ? ', high' : ''}`}</span>
+          <span aria-hidden>· {creditsText(aiCredits)}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        <span className="flex flex-col">
+          <span>{`${creditsText(aiCredits)} used this session`}</span>
+          <span data-plan-usage style={planUsed === null ? undefined : { color: contextUsageColor(Math.round(planUsed)) }}>
+            {planText(planUsed)}
+            {planHigh && ' (high)'}
+          </span>
+        </span>
+      </TooltipContent>
+    </Tooltip>
+  )
   if (contextUsage === 'not-available') {
     return (
       <ReadoutChip icon={GaugeIcon}>
         <span>Not available</span>
+        {credits}
       </ReadoutChip>
     )
   }
@@ -59,6 +98,7 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
         {used}/{windowSize} ({percent}%)
         {high && <span> high</span>}
       </span>
+      {credits}
       {showBar && (
         <span aria-hidden data-context-usage-bar className="absolute inset-x-0 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-muted forced-colors:hidden">
           <span

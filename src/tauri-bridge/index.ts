@@ -254,6 +254,7 @@ const refract: RefractApi = {
     setShowSampleData: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, enabled),
     setDetectImagePathsOnPaste: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE, enabled),
     setShowContextUsageBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR, enabled),
+    setShowAiCredits: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AI_CREDITS, enabled),
     setShowAgentStoppedBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AGENT_STOPPED_BAR, enabled),
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
@@ -328,6 +329,10 @@ const refract: RefractApi = {
     reset: (key) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET, { key }),
     handoff: (sessionId) =>
       request<TokenGuardHandoffResult>(IPC_REQUESTS.TOKEN_GUARD_HANDOFF, sessionId)
+  },
+
+  copilot: {
+    planUsage: () => request<{ percentUsed: number } | null>(IPC_REQUESTS.COPILOT_PLAN_USAGE)
   },
 
   // Synchronous by design (FR-011, research.md decision 4): called once from `main.tsx`'s very

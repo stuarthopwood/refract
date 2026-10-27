@@ -400,6 +400,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
   SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR: 'settings.setShowContextUsageBar',
   SETTINGS_SET_SHOW_AGENT_STOPPED_BAR: 'settings.setShowAgentStoppedBar',
+  SETTINGS_SET_SHOW_AI_CREDITS: 'settings.setShowAiCredits',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
   SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
@@ -432,6 +433,7 @@ export const IPC_REQUESTS = {
   TOKEN_GUARD_SET: 'tokenGuard.set',
   TOKEN_GUARD_RESET: 'tokenGuard.reset',
   TOKEN_GUARD_HANDOFF: 'tokenGuard.handoff',
+  COPILOT_PLAN_USAGE: 'copilot.planUsage',
   ACCOUNTS_GITHUB_LIST: 'accounts.github.list',
   ACCOUNTS_GITHUB_ADD_START: 'accounts.github.addStart',
   ACCOUNTS_GITHUB_ADD_CANCEL: 'accounts.github.addCancel',
@@ -685,6 +687,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * `false` (pasting a clipboard image directly is never affected). */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setShowContextUsageBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1082 (spec 004 FR-034).
+    setShowAiCredits(enabled: boolean): Promise<Result<Settings>>; // #1238: hides the credits part of the Context usage chip; default on.
     setShowAgentStoppedBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1205 (FR-107): only hides the "Agent stopped" bar; never changes history-only opening.
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
@@ -793,6 +796,11 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     set(key: string, value: unknown): Promise<Result<TokenGuardSnapshot>>;
     reset(key: string): Promise<Result<TokenGuardSnapshot>>;
     handoff(sessionId: string): Promise<Result<TokenGuardHandoffResult>>;
+  };
+
+  /** #1238: individual Copilot plan usage; `null` = unavailable. No args, never a token. */
+  copilot: {
+    planUsage(): Promise<Result<{ percentUsed: number } | null>>;
   };
 
   /** Spec 007 contracts/ipc.md "Bootstrap": synchronous, called once from `main.tsx`'s very

@@ -96,6 +96,7 @@ pub struct Settings {
     pub show_context_usage_bar: bool,
     /// Issue #1205 (FR-107): the "Agent stopped" bar; default on (`agent_stopped_bar.rs`).
     pub show_agent_stopped_bar: bool,
+    pub show_ai_credits: bool,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -132,11 +133,13 @@ use settings_parse::{
     clamp_pull_requests_list_width_px, default_session_list_collapse, parse_session_list_collapse,
     parse_session_readout, parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
 };
-// Issue #1205 (FR-107): the `showAgentStoppedBar` parse and setter (issue #806 cap).
+// Issue #1205 (FR-107) / #1238: the `showAgentStoppedBar` / `showAiCredits` parse and setter.
 #[path = "activity_text.rs"]
 mod activity_text;
 #[path = "agent_stopped_bar.rs"]
 mod agent_stopped_bar;
+#[path = "ai_credits.rs"]
+mod ai_credits;
 pub use activity_text::ActivityText;
 #[path = "right_pane.rs"]
 pub(crate) mod right_pane;
@@ -229,6 +232,7 @@ impl SettingsStore {
             .and_then(Value::as_bool)
             .unwrap_or(true);
         let show_agent_stopped_bar = agent_stopped_bar::parse(&object);
+        let show_ai_credits = ai_credits::parse(&object);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -255,7 +259,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 18] = [
+        const KNOWN_FIELDS: [&str; 19] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -270,6 +274,7 @@ impl SettingsStore {
             "detectImagePathsOnPaste",
             "showContextUsageBar",
             agent_stopped_bar::KEY,
+            ai_credits::KEY,
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -296,6 +301,7 @@ impl SettingsStore {
             detect_image_paths_on_paste,
             show_context_usage_bar,
             show_agent_stopped_bar,
+            show_ai_credits,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -372,6 +378,7 @@ impl SettingsStore {
         );
         let show_bar = self.data.show_agent_stopped_bar;
         map.insert(agent_stopped_bar::KEY.to_string(), json!(show_bar));
+        ai_credits::write(&mut map, self.data.show_ai_credits);
         map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),
@@ -535,15 +542,6 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             detect_image_paths_on_paste: enabled,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
-    /// `settings.setShowContextUsageBar(enabled)` (issue #1082): plain boolean, like the one above.
-    pub async fn set_show_context_usage_bar(&mut self, enabled: bool) -> std::io::Result<Settings> {
-        let next = Settings {
-            show_context_usage_bar: enabled,
             ..self.data.clone()
         };
         self.persist_whole(next).await
