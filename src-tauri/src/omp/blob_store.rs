@@ -23,7 +23,10 @@ pub fn parse_blob_reference(data: &str) -> Option<&str> {
 
 /// `^[0-9a-f]{64}$`.
 pub fn is_blob_hash(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn blobs_dir() -> Option<PathBuf> {

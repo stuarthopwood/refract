@@ -49,10 +49,14 @@ pub fn is_inline_image_id(id: &str) -> bool {
         return false;
     };
     hash.len() == 16
-        && hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
         && !len.is_empty()
         && len.len() <= 8
-        && len.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        && len
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// Stores the bytes (already validated by the caller) and returns their id. A re-put of the same
