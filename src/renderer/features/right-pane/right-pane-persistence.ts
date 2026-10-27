@@ -19,8 +19,8 @@ let timer: number | undefined
 let started = false
 
 function snapshot(): RightPaneSettings {
-  const { open, widthPx, openPanelIds, activePanelId } = useRightPaneStore.getState()
-  return { open, widthPx: Math.round(widthPx), openPanelIds: [...openPanelIds], activePanelId }
+  const { open, widthPx, openPanelIds, activePanelId, panelOrder } = useRightPaneStore.getState()
+  return { open, widthPx: Math.round(widthPx), openPanelIds: [...openPanelIds], activePanelId, panelOrder: [...panelOrder] }
 }
 
 export function restoreRightPane(saved: RightPaneSettings | undefined): void {
@@ -31,7 +31,9 @@ export function restoreRightPane(saved: RightPaneSettings | undefined): void {
     open: source.open,
     widthPx: Math.min(RIGHT_PANE_MAX_WIDTH_PX, Math.max(RIGHT_PANE_MIN_WIDTH_PX, source.widthPx)),
     openPanelIds,
-    activePanelId: active && openPanelIds.includes(active as PanelId) ? (active as PanelId) : (openPanelIds.at(-1) ?? null)
+    activePanelId: active && openPanelIds.includes(active as PanelId) ? (active as PanelId) : (openPanelIds.at(-1) ?? null),
+    // Unregistered ids stay (a panel a later build adds); `mergePanelOrder` handles them on read.
+    panelOrder: Array.isArray(source.panelOrder) ? source.panelOrder.filter((id) => typeof id === 'string') : []
   })
   lastSaved = JSON.stringify(snapshot())
 }
@@ -64,7 +66,8 @@ export function startRightPanePersistence(): void {
       state.open === prev.open &&
       state.widthPx === prev.widthPx &&
       state.openPanelIds === prev.openPanelIds &&
-      state.activePanelId === prev.activePanelId
+      state.activePanelId === prev.activePanelId &&
+      state.panelOrder === prev.panelOrder
     ) {
       return
     }

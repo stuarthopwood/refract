@@ -2086,6 +2086,27 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-111** (new, 2026-10-26, issue #526): Settings > Appearance MUST gain "Activity text", a
   Plain | Playful choice, default Plain, persisted in `settings.json` and applied live to both the
   Activity line and spec 004's banner (spec 004 FR-041).
+- **FR-112** (new, 2026-10-27, issue #730): The right pane's icon rail, and the launcher shown
+  when no panel is open, MUST list the hosted panels in one **panel order**. The default order is
+  Git changes, File explorer, Subagents, Side chat, FDB Knowledge, Agent Builder. The tab bar is
+  NOT reordered by it: tabs keep their open order (Stuart, 2026-10-27, grill Q1).
+- **FR-113** (new, 2026-10-27, issue #730): The user MUST be able to move a rail button by
+  pointer drag (after about 6 px of movement, so a plain click still toggles the panel, with an
+  insertion marker while dragging and Esc cancelling) and by the keyboard alternative
+  `Alt+Shift+Up` / `Alt+Shift+Down` on the focused button (WCAG 2.5.7). A move is announced
+  politely ("Git changes, position 1 of 6"), the moved button keeps focus, and reduced motion is
+  respected. There is no context menu alternative (grill Q3).
+- **FR-114** (new, 2026-10-27, issue #730): The panel order MUST persist as
+  `Settings.rightPane.panelOrder` (an array of panel ids) through the existing right-pane writer
+  and Rust store (spec 024). On load, saved ids this build does not register are kept in the saved
+  array but not rendered, and registered panels missing from the saved list are inserted at their
+  default slot, not appended. Only the user's own moves change the saved order.
+- **FR-115** (new, 2026-10-27, issue #730): Settings > Right pane MUST offer "Reset panel order",
+  restoring the default order.
+- **FR-116** (new, 2026-10-27, issue #730): The reorder behaviour (pointer drag, keyboard move,
+  announcement, insertion marker) MUST be one list-agnostic hook and component set in
+  `src/renderer/components`, so #638 (rearrange repositories) reuses it rather than a second
+  implementation. The rail is its first consumer.
 
 ### Key Entities
 
@@ -2100,6 +2121,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **Stage**: The subagents started by one `task()` call, or by `task()` calls issued together with nothing else in the transcript between them, numbered in turn order (FR-067).
 - **Subagent chain**: The per-turn summary row listing a turn's Stages and their agents with status and duration, shown only for a turn with two or more Stages (FR-068).
 - **Activity line**: The second line of a Session row while the Session is working or needs the developer: one short derived sentence about what the agent is doing now, otherwise the branch (FR-108 to FR-111).
+- **Panel order**: The user's saved left-to-right (top-to-bottom) order of the right pane's hosted panels, shared by the icon rail and the launcher and persisted as `Settings.rightPane.panelOrder` (FR-112 to FR-116).
 
 ## Success Criteria *(mandatory)*
 

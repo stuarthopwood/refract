@@ -117,6 +117,10 @@ These rules come from issue #538 (Stuart, 2026-10-07), decided the day before th
 
 Decided for #538 (spec 024, Skippy delegated by Stuart 2026-10-26, see the decision comment on #538): rail icons carry count badges while the pane is collapsed (a running Subagent count in the running colour, a neutral changed-file count, "9+" over nine, never colour alone); the rail's top button collapses and expands the pane (`aria-expanded`, Ctrl+Shift+B, which never fires while an overlay is open); open or collapsed, width, open panels in tab order and the active tab persist in `Settings.rightPane`, restored before first paint and written only by `right-pane-persistence.ts`. It amends spec 013 as spec 024 rather than reopening specs 004 and 005. Not in scope: dragging the rail to rearrange (#730), the header-row reorder (#674), and a View-menu item.
 
+## Reorderable lists
+
+A list whose items the user can rearrange uses `useReorderable` (`src/renderer/components/reorder/use-reorderable.ts`) and `ReorderAnnouncer`, never its own drag code (issue #730). Pointer drag starts after 6 px so a click still works, Esc cancels, `Alt+Shift+Up/Down` (Left/Right on a horizontal list, `axis: 'x'`) is the keyboard alternative (WCAG 2.5.7), each move is announced politely, the moved item keeps focus, and `REORDER_MARKER_CLASS` draws the insertion bar on a `relative` item. The icon rail is the first consumer; #638 (repositories) adopts it next.
+
 ## Cards and boxes
 
 The zero-box rule (#556, settled against the AI Studio mock review #549, agenda item 9/8): a box — a fill or a border around content — is allowed only where it marks something interactive or needing a hard boundary:
