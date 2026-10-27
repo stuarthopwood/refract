@@ -32,6 +32,8 @@ export function ChatDisplaySection() {
   const setDetectImagePathsOnPaste = useSettingsStore((state) => state.setDetectImagePathsOnPaste)
   const showContextUsageBar = useSettingsStore((state) => state.settings.showContextUsageBar !== false)
   const setShowContextUsageBar = useSettingsStore((state) => state.setShowContextUsageBar)
+  const showFinishedTurnTimes = useSettingsStore((state) => state.settings.showFinishedTurnTimes === true)
+  const setShowFinishedTurnTimes = useSettingsStore((state) => state.setShowFinishedTurnTimes)
   const wordPredictionEnabled = useSettingsStore((state) => state.settings.wordPredictionEnabled)
   const setWordPredictionEnabled = useSettingsStore((state) => state.setWordPredictionEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -46,7 +48,7 @@ export function ChatDisplaySection() {
         Chat
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
-        Choose what the chat transcript shows, how pasted content is handled, and how context usage is drawn
+        Choose what the chat transcript shows, whether finished turns show their time, how pasted content is handled, and how context usage is drawn
         {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
       </p>
       <div className="flex flex-col divide-y divide-border">
@@ -86,6 +88,14 @@ export function ChatDisplaySection() {
           description="A thin bar under the context usage figures, filled to how much of the context window is in use."
           checked={showContextUsageBar}
           onCheckedChange={(checked) => void setShowContextUsageBar(checked)}
+        />
+        {/* Issue #1250 (spec 001 FR-119): off by default; the running turn's live total always shows. */}
+        <SettingSwitchRow
+          id="show-finished-turn-times"
+          label="Show finished turn times"
+          description="The total time a turn took, shown under it once it finishes. The running turn always shows its live time."
+          checked={showFinishedTurnTimes}
+          onCheckedChange={(checked) => void setShowFinishedTurnTimes(checked)}
         />
         {wordPredictionEnabled !== undefined && (
           <SettingSwitchRow

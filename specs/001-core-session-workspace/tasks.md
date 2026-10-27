@@ -5416,12 +5416,12 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 
 ## Phase 82: Convergence (#1250 turn timers, FR-046, FR-119; spec 004 FR-039)
 
-- [ ] T405 Remove the elapsed time and "·" from `CurrentWorkBanner.tsx` (delete `useElapsedMs` and the
+- [x] T405 Remove the elapsed time and "·" from `CurrentWorkBanner.tsx` (delete `useElapsedMs` and the
   `formatElapsed` import), per spec 004 FR-039 (missing)
-- [ ] T406 Add the `showFinishedTurnTimes` setting (default off) through Rust `store/`, `ipc/`
+- [x] T406 Add the `showFinishedTurnTimes` setting (default off) through Rust `store/`, `ipc/`
   (`settings.setShowFinishedTurnTimes`), `shared/ipc.ts`, `model.ts`, the bridge and
   `settings-store.ts`, per FR-119 (missing)
-- [ ] T407 Gate the settled branch of `TurnTotalLine` (visual and sr-only) on the setting, keep the
+- [x] T407 Gate the settled branch of `TurnTotalLine` (visual and sr-only) on the setting, keep the
   running line always shown, and add a "Show finished turn times" switch to Settings > Chat from
   `SettingSwitchRow`, per FR-046 and FR-119 (missing)
 - [ ] T408 Verify live with the fake-omp harness (banner has no time; a settled turn shows no total

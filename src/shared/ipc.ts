@@ -401,6 +401,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR: 'settings.setShowContextUsageBar',
   SETTINGS_SET_SHOW_AGENT_STOPPED_BAR: 'settings.setShowAgentStoppedBar',
   SETTINGS_SET_ANIMATED_STATUS_TEXT: 'settings.setAnimatedStatusText',
+  SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
   SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
@@ -691,6 +692,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
+    setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
     setActivityText(value: ActivityText): Promise<Result<Settings>>; // #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setRightPane(value: Settings['rightPane']): Promise<Result<Settings>>; // Spec 024: sole writer is `right-pane-persistence.ts`; Rust clamps width and repairs the active tab. Pushes settings:changed.

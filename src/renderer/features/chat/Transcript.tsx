@@ -118,7 +118,9 @@ interface TurnTotalLineProps {
 // the final value once the turn ends; omitted when no item in the turn carries usable timing
 // (a reopened Conversation whose history has none -- including a `user` item whose own `at` is
 // the sentinel `0` fromHistory falls back to when the source message carried no timestamp at
-// all, which is not a real timing and must not be used to compute an elapsed time).
+// all, which is not a real timing and must not be used to compute an elapsed time). Issue #1250
+// (FR-119): once settled it renders only while `showFinishedTurnTimes` is on; the running line
+// always shows.
 function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTotalLineProps) {
   // Settled is always `computeTurnEnd` (turnTiming.ts): pure/deterministic, so an unrelated
   // command's own `command_output` reply (excluded from its own scan) can never affect it no
@@ -149,6 +151,7 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
   const [lastSettledEnd, setLastSettledEnd] = React.useState<number | null | undefined>(() =>
     isLastTurn && isTurnRunning ? undefined : (settledEnd ?? null)
   )
+  const showFinishedTurnTimes = useSettingsStore((state) => state.settings.showFinishedTurnTimes === true)
   React.useEffect(() => {
     if (!(isLastTurn && isTurnRunning)) setLastSettledEnd(settledEnd ?? null)
   }, [isLastTurn, isTurnRunning, settledEnd])
@@ -159,6 +162,8 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
     (lastSettledEnd === undefined || (lastSettledEnd === null ? settledEnd !== undefined : hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd)))
   const end = running ? Date.now() : settledEnd
   if (end === undefined) return null
+  // Issue #1250 (FR-119): the settled total is opt-in; the running line always shows.
+  if (!running && !showFinishedTurnTimes) return null
   const elapsedMs = Math.max(0, end - turn.userItem.at)
   const elapsed = formatElapsed(elapsedMs)
   return (
