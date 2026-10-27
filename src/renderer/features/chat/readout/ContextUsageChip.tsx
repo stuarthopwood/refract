@@ -68,7 +68,7 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
             role="group"
             aria-label={creditsLabel}
             data-ai-credits
-            className={cn('outline-none', READOUT_CHIP_INTERACTIVE_ADDITIONS)}
+            className={cn('outline-none focus-visible:outline-solid', READOUT_CHIP_INTERACTIVE_ADDITIONS)}
           >
             <span aria-hidden>{creditsText(aiCredits)}</span>
           </span>
@@ -88,7 +88,8 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
   if (contextUsage === 'not-available') {
     return (
       <ReadoutChip icon={GaugeIcon}>
-        <span>Context n/a</span>
+        <span aria-hidden>Context n/a</span>
+        <span className="sr-only">Context usage not available</span>
         {credits}
       </ReadoutChip>
     )
