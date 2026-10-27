@@ -26,6 +26,10 @@ pub struct RightPaneState {
     pub width_px: i64,
     pub open_panel_ids: Vec<String>,
     pub active_panel_id: Option<String>,
+    /// Issue #730: the user's saved panel order (empty means the default). May hold ids this
+    /// build does not register; the renderer keeps and merges them.
+    #[serde(default)]
+    pub panel_order: Vec<String>,
 }
 
 pub(super) fn default_state() -> RightPaneState {
@@ -34,7 +38,27 @@ pub(super) fn default_state() -> RightPaneState {
         width_px: WIDTH_DEFAULT,
         open_panel_ids: Vec::new(),
         active_panel_id: None,
+        panel_order: Vec::new(),
     }
+}
+
+/// Distinct string ids, each within `MAX_ID_BYTES`, at most `MAX_IDS`; anything else is malformed.
+fn parse_ids(ids: &[Value]) -> Option<Vec<String>> {
+    if ids.len() > MAX_IDS {
+        return None;
+    }
+    let mut seen: HashSet<&str> = HashSet::with_capacity(ids.len());
+    let mut out: Vec<String> = Vec::with_capacity(ids.len());
+    for id in ids {
+        let id = id.as_str()?;
+        if id.len() > MAX_ID_BYTES {
+            return None;
+        }
+        if seen.insert(id) {
+            out.push(id.to_string());
+        }
+    }
+    Some(out)
 }
 
 /// Shared by the disk loader (malformed resets to the default) and the IPC setter (malformed is
@@ -44,21 +68,11 @@ pub(crate) fn parse(value: &Value) -> Option<RightPaneState> {
     let object = value.as_object()?;
     let open = object.get("open")?.as_bool()?;
     let width_px = object.get("widthPx")?.as_i64()?.clamp(WIDTH_MIN, WIDTH_MAX);
-    let ids = object.get("openPanelIds")?.as_array()?;
-    if ids.len() > MAX_IDS {
-        return None;
-    }
-    let mut seen: HashSet<&str> = HashSet::with_capacity(ids.len());
-    let mut open_panel_ids: Vec<String> = Vec::with_capacity(ids.len());
-    for id in ids {
-        let id = id.as_str()?;
-        if id.len() > MAX_ID_BYTES {
-            return None;
-        }
-        if seen.insert(id) {
-            open_panel_ids.push(id.to_string());
-        }
-    }
+    let open_panel_ids = parse_ids(object.get("openPanelIds")?.as_array()?)?;
+    let panel_order = match object.get("panelOrder") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(v) => parse_ids(v.as_array()?)?,
+    };
     let active = match object.get("activePanelId") {
         None | Some(Value::Null) => None,
         Some(v) => Some(v.as_str()?.to_string()),
@@ -72,6 +86,7 @@ pub(crate) fn parse(value: &Value) -> Option<RightPaneState> {
         width_px,
         open_panel_ids,
         active_panel_id,
+        panel_order,
     })
 }
 
