@@ -835,7 +835,7 @@ driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
 - [ ] T155 Add `scripts/verify-687-current-work-banner.mjs`, a live check that drives priority states, idle hiding, the Setting off and the pinned-Todo case, per FR-035 to FR-040
 ## Phase 42: Convergence for issue #1242 (current-work banner styling)
 
-- [ ] T156 Add the shared `.text-shimmer` utility and keyframes to `globals.css` (accent band clipped to text, about 1.6 s, `transform`-driven, `motion-reduce` and hidden-window static), per FR-042
-- [ ] T157 Add the `animatedStatusText` setting (Rust `store/status_shimmer.rs`, `settings.setAnimatedStatusText`, `Settings`, bridge, store) with an "Animated status text" switch in Settings > Appearance, per FR-042
-- [ ] T158 Restyle `CurrentWorkBanner`: `text-sm`, label `text-accent-text` plus shimmer only while working, elapsed time muted, `mb-1`; verify `--accent-text` at 4.5:1 in all five themes (themed fallback if not), per FR-039, FR-042
-- [ ] T159 Update `docs/design/foundations-motion.md` with the status-text shimmer row and add `scripts/verify-1242-status-text.mjs`, a live check in all five themes with reduced motion on and off, per FR-042
+- [x] T156 Add the shared `.text-shimmer` utility and keyframes to `globals.css` (accent band clipped to text, about 1.6 s, `background-position`-driven, reduced-motion and hidden-window static), per FR-042
+- [x] T157 Add the `animatedStatusText` setting (Rust `store/animated_status_text.rs`, `settings.setAnimatedStatusText`, `Settings`, bridge, store) with an "Animated status text" switch in Settings > Appearance, per FR-042
+- [x] T158 Restyle `CurrentWorkBanner`: `text-sm`, label `text-accent-text` plus shimmer only while working, elapsed time muted, `mb-1`; verify `--accent-text` at 4.5:1 in all five themes (themed fallback if not), per FR-039, FR-042
+- [x] T159 Update `docs/design/foundations-motion.md` with the status-text shimmer row and add `scripts/verify-1242-status-text.mjs`, a live check in all five themes with reduced motion on and off, per FR-042
