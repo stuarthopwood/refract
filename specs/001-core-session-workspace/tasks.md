@@ -5424,7 +5424,7 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T407 Gate the settled branch of `TurnTotalLine` (visual and sr-only) on the setting, keep the
   running line always shown, and add a "Show finished turn times" switch to Settings > Chat from
   `SettingSwitchRow`, per FR-046 and FR-119 (missing)
-- [ ] T408 Verify live with the fake-omp harness (banner has no time; a settled turn shows no total
+- [x] T408 Verify live with the fake-omp harness (banner has no time; a settled turn shows no total
   with the switch off and "Turn took Ns" with it on; the running line always ticks; the switch
   applies live and persists), update `docs/PLAN.md`, then run `node scripts/ci-local.mjs` per
   FR-046 and FR-119 (missing)
