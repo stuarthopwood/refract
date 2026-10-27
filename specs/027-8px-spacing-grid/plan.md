@@ -11,7 +11,7 @@ Renderer-only change (Tailwind class edits and one Node check script). No Rust, 
 - Stack: React, Tailwind v4 utilities, `cva` in `src/renderer/components/ui/*`.
 - Baseline scan (issue, origin/main): off-scale 6px x125, 2px x66, 10px x36, 12px x88 (half legitimate by context), 20px x9, plus arbitrary values; icon sizes `size-3`, `size-3.5`, `size-5` across about 99 files.
 - Mapping rule (FR-003) is per call site by context; mechanical codemod only for unambiguous cases (`gap-1.5` to `gap-2`, `px-2.5` to `px-2`), the rest by hand per area.
-- Existing gate pattern: `scripts/check-*.mjs` run through `package.json` `check:*` and `scripts/ci-local` (the list of `run:` steps mirrors `.github/workflows/ci.yml`; add `check:spacing` to both).
+- Existing gate pattern: `scripts/check-*.mjs` run through `package.json` `check:*` and `scripts/ci-local.mjs`, which runs the `run:` steps of `.github/workflows/ci.yml` (add `check:spacing` as a step there).
 
 ## Design
 
