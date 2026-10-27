@@ -13,6 +13,7 @@ pub mod agent;
 pub mod manager;
 pub mod model;
 pub mod pending_selection;
+mod ai_credits;
 pub mod readout;
 mod readout_head_watch;
 pub mod saved_history;

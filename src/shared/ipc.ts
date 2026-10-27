@@ -688,7 +688,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * `false` (pasting a clipboard image directly is never affected). */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setShowContextUsageBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1082 (spec 004 FR-034).
-    setShowAiCredits(enabled: boolean): Promise<Result<Settings>>; // #1238: hides the credits part of the Context usage chip; default on.
+    setShowAiCredits(enabled: boolean): Promise<Result<Settings>>; // #1238.
     setShowAgentStoppedBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1205 (FR-107): only hides the "Agent stopped" bar; never changes history-only opening.
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
@@ -800,10 +800,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     handoff(sessionId: string): Promise<Result<TokenGuardHandoffResult>>;
   };
 
-  /** #1238: individual Copilot plan usage; `null` = unavailable. No args, never a token. */
-  copilot: {
-    planUsage(): Promise<Result<{ percentUsed: number } | null>>;
-  };
+  copilot: { planUsage(): Promise<Result<{ percentUsed: number } | null>> }; // #1238; null = unavailable.
 
   /** Spec 007 contracts/ipc.md "Bootstrap": synchronous, called once from `main.tsx`'s very
    * first lines, before React mounts and before any class is set on `<html>` -- replaces the old

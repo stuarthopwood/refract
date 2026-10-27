@@ -75,7 +75,6 @@ const READOUT_COALESCE_MS: u64 = 100;
 const GIT_READ_TIMEOUT: Duration = Duration::from_secs(3);
 /// Mirrors `SessionAgent.ts`'s own `PR_POLL_INTERVAL_MS`.
 const PR_POLL_INTERVAL_MS: u64 = 60_000;
-const AI_CREDITS_TIMEOUT_MS: u64 = 5_000;
 
 #[derive(Debug, Clone)]
 struct ContextUsageState {
@@ -97,7 +96,6 @@ struct PullRequestState {
 pub(super) struct State {
     turn_started_at: Option<i64>,
     context_usage: Option<ContextUsageState>,
-    /// Issue #1238: session AI credits (cost x 100); `None` when unknown or not a Copilot model.
     ai_credits: Option<f64>,
     /// True once at least one `get_state` has synced THIS run; before that, `context_usage`/
     /// `todo_phases` stay at whatever they already had (typically `None`, hidden) rather than
@@ -281,14 +279,12 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
     });
 }
 
-/// `session::agent::launch`'s own `sync_from_state` hook (one line added there, see this file's
-/// own header): refreshes `contextUsage`/`todoProgress` from the SAME `get_state` response every
-/// other field of that method already reads, so this spec never needs its own `get_state` round
-/// trip (mirrors `syncFromState`'s own doc comment).
+/// `session::agent::launch`'s own `sync_from_state` hook: refreshes `contextUsage`/`todoProgress`
+/// (and #1238's AI credits) from the SAME `get_state` response, so no extra `get_state` round trip.
 pub(super) async fn on_sync_from_state(agent: &SessionAgent, state: &Value) {
     let context_usage = state.get("contextUsage").and_then(parse_context_usage);
     let todo_phases = state.get("todoPhases").and_then(parse_todo_phases);
-    let ai_credits = fetch_ai_credits(agent, state).await;
+    let ai_credits = super::ai_credits::fetch_ai_credits(agent, state).await;
     agent
         .with_readout_state(|s| {
             s.state_synced = true;
@@ -300,33 +296,12 @@ pub(super) async fn on_sync_from_state(agent: &SessionAgent, state: &Value) {
     schedule_readout_update(agent).await;
 }
 
-/// Issue #1238 (spec 004 FR-050): OMP's session cost in dollars times 100 (1 credit = $0.01),
-/// only for a GitHub Copilot model; `None` for any other provider or when the stats call fails.
-async fn fetch_ai_credits(agent: &SessionAgent, state: &Value) -> Option<f64> {
-    let provider = state.get("model")?.get("provider")?.as_str()?;
-    if provider != "github-copilot" {
-        return None;
-    }
-    let stats = agent
-        .request_rpc(json!({ "type": "get_session_stats" }), AI_CREDITS_TIMEOUT_MS)
-        .await
-        .ok()?;
-    if stats.get("success").and_then(Value::as_bool) != Some(true) {
-        return None;
-    }
-    let cost = stats.get("data")?.get("cost")?.as_f64()?;
-    (cost.is_finite() && cost >= 0.0).then_some(cost * 100.0)
-}
-
 /// `conversations.rs`'s own `start_new_conversation`/`open_conversation` hook (issue #577): a
 /// brand-new or just-switched-to Conversation's `get_state` has not synced yet, so the PREVIOUS
 /// Conversation's `contextUsage`/`todoProgress` must never be shown as if it were this one's --
-/// cleared here, BEFORE the caller's own `sync_from_state` call publishes the real (possibly
-/// absent) fresh reading. `pull_request`/`pull_request_branch` are deliberately untouched
-/// (#577's own "Changes and Pull request... are worktree-based and correctly stay"). Also
-/// schedules a readout update (test-review round 1 MEDIUM finding): if the caller's own
-/// `get_state` fails right after this, the old `contextUsage`/`subagentCount` must not keep
-/// showing on screen, which only a fresh emit (even with the now-cleared values) corrects.
+/// cleared here, BEFORE the caller's own `sync_from_state` call publishes the real fresh reading.
+/// `pull_request`/`pull_request_branch` stay (worktree-based). Also schedules a readout update:
+/// if the caller's own `get_state` fails right after this, old values must not keep showing.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_readout_state(|s| {
@@ -354,7 +329,6 @@ fn empty_readout() -> Value {
     let mut readout = json!({
         "changes": Value::Null,
         "contextUsage": Value::Null,
-        "aiCredits": Value::Null,
         "turnTime": Value::Null,
         "pullRequest": Value::Null,
         "subagentCount": Value::Null,
