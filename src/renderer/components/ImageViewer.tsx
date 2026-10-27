@@ -46,6 +46,11 @@ export function ImageViewer({ open, onOpenChange, items, index, onIndexChange, t
   const item = items[index]
   const [loaded, setLoaded] = React.useState<Loaded | null>(null)
   const itemKey = item?.key
+  const openerRef = React.useRef<HTMLElement | null>(null)
+  // Radix only restores focus to a `DialogTrigger`; this dialog is opened by a tile's own state, so remember the opener before focus moves into the dialog.
+  React.useLayoutEffect(() => {
+    if (open) openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }, [open])
 
   React.useEffect(() => {
     if (!open || !item) return
@@ -79,6 +84,10 @@ export function ImageViewer({ open, onOpenChange, items, index, onIndexChange, t
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-2xl"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          openerRef.current?.focus()
+        }}
         onKeyDown={(event) => {
           if (total < 2) return
           if (event.key === 'ArrowLeft') go(-1)

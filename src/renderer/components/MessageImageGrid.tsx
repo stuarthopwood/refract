@@ -104,7 +104,7 @@ export function MessageImageGrid({ images, className }: MessageImageGridProps) {
   }
 
   return (
-    <div role="group" aria-label="Attached images" className={cn('@container', className)}>
+    <div role="group" aria-label="Attached images" className={cn(!single && '@container w-[30rem] max-w-full', className)}>
       <div className={single ? undefined : 'grid grid-cols-2 gap-1 @md:grid-cols-3'}>
         {visible.map((image, index) => (
           <ImageTile key={image.id + index} image={image} index={index} total={images.length} single={single} overflow={index === visible.length - 1 ? images.length - visible.length : 0} onOpen={open} />

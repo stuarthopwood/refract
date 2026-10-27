@@ -1,0 +1,11 @@
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["switch_session"]}
+{"id":"$lastId","type":"response","command":"switch_session","success":true,"data":{"cancelled":false}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"$conversationFile","sessionId":"sess-0001","messageCount":7,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[{"role":"user","content":[{"type":"text","text":"Single image message."},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_WIDE"}]},{"role":"assistant","content":[{"type":"text","text":"Historical reply."}],"timestamp":0},{"role":"user","content":[{"type":"text","text":"Six image message."},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_1"},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_2"},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_3"},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_4"},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_5"},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_6"}]},{"role":"user","content":[{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_ONLY"}]},{"role":"user","content":[{"type":"text","text":"Invalid image message."},{"type":"image","mimeType":"image/png","data":"this-is-not-valid-base64-image-data"}]},{"role":"user","content":[{"type":"text","text":"Blob image message."},{"type":"image","mimeType":"image/png","data":"$env:REFRACT_FAKE_OMP_IMG_BLOB_REF"}]},{"role":"assistant","content":[{"type":"text","text":"Trailing reply."}],"timestamp":0}],"totalMessages":7}}
