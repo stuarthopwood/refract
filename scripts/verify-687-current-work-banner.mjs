@@ -160,7 +160,7 @@ async function main() {
     await expectBanner(cdp, /\S/, 'Banner returns when the Setting is back on');
 
     // Needs you: the scripted question is pending.
-    await expectBanner(cdp, /Waiting for your answer/, 'Banner shows "needs you" while a question is pending', 30_000);
+    await expectBanner(cdp, /Needs your input/, 'Banner shows "needs you" while a question is pending', 30_000);
     await shot(cdp, 'needs-you.png');
     await cdp.waitFor(`!!document.querySelector('[role="radio"]')`, { timeoutMs: 10_000, label: 'Question card is open' });
     await cdp.click(`Array.from(document.querySelectorAll('[role="radio"]')).find((el) => (el.textContent ?? '').includes('Postgres'))`);
