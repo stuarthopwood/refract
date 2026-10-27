@@ -96,6 +96,7 @@ struct PullRequestState {
 pub(super) struct State {
     turn_started_at: Option<i64>,
     context_usage: Option<ContextUsageState>,
+    ai_credits: Option<f64>,
     /// True once at least one `get_state` has synced THIS run; before that, `context_usage`/
     /// `todo_phases` stay at whatever they already had (typically `None`, hidden) rather than
     /// jumping to a definitive "not available" -- no reading was ever expected yet.
@@ -278,10 +279,8 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
     });
 }
 
-/// `session::agent::launch`'s own `sync_from_state` hook (one line added there, see this file's
-/// own header): refreshes `contextUsage`/`todoProgress` from the SAME `get_state` response every
-/// other field of that method already reads, so this spec never needs its own `get_state` round
-/// trip (mirrors `syncFromState`'s own doc comment).
+/// `session::agent::launch`'s `sync_from_state` hook: refreshes `contextUsage`/`todoProgress` from
+/// the SAME `get_state` response, then (#1238) the AI credits, published as a second update.
 pub(super) async fn on_sync_from_state(agent: &SessionAgent, state: &Value) {
     let context_usage = state.get("contextUsage").and_then(parse_context_usage);
     let todo_phases = state.get("todoPhases").and_then(parse_todo_phases);
@@ -293,22 +292,22 @@ pub(super) async fn on_sync_from_state(agent: &SessionAgent, state: &Value) {
         })
         .await;
     schedule_readout_update(agent).await;
+    if let Some(credits) = super::ai_credits::fetch_ai_credits(agent, state).await {
+        agent.with_readout_state(|s| s.ai_credits = credits).await;
+        schedule_readout_update(agent).await;
+    }
 }
 
 /// `conversations.rs`'s own `start_new_conversation`/`open_conversation` hook (issue #577): a
 /// brand-new or just-switched-to Conversation's `get_state` has not synced yet, so the PREVIOUS
 /// Conversation's `contextUsage`/`todoProgress` must never be shown as if it were this one's --
-/// cleared here, BEFORE the caller's own `sync_from_state` call publishes the real (possibly
-/// absent) fresh reading. `pull_request`/`pull_request_branch` are deliberately untouched
-/// (#577's own "Changes and Pull request... are worktree-based and correctly stay"). Also
-/// schedules a readout update (test-review round 1 MEDIUM finding): if the caller's own
-/// `get_state` fails right after this, the old `contextUsage`/`subagentCount` must not keep
-/// showing on screen, which only a fresh emit (even with the now-cleared values) corrects.
+/// cleared here, BEFORE the caller's `sync_from_state` publishes the fresh reading; PR fields stay.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_readout_state(|s| {
             s.state_synced = false;
             s.context_usage = None;
+            s.ai_credits = None;
             s.todo_phases = None;
             s.activity.reset();
         })
@@ -588,6 +587,7 @@ fn build_readout_value(
     let mut readout = json!({
         "changes": changes,
         "contextUsage": context_usage,
+        "aiCredits": s.ai_credits,
         "turnTime": turn_time,
         "pullRequest": pull_request,
         "subagentCount": subagent_count,

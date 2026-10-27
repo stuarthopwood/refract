@@ -86,6 +86,7 @@ pub struct Settings {
     pub show_context_usage_bar: bool,
     /// Issue #1205 (FR-107): the "Agent stopped" bar; default on (`agent_stopped_bar.rs`).
     pub show_agent_stopped_bar: bool,
+    pub show_ai_credits: bool,
     /// Issue #1242 (FR-042): the shared status-text shimmer switch; default on.
     pub animated_status_text: bool,
     /// Issue #1246: code ligatures on the Code font; default on (`code_ligatures.rs`).
@@ -130,6 +131,8 @@ use settings_parse::{
 mod activity_text;
 #[path = "agent_stopped_bar.rs"]
 mod agent_stopped_bar;
+#[path = "ai_credits.rs"]
+mod ai_credits;
 pub use activity_text::ActivityText;
 #[path = "animated_status_text.rs"]
 mod animated_status_text;
@@ -217,6 +220,7 @@ impl SettingsStore {
             .and_then(Value::as_bool)
             .unwrap_or(true);
         let show_agent_stopped_bar = agent_stopped_bar::parse(&object);
+        let show_ai_credits = ai_credits::parse(&object);
         let animated_status_text = animated_status_text::parse(&object);
         let code_ligatures = code_ligatures::parse(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
@@ -246,7 +250,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 20] = [
+        const KNOWN_FIELDS: [&str; 21] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -261,6 +265,7 @@ impl SettingsStore {
             "detectImagePathsOnPaste",
             "showContextUsageBar",
             agent_stopped_bar::KEY,
+            ai_credits::KEY,
             animated_status_text::KEY,
             code_ligatures::KEY,
             finished_turn_times::KEY,
@@ -290,6 +295,7 @@ impl SettingsStore {
             detect_image_paths_on_paste,
             show_context_usage_bar,
             show_agent_stopped_bar,
+            show_ai_credits,
             animated_status_text,
             code_ligatures,
             show_finished_turn_times,
@@ -369,6 +375,7 @@ impl SettingsStore {
         );
         let show_bar = self.data.show_agent_stopped_bar;
         map.insert(agent_stopped_bar::KEY.to_string(), json!(show_bar));
+        ai_credits::write(&mut map, self.data.show_ai_credits);
         let animated = self.data.animated_status_text;
         map.insert(animated_status_text::KEY.to_string(), json!(animated));
         map.insert(code_ligatures::KEY.to_string(), json!(self.data.code_ligatures));
@@ -537,15 +544,6 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             detect_image_paths_on_paste: enabled,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
-    /// `settings.setShowContextUsageBar(enabled)` (issue #1082): plain boolean, like the one above.
-    pub async fn set_show_context_usage_bar(&mut self, enabled: bool) -> std::io::Result<Settings> {
-        let next = Settings {
-            show_context_usage_bar: enabled,
             ..self.data.clone()
         };
         self.persist_whole(next).await

@@ -32,6 +32,8 @@ export function ChatDisplaySection() {
   const setDetectImagePathsOnPaste = useSettingsStore((state) => state.setDetectImagePathsOnPaste)
   const showContextUsageBar = useSettingsStore((state) => state.settings.showContextUsageBar !== false)
   const setShowContextUsageBar = useSettingsStore((state) => state.setShowContextUsageBar)
+  const showAiCredits = useSettingsStore((state) => state.settings.showAiCredits !== false)
+  const setShowAiCredits = useSettingsStore((state) => state.setShowAiCredits)
   const showFinishedTurnTimes = useSettingsStore((state) => state.settings.showFinishedTurnTimes === true)
   const setShowFinishedTurnTimes = useSettingsStore((state) => state.setShowFinishedTurnTimes)
   const wordPredictionEnabled = useSettingsStore((state) => state.settings.wordPredictionEnabled)
@@ -106,6 +108,14 @@ export function ChatDisplaySection() {
           description="A thin bar under the context usage figures, filled to how much of the context window is in use."
           checked={showContextUsageBar}
           onCheckedChange={(checked) => void setShowContextUsageBar(checked)}
+        />
+        {/* Issue #1238 (spec 004 FR-053): on by default; Copilot models only. */}
+        <SettingSwitchRow
+          id="show-ai-credits"
+          label="Show AI credits and plan usage"
+          description="The session's AI credits next to the context usage figures, with your Copilot plan usage in its tooltip. Copilot models only, and only while the context usage readout is on."
+          checked={showAiCredits}
+          onCheckedChange={(checked) => void setShowAiCredits(checked)}
         />
         {wordPredictionEnabled !== undefined && (
           <SettingSwitchRow

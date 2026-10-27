@@ -116,7 +116,7 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: the two show toggles default true; #469's toolNames defaults false
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on
-  wordPredictionEnabled?: boolean; showAgentStoppedBar?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; showFinishedTurnTimes?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation. showAgentStoppedBar (#1205, FR-107): the "Agent stopped" bar, absent = on. animatedStatusText (#1242, FR-042): the status-text shimmer switch, absent = on; showFinishedTurnTimes (#1250, FR-119): the settled turn total, absent = off. codeLigatures (#1246): ligatures in the Code font, absent = on
+  wordPredictionEnabled?: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; showFinishedTurnTimes?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation. showAgentStoppedBar (#1205, FR-107): the "Agent stopped" bar, absent = on. animatedStatusText (#1242, FR-042): the status-text shimmer switch, absent = on; showFinishedTurnTimes (#1250, FR-119): the settled turn total, absent = off. showAiCredits (#1238): credits in the Context usage chip, absent = on. codeLigatures (#1246): ligatures in the Code font, absent = on
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings; // spec 024 right pane; #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
@@ -326,7 +326,7 @@ export interface DiffStat {
  * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately absent: it is a pure client clock the renderer computes itself (FR-005). */
 export interface SessionReadout extends ActivityReadoutFields {
   changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
-  contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
+  contextUsage: ContextUsage | 'not-available' | null; aiCredits?: number | null; // null = agent does not report it at all (hidden, not shown). aiCredits (#1238): OMP cost x 100; null/absent = not Copilot or unknown
   turnTime: { startedAt: number } | null; // null = no turn running (chip hidden)
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
   // Gate fixes 2 finding 7: `finished`/`exited`/`failed` are separate counts, not folded
