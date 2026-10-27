@@ -1,4 +1,5 @@
 import type { StageGroupedItem } from './groupSubagentStages'
+import type { MidTurnProse } from './groupMidTurnProse'
 import type { TranscriptItem } from '../../../shared/model'
 
 type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>
@@ -9,7 +10,7 @@ export interface AdvisoryRun {
   items: AdvisoryItem[]
 }
 
-export type AdvisoryGroupedTranscriptItem = StageGroupedItem | AdvisoryRun
+export type AdvisoryGroupedTranscriptItem = StageGroupedItem | AdvisoryRun | MidTurnProse
 
 export function isAdvisoryRun(item: AdvisoryGroupedTranscriptItem): item is AdvisoryRun {
   return item.kind === 'advisory-run'
@@ -29,8 +30,8 @@ export function isAdvisoryRun(item: AdvisoryGroupedTranscriptItem): item is Advi
 // crosses a turn, since this runs last in the chain, over one turn's own already-grouped items.
 export const CONCERN_RUN_THRESHOLD = 5
 
-export function groupAdvisoryItems(items: StageGroupedItem[]): AdvisoryGroupedTranscriptItem[] {
-  const result: AdvisoryGroupedTranscriptItem[] = []
+export function groupAdvisoryItems(items: StageGroupedItem[]): (StageGroupedItem | AdvisoryRun)[] {
+  const result: (StageGroupedItem | AdvisoryRun)[] = []
   let run: AdvisoryItem[] = []
 
   const flushRun = () => {

@@ -3,6 +3,7 @@ import { ChevronRightIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ClampedContent } from './ClampedContent'
 
 // #565 decision 10: the label column -- row `px-2` (8px) + the icon slot (`size-4`, 16px) +
 // `gap-2` (8px) = 32px -- is private to this file's own layout, so every consumer that wants a
@@ -99,6 +100,9 @@ export interface CollapsedLineProps {
   id?: string
   className?: string
   contentClassName?: string
+  /** #1236: clamp an expanded body to this many lines behind a Show more button (only shown when
+   * the body overflows). Omit for an unclamped body. */
+  clampLines?: number
 }
 
 // The one shared collapsed-line baseline every chat output kind builds on (T080, docs/DESIGN.md
@@ -131,6 +135,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     children,
     className,
     contentClassName,
+    clampLines,
     id
   },
   ref
@@ -379,7 +384,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           {detail}
         </p>
       )}
-      <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>{children}</CollapsibleContent>
+      <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>
+        {clampLines !== undefined ? <ClampedContent lines={clampLines}>{children}</ClampedContent> : children}
+      </CollapsibleContent>
     </Collapsible>
   )
 })

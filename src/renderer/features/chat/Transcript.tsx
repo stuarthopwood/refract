@@ -18,6 +18,7 @@ import { LinkContext } from './Markdown'
 import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 import { groupToolItems, isToolGroup } from './groupToolItems'
 import { groupThoughtItems } from './groupThoughtItems'
+import { groupMidTurnProse } from './groupMidTurnProse'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
@@ -299,7 +300,7 @@ export function Transcript({
         // items (even a run of one) into a `ThoughtRun`; order against `groupToolItems` and
         // `groupSubagentStages` does not matter, since each only rewrites items of its own kind.
         // Issue #558: `groupAdvisoryItems` runs last, over every already-grouped item in the turn.
-        const groupedWithStages = groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems))))
+        const groupedWithStages = groupMidTurnProse(groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems)))))
         return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
       }),
     [visibleTurns, transcriptDisplay.thinking]
