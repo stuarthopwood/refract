@@ -52,7 +52,7 @@ export function BrandWatermark({ variant }: BrandWatermarkProps) {
           aria-hidden
           focusable={false}
           className="size-full"
-          style={{ color: 'var(--muted-foreground)', opacity: 'var(--watermark-opacity)' }}
+          style={{ color: 'var(--muted-foreground)', opacity: 'var(--holiday-artwork-opacity)' }}
           strokeWidth={1.5}
         />
       </div>

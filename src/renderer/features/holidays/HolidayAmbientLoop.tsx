@@ -58,6 +58,7 @@ export function HolidayAmbientLoop() {
   const [flightCount, setFlightCount] = useState(0)
   const idleTimerRef = useRef<number | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
+  const remainingFlightDelayMsRef = useRef<number | null>(null)
   const dialogOpenRef = useRef(false)
 
   const active = holidayTouches === 'full' && holiday !== null && HOLIDAY_CONTENT[holiday].hasAmbientLoop
@@ -200,17 +201,31 @@ export function HolidayAmbientLoop() {
   // `will-change: transform` is set only for that one flight's own duration, never ambiently.
   // block the next one).
   useEffect(() => {
-    if (!active || paused || motionReducedOrForcedColors) return
+    if (!active) {
+      remainingFlightDelayMsRef.current = null
+      return
+    }
+    if (paused || motionReducedOrForcedColors) return
     let cancelled = false
     let flightTimer: number | undefined
     let currentAnimation: Animation | undefined
+    let timerPending = false
+    let timerDelayMs = 0
+    let timerStartedAt = 0
 
-    function scheduleNextFlight() {
-      const delayMs = flightIntervalMsOverride !== null ? flightIntervalMsOverride : 90_000 + Math.random() * 90_000
+    // #1233: a pause (idle, blur, overlay) freezes the countdown instead of discarding it, so a
+    // reader who pauses and resumes still gets a flight once the unpaused time reaches the delay.
+    function scheduleNextFlight(resumeDelayMs?: number) {
+      const delayMs =
+        resumeDelayMs ?? (flightIntervalMsOverride !== null ? flightIntervalMsOverride : 90_000 + Math.random() * 90_000)
+      timerDelayMs = delayMs
+      timerStartedAt = Date.now()
+      timerPending = true
       flightTimer = window.setTimeout(runFlight, delayMs)
     }
 
     function runFlight() {
+      timerPending = false
       const bats = containerRef.current?.querySelectorAll<HTMLElement>('.holiday-ambient-loop-bat-wrap')
       if (!bats || bats.length === 0) {
         scheduleNextFlight()
@@ -245,10 +260,21 @@ export function HolidayAmbientLoop() {
       }
     }
 
-    scheduleNextFlight()
+    const resumedDelayMs = remainingFlightDelayMsRef.current
+    remainingFlightDelayMsRef.current = null
+    scheduleNextFlight(
+      resumedDelayMs === null
+        ? undefined
+        : flightIntervalMsOverride !== null
+          ? Math.min(resumedDelayMs, flightIntervalMsOverride)
+          : resumedDelayMs
+    )
     return () => {
       cancelled = true
       window.clearTimeout(flightTimer)
+      if (timerPending) {
+        remainingFlightDelayMsRef.current = Math.max(0, timerDelayMs - (Date.now() - timerStartedAt))
+      }
       currentAnimation?.cancel()
     }
   }, [active, paused, motionReducedOrForcedColors, flightIntervalMsOverride])
