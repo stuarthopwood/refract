@@ -125,9 +125,9 @@ async function main() {
     const tabIndex = await cdp.evaluate(`${CREDITS} ? ${CREDITS}.tabIndex : null`);
     check(tabIndex === 0, '(e) [data-ai-credits] is keyboard reachable (tabIndex 0)', { tabIndex });
 
-    // (c) Screen-reader text.
-    const sr = await cdp.evaluate(`${CREDITS} ? (${CREDITS}.querySelector('.sr-only')?.textContent ?? null) : null`);
-    check(typeof sr === 'string' && sr.includes('12 credits'), '(c) sr-only text includes "12 credits"', { sr });
+    // (c) Screen-reader name.
+    const sr = await cdp.evaluate(`${CREDITS} ? ${CREDITS}.getAttribute('aria-label') : null`);
+    check(typeof sr === 'string' && sr.includes('12 credits'), '(c) aria-label includes "12 credits"', { sr });
 
     // (b) Tooltip via keyboard focus plus a real mouse move over the element.
     await cdp.evaluate(`${CREDITS}.focus()`);
@@ -135,8 +135,8 @@ async function main() {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
     let tooltipText = null;
     try {
-      await cdp.waitFor(`!!document.querySelector('[role="tooltip"], [data-slot="tooltip-content"]') && /Plan/.test(document.querySelector('[data-plan-usage]')?.textContent ?? '')`, {
-        timeoutMs: 10_000,
+      await cdp.waitFor(`!!document.querySelector('[role="tooltip"], [data-slot="tooltip-content"]') &&       /Plan/.test(document.querySelector('[data-plan-usage]')?.textContent ?? '') && !/Checking/.test(document.querySelector('[data-plan-usage]')?.textContent ?? '')`, {
+              timeoutMs: 20_000,
         label: 'Tooltip with the plan line'
       });
     } catch {

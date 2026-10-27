@@ -4,12 +4,15 @@
 import { useEffect, useState } from 'react'
 
 const CACHE_MS = 5 * 60 * 1000
+const FAILURE_CACHE_MS = 30 * 1000
 
 let cached: { at: number; percentUsed: number | null } | null = null
 let inFlight: Promise<number | null> | null = null
 
 function loadPlanUsage(): Promise<number | null> {
-  if (cached && Date.now() - cached.at < CACHE_MS) return Promise.resolve(cached.percentUsed)
+  if (cached && Date.now() - cached.at < (cached.percentUsed === null ? FAILURE_CACHE_MS : CACHE_MS)) {
+    return Promise.resolve(cached.percentUsed)
+  }
   inFlight ??= window.refract.copilot
     .planUsage()
     .then((result) => (result.ok && result.value ? result.value.percentUsed : null))
@@ -23,9 +26,9 @@ function loadPlanUsage(): Promise<number | null> {
 }
 
 /** `enabled` false never calls the lookup. Re-reads whenever `refreshKey` changes (the session's
- * credits), still bounded by the shared cache. */
-export function useCopilotPlanUsage(enabled: boolean, refreshKey: unknown): number | null {
-  const [percentUsed, setPercentUsed] = useState<number | null>(cached?.percentUsed ?? null)
+ * credits), still bounded by the shared cache. `undefined` = still loading, `null` = unavailable. */
+export function useCopilotPlanUsage(enabled: boolean, refreshKey: unknown): number | null | undefined {
+  const [percentUsed, setPercentUsed] = useState<number | null | undefined>(cached ? cached.percentUsed : undefined)
   useEffect(() => {
     if (!enabled) return
     let live = true

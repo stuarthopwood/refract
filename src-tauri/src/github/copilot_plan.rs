@@ -117,7 +117,9 @@ mod tests {
 
     #[test]
     fn prefers_the_precise_remaining_over_entitlement() {
-        let body = snapshot(json!({ "entitlement": 2_000_000.0, "quota_remaining": 1_981_588.9, "percent_remaining": 99 }));
+        let body = snapshot(
+            json!({ "entitlement": 2_000_000.0, "quota_remaining": 1_981_588.9, "percent_remaining": 99 }),
+        );
         let used = parse_percent_used(&body).unwrap();
         assert!((used - 0.92).abs() < 0.01);
     }
@@ -130,7 +132,12 @@ mod tests {
 
     #[test]
     fn unlimited_and_missing_are_unavailable() {
-        assert_eq!(parse_percent_used(&json!({ "quota_snapshots": { "premium_interactions": { "unlimited": true, "percent_remaining": 100 } } })), None);
+        assert_eq!(
+            parse_percent_used(
+                &json!({ "quota_snapshots": { "premium_interactions": { "unlimited": true, "percent_remaining": 100 } } })
+            ),
+            None
+        );
         assert_eq!(parse_percent_used(&json!({ "quota_snapshots": {} })), None);
         assert_eq!(parse_percent_used(&json!({})), None);
     }

@@ -15,7 +15,8 @@ pub fn register(d: &mut Dispatcher) {
 /// the file-size cap.
 fn settings_set_show_ai_credits(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let enabled = super::settings::require_bool(&args, 0, "settings.setShowAiCredits", "enabled")?;
+        let enabled =
+            super::settings::require_bool(&args, 0, "settings.setShowAiCredits", "enabled")?;
         let value = state
             .settings
             .lock()
@@ -31,9 +32,11 @@ fn settings_set_show_ai_credits(state: AppState, args: Vec<Value>) -> HandlerFut
 
 fn copilot_plan_usage(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        Ok(match crate::github::copilot_plan::plan_percent_used().await {
-            Some(percent) => json!({ "percentUsed": percent }),
-            None => Value::Null,
-        })
+        Ok(
+            match crate::github::copilot_plan::plan_percent_used().await {
+                Some(percent) => json!({ "percentUsed": percent }),
+                None => Value::Null,
+            },
+        )
     })
 }

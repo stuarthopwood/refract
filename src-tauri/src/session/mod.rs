@@ -10,10 +10,10 @@
 
 pub mod advisor;
 pub mod agent;
+mod ai_credits;
 pub mod manager;
 pub mod model;
 pub mod pending_selection;
-mod ai_credits;
 pub mod readout;
 mod readout_head_watch;
 pub mod saved_history;

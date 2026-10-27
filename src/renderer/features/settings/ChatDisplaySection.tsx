@@ -93,7 +93,7 @@ export function ChatDisplaySection() {
         <SettingSwitchRow
           id="show-ai-credits"
           label="Show AI credits and plan usage"
-          description="The session's AI credits next to the context usage figures, with your Copilot plan usage in its tooltip. Copilot models only."
+          description="The session's AI credits next to the context usage figures, with your Copilot plan usage in its tooltip. Copilot models only, and only while the context usage readout is on."
           checked={showAiCredits}
           onCheckedChange={(checked) => void setShowAiCredits(checked)}
         />

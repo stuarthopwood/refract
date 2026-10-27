@@ -279,29 +279,29 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
     });
 }
 
-/// `session::agent::launch`'s own `sync_from_state` hook: refreshes `contextUsage`/`todoProgress`
-/// (and #1238's AI credits) from the SAME `get_state` response, so no extra `get_state` round trip.
+/// `session::agent::launch`'s `sync_from_state` hook: refreshes `contextUsage`/`todoProgress` from
+/// the SAME `get_state` response, then (#1238) the AI credits, published as a second update.
 pub(super) async fn on_sync_from_state(agent: &SessionAgent, state: &Value) {
     let context_usage = state.get("contextUsage").and_then(parse_context_usage);
     let todo_phases = state.get("todoPhases").and_then(parse_todo_phases);
-    let ai_credits = super::ai_credits::fetch_ai_credits(agent, state).await;
     agent
         .with_readout_state(|s| {
             s.state_synced = true;
             s.context_usage = context_usage;
             s.todo_phases = todo_phases;
-            s.ai_credits = ai_credits;
         })
         .await;
     schedule_readout_update(agent).await;
+    if let Some(credits) = super::ai_credits::fetch_ai_credits(agent, state).await {
+        agent.with_readout_state(|s| s.ai_credits = credits).await;
+        schedule_readout_update(agent).await;
+    }
 }
 
 /// `conversations.rs`'s own `start_new_conversation`/`open_conversation` hook (issue #577): a
 /// brand-new or just-switched-to Conversation's `get_state` has not synced yet, so the PREVIOUS
 /// Conversation's `contextUsage`/`todoProgress` must never be shown as if it were this one's --
-/// cleared here, BEFORE the caller's own `sync_from_state` call publishes the real fresh reading.
-/// `pull_request`/`pull_request_branch` stay (worktree-based). Also schedules a readout update:
-/// if the caller's own `get_state` fails right after this, old values must not keep showing.
+/// cleared here, BEFORE the caller's `sync_from_state` publishes the fresh reading; PR fields stay.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_readout_state(|s| {

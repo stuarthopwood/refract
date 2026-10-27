@@ -9,8 +9,9 @@ import type { CSSProperties } from 'react'
 import { GaugeIcon, TriangleAlertIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { compactNumber } from '@/lib/compactNumber'
+import { cn } from '@/lib/utils'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
-import { ReadoutChip } from './ReadoutChip'
+import { READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
 import { useCopilotPlanUsage } from './useCopilotPlanUsage'
 
 /** #1238 (FR-050): "12 credits", "1 credit", "<1 credit" for a tiny non-zero spend. */
@@ -20,8 +21,9 @@ function creditsText(credits: number): string {
   return `${FULL_NUMBER_FORMAT.format(whole)} ${whole === 1 ? 'credit' : 'credits'}`
 }
 
-/** The plan figure, `null` when the lookup reported nothing. */
-function planText(percentUsed: number | null): string {
+/** The plan figure; `undefined` = still loading, `null` = the lookup reported nothing. */
+function planText(percentUsed: number | null | undefined): string {
+  if (percentUsed === undefined) return 'Checking plan usage…'
   if (percentUsed === null) return 'Plan usage unavailable'
   return percentUsed > 0 && percentUsed < 1 ? 'Plan: <1% used' : `Plan: ${Math.round(percentUsed)}% used`
 }
@@ -54,30 +56,39 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
   const creditsOn = useSettingsStore((s) => s.settings.showAiCredits !== false)
   const planUsed = useCopilotPlanUsage(creditsOn && aiCredits !== null, aiCredits)
   if (contextUsage === null) return null
-  const planHigh = planUsed !== null && Math.round(planUsed) >= 90
+  const planHigh = typeof planUsed === 'number' && Math.round(planUsed) >= 90
+  const creditsLabel = aiCredits === null ? '' : `${creditsText(aiCredits)} used this session. ${planText(planUsed)}${planHigh ? ' (high)' : ''}`
   const credits = creditsOn && aiCredits !== null && (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span tabIndex={0} data-ai-credits className="rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-ring">
-          <span className="sr-only">{`, ${creditsText(aiCredits)} this session. ${planText(planUsed)}${planHigh ? ', high' : ''}`}</span>
-          <span aria-hidden>· {creditsText(aiCredits)}</span>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>
-        <span className="flex flex-col">
-          <span>{`${creditsText(aiCredits)} used this session`}</span>
-          <span data-plan-usage style={planUsed === null ? undefined : { color: contextUsageColor(Math.round(planUsed)) }}>
-            {planText(planUsed)}
-            {planHigh && ' (high)'}
+    <>
+      <span aria-hidden>·</span>
+      <Tooltip>
+        <TooltipTrigger asChild aria-describedby={undefined}>
+          <span
+            tabIndex={0}
+            role="group"
+            aria-label={creditsLabel}
+            data-ai-credits
+            className={cn('outline-none', READOUT_CHIP_INTERACTIVE_ADDITIONS)}
+          >
+            <span aria-hidden>{creditsText(aiCredits)}</span>
           </span>
-        </span>
-      </TooltipContent>
-    </Tooltip>
+        </TooltipTrigger>
+        <TooltipContent>
+          <span className="flex flex-col">
+            <span>{`${creditsText(aiCredits)} used this session`}</span>
+            <span data-plan-usage>
+              {planText(planUsed)}
+              {planHigh && ' (high)'}
+            </span>
+          </span>
+        </TooltipContent>
+      </Tooltip>
+    </>
   )
   if (contextUsage === 'not-available') {
     return (
       <ReadoutChip icon={GaugeIcon}>
-        <span>Not available</span>
+        <span>Context n/a</span>
         {credits}
       </ReadoutChip>
     )
@@ -94,19 +105,19 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
   return (
     <ReadoutChip icon={high ? TriangleAlertIcon : GaugeIcon} className="relative">
       <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${usedFull} of ${windowFull} tokens used, ${percent} percent`}</span>
-      <span aria-hidden data-context-usage-figures style={colour}>
+      <span aria-hidden data-context-usage-figures style={colour} className="relative inline-flex items-center self-stretch">
         {used}/{windowSize} ({percent}%)
         {high && <span> high</span>}
+        {showBar && (
+          <span aria-hidden data-context-usage-bar className="absolute inset-x-0 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-muted forced-colors:hidden">
+            <span
+              className="block h-full rounded-full motion-safe:transition-[width] motion-safe:duration-300"
+              style={{ width: `${Math.min(100, Math.max(0, percent))}%`, backgroundColor: contextUsageColor(percent) }}
+            />
+          </span>
+        )}
       </span>
       {credits}
-      {showBar && (
-        <span aria-hidden data-context-usage-bar className="absolute inset-x-0 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-muted forced-colors:hidden">
-          <span
-            className="block h-full rounded-full motion-safe:transition-[width] motion-safe:duration-300"
-            style={{ width: `${Math.min(100, Math.max(0, percent))}%`, backgroundColor: contextUsageColor(percent) }}
-          />
-        </span>
-      )}
     </ReadoutChip>
   )
 }
