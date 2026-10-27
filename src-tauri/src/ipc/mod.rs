@@ -44,6 +44,7 @@ pub mod repositories;
 pub mod sessions_agent;
 pub mod sessions_lifecycle;
 pub mod settings;
+pub mod settings_animated_status_text;
 pub mod side_chat;
 pub mod subagents;
 pub mod theme;
@@ -168,6 +169,7 @@ impl Dispatcher {
 /// an empty, pre-declared stub: its `register` is a no-op until that lane lands.
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings::register(dispatcher);
+    settings_animated_status_text::register(dispatcher);
     debug::register(dispatcher);
     readiness::register(dispatcher);
     repositories::register(dispatcher);

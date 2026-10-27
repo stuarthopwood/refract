@@ -1,5 +1,6 @@
-// Issue #687 (spec 004 FR-035 to FR-040): the current-work banner, one muted line directly above
-// the composer. Shown while the Session is working or needs you, hidden when idle, gated by
+// Issue #687 (spec 004 FR-035 to FR-040, FR-042): the current-work banner, one line directly above
+// the composer: elapsed time muted, label in the accent text colour with the shared shimmer while
+// the Session is working (static when it needs you). Shown while the Session is working or needs you, hidden when idle, gated by
 // `sessionReadout['current-work']`. One per ChatPane (each split pane mounts its own, keyed by
 // `sessionId`). Text comes from the shared pure `deriveActivity` (src/shared/activity.ts) and is
 // rendered as plain text only. No spinner, no stop control (the composer and chat header already
@@ -7,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSessionsStore, useSettingsStore, useTodoPinStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ShimmerText } from '@/components/ShimmerText'
 import { deriveActivity } from '../../../shared/activity'
 import { formatElapsed } from './formatElapsed'
 import { deriveCurrentTask, deriveTodoTotals } from './readout/todoDerive'
@@ -55,7 +57,7 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
       data-slot="current-work-banner"
       data-testid="current-work-banner"
       aria-live="off"
-      className="flex h-6 shrink-0 items-center gap-1.5 px-4 text-xs text-muted-foreground"
+      className="mb-1 flex h-6 shrink-0 items-center gap-1.5 px-4 text-sm text-muted-foreground"
     >
       {elapsedMs !== null && (
         <>
@@ -68,11 +70,15 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
           <span
             aria-describedby={undefined}
             data-testid="current-work-banner-text"
-            className="block min-w-0 flex-1 truncate"
+            className="block min-w-0 flex-1 truncate text-accent-text"
           >
-            <span key={text} className="animate-in fade-in-0 duration-150 motion-reduce:animate-none">
+            <ShimmerText
+              key={text}
+              active={status === 'working'}
+              className="animate-in fade-in-0 duration-150 motion-reduce:animate-none"
+            >
               {text}
-            </span>
+            </ShimmerText>
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-md break-words">{text}</TooltipContent>

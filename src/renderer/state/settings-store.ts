@@ -22,6 +22,7 @@ interface SettingsState {
   setWordPredictionEnabled(enabled: boolean): Promise<void>
   /** Issue #1205 (FR-107): resolves `true` on success, so **Don't show again** only toasts a real change. */
   setShowAgentStoppedBar(enabled: boolean): Promise<boolean>
+  setAnimatedStatusText(enabled: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -142,5 +143,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
     return result.ok
+  },
+  setAnimatedStatusText: async (enabled) => {
+    const result = await window.refract.settings.setAnimatedStatusText(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
   }
 }))

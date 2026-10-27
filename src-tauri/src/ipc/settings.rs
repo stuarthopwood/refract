@@ -124,7 +124,7 @@ const READOUT_KINDS: [&str; 8] = [
     "current-work",
 ];
 
-fn require_bool(
+pub(super) fn require_bool(
     args: &[Value],
     index: usize,
     channel: &str,

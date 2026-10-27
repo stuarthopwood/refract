@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
 import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
@@ -29,6 +30,8 @@ export function AppearanceSection() {
   const setHolidayTouches = useSettingsStore((state) => state.setHolidayTouches)
   const activityText = useSettingsStore((state) => state.settings.activityText ?? 'plain')
   const setActivityText = useSettingsStore((state) => state.setActivityText)
+  const animatedStatusText = useSettingsStore((state) => state.settings.animatedStatusText !== false)
+  const setAnimatedStatusText = useSettingsStore((state) => state.setAnimatedStatusText)
   const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
   const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -264,6 +267,16 @@ export function AppearanceSection() {
           <ToggleGroupItem value="plain" className={SELECTED_SEGMENT_CLASS}>Plain</ToggleGroupItem>
           <ToggleGroupItem value="playful" className={SELECTED_SEGMENT_CLASS}>Playful</ToggleGroupItem>
         </ToggleGroup>
+      </div>
+      {/* Issue #1242 (FR-042): applies live; also lets the user stop the looping shimmer (WCAG 2.2.2). */}
+      <div className="mt-6">
+        <SettingSwitchRow
+          id="animated-status-text"
+          label="Animated status text"
+          description="A moving highlight on the status line above the message box while the agent is working. Always still when you have reduced motion on."
+          checked={animatedStatusText}
+          onCheckedChange={(checked) => void setAnimatedStatusText(checked)}
+        />
       </div>
     </div>
   )
