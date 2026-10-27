@@ -24,7 +24,7 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
-import { settleForScreenshot, dispatchNeutralPointerdown } from './verify-1048-holiday-touches-helpers.mjs';
+import { dispatchNeutralPointerdown } from './verify-1048-holiday-touches-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -133,7 +133,8 @@ async function main() {
     // ---- 3:1 contrast, bats and glyph, every theme ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
-      await settleForScreenshot(cdp);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 400 });
+      await sleep(600);
       const glyph = await cdp.evaluate(`(${CONTRAST_PROBE})('.watermark-mark-holiday svg')`);
       const bat = await cdp.evaluate(`(${CONTRAST_PROBE})('.holiday-ambient-loop-bat')`);
       assertTrue(!!glyph && glyph.contrast >= MIN_CONTRAST, `${theme.name}: watermark glyph at least ${MIN_CONTRAST}:1`, glyph);
