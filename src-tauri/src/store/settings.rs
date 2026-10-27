@@ -250,7 +250,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 21] = [
+        const KNOWN_FIELDS: [&str; 22] = [
             "version",
             "approvalMode",
             "sessionReadout",
