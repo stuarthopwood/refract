@@ -148,7 +148,7 @@ async function main() {
     await cdp.waitFor(`${SHIMMER}?.getAttribute('data-shimmer') === 'on'`, { timeoutMs: 5_000, label: 'Shimmer resumes with the switch on' });
 
     // Needs you: static, accent-coloured in every theme.
-    await cdp.waitFor(`/Waiting for your answer/.test(${LABEL}?.textContent ?? '')`, { timeoutMs: 30_000, label: 'Banner shows needs-you' });
+    await cdp.waitFor(`/Needs your input/.test(${LABEL}?.textContent ?? '')`, { timeoutMs: 30_000, label: 'Banner shows needs-you' });
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
       await sleep(300);
