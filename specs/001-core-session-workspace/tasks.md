@@ -5407,8 +5407,9 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [ ] T402 Extend `CollapsedLine` with a `clampLines` prop and a shared Show more clamp, per FR-118
   (missing)
 - [ ] T403 Add `MidTurnProseRow.tsx` (a "Note" `CollapsedLine`, first-line summary, icon distinct
-  from the thought row's, clamp at 8 lines) and render it from `TranscriptRow.tsx`; treat it as a
-  bookkeeping-free visible row in `transcriptRowVisibility.ts`, per FR-117 and FR-118 (missing)
+  from the thought row's, clamp at 8 lines) and render it from `TranscriptRow.tsx`; the row needs no
+  entry in `transcriptRowVisibility.ts` (prose is not bookkeeping and "Show tool calls" never
+  hides it), per FR-117 and FR-118 (missing)
 - [ ] T404 Verify live with the fake-omp harness (a multi-tool turn with mid-turn prose; check the
   collapse, the streaming switch, the clamp, the final reply untouched), update `docs/PLAN.md`,
   then run `node scripts/ci-local.mjs` per FR-117 and FR-118 (missing)
