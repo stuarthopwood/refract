@@ -434,7 +434,8 @@ export const IPC_REQUESTS = {
   TOKEN_GUARD_GET: 'tokenGuard.get',
   TOKEN_GUARD_SET: 'tokenGuard.set',
   TOKEN_GUARD_RESET: 'tokenGuard.reset',
-  TOKEN_GUARD_HANDOFF: 'tokenGuard.handoff', COPILOT_PLAN_USAGE: 'copilot.planUsage',
+  TOKEN_GUARD_HANDOFF: 'tokenGuard.handoff',
+  COPILOT_PLAN_USAGE: 'copilot.planUsage',
   ACCOUNTS_GITHUB_LIST: 'accounts.github.list',
   ACCOUNTS_GITHUB_ADD_START: 'accounts.github.addStart',
   ACCOUNTS_GITHUB_ADD_CANCEL: 'accounts.github.addCancel',
@@ -682,8 +683,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * returns this call's own written value, the same race-safety pattern as
      * `setApprovalMode`/`setWatermarkEnabled` above. Pushes `settings:changed`, no new event. */
     setShowSampleData(enabled: boolean): Promise<Result<Settings>>;
-    /** #514 (contracts/ipc.md): persists the whole `Settings` row and returns this call's own
-     * written value, same race-safety pattern as every other setter here. Pushes
+    /** #514 (contracts/ipc.md): persists the whole `Settings` row, same race-safety pattern as every other setter here. Pushes
      * `settings:changed`; turns OFF path-based image-attach detection on paste entirely when
      * `false` (pasting a clipboard image directly is never affected). */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
