@@ -1,24 +1,43 @@
 import * as React from 'react'
-import { ImageOffIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { loadMessageImage } from '@/lib/messageImageCache'
-import { formatByteSize } from '@/features/chat/attachments'
+import { formatByteSize, imageTypeLabel } from '@/lib/formatBytes'
+import { cn } from '@/lib/utils'
 import type { MessageImageData, TranscriptImageRef } from '../../shared/ipc-images'
+import { ImageThumbnail } from './ImageThumbnail'
 import { ImageViewer, type ViewerItem } from './ImageViewer'
 
 const MAX_VISIBLE_TILES = 4
 const SINGLE_IMAGE_MAX_HEIGHT_PX = 320
+const NEAR_VIEW_MARGIN = '200px'
 const INVALID_ID = 'invalid'
 
 type TileState = { status: 'loading' } | { status: 'ready'; data: MessageImageData } | { status: 'unavailable' }
 
-function useMessageImage(id: string): TileState {
+/** True once the element has come within ~200 px of the viewport; stays true after that. */
+function useNearView(ref: React.RefObject<Element | null>): boolean {
+  const [near, setNear] = React.useState(false)
+  React.useEffect(() => {
+    const element = ref.current
+    if (near || !element) return
+    if (typeof IntersectionObserver === 'undefined') {
+      setNear(true)
+      return
+    }
+    const observer = new IntersectionObserver((entries) => entries.some((entry) => entry.isIntersecting) && setNear(true), { rootMargin: NEAR_VIEW_MARGIN })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [near, ref])
+  return near
+}
+
+function useMessageImage(id: string, enabled: boolean): TileState {
   const [state, setState] = React.useState<TileState>(id === INVALID_ID ? { status: 'unavailable' } : { status: 'loading' })
   React.useEffect(() => {
     if (id === INVALID_ID) {
       setState({ status: 'unavailable' })
       return
     }
+    if (!enabled) return
     let cancelled = false
     setState({ status: 'loading' })
     loadMessageImage(id).then(
@@ -28,12 +47,8 @@ function useMessageImage(id: string): TileState {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, enabled])
   return state
-}
-
-function typeLabel(mimeType: string): string {
-  return mimeType.slice(mimeType.indexOf('/') + 1).toUpperCase()
 }
 
 interface TileProps {
@@ -46,39 +61,30 @@ interface TileProps {
 }
 
 function ImageTile({ image, index, total, single, overflow, onOpen }: TileProps) {
-  const state = useMessageImage(image.id)
-  const frame = cn('overflow-hidden rounded-md border border-border bg-muted', single ? 'inline-block max-w-full' : 'aspect-square w-full')
-
-  if (state.status === 'unavailable') {
-    return (
-      <div role="img" aria-label="Image no longer available" className={cn(frame, 'flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 p-2 text-center text-xs text-muted-foreground')}>
-        <ImageOffIcon aria-hidden className="size-5 shrink-0" />
-        <span aria-hidden>Image no longer available</span>
-      </div>
-    )
-  }
-
-  const ready = state.status === 'ready'
-  const position = total > 1 ? `Image ${index + 1} of ${total}` : 'Image'
-  const label = ready ? `${position}, ${typeLabel(state.data.mimeType)}, ${formatByteSize(state.data.byteLength)}. Open larger view` : `${position}, loading`
-  const reserve = !ready && image.width && image.height ? { aspectRatio: `${image.width} / ${image.height}` } : undefined
+  const cell = React.useRef<HTMLDivElement>(null)
+  const near = useNearView(cell)
+  const state = useMessageImage(image.id, near)
+  const position = total > 1 ? `Image ${index + 1} of ${total} attached to your message` : 'Image attached to your message'
+  const more = overflow > 0 ? `, plus ${overflow} more` : ''
+  let label: string
+  if (state.status === 'unavailable') label = `Image no longer available${more}`
+  else if (state.status === 'ready') label = `${position}, ${imageTypeLabel(state.data.mimeType)}, ${formatByteSize(state.data.byteLength)}${more}. Open larger view`
+  else label = `${position}, loading${more}. Open larger view`
 
   return (
-    <button
-      type="button"
-      aria-label={label}
-      disabled={!ready}
-      onClick={() => onOpen(index)}
-      className={cn(frame, 'relative block min-h-6 min-w-6 cursor-zoom-in focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default', !ready && 'animate-pulse motion-reduce:animate-none')}
-      style={reserve}
-    >
-      {ready && <img src={state.data.dataUrl} alt="" loading="lazy" className={single ? 'max-w-full object-contain' : 'size-full object-cover'} style={single ? { maxHeight: SINGLE_IMAGE_MAX_HEIGHT_PX } : undefined} />}
-      {overflow > 0 && (
-        <span aria-hidden className="absolute inset-0 flex items-center justify-center bg-black/50 text-sm font-medium text-white">
-          +{overflow}
-        </span>
-      )}
-    </button>
+    <div ref={cell} className={single ? 'max-w-full' : undefined}>
+      <ImageThumbnail
+        state={state.status}
+        src={state.status === 'ready' ? state.data.dataUrl : undefined}
+        label={label}
+        single={single}
+        maxHeight={SINGLE_IMAGE_MAX_HEIGHT_PX}
+        width={image.width}
+        height={image.height}
+        overflow={overflow}
+        onClick={() => onOpen(overflow > 0 ? MAX_VISIBLE_TILES : index)}
+      />
+    </div>
   )
 }
 
@@ -88,8 +94,9 @@ export interface MessageImageGridProps {
 }
 
 /** The images of one user message (Message image, CONTEXT.md): a single image at its natural size
- * (never upscaled, 320 px tall at most), several in a 2-across grid (3 when the bubble is wide)
- * with "+N" past four. Click opens the Image viewer over all of them, not just the visible tiles. */
+ * (never upscaled, 320 px tall at most), several in a 2-across grid (4 when the bubble is wide)
+ * with "+N" past four. Tiles fetch only when scrolled near view. Click opens the Image viewer over
+ * all of them, not just the visible tiles; the "+N" tile opens at the first hidden image. */
 export function MessageImageGrid({ images, className }: MessageImageGridProps) {
   const [viewerIndex, setViewerIndex] = React.useState<number | null>(null)
   const [lastIndex, setLastIndex] = React.useState(0)
@@ -104,8 +111,8 @@ export function MessageImageGrid({ images, className }: MessageImageGridProps) {
   }
 
   return (
-    <div role="group" aria-label="Attached images" className={cn(!single && '@container w-[30rem] max-w-full', className)}>
-      <div className={single ? undefined : 'grid grid-cols-2 gap-1 @md:grid-cols-3'}>
+    <div role="group" tabIndex={-1} aria-label="Attached images" className={cn('outline-none', !single && '@container w-[30rem] max-w-full', className)}>
+      <div className={single ? undefined : 'grid grid-cols-2 gap-1 @md:grid-cols-4'}>
         {visible.map((image, index) => (
           <ImageTile key={image.id + index} image={image} index={index} total={images.length} single={single} overflow={index === visible.length - 1 ? images.length - visible.length : 0} onOpen={open} />
         ))}
@@ -115,10 +122,7 @@ export function MessageImageGrid({ images, className }: MessageImageGridProps) {
         onOpenChange={(next) => !next && setViewerIndex(null)}
         items={items}
         index={viewerIndex ?? lastIndex}
-        onIndexChange={(next) => {
-          setLastIndex(next)
-          setViewerIndex(next)
-        }}
+        onIndexChange={open}
         title="Image"
       />
     </div>

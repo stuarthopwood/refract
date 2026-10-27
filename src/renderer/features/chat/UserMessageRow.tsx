@@ -105,7 +105,7 @@ export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps
               ))}
             </div>
           )}
-          {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-1.5" />}
+          {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-2" />}
           {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} className="text-chat-foreground" />}
           {/* #744: an image-only message whose images are missing still says so rather than render an empty bubble. */}
           {item.text.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}

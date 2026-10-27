@@ -17,7 +17,12 @@ export function ImagePreviewModal({ attachment, trigger }: ImagePreviewModalProp
   )
   return (
     <>
-      {React.cloneElement(trigger, { onClick: () => setOpen(true) })}
+      {React.cloneElement(trigger, {
+        onClick: (event) => {
+          trigger.props.onClick?.(event)
+          setOpen(true)
+        }
+      })}
       <ImageViewer open={open} onOpenChange={setOpen} items={items} index={0} onIndexChange={() => {}} title="Pasted image" />
     </>
   )

@@ -11,7 +11,7 @@
 - Q: Thumbnails generated in Rust? -> A: No. The Rust build has no image-decode crate and gains none. The backend serves the original bytes (already capped at 20 MiB and 40 MP) as a data URL on demand; the webview scales it with CSS; the renderer loads lazily per tile and keeps a small cache by image id.
 - Q: Where do the bytes of a live inline image live? -> A: In a bounded per-Session in-memory store in Rust, keyed by a generated id and evicted with the Session. A `blob:sha256:<hash>` reference uses the hash as its id and is read from OMP's blob folder.
 - Q: Scope? -> A: Viewer has previous and next with arrow keys, Esc and a close button, focus return, and shows type and size. No zoom or pan, no Copy image or Save as, no images from assistant or tool-result content, no optimistic-swap logic (pending attachments show as today until the user item lands).
-- Q: Layout defaults? -> A: One image at natural size up to the bubble width and 320 px tall, never upscaled. Two or more: a grid of equal cropped tiles, 2 across (3 when the bubble is wide), at most 4 tiles with `+N` on the last past that.
+- Q: Layout defaults? -> A: One image at natural size up to the bubble width and 320 px tall, never upscaled. Two or more: a grid of equal cropped tiles, 2 across (4 when the bubble is wide), at most 4 tiles with `+N` on the last past that.
 - Q: Glossary? -> A: **Message image** and **Image viewer** added to `CONTEXT.md`.
 - Clarify pass (2026-10-27, `/speckit.clarify`): no open ambiguities beyond FR-005's store scope, resolved above. An unsupported or over-cap image part yields an image entry the viewer shows as unavailable (the message is never dropped). Opaque OMP strings other than `blob:sha256:` and valid base64 are treated as invalid inline data.
 - Both live frame shapes (inline base64 and `blob:sha256:` reference) are read defensively, branching on the value's own prefix (probe: live echo is inline, history is a blob reference).
@@ -25,7 +25,7 @@ A developer pastes two screenshots, types a question and sends. The bubble shows
 **Acceptance Scenarios**:
 
 1. **Given** a message with one image, **When** it appears in the transcript, **Then** the image shows above the text at natural size up to the bubble width and 320 px tall, never upscaled, with a 1 px border.
-2. **Given** a message with six images, **Then** four tiles show in a 2-across grid (3 when wide), the last labelled `+2`.
+2. **Given** a message with six images, **Then** four tiles show in a 2-across grid (4 when wide), the last labelled `+2`.
 3. **Given** a message with only images, **Then** there is no empty text block.
 4. **Given** the pane is 320 px wide, **Then** nothing overflows horizontally and the layout does not jump as images load (the aspect ratio is reserved when the size is known).
 5. **Given** a message with no images, **Then** the bubble is unchanged.
