@@ -684,9 +684,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * returns this call's own written value, the same race-safety pattern as
      * `setApprovalMode`/`setWatermarkEnabled` above. Pushes `settings:changed`, no new event. */
     setShowSampleData(enabled: boolean): Promise<Result<Settings>>;
-    /** #514 (contracts/ipc.md): persists the whole `Settings` row, same race-safety pattern as every other setter here. Pushes
-     * `settings:changed`; turns OFF path-based image-attach detection on paste entirely when
-     * `false` (pasting a clipboard image directly is never affected). */
+    /** #514 (contracts/ipc.md): whole-row persist; `false` turns OFF path-based image-attach detection on paste (a pasted clipboard image is never affected). */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setShowContextUsageBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1082 (spec 004 FR-034).
     setShowAiCredits(enabled: boolean): Promise<Result<Settings>>; // #1238.
