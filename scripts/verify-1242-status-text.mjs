@@ -154,7 +154,7 @@ async function main() {
       await sleep(300);
       const themeAccent = await resolveCssVarColor(cdp, '--accent-text', 'color');
       const s = await shimmerState(cdp);
-      assertTrue(s?.mode === 'off' && s.animation === 'none', `${theme.name}: needs-you is static`, s);
+      assertTrue(s?.mode === 'off' && s.animation !== 'text-shimmer-sweep', `${theme.name}: needs-you is static`, s);
       const color = await cdp.evaluate(`getComputedStyle(${LABEL}).color`);
       assertTrue(color === themeAccent, `${theme.name}: label colour is --accent-text`, { themeAccent, color });
       await shot(cdp, `needs-you-${theme.id}.png`);

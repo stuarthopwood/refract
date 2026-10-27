@@ -1,6 +1,7 @@
 // Issue #687 (spec 004 FR-035 to FR-040, FR-042): the current-work banner, one line directly above
 // the composer: elapsed time muted, label in the accent text colour with the shared shimmer while
-// the Session is working (static when it needs you). Shown while the Session is working or needs you, hidden when idle, gated by
+// the Session is working (static when it needs you; the sweep is not restarted by a label change).
+// Shown while the Session is working or needs you, hidden when idle, gated by
 // `sessionReadout['current-work']`. One per ChatPane (each split pane mounts its own, keyed by
 // `sessionId`). Text comes from the shared pure `deriveActivity` (src/shared/activity.ts) and is
 // rendered as plain text only. No spinner, no stop control (the composer and chat header already
@@ -73,7 +74,7 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
             className="block min-w-0 flex-1 truncate text-accent-text"
           >
             <ShimmerText
-              key={text}
+              key={status === 'working' ? 'working' : text}
               active={status === 'working'}
               className="animate-in fade-in-0 duration-150 motion-reduce:animate-none"
             >
