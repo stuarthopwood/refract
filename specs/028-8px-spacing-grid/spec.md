@@ -2,7 +2,7 @@
 
 **Feature Branch**: `8px-grid-spacing`
 **Status**: Draft
-**Input**: Issue #1252 (UI polish, `p1`). It supersedes the "Spacing grid" rule decided in #474 (2026-10-08) and the 28px control sizes. Decisions: the 2026-10-27 grill recorded in the issue body, and the 2026-10-27 pickup grill below. Numbered 027 so it cannot clash with 026.
+**Input**: Issue #1252 (UI polish, `p1`). It supersedes the "Spacing grid" rule decided in #474 (2026-10-08) and the 28px control sizes. Decisions: the 2026-10-27 grill recorded in the issue body, and the 2026-10-27 pickup grill below. Numbered 028 so it cannot clash with 026 or 027 (#1246).
 
 ## Clarifications
 

@@ -292,7 +292,7 @@ Every run of consecutive concern-severity advisories in one turn with nothing el
 _Avoid_: concern group, advisory batch
 
 **Spacing grid**:
-The 8px grid with a 4px half-step that every padding, margin and gap in `src/renderer` follows: allowed steps 4, 8, 16, 24, 32, 40 and 48 px (plus 0), 4px only for tight icon-to-text gaps and inline chip padding. Control heights are 24px (`xs`/`sm`) and 32px (`default`); icon boxes are 8, 16, 24 or 32 px. Enforced by `pnpm check:spacing`, with exceptions in an allowlist file. Supersedes the 4px grid of #474 (issue #1252, `specs/027-8px-spacing-grid/`).
+The 8px grid with a 4px half-step that every padding, margin and gap in `src/renderer` follows: allowed steps 4, 8, 16, 24, 32, 40 and 48 px (plus 0), 4px only for tight icon-to-text gaps and inline chip padding. Control heights are 24px (`xs`/`sm`) and 32px (`default`); icon boxes are 8, 16, 24 or 32 px. Enforced by `pnpm check:spacing`, with exceptions in an allowlist file. Supersedes the 4px grid of #474 (issue #1252, `specs/028-8px-spacing-grid/`).
 _Avoid_: 4px grid, spacing scale
 
 ## Flagged ambiguities

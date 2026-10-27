@@ -1,6 +1,6 @@
 # Implementation Plan: 8px spacing grid with a 4px half-step
 
-**Spec**: `specs/027-8px-spacing-grid/spec.md` | **Issue**: #1252 | **Depends on**: #1246 (Geist fonts, PR #1266) merged first, because it touches the same renderer files app-wide.
+**Spec**: `specs/028-8px-spacing-grid/spec.md` | **Issue**: #1252 | **Depends on**: #1246 (Geist fonts, PR #1266) merged first, because it touches the same renderer files app-wide.
 
 ## Approach
 
