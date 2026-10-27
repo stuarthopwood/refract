@@ -20,6 +20,13 @@
 - Q: Does the composer move to the Code font here, or wait for #839? → A: In scope now. The composer textarea and its mirrors (ghost text, chip overlay, command pill) use the Code font so glyph positions stay aligned.
 - Q: Where does the ligatures switch live? → A: Settings > Chat, as the issue proposes.
 
+### Session 2026-10-27 (clarify step; Stuart was not asked again, each answer is resolved from the issue and the code and flagged for review)
+
+- Q: How does the ligature setting reach CSS? → A: Decided (worker, from code; flag for review): the settings store sets `data-code-ligatures="off"` on `document.documentElement` when `codeLigatures === false`; one CSS rule turns `font-variant-ligatures` off for `code, pre, kbd`, the composer text class and anything using `font-code`. Absent or true means on, the same default shape as `animatedStatusText`.
+- Q: Do Rust and the shared IPC contract change? → A: Decided (worker, from code; flag for review): yes. A `codeLigatures` boolean is added to the Rust settings store, one IPC request (`settings.setCodeLigatures`), the bridge, `ipc.ts` and `model.ts`, copying the #1242 pattern file for file; `model.ts` gains the field on its existing line, so the file-size baseline holds.
+- Q: What does the Readiness brand header become? → A: Decided (worker, from code; flag for review): it keeps `font-brand` (Geist) and follows the scale: headline `font-bold` renders 600, tagline `font-medium` renders 400. Brand and UI font are now the same family, but `--font-brand` stays as the named token.
+- Q: Does `font-light` (300) matter? → A: Decided (worker, from code; flag for review): no utility uses it; it is left at Tailwind's default.
+- Q: Windows font hinting at 300 on small text? → A: Decided (worker, from code; flag for review): judged in the live check by screenshot at 12px and 13px chips; no size changes in this issue.
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Lighter, consistent text everywhere (Priority: P1)
