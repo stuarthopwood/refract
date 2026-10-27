@@ -1,5 +1,5 @@
-// Real, valid PNG encoder for the #513 live check (no dependencies): a gradient of two colours
-// with a one-pixel-grid pattern so a thumbnail is visibly an image, not a flat swatch.
+// Real, valid PNG encoder for the #513 live check (no dependencies): a flat left-to-right
+// gradient so a thumbnail is visibly an image, not a flat swatch, yet tiny once deflated.
 import { deflateSync } from 'node:zlib';
 
 const CRC_TABLE = (() => {
@@ -27,7 +27,8 @@ function chunk(type, data) {
   return out;
 }
 
-/** `from`/`to` are [r, g, b]; the gradient runs left to right with a diagonal grid overlay. */
+/** `from`/`to` are [r, g, b]; the gradient runs left to right. Rows are identical (compresses to
+ * a few KB, so each base64 env var stays far below the Windows 32,767-char limit). */
 export function makePng(width, height, from, to) {
   const stride = width * 3 + 1;
   const raw = Buffer.alloc(stride * height);
@@ -35,9 +36,8 @@ export function makePng(width, height, from, to) {
     raw[y * stride] = 0;
     for (let x = 0; x < width; x += 1) {
       const t = x / Math.max(1, width - 1);
-      const grid = (x + y) % 50 < 3 ? 40 : 0;
       for (let c = 0; c < 3; c += 1) {
-        raw[y * stride + 1 + x * 3 + c] = Math.min(255, Math.round(from[c] + (to[c] - from[c]) * t) + grid);
+        raw[y * stride + 1 + x * 3 + c] = Math.min(255, Math.round(from[c] + (to[c] - from[c]) * t));
       }
     }
   }

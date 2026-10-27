@@ -22,7 +22,15 @@ export function probeBubble(index) {
       const emptyBlocks = Array.from(contentEl.querySelectorAll('p')).filter((el) => !group.contains(el) && el.textContent.trim() === '');
       const text = textNodes.map((el) => el.textContent.trim()).join(' | ');
       const groupRect = group.getBoundingClientRect();
+      const tileRects = tiles.map((t) => t.getBoundingClientRect());
+      const tileBorder = tiles[0] ? getComputedStyle(tiles[0]).borderTopWidth : null;
       return {
+        tileLabels: tiles.map((t) => t.getAttribute('aria-label')),
+        tileImgAlts: imgs.map((i) => i.getAttribute('alt')),
+        minTileSize: tileRects.length ? Math.min(...tileRects.map((r) => Math.min(r.width, r.height))) : 0,
+        tileBorder,
+        docOverflowX: document.documentElement.scrollWidth > window.innerWidth,
+        groupOverflowX: group.scrollWidth > group.clientWidth,
         tiles: tiles.length,
         imgs: imgs.length,
         imgSrcData: imgs.length > 0 && imgs.every((i) => i.src.startsWith('data:')),
@@ -52,7 +60,10 @@ export function viewerProbe() {
       if (!dialog) return { error: 'no dialog' };
       const title = dialog.querySelector('h2, [data-slot="dialog-title"]');
       const img = dialog.querySelector('img[alt="Attached image, full size"]');
+      const desc = dialog.querySelector('[data-slot="dialog-description"]');
       return {
+        description: desc ? desc.textContent.trim() : null,
+        dialogHeight: Math.round(dialog.getBoundingClientRect().height * 10) / 10,
         title: title ? title.textContent.trim() : null,
         src: img ? img.src : null,
         srcData: !!img && img.src.startsWith('data:'),

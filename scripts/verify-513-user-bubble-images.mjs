@@ -28,6 +28,13 @@ const BLOBS_DIR = path.join(os.homedir(), '.omp', 'agent', 'blobs');
 const NARROW = { width: 760, height: 900 };
 const WIDE = { width: 1700, height: 1000 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const MAX_ENV_B64_CHARS = 20_000;
+
+/** Tiles load lazily near the viewport: scroll the Nth group into view, then wait until none is loading and `imgs` images exist. */
+async function revealGroup(cdp, groupIndex, imgs) {
+  await cdp.evaluate(`document.querySelectorAll('${GROUP_SEL}')[${groupIndex}]?.scrollIntoView({ block: 'center' })`);
+  await cdp.waitFor(`(() => { const g = document.querySelectorAll('${GROUP_SEL}')[${groupIndex}]; return !!g && g.querySelectorAll('button[aria-label*=", loading"]').length === 0 && g.querySelectorAll('img').length >= ${imgs}; })()`, { timeoutMs: 30_000, label: `group ${groupIndex} tiles loaded` });
+}
 
 function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, pathPrepend, extraEnv = {}, logFile }) {
   const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
@@ -92,21 +99,26 @@ async function main() {
     console.log(`verify-513: shots dir ${SHOTS_DIR}`);
 
     // Images: distinct colours so six tiles/viewer steps are distinguishable (identical bytes
-    // would share one content id).
+    // would share one content id). Flat gradients keep each env var far below the Windows limit.
     const wide = makePng(600, 300, [20, 90, 200], [240, 120, 30]);
     const palette = [[200, 40, 40], [40, 160, 60], [40, 70, 200], [220, 170, 20], [150, 50, 180], [30, 170, 170]];
     const six = palette.map((c, i) => makePng(120 + i * 20, 90, c, [255 - c[0], 255 - c[1], 255 - c[2]]));
     const imageOnly = makePng(300, 200, [90, 90, 90], [250, 250, 250]);
     const blobPng = makePng(240, 160, [10, 10, 10], [200, 30, 120]);
-    const b64 = (b) => b.toString('base64');
+    const b64 = (b) => {
+      const text = b.toString('base64');
+      if (text.length > MAX_ENV_B64_CHARS) throw new Error(`image payload is ${text.length} base64 chars (> ${MAX_ENV_B64_CHARS}); too large for an env var`);
+      return text;
+    };
 
-    // Blob seeding: unique random name, never an existing file (wx flag fails if present).
+    // Blob seeding: unique random name, extensionless (the first path the app tries), never an
+    // existing file (wx flag fails if present).
     const blobHash = randomBytes(32).toString('hex');
     if (!existsSync(BLOBS_DIR)) {
       mkdirSync(BLOBS_DIR, { recursive: true });
       createdBlobsDir = true;
     }
-    blobFile = path.join(BLOBS_DIR, `${blobHash}.png`);
+    blobFile = path.join(BLOBS_DIR, blobHash);
     writeFileSync(blobFile, blobPng, { flag: 'wx' });
     console.log(`verify-513: seeded blob ${blobFile}`);
 
@@ -181,13 +193,14 @@ async function main() {
     await cdp2.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session reattached' });
     await setViewport(cdp2, NARROW);
     await cdp2.waitFor(`document.querySelector('[aria-label="Transcript"]')?.textContent.includes('Blob image message.')`, { timeoutMs: 30_000, label: 'History rendered' });
-    // Wait for every non-invalid tile to finish loading (img present or placeholder).
-    await cdp2.waitFor(`(() => { const t = document.querySelector('[aria-label="Transcript"]'); return t.querySelectorAll('${GROUP_SEL} button[aria-label$="loading"]').length === 0 && t.querySelectorAll('${GROUP_SEL} img').length >= 7; })()`, { timeoutMs: 30_000, label: 'All image tiles loaded' });
+    // Tiles load lazily (IntersectionObserver, ~200px margin): scroll each group into view, then wait.
+    const GROUP_IMGS = [1, 4, 1, 0, 1];
+    for (let g = 0; g < GROUP_IMGS.length; g += 1) await revealGroup(cdp2, g, GROUP_IMGS[g]);
 
     // ---- Narrow ----
     await cdp2.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
     await cdp2.evaluate(`document.querySelector('[data-slot="message-scroller-viewport"]')?.scrollTo(0, 0)`);
-    await sleep(300);
+    await cdp2.waitFor(`(document.querySelector('[data-slot="message-scroller-viewport"]')?.scrollTop ?? 0) === 0`, { timeoutMs: 5000, label: 'scrolled to top' });
     await cdp2.screenshot(path.join(SHOTS_DIR, '01-narrow-top.png'));
     const narrow = {};
     for (const [name, i] of [['single', 0], ['six', 1], ['imageOnly', 2], ['invalid', 3], ['blob', 4]]) narrow[name] = await cdp2.evaluate(probeBubble(i));
@@ -196,6 +209,8 @@ async function main() {
     // (a) single
     const s = narrow.single;
     check(s.tiles === 1 && s.imgs === 1 && s.imgSrcData, 'single: one tile with an <img> whose src is a data: URL.', `single: expected 1 tile + data: img, got ${JSON.stringify(s)}`);
+    check(/^Image attached to your message, PNG, [\d.]+ (B|KB|MB)\. Open larger view$/.test(s.tileLabels[0] ?? ''), `single: tile name "${s.tileLabels[0]}".`, `single: tile name "${s.tileLabels[0]}" does not match "Image attached to your message, TYPE, size. Open larger view".`);
+    check(s.tileImgAlts.every((a) => a === ''), 'single: tile <img> has alt="".', `single: tile <img> alt ${JSON.stringify(s.tileImgAlts)}, expected "".`);
     check(s.imgH > 0 && s.imgH <= 320.5, `single: image is ${s.imgH}px tall (<= 320).`, `single: image is ${s.imgH}px tall (> 320).`);
     check(s.imgW <= s.natW && s.imgH <= s.natH, `single: rendered ${s.imgW}x${s.imgH} within natural ${s.natW}x${s.natH} (not upscaled).`, `single: rendered ${s.imgW}x${s.imgH} exceeds natural ${s.natW}x${s.natH}.`);
     check(s.natW === 600 && s.natH === 300, 'single: natural size is the generated 600x300.', `single: natural size ${s.natW}x${s.natH}, expected 600x300.`);
@@ -207,6 +222,13 @@ async function main() {
     check(x.overlays.length === 1 && x.overlays[0].text === '+2' && x.overlays[0].tileIndex === 3, `six: a single "+2" overlay on the 4th tile (${JSON.stringify(x.overlays)}).`, `six: overlay wrong ${JSON.stringify(x.overlays)}.`);
     const nCols = x.columns;
     console.log(`verify-513: narrow six grid columns=${nCols} groupWidth=${x.groupWidth}`);
+    x.tileLabels.forEach((label, i) => {
+      const more = i === 3 ? ', plus 2 more' : '';
+      check(new RegExp(`^Image ${i + 1} of 6 attached to your message, PNG, [\\d.]+ (B|KB|MB)${more}\\. Open larger view$`).test(label ?? ''), `six: tile ${i + 1} name "${label}".`, `six: tile ${i + 1} name "${label}" does not match the expected pattern${more ? ' (with ", plus 2 more")' : ''}.`);
+    });
+    check(x.tileImgAlts.every((a) => a === ''), 'six: every tile <img> has alt="".', `six: tile <img> alts ${JSON.stringify(x.tileImgAlts)}.`);
+    check(x.minTileSize >= 24, `six: smallest tile side ${Math.round(x.minTileSize)}px (>= 24).`, `six: smallest tile side ${x.minTileSize}px (< 24).`);
+    check(x.tileBorder === '1px', 'six: tiles have a 1px border.', `six: tile border width ${x.tileBorder}, expected 1px.`);
     // (c) image-only
     const o = narrow.imageOnly;
     check(o.tiles === 1 && o.imgs === 1, 'image-only: one image tile renders.', `image-only: expected one tile, got ${JSON.stringify(o)}.`);
@@ -219,24 +241,38 @@ async function main() {
     // (e) blob
     const bl = narrow.blob;
     check(bl.tiles === 1 && bl.imgs === 1 && bl.imgSrcData, 'blob: the blob:sha256 reference resolves to a data: URL image (images.get).', `blob: expected a loaded image, got ${JSON.stringify(bl)}.`);
+    check(!narrow.six.docOverflowX && !narrow.six.groupOverflowX, 'narrow: no horizontal overflow (document and group).', `narrow: horizontal overflow ${JSON.stringify({ doc: narrow.six.docOverflowX, group: narrow.six.groupOverflowX })}.`);
 
     // ---- Viewer (narrow window) ----
-    const six0 = await cdp2.evaluate(`(() => { const g = document.querySelectorAll('${GROUP_SEL}')[1]; g.scrollIntoView({block:'center'}); return true; })()`);
-    await sleep(300);
+    await revealGroup(cdp2, 1, 4);
     await cdp2.screenshot(path.join(SHOTS_DIR, '02-narrow-six-grid.png'));
-    const tileLabel = await cdp2.evaluate(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[1].getAttribute('aria-label')`);
-    await cdp2.click(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[1]`);
+    // The "+2" tile (4th) opens the viewer at the first hidden image (5th), not at the 4th.
+    const tileLabel = await cdp2.evaluate(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[3].getAttribute('aria-label')`);
+    await cdp2.click(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[3]`);
     await cdp2.waitFor(`!!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { label: 'Viewer opened with image' });
     const seen = [];
     let v = await cdp2.evaluate(viewerProbe());
-    check(v.title === 'Image 2 of 6', `viewer: opened on the clicked (2nd) tile -- title "${v.title}".`, `viewer: title "${v.title}", expected "Image 2 of 6".`);
+    check(v.title === 'Image 5 of 6', `viewer: the +2 tile opened the first hidden image -- title "${v.title}".`, `viewer: title "${v.title}", expected "Image 5 of 6".`);
+    check(/PNG, [\d.]+ (B|KB|MB)/.test(v.description ?? ''), `viewer: shows type and size ("${v.description}").`, `viewer: description "${v.description}" lacks type and size.`);
+    const height5 = v.dialogHeight;
     await cdp2.screenshot(path.join(SHOTS_DIR, '03-viewer-open.png'));
-    // Navigate: Left to 1, then Right through 2..6, then wrap.
-    await key(cdp2, 'ArrowLeft', 'ArrowLeft');
-    await cdp2.waitFor(`document.querySelector('[role="dialog"] [id^="radix-"]')?.textContent.includes('Image 1 of 6')`, { timeoutMs: 5000, label: 'ArrowLeft -> 1 of 6' });
+    // Next button: 5 -> 6, then 6 -> 1 (wrap); the dialog must not change height between images.
+    const dialogBtn = (label) => `document.querySelector('[role="dialog"] button[aria-label="${label}"]')`;
+    await cdp2.click(dialogBtn('Next image'));
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 6 of 6') && !!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { timeoutMs: 8000, label: 'Next button -> 6 of 6' });
+    pass('viewer: the Next button moves 5 -> 6.');
+    await cdp2.click(dialogBtn('Next image'));
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 1 of 6') && !!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { timeoutMs: 8000, label: 'Next button wraps -> 1 of 6' });
+    v = await cdp2.evaluate(viewerProbe());
+    check(v.dialogHeight === height5, `viewer: dialog height unchanged between images (${height5}px vs ${v.dialogHeight}px).`, `viewer: dialog height changed from ${height5}px (image 5) to ${v.dialogHeight}px (image 1).`);
+    await cdp2.click(dialogBtn('Previous image'));
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 6 of 6')`, { timeoutMs: 8000, label: 'Previous button wraps -> 6 of 6' });
+    pass('viewer: the Previous button wraps 1 -> 6.');
+    // Keys: Right wraps to 1, then Right through 2..6.
+    await key(cdp2, 'ArrowRight', 'ArrowRight');
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 1 of 6') && !!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { timeoutMs: 8000, label: 'ArrowRight wraps -> 1 of 6' });
     v = await cdp2.evaluate(viewerProbe());
     seen.push(v.src);
-    check(v.title === 'Image 1 of 6', 'viewer: ArrowLeft from 2 goes to "Image 1 of 6".', `viewer: ArrowLeft gave "${v.title}".`);
     for (let n = 2; n <= 6; n += 1) {
       await key(cdp2, 'ArrowRight', 'ArrowRight');
       await cdp2.waitFor(`document.querySelector('[role="dialog"] img[alt="Attached image, full size"]') && document.querySelector('[role="dialog"]').textContent.includes('Image ${n} of 6')`, { timeoutMs: 8000, label: `ArrowRight -> ${n} of 6` });
@@ -252,33 +288,39 @@ async function main() {
     await key(cdp2, 'Escape', 'Escape');
     await cdp2.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 5000, label: 'Esc closes viewer' });
     pass('viewer: Esc closes the dialog.');
-    await sleep(300);
-    const focus = await cdp2.evaluate(`(() => { const a = document.activeElement; return { label: a?.getAttribute('aria-label') ?? null, tag: a?.tagName }; })()`);
-    // The viewer index is now the wrapped/last one; focus returns to the opener tile (the 2nd).
-    check(focus.label === tileLabel, `viewer: focus returned to the tile that opened it ("${focus.label}").`, `viewer: focus is ${JSON.stringify(focus)}, expected the opener tile "${tileLabel}".`);
+    await cdp2.waitFor(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(tileLabel)}`, { timeoutMs: 5000, label: 'focus back on opener tile' });
+    pass(`viewer: Esc returned focus to the tile that opened it ("${tileLabel}").`);
+    // Close button: open from the 2nd tile, close with the button, focus returns to that tile.
+    const tile2Label = await cdp2.evaluate(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[1].getAttribute('aria-label')`);
+    await cdp2.click(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[1]`);
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 2 of 6')`, { timeoutMs: 5000, label: 'viewer at 2 of 6' });
+    pass('viewer: a visible tile opens the viewer at its own index ("Image 2 of 6").');
+    await cdp2.click(`document.querySelector('[role="dialog"] [data-slot="dialog-close"]')`);
+    await cdp2.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 5000, label: 'Close button closes viewer' });
+    await cdp2.waitFor(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(tile2Label)}`, { timeoutMs: 5000, label: 'focus back after Close button' });
+    pass('viewer: the Close button closes the dialog and focus returns to the opener tile.');
 
     // ---- Wide ----
     await setViewport(cdp2, WIDE);
-    await cdp2.evaluate(`document.querySelectorAll('${GROUP_SEL}')[1].scrollIntoView({block:'center'})`);
-    await sleep(500);
+    await revealGroup(cdp2, 1, 4);
     const wideSix = await cdp2.evaluate(probeBubble(1));
     const wideSingle = await cdp2.evaluate(probeBubble(0));
     console.log(`verify-513: wide six columns=${wideSix.columns} groupWidth=${wideSix.groupWidth}; narrow columns=${nCols} groupWidth=${x.groupWidth}`);
     check(nCols === 2, `grid: ${nCols} columns at the narrow pane (group ${Math.round(x.groupWidth)}px).`, `grid: ${nCols} columns at narrow (group ${Math.round(x.groupWidth)}px), expected 2.`);
-    check(wideSix.columns === 3, `grid: ${wideSix.columns} columns when wide (group ${Math.round(wideSix.groupWidth)}px).`, `grid: ${wideSix.columns} columns when wide (group ${Math.round(wideSix.groupWidth)}px), expected 3.`);
+    check(wideSix.columns === 4, `grid: ${wideSix.columns} columns when wide (group ${Math.round(wideSix.groupWidth)}px).`, `grid: ${wideSix.columns} columns when wide (group ${Math.round(wideSix.groupWidth)}px), expected 4.`);
+    check(!wideSix.docOverflowX && !wideSix.groupOverflowX, 'wide: no horizontal overflow (document and group).', `wide: horizontal overflow ${JSON.stringify({ doc: wideSix.docOverflowX, group: wideSix.groupOverflowX })}.`);
     check(wideSingle.imgH <= 320.5 && wideSingle.imgW <= wideSingle.natW, `single (wide): ${wideSingle.imgW}x${wideSingle.imgH}, still not upscaled and <= 320 tall.`, `single (wide): ${wideSingle.imgW}x${wideSingle.imgH} violates the cap.`);
     await cdp2.screenshot(path.join(SHOTS_DIR, '05-wide-six-grid.png'));
     await cdp2.evaluate(`document.querySelector('[data-slot="message-scroller-viewport"]')?.scrollTo(0, 0)`);
-    await sleep(300);
+    await cdp2.waitFor(`(document.querySelector('[data-slot="message-scroller-viewport"]')?.scrollTop ?? 0) === 0`, { timeoutMs: 5000, label: 'scrolled to top (wide)' });
     await cdp2.screenshot(path.join(SHOTS_DIR, '06-wide-top.png'));
 
-    // Narrower pane (~320px bubble): shrink the window to its practical floor and report.
+    // Narrowest practical window (~320px bubble).
     await setViewport(cdp2, { width: 400, height: 900 });
-    await cdp2.evaluate(`document.querySelectorAll('${GROUP_SEL}')[1].scrollIntoView({block:'center'})`);
-    await sleep(500);
+    await revealGroup(cdp2, 1, 4);
     const tiny = await cdp2.evaluate(probeBubble(1));
     console.log(`verify-513: 400px window: six columns=${tiny.columns} groupWidth=${tiny.groupWidth}`);
-    pass(`informational: 400px window -> group ${Math.round(tiny.groupWidth)}px wide, ${tiny.columns} columns.`);
+    check(!tiny.docOverflowX && !tiny.groupOverflowX, `400px: no horizontal overflow (group ${Math.round(tiny.groupWidth)}px, ${tiny.columns} columns).`, `400px: horizontal overflow ${JSON.stringify({ doc: tiny.docOverflowX, group: tiny.groupOverflowX })}.`);
     await cdp2.screenshot(path.join(SHOTS_DIR, '07-tiny-six-grid.png'));
 
     const report = { gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length ? 1 : 0 };
@@ -304,7 +346,7 @@ async function main() {
     cdp2?.close();
     if (child1) await stopLauncher(child1);
     if (child2) await stopLauncher(child2);
-    if (blobFile && path.dirname(blobFile) === BLOBS_DIR && /^[0-9a-f]{64}\.png$/.test(path.basename(blobFile)) && existsSync(blobFile)) {
+    if (blobFile && path.dirname(blobFile) === BLOBS_DIR && /^[0-9a-f]{64}$/.test(path.basename(blobFile)) && existsSync(blobFile)) {
       unlinkSync(blobFile);
       console.log(`verify-513: removed seeded blob ${blobFile}`);
       if (createdBlobsDir) {
