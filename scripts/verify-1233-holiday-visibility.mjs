@@ -46,29 +46,38 @@ const MIN_CONTRAST = 3;
 // Composites `color` at `opacity` over `--background` through a canvas (the same sRGB-gamma
 // blend the compositor uses) and returns the WCAG contrast of the result against the background.
 const CONTRAST_PROBE = `(selector) => {
-  const el = document.querySelector(selector);
-  if (!el) return null;
+  const els = Array.from(document.querySelectorAll(selector));
+  if (els.length === 0) return null;
   const probe = document.createElement('canvas');
   probe.width = probe.height = 1;
   const ctx = probe.getContext('2d', { willReadFrequently: true });
-  const style = getComputedStyle(el);
-  const rootStyle = getComputedStyle(document.documentElement);
   const bgHost = document.createElement('div');
-  bgHost.style.color = getComputedStyle(document.querySelector('[class*="theme-"]') ?? document.body).getPropertyValue('--background') || rootStyle.getPropertyValue('--background');
+  bgHost.style.color = getComputedStyle(document.documentElement).getPropertyValue('--background');
   document.body.appendChild(bgHost);
   const bgColor = getComputedStyle(bgHost).color;
   bgHost.remove();
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, 1, 1);
   const bg = Array.from(ctx.getImageData(0, 0, 1, 1).data);
-  ctx.globalAlpha = Number(style.opacity);
-  ctx.fillStyle = style.color;
-  ctx.fillRect(0, 0, 1, 1);
-  const fg = Array.from(ctx.getImageData(0, 0, 1, 1).data);
   const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
   const lum = (p) => 0.2126 * lin(p[0]) + 0.7152 * lin(p[1]) + 0.0722 * lin(p[2]);
-  const a = lum(fg), b = lum(bg);
-  return { opacity: style.opacity, color: style.color, bg, fg, contrast: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+  let worst = null;
+  for (const el of els) {
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const visible = style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    ctx.fillStyle = bgColor;
+    ctx.globalAlpha = 1;
+    ctx.fillRect(0, 0, 1, 1);
+    ctx.globalAlpha = Number(style.opacity);
+    ctx.fillStyle = style.color;
+    ctx.fillRect(0, 0, 1, 1);
+    const fg = Array.from(ctx.getImageData(0, 0, 1, 1).data);
+    const a = lum(fg), b = lum(bg);
+    const contrast = visible ? (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) : 0;
+    if (!worst || contrast < worst.contrast) worst = { count: els.length, visible, opacity: style.opacity, color: style.color, bg, fg, contrast };
+  }
+  return worst;
 }`;
 
 async function main() {

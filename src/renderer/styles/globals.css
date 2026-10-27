@@ -156,6 +156,9 @@
      theme-independent since it is a flat alpha over whatever `--muted-foreground`/`--background`
      resolve to per theme. Documented ceiling for a future aesthetic tuning pass: 0.12. */
   --watermark-opacity: 0.06;
+  /* #1233: safe default for the Halloween artwork (bats and glyph); every `.theme-*` block
+     overrides it with the value that gives about 3:1 against its own background. */
+  --holiday-artwork-opacity: 0.58;
 }
 
 .theme-dark {
@@ -1394,8 +1397,8 @@
  * fallback): one randomly-chosen bat flies for about 4s every 90-180s via a single
  * `Element.animate()` call in `HolidayAmbientLoop.tsx` itself -- genuinely NO animation,
  * CSS or JS, running between flights, so `document.getAnimations()` is empty almost all the
- * time. Single colour (`--muted-foreground`, the same token the watermark itself uses), very
- * low constant opacity. */
+ * time. Single colour (`--muted-foreground`, the same token the watermark itself uses) at the
+ * per-theme `--holiday-artwork-opacity` (#1233: about 3:1 against the theme background). */
 .holiday-ambient-loop-bat {
   color: var(--muted-foreground);
   opacity: var(--holiday-artwork-opacity);
@@ -1414,7 +1417,7 @@
 .holiday-ambient-loop-bat-wrap:nth-child(2) { top: 32%; left: 55%; }
 .holiday-ambient-loop-bat-wrap:nth-child(3) { top: 58%; left: 22%; }
 
-@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+@media (prefers-reduced-motion: reduce), (forced-colors: active), (prefers-reduced-transparency: reduce) {
   .holiday-ambient-loop {
     display: none;
   }

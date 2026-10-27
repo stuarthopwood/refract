@@ -9,11 +9,13 @@
 //
 // Issue #1048 (Holiday touches): in season, with the "Holiday touches" setting not `'off'`,
 // this renders the active holiday's own icon (`HOLIDAY_CONTENT`) INSTEAD of the plain Refract
-// mark -- same faint opacity/size/anchor/`aria-hidden` contract as the mark itself, just a
+// mark -- same size/anchor/`aria-hidden` contract as the mark itself, just a
 // themed `<Icon>` element in place of the `mask-image` `<div>` (simpler than hand-drawing six
 // more SVG assets to mask, and every lucide icon is already a flat single-colour glyph). Colour
 // comes from `--muted-foreground` (the SAME token the plain mark's own `background-color`
-// already uses), never a new hex -- decision 5's "theme tokens only" rule.
+// already uses), never a new hex -- decision 5's "theme tokens only" rule. Opacity comes from
+// the per-theme `--holiday-artwork-opacity` (#1233, about 3:1 against the theme background), not
+// the plain mark's 0.06 `--watermark-opacity`.
 import { cn } from '@/lib/utils'
 import { useHolidayStore, useSettingsStore } from '@/state'
 import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
