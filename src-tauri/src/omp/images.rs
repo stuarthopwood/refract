@@ -461,6 +461,20 @@ pub fn validate_image_attachment(data: &str, mime_type: &str) -> Result<(), Imag
     validate_image_attachment_decoded(data, mime_type)
 }
 
+/// #513: sniffs real bytes (never a declared type), parses the header dimensions and applies the
+/// byte and pixel caps. `None` for anything unsupported, malformed or over a cap (fail-closed).
+pub fn inspect_image_bytes(bytes: &[u8]) -> Option<(&'static str, u32, u32)> {
+    if bytes.len() as u64 > MAX_IMAGE_INPUT_BYTES {
+        return None;
+    }
+    let mime = sniff_image_mime_type(bytes)?;
+    let (width, height) = read_image_dimensions(bytes, mime)?;
+    if (width as u64) * (height as u64) > MAX_IMAGE_PIXELS {
+        return None;
+    }
+    Some((mime, width, height))
+}
+
 #[cfg(test)]
 #[path = "images.test.rs"]
 mod tests;

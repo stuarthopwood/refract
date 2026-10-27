@@ -39,6 +39,8 @@ mod notice_prefixes;
 use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
 mod file_attachment_markers;
 use file_attachment_markers::FileAttachmentRef;
+mod user_images;
+use user_images::ImageRef;
 mod agent_message;
 use agent_message::try_build_agent_message;
 
@@ -65,6 +67,9 @@ pub enum TranscriptItem {
             skip_serializing_if = "Vec::is_empty"
         )]
         file_attachments: Vec<FileAttachmentRef>,
+        // #513: images sent with the message (ids only, never bytes); empty for none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<ImageRef>,
     },
     #[serde(rename_all = "camelCase")]
     AssistantText {
@@ -1065,6 +1070,7 @@ fn apply_message_snapshot(
                     message_id.to_string(),
                     text,
                     at,
+                    parts,
                 ))],
             )
         }
@@ -1611,7 +1617,7 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
                 let text = join_text(parts);
                 let at = as_timestamp(message, "timestamp").unwrap_or(0);
                 items.push(Arc::new(file_attachment_markers::build_user_item(
-                    message_id, text, at,
+                    message_id, text, at, parts,
                 )));
             }
             "custom" => {

@@ -185,12 +185,18 @@ fn extract_file_attachments(text: &str, message_id: &str) -> (String, Vec<FileAt
 /// of `text` first -- the one entry point `transcript.rs`'s own `apply_message_snapshot`/
 /// `items_from_history` both call, so neither site threads `extract_file_attachments`'s own
 /// `(text, file_attachments)` pair through its own construction of the variant by hand.
-pub(super) fn build_user_item(id: String, text: String, at: i64) -> TranscriptItem {
+pub(super) fn build_user_item(
+    id: String,
+    text: String,
+    at: i64,
+    parts: &[serde_json::Value],
+) -> TranscriptItem {
     let (text, file_attachments) = extract_file_attachments(&text, &id);
     TranscriptItem::User {
         id,
         text,
         at,
         file_attachments,
+        images: super::user_images::extract_images(parts),
     }
 }

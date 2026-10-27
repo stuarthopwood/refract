@@ -9,6 +9,7 @@
 import type { ReactNode, RefObject } from 'react'
 import { XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { ImageThumbnail } from '@/components/ImageThumbnail'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { TextPreviewModal } from './TextPreviewModal'
 import { FileAttachmentChip } from './FileAttachmentChip'
@@ -49,17 +50,16 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
           <ImagePreviewModal
             attachment={image}
             trigger={
-              <button
-                type="button"
-                aria-label={
+              <ImageThumbnail
+                state="ready"
+                src={image.previewUrl}
+                label={
                   images.length > 1
                     ? `View image ${index + 1} of ${images.length}, ${formatByteSize(image.byteLength)}`
                     : `View image, ${formatByteSize(image.byteLength)}`
                 }
-                className="block size-10 overflow-hidden rounded-md border border-border bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                <img src={image.previewUrl} alt="" className="size-full object-cover" />
-              </button>
+                className="size-10"
+              />
             }
           />
           <button

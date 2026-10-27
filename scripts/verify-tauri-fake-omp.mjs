@@ -86,6 +86,14 @@ function substitute(value, vars) {
     if (value === '$histYesterdayAt') return vars.histYesterdayAt;
     if (value === '$histThisYearAt') return vars.histThisYearAt;
     if (value === '$histPastYearAt') return vars.histPastYearAt;
+    // `$env:NAME` (whole value only, REFRACT_FAKE_OMP_* names): a run-time payload the script
+    // generates, such as image base64 too large to hand-write in a fixture.
+    const envMatch = /^\$env:(REFRACT_FAKE_OMP_[A-Z0-9_]+)$/.exec(value);
+    if (envMatch) {
+      const envValue = process.env[envMatch[1]];
+      if (!envValue) process.stderr.write(`fake-omp: warning: ${envMatch[1]} is unset or empty; substituting ''\n`);
+      return envValue ?? '';
+    }
     return value;
   }
   if (Array.isArray(value)) return value.map((v) => substitute(v, vars));

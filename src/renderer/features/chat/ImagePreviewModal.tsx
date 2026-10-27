@@ -1,31 +1,29 @@
-import type { ReactNode } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import * as React from 'react'
+import { ImageViewer } from '@/components/ImageViewer'
 import type { PendingImageAttachment } from './attachments'
-import { formatByteSize } from './attachments'
 
 export interface ImagePreviewModalProps {
   attachment: PendingImageAttachment
-  trigger: ReactNode
+  trigger: React.ReactElement<{ onClick?: React.MouseEventHandler }>
 }
 
-/** FR-004, FR-016: the full-size preview of a pending pasted image. `trigger` is the thumbnail
- * button itself (`DialogTrigger asChild`) -- Radix's own default focus handling (same pattern as
- * every other dialog in the app, e.g. `NewSessionDialog`) moves focus into the modal on open and
- * returns it to that exact thumbnail on Esc or an outside click, with no extra wiring needed. */
+/** FR-004, FR-016: the full-size preview of a pending pasted image, now the shared `ImageViewer`.
+ * `trigger` is the thumbnail button itself; Radix returns focus to it on close. */
 export function ImagePreviewModal({ attachment, trigger }: ImagePreviewModalProps) {
+  const [open, setOpen] = React.useState(false)
+  const items = React.useMemo(
+    () => [{ key: attachment.id, data: { src: attachment.previewUrl, byteLength: attachment.byteLength } }],
+    [attachment.id, attachment.previewUrl, attachment.byteLength]
+  )
   return (
-    <Dialog>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Pasted image ({formatByteSize(attachment.byteLength)})</DialogTitle>
-        </DialogHeader>
-        <img
-          src={attachment.previewUrl}
-          alt="Pasted content, full size"
-          className="max-h-[70vh] w-full rounded-md object-contain"
-        />
-      </DialogContent>
-    </Dialog>
+    <>
+      {React.cloneElement(trigger, {
+        onClick: (event) => {
+          trigger.props.onClick?.(event)
+          setOpen(true)
+        }
+      })}
+      <ImageViewer open={open} onOpenChange={setOpen} items={items} index={0} onIndexChange={() => {}} title="Pasted image" />
+    </>
   )
 }

@@ -4,6 +4,7 @@ import type { TranscriptItem } from '../../../shared/model'
 import { initials } from '@/lib/initials'
 import { Markdown } from './Markdown'
 import { FileAttachmentChip } from './FileAttachmentChip'
+import { MessageImageGrid } from '@/components/MessageImageGrid'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -104,10 +105,10 @@ export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps
               ))}
             </div>
           )}
-          <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
-          {/* #744 (spec 009 FR-041): an image-only message has no text; until #513 shows the
-              image itself, say so rather than render an empty bubble. */}
-          {item.text.trim() === '' && !item.fileAttachments?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
+          {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-2" />}
+          {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} className="text-chat-foreground" />}
+          {/* #744: an image-only message whose images are missing still says so rather than render an empty bubble. */}
+          {item.text.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
         </MessageContent>
       </Message>
     </>

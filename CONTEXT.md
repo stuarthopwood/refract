@@ -204,6 +204,14 @@ _Avoid_: Badge, tag (for a control that opens a menu)
 A small, rounded-rectangle element showing one discrete fact or item, read-only or removable, usually grouped with others in a row (for example, a pasted-text chip in the composer's attachment strip -- this entry defines the shape generically). The **Status line**'s own entries are plain text, not this shape (2026-10-15 grill, issue #564): see **Status line**'s own _Avoid_ note.
 _Avoid_: Tag, token (ambiguous with a design token)
 
+**Message image**:
+An image sent with a user message, shown inside that message's bubble above its text; it exists once the message is sent. Before sending, the same image is a pending attachment in the composer's attachment strip, not a Message image (2026-10-27 grill, issue #513).
+_Avoid_: Attachment (for a sent image), thumbnail (that is only how a Message image is drawn)
+
+**Image viewer**:
+The modal that shows one Message image at a larger size, with previous and next when the message has several (2026-10-27 grill, issue #513).
+_Avoid_: Lightbox, preview modal (the composer's pending-attachment preview is a separate use of the same shared component)
+
 **Row**:
 One horizontal line of a list that repeats the same layout as its siblings -- an icon, a label, and trailing actions (for example, a session row).
 _Avoid_: Item, entry (too generic elsewhere in this file)
