@@ -21,3 +21,5 @@ Thumbs.db
 .omp/*
 !.omp/commands/
 !.omp/skills/
+
+.impeccable/
