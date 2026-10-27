@@ -1,33 +1,18 @@
 // Issue #687 (spec 004 FR-035 to FR-040, FR-042): the current-work banner, one line directly above
-// the composer: elapsed time muted, label in the accent text colour with the shared shimmer while
+// the composer: the label in the accent text colour with the shared shimmer while
 // the Session is working (static when it needs you; the sweep is not restarted by a label change).
+// No elapsed time (FR-039, issue #1250): the turn-time chip and the transcript's turn total carry it.
 // Shown while the Session is working or needs you, hidden when idle, gated by
 // `sessionReadout['current-work']`. One per ChatPane (each split pane mounts its own, keyed by
 // `sessionId`). Text comes from the shared pure `deriveActivity` (src/shared/activity.ts) and is
 // rendered as plain text only. No spinner, no stop control (the composer and chat header already
 // carry both); `aria-live="off"`, so a screen reader is never interrupted by it.
-import { useEffect, useState } from 'react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSessionsStore, useSettingsStore, useTodoPinStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ShimmerText } from '@/components/ShimmerText'
 import { deriveActivity } from '../../../shared/activity'
-import { formatElapsed } from './formatElapsed'
 import { deriveCurrentTask, deriveTodoTotals } from './readout/todoDerive'
 import { useHeldActivityText, usePendingActivity } from './useHeldActivityText'
-
-
-function useElapsedMs(startedAt: number | null): number | null {
-  const [tick, setTick] = useState(() => ({ startedAt, now: Date.now() }))
-  useEffect(() => {
-    if (startedAt === null) return
-    setTick({ startedAt, now: Date.now() })
-    const timer = setInterval(() => setTick({ startedAt, now: Date.now() }), 1000)
-    return () => clearInterval(timer)
-  }, [startedAt])
-  if (startedAt === null) return null
-  const now = tick.startedAt === startedAt ? tick.now : Date.now()
-  return Math.max(0, now - startedAt)
-}
 
 export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
   const enabled = useSettingsStore((s) => s.settings.sessionReadout['current-work'])
@@ -50,7 +35,6 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
     compacting: readout.compacting
   })
   const text = useHeldActivityText(sessionId, visible ? activity : null)
-  const elapsedMs = useElapsedMs(visible ? (readout.turnTime?.startedAt ?? null) : null)
 
   if (!visible || text === null) return null
   return (
@@ -58,14 +42,8 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
       data-slot="current-work-banner"
       data-testid="current-work-banner"
       aria-live="off"
-      className="mb-1 flex h-6 shrink-0 items-center gap-1.5 px-4 text-sm text-muted-foreground"
+      className="mb-1 flex h-6 shrink-0 items-center px-4 text-sm"
     >
-      {elapsedMs !== null && (
-        <>
-          <span className="shrink-0 tabular-nums">{formatElapsed(elapsedMs)}</span>
-          <span aria-hidden="true">·</span>
-        </>
-      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <span

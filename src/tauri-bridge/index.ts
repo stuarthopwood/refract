@@ -257,6 +257,7 @@ const refract: RefractApi = {
     setShowAgentStoppedBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AGENT_STOPPED_BAR, enabled),
     setAnimatedStatusText: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ANIMATED_STATUS_TEXT, enabled),
     setCodeLigatures: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CODE_LIGATURES, enabled),
+    setShowFinishedTurnTimes: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_FINISHED_TURN_TIMES, enabled),
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
     // own doc comment.

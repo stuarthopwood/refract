@@ -122,9 +122,9 @@ async function main() {
     await cdp.typeIntoByLabel('Message', 'do the work');
     await cdp.clickByLabel('Send message');
 
-    const intentText = await expectBanner(cdp, /^\d+m \d{2}s · Reading ChatPane\.tsx$|Reading ChatPane\.tsx/, 'Banner shows the latest intent');
+    const intentText = await expectBanner(cdp, /Reading ChatPane\.tsx/, 'Banner shows the latest intent');
     const full = await cdp.evaluate(`${BANNER}.textContent`);
-    assertTrue(/^\s*\d+[ms]?[\d\sms]*·\s*Reading ChatPane\.tsx/.test(full), 'Banner is prefixed with the elapsed turn time', { full });
+    assertTrue(/^\s*Reading ChatPane\.tsx/.test(full), 'Banner has no elapsed turn time prefix (#1250)', { full });
     assertTrue(await cdp.evaluate(`(() => { const b = ${BANNER}; return b.getAttribute('aria-live') === 'off' && !b.querySelector('svg, [role="progressbar"], button'); })()`), 'Banner is aria-live off with no spinner or control');
     const height = await cdp.evaluate(`${BANNER}.getBoundingClientRect().height`);
     assertTrue(height >= 20 && height <= 28, 'Banner is one ~24px line', { height });

@@ -90,6 +90,8 @@ pub struct Settings {
     pub animated_status_text: bool,
     /// Issue #1246: code ligatures on the Code font; default on (`code_ligatures.rs`).
     pub code_ligatures: bool,
+    /// Issue #1250 (FR-119): the settled turn total under each turn; default off.
+    pub show_finished_turn_times: bool,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -116,9 +118,7 @@ pub struct Settings {
     pub extra: Map<String, Value>,
 }
 
-// Lazy-correction parsers and clamps (issue #806, keeps this file under the 600-line cap): see
-// `settings_parse.rs` for `parse_split_layout`/`default_session_list_collapse`/
-// `parse_session_list_collapse`/`clamp_pull_requests_list_width_px`'s own doc comments.
+// Small per-setting modules (issue #806 cap); see `settings_parse.rs` for the parse helpers.
 #[path = "settings_parse.rs"]
 mod settings_parse;
 pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
@@ -126,18 +126,17 @@ use settings_parse::{
     clamp_pull_requests_list_width_px, default_session_list_collapse, parse_session_list_collapse,
     parse_session_readout, parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
 };
-// Issue #1205 (FR-107): the `showAgentStoppedBar` parse and setter (issue #806 cap).
 #[path = "activity_text.rs"]
 mod activity_text;
 #[path = "agent_stopped_bar.rs"]
 mod agent_stopped_bar;
 pub use activity_text::ActivityText;
-// Issue #1242 (FR-042): the `animatedStatusText` parse and setter; `transcriptDisplay` moved out
-// to make room (issue #806 cap).
 #[path = "animated_status_text.rs"]
 mod animated_status_text;
 #[path = "code_ligatures.rs"]
 mod code_ligatures;
+#[path = "finished_turn_times.rs"]
+mod finished_turn_times;
 #[path = "transcript_display.rs"]
 mod transcript_display;
 pub use transcript_display::TranscriptDisplaySettings;
@@ -220,6 +219,7 @@ impl SettingsStore {
         let show_agent_stopped_bar = agent_stopped_bar::parse(&object);
         let animated_status_text = animated_status_text::parse(&object);
         let code_ligatures = code_ligatures::parse(&object);
+        let show_finished_turn_times = finished_turn_times::parse(&object);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -246,7 +246,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 19] = [
+        const KNOWN_FIELDS: [&str; 20] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -263,6 +263,7 @@ impl SettingsStore {
             agent_stopped_bar::KEY,
             animated_status_text::KEY,
             code_ligatures::KEY,
+            finished_turn_times::KEY,
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -291,6 +292,7 @@ impl SettingsStore {
             show_agent_stopped_bar,
             animated_status_text,
             code_ligatures,
+            show_finished_turn_times,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -370,6 +372,8 @@ impl SettingsStore {
         let animated = self.data.animated_status_text;
         map.insert(animated_status_text::KEY.to_string(), json!(animated));
         map.insert(code_ligatures::KEY.to_string(), json!(self.data.code_ligatures));
+        let turn_times = self.data.show_finished_turn_times;
+        map.insert(finished_turn_times::KEY.to_string(), json!(turn_times));
         map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),

@@ -76,6 +76,10 @@ _Avoid_: Session (in the agent's own sense), transcript
 The row between the transcript and the message box (spec 004), spanning the chat column's full width: one **Readout** per glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Plain text, no boxes (2026-10-15 grill, issue #564): a read-only Readout is an icon plus text with no border or fill; one that opens something (Pull request, Subagents) is a quiet text button with a hover background and no border. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently.
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
 
+**Turn total**:
+The muted elapsed-time line under a **Session**'s turn in the transcript (spec 001 FR-046). The running turn's total always ticks live; the settled total shows only when Settings > Chat "Show finished turn times" is on (default off, 2026-10-27 grill, issue #1250, FR-119). Distinct from the **Status line**'s Turn time readout, and the current-work banner above the composer shows no elapsed time at all.
+_Avoid_: Turn timer (ambiguous: the banner no longer has one)
+
 **Stage**:
 The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal). Two or more agents in a Stage are connected by a **Spine** (issue #565). Its name is the first line of its batch brief, after its number ("Stage 1 · Quality gate for #923", issue #941).
 _Avoid_: Batch (in UI text), gate, phase (a phase is a **Todo phase**)
