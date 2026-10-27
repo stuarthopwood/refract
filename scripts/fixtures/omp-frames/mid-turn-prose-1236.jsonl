@@ -1,0 +1,33 @@
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\session\\conversation.json","sessionId":"sess-1236","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"type":"available_commands_update","commands":[{"name":"new","description":"Start a new Conversation in this Session"}]}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"NOTE-ONE-1236 first line."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"NOTE-ONE-1236 first line.\n\nParagraph 1 of the long note.\n\nParagraph 2 of the long note.\n\nParagraph 3 of the long note.\n\nParagraph 4 of the long note.\n\nParagraph 5 of the long note.\n\nParagraph 6 of the long note.\n\nParagraph 7 of the long note.\n\nParagraph 8 of the long note.\n\nParagraph 9 of the long note.\n\nParagraph 10 of the long note.\n\nParagraph 11 of the long note.\n\nParagraph 12 of the long note.\n\nParagraph 13 of the long note.\n\nParagraph 14 of the long note."}],"timestamp":0}}
+{"__delay__":3000}
+{"type":"tool_execution_start","toolCallId":"call-1","toolName":"read","args":{"path":"a.txt"},"intent":"Reading a.txt"}
+{"type":"tool_execution_end","toolCallId":"call-1","toolName":"read","result":{"content":[{"type":"text","text":"contents of a"}]},"isError":false}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":"NOTE-TWO-1236 short note."}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"call-2","toolName":"read","args":{"path":"b.txt"},"intent":"Reading b.txt"}
+{"type":"tool_execution_end","toolCallId":"call-2","toolName":"read","result":{"content":[{"type":"text","text":"contents of b"}]},"isError":false}
+{"type":"message_start","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":"FINAL-REPLY-1236 all done."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\session\\conversation.json","sessionId":"sess-1236","messageCount":6,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
