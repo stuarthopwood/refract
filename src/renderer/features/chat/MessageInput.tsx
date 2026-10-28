@@ -1484,7 +1484,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
               FR-011), a documented exception to "one filled button per surface": the two fills
           are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). Gate round 3 CRITICAL fix (#1050): `z-[3]`, above the `relative z-[1]` the composer textarea gains ONLY while a pill shows (`CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`, full stacking order there) and the mirrors' `z-[2]` -- this container had NO z-index before, so the textarea painted over it (`elementFromPoint` at Send's centre resolved to the textarea), making Send/Stop unclickable. */}
-          <div className="absolute right-1.5 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">
+          <div className="absolute right-2 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>

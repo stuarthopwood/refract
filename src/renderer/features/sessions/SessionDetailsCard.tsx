@@ -143,7 +143,7 @@ export function SessionDetailsCard({
                   raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this
                   card has room for it that the composer strip does not. `pl-4` aligns it under
                   the model name's own text, past the CpuIcon (`size-4` + `gap-2` above it). */}
-              {session.lastModel && <p className="truncate pl-4 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
+              {session.lastModel && <p className="truncate pl-6 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FileDiffIcon aria-hidden className="size-4 shrink-0" />

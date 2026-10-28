@@ -232,7 +232,7 @@ export function SessionList() {
           before the double-click ever reaches the page's own JS, so a renderer-driven toggle was
           dead code and has been removed. */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-4">
-        <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
+        <img src={refractHero} alt="" aria-hidden className="size-4 shrink-0" />
         <span className="text-sm font-medium">Refract</span>
         {/* Issue #1048 (Holiday touches): a purely decorative accessory beside the wordmark --
             `aria-hidden`, the "Refract" accessible name above is unchanged either way. */}

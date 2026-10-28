@@ -106,7 +106,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
           <DialogTitle>New session in {repository.name}</DialogTitle>
           <DialogDescription>Refract names the Session and its branch automatically.</DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-2" onSubmit={(event) => void handleSubmit(event)}>
+        <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
           <div className="flex flex-col gap-2">
             <label htmlFor="base-branch" className="text-sm">
               Base branch
