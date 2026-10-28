@@ -12,13 +12,16 @@ use std::time::Duration;
 
 use serde::Serialize;
 
+use super::changes_score::score_untracked_file as score_untracked_entry;
 use super::git::git_raw;
 
 const MAX_FILES: i64 = 200;
+#[cfg(test)]
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(3);
 /// Only the first slice of a file is checked for a NUL byte (git's own binary heuristic);
 /// mirrors `diffStat.ts`'s own `BINARY_SNIFF_BYTES`.
+#[cfg(test)]
 const BINARY_SNIFF_BYTES: usize = 8000;
 
 /// Same wire shape as `src/shared/model.ts`'s `DiffStat` (`sessions.diffStat`'s return value,
@@ -35,6 +38,7 @@ pub struct DiffStatResult {
 
 /// Port of `diffStat.ts`'s own `isBinary`: true the moment a NUL byte appears in the first
 /// `BINARY_SNIFF_BYTES` bytes.
+#[cfg(test)]
 fn is_binary(buf: &[u8]) -> bool {
     let len = buf.len().min(BINARY_SNIFF_BYTES);
     buf[..len].contains(&0)
@@ -43,6 +47,7 @@ fn is_binary(buf: &[u8]) -> bool {
 /// Port of `diffStat.ts`'s own `countLines`: counts lines the way a brand-new file's `git diff
 /// --numstat` would -- a trailing newline does not add an extra empty line, but trailing content
 /// without one still counts as a line.
+#[cfg(test)]
 fn count_lines(text: &str) -> i64 {
     if text.is_empty() {
         return 0;
@@ -94,6 +99,7 @@ fn count_numstat_lines(stdout: &str) -> (i64, i64, i64, bool) {
 /// `diffStat.ts`'s own "skip reading" comment; `content: None` with `size` within the cap means
 /// the read itself failed (0 additions, not `partial`); otherwise a binary file (NUL in the
 /// first `BINARY_SNIFF_BYTES`) counts as 0 additions, and everything else is `count_lines`.
+#[cfg(test)]
 fn score_untracked_file(size: u64, content: Option<&[u8]>) -> (i64, bool) {
     if size > MAX_FILE_BYTES {
         return (0, true);
@@ -163,19 +169,10 @@ async fn compute_diff_stat(worktree_path: &Path, base_branch: &str) -> Option<Di
                 break;
             }
             files += 1;
-            let absolute_path = worktree_path.join(relative_path);
-            let metadata = match tokio::fs::metadata(&absolute_path).await {
-                Ok(metadata) => metadata,
-                // Vanished between `ls-files` and `stat`; already counted, 0 additions.
-                Err(_) => continue,
-            };
-            let content = if metadata.len() <= MAX_FILE_BYTES {
-                tokio::fs::read(&absolute_path).await.ok()
-            } else {
-                None
-            };
-            let (file_additions, file_partial) =
-                score_untracked_file(metadata.len(), content.as_deref());
+            // Containment-proven, never read through a symlink (#1115); same scorer as the Git
+            // changes panel (#1110/#1111). Escape, missing or unreadable all score 0.
+            let (file_additions, _deletions, file_partial) =
+                score_untracked_entry(worktree_path, relative_path).await;
             additions += file_additions;
             partial = partial || file_partial;
         }
