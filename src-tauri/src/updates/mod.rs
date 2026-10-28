@@ -167,17 +167,20 @@ pub fn begin_quit() -> bool {
 pub async fn verify_downloaded_installer(
     store: &SharedUpdateState,
     updates_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), (installer::UpdateErrorCode, String)> {
+    let not_ready = || {
+        (
+            installer::UpdateErrorCode::UpdateUnavailable,
+            "No downloaded update is ready to install.".to_string(),
+        )
+    };
     let installer_path = {
         let guard = store.lock().await;
         let current = guard.get();
         if current.phase != state::UpdatePhase::Downloaded {
-            return Err("No downloaded update is ready to install.".to_string());
+            return Err(not_ready());
         }
-        current
-            .installer_path
-            .clone()
-            .ok_or_else(|| "No downloaded update is ready to install.".to_string())?
+        current.installer_path.clone().ok_or_else(not_ready)?
     };
     match tokio::time::timeout(
         VERIFY_AND_SCHEDULE_TIMEOUT,
@@ -188,8 +191,13 @@ pub async fn verify_downloaded_installer(
     )
     .await
     {
-        Ok(result) => result,
-        Err(_) => Err("Verifying the update timed out.".to_string()),
+        Ok(result) => {
+            result.map_err(|reason| (installer::UpdateErrorCode::ChecksumMismatch, reason))
+        }
+        Err(_) => Err((
+            installer::UpdateErrorCode::UpdateUnavailable,
+            "Verifying the update timed out.".to_string(),
+        )),
     }
 }
 
