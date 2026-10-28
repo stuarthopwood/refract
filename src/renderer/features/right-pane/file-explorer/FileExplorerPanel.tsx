@@ -1079,8 +1079,8 @@ function TreeNodeRow({
       onKeyDown={(event) => onRowKeyDown(event, row, absIndex)}
     >
       {selected && <ActiveIndicatorBar />}
-      <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
-        {isFolder && (expanded ? <ChevronDownIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />)}
+      <span aria-hidden className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+        {isFolder && (expanded ? <ChevronDownIcon className="size-4" /> : <ChevronRightIcon className="size-4" />)}
       </span>
       {isFolder ? (
         expanded ? (
@@ -1099,7 +1099,7 @@ function TreeNodeRow({
       </span>
       {mark && (
         <span id={markId} title={mark.label} className="flex shrink-0 items-center">
-          <mark.Icon aria-hidden className={`size-3 ${mark.className}`} />
+          <mark.Icon aria-hidden className={`size-4 ${mark.className}`} />
           <span className="sr-only">{mark.label}</span>
         </span>
       )}
@@ -1118,20 +1118,20 @@ function TreeNodeRow({
               // PR #671 gate round 4 fix (Medium, A11y4): visible whenever this row is SELECTED
               // (not hover/focus-within only, which read as hover-only on a touch device with no
               // hover concept at all), and raised to a `size-6` (24px) target -- the previous
-              // ~18px (icon `size-3.5` plus `p-1`) sat under the 24px minimum.
+              // ~18px (icon `size-4` plus `p-1`) sat under the 24px minimum.
               className={`flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 ${selected ? 'opacity-100' : 'opacity-0'}`}
               // The whole row (not a separate open button, unlike `SessionList.tsx`) carries
               // `onClick`/`onRowClick` above -- without this, clicking the trigger would bubble
               // up and also select/activate the row underneath it.
               onClick={(event) => event.stopPropagation()}
             >
-              <EllipsisVerticalIcon aria-hidden className="size-3.5" />
+              <EllipsisVerticalIcon aria-hidden className="size-4" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
             {menuActions.map((action) => (
               <DropdownMenuItem key={action.key} onSelect={action.onSelect}>
-                <action.icon aria-hidden className="size-3.5" />
+                <action.icon aria-hidden className="size-4" />
                 {action.label}
               </DropdownMenuItem>
             ))}
@@ -1149,7 +1149,7 @@ function TreeNodeRow({
       <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
         {menuActions.map((action) => (
           <ContextMenuItem key={action.key} onSelect={action.onSelect}>
-            <action.icon aria-hidden className="size-3.5" />
+            <action.icon aria-hidden className="size-4" />
             {action.label}
           </ContextMenuItem>
         ))}

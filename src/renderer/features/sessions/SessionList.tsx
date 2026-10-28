@@ -236,7 +236,7 @@ export function SessionList() {
         <span className="text-sm font-medium">Refract</span>
         {/* Issue #1048 (Holiday touches): a purely decorative accessory beside the wordmark --
             `aria-hidden`, the "Refract" accessible name above is unchanged either way. */}
-        {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-3.5 shrink-0 text-muted-foreground" />}
+        {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-4 shrink-0 text-muted-foreground" />}
       </div>
       {/* specs/003-pull-request-management FR-001, T011: above the repository groups, Stuart's
           placement answer (spec 003 Clarifications). `aria-current` gives the selected state a

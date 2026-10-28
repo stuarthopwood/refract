@@ -76,7 +76,7 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
             // mis-click than the 16px one was; restored once actually visible (hover/focus).
             className="pointer-events-none absolute -top-1 -right-1 flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
           >
-            <XIcon className="size-3" />
+            <XIcon className="size-4" />
           </button>
         </div>
       ))}

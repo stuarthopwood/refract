@@ -87,7 +87,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             <span id={`theme-option-${theme.id}-name`} className="flex-1">{theme.name}</span>
             {isActive && (
               <span aria-hidden className="flex items-center gap-1 text-xs">
-                <CheckIcon aria-hidden className="size-3.5" />
+                <CheckIcon aria-hidden className="size-4" />
                 <span>Current</span>
               </span>
             )}

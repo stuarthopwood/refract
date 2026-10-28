@@ -44,12 +44,12 @@ export function CheckStatusIcon({
   if (!check) {
     return checking ? (
       <>
-        <LoaderCircleIcon aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
+        <LoaderCircleIcon aria-hidden className="mt-1 size-4 shrink-0 animate-spin text-muted-foreground" />
         {srWord && <span className="sr-only">{word}</span>}
       </>
     ) : (
       <>
-        <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <CircleAlertIcon aria-hidden className="mt-1 size-4 shrink-0 text-muted-foreground" />
         {srWord && <span className="sr-only">{word}</span>}
       </>
     )
@@ -57,19 +57,19 @@ export function CheckStatusIcon({
   if (check.ok && check.warning) {
     return (
       <>
-        <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-state-needs-you" />
+        <TriangleAlertIcon aria-hidden className="mt-1 size-4 shrink-0 text-state-needs-you" />
         {srWord && <span className="sr-only">{word}</span>}
       </>
     )
   }
   return check.ok ? (
     <>
-      <CircleCheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-state-working" />
+      <CircleCheckIcon aria-hidden className="mt-1 size-4 shrink-0 text-state-working" />
       {srWord && <span className="sr-only">{word}</span>}
     </>
   ) : (
     <>
-      <CircleXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <CircleXIcon aria-hidden className="mt-1 size-4 shrink-0 text-destructive" />
       {srWord && <span className="sr-only">{word}</span>}
     </>
   )
@@ -85,7 +85,7 @@ export interface CheckRowProps {
 
 export function CheckRow({ label, check, checking, showStateWord = false }: CheckRowProps) {
   return (
-    <li className="flex items-start gap-2.5">
+    <li className="flex items-start gap-2">
       <CheckStatusIcon check={check} checking={checking} srWord={!showStateWord} />
       <div className="flex min-w-0 flex-col">
         <span className="text-sm">

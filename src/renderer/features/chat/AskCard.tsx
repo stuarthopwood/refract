@@ -292,7 +292,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
                           <span className="min-w-0 truncate">{label}</span>
                           {answered && (
                             <>
-                              <CheckIcon aria-hidden className="size-3.5 shrink-0" />
+                              <CheckIcon aria-hidden className="size-4 shrink-0" />
                               <span className="sr-only">, answered</span>
                             </>
                           )}

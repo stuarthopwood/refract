@@ -24,12 +24,12 @@ export function StatePill({ state, className }: StatePillProps) {
   return (
     <span
       className={cn(
-        'inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs forced-color-adjust-none forced-colors:border forced-colors:border-[ButtonText]',
+        'inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-1 text-xs forced-color-adjust-none forced-colors:border forced-colors:border-[ButtonText]',
         STATE_PILL_CLASS[state],
         className
       )}
     >
-      <Icon aria-hidden className="size-3.5" />
+      <Icon aria-hidden className="size-4" />
       {display.label}
     </span>
   )

@@ -89,7 +89,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
             // activates: this pill is never `aria-disabled`.
           )}
         >
-          <CurrentIcon aria-hidden className="size-3" />
+          <CurrentIcon aria-hidden className="size-4" />
           {current.label}
           {pendingLabel && <span className="text-muted-foreground">&middot; {pendingLabel}</span>}
         </button>
@@ -106,7 +106,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
                   {item.label}
                   {checked && (
                     <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
-                      <CheckIcon aria-hidden className="size-3.5" />
+                      <CheckIcon aria-hidden className="size-4" />
                       Current
                     </span>
                   )}

@@ -86,7 +86,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
   }
 
   return (
-    <section aria-labelledby="omp-providers-heading" aria-busy={initialLoading || undefined} className="flex min-w-0 flex-col gap-3">
+    <section aria-labelledby="omp-providers-heading" aria-busy={initialLoading || undefined} className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 id="omp-providers-heading" className="truncate text-sm font-medium">
@@ -99,7 +99,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
         <div className="flex shrink-0 items-center gap-2">
           {refreshing && total > 0 && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+              <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
               Checking…
             </span>
           )}
@@ -139,7 +139,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
                     {provider.id}
                   </span>
                   <span className="flex shrink-0 items-center gap-1 text-xs">
-                    <CheckIcon aria-hidden className="size-3.5" />
+                    <CheckIcon aria-hidden className="size-4" />
                     Signed in
                   </span>
                 </li>
@@ -151,19 +151,19 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
             <Collapsible open={expanded} onOpenChange={setExpanded}>
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="xs" className="w-fit">
-                  <ChevronDownIcon aria-hidden className={cn('size-3.5 transition-transform', expanded && 'rotate-180')} />
+                  <ChevronDownIcon aria-hidden className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
                   {expanded ? 'Show signed in only' : `Show all ${total} providers…`}
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <ul role="list" aria-label="Other OMP providers" className="mt-2 flex max-h-36 flex-col gap-1 overflow-y-auto pr-3">
+                <ul role="list" aria-label="Other OMP providers" className="mt-2 flex max-h-36 flex-col gap-1 overflow-y-auto pr-4">
                   {other.map((provider) => (
                     <li key={provider.id} className="flex min-w-0 items-center justify-between gap-2">
                       <span className="truncate font-code text-xs" title={provider.id}>
                         {provider.id}
                       </span>
                       <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                        <MinusIcon aria-hidden className="size-3.5" />
+                        <MinusIcon aria-hidden className="size-4" />
                         Not signed in
                       </span>
                     </li>
@@ -183,7 +183,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
       {status === 'error' && (
         <div className="flex flex-col gap-1 rounded-md border border-border p-2">
           <span className="flex items-center gap-1 text-xs text-state-needs-you">
-            <TriangleAlertIcon aria-hidden className="size-3.5" />
+            <TriangleAlertIcon aria-hidden className="size-4" />
             Could not read OMP providers
           </span>
           <p className="text-xs text-muted-foreground">OMP did not respond or returned an error.</p>
@@ -212,7 +212,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
             auditor Low): the accessible name now matches the visible "Copy command"/"Copied"
             text exactly, the same fix AddAccountPanel.tsx's own Copy code button already has. */}
         <Button variant="outline" size="xs" className="shrink-0" onClick={() => void handleCopy()}>
-          {copied ? <CheckIcon aria-hidden className="size-3.5" /> : <CopyIcon aria-hidden className="size-3.5" />}
+          {copied ? <CheckIcon aria-hidden className="size-4" /> : <CopyIcon aria-hidden className="size-4" />}
           {copied ? 'Copied' : 'Copy command'}
         </Button>
       </div>

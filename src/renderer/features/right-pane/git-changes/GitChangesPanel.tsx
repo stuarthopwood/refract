@@ -393,7 +393,7 @@ function GitChangesDiffPane({
           onClick={onBack}
           className="min-w-0 flex-1 justify-start gap-2 px-1 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         >
-          <ArrowLeftIcon aria-hidden className="size-3.5 shrink-0" />
+          <ArrowLeftIcon aria-hidden className="size-4 shrink-0" />
           <span aria-hidden className="min-w-0 truncate">
             {fileName}
           </span>

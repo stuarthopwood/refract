@@ -293,7 +293,7 @@ export function ModelRolesSection() {
     if (catalogLoading) {
       return (
         <p key={kind} className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-3 shrink-0 animate-spin" />
+          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
           Loading models…
         </p>
       )
@@ -303,7 +303,7 @@ export function ModelRolesSection() {
       return (
         <p key={kind} id={catalogErrorId} className="mb-2 flex items-center gap-2 text-xs text-destructive">
           <span className="flex items-center gap-1">
-            <OctagonXIcon aria-hidden className="size-3 shrink-0" />
+            <OctagonXIcon aria-hidden className="size-4 shrink-0" />
             Could not load {kindLabel} models: {catalogError}
           </span>
           <Button
@@ -395,7 +395,7 @@ export function ModelRolesSection() {
           <div className="flex items-center gap-2">
             {isPending && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin" />
+                <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
                 Saving…
               </span>
             )}
@@ -478,7 +478,7 @@ export function ModelRolesSection() {
         </div>
         {saveError && (
           <p id={saveErrorId} className="mt-1 flex items-center gap-1 text-xs text-destructive">
-            <OctagonXIcon aria-hidden className="size-3 shrink-0" />
+            <OctagonXIcon aria-hidden className="size-4 shrink-0" />
             Could not save: {saveError}
           </p>
         )}

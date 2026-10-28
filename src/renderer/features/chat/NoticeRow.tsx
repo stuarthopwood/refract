@@ -59,7 +59,7 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
   const icon = (
     <>
-      <Icon className={cn('size-3.5 shrink-0', NOTICE_CLASS[level])} />
+      <Icon className={cn('size-4 shrink-0', NOTICE_CLASS[level])} />
       <span className="sr-only">{NOTICE_LABEL[level]}</span>
     </>
   )

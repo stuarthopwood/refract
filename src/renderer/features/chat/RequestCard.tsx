@@ -40,11 +40,11 @@ export function ResolvedRequestSummary({ resolved, detail, requestId, sessionId 
   // `--muted-foreground` XIcon; only an actual Deny (a real tool-approval refusal) reads as destructive.
   const icon =
     resolved === 'denied' ? (
-      <XIcon className="size-3.5 shrink-0 text-destructive" />
+      <XIcon className="size-4 shrink-0 text-destructive" />
     ) : resolved === 'cancelled' ? (
-      <XIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <XIcon className="size-4 shrink-0 text-muted-foreground" />
     ) : (
-      <CheckIcon className="size-3.5 shrink-0 text-state-working" />
+      <CheckIcon className="size-4 shrink-0 text-state-working" />
     )
   const intentKey = requestId && sessionId ? `${sessionId}:${requestId}` : undefined
   const rowRef = React.useRef<HTMLElement>(null)
@@ -190,7 +190,7 @@ function AskStatusMeta({ status }: { status: AskCallStatus }) {
   if (status === 'cancelled') {
     return (
       <span className="inline-flex items-center gap-1">
-        <XIcon aria-hidden className="size-3" />
+        <XIcon aria-hidden className="size-4" />
         Cancelled
       </span>
     )
@@ -198,7 +198,7 @@ function AskStatusMeta({ status }: { status: AskCallStatus }) {
   if (status === 'not-answered') return <span>Question not answered</span>
   return (
     <span className="inline-flex items-center gap-1">
-      <CheckIcon aria-hidden className="size-3" />
+      <CheckIcon aria-hidden className="size-4" />
       {status === 'answered-automatically' ? 'Answered automatically' : 'Answered'}
     </span>
   )
@@ -289,7 +289,7 @@ export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQues
   return (
     <CollapsedLine
       ref={triggerRef}
-      icon={<CircleQuestionMarkIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+      icon={<CircleQuestionMarkIcon className="size-4 shrink-0 text-muted-foreground" />}
       label="Asked user"
       summary={summary}
       meta={<AskStatusMeta status={status} />}

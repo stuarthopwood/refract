@@ -51,7 +51,7 @@ import { ReviewConsensus } from './ReviewConsensus'
 // active edge reads as the system `Highlight` colour, so forced-colors mode can still tell the
 // two tabs apart once the box problem above is fixed.
 const PR_DETAIL_TAB_TRIGGER_CLASS =
-  'rounded-none border-0 border-b-2 border-transparent px-1 py-1.5 text-muted-foreground shadow-none data-[state=active]:border-b-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-b-border hover:text-foreground forced-colors:border-b-[Canvas] forced-colors:data-[state=active]:border-b-[Highlight]'
+  'rounded-none border-0 border-b-2 border-transparent px-1 py-1 text-muted-foreground shadow-none data-[state=active]:border-b-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-b-border hover:text-foreground forced-colors:border-b-[Canvas] forced-colors:data-[state=active]:border-b-[Highlight]'
 
 // research.md "Polling interval and rate-limit headroom": re-calls `detail()` every 15s while
 // `checkState === 'pending'`, stops once checks finish or this view closes; `list()` is never
@@ -215,7 +215,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* drag-regions-allow: renders right of PullRequestList, below PullRequestsView's own h-10 drag-region header, so it never touches App.tsx's strip despite the same shape. */}
-      <div className="shrink-0 border-b border-border p-3">
+      <div className="shrink-0 border-b border-border p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
@@ -236,7 +236,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
                 red only on failure" for PR checks only (`CHECK_STATE_DISPLAY.colorClass`, shared
                 with `PullRequestRow.tsx` so the two surfaces can't drift apart). */}
             <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
-              <CheckIcon aria-hidden className={cn('size-3.5', detail.checkState === 'pending' && 'animate-spin')} />
+              <CheckIcon aria-hidden className={cn('size-4', detail.checkState === 'pending' && 'animate-spin')} />
               {check.label}
             </span>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
@@ -313,7 +313,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           </div>
         )}
         {(detail.reviewers.length > 0 || detail.assignees.length > 0) && (
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
             {detail.reviewers.length > 0 && <span>Reviewers: {detail.reviewers.map((r) => r.name ?? r.login).join(', ')}</span>}
             {detail.assignees.length > 0 && <span>Assignees: {detail.assignees.map((a) => a.name ?? a.login).join(', ')}</span>}
           </div>
@@ -330,7 +330,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             heuristic (`border-b` + `shrink-0`), but this row sits deep in the content area, well
             below `PullRequestsView.tsx`'s own separate `h-10` drag-region strip -- it never
             touches `App.tsx`'s drag strip despite the coincidental shape; drag-regions-allow: see above. */}
-        <TabsList className="mx-3 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none border-b border-border bg-transparent p-0">
+        <TabsList className="mx-2 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none border-b border-border bg-transparent p-0">
           <TabsTrigger value="overview" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
             Overview
           </TabsTrigger>
@@ -340,12 +340,12 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
         </TabsList>
         {/* #1200: `relative` keeps the comment box's `sr-only` alert (absolute) inside this scroller. */}
         <TabsContent value="overview" className="relative min-h-0 flex-1 overflow-auto">
-          <div className="p-3">
+          <div className="p-4">
             <ReviewConsensus timeline={detail.timeline} authorLogin={detail.author.login} />
             <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} />
           </div>
           <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} onChanged={() => void load()} />
-          <div className="border-t border-border p-3">
+          <div className="border-t border-border p-4">
             <Textarea
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}

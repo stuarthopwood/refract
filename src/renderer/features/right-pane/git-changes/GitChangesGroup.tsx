@@ -134,7 +134,7 @@ export function GitChangesGroup({
                   className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
                   onClick={() => void runBulkAction()}
                 >
-                  {bulkPending ? <Loader2Icon aria-hidden className="size-3.5 animate-spin" /> : <bulk.icon aria-hidden className="size-3.5" />}
+                  {bulkPending ? <Loader2Icon aria-hidden className="size-4 animate-spin" /> : <bulk.icon aria-hidden className="size-4" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{bulkAccessibleName}</TooltipContent>

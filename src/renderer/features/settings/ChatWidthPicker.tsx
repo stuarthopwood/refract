@@ -83,7 +83,7 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
                 <span id={`chat-width-option-${option.id}-name`} className="flex-1">{option.name}</span>
                 {isActive && (
                   <span aria-hidden className="flex items-center gap-1 text-xs">
-                    <CheckIcon aria-hidden className="size-3.5" />
+                    <CheckIcon aria-hidden className="size-4" />
                     <span>Current</span>
                   </span>
                 )}

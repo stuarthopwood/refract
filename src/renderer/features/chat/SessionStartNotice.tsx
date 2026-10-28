@@ -135,7 +135,7 @@ export function SessionStartNotice({
       ) : (
         <p className="flex items-center gap-2 text-base text-muted-foreground">
           <span className="sr-only">{describeStartProgressLabel(startProgress.kind)}</span>
-          <LoaderCircleIcon aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
+          <LoaderCircleIcon aria-hidden="true" className="size-4 shrink-0 animate-spin" />
           <span aria-hidden="true" data-start-plain-text>{describeStartProgress(startProgress)}</span>
         </p>
       )}

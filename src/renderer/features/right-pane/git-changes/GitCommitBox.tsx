@@ -128,7 +128,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
     <div className="no-drag-region flex shrink-0 flex-col gap-2 border-t border-divider p-2">
       {sessionStatus === 'working' && (
         <p id={warningId} role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
-          <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
+          <TriangleAlertIcon aria-hidden className="size-4 shrink-0" />
           Agent is working — review before committing
         </p>
       )}

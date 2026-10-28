@@ -382,7 +382,7 @@ export function DeleteDialog({
                 </li>
               ))}
               {leftoverSummary.moreCount > 0 && (
-                <li className="pl-[22px] text-xs">and {leftoverSummary.moreCount.toLocaleString()} more files</li>
+                <li className="pl-6 text-xs">and {leftoverSummary.moreCount.toLocaleString()} more files</li>
               )}
             </ul>
           </div>

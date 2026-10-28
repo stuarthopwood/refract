@@ -34,7 +34,7 @@ export function ComposerBranchLabel({ sessionId }: { sessionId: string }) {
           className={cn(PICKER_TRIGGER_CLASS, 'min-w-16 max-w-max flex-[1_1_0%] shrink')}
           onClick={onClick}
         >
-          <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+          <GitBranchIcon aria-hidden className="size-4 shrink-0" />
           <span className="min-w-0 truncate">{label}</span>
         </button>
       </TooltipTrigger>

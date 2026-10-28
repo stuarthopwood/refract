@@ -80,11 +80,11 @@ export function ChatHeader({
             type="button"
             variant="outline"
             size="sm"
-            className="h-7 gap-2 px-2 text-xs"
+            className="h-6 gap-2 px-2 text-xs"
             onClick={onSwapToOther}
             aria-label={`Switch to ${otherSessionName}`}
           >
-            <SplitSquareHorizontalIcon aria-hidden className="size-3.5" />
+            <SplitSquareHorizontalIcon aria-hidden className="size-4" />
             {otherSessionName}
           </Button>
         )}

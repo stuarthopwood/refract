@@ -55,7 +55,7 @@ const SEVERITY_LABEL: Record<AutomatedFinding['severity'], string> = {
 
 function CommitRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'commit' }> }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-border px-3 py-2 text-sm">
+    <div className="flex items-start gap-2 rounded-md border border-border px-4 py-2 text-sm">
       <span className="shrink-0 font-code text-xs text-muted-foreground">{entry.sha.slice(0, 7)}</span>
       <span className="min-w-0 flex-1 break-words">{entry.message}</span>
       <span className="shrink-0 text-xs text-muted-foreground">
@@ -67,7 +67,7 @@ function CommitRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'commit' }
 
 function CommentRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'comment' }> }) {
   return (
-    <div className="rounded-md border border-border px-3 py-2">
+    <div className="rounded-md border border-border px-4 py-2">
       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
         <span className="text-foreground">{actorLabel(entry.author)}</span>
         <span>{formatRelativeTime(entry.createdAt)}</span>
@@ -80,7 +80,7 @@ function CommentRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'comment'
 function ReviewRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'review' }> }) {
   const { review } = entry
   return (
-    <div className="rounded-md border border-border px-3 py-2">
+    <div className="rounded-md border border-border px-4 py-2">
       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
         <span className="text-foreground">
           {reviewSentence(review)}
@@ -89,10 +89,10 @@ function ReviewRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'review' }
       </div>
       {review.body && <Markdown id={review.id} text={review.body} />}
       {review.findings.length > 0 && (
-        <ul className="mt-2 space-y-1.5">
+        <ul className="mt-2 space-y-2">
           {review.findings.map((finding, i) => (
             <li key={i} className="flex items-start gap-2 text-xs">
-              <span className="shrink-0 rounded border border-border px-1.5 py-0.5">
+              <span className="shrink-0 rounded border border-border px-1 py-1">
                 {SEVERITY_LABEL[finding.severity]}
               </span>
               <Markdown id={`${review.id}-finding-${i}`} text={finding.body} className="text-xs" />
@@ -150,7 +150,7 @@ function ThreadRow({
   }
 
   return (
-    <div className="rounded-md border border-border px-3 py-2">
+    <div className="rounded-md border border-border px-4 py-2">
       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
         <span className="font-code">
           {thread.path}
@@ -163,7 +163,7 @@ function ThreadRow({
       <div className="space-y-2">
         {thread.comments.map((comment) => (
           <div key={comment.id}>
-            <div className="mb-0.5 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
               <span className="text-foreground">{actorLabel(comment.author)}</span>
               <span>{formatRelativeTime(comment.createdAt)}</span>
             </div>
@@ -215,10 +215,10 @@ function ThreadRow({
 
 export function Timeline({ repositoryId, number, entries, onChanged }: TimelineProps) {
   if (entries.length === 0) {
-    return <p className="p-3 text-sm text-muted-foreground">No activity yet.</p>
+    return <p className="p-4 text-sm text-muted-foreground">No activity yet.</p>
   }
   return (
-    <div className="flex flex-col gap-2 p-3">
+    <div className="flex flex-col gap-2 p-4">
       {entries.map((entry) => {
         switch (entry.kind) {
           case 'commit':

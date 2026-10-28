@@ -278,7 +278,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                   </span>
                   {/* Line 2: one slot, first match wins (`lineTwoKind` above). Gate round 1 fix
                       (Medium, decision 9.4): an archived row's Project name gets the same
-                      `FolderGit2Icon size-3` the old per-repository secondary label used. */}
+                      `FolderGit2Icon size-4` the old per-repository secondary label used. */}
                   {lineTwo === 'start-progress' && session.startProgress ? (
                     <span className="truncate pl-6 text-xs text-muted-foreground" aria-hidden>
                       {describeStartProgress(session.startProgress)}
@@ -287,7 +287,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                     <span className="truncate pl-6 text-xs text-destructive">Terminated unexpectedly</span>
                   ) : lineTwo === 'archived' ? (
                     <span className="flex min-w-0 items-center gap-1 pl-6 text-xs text-muted-foreground">
-                      <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+                      <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
                       <span className="truncate">{repository.name}</span>
                     </span>
                   ) : lineTwo === 'activity' ? (
@@ -342,9 +342,9 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                       onClick={() => void handleResume()}
                     >
                       {resuming ? (
-                        <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+                        <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
                       ) : (
-                        <RotateCwIcon aria-hidden className="size-3" />
+                        <RotateCwIcon aria-hidden className="size-4" />
                       )}
                     </Button>
                   </TooltipTrigger>
@@ -391,7 +391,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                       aria-label={`${session.name} actions`}
                       className={TRAILING_MENU_BUTTON_CLASS}
                     >
-                      <EllipsisVerticalIcon aria-hidden className="size-3" />
+                      <EllipsisVerticalIcon aria-hidden className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>

@@ -534,9 +534,9 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
               icon size, #928) plus `motion-reduce:animate-none` (vestibular-motion sensitivity,
               not present on that other trigger). Same SPIN APPROACH, deliberately adapted. */}
           {turningOff ? (
-            <Loader2Icon aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+            <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
           ) : (
-            <EyeIcon aria-hidden className="size-3.5" />
+            <EyeIcon aria-hidden className="size-4" />
           )}
           <span aria-hidden>Advisor</span>
         </button>

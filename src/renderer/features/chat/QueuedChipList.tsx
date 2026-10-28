@@ -89,7 +89,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
                       onRemove(chip)
                     }}
                   >
-                    <XIcon className="size-3" />
+                    <XIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{removeLabel}</TooltipContent>

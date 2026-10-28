@@ -98,7 +98,7 @@ export function SettingsScreen() {
         <Button
           variant="ghost"
           size="icon"
-          className="no-drag-region size-7"
+          className="no-drag-region size-6"
           aria-label="Back to chat"
           onClick={handleBackToChat}
         >

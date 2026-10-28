@@ -24,7 +24,7 @@ export function SkillPromptRow({ item }: SkillPromptRowProps) {
   )
   return (
     <CollapsedLine
-      icon={<BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+      icon={<BookOpenIcon className="size-4 shrink-0 text-muted-foreground" />}
       label="Skill invoked"
       summary={
         <>

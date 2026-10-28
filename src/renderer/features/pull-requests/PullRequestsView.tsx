@@ -71,7 +71,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   // Issue #930 gate-fix (caught live 2026-10-17, round 2): the heading row's own wrapper used to
   // track the layout store's `widthPx` (an integer read off `react-resizable-panels`' own
   // `onResize`). Matching the panel's real rendered WIDTH turned out not to be enough on its
-  // own: the drag-region header row above has its own `px-3` horizontal padding, while the
+  // own: the drag-region header row above has its own `px-4` horizontal padding, while the
   // `ResizablePanelGroup`/panel below it has none, so this wrapper's own LEFT edge sits ~12px
   // to the right of the panel's real left edge. Pinning the wrapper's width to the panel's
   // width alone still left its RIGHT edge ~12px past the panel's real right edge -- invisible
@@ -150,7 +150,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           the session-list/right-pane panels stay), so `reservesWindowControls` must be `false`
           whenever the right pane shell is the one holding that corner (FR-011, "exactly once"),
           the same prop `ChatPane.tsx` takes. */}
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-4">
         {/* Issue #930 (2026-10-16 decision): this wrapper's own width tracks the resizable list
             column's real rendered width (`listColumnWidthPx`, measured off the panel's own DOM
             element -- see the `ResizeObserver` effect above) so the heading and Project selector

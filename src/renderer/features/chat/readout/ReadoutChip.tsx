@@ -11,7 +11,7 @@
 //
 // Issue #928 (status line font size, 2026-10-16 grill): every chip's text is `text-readout`
 // (13px, docs/design/foundations-typography-spacing.md "Status line type", globals.css) and
-// every icon is `size-3.5` (14px) -- up from the original `text-xs`/`size-3` (12px/12px), Stuart's
+// every icon is `size-4` (14px) -- up from the original `text-xs`/`size-4` (12px/12px), Stuart's
 // own choice over a 14px TEXT step, which would read "as loud as the chat".
 import { forwardRef } from 'react'
 import type { ComponentType, FocusEvent, MouseEvent, ReactNode, Ref } from 'react'
@@ -99,7 +99,7 @@ export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
         onFocus={onFocus}
         onBlur={onBlur}
       >
-        {Icon && <Icon aria-hidden className="size-3.5" />}
+        {Icon && <Icon aria-hidden className="size-4" />}
         {children}
       </a>
     )
@@ -122,7 +122,7 @@ export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
         onFocus={onFocus}
         onBlur={onBlur}
       >
-        {Icon && <Icon aria-hidden className="size-3.5" />}
+        {Icon && <Icon aria-hidden className="size-4" />}
         {children}
       </button>
     )
@@ -130,7 +130,7 @@ export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
 
   return (
     <span ref={ref as Ref<HTMLSpanElement>} data-slot="readout-chip" className={baseClasses} aria-label={accessibleName}>
-      {Icon && <Icon aria-hidden className="size-3.5" />}
+      {Icon && <Icon aria-hidden className="size-4" />}
       {children}
     </span>
   )

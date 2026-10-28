@@ -97,16 +97,16 @@ export function SessionDetailsCard({
               {activityText && <p className="break-words pl-4 text-xs text-muted-foreground">{activityText}</p>}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <FolderIcon aria-hidden className="size-3.5 shrink-0" />
+              <FolderIcon aria-hidden className="size-4 shrink-0" />
               <span className="truncate">{repository.name}</span>
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <GitBranchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <span className="truncate">{session.branch}</span>
               <span className="shrink-0 text-muted-foreground">from {session.baseBranch}</span>
             </div>
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <MapPinIcon aria-hidden className="mt-1 size-3.5 shrink-0" />
+              <MapPinIcon aria-hidden className="mt-1 size-4 shrink-0" />
               <p className="min-w-0 break-all">
                 {worktreeMissing ? (
                   <>
@@ -126,12 +126,12 @@ export function SessionDetailsCard({
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="flex min-w-0 items-center gap-2 truncate">
-                  <CpuIcon aria-hidden className="size-3.5 shrink-0" />
+                  <CpuIcon aria-hidden className="size-4 shrink-0" />
                   <span className="truncate">{formatModelLabel(session) ?? 'Model not known yet'}</span>
                 </span>
                 {formatThinkingLevelLabel(session) && (
                   <span className="flex shrink-0 items-center gap-2">
-                    <ReasoningGaugeIcon level={session.lastThinkingLevel} className="size-3.5 shrink-0" />
+                    <ReasoningGaugeIcon level={session.lastThinkingLevel} className="size-4 shrink-0" />
                     <span>
                       <span className="sr-only">Thinking level: </span>
                       {formatThinkingLevelLabel(session)}
@@ -142,11 +142,11 @@ export function SessionDetailsCard({
               {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map,
                   raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this
                   card has room for it that the composer strip does not. `pl-4` aligns it under
-                  the model name's own text, past the CpuIcon (`size-3.5` + `gap-2` above it). */}
+                  the model name's own text, past the CpuIcon (`size-4` + `gap-2` above it). */}
               {session.lastModel && <p className="truncate pl-4 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <FileDiffIcon aria-hidden className="size-3.5 shrink-0" />
+              <FileDiffIcon aria-hidden className="size-4 shrink-0" />
               {/* Gate round 5 fix (Flow LOW): this line had no `sr-only` full-figure pairing at
                   all, unlike the status line's identical `ChangesChip`, which carries one
                   (`formatDiffStatAccessible`, shared from `sessionDisplay.tsx` precisely so

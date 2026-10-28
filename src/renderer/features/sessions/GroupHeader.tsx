@@ -120,8 +120,8 @@ export function GroupHeaderTrigger({
           matched on any repository header (the arrow stayed closed-looking even when the group
           was open). `aria-expanded` is set only by Collapsible and untouched by Tooltip, so
           keying off it instead is immune to this. */}
-      <ChevronRightIcon aria-hidden className="size-3 shrink-0 transition-transform group-aria-expanded/trigger:rotate-90" />
-      {Icon && <Icon aria-hidden className="size-3 shrink-0" />}
+      <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-aria-expanded/trigger:rotate-90" />
+      {Icon && <Icon aria-hidden className="size-4 shrink-0" />}
       <span className="truncate" title={tooltip ? undefined : title}>{label}</span>
       {/* #567 decision 5: a separate `tabular-nums` count, never `Archived (N)` in brackets. */}
       {count !== undefined && <span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>}

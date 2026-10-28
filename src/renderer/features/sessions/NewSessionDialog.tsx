@@ -118,7 +118,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
               <SelectContent position="popper" side="bottom" sideOffset={4}>
                 <SelectGroup>
                   <SelectLabel className="flex items-center gap-2">
-                    <GitBranchIcon aria-hidden className="size-3.5" />
+                    <GitBranchIcon aria-hidden className="size-4" />
                     Branches
                   </SelectLabel>
                   {branchOptions.map((entry) => (
@@ -132,7 +132,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
                     <SelectSeparator />
                     <SelectGroup>
                       <SelectLabel className="flex items-center gap-2">
-                        <FolderGit2Icon aria-hidden className="size-3.5" />
+                        <FolderGit2Icon aria-hidden className="size-4" />
                         Sessions
                       </SelectLabel>
                       {sessionOptions.map((entry) => (

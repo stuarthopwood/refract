@@ -312,7 +312,7 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
         // never render this component at all); this one sits right where a keyboard/radio user
         // is actually looking, immediately under the row they just picked in.
         <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-3 shrink-0 animate-spin" />
+          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
           Saving…
         </p>
       )}

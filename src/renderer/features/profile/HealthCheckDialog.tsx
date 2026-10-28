@@ -133,7 +133,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
           role="list"
           aria-label="Health checks"
           aria-busy={loading || undefined}
-          className={`flex flex-col gap-3${loading && checks !== null ? ' opacity-80' : ''}`}
+          className={`flex flex-col gap-2${loading && checks !== null ? ' opacity-80' : ''}`}
         >
           {CHECK_ORDER.map((key) => (
             <CheckRow

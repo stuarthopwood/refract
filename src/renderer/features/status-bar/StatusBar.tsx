@@ -39,7 +39,7 @@ export function StatusBar() {
   const updateTroubled = updateState?.phase === 'failed' || updateUnavailable
 
   return (
-    <footer className="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-divider bg-card px-3 text-xs text-muted-foreground">
+    <footer className="flex h-9 shrink-0 items-center justify-between gap-2 border-t border-divider bg-card px-4 text-xs text-muted-foreground">
       <div className="flex items-center gap-2">
         {updateState &&
           (updateState.phase === 'available' ||
@@ -54,14 +54,14 @@ export function StatusBar() {
                   className={cn(
                     badgeVariants({ variant: 'outline' }),
                     updateTroubled
-                      ? 'h-6 gap-1.5 border-state-needs-you/50 bg-state-needs-you/10 px-2.5 text-state-needs-you hover:bg-state-needs-you/20'
-                      : 'h-6 gap-1.5 px-2.5 hover:bg-accent'
+                      ? 'h-6 gap-2 border-state-needs-you/50 bg-state-needs-you/10 px-2 text-state-needs-you hover:bg-state-needs-you/20'
+                      : 'h-6 gap-2 px-2 hover:bg-accent'
                   )}
                 >
                   {updateTroubled ? (
-                    <AlertTriangleIcon aria-hidden className="size-3" />
+                    <AlertTriangleIcon aria-hidden className="size-4" />
                   ) : (
-                    <DownloadIcon aria-hidden className="size-3" />
+                    <DownloadIcon aria-hidden className="size-4" />
                   )}
                   {updateBadgeShortLabel(updateState, updateUnavailable)}
                 </button>
@@ -89,7 +89,7 @@ export function StatusBar() {
                           ? 'Downloading the update now; it installs the next time you quit.'
                           : 'Refract downloads and verifies the installer in the background.'}
                 </p>
-                <div className="mt-3 flex items-center gap-2">
+                <div className="mt-2 flex items-center gap-2">
                   {updateState.phase === 'downloaded' && (
                     <Button
                       size="xs"

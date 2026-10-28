@@ -171,7 +171,7 @@ export function ProfileAlertRows() {
   }, [memoryShown, ompVersionShown])
 
   return (
-    <div className={memoryShown || ompVersionShown || updateVersion ? 'flex flex-col gap-0.5 px-2 pb-2' : 'flex flex-col gap-0.5'}>
+    <div className={memoryShown || ompVersionShown || updateVersion ? 'flex flex-col gap-1 px-2 pb-2' : 'flex flex-col gap-1'}>
       {updateVersion && <UpdateAlertRow version={updateVersion} />}
       {memoryShown && warning && (
         <AlertRow

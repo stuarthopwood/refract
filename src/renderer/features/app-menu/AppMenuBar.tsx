@@ -162,7 +162,7 @@ export function AppMenuBar() {
           autoFocus={index === 0}
           onKeyDown={(event) => onButtonKeyDown(event, index)}
           onClick={(event) => void openMenu(menu.id, event.currentTarget)}
-          className="px-2.5 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           {menu.label}
         </button>

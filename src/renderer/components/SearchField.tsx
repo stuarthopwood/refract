@@ -137,7 +137,7 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
             </Button>
           </TooltipTrigger>
           <TooltipContent side={tooltipSide}>
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-2">
               Clear filter
               <KbdGroup>
                 <Kbd>Esc</Kbd>

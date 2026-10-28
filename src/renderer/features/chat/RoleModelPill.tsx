@@ -83,7 +83,7 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
             aria-describedby={undefined}
             className={cn(PICKER_TRIGGER_CLASS, 'max-w-80 min-w-0 shrink', className)}
           >
-            <shown.Icon aria-hidden className="size-3 shrink-0" />
+            <shown.Icon aria-hidden className="size-4 shrink-0" />
             <span className="shrink-0">{shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')}</span>
             {shown.roleLabel && shown.model && (
               <span className="flex min-w-0 gap-1 @max-[400px]:hidden">
@@ -91,7 +91,7 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
                 <span className="truncate">{shortModelName(shown.model)}</span>
               </span>
             )}
-            {queued && <ClockIcon aria-hidden data-pending-glyph className="size-3 shrink-0 text-foreground" />}
+            {queued && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}
           </button>
         </TooltipTrigger>
         <TooltipContent>{tooltip}</TooltipContent>

@@ -327,7 +327,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
                       }
                     }}
                   >
-                    <XIcon aria-hidden className="size-3.5" />
+                    <XIcon aria-hidden className="size-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -402,7 +402,7 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       aria-controls={selected ? `panel-content-${id}` : undefined}
       tabIndex={selected ? 0 : -1}
       className={cn(
-        'relative inline-flex h-7 min-w-14 shrink items-center gap-1 rounded-md px-2 pr-6 text-sm font-medium',
+        'relative inline-flex h-6 min-w-14 shrink items-center gap-1 rounded-md px-2 pr-6 text-sm font-medium',
         FOCUS_VISIBLE,
         selected
           ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
@@ -411,7 +411,7 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       onClick={onSelect}
       onKeyDown={onKeyDown}
     >
-      <Icon aria-hidden className="size-3.5 shrink-0" />
+      <Icon aria-hidden className="size-4 shrink-0" />
       <span className="min-w-0 shrink-[100] truncate">{descriptor.name}</span>
       {count?.kind === 'additions-deletions' ? (
         <span className="shrink-0 text-xs">

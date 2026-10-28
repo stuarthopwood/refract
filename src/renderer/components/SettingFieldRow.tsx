@@ -23,8 +23,8 @@ export function SettingFieldRow({
   children
 }: SettingFieldRowProps) {
   return (
-    <div className={`flex ${wrap ? 'flex-wrap ' : ''}items-center justify-between gap-x-4 gap-y-2 py-3`}>
-      <div className="flex min-w-0 flex-col gap-0.5">
+    <div className={`flex ${wrap ? 'flex-wrap ' : ''}items-center justify-between gap-x-4 gap-y-2 py-4`}>
+      <div className="flex min-w-0 flex-col gap-1">
         <label htmlFor={id} className="text-sm">
           {label}
         </label>

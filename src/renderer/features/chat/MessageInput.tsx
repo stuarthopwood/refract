@@ -1427,11 +1427,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             >
               <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
-                <SlashIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                <SlashIcon aria-hidden="true" className="size-4 shrink-0" />
                 <span className="min-w-0 truncate">for commands</span>
               </span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
-                <TypeIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                <TypeIcon aria-hidden="true" className="size-4 shrink-0" />
                 <span className="min-w-0 truncate">Markdown supported</span>
               </span>
             </div>

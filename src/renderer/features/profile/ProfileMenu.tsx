@@ -306,7 +306,7 @@ function CommonMenuItems({
       <DropdownMenuItem onSelect={onWhatsNew}>
         <SparklesIcon aria-hidden />
         <span className="flex-1">What's new</span>
-        <ExternalLinkIcon aria-hidden className="size-3.5" />
+        <ExternalLinkIcon aria-hidden className="size-4" />
         <span className="sr-only"> Opens in your browser</span>
       </DropdownMenuItem>
     </>
@@ -348,7 +348,7 @@ export function ProfileMenuContent({
     >
       {signedIn && account ? (
         <>
-          <DropdownMenuLabel className="flex items-center gap-2.5 font-normal">
+          <DropdownMenuLabel className="flex items-center gap-2 font-normal">
             <Avatar>
               <AvatarImage src={account.avatarDataUrl ?? undefined} alt="" />
               <AvatarFallback>{initials(account.displayName ?? account.login)}</AvatarFallback>
@@ -358,7 +358,7 @@ export function ProfileMenuContent({
                   ACTIVE account's own GitHub sign-in needs attention. */}
               <span className="flex items-center gap-1 truncate text-sm">
                 {account.state !== 'success' && (
-                  <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-state-needs-you" />
+                  <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />
                 )}
                 <span className="truncate">{account.displayName ?? account.login}</span>
               </span>
@@ -378,7 +378,7 @@ export function ProfileMenuContent({
           <a href="https://cli.github.com" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2">
             <DownloadIcon aria-hidden />
             <span className="flex-1">Install GitHub CLI</span>
-            <ExternalLinkIcon aria-hidden className="size-3.5" />
+            <ExternalLinkIcon aria-hidden className="size-4" />
             <span className="sr-only"> Opens in your browser</span>
           </a>
         </DropdownMenuItem>

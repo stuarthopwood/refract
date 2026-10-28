@@ -72,7 +72,7 @@ export function StatusIcon({ status }: { status: RowStatus }) {
   const { Icon, className } = STATUS_GLYPH[GLYPH_KEY_BY_STATUS[status]]
   return (
     <>
-      <Icon aria-hidden className={cn('size-3.5 shrink-0', className)} />
+      <Icon aria-hidden className={cn('size-4 shrink-0', className)} />
       <span className="sr-only">{label}</span>
     </>
   )

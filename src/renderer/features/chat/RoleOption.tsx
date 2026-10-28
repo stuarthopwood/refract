@@ -48,7 +48,7 @@ export function RoleOption({
       )}
     >
       <span className="flex items-center gap-1">
-        <Icon aria-hidden className="size-3 shrink-0" />
+        <Icon aria-hidden className="size-4 shrink-0" />
         {/* #1208 SC-005: an invisible medium-weight copy reserves the highlighted width, so moving
             the highlight never resizes the chip or shifts its neighbours. */}
         <span className="grid *:col-start-1 *:row-start-1">

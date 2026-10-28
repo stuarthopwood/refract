@@ -96,7 +96,7 @@ export function FileAttachmentChip({ name, byteLength, isDirectory, sentAs, onRe
               onClick={onRemove}
               className="relative -my-1 flex size-6 shrink-0 items-center justify-center rounded-full text-secondary-foreground/70 hover:bg-secondary-foreground/15 hover:text-secondary-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
             >
-              <XIcon className="size-3" />
+              <XIcon className="size-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent>Remove {removeLabel ?? name}</TooltipContent>

@@ -24,22 +24,22 @@ interface ChangesTabProps {
 
 export function ChangesTab({ additions, deletions, changedFilesCount, files, url }: ChangesTabProps) {
   if (files.length === 0) {
-    return <p className="p-3 text-sm text-muted-foreground">No changed files.</p>
+    return <p className="p-4 text-sm text-muted-foreground">No changed files.</p>
   }
 
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-2 p-4">
       <p className="text-sm text-muted-foreground">
         {files.length} file{files.length === 1 ? '' : 's'} changed, <DiffStatCounts added={additions} removed={deletions} accessibleLabel />
       </p>
       {files.length < changedFilesCount && (
-        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-4 py-1 text-xs text-muted-foreground">
           <span>
             Only {files.length} of {changedFilesCount} changed files are shown.
           </span>
           <a href={`${url}/files`} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 underline underline-offset-2">
             Open in browser
-            <ExternalLinkIcon aria-hidden className="size-3" />
+            <ExternalLinkIcon aria-hidden className="size-4" />
           </a>
         </div>
       )}
@@ -57,7 +57,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
               {/* drag-regions-allow: renders inside PullRequestDetail's Changes tab, well below PullRequestsView's own h-10 drag-region strip, so it never touches App.tsx's strip despite the coincidental border-b shape -- same pattern as the identical bg-muted header in DiffView.tsx. */}
               <div
                 data-slot="diff-fallback-header"
-                className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground"
+                className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2 py-1 font-code text-xs text-muted-foreground"
               >
                 <span className="min-w-0 truncate" title={file.path}>
                   {file.path}
@@ -71,11 +71,11 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
                     className="flex h-6 shrink-0 items-center gap-1 -my-1 font-sans underline underline-offset-2"
                   >
                     Open in browser
-                    <ExternalLinkIcon aria-hidden className="size-3" />
+                    <ExternalLinkIcon aria-hidden className="size-4" />
                   </a>
                 </span>
               </div>
-              <div className="px-2.5 py-1.5 text-xs text-muted-foreground">This file's diff is too large to show in full.</div>
+              <div className="px-2 py-1 text-xs text-muted-foreground">This file's diff is too large to show in full.</div>
             </div>
           )}
         </div>

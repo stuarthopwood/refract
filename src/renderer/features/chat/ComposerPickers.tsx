@@ -95,12 +95,12 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
               className={PICKER_TRIGGER_CLASS}
             >
               {pendingLabel !== null ? (
-                <Loader2Icon aria-hidden className="size-3 animate-spin" />
+                <Loader2Icon aria-hidden className="size-4 animate-spin" />
               ) : (
-                <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-3" />
+                <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-4" />
               )}
               <span>{triggerLabel}</span>
-              {nextLabel && pendingLabel === null && <ClockIcon aria-hidden data-pending-glyph className="size-3 shrink-0 text-foreground" />}
+              {nextLabel && pendingLabel === null && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}
             </button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

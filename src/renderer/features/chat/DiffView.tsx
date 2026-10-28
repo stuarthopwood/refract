@@ -143,7 +143,7 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
               aria-controls={regionId}
               onClick={() => setExpanded((value) => !value)}
             >
-              {expanded ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+              {expanded ? <ChevronUpIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
               {expanded ? 'Collapse' : 'Expand'}
             </Button>
           )}
