@@ -182,7 +182,7 @@ fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveT
                     path: path.to_path_buf(),
                     source,
                     after_partial: attempt > 1,
-                })
+                });
             }
         };
 
