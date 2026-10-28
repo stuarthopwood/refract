@@ -244,9 +244,9 @@ async function runB(ctx) {
     // (e) leave one agent mid-turn (fake omp holds the turn until aborted).
     await cdp.typeIntoByLabel('Message', 'keep working for the update check');
     await cdp.clickByLabel('Send message');
-    await cdp.waitFor(`(() => { const b = document.querySelector('[aria-label="Stop"]'); return !!b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, {
+    await cdp.waitFor(`document.body.textContent.includes('Running a long command')`, {
       timeoutMs: 20_000,
-      label: 'agent mid-turn (Stop button enabled)'
+      label: 'agent mid-turn (long command running)'
     });
     await cdp.clickByLabel('Restart and install the update now');
     await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'confirm dialog opened' });
