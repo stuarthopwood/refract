@@ -86,7 +86,7 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
       <CardHeader>
         <CardTitle>Add GitHub account</CardTitle>
       </CardHeader>
-      <CardContent className="flex min-w-0 flex-col gap-3">
+      <CardContent className="flex min-w-0 flex-col gap-2">
         {status === 'failed' ? (
           <>
             {/* Quality-gate remediation (code-reviewer/UI M5): main's own plain-language reason
@@ -112,7 +112,7 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
                 is actually waiting -- it used to render unconditionally, including over the
                 failed and starting-with-no-code states above, where there is no code to enter. */}
             <p className="text-sm text-muted-foreground">Enter this code on GitHub to finish signing in.</p>
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 items-center gap-2">
               <div className="min-w-0">
                 {/* aria-hidden (quality-gate remediation, accessibility-auditor Low): the sr-only
                     span below already repeats "One-time code", so a screen reader was reading it
@@ -148,9 +148,9 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
               href="https://github.com/login/device"
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex w-fit items-center gap-1.5 text-sm underline underline-offset-2"
+              className="inline-flex w-fit items-center gap-2 text-sm underline underline-offset-2"
             >
-              <ExternalLinkIcon aria-hidden className="size-3.5" />
+              <ExternalLinkIcon aria-hidden className="size-4" />
               Open the GitHub device page
               <span className="sr-only"> Opens in your browser</span>
             </a>

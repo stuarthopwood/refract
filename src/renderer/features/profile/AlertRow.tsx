@@ -36,8 +36,8 @@ export function AlertRow({
   onDismiss
 }: AlertRowProps) {
   return (
-    <div ref={containerRef} className="flex h-6 items-center gap-1.5 pl-2 text-xs">
-      <AlertTriangleIcon aria-hidden className="size-3 shrink-0 text-state-needs-you" />
+    <div ref={containerRef} className="flex min-h-6 items-center gap-2 py-1 pl-2 text-xs">
+      <AlertTriangleIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />
       <span className={cn('min-w-0 flex-1 text-muted-foreground', wrapLabel ? 'whitespace-normal' : 'truncate')}>{label}</span>
       <Button
         ref={actionRef}

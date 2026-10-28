@@ -94,11 +94,11 @@ export function SettingsScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b px-3">
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b px-4">
         <Button
           variant="ghost"
           size="icon"
-          className="no-drag-region size-7"
+          className="no-drag-region size-6"
           aria-label="Back to chat"
           onClick={handleBackToChat}
         >
@@ -108,7 +108,7 @@ export function SettingsScreen() {
       </div>
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Settings sections" className="w-48 shrink-0 overflow-y-auto border-r p-2">
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-1">
             {SECTIONS.map((section) => (
               <li key={section.id}>
                 <button
@@ -127,7 +127,7 @@ export function SettingsScreen() {
                   // main-content selected row (components.md).
                   data-choice-item
                   className={cn(
-                    'relative block w-full rounded-md border border-transparent bg-clip-padding px-2 py-1.5 text-left text-sm outline-none',
+                    'relative block w-full rounded-md border border-transparent bg-clip-padding px-2 py-1 text-left text-sm outline-none',
                     'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
                     // Forced colours strips the box-shadow ring and the transparent border, so
                     // draw a real outline there (same pattern as SessionList.tsx's Clear filter).
@@ -169,8 +169,8 @@ export function SettingsScreen() {
                 {READOUT_TOGGLES.map((toggle) => {
                   const id = `readout-toggle-${toggle.kind}`
                   return (
-                    <div key={toggle.kind} className="flex items-center justify-between gap-4 py-3">
-                      <label htmlFor={id} className="flex flex-col gap-0.5">
+                    <div key={toggle.kind} className="flex items-center justify-between gap-4 py-4">
+                      <label htmlFor={id} className="flex flex-col gap-1">
                         <span className="text-sm">{toggle.label}</span>
                         <span className="text-xs text-muted-foreground">{toggle.description}</span>
                       </label>

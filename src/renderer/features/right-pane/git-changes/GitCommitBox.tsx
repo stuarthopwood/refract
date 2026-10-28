@@ -125,15 +125,15 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
   const describedBy = [sessionStatus === 'working' ? warningId : null, disabledReason ? reasonId : null].filter(Boolean).join(' ') || undefined
 
   return (
-    <div className="no-drag-region flex shrink-0 flex-col gap-1.5 border-t border-divider p-2">
+    <div className="no-drag-region flex shrink-0 flex-col gap-2 border-t border-divider p-2">
       {sessionStatus === 'working' && (
-        <p id={warningId} role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
+        <p id={warningId} role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+          <TriangleAlertIcon aria-hidden className="size-4 shrink-0" />
           Agent is working — review before committing
         </p>
       )}
       <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <label htmlFor={subjectId} className="sr-only">
             Commit subject
           </label>
@@ -201,7 +201,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
         className={cn('max-h-32 min-h-12 overflow-y-auto text-sm', COMPOSER_INPUT_SURFACE_CLASS)}
       />
       {entry?.actionError && (
-        <div className="flex items-start gap-1.5">
+        <div className="flex items-start gap-2">
           <p role="alert" className="max-h-24 flex-1 overflow-y-auto whitespace-pre-wrap text-xs text-destructive">
             {entry.actionError}
           </p>
@@ -226,7 +226,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
       <p role="status" className="sr-only">
         {announcement}
       </p>
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="flex items-center justify-end gap-2">
         {disabledReason && (
           <span id={reasonId} className="text-xs text-muted-foreground">
             {disabledReason}

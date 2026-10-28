@@ -11,7 +11,7 @@
 //
 // Issue #928 (status line font size, 2026-10-16 grill): every chip's text is `text-readout`
 // (13px, docs/design/foundations-typography-spacing.md "Status line type", globals.css) and
-// every icon is `size-3.5` (14px) -- up from the original `text-xs`/`size-3` (12px/12px), Stuart's
+// every icon is `size-4` (16px) on the 8px grid, Stuart's
 // own choice over a 14px TEXT step, which would read "as loud as the chat".
 import { forwardRef } from 'react'
 import type { ComponentType, FocusEvent, MouseEvent, ReactNode, Ref } from 'react'
@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils'
 // `<button>` rather than retrofitting onto this change, which only ever reached ReadoutChip's
 // own three render branches. One source of truth for the classes either way -- this component
 // below still uses the SAME two constants, never a second copy of the literal strings.
-export const READOUT_CHIP_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-1.5 text-readout text-muted-foreground'
+export const READOUT_CHIP_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-2 text-readout text-muted-foreground'
 // Gate round 1 fix (MEDIUM): the plain-text restyle above dropped `badgeVariants`' own
 // `focus-visible:border-ring ring-[3px]` ring entirely -- an interactive Readout had no
 // explicit focus style at all, only the browser default outline. Opaque (no `/50` alpha),
@@ -99,7 +99,7 @@ export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
         onFocus={onFocus}
         onBlur={onBlur}
       >
-        {Icon && <Icon aria-hidden className="size-3.5" />}
+        {Icon && <Icon aria-hidden className="size-4" />}
         {children}
       </a>
     )
@@ -122,7 +122,7 @@ export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
         onFocus={onFocus}
         onBlur={onBlur}
       >
-        {Icon && <Icon aria-hidden className="size-3.5" />}
+        {Icon && <Icon aria-hidden className="size-4" />}
         {children}
       </button>
     )
@@ -130,7 +130,7 @@ export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
 
   return (
     <span ref={ref as Ref<HTMLSpanElement>} data-slot="readout-chip" className={baseClasses} aria-label={accessibleName}>
-      {Icon && <Icon aria-hidden className="size-3.5" />}
+      {Icon && <Icon aria-hidden className="size-4" />}
       {children}
     </span>
   )

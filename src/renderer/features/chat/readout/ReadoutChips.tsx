@@ -235,7 +235,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
         side="top"
         align="start"
         collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
-        className="w-auto p-3"
+        className="w-auto p-4"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}
@@ -308,7 +308,7 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
         side="top"
         align="start"
         collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
-        className="w-auto p-3"
+        className="w-auto p-4"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}
@@ -534,9 +534,9 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
               icon size, #928) plus `motion-reduce:animate-none` (vestibular-motion sensitivity,
               not present on that other trigger). Same SPIN APPROACH, deliberately adapted. */}
           {turningOff ? (
-            <Loader2Icon aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+            <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
           ) : (
-            <EyeIcon aria-hidden className="size-3.5" />
+            <EyeIcon aria-hidden className="size-4" />
           )}
           <span aria-hidden>Advisor</span>
         </button>

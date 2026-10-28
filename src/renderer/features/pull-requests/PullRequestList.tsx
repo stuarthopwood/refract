@@ -171,7 +171,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
       <Tabs value={state.tab} onValueChange={(value) => setTab(repositoryId, value as FilterTab)} activationMode="manual">
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-1">
           {/* Gate-fix (M1, caught live 2026-10-18): the mask is now driven entirely by
               `data-fade-left`/`data-fade-right` (`globals.css`'s own `.pr-tabs-fade` rules), never
               a static gradient on both edges regardless of whether either is actually clipped.
@@ -186,7 +186,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
             ref={tabsWrapRef}
             className="relative min-w-0 flex-1 scroll-px-6 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            <TabsList className="h-8 w-max shrink-0 justify-start gap-0.5 rounded-none bg-transparent p-0">
+            <TabsList className="h-8 w-max shrink-0 justify-start gap-1 rounded-none bg-transparent p-0">
               {TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} className={PR_FILTER_TAB_TRIGGER_CLASS}>
                   {tab.label}
@@ -194,7 +194,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
               ))}
             </TabsList>
           </div>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-1">
             <Tooltip>
               {/* Matches `RefreshButton.tsx`'s own fix: the tooltip text duplicates `aria-label`,
                   so `aria-describedby={undefined}` stops Radix doubling the announcement. */}
@@ -286,7 +286,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {friendlyError ? (
-          <div role="alert" className="p-3 text-sm text-destructive">
+          <div role="alert" className="p-4 text-sm text-destructive">
             {friendlyError}
           </div>
         ) : state.items.length === 0 && !state.loading ? (
@@ -321,7 +321,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
               </EmptyContent>
             </Empty>
           ) : (
-            <div className="p-3 text-sm text-muted-foreground">No pull requests match this tab.</div>
+            <div className="p-4 text-sm text-muted-foreground">No pull requests match this tab.</div>
           )
         ) : (
           <div className="flex flex-col divide-y divide-divider">

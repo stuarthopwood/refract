@@ -92,7 +92,7 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
       {/* drag-regions-allow: a diff box's own header, nested inside an expanded `ToolRow` call in the chat transcript, always well below that screen's own real drag-region header (ChatHeader.tsx) -- it never touches App.tsx's permanent strip despite the `border-b` shape, same pattern as PullRequestDetail.tsx/ManageSessionsToolbar.tsx below. Gained an interactive opener (`capped`'s own Expand/Collapse `<Button>`) that `check:drag-regions` had not flagged before, since `CopyButton`/`FileLinkButton`'s own internal `<button>` aren't in its tag list. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2 py-1 font-code text-xs text-muted-foreground">
         {/* Quality-gate fix (A11y HIGH, round 2): the old `<span className="truncate">` wrapper
          * clipped the button's own focus ring (an inline-block child of an `overflow:hidden`
          * flex item) and gave the inline-block button no ellipsis of its own on a long path.
@@ -143,16 +143,16 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
               aria-controls={regionId}
               onClick={() => setExpanded((value) => !value)}
             >
-              {expanded ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+              {expanded ? <ChevronUpIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
               {expanded ? 'Collapse' : 'Expand'}
             </Button>
           )}
         </span>
       </div>
       {diffTooLarge ? (
-        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">Diff too large to show</div>
+        <div className="px-2 py-1 text-xs text-muted-foreground">Diff too large to show</div>
       ) : !changedFile ? (
-        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">No changes</div>
+        <div className="px-2 py-1 text-xs text-muted-foreground">No changes</div>
       ) : (
         // #630: a keyboard-focusable, named scroll region (WCAG 2.1.1, 1.4.10, 2.4.11) so Tab
         // reaches it and arrow/Page-Down keys scroll it even though nothing inside is itself
@@ -239,7 +239,7 @@ ${patch}`
 
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2 py-1 font-code text-xs text-muted-foreground">
         {!hideFileName && (
           <span className="min-w-0 truncate" title={path}>
             {path}
@@ -258,7 +258,7 @@ ${patch}`
         </span>
       </div>
       {!changedFile ? (
-        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">{reason ?? 'No changes'}</div>
+        <div className="px-2 py-1 text-xs text-muted-foreground">{reason ?? 'No changes'}</div>
       ) : (
         <Diff viewType="unified" diffType={changedFile.type} hunks={changedFile.hunks} renderGutter={renderGutter}>
           {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}

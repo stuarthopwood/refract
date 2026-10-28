@@ -155,15 +155,15 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
             </span>
           )}
           <Button type="button" variant="outline" size="sm" onClick={() => void runOpenInVSCode(preview.path)}>
-            <Code2Icon aria-hidden className="size-3.5" />
+            <Code2Icon aria-hidden className="size-4" />
             Open in VS Code
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => void onReveal(preview.path)}>
-            <FolderOpenIcon aria-hidden className="size-3.5" />
+            <FolderOpenIcon aria-hidden className="size-4" />
             Reveal
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => void onCopyPath(preview.path)}>
-            <CopyIcon aria-hidden className="size-3.5" />
+            <CopyIcon aria-hidden className="size-4" />
             Copy path
           </Button>
         </div>
@@ -255,7 +255,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
               aria-label="Wrap long lines"
               onClick={() => setWrap((v) => !v)}
             >
-              <WrapTextIcon aria-hidden className="size-3.5" />
+              <WrapTextIcon aria-hidden className="size-4" />
               Wrap
             </Button>
           </div>

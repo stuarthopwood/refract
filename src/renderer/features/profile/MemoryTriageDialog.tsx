@@ -327,7 +327,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
               {idleSessions.map((session) => {
                 const repository = repositoriesById.get(session.repositoryId)
                 return (
-                  <li key={session.id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted">
+                  <li key={session.id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-muted">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-foreground">{session.name}</p>
                       <p className="truncate text-xs text-muted-foreground">

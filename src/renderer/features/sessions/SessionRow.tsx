@@ -186,7 +186,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
               the open button to line 1's own height, instead of centring it across the whole
               44px row (gate round 1 fix, architect/layout). `min-h-11` keeps the row at its full
               height while renaming (gate round 1 fix, Low: a lone `<input>` used to shrink it to
-              about 38px). Row `pl-6` (not the decision's own literal `pl-3`): the UX architect's
+              about 38px). Row `pl-6` (not the decision's own literal `pl-4`): the UX architect's
               gate ruling on decision 8 changes the header trigger to `gap-1 px-1`
               (`GroupHeader.tsx`) so its own Project icon starts at 24px, and widens this row to
               match, so the status icon finally lines up under it.
@@ -259,14 +259,14 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                       220px minimum, far more than the group ever needs under `[@media(hover:
                       hover)]` (only one of time/"..." shows at a time there). Sized to the real
                       content instead: `pr-10` (time or "..." alone, whichever is wider) or
-                      `pr-16` with Resume mounted (+24px, +4px gap), under `[@media(hover:hover)]`;
+                      `pr-18` (72px) with Resume mounted (+24px, +4px gap, rounded up to the grid), under `[@media(hover:hover)]`;
                       `[@media(hover:none)]` widens further to the true additive case (time AND
-                      "..." both shown together) -- `pr-17` (68px) without Resume, `pr-24` (96px,
+                      "..." both shown together) -- `pr-18` (72px, 68px rounded up) without Resume, `pr-24` (96px,
                       the clean existing Tailwind size) with it. */}
                   <span
                     className={cn(
                       'flex min-w-0 items-center gap-2',
-                      canResume ? 'pr-16 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-17'
+                      canResume ? 'pr-18 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-18'
                     )}
                   >
                     {session.startProgress ? (
@@ -278,7 +278,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                   </span>
                   {/* Line 2: one slot, first match wins (`lineTwoKind` above). Gate round 1 fix
                       (Medium, decision 9.4): an archived row's Project name gets the same
-                      `FolderGit2Icon size-3` the old per-repository secondary label used. */}
+                      `FolderGit2Icon size-4` the old per-repository secondary label used. */}
                   {lineTwo === 'start-progress' && session.startProgress ? (
                     <span className="truncate pl-6 text-xs text-muted-foreground" aria-hidden>
                       {describeStartProgress(session.startProgress)}
@@ -287,7 +287,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                     <span className="truncate pl-6 text-xs text-destructive">Terminated unexpectedly</span>
                   ) : lineTwo === 'archived' ? (
                     <span className="flex min-w-0 items-center gap-1 pl-6 text-xs text-muted-foreground">
-                      <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+                      <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
                       <span className="truncate">{repository.name}</span>
                     </span>
                   ) : lineTwo === 'activity' ? (
@@ -342,9 +342,9 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                       onClick={() => void handleResume()}
                     >
                       {resuming ? (
-                        <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+                        <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
                       ) : (
-                        <RotateCwIcon aria-hidden className="size-3" />
+                        <RotateCwIcon aria-hidden className="size-4" />
                       )}
                     </Button>
                   </TooltipTrigger>
@@ -391,7 +391,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                       aria-label={`${session.name} actions`}
                       className={TRAILING_MENU_BUTTON_CLASS}
                     >
-                      <EllipsisVerticalIcon aria-hidden className="size-3" />
+                      <EllipsisVerticalIcon aria-hidden className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>

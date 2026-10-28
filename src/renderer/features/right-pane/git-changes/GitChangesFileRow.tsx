@@ -150,26 +150,26 @@ export function GitChangesFileRow({
   }
 
   return (
-    <div className="group/row flex w-full items-center gap-1.5 rounded px-1 py-1 text-sm hover:bg-accent/50" aria-busy={actionPending}>
+    <div className="group/row flex w-full items-center gap-2 rounded px-1 py-1 text-sm hover:bg-accent/50" aria-busy={actionPending}>
       <button
         type="button"
         data-git-row-path={entry.path}
         onClick={onOpenDiff}
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
         {/* Item 3 (#1101): the row's own status icon becomes a spinner while a stage/unstage
             round trip for THIS file is in flight -- the kebab menu that triggered it has
             already closed (a `DropdownMenuItem`'s `onSelect` always closes its menu), so the
             row itself is the only place left to show it. */}
         {actionPending ? (
-          <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />
         ) : (
-          <mark.Icon aria-hidden className={`size-3.5 shrink-0 ${mark.className}`} />
+          <mark.Icon aria-hidden className={`size-4 shrink-0 ${mark.className}`} />
         )}
         <span className="sr-only">{`${mark.label} — Open diff for ${entry.path}`}</span>
         <span aria-hidden className="min-w-0 flex-1 truncate" title={entry.path}>
           {fileName}
-          {entry.folder && <span className="ml-1.5 text-xs text-muted-foreground">{entry.folder}</span>}
+          {entry.folder && <span className="ml-1 text-xs text-muted-foreground">{entry.folder}</span>}
         </span>
       </button>
       <DiffStatCounts added={entry.additions} removed={entry.deletions} compact accessibleLabel />
@@ -211,32 +211,32 @@ export function GitChangesFileRow({
             }}
             className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 outline-none hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 aria-expanded:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >
-            <EllipsisVerticalIcon aria-hidden className="size-3.5" />
+            <EllipsisVerticalIcon aria-hidden className="size-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isConflict ? (
             <DropdownMenuItem onSelect={() => setConfirmResolveOpen(true)}>
-              <CheckIcon aria-hidden className="size-3.5" />
+              <CheckIcon aria-hidden className="size-4" />
               {`Mark ${fileName} as resolved`}
             </DropdownMenuItem>
           ) : canStage ? (
             <DropdownMenuItem onSelect={() => void handleStage()}>
-              <PlusIcon aria-hidden className="size-3.5" />
+              <PlusIcon aria-hidden className="size-4" />
               {`Stage ${fileName}`}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem onSelect={() => void handleUnstage()}>
-              <MinusIcon aria-hidden className="size-3.5" />
+              <MinusIcon aria-hidden className="size-4" />
               {`Unstage ${fileName}`}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onSelect={onOpenDiff}>
-            <EyeIcon aria-hidden className="size-3.5" />
+            <EyeIcon aria-hidden className="size-4" />
             {`Open diff for ${fileName}`}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void runOpenInVSCode()}>
-            <Code2Icon aria-hidden className="size-3.5" />
+            <Code2Icon aria-hidden className="size-4" />
             {`Open ${fileName} in VS Code`}
           </DropdownMenuItem>
         </DropdownMenuContent>

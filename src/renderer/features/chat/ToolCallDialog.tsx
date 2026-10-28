@@ -115,7 +115,7 @@ function ToolCallDialogBody({ item }: { item: ToolItem }) {
         <TabsTrigger value="formatted">Formatted</TabsTrigger>
         <TabsTrigger value="json">JSON</TabsTrigger>
       </TabsList>
-      <TabsContent value="formatted" className={`${panelClassName} space-y-3`}>
+      <TabsContent value="formatted" className={`${panelClassName} space-y-2`}>
         <div className="flex items-center gap-2 text-sm">
           <StatusIcon status={item.status} />
           <span className="shrink-0 text-xs text-muted-foreground">

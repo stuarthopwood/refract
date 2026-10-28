@@ -34,12 +34,12 @@ export function ComposerBranchLabel({ sessionId }: { sessionId: string }) {
           className={cn(PICKER_TRIGGER_CLASS, 'min-w-16 max-w-max flex-[1_1_0%] shrink')}
           onClick={onClick}
         >
-          <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+          <GitBranchIcon aria-hidden className="size-4 shrink-0" />
           <span className="min-w-0 truncate">{label}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent>
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <span className="break-all">{label}</span>
           {baseBranch && <span>From {baseBranch}</span>}
           {differs && <span>Session branch: {sessionBranch}</span>}

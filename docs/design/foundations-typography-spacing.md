@@ -80,31 +80,34 @@ Decided 2026-10-16 (issue #928, v0.3.0 feedback item 5): the composer status lin
 | Element | Classes |
 | --- | --- |
 | Status line chip text (`ReadoutChip.tsx`) | `text-readout text-muted-foreground` (13px) |
-| Status line chip icon (`ReadoutChip.tsx`) | `size-3.5` (14px) |
+| Status line chip icon (`ReadoutChip.tsx`) | `size-4` (16px; was 14px before #1252) |
 
 Scoped to `ReadoutChip.tsx` alone, the status line's own shared baseline component -- nothing else reads `text-readout` today.
 
 
 ## Spacing grid
 
-Use a 4px grid with five allowed steps for padding, margin, and gap; control and icon sizes follow the control-height and icon-size ladders instead, not this grid. Never use an arbitrary pixel value in a component; the #474 audit found raw values (`p-1.5`, `p-0.5`, `gap-1.5`, `size-2.5`) outside this scale.
+Use an 8px grid with a 4px half-step for padding, margin, and gap (decided 2026-10-27, #1252; it supersedes the 4px grid of #474). Use the 4px step only for tight icon-to-text gaps and inline chip padding. Never use an off-scale value (`p-1.5`, `gap-3`, `px-2.5`, `py-0.5`) or an arbitrary pixel value in a component; `pnpm check:spacing` (part of `pnpm ci:local`) fails on them, and `scripts/spacing-allowlist.json` lists any justified exception. Control and icon sizes follow the ladders below.
 
 | Step | Tailwind class |
 | --- | --- |
-| 4px | `1` |
+| 4px (half-step) | `1` |
 | 8px | `2` |
-| 12px | `3` |
 | 16px | `4` |
 | 24px | `6` |
+| 32px | `8` |
+| 40px | `10` |
+| 48px | `12` |
+
+Larger offsets (for example space reserved for a trailing button) are multiples of 8px.
 
 ## Control heights
 
-Control heights are 24, 28, and 32px (`xs`/`icon-xs`, `sm`/`icon-sm`, `default`/`icon`), following the button sizes decided in agenda item 8.
+Control heights are 24 and 32px (`xs`/`sm` and `icon-xs`/`icon-sm` at 24px, `default`/`icon` at 32px); `sm` and `icon-sm` dropped from 28px under #1252.
 
 | Height | Button size | Icon-only size |
 | --- | --- | --- |
-| 24px | `xs` | `icon-xs` |
-| 28px | `sm` | `icon-sm` |
+| 24px | `xs`, `sm` | `icon-xs`, `icon-sm` |
 | 32px | `default` | `icon` |
 
 `button.tsx` also defines `lg` and `icon-lg` (36px); these are not part of the system, the same rule agenda item 4 applies to the unused `secondary` and `link` variants.

@@ -27,9 +27,9 @@ const THINKING_PREVIEW_CHARS = 120
 // ask, only `allFinished` -- can reuse it as `thoughtIcon(!allFinished)`.
 function thoughtIcon(streaming: boolean) {
   return streaming ? (
-    <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
+    <Loader2Icon className="size-4 shrink-0 animate-spin text-state-working" />
   ) : (
-    <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
+    <BrainIcon className="size-4 shrink-0 text-muted-foreground" />
   )
 }
 

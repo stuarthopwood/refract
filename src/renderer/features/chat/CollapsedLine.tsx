@@ -184,7 +184,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
 
   const row = (
     <>
-      {/* #565 decision 7: 16px slot (icon itself stays 14px, `size-3.5`, centred within it) so
+      {/* #565 decision 7: 16px slot (icon is `size-4` (16px), centred within it) so
        * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly.
        * Gate round 1 (Main, D1): the row is `items-start` (not `items-center`), so this slot's
        * own height must match the label's 20px line box (`h-5`) for the icon to sit centred on
@@ -350,7 +350,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         >
           {row}
           <span className="flex h-5 shrink-0 items-center">
-            <ChevronRightIcon className={cn('size-3.5 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
+            <ChevronRightIcon className={cn('size-4 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
           </span>
         </CollapsibleTrigger>
         {/* Sibling of the trigger, never nested inside it -- a `<button>` cannot nest inside

@@ -238,7 +238,7 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   if (item.severity === 'nit') {
     return (
       <CollapsedLine
-        icon={<Icon className={cn('size-3.5 shrink-0', className)} />}
+        icon={<Icon className={cn('size-4 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
         meta={meta || undefined}
@@ -266,7 +266,7 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
     <div data-advisory-severity={item.severity} className={cn(item.severity === 'blocker' || open ? STRIPE_CLASS[item.severity] : undefined)}>
       <CollapsedLine
         ref={innerRef}
-        icon={<Icon className={cn('size-3.5 shrink-0', className)} />}
+        icon={<Icon className={cn('size-4 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
         meta={meta || undefined}

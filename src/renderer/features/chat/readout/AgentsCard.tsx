@@ -56,7 +56,7 @@ export function AgentsCard({
         <ul className="mt-2 max-h-[min(16rem,40vh)] space-y-2 overflow-y-auto">
           {shown.map((agent) => (
             <li key={agent.id} className="flex items-start gap-2 text-xs">
-              <RunningIcon aria-hidden className={cn('mt-0.5 size-3.5 shrink-0', runningIconClass)} />
+              <RunningIcon aria-hidden className={cn('mt-1 size-4 shrink-0', runningIconClass)} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
                   {/* Gate round 1 fix 6: the agent's own NAME leads (never falls back to the

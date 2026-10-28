@@ -257,7 +257,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
         >
           {roleItems.length === 0 && (
             <span className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-              <Loader2Icon aria-hidden className="size-3 animate-spin" />
+              <Loader2Icon aria-hidden className="size-4 animate-spin" />
               Loading roles…
             </span>
           )}
@@ -291,7 +291,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             onKeyDown={handleFilterKeyDown}
             placeholder="Filter models…"
             aria-label="Filter models"
-            className="h-7"
+            className="h-6"
           />
         </div>
         <div ref={listRef} id={listboxId} role="listbox" aria-label="Models" className="min-h-0 flex-1 overflow-y-auto" onMouseDown={(event) => event.preventDefault()}>

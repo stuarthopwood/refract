@@ -197,7 +197,7 @@ function shouldShowTimeGapDivider(previousAt: number, nextAt: number): boolean {
 function TimeGapDivider({ at }: { at: number }) {
   const label = new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   return (
-    <div data-slot="time-gap-divider" className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
+    <div data-slot="time-gap-divider" className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
       <span>{label}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />

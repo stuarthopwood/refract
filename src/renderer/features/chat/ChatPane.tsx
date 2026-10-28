@@ -1147,7 +1147,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       <div
         role="status"
         className={cn(
-          'flex shrink-0 items-center gap-1.5 px-4 py-2 text-xs text-muted-foreground',
+          'flex shrink-0 items-center gap-2 px-4 py-2 text-xs text-muted-foreground',
           !recovering && !startingNew && !resuming && 'sr-only'
         )}
       >
@@ -1179,7 +1179,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         {startAnnouncement}
       </div>
       {showBanner && (
-        <div data-pane-banner className="shrink-0 px-4 pt-3">
+        <div data-pane-banner className="shrink-0 px-4 pt-4">
           <Alert variant="destructive">
             <AlertTriangleIcon />
             <AlertTitle>
@@ -1270,7 +1270,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
               Start new, and on expand the whole stderr/omp-log/memory text), interrupting the
               user mid-read. A sibling here never mutates a live region. */}
           {startFailureDetails && (
-            <div className="mt-2 pl-8 pb-3">
+            <div className="mt-2 pl-8 pb-4">
               {/* Issue #512 requirement 2 (gate-fixes Medium finding, cycle 5): the stderr/
                   omp-log warnings-and-errors tails and memory figures `buildStartFailure`
                   appends, hidden behind a disclosure instead of always shown inline -- the

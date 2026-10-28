@@ -156,13 +156,13 @@ export function ManageSessionsScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="no-drag-region size-7"
+              className="no-drag-region size-6"
               aria-label="Back to chat"
               onClick={handleBackToChat}
             >
@@ -186,7 +186,7 @@ export function ManageSessionsScreen() {
         totalCount={sessions.length}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {sessions.length === 0 ? (
           <Empty>
             <EmptyHeader>

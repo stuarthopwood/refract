@@ -318,7 +318,7 @@ export function DeleteDialog({
           <AlertDialogDescription>This removes its worktree, its branch, and its Conversations.</AlertDialogDescription>
         </AlertDialogHeader>
         {result && (result.uncommittedFiles > 0 || result.unpushedCommits > 0 || !result.hasUpstream) && (
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
             {result.uncommittedFiles > 0 && (
               <li>
                 {result.uncommittedFiles} uncommitted file{result.uncommittedFiles === 1 ? '' : 's'} will be lost
@@ -340,7 +340,7 @@ export function DeleteDialog({
             CHANGE to an already-present live region, not a node that appears for the first
             time. `min-h-5` keeps this row's own height constant as the icon and text come and
             go, matching the error box below's own established pattern. */}
-        <p role="status" className="flex min-h-5 items-center gap-1.5 text-sm text-muted-foreground">
+        <p role="status" className="flex min-h-5 items-center gap-2 text-sm text-muted-foreground">
           {deleting && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
           {statusText}
         </p>
@@ -355,15 +355,15 @@ export function DeleteDialog({
               Files left in the worktree
             </p>
             {/* Issue #891 gate round (M4): leading Folder/File icons replace disc bullets, so
-                the list no longer needs `pl-5`'s own off-grid indent. */}
+                the list no longer needs `pl-4`'s own off-grid indent. */}
             <ul
               aria-labelledby="leftover-files-label"
               tabIndex={0}
               className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             >
               {leftoverSummary.generatedFolders.map((folder) => (
-                <li key={folder.name} className="flex min-w-0 items-start gap-1.5">
-                  <FolderIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <li key={folder.name} className="flex min-w-0 items-start gap-2">
+                  <FolderIcon aria-hidden className="mt-1 size-4 shrink-0" />
                   {/* Issue #891 gate round (M3): `font-code`/`[overflow-wrap:anywhere]` (never
                       `break-all`, which breaks mid-word anywhere rather than preferring a
                       boundary); counts unbracketed, `tabular-nums`, `toLocaleString()`. */}
@@ -374,15 +374,15 @@ export function DeleteDialog({
                 </li>
               ))}
               {leftoverSummary.otherFiles.map((filePath) => (
-                <li key={filePath} className="flex min-w-0 items-start gap-1.5">
-                  <FileIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <li key={filePath} className="flex min-w-0 items-start gap-2">
+                  <FileIcon aria-hidden className="mt-1 size-4 shrink-0" />
                   <span className="min-w-0 flex-1 font-code [overflow-wrap:anywhere]">
                     {leftoverSummary.rootName}/{normalizeDisplayPath(filePath)}
                   </span>
                 </li>
               ))}
               {leftoverSummary.moreCount > 0 && (
-                <li className="pl-[22px] text-xs">and {leftoverSummary.moreCount.toLocaleString()} more files</li>
+                <li className="pl-6 text-xs">and {leftoverSummary.moreCount.toLocaleString()} more files</li>
               )}
             </ul>
           </div>
@@ -395,11 +395,11 @@ export function DeleteDialog({
         <div
           id="delete-dialog-error"
           role="alert"
-          className={cn('flex min-h-5 min-w-0 items-start gap-1.5 text-sm [overflow-wrap:anywhere]')}
+          className={cn('flex min-h-5 min-w-0 items-start gap-2 text-sm [overflow-wrap:anywhere]')}
         >
           {error && (
             <>
-              <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <OctagonXIcon aria-hidden className="mt-1 size-4 shrink-0 text-destructive" />
               <p className="min-w-0 flex-1">
                 <span className="sr-only">Error: </span>
                 <span className="text-destructive">{errorFirst}</span>

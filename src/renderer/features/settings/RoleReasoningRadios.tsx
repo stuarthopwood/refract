@@ -275,7 +275,7 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
         aria-labelledby={`${labelId} ${reasoningLabelId}`}
         aria-describedby={captionId}
         aria-busy={disabled || undefined}
-        className="mt-2 flex flex-row flex-wrap gap-x-4 gap-y-1.5"
+        className="mt-2 flex flex-row flex-wrap gap-x-4 gap-y-2"
         value={currentLevel}
         onValueChange={(value) => {
           if (value === INHERIT_VALUE) pick(INHERIT_VALUE)
@@ -312,7 +312,7 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
         // never render this component at all); this one sits right where a keyboard/radio user
         // is actually looking, immediately under the row they just picked in.
         <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-3 shrink-0 animate-spin" />
+          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
           Saving…
         </p>
       )}
@@ -344,7 +344,7 @@ function ReasoningRadioItem({
       value={value}
       disabled={disabled}
       className={cn(
-        'min-h-6 w-auto flex-row items-center gap-1.5 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
+        'min-h-6 w-auto flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
         // Gate round 2 fix (Visual Medium #2): a filled background makes the pending item
         // unmistakable. Gate round 3 fix (Medium #6): the base `data-[state=checked]:bg-
         // transparent` and a plain `bg-accent/70` have the SAME specificity once checked (the

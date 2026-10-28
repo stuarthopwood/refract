@@ -252,7 +252,7 @@ export function ProfileItem() {
                     {missingCli ? (
                       '?'
                     ) : githubError ? (
-                      <TriangleAlertIcon aria-hidden className="size-3.5" />
+                      <TriangleAlertIcon aria-hidden className="size-4" />
                     ) : (
                       initials(name ?? '?')
                     )}
@@ -263,7 +263,7 @@ export function ProfileItem() {
                     the dialog's own "Needs attention" rows) -- shown only for the ACTIVE
                     account's own auth problem, distinct from `githubError` above (the CLI itself
                     being unreachable, with no account known at all). */}
-                {authProblem && <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-state-needs-you" />}
+                {authProblem && <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />}
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>

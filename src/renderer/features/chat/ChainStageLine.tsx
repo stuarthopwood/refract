@@ -121,7 +121,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           title={`Go to ${stageLabel}`}
           // Issue #1008 gate round 1 (item 3, Medium): cursor/underline affordance cues beyond
           // colour; `py-1` really matches `ChainAgentEntry`'s own 28px button height above (its
-          // button uses `py-1`, not `py-0.5` -- gate round 2 fix, item 4: the old comment here
+          // button uses `py-1`, not `py-1` -- gate round 2 fix, item 4: the old comment here
           // claimed a match that was never true).
           className={cn(
             'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
@@ -142,7 +142,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           {formatElapsed(durationMs)}
         </span>
       )}
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         {stage.items.map((item) => (
           <ChainAgentEntry key={item.id} item={item} sessionId={sessionId} />
         ))}

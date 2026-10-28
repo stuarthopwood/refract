@@ -191,7 +191,7 @@ export function SlashMenu({
             onSelect(match.command, match.isRunBare)
           }}
           className={cn(
-            'flex cursor-default items-center justify-between gap-3 border-l-2 border-transparent px-2 py-1.5',
+            'flex cursor-default items-center justify-between gap-2 border-l-2 border-transparent px-2 py-1',
             index === activeIndex && 'border-l-active-indicator bg-accent text-accent-foreground'
           )}
         >

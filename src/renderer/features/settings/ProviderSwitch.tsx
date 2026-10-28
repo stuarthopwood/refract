@@ -22,7 +22,7 @@ export function ProviderSwitch({ providers, selected, onSelect }: ProviderSwitch
   if (providers.length <= 1) return null
   const labelId = 'model-role-provider-switch-label'
   return (
-    <div className="mb-3">
+    <div className="mb-2">
       {/* Gate round 1 fix (#1114, Flow/Visual Medium #7): the switch read as an ordinary setting,
           not a filter -- a visible label fixes both the sighted-user ambiguity and the missing
           accessible name (`aria-label="Provider"` alone gave no visible cue at all). */}

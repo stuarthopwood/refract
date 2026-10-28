@@ -81,7 +81,7 @@ function getHighlighter(): Promise<Highlighter> {
 // multiple blocks in one transcript are distinguishable in a screen reader's button list.
 function CodeBlockHeader({ label, copyText }: { label: string; copyText: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2.5 py-1 font-code text-xs text-muted-foreground">
+    <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2 py-1 font-code text-xs text-muted-foreground">
       <span className="truncate">{label}</span>
       {copyText !== '' && (
         <CopyButton
@@ -203,7 +203,7 @@ export function CodeBlock({
   const gutter = showLineNumbers ? (
     <pre
       aria-hidden
-      className="m-0 select-none border-r border-border bg-card py-3 pl-3 pr-2 text-right leading-[1.6] text-muted-foreground tabular-nums"
+      className="m-0 select-none border-r border-border bg-card py-4 pl-4 pr-2 text-right leading-[1.6] text-muted-foreground tabular-nums"
     >
       {Array.from({ length: lineCount }, (_, i) => i + 1).join('\n')}
     </pre>
@@ -225,7 +225,7 @@ export function CodeBlock({
             className={cn(
               'min-w-0 flex-1 bg-card',
               wrap ? wrapClassName : scrollableClassName,
-              wrap ? '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:whitespace-pre-wrap [&>pre]:break-words' : '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:leading-[1.6]'
+              wrap ? '[&>pre]:m-0 [&>pre]:p-4 [&>pre]:whitespace-pre-wrap [&>pre]:break-words' : '[&>pre]:m-0 [&>pre]:p-4 [&>pre]:leading-[1.6]'
             )}
             dangerouslySetInnerHTML={{ __html: html }}
           />
@@ -242,7 +242,7 @@ export function CodeBlock({
           tabIndex={0}
           role="region"
           aria-label={regionLabel}
-          className={cn('min-w-0 flex-1', wrap ? wrapClassName : scrollableClassName, 'bg-card p-3 leading-[1.6]')}
+          className={cn('min-w-0 flex-1', wrap ? wrapClassName : scrollableClassName, 'bg-card p-4 leading-[1.6]')}
         >
           <code>{code}</code>
         </pre>
@@ -682,7 +682,7 @@ function UnorderedList({ className, ...props }: React.ComponentProps<'ul'> & Ext
       className={cn(
         typeof className === 'string' && className.includes('contains-task-list')
           ? 'list-none space-y-1 pl-0'
-          : 'list-disc pl-5',
+          : 'list-disc pl-4',
         className
       )}
       {...props}
@@ -690,13 +690,13 @@ function UnorderedList({ className, ...props }: React.ComponentProps<'ul'> & Ext
   )
 }
 function OrderedList({ className, ...props }: React.ComponentProps<'ol'> & ExtraProps) {
-  return <ol className={cn('list-decimal pl-5', className)} {...props} />
+  return <ol className={cn('list-decimal pl-4', className)} {...props} />
 }
 // Task-list checkboxes (GFM): rehype-sanitize's default (GitHub-style) schema already allows
 // `input[type=checkbox][disabled]` and `li.task-list-item` (hast-util-sanitize
 // lib/schema.js), so no schema extension was needed for T065; this only themes the checkbox.
 function TaskCheckbox({ className, ...props }: React.ComponentProps<'input'> & ExtraProps) {
-  return <input className={cn('mr-1.5 align-middle accent-primary', className)} {...props} />
+  return <input className={cn('mr-1 align-middle accent-primary', className)} {...props} />
 }
 
 // Clones the task-list-item's checkbox (always its first real child, per remark-gfm) with
@@ -837,7 +837,7 @@ const components: Components = {
     <section
       className={cn(
         typeof className === 'string' && className.includes('footnotes')
-          ? 'mt-3 border-t border-border pt-2 text-xs text-muted-foreground'
+          ? 'mt-2 border-t border-border pt-2 text-xs text-muted-foreground'
           : undefined,
         className
       )}
@@ -845,7 +845,7 @@ const components: Components = {
     />
   ),
   blockquote: ({ className, ...props }) => (
-    <blockquote className={cn('border-l-2 border-border pl-3 text-muted-foreground', className)} {...props} />
+    <blockquote className={cn('border-l-2 border-border pl-4 text-muted-foreground', className)} {...props} />
   ),
   hr: ({ className, ...props }) => <hr className={cn('border-border', className)} {...props} />,
   h1: heading('h1'),
@@ -895,7 +895,7 @@ const components: Components = {
         const safe = trimmed && !/\s/.test(trimmed) ? safeUrl(trimmed) : undefined
         if (safe) {
           return (
-            <code className="rounded bg-muted px-1 py-0.5 font-code text-[0.85em]" {...props}>
+            <code className="rounded bg-muted px-1 py-1 font-code text-[0.85em]" {...props}>
               {streaming ? (
                 <span className={mutedInertLinkClassName}>{text}</span>
               ) : (
@@ -913,14 +913,14 @@ const components: Components = {
         const fileRef = sessionId && trimmed ? parseFileReference(trimmed) : null
         if (fileRef) {
           return (
-            <code className="rounded bg-muted px-1 py-0.5 font-code text-[0.85em]" {...props}>
+            <code className="rounded bg-muted px-1 py-1 font-code text-[0.85em]" {...props}>
               <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} />
             </code>
           )
         }
       }
       return (
-        <code className="rounded bg-muted px-1 py-0.5 font-code text-[0.85em]" {...props}>
+        <code className="rounded bg-muted px-1 py-1 font-code text-[0.85em]" {...props}>
           {children}
         </code>
       )

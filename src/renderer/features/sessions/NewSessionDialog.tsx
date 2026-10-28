@@ -106,8 +106,8 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
           <DialogTitle>New session in {repository.name}</DialogTitle>
           <DialogDescription>Refract names the Session and its branch automatically.</DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-3" onSubmit={(event) => void handleSubmit(event)}>
-          <div className="flex flex-col gap-1.5">
+        <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
+          <div className="flex flex-col gap-2">
             <label htmlFor="base-branch" className="text-sm">
               Base branch
             </label>
@@ -117,8 +117,8 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
               </SelectTrigger>
               <SelectContent position="popper" side="bottom" sideOffset={4}>
                 <SelectGroup>
-                  <SelectLabel className="flex items-center gap-1.5">
-                    <GitBranchIcon aria-hidden className="size-3.5" />
+                  <SelectLabel className="flex items-center gap-2">
+                    <GitBranchIcon aria-hidden className="size-4" />
                     Branches
                   </SelectLabel>
                   {branchOptions.map((entry) => (
@@ -131,8 +131,8 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
                   <>
                     <SelectSeparator />
                     <SelectGroup>
-                      <SelectLabel className="flex items-center gap-1.5">
-                        <FolderGit2Icon aria-hidden className="size-3.5" />
+                      <SelectLabel className="flex items-center gap-2">
+                        <FolderGit2Icon aria-hidden className="size-4" />
                         Sessions
                       </SelectLabel>
                       {sessionOptions.map((entry) => (

@@ -360,7 +360,7 @@ function GitChangesDiffPane({
       // landed on that outer scroll container instead of this div, leaving focus stranded where
       // Escape could never reach this div's own handler below.
       tabIndex={-1}
-      className="flex min-h-full flex-col gap-1.5 p-1 outline-none"
+      className="flex min-h-full flex-col gap-2 p-1 outline-none"
       onKeyDown={(event) => {
         // Item 14 (gate round 1): Escape returns to the list, same as the explicit Back button.
         if (event.key === 'Escape') {
@@ -375,8 +375,8 @@ function GitChangesDiffPane({
           tab" ships and this whole diff pane (Back button included) is removed. `bg-background`
           (this hosted pane's own inherited base surface, set no closer than the app root) stops
           scrolled-past diff text from showing through underneath it. Gate round 1 LOW 5 (#1101):
-          `py-1` (was `py-0.5`) -- the Back button's own 3px focus-visible ring needs 1px more
-          clearance than `py-0.5` left it, or the ring clips against the sticky bar's own edge.
+          `py-1` (the Back button's own 3px focus-visible ring needs 1px more
+          clearance than `py-1` left it, or the ring clips against the sticky bar's own edge.
           #1111 item 4/Low "border-b": the arrow and the file name are now ONE ghost button
           (`title={entry.path}` is the Low item's own actionable hover text, the accessible name
           comes from the visible "Back to changes from <file>" label below) instead of a
@@ -391,9 +391,9 @@ function GitChangesDiffPane({
           title={entry.path}
           aria-label={`Back to changes from ${fileName}`}
           onClick={onBack}
-          className="min-w-0 flex-1 justify-start gap-1.5 px-1.5 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+          className="min-w-0 flex-1 justify-start gap-2 px-1 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         >
-          <ArrowLeftIcon aria-hidden className="size-3.5 shrink-0" />
+          <ArrowLeftIcon aria-hidden className="size-4 shrink-0" />
           <span aria-hidden className="min-w-0 truncate">
             {fileName}
           </span>

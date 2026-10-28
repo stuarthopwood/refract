@@ -236,7 +236,7 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
               className={cn('aria-expanded:bg-transparent aria-expanded:text-muted-foreground', COMPOSER_BUTTON_FOCUS_CLASS)}
               onClick={() => setCollapsed(sessionId, !collapsed)}
             >
-              <ChevronDownIcon aria-hidden className={cn('size-3.5 transition-transform', collapsed && '-rotate-90')} />
+              <ChevronDownIcon aria-hidden className={cn('size-4 transition-transform', collapsed && '-rotate-90')} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Todo list details</TooltipContent>
@@ -252,7 +252,7 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
               className={COMPOSER_BUTTON_FOCUS_CLASS}
               onClick={() => setPinned(sessionId, false)}
             >
-              <PinOffIcon aria-hidden className="size-3.5" />
+              <PinOffIcon aria-hidden className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Unpin todo list</TooltipContent>

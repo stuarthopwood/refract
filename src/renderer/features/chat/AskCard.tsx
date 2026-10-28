@@ -31,7 +31,7 @@ interface AskCardProps {
  * (so the card's own surface shows through, decision D9), a muted hover, and a 36px minimum
  * target (WCAG 2.5.8). Named for what it governs, not the primitive it happens to sit on (code
  * review Low, round 1). */
-const ASK_ROW_CLASS = 'gap-1 bg-transparent hover:bg-muted min-h-9 py-1.5'
+const ASK_ROW_CLASS = 'gap-1 bg-transparent hover:bg-muted min-h-9 py-1'
 
 /** D13: a single choice is complete once a real option is picked or Other carries text; a
  * multiple choice is complete once its tab has been opened, even with nothing ticked (D15: an
@@ -292,7 +292,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
                           <span className="min-w-0 truncate">{label}</span>
                           {answered && (
                             <>
-                              <CheckIcon aria-hidden className="size-3.5 shrink-0" />
+                              <CheckIcon aria-hidden className="size-4 shrink-0" />
                               <span className="sr-only">, answered</span>
                             </>
                           )}

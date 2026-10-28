@@ -75,5 +75,5 @@ export function ReviewConsensus({ timeline, authorLogin }: ReviewConsensusProps)
 
   if (parts.length === 0) return null
 
-  return <p className="mb-3 text-sm text-muted-foreground">{parts.join(', ')}</p>
+  return <p className="mb-2 text-sm text-muted-foreground">{parts.join(', ')}</p>
 }

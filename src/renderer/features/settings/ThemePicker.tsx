@@ -71,7 +71,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             onClick={() => choose(theme.id)}
             onKeyDown={(event) => handleKeyDown(event, index)}
             className={cn(
-              'flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2 text-left text-sm outline-none',
+              'flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none',
               'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
               isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
             )}
@@ -87,7 +87,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             <span id={`theme-option-${theme.id}-name`} className="flex-1">{theme.name}</span>
             {isActive && (
               <span aria-hidden className="flex items-center gap-1 text-xs">
-                <CheckIcon aria-hidden className="size-3.5" />
+                <CheckIcon aria-hidden className="size-4" />
                 <span>Current</span>
               </span>
             )}

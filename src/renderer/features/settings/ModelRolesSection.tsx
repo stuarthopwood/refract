@@ -293,7 +293,7 @@ export function ModelRolesSection() {
     if (catalogLoading) {
       return (
         <p key={kind} className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-3 shrink-0 animate-spin" />
+          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
           Loading models…
         </p>
       )
@@ -303,7 +303,7 @@ export function ModelRolesSection() {
       return (
         <p key={kind} id={catalogErrorId} className="mb-2 flex items-center gap-2 text-xs text-destructive">
           <span className="flex items-center gap-1">
-            <OctagonXIcon aria-hidden className="size-3 shrink-0" />
+            <OctagonXIcon aria-hidden className="size-4 shrink-0" />
             Could not load {kindLabel} models: {catalogError}
           </span>
           <Button
@@ -382,9 +382,9 @@ export function ModelRolesSection() {
     const selectValue = hasUnknownCurrent ? (currentValue ?? INHERITED_VALUE) : (currentBase ?? INHERITED_VALUE)
 
     return (
-      <div key={role} className="py-3">
+      <div key={role} className="py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-1">
             <label id={labelId} htmlFor={selectId} className="text-sm">
               {label}
             </label>
@@ -395,7 +395,7 @@ export function ModelRolesSection() {
           <div className="flex items-center gap-2">
             {isPending && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin" />
+                <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
                 Saving…
               </span>
             )}
@@ -456,7 +456,7 @@ export function ModelRolesSection() {
                 {hasUnknownCurrent && (
                   <SelectItem value={currentValue as string}>
                     {resolvedCurrentEntry ? (
-                      <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="flex min-w-0 items-center gap-2">
                         <span className="min-w-0 truncate">{resolvedCurrentEntry.name}</span>
                         {resolvedCurrentEntry.provider !== selectedProvider && (
                           <span className="shrink-0 text-xs text-muted-foreground">{' '}via {friendlyProviderLabel(resolvedCurrentEntry.provider)}</span>
@@ -478,7 +478,7 @@ export function ModelRolesSection() {
         </div>
         {saveError && (
           <p id={saveErrorId} className="mt-1 flex items-center gap-1 text-xs text-destructive">
-            <OctagonXIcon aria-hidden className="size-3 shrink-0" />
+            <OctagonXIcon aria-hidden className="size-4 shrink-0" />
             Could not save: {saveError}
           </p>
         )}

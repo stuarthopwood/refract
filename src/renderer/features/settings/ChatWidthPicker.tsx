@@ -71,19 +71,19 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
               onClick={() => choose(option.id)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
-                'flex w-full flex-col items-start gap-0.5 rounded-md border border-transparent px-2.5 py-2 text-left text-sm outline-none',
+                'flex w-full flex-col items-start gap-1 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none',
                 'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
                 isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
               )}
             >
-              <span className="flex w-full items-center gap-2.5">
+              <span className="flex w-full items-center gap-2">
                 {/* L4: an aria-hidden size-4 slot so this group's labels align with Theme's own
                     swatch-led rows -- Chat width has no per-option colour, so this stays empty. */}
                 <span aria-hidden className="size-4 shrink-0" />
                 <span id={`chat-width-option-${option.id}-name`} className="flex-1">{option.name}</span>
                 {isActive && (
                   <span aria-hidden className="flex items-center gap-1 text-xs">
-                    <CheckIcon aria-hidden className="size-3.5" />
+                    <CheckIcon aria-hidden className="size-4" />
                     <span>Current</span>
                   </span>
                 )}

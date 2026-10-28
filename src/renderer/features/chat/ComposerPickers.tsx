@@ -95,12 +95,12 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
               className={PICKER_TRIGGER_CLASS}
             >
               {pendingLabel !== null ? (
-                <Loader2Icon aria-hidden className="size-3 animate-spin" />
+                <Loader2Icon aria-hidden className="size-4 animate-spin" />
               ) : (
-                <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-3" />
+                <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-4" />
               )}
               <span>{triggerLabel}</span>
-              {nextLabel && pendingLabel === null && <ClockIcon aria-hidden data-pending-glyph className="size-3 shrink-0 text-foreground" />}
+              {nextLabel && pendingLabel === null && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}
             </button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -187,7 +187,7 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
           // bare `Button variant="ghost"` with neither `cursor-pointer` (U2) nor the enforced
           // Dark-high-contrast resting border (U1, `border-composer-control-border`,
           // transparent in Dark/Obsidian so no visual change there). Not `PICKER_TRIGGER_CLASS`
-          // itself -- that's sized as a padded text+icon pill (`h-6 px-2.5`); Attach stays the
+          // itself -- that's sized as a padded text+icon pill (`h-6 px-2`); Attach stays the
           // icon-only square `size="icon-xs"` square its own design already is.
           className={cn(
             'cursor-pointer border-composer-control-border',

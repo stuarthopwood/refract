@@ -610,7 +610,7 @@ export function App() {
                       aria-keyshortcuts="Control+Shift+\"
                       onClick={() => useSplitStore.getState().focusOther()}
                     >
-                      <ArrowLeftRightIcon aria-hidden className="size-3.5" />
+                      <ArrowLeftRightIcon aria-hidden className="size-4" />
                     </button>
                     <ResizablePanel id="split-pane-1" defaultSize={`${100 - dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>

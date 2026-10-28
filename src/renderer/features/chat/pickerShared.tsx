@@ -91,7 +91,7 @@ export const PICKER_TRIGGER_CLASS = cn(
   // (globals.css); `border` (1px) is added explicitly since `ghost` sets none of its own.
   // U2: `cursor-pointer`/`aria-disabled:cursor-not-allowed` -- hover must show the pointer
   // cursor (decision 4a), never the default disabled-looking arrow, except while truly disabled.
-  'h-6 shrink-0 gap-2 px-2.5 border border-composer-control-border cursor-pointer aria-disabled:cursor-not-allowed text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:aria-disabled:hover:bg-transparent',
+  'h-6 shrink-0 gap-2 px-2 border border-composer-control-border cursor-pointer aria-disabled:cursor-not-allowed text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:aria-disabled:hover:bg-transparent',
   COMPOSER_DISABLED_CLASS,
   GHOST_FOCUS_CLASS
 )
@@ -101,7 +101,7 @@ export const PICKER_TRIGGER_CLASS = cn(
  * close to `--popover` by design. Matches `SlashMenu.tsx`'s own pattern exactly: a left border,
  * transparent at rest, switching to the opaque `--active-indicator` token (>=3:1 everywhere,
  * already relied on elsewhere for exactly this purpose) when active. */
-export const PICKER_OPTION_CLASS = 'flex cursor-default items-center gap-2 border-l-2 border-transparent px-2 py-1.5 text-sm'
+export const PICKER_OPTION_CLASS = 'flex cursor-default items-center gap-2 border-l-2 border-transparent px-2 py-1 text-sm'
 export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-accent text-accent-foreground'
 
 /** #1101 (Git changes panel commit box, ADR 0003): the composer's own surface/border/focus

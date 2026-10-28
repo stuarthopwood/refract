@@ -59,7 +59,7 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
   const icon = (
     <>
-      <Icon className={cn('size-3.5 shrink-0', NOTICE_CLASS[level])} />
+      <Icon className={cn('size-4 shrink-0', NOTICE_CLASS[level])} />
       <span className="sr-only">{NOTICE_LABEL[level]}</span>
     </>
   )
@@ -85,7 +85,7 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       summary={text}
       summaryClassName={NOTICE_CLASS[level]}
       // #565 decision 10/7: the label column moved from 30px to 32px when `CollapsedLine`'s
-      // icon slot widened 14px -> 16px; `pl-7` (28px) becomes `pl-8` (32px) to stay aligned.
+      // icon slot widened 14px -> 16px; the column is now `pl-8` (32px) to stay aligned.
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed

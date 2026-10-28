@@ -32,7 +32,7 @@ Every icon-only control has an `aria-label` that equals its tooltip text, verb f
 
 ### Targets
 
-WCAG 2.5.8 applies to every pointer target, not only icon-only controls: each is at least 24×24 CSS px, or meets the spacing exception: a 24px circle centred on the bounding box of each undersized target does not intersect another target or the 24px circle of any other undersized target. Exempt: inline text links, user-agent-controlled controls (for example a native `<select>`), essential targets where the function itself requires a smaller size, and Equivalent (the same function is available through another control on the page that meets 24×24). Icon-only buttons meet the floor through `icon-xs` (24px) and `icon-sm` (28px); see "Sizes" in [components.md](components.md).
+WCAG 2.5.8 applies to every pointer target, not only icon-only controls: each is at least 24×24 CSS px, or meets the spacing exception: a 24px circle centred on the bounding box of each undersized target does not intersect another target or the 24px circle of any other undersized target. Exempt: inline text links, user-agent-controlled controls (for example a native `<select>`), essential targets where the function itself requires a smaller size, and Equivalent (the same function is available through another control on the page that meets 24×24). Icon-only buttons meet the floor through `icon-xs` (24px) and `icon-sm` (24px); see "Sizes" in [components.md](components.md).
 
 #### Known gaps for the #579 sweep
 
@@ -42,7 +42,7 @@ Existing controls measured below 24px, verified in code, not fixed by this docum
 - The resizable-panel handle (`resizable.tsx:37`): the hit area (`after:w-1`) is 4px wide; the visible line is 1px. It also needs the single-pointer resize alternative above (2.5.7).
 - The pasted-image remove button (`AttachmentStrip.tsx:41-49`, `size-4`): a 16px target.
 - The queued-message remove button (`MessageInput.tsx:717-720`, `p-0.5` around a `size-3` icon): about 16px.
-- The session-row and repository-header `⋮` menu triggers (`SessionList.tsx:299-301` and `:414-416`, `p-1` around a `size-3.5` icon): about 22px.
+- The session-row and repository-header `⋮` menu triggers (`SessionList.tsx:299-301` and `:414-416`, `p-1` around a `size-4` icon): about 24px.
 
 ### Hover-only actions need a keyboard path
 

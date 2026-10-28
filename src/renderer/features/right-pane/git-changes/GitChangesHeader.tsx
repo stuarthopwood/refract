@@ -8,8 +8,8 @@ import type { GitChangesHeader as GitChangesHeaderData } from '../../../../share
 
 export function GitChangesHeader({ header }: { header: GitChangesHeaderData }) {
   return (
-    <div className="no-drag-region flex shrink-0 items-center gap-1.5 border-b border-divider px-2 py-1.5 text-xs">
-      <GitBranchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+    <div className="no-drag-region flex shrink-0 items-center gap-2 border-b border-divider px-2 py-1 text-xs">
+      <GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate" title={header.branch}>
         {header.branch}
       </span>
@@ -17,9 +17,9 @@ export function GitChangesHeader({ header }: { header: GitChangesHeaderData }) {
       {header.aheadBehind && (
         <span className="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground">
           <span aria-hidden className="flex items-center gap-1">
-            <ArrowUpIcon className="size-3" />
+            <ArrowUpIcon className="size-4" />
             <span className="tabular-nums">{header.aheadBehind.ahead}</span>
-            <ArrowDownIcon className="size-3" />
+            <ArrowDownIcon className="size-4" />
             <span className="tabular-nums">{header.aheadBehind.behind}</span>
           </span>
           <span className="sr-only">

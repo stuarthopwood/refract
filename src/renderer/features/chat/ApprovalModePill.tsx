@@ -83,13 +83,13 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
           className={cn(
             PICKER_TRIGGER_CLASS,
             // Gate round 6 fix (`agent://Arch877` Visual N7): was a one-off duplicate of
-            // `pickerShared.tsx`'s own trigger class (including its stale `gap-1.5`, missed when
+            // `pickerShared.tsx`'s own trigger class (including its stale 6px gap, missed when
             // that shared class moved to `gap-2`) -- now reads the shared class directly, so the
             // two can never drift apart again. `COMPOSER_DISABLED_CLASS` folded in here never
             // activates: this pill is never `aria-disabled`.
           )}
         >
-          <CurrentIcon aria-hidden className="size-3" />
+          <CurrentIcon aria-hidden className="size-4" />
           {current.label}
           {pendingLabel && <span className="text-muted-foreground">&middot; {pendingLabel}</span>}
         </button>
@@ -101,12 +101,12 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
           return (
             <DropdownMenuItem key={item.value} onSelect={() => handleSelect(item.value)}>
               <ItemIcon aria-hidden className="size-4" />
-              <div className="flex flex-col gap-0.5 py-0.5">
-                <span className="flex items-center gap-1.5">
+              <div className="flex flex-col gap-1 py-1">
+                <span className="flex items-center gap-2">
                   {item.label}
                   {checked && (
                     <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
-                      <CheckIcon aria-hidden className="size-3.5" />
+                      <CheckIcon aria-hidden className="size-4" />
                       Current
                     </span>
                   )}

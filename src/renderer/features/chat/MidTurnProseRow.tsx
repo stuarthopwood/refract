@@ -31,7 +31,7 @@ export function MidTurnProseRow({ group }: { group: MidTurnProse }) {
   return (
     <div aria-live="off">
       <CollapsedLine
-        icon={<StickyNoteIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+        icon={<StickyNoteIcon className="size-4 shrink-0 text-muted-foreground" />}
         label="Note"
         summary={firstLineSummary(item.text) || undefined}
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}

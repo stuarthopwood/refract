@@ -97,24 +97,24 @@ export function ModelCatalogGroup({
               just reachable by closing and reopening the menu. */}
           <span className="min-w-0 flex-1 whitespace-normal break-words text-muted-foreground">{catalogError}</span>
           <span className="flex shrink-0 items-center gap-1 text-xs">
-            {retrying && <Loader2Icon aria-hidden className="size-3 animate-spin" />}
+            {retrying && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
             {retrying ? 'Retrying…' : 'Retry'}
           </span>
         </div>
       )}
       {!catalogError && catalog === undefined && (
-        <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin" />
+        <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
+          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
           Loading models…
         </div>
       )}
       {!catalogError && catalog !== undefined && catalog.length === 0 && (
-        <div role="option" aria-disabled className="px-2 py-1.5 text-sm text-muted-foreground">
+        <div role="option" aria-disabled className="px-2 py-1 text-sm text-muted-foreground">
           No models available. Check the agent's own model configuration.
         </div>
       )}
       {!catalogError && catalog !== undefined && catalog.length > 0 && filteredCatalog.length === 0 && (
-        <div role="option" aria-disabled className="px-2 py-1.5 text-sm text-muted-foreground">
+        <div role="option" aria-disabled className="px-2 py-1 text-sm text-muted-foreground">
           No models match.
         </div>
       )}
@@ -149,7 +149,7 @@ export function ModelCatalogGroup({
                 {checked && <span className="text-xs text-muted-foreground"> current</span>}
                 {nextModel && entry.provider === nextModel.provider && entry.id === nextModel.modelId && <span className="text-xs text-muted-foreground"> next</span>}
               </span>
-              {checked && <CheckIcon aria-hidden className="size-3.5 shrink-0" />}
+              {checked && <CheckIcon aria-hidden className="size-4 shrink-0" />}
             </div>
           )
         })}

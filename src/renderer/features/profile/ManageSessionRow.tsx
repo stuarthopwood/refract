@@ -511,7 +511,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                 onBlur={() => void commitRename()}
                 onKeyDown={handleNameKeyDown}
                 aria-label="Session name"
-                className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1.5 text-sm outline-none"
+                className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1 text-sm outline-none"
               />
             ) : (
               <button
@@ -525,14 +525,14 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                 // row instead of each shifting with its own content's length. Padding moved onto
                 // this button (off the wrapping `<li>`) so the hover fill below is entirely
                 // clickable, with no dead gutter.
-                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[8rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[8rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-2 rounded-md py-2 pl-4 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {/* Post-build review fix (Phase7PostBuild, HIGH, WCAG 2.5.3/4.1.2): no
                     `aria-label` here -- it previously replaced the button's whole content with
                     "Open session X in repo", hiding status, branch, Archived, Worktree missing,
                     and last activity from screen-reader users entirely. The accessible name now
                     comes from this visible content, in the same order it is read. */}
-                <span className="flex min-w-0 items-center gap-1.5">
+                <span className="flex min-w-0 items-center gap-2">
                   <StateIcon status={displayStatus(session)} />
                   <span className="truncate text-xs text-muted-foreground">{STATUS_LABEL[displayStatus(session)]}</span>
                 </span>
@@ -543,24 +543,24 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                     {session.name}
                   </span>
                   <span className="flex min-w-0 items-center gap-1 font-code text-xs text-muted-foreground">
-                    <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+                    <GitBranchIcon aria-hidden className="size-4 shrink-0" />
                     <span className="truncate">{session.branch}</span>
                   </span>
                 </span>
                 <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                  <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+                  <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
                   <span className="truncate">{repositoryName}</span>
                 </span>
-                <span className="flex min-w-0 items-center gap-1.5 text-xs">
+                <span className="flex min-w-0 items-center gap-2 text-xs">
                   {worktreeMissing && (
                     <span className="flex shrink-0 items-center gap-1 text-destructive">
-                      <TriangleAlertIcon aria-hidden className="size-3 shrink-0" />
+                      <TriangleAlertIcon aria-hidden className="size-4 shrink-0" />
                       Worktree missing
                     </span>
                   )}
                   {isArchived && (
                     <Badge variant="secondary" className="shrink-0">
-                      <ArchiveIcon aria-hidden className="size-3" />
+                      <ArchiveIcon aria-hidden className="size-4" />
                       Archived
                     </Badge>
                   )}
@@ -576,7 +576,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                     aria-label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
                     aria-disabled={quickActionPending || undefined}
                     onClick={handleQuickAction}
-                    className="rounded p-1.5 text-muted-foreground aria-disabled:opacity-50 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    className="rounded p-2 text-muted-foreground aria-disabled:opacity-50 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                   >
                     {isArchived ? <ArchiveRestoreIcon aria-hidden className="size-4" /> : <ArchiveIcon aria-hidden className="size-4" />}
                   </button>
@@ -600,7 +600,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                         ref={menuTriggerRef}
                         type="button"
                         aria-label={`${session.name} actions`}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                       >
                         <EllipsisVerticalIcon aria-hidden className="size-4" />
                       </button>

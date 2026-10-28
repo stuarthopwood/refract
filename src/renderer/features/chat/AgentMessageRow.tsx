@@ -23,7 +23,7 @@ const AGENT_MESSAGE_LABEL_CLASS = 'text-agent-message'
 
 function DirectionGlyph({ direction, broadcast }: { direction: AgentMessageDirection; broadcast?: boolean }) {
   const Icon = broadcast ? MessagesSquareIcon : DIRECTION_GLYPH[direction]
-  return <Icon aria-hidden data-agent-message-direction={direction} className="size-3.5 shrink-0 text-agent-message" />
+  return <Icon aria-hidden data-agent-message-direction={direction} className="size-4 shrink-0 text-agent-message" />
 }
 
 // The visible "<sender> to <recipient>" plus an sr-only "Agent message from X to Y" in its

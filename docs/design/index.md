@@ -9,7 +9,7 @@ This page indexes Refract's UI design system: what each page covers, how the rul
 | Page | Covers |
 |---|---|
 | [Tokens and theming](foundations-tokens-theming.md) | Palette, semantic roles, component tokens, theme files (#456, #458) |
-| [Typography and spacing](foundations-typography-spacing.md) | Font roles, the 4px spacing grid, density (#4, #360, #473) |
+| [Typography and spacing](foundations-typography-spacing.md) | Font roles, the 8px spacing grid, density (#4, #360, #473) |
 | [Icons](foundations-icons.md) | Icon set, sizes, stroke weight, and the icon-only requirements bundle (#469) |
 | [Motion](foundations-motion.md) | Reduced motion, waiting and running indicators, focus ring (#566) |
 | [Components](components.md) | Button, menu, tooltip, tab, card, row, chip, dialog, toast, empty state |

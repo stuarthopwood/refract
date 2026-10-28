@@ -476,9 +476,9 @@ export function ManageAccountsDialog({
                 href="https://cli.github.com"
                 target="_blank"
                 rel="noreferrer noopener"
-                className="inline-flex w-fit items-center gap-1.5 text-sm underline underline-offset-2"
+                className="inline-flex w-fit items-center gap-2 text-sm underline underline-offset-2"
               >
-                <ExternalLinkIcon aria-hidden className="size-3.5" />
+                <ExternalLinkIcon aria-hidden className="size-4" />
                 Install GitHub CLI
                 <span className="sr-only"> Opens in your browser</span>
               </a>
@@ -519,7 +519,7 @@ export function ManageAccountsDialog({
               </Button>
             </div>
           ) : (
-            <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-2">
               <div className="flex min-w-0 items-center justify-between gap-2">
                 <h3 id="github-accounts-heading" className="truncate text-sm font-medium">
                   GitHub accounts
@@ -583,18 +583,18 @@ export function ManageAccountsDialog({
                             </span>
                             {account.active && (
                               <span className="flex shrink-0 items-center gap-1 text-xs">
-                                <CheckIcon aria-hidden className="size-3.5" />
+                                <CheckIcon aria-hidden className="size-4" />
                                 Active
                               </span>
                             )}
                           </div>
                           <span className="flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground">
                             <span className="flex min-w-0 items-center gap-1 truncate">
-                              <AtSignIcon aria-hidden className="size-3 shrink-0" />
+                              <AtSignIcon aria-hidden className="size-4 shrink-0" />
                               <span className="truncate">{account.login}</span>
                             </span>
                             <span className="flex min-w-0 items-center gap-1 truncate">
-                              <GlobeIcon aria-hidden className="size-3 shrink-0" />
+                              <GlobeIcon aria-hidden className="size-4 shrink-0" />
                               <span className="truncate">{account.host}</span>
                             </span>
                           </span>
@@ -607,7 +607,7 @@ export function ManageAccountsDialog({
                               unknown `gh` error with no more specific cause to report. */}
                           {authProblem && (
                             <span className="flex items-center gap-1 text-xs text-state-needs-you">
-                              <TriangleAlertIcon aria-hidden className="size-3" />
+                              <TriangleAlertIcon aria-hidden className="size-4" />
                               {unreachable
                                 ? "Couldn't reach GitHub."
                                 : account.problem === 'expired'
@@ -677,7 +677,7 @@ export function ManageAccountsDialog({
                               aria-label={busy ? `Switching to ${name}` : `Switch active account to ${name}`}
                               onClick={() => void handleSwitch(account)}
                             >
-                              {busy ? <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" /> : null}
+                              {busy ? <LoaderCircleIcon aria-hidden className="size-4 animate-spin" /> : null}
                               {busy ? 'Switching…' : 'Switch'}
                             </Button>
                           )}

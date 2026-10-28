@@ -74,7 +74,7 @@ export function subagentStatusTextClass(counts: Record<SubagentRowStatus, number
  * (cancelled), unplug (exited). */
 function SubagentStatusGlyphIcons({ status }: { status: SubagentRowStatus }) {
   const { Icon, className } = STATUS_GLYPH[GLYPH_KEY_BY_STATUS[status]]
-  return <Icon aria-hidden className={cn('size-3.5 shrink-0', className)} />
+  return <Icon aria-hidden className={cn('size-4 shrink-0', className)} />
 }
 
 /** A distinct icon per state, never colour alone (WCAG 2.1 AA). `finished`'s word is `sr-only`

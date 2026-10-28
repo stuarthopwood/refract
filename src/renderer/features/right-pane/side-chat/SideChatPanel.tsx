@@ -339,7 +339,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                     // never announce assertively just because the panel opened -- only a NEW
                     // error transition is ever announced, through the live region above.
                     <div className="flex items-start gap-2 text-sm text-destructive">
-                      <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+                      <TriangleAlertIcon aria-hidden className="mt-1 size-4 shrink-0" />
                       <span>
                         <span className="sr-only">Answer: </span>
                         {record.error ?? 'The side question failed.'}

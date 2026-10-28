@@ -333,7 +333,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
       <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="60%" minSize="20%">
           {rows.length > 0 ? (
-            <div role="tree" aria-label="Subagents" className="flex h-full flex-col gap-0.5 overflow-y-auto px-3 py-2">
+            <div role="tree" aria-label="Subagents" className="flex h-full flex-col gap-1 overflow-y-auto px-4 py-2">
               {rows.map((row, index) => (
                 <div
                   key={row.node.key}
@@ -375,7 +375,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     // same element) -- an ordinary row's single inner `flex items-center` span
                     // below renders identically either way; a Stage header row with a real
                     // "Uses:" line gets a genuine second line underneath it.
-                    'relative flex w-full flex-col gap-0.5 rounded-md py-1.5 pr-2 text-left text-sm',
+                    'relative flex w-full flex-col gap-1 rounded-md py-1 pr-2 text-left text-sm',
                     // Gate round 1 fix (issue #941 part 2, item 5, MEDIUM): a Stage header is not
                     // itself selectable/hoverable-as-a-target (it carries no `aria-selected`,
                     // see above) -- the hover affordance stays scoped to real, selectable rows.
@@ -433,7 +433,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                         alignment. A member/solo row keeps `SubagentStatusIcon` (visible word)
                         unchanged -- nothing renders beneath it needing a stable column to align
                         against. */}
-                    <span className={row.node.isStage ? 'flex h-5 w-4 shrink-0 items-center justify-center' : 'flex shrink-0 items-center gap-1.5'}>
+                    <span className={row.node.isStage ? 'flex h-5 w-4 shrink-0 items-center justify-center' : 'flex shrink-0 items-center gap-2'}>
                       {row.node.isStage ? <SubagentStatusGlyph status={row.node.status} /> : <SubagentStatusIcon status={row.node.status} />}
                     </span>
                     {/* Issue #941: a finished agent/Stage row (never a tool row) gets green
@@ -487,7 +487,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                       only, no "(Stage N)" suffix (see file header). Gate round 3 fix (item 1,
                       MEDIUM, wrong comment): indented to the label column, which is the Stage
                       header's own FIXED icon slot width (`w-4`, 16px) plus this row's own
-                      `gap-2` (8px) = 24px, `pl-6` -- not the "icon slot's own `gap-1.5` width"
+                      `gap-2` (8px) = 24px, `pl-6` -- not the "icon slot's own `gap-2` width"
                       this comment previously (and wrongly) claimed; that gap only ever applies
                       BETWEEN two children of the icon wrapper, and the wrapper has always held
                       exactly one. */}
@@ -502,13 +502,13 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
             // (ARIA's required-owned-elements rule) -- rendered as a sibling instead, only when
             // the tree itself has nothing to show. Decision 24 plus the Session-wide (not
             // turn-scoped) definition this panel now uses: "No agents running.", not "this turn".
-            <p className="px-2 py-1.5 text-sm text-muted-foreground">No agents running.</p>
+            <p className="px-2 py-1 text-sm text-muted-foreground">No agents running.</p>
           )}
         </ResizablePanel>
         <ResizableHandle withHandle aria-label="Resize agent tree and stream" />
         <ResizablePanel defaultSize="40%" minSize="15%">
           <ScrollArea className="h-full">
-            <div className="flex flex-col gap-2 px-3 py-2">
+            <div className="flex flex-col gap-2 px-4 py-2">
               {selectedId === null && <p className="px-1 py-2 text-sm text-muted-foreground">Select a subagent to see its live stream.</p>}
               {grouped.map((item) =>
                 isToolGroup(item) ? (
