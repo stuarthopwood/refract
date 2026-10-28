@@ -182,3 +182,25 @@ export async function runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings,
   assertTrue(!logAfterHaikuSwitch.includes('claude-haiku-5.5:xhigh'), 'No :xhigh write for Claude Haiku 5.5 appears in fake-omp-invocations.log -- the refused pick never reached the backend', findings, failures);
   assertEqual(countConfigSetCalls(debugLogPath) - configSetBeforeHaikuSwitch, 1, 'Exactly one config-set call (the Haiku model switch) landed; the refused Extra high pick fired no write', findings, failures);
 }
+
+/** #1127 finding 1 (WCAG 2.4.3): the focused Auto radio must not unmount under the user when a model
+ * save lands that cannot carry `:auto`. Plan -> GPT 3.5 Turbo (no reasoning); the Auto click is
+ * refused mid-save but still focuses it; once the save lands the stored value is bare, and focus
+ * must NOT have fallen to `<body>`. */
+export async function runKeptAutoRadioKeepsFocusCase(cdp, findings, failures, assertEqual, assertTrue) {
+  const planBusy = `document.getElementById('model-role-plan-reasoning-inherit')?.closest('[role="radiogroup"]')?.getAttribute('aria-busy') === 'true'`;
+  await cdp.click(`document.getElementById('model-role-plan')`);
+  await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Plan dropdown opened (focus-loss check)' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('GPT 3.5 Turbo'))`);
+  await cdp.waitFor(planBusy, { timeoutMs: 2_000, label: 'Plan radiogroup busy: the GPT 3.5 Turbo model save is in flight' });
+  await cdp.click(`document.getElementById('model-role-plan-reasoning-auto')`);
+  await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.plan === 'github-copilot/gpt-3.5-turbo')`, {
+    timeoutMs: 8_000,
+    label: 'The GPT 3.5 Turbo save lands bare -- :auto cannot be carried'
+  });
+  await sleep(500);
+  const focusedAfterUnmountingToken = await cdp.evaluate(`document.activeElement?.id ?? null`);
+  assertTrue(focusedAfterUnmountingToken !== null && focusedAfterUnmountingToken.startsWith('model-role-plan-reasoning-'), `Focus stays inside Plan's radiogroup (never <body>) when the focused Auto radio's token can no longer be carried (got ${focusedAfterUnmountingToken})`, findings, failures);
+  const rolesAfter = await cdp.evaluate(`window.refract.modelRoles.list().then((r) => (r.ok ? r.value : null))`);
+  assertEqual(rolesAfter?.plan, 'github-copilot/gpt-3.5-turbo', 'Activating the kept Auto radio never wrote :auto back onto a model that cannot carry it', findings, failures);
+}

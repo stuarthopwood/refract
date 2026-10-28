@@ -70,7 +70,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
-import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState, runUnmountDropsHeldLevelCase, runFocusRecoveryOnUnsupportedTransitionCase } from './verify-1069-roles-overhaul-helpers.mjs';
+import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState, runUnmountDropsHeldLevelCase, runFocusRecoveryOnUnsupportedTransitionCase, runKeptAutoRadioKeepsFocusCase } from './verify-1069-roles-overhaul-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -541,21 +541,7 @@ async function main() {
     // when a model save lands that cannot carry :auto. Plan -> GPT 3.5 Turbo (no reasoning); the
     // Auto click is refused mid-save but still focuses it; once the save lands the stored value
     // is bare, and focus must NOT have fallen to <body>. ----
-    const planBusy = `document.getElementById('model-role-plan-reasoning-inherit')?.closest('[role="radiogroup"]')?.getAttribute('aria-busy') === 'true'`;
-    await cdp.click(`document.getElementById('model-role-plan')`);
-    await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Plan dropdown opened (focus-loss check)' });
-    await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('GPT 3.5 Turbo'))`);
-    await cdp.waitFor(planBusy, { timeoutMs: 2_000, label: 'Plan radiogroup busy: the GPT 3.5 Turbo model save is in flight' });
-    await cdp.click(`document.getElementById('model-role-plan-reasoning-auto')`);
-    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.plan === 'github-copilot/gpt-3.5-turbo')`, {
-      timeoutMs: 8_000,
-      label: 'The GPT 3.5 Turbo save lands bare -- :auto cannot be carried'
-    });
-    await sleep(500);
-    const focusedAfterUnmountingToken = await cdp.evaluate(`document.activeElement?.id ?? null`);
-    assertTrue(focusedAfterUnmountingToken !== null && focusedAfterUnmountingToken.startsWith('model-role-plan-reasoning-'), `Focus stays inside Plan's radiogroup (never <body>) when the focused Auto radio's token can no longer be carried (got ${focusedAfterUnmountingToken})`, findings, failures);
-    rolesNow = await readModelRolesViaIpc();
-    assertEqual(rolesNow?.plan, 'github-copilot/gpt-3.5-turbo', 'Re-clicking the kept Auto radio never wrote :auto back onto a model that cannot carry it', findings, failures);
+    await runKeptAutoRadioKeepsFocusCase(cdp, findings, failures, assertEqual, assertTrue);
     // Gate round 2 (Medium #6 evidence): a failed catalog fetch is simulated by
     // `REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND`, fixed for this process's WHOLE lifetime -- it
     // cannot be toggled on for just one assertion without breaking every OTHER assertion above
