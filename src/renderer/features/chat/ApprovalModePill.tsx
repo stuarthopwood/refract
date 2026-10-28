@@ -83,7 +83,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
           className={cn(
             PICKER_TRIGGER_CLASS,
             // Gate round 6 fix (`agent://Arch877` Visual N7): was a one-off duplicate of
-            // `pickerShared.tsx`'s own trigger class (including its stale `gap-2`, missed when
+            // `pickerShared.tsx`'s own trigger class (including its stale 6px gap, missed when
             // that shared class moved to `gap-2`) -- now reads the shared class directly, so the
             // two can never drift apart again. `COMPOSER_DISABLED_CLASS` folded in here never
             // activates: this pill is never `aria-disabled`.

@@ -94,7 +94,7 @@ export function SessionDetailsCard({
                 <span>{STATUS_LABEL[displayStatus(session)]}</span>
                 <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
               </div>
-              {activityText && <p className="break-words pl-4 text-xs text-muted-foreground">{activityText}</p>}
+              {activityText && <p className="break-words pl-6 text-xs text-muted-foreground">{activityText}</p>}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FolderIcon aria-hidden className="size-4 shrink-0" />

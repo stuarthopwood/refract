@@ -259,14 +259,14 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                       220px minimum, far more than the group ever needs under `[@media(hover:
                       hover)]` (only one of time/"..." shows at a time there). Sized to the real
                       content instead: `pr-10` (time or "..." alone, whichever is wider) or
-                      `pr-16` with Resume mounted (+24px, +4px gap), under `[@media(hover:hover)]`;
+                      `pr-18` (72px) with Resume mounted (+24px, +4px gap, rounded up to the grid), under `[@media(hover:hover)]`;
                       `[@media(hover:none)]` widens further to the true additive case (time AND
-                      "..." both shown together) -- `pr-16` (68px) without Resume, `pr-24` (96px,
+                      "..." both shown together) -- `pr-18` (72px, 68px rounded up) without Resume, `pr-24` (96px,
                       the clean existing Tailwind size) with it. */}
                   <span
                     className={cn(
                       'flex min-w-0 items-center gap-2',
-                      canResume ? 'pr-16 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-16'
+                      canResume ? 'pr-18 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-18'
                     )}
                   >
                     {session.startProgress ? (

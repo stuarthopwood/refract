@@ -63,7 +63,7 @@ export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
             Paste the folder path of a local git repository, or browse for one.
           </DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
+        <form className="flex flex-col gap-2" onSubmit={(event) => void handleSubmit(event)}>
           <label htmlFor="repository-path" className="text-sm">
             Repository path
           </label>

@@ -69,7 +69,7 @@ export function ChatHeader({
           // `--send-foreground`/`--composer-selection-fg`, not the softened alias cascade. A
           // re-verified ratio on the translucent value isn't the fix: moved to the dedicated
           // `--active-indicator-foreground` token (plain solid white in every theme).
-          <span className="shrink-0 rounded-full border border-active-indicator/40 bg-active-indicator/20 px-1 py-1 text-[10px] font-medium text-active-indicator-foreground">
+          <span className="shrink-0 rounded-full border border-active-indicator/40 bg-active-indicator/20 p-1 text-[10px] font-medium text-active-indicator-foreground">
             Focused
           </span>
         )}

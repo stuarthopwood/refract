@@ -184,7 +184,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
 
   const row = (
     <>
-      {/* #565 decision 7: 16px slot (icon itself stays 14px, `size-4`, centred within it) so
+      {/* #565 decision 7: 16px slot (icon is `size-4` (16px), centred within it) so
        * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly.
        * Gate round 1 (Main, D1): the row is `items-start` (not `items-center`), so this slot's
        * own height must match the label's 20px line box (`h-5`) for the icon to sit centred on
