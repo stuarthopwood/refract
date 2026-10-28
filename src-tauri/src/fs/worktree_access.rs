@@ -61,8 +61,14 @@ pub async fn write_guard(session_id: &str) -> OwnedRwLockWriteGuard<()> {
 /// this writer too. Longer than `READER_TIMEOUT` so a bounded `deleteCheck` gives up first.
 pub const WRITE_GUARD_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Issue #1055: the most a `sessions.deleteCheck` reader may hold its read guard for.
+/// Issue #1055: the most a `sessions.deleteCheck` may wait to acquire its read guard, and (in
+/// `delete_check_for_session`) the most its git work may then run: each stage is bounded.
 pub const READER_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The `deleteCheck` refusal has no Retry button (the dialog shows it as a plain error), so it
+/// must not tell the user to press one.
+pub const STILL_CHECKING_READ_MESSAGE: &str =
+    "Refract is still busy with this folder, so it could not check what Delete would lose. Close this dialog and open it again in a moment.";
 
 pub const STILL_CHECKING_MESSAGE: &str =
     "Refract is still checking this folder, so nothing was deleted. Choose Retry in a moment.";
@@ -81,5 +87,5 @@ pub async fn write_guard_bounded(session_id: &str) -> Result<OwnedRwLockWriteGua
 pub async fn read_guard_bounded(session_id: &str) -> Result<OwnedRwLockReadGuard<()>, GitError> {
     tokio::time::timeout(READER_TIMEOUT, read_guard(session_id))
         .await
-        .map_err(|_| GitError::new(GitErrorCode::WorktreeBusy, STILL_CHECKING_MESSAGE))
+        .map_err(|_| GitError::new(GitErrorCode::WorktreeBusy, STILL_CHECKING_READ_MESSAGE))
 }

@@ -29,7 +29,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::fs::leftover_summary::{cancel_and_wait, compute_leftover_summary};
-use crate::git::git::GitError;
+use crate::git::git::{GitError, GitErrorCode};
 use crate::git::worktree_delete::remove_session_worktree;
 use crate::git::worktree_delete_check::delete_check_for_session;
 use crate::git::worktree_holders;
@@ -394,7 +394,18 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // walk, never the agent turn (stopped later, after the holder check), so a refusal
         // from the bounded write guard below still leaves the Session exactly as it was. It
         // must run first: it shortens the write-guard wait.
-        cancel_and_wait(&id).await;
+        // Bounded like the write guard: a walk that ignores its cancel flag must not hang Delete.
+        tokio::time::timeout(
+            crate::fs::worktree_access::WRITE_GUARD_TIMEOUT,
+            cancel_and_wait(&id),
+        )
+        .await
+        .map_err(|_| {
+            map_git_error(GitError::new(
+                GitErrorCode::WorktreeBusy,
+                crate::fs::worktree_access::STILL_CHECKING_MESSAGE,
+            ))
+        })?;
 
         // Issue #891 gate round 3 (H1): the write guard blocks until EVERY Refract-owned reader
         // of this worktree (`deleteCheck`'s own git children, the leftover walk above) has
