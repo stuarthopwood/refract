@@ -93,13 +93,13 @@ p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
 | Wave | Bundle | Issues | Shape |
 |---|---|---|---|
 | 0 | Non-UI p1 fixes | #517 (done, spec 030, PR #1281), #1115, #1158, #1163, #1175, #1127, #897, #903 | small separate PRs, in parallel |
-| 1 | App-wide tokens | #843, #1144, #1267, #1270, #1073, #1124, #1125, #682, #738, #1065 (product items only) | one PR; later bundles build on it. **Grilled 2026-10-28** (outcomes in a comment on each issue; #1112 and the verify-script bullets of #1065 and #1270 moved to #1137 at p3); next: Spec Kit, then implement |
+| 1 | App-wide tokens | #843, #1144, #1267 (rule amended 2026-10-28: non-white text one weight step heavier at every size), #1270, #1073, #1124, #1125, #682, #738, #1065 (product items only) | one PR; later bundles build on it. **Grilled 2026-10-28** (outcomes in a comment on each issue; #1112 and the verify-script bullets of #1065 and #1270 moved to #1137 at p3); next: Spec Kit, then implement |
 | 2 | Settings | #714, #717, #1070, #1141, #450, #842 | one PR, parallel with the other wave 2 bundles |
 | 2 | Session list | #1203, #1204, #731, #934, #646, #482, #887 | one PR |
 | 2 | Right pane and Explorer | #674, #800, #1126, #756, #768 | one PR |
 | 2 | Pull requests (#1273) | #915, #1196, #1198 | one PR |
-| 3 | Composer | #839, #1149, #1145, #1129, #675, #1258, #1265, #1268, #496, #865, #1084 | one PR, before the transcript bundle (shared files) |
-| 3 | Chat transcript | #907, #1130, #1210, #1220, #1262, #1041, #473, #719, #684, #746, #1098, #896 | one PR |
+| 3 | Composer | #839 (amended 2026-10-28: Geist at 13 px; mono code spans come with #1170), #1149, #1145, #1129, #675, #1258, #1265, #1268, #496, #865, #1084 | one PR, before the transcript bundle (shared files) |
+| 3 | Chat transcript | #1284 (bug: model errors and retries are invisible; error row with hint and Retry, live retry line with Stop), #1283 (todo icon alignment), #907, #1130, #1210, #1220, #1262, #1041, #473, #719, #684, #746, #1098, #896 | one PR |
 | 4 | Chat navigation | #751, #752, #753, #754 | one PR on one shared message index |
 | 5 | Larger features and ideas | #132, #137, #406, #456, #458, #471, #503, #504, #505, #506, #507, #525, #545, #549, #552, #553, #561, #566, #571, #678, #732, #748, #867, #869, #874, #878, #1048, #1256, #1140, #1170 | one story each, full grill |
 
