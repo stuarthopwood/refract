@@ -67,7 +67,7 @@ function RadioGroup({
   return (
     <RadioGroupPrimitive.Root
       data-slot="radio-group"
-      className={cn("flex flex-col gap-1.5", className)}
+      className={cn("flex flex-col gap-2", className)}
       {...props}
     />
   )
@@ -95,7 +95,7 @@ function RadioGroupItem({
         // alone already resolves to `outline-style: none`, same as `outline-hidden` would) while
         // only drawing the `forced-colors` transparent outline on the item that actually has
         // keyboard focus.
-        "group/radio-item flex w-full min-w-0 flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm outline-none focus-visible:outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
+        "group/radio-item flex w-full min-w-0 flex-col items-start gap-1 rounded-lg border border-border bg-background px-4 py-2 text-left text-sm outline-none focus-visible:outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
         className
       )}
       {...props}
