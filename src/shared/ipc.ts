@@ -598,7 +598,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * the outgoing command (FR-018), returning `unsupported-image-type`/`image-too-large` on the
      * first failing entry and sending nothing. */
     send(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ queued: boolean }>>;
-    stop(sessionId: string): Promise<Result<void>>;
+    stop(sessionId: string): Promise<Result<import('./stop-result').StopResult>>;
     // Issue #540: carries the queue the chip actually belongs to -- the old hard-coded
     // `'followUp'` meant a steering chip's Remove always reported `removed: false` (OMP never
     // had it in that queue), so a steering chip could never be removed at all.

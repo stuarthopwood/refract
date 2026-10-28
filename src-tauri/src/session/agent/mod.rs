@@ -53,6 +53,7 @@ use crate::store::registry::{RegistryStore, Session};
 use crate::store::settings::{ApprovalMode, SettingsStore};
 
 mod chat;
+mod chat_restore;
 mod commands;
 mod conversations;
 mod frame;

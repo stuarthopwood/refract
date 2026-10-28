@@ -92,7 +92,7 @@ p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
 
 | Wave | Bundle | Issues | Shape |
 |---|---|---|---|
-| 0 | Non-UI p1 fixes | #517, #1115, #1158, #1163, #1175, #1127, #897, #903 | small separate PRs, in parallel. #903 (explorer focus ring): done in its PR, Spec Kit route `none` |
+| 0 | Non-UI p1 fixes | #517 (done, spec 030, PR #1281), #1115, #1158, #1163, #1175, #1127, #897, #903 | small separate PRs, in parallel. #903 (explorer focus ring): done in its PR, Spec Kit route `none` |
 | 1 | App-wide tokens | #843, #1144, #1267, #1270, #1073, #1124, #1125, #682, #738, #1065 (product items only) | one PR; later bundles build on it. **Grilled 2026-10-28** (outcomes in a comment on each issue; #1112 and the verify-script bullets of #1065 and #1270 moved to #1137 at p3); next: Spec Kit, then implement |
 | 2 | Settings | #714, #717, #1070, #1141, #450, #842 | one PR, parallel with the other wave 2 bundles |
 | 2 | Session list | #1203, #1204, #731, #934, #646, #482, #887 | one PR |
@@ -585,7 +585,7 @@ One agent, read-only. The supported OMP range is moving to a **minimum of 18.6.3
 5. #392 and #391: integration route, once the FDB owners say what exists (MCP, API, host tools).
 6. #482: what happens to the brand spinner (a third style, moved elsewhere, or tinted), and the non-colour cue for dots.
 7. #489: what exactly he saw after the crash (Refract or omp crashed, was a process left running). Free text, so not in `ask`: he replies when convenient.
-8. #517: restored queued messages replace or append to the composer text. #521: show only the usage-limit readout, or also a Slow toggle (and Fast mode). (#516 decided 2026-10-07: native `btw`, minimum OMP 18.6.3.)
+8. #517 decided 2026-10-28: restored queued messages append below the composer text (spec 030). #521: show only the usage-limit readout, or also a Slow toggle (and Fast mode). (#516 decided 2026-10-07: native `btw`, minimum OMP 18.6.3.)
 9. #388 spec-007: the Mermaid contrast checker is still non-deterministic after 3 fix-and-regate rounds (mindmap labels consistently fail; gitGraph/flowchart/pie marginal failures unaddressed); the issue itself asks for Stuart's call rather than another autonomous round.
 
 ## File collisions (one agent per file at a time)
