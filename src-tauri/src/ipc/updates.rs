@@ -158,6 +158,12 @@ fn updates_install_now(state: AppState, _args: Vec<Value>) -> HandlerFuture {
         let Some(app_handle) = app_handle else {
             return Err(IpcError::new("unsupported", "No window yet"));
         };
+        let updates_dir = state.data_dir.join("updates");
+        if let Err(reason) =
+            crate::updates::verify_downloaded_installer(&store_handle, &updates_dir).await
+        {
+            return Err(IpcError::new("checksum-mismatch", reason));
+        }
         crate::updates::request_restart_after_install();
         app_handle.exit(0);
         Ok(Value::Null)

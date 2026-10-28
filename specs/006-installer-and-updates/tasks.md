@@ -212,7 +212,7 @@ download (FR-012, FR-014). Task ids continue after the #881 convergence phase (T
 Appended by `/speckit.converge` on 2026-10-28: the Update now confirm undercounts, `installNow` can quit
 without installing, and a repeated `ExitRequested` can double the hand-off. Task ids continue after T038.
 
-- [ ] T039 [US3] FR-035 (partial): `useUpdateNow.tsx` counts every non-archived session whose status is not `stopped`, and keeps the confirm count as state set when the confirm opens (no ref written during render).
-- [ ] T040 [US3] FR-035 (partial): `updates.installNow` calls `install_on_quit::verify_installer_before_quit` (bounded) before flagging the relaunch and exiting, returning a `checksum-mismatch`/`update-unavailable` IPC error on failure so Refract stays open.
-- [ ] T041 [US3] FR-035 (missing): `lib.rs`'s `ExitRequested` handler runs the stop-all and install hand-off once, guarded by a process-global `AtomicBool` quit-in-progress flag.
+- [x] T039 [US3] FR-035 (partial): `useUpdateNow.tsx` counts every non-archived session whose status is not `stopped`, and keeps the confirm count as state set when the confirm opens (no ref written during render).
+- [x] T040 [US3] FR-035 (partial): `updates.installNow` calls `install_on_quit::verify_installer_before_quit` (bounded) before flagging the relaunch and exiting, returning a `checksum-mismatch`/`update-unavailable` IPC error on failure so Refract stays open.
+- [x] T041 [US3] FR-035 (missing): `lib.rs`'s `ExitRequested` handler runs the stop-all and install hand-off once, guarded by a process-global `AtomicBool` quit-in-progress flag.
 - [ ] T042 [US3] Verify live on a scratch exe, update `docs/PLAN.md` row #1175, then run `node scripts/ci-local.mjs`.
