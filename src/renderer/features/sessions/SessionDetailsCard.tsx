@@ -88,25 +88,25 @@ export function SessionDetailsCard({
         </HoverCardTrigger>
         <HoverCardContent>
           <div className="flex flex-col gap-2">
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
                 <StateIcon status={displayStatus(session)} />
                 <span>{STATUS_LABEL[displayStatus(session)]}</span>
                 <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
               </div>
-              {activityText && <p className="break-words pl-5 text-xs text-muted-foreground">{activityText}</p>}
+              {activityText && <p className="break-words pl-4 text-xs text-muted-foreground">{activityText}</p>}
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FolderIcon aria-hidden className="size-3.5 shrink-0" />
               <span className="truncate">{repository.name}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs">
+            <div className="flex items-center gap-2 text-xs">
               <GitBranchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="truncate">{session.branch}</span>
               <span className="shrink-0 text-muted-foreground">from {session.baseBranch}</span>
             </div>
-            <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-              <MapPinIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            <div className="flex items-start gap-2 text-xs text-muted-foreground">
+              <MapPinIcon aria-hidden className="mt-1 size-3.5 shrink-0" />
               <p className="min-w-0 break-all">
                 {worktreeMissing ? (
                   <>
@@ -120,17 +120,17 @@ export function SessionDetailsCard({
             {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)"
                     suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). Gate round 1 fix
                     (LOW #12): the model/effort row and its own "via <Provider>" caption below are
-                    grouped in one `flex flex-col gap-0.5` -- the outer card's own `gap-2` between
+                    grouped in one `flex flex-col gap-1` -- the outer card's own `gap-2` between
                     EVERY row read as "via Provider" belonging to the NEXT unrelated row, not a
                     caption of the model row directly above it. */}
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="flex min-w-0 items-center gap-1.5 truncate">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-2 truncate">
                   <CpuIcon aria-hidden className="size-3.5 shrink-0" />
                   <span className="truncate">{formatModelLabel(session) ?? 'Model not known yet'}</span>
                 </span>
                 {formatThinkingLevelLabel(session) && (
-                  <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="flex shrink-0 items-center gap-2">
                     <ReasoningGaugeIcon level={session.lastThinkingLevel} className="size-3.5 shrink-0" />
                     <span>
                       <span className="sr-only">Thinking level: </span>
@@ -141,11 +141,11 @@ export function SessionDetailsCard({
               </div>
               {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map,
                   raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this
-                  card has room for it that the composer strip does not. `pl-5` aligns it under
-                  the model name's own text, past the CpuIcon (`size-3.5` + `gap-1.5` above it). */}
-              {session.lastModel && <p className="truncate pl-5 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
+                  card has room for it that the composer strip does not. `pl-4` aligns it under
+                  the model name's own text, past the CpuIcon (`size-3.5` + `gap-2` above it). */}
+              {session.lastModel && <p className="truncate pl-4 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FileDiffIcon aria-hidden className="size-3.5 shrink-0" />
               {/* Gate round 5 fix (Flow LOW): this line had no `sr-only` full-figure pairing at
                   all, unlike the status line's identical `ChangesChip`, which carries one
@@ -164,7 +164,7 @@ export function SessionDetailsCard({
                 </span>
               )}
             </div>
-            <div className="flex items-center justify-end gap-1.5 pt-1">
+            <div className="flex items-center justify-end gap-2 pt-1">
               <Button variant="outline" size="xs" onClick={() => void copyPath()}>
                 <CopyIcon aria-hidden />
                 Copy path

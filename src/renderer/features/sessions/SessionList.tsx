@@ -231,7 +231,7 @@ export function SessionList() {
           `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
           before the double-click ever reaches the page's own JS, so a renderer-driven toggle was
           dead code and has been removed. */}
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-4">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
         <span className="text-sm font-medium">Refract</span>
         {/* Issue #1048 (Holiday touches): a purely decorative accessory beside the wordmark --
@@ -279,7 +279,7 @@ export function SessionList() {
               `role="search"` landmark lives here, at the call site, not inside `SearchField`
               itself, so a future shared toolbar can embed the field without nesting a second
               landmark (#559 decision 3). `mx-2` lines the field up with Pull requests' own
-              column, not the toolbar's `px-3` (decision 4). */}
+              column, not the toolbar's `px-4` (decision 4). */}
           <div role="search" aria-label="Sessions" data-session-search-region className="mx-2 mt-4 shrink-0">
             <SearchField
               inputRef={searchInputRef}
@@ -304,7 +304,7 @@ export function SessionList() {
               roving is ruled out by #567 decision 17). `mt-2` (was `mt-4`): #559 decision 3 gives
               the 16px gap from Pull requests to the search field above instead, so this row's
               own gap shrinks to the 8px step under the field. */}
-          <div className="mt-2 flex shrink-0 items-center justify-end gap-1 px-3">
+          <div className="mt-2 flex shrink-0 items-center justify-end gap-1 px-4">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -364,7 +364,7 @@ export function SessionList() {
             </Tooltip>
           </div>
           <ScrollArea className="min-h-0 flex-1">
-            <div className="flex flex-col gap-3 p-2">
+            <div className="flex flex-col gap-2 p-2">
               {noMatches ? (
                 <Empty>
                   <EmptyHeader>

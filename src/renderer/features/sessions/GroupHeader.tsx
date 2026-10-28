@@ -100,7 +100,7 @@ export function GroupHeaderTrigger({
       // merge lets this explicit prop win over the one Tooltip injects.
       aria-describedby={describedByPath ? pathId : undefined}
       // Gate round 1 fix (Medium, architect ruling on decision 8): `gap-1`/`px-1` (was
-      // `gap-1.5`/`px-1.5`, itself off-grid per decision 28) -- moves the Project icon's own
+      // `gap-2`/`px-1`, itself off-grid per decision 28) -- moves the Project icon's own
       // left edge to exactly 24px (4px container padding + 4px this padding + 12px chevron +
       // 4px gap), so `SessionRow.tsx`'s own `pl-6` status icon finally lines up under it.
       // Issue #1122: `data-choice-item` joins the shared square-choice selector (globals.css),

@@ -186,7 +186,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
               the open button to line 1's own height, instead of centring it across the whole
               44px row (gate round 1 fix, architect/layout). `min-h-11` keeps the row at its full
               height while renaming (gate round 1 fix, Low: a lone `<input>` used to shrink it to
-              about 38px). Row `pl-6` (not the decision's own literal `pl-3`): the UX architect's
+              about 38px). Row `pl-6` (not the decision's own literal `pl-4`): the UX architect's
               gate ruling on decision 8 changes the header trigger to `gap-1 px-1`
               (`GroupHeader.tsx`) so its own Project icon starts at 24px, and widens this row to
               match, so the status icon finally lines up under it.
@@ -261,12 +261,12 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                       content instead: `pr-10` (time or "..." alone, whichever is wider) or
                       `pr-16` with Resume mounted (+24px, +4px gap), under `[@media(hover:hover)]`;
                       `[@media(hover:none)]` widens further to the true additive case (time AND
-                      "..." both shown together) -- `pr-17` (68px) without Resume, `pr-24` (96px,
+                      "..." both shown together) -- `pr-16` (68px) without Resume, `pr-24` (96px,
                       the clean existing Tailwind size) with it. */}
                   <span
                     className={cn(
                       'flex min-w-0 items-center gap-2',
-                      canResume ? 'pr-16 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-17'
+                      canResume ? 'pr-16 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-16'
                     )}
                   >
                     {session.startProgress ? (
