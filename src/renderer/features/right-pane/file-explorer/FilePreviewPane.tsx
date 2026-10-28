@@ -145,7 +145,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
       role="region"
       aria-label={regionLabel}
       tabIndex={0}
-      className="flex h-full flex-col overflow-y-auto p-2 outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="flex h-full flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {showToolbar && preview && (
         <div className="no-drag-region mb-2 flex shrink-0 flex-wrap items-center justify-end gap-1 border-b border-divider pb-2">
