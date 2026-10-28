@@ -32,7 +32,7 @@ export function RightPaneSection() {
         Choose what the FDB Knowledge and Agent Builder panels show before either integration exists.
       </p>
       <div className="flex items-center justify-between gap-4">
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <label htmlFor="show-sample-data-toggle" className="text-sm">
             Show sample data
           </label>
@@ -48,7 +48,7 @@ export function RightPaneSection() {
         />
       </div>
       <div className="mt-6 flex items-center justify-between gap-4">
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <span id="panel-order-label" className="text-sm">
             Panel order
           </span>

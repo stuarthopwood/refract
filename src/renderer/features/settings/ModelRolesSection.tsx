@@ -382,9 +382,9 @@ export function ModelRolesSection() {
     const selectValue = hasUnknownCurrent ? (currentValue ?? INHERITED_VALUE) : (currentBase ?? INHERITED_VALUE)
 
     return (
-      <div key={role} className="py-3">
+      <div key={role} className="py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-1">
             <label id={labelId} htmlFor={selectId} className="text-sm">
               {label}
             </label>
@@ -456,7 +456,7 @@ export function ModelRolesSection() {
                 {hasUnknownCurrent && (
                   <SelectItem value={currentValue as string}>
                     {resolvedCurrentEntry ? (
-                      <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="flex min-w-0 items-center gap-2">
                         <span className="min-w-0 truncate">{resolvedCurrentEntry.name}</span>
                         {resolvedCurrentEntry.provider !== selectedProvider && (
                           <span className="shrink-0 text-xs text-muted-foreground">{' '}via {friendlyProviderLabel(resolvedCurrentEntry.provider)}</span>

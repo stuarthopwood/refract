@@ -206,7 +206,7 @@ export function AppearanceSection() {
             every time this control got focus -- putting only the title in the label and wiring
             the description in via `aria-describedby` (the same pattern as a native form hint)
             announces the title as the name and the description separately, once, as a hint. */}
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <label htmlFor="watermark-toggle" className="text-sm">Background watermark</label>
           <span id="watermark-toggle-description" className="text-xs text-muted-foreground">
             {holidayEntry ? 'A faint mark shown in the corner of the chat area — a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
@@ -219,13 +219,13 @@ export function AppearanceSection() {
           onCheckedChange={(checked) => void setWatermarkEnabled(checked)}
         />
       </div>
-      <div className="mt-3 flex size-28 items-center justify-center rounded-md border border-border">
+      <div className="mt-2 flex size-28 items-center justify-center rounded-md border border-border">
         <BrandWatermark variant="preview" />
       </div>
       {/* Issue #1048 (Holiday touches): applies live, next to the watermark switch, the same
           "no Save/Cancel" posture spec 012's own control above uses. */}
       <div className="mt-6 flex items-center justify-between gap-4">
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <label htmlFor="holiday-touches-select" className="text-sm">Holiday touches</label>
           <span id="holiday-touches-description" className="text-xs text-muted-foreground">Seasonal artwork and ambient motion near a holiday.</span>
         </div>
@@ -243,7 +243,7 @@ export function AppearanceSection() {
       {/* #526 (FR-111): applies live, same posture as Holiday touches. The shared segmented
           `ToggleGroup` (ProviderSwitch, ManageSessionsToolbar) -- no one-off control. */}
       <div className="mt-6 flex items-center justify-between gap-4">
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <span id="activity-text-label" className="text-sm">Activity text</span>
           <span id="activity-text-description" className="text-xs text-muted-foreground">
             Shown for each Session in the Session list and in the banner above the composer when it has

@@ -25,7 +25,7 @@ export function OmpSection() {
         Values Refract sets for OMP every time it starts a Session, to keep token use down. Changes apply to Sessions started afterwards; running Sessions keep the values they launched with.
       </p>
       {error && (
-        <p role="alert" className="mb-3 text-sm text-destructive">
+        <p role="alert" className="mb-2 text-sm text-destructive">
           {error}
         </p>
       )}
