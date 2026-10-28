@@ -6,12 +6,12 @@
 // (fake-omp fixture, `report.json`, `clearKnownOutputFiles`, themed screenshots).
 //
 // New fixture `scripts/fixtures/omp-frames/stop-911.jsonl` (AGENTS.md: a fake-omp frame fixture
-// genuinely needed here -- no existing tape scripts an `abort` wait, and a real `omp`'s own abort
+// genuinely needed here -- no existing tape scripts an `abort_and_restore_queue` wait, and a real `omp`'s own abort
 // timing is not deterministic enough to assert a settled DOM state against, unlike #570's own
 // turn (c), which only ever RECORDED what happened, asserting nothing). Three turns against one
 // scratch Session:
 //   Turn A: a `read` call that finishes immediately (done, unaffected baseline), then a `bash`
-//     call that stays running until the script's own REAL Stop click sends OMP's `abort` command
+//     call that stays running until the script's own REAL Stop click sends OMP's `abort_and_restore_queue` command
 //     -- the fixture then settles that SAME call's own `tool_execution_end` with `isError:true`
 //     and `result.content` reading "Command aborted" (OMP's own real wire shape confirmed live
 //     at #570's own gate round 1, `verify-570-tool-colours.mjs` turn (c), 2026-10-16), followed by
@@ -324,7 +324,7 @@ async function main() {
     }
 
     notExercised.push(
-      "This fixture's own turn-A abort sequence (`tool_execution_start`, a REAL `abort` wait, then that same call's own `tool_execution_end{isError:true, \"Command aborted\"}`, then `prompt_result{status:\"aborted\"}`) is hand-written against the documented wire contract (src/shared/frames.ts's PromptResultFrame.status already lists 'aborted'; transcript.rs's own apply_prompt_result_notice already has an \"aborted\" arm) and against issue #911's own live finding (verify-570-tool-colours.mjs turn (c), 2026-10-16, real signed-in omp, which captured this exact isError:true/\"Command aborted\" shape once, live) -- it is NOT itself a fresh live capture of a real omp's own abort response; re-probing a real omp for it was out of scope for this fix."
+      "This fixture's own turn-A abort sequence (`tool_execution_start`, a REAL `abort_and_restore_queue` wait, then that same call's own `tool_execution_end{isError:true, \"Command aborted\"}`, then `prompt_result{status:\"aborted\"}`) is hand-written against the documented wire contract (src/shared/frames.ts's PromptResultFrame.status already lists 'aborted'; transcript.rs's own apply_prompt_result_notice already has an \"aborted\" arm) and against issue #911's own live finding (verify-570-tool-colours.mjs turn (c), 2026-10-16, real signed-in omp, which captured this exact isError:true/\"Command aborted\" shape once, live) -- it is NOT itself a fresh live capture of a real omp's own abort response; re-probing a real omp for it was out of scope for this fix."
     );
     // Issue #911 live-verified (build slot granted by Main, 2026-10-18): ran end to end,
     // 0 failures, screenshots viewed in all 3 themes. The "written, not run" note this script

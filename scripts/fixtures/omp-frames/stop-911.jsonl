@@ -1,6 +1,6 @@
 // SYNTHESIZED (issue #911 live check): the standard negotiate_protocol/get_state/set_ask_dialog/
 // get_messages_page preamble reuses session.jsonl's own genuinely-recorded shapes verbatim. The
-// turn-A tool sequence (tool_execution_start for a `bash` call, then a genuine `abort` command
+// turn-A tool sequence (tool_execution_start for a `bash` call, then a genuine `abort_and_restore_queue` command
 // arriving mid-flight, then that SAME call's own `tool_execution_end` with `isError:true` and
 // `result.content` reading "Command aborted", followed by `prompt_result{status:"aborted"}`) is
 // hand-written against the documented wire contract (src/shared/frames.ts's `PromptResultFrame`

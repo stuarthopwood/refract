@@ -117,6 +117,8 @@ impl SessionAgent {
                 restored = parse_restored_queue(res.get("data").unwrap_or(&Value::Null));
                 Ok(res)
             }
+            // Intentional (FR-003): any rejection falls back to plain `abort`, so an older runtime
+            // that does not know the command and a real failure both still stop the turn.
             Ok(_) => {
                 proc.request(json!({ "type": "abort" }), DEFAULT_REQUEST_TIMEOUT_MS)
                     .await
@@ -160,6 +162,19 @@ impl SessionAgent {
         .await
         .is_err()
         {
+            // The queue is already withdrawn from OMP: never drop it with the error (#517 gate).
+            let has_restored = restored["messages"]
+                .as_array()
+                .is_some_and(|messages| !messages.is_empty());
+            if has_restored {
+                self.append_notice(
+                    "Stop is taking longer than expected; your queued messages were returned."
+                        .to_string(),
+                    "info",
+                )
+                .await;
+                return Ok(restored);
+            }
             return Err(AgentError::new(
                 "prompt-failed",
                 format!(
