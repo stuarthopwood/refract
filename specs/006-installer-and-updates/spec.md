@@ -339,6 +339,12 @@ draft, are never offered as an update by User Story 3's check.
 - **FR-035** (issue #883): Selecting Update now MUST quit Refract, install the verified update,
   and start the new version. If any agent is mid-turn, Refract MUST first ask the developer to
   confirm ("N agents are running; restarting stops them"), and MUST NOT quit if they cancel.
+  The count (N) MUST include every non-archived session with a live agent (working, needs-you,
+  or idle), not only mid-turn ones, because the quit stops all of them; it MUST be fixed when the
+  confirm opens. Refract MUST re-verify the installer before it begins quitting; a failed or
+  timed-out verification MUST return an error to the renderer and leave Refract running. A
+  repeated quit request while the quit is in progress MUST NOT start the stop-all and install
+  hand-off a second time (issue #1175).
 
 ### Key Entities
 

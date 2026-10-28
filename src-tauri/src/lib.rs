@@ -459,6 +459,9 @@ pub fn run() {
     app.run(move |app_handle, event| {
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
             api.prevent_exit();
+            if !updates::begin_quit() {
+                return;
+            }
             let session_manager = session_manager_for_exit.clone();
             let app_handle = app_handle.clone();
             let update_state = update_state_for_exit.clone();
