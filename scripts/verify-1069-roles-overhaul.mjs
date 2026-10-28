@@ -443,8 +443,7 @@ async function main() {
     await sleep(300); // let a (buggy) optimistic re-render land before reading, so "unchecked" is not vacuous
     const highCheckedWhileRefused = await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.getAttribute('aria-checked')`);
     assertEqual(highCheckedWhileRefused, 'false', 'A pick made during a Select model save is refused outright: the dot does not move', findings, failures);
-    // `keepFocus`: the screenshot step must not move focus, so the assertion below proves the APP holds it.
-    await shot('04-pending-save-in-row.png', { keepFocus: true });
+    await shot('04-pending-save-in-row.png', { keepFocus: true }); // keepFocus: the assertion below proves the APP holds focus
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5')`, {
       timeoutMs: 8_000,
       label: 'The Claude Opus 5.5 model save lands bare -- the refused "High" pick never applied'
@@ -537,11 +536,7 @@ async function main() {
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.plan, 'github-copilot/claude-fable-5:auto', 'Plan ends on :auto again after arrowing off and back, read via modelRoles.list()', findings, failures);
 
-    // ---- #1127 finding 1 (WCAG 2.4.3): the focused Auto radio must not unmount under the user
-    // when a model save lands that cannot carry :auto. Plan -> GPT 3.5 Turbo (no reasoning); the
-    // Auto click is refused mid-save but still focuses it; once the save lands the stored value
-    // is bare, and focus must NOT have fallen to <body>. ----
-    await runKeptAutoRadioKeepsFocusCase(cdp, findings, failures, assertEqual, assertTrue);
+    await runKeptAutoRadioKeepsFocusCase(cdp, findings, failures, assertEqual, assertTrue); // #1127 finding 1
     // Gate round 2 (Medium #6 evidence): a failed catalog fetch is simulated by
     // `REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND`, fixed for this process's WHOLE lifetime -- it
     // cannot be toggled on for just one assertion without breaking every OTHER assertion above
