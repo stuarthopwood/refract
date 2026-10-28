@@ -38,7 +38,7 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
       aria-label="Agent stopped"
       box="inline"
       data-slot="agent-stopped-bar"
-      className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-1.5 text-xs text-muted-foreground"
+      className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-1 text-xs text-muted-foreground"
     >
       <span>Agent stopped</span>
       <Button type="button" variant="outline" size="xs" onClick={handleStart}>

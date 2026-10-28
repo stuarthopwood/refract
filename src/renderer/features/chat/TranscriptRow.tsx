@@ -97,7 +97,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, as
           <MessageContent className="w-full">
             <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
             {item.streaming && (
-              <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
+              <span aria-hidden className="ml-1 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
             )}
           </MessageContent>
         </Message>

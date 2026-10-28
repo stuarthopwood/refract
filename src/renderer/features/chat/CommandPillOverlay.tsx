@@ -89,7 +89,7 @@ export function findRecognisedCommandToken(text: string, commands: readonly Slas
  * own `<textarea>` reserves the same gutter unconditionally (not only while a pill shows) so the
  * two widths always match, pill or no pill. */
 export const COMPOSER_MIRROR_CLASS =
-  'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 font-code text-base text-foreground [scrollbar-gutter:stable] md:text-sm'
+  'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2 py-2 pr-20 font-code text-base text-foreground [scrollbar-gutter:stable] md:text-sm'
 
 /** Decision 3's pill colours: two INDEPENDENT dedicated tokens (gate round 2 remediation --
  * round 1's single `--card`-or-`--muted`-aliased fill, paired with `--accent-text` directly, is

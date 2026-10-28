@@ -103,18 +103,18 @@ export function ModelCatalogGroup({
         </div>
       )}
       {!catalogError && catalog === undefined && (
-        <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
+        <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
           <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin" />
           Loading models…
         </div>
       )}
       {!catalogError && catalog !== undefined && catalog.length === 0 && (
-        <div role="option" aria-disabled className="px-2 py-1.5 text-sm text-muted-foreground">
+        <div role="option" aria-disabled className="px-2 py-1 text-sm text-muted-foreground">
           No models available. Check the agent's own model configuration.
         </div>
       )}
       {!catalogError && catalog !== undefined && catalog.length > 0 && filteredCatalog.length === 0 && (
-        <div role="option" aria-disabled className="px-2 py-1.5 text-sm text-muted-foreground">
+        <div role="option" aria-disabled className="px-2 py-1 text-sm text-muted-foreground">
           No models match.
         </div>
       )}

@@ -39,7 +39,7 @@ export function ComposerBranchLabel({ sessionId }: { sessionId: string }) {
         </button>
       </TooltipTrigger>
       <TooltipContent>
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <span className="break-all">{label}</span>
           {baseBranch && <span>From {baseBranch}</span>}
           {differs && <span>Session branch: {sessionBranch}</span>}

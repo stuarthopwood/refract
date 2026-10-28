@@ -38,7 +38,7 @@
 // around it is no longer muted).
 //
 // Gate-fix (UI, gate round 1): on a short pane, `@max-h-[28rem]` trims this component's own
-// vertical padding (`py-8`/`py-4` down to `py-4`/`py-3`) -- paired with `Transcript.tsx`'s own
+// vertical padding (`py-8`/`py-4` down to `py-4`/`py-4`) -- paired with `Transcript.tsx`'s own
 // `items-center-safe` overlay (falls back to top-aligned, then scrolls, rather than clipping
 // Keep waiting/Cancel off the top) -- so the larger #672 sizing never pushes those controls out
 // of reach.
@@ -105,8 +105,8 @@ export function SessionStartNotice({
       role="group"
       aria-label="Agent start"
       className={cn(
-        'flex flex-col items-center gap-3 text-center',
-        dimmed ? 'rounded-xl bg-background/90 px-6 py-4 backdrop-blur-sm @max-h-[28rem]:py-3' : 'px-2 py-8 @max-h-[28rem]:py-4'
+        'flex flex-col items-center gap-2 text-center',
+        dimmed ? 'rounded-xl bg-background/90 px-6 py-4 backdrop-blur-sm @max-h-[28rem]:py-4' : 'px-2 py-8 @max-h-[28rem]:py-4'
       )}
     >
       {hasJoke ? (
@@ -133,7 +133,7 @@ export function SessionStartNotice({
           </p>
         </div>
       ) : (
-        <p className="flex items-center gap-1.5 text-base text-muted-foreground">
+        <p className="flex items-center gap-2 text-base text-muted-foreground">
           <span className="sr-only">{describeStartProgressLabel(startProgress.kind)}</span>
           <LoaderCircleIcon aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
           <span aria-hidden="true" data-start-plain-text>{describeStartProgress(startProgress)}</span>

@@ -63,8 +63,8 @@ export function FileAttachmentChip({ name, byteLength, isDirectory, sentAs, onRe
     <Badge
       variant="secondary"
       className={cn(
-        'h-auto max-w-full gap-1.5 overflow-visible py-0.5 text-secondary-foreground',
-        onRemove && 'pr-0.5',
+        'h-auto max-w-full gap-2 overflow-visible py-1 text-secondary-foreground',
+        onRemove && 'pr-1',
         // Gate round 3 (UI3 Low): `flex-wrap` lets the chip's own children (icon, name, size,
         // "sent as path") drop onto a new line as a group once the name itself wraps, instead
         // of a lone overflowing row; `rounded-md` replaces the Badge's own pill shape
@@ -77,7 +77,7 @@ export function FileAttachmentChip({ name, byteLength, isDirectory, sentAs, onRe
       {/* Gate round 2 (UI2 Low): no explicit size class here -- `Badge`'s own base style forces
           `[&>svg]:size-3!` on any direct svg child regardless, so an explicit `size-3.5` was
           dead, misleading code that never actually rendered. */}
-      <Icon aria-hidden className={cn('shrink-0', wrap && 'mt-0.5')} />
+      <Icon aria-hidden className={cn('shrink-0', wrap && 'mt-1')} />
       <span className={cn('min-w-0', wrap ? 'break-words' : 'truncate')}>{name}</span>
       {!isDirectory && <span className="shrink-0 text-xs text-secondary-foreground/80">{formatByteSize(byteLength)}</span>}
       {isPathFile && (

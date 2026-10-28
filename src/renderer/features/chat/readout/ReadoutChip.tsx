@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils'
 // `<button>` rather than retrofitting onto this change, which only ever reached ReadoutChip's
 // own three render branches. One source of truth for the classes either way -- this component
 // below still uses the SAME two constants, never a second copy of the literal strings.
-export const READOUT_CHIP_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-1.5 text-readout text-muted-foreground'
+export const READOUT_CHIP_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-2 text-readout text-muted-foreground'
 // Gate round 1 fix (MEDIUM): the plain-text restyle above dropped `badgeVariants`' own
 // `focus-visible:border-ring ring-[3px]` ring entirely -- an interactive Readout had no
 // explicit focus style at all, only the browser default outline. Opaque (no `/50` alpha),

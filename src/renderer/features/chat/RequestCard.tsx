@@ -294,7 +294,7 @@ export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQues
       summary={summary}
       meta={<AskStatusMeta status={status} />}
     >
-      <div className="space-y-3">
+      <div className="space-y-2">
         {questions.map((question, index) => {
           const { heading, body } = splitQuestionHeading(question.question)
           const answer = answers[index] ?? answers[0]
@@ -316,7 +316,7 @@ export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQues
                 className="text-muted-foreground [&_p]:whitespace-pre-line"
               />
               {question.options.length > 0 && (
-                <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+                <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
                   {question.options.map((option) => (
                     <li key={option}>{option}</li>
                   ))}
@@ -544,7 +544,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                   // like a button in every dark theme instead of like the dialog path's own
                   // transparent rows. `data-choice-item` squares the corners (globals.css), same
                   // as every other option row.
-                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal bg-transparent py-1.5 text-left hover:bg-muted dark:border-border dark:bg-transparent dark:hover:bg-muted"
+                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal bg-transparent py-1 text-left hover:bg-muted dark:border-border dark:bg-transparent dark:hover:bg-muted"
                   onClick={() => void answer({ value: option }, 'answered', displayLabel)}
                 >
                   {/* `w-full`/`break-words`/`min-w-0` (#497): the button's `items-start` sizes each

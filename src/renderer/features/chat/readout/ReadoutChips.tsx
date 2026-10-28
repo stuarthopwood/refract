@@ -235,7 +235,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
         side="top"
         align="start"
         collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
-        className="w-auto p-3"
+        className="w-auto p-4"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}
@@ -308,7 +308,7 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
         side="top"
         align="start"
         collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
-        className="w-auto p-3"
+        className="w-auto p-4"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}

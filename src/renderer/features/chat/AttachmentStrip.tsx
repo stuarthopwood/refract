@@ -43,7 +43,7 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
       // Remove button's `-top-1 -right-1` offset (and its own focus ring) -- without it, a chip
       // in the first row or at the strip's right edge had both clipped by this container's own
       // `overflow-y-auto` boundary.
-      className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto p-1"
+      className="flex max-h-28 flex-wrap items-center gap-2 overflow-y-auto p-1"
     >
       {images.map((image, index) => (
         <div key={image.id} className="group relative">

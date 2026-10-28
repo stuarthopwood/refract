@@ -26,7 +26,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
     <ul
       ref={listRef}
       aria-label="Queued messages"
-      className="m-0 flex list-none flex-wrap gap-1.5 p-0"
+      className="m-0 flex list-none flex-wrap gap-2 p-0"
       onFocus={onFocus}
       onBlur={onBlur}
     >
@@ -41,7 +41,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
           <li key={chip.key} data-chip-key={chip.key}>
             <Badge
               variant="secondary"
-              className="h-auto max-w-full gap-1.5 overflow-visible py-0.5 pr-0.5"
+              className="h-auto max-w-full gap-2 overflow-visible py-1 pr-1"
             >
               <span className="max-w-64 truncate" title={displayText}>
                 {displayText}

@@ -1230,7 +1230,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const composerClearanceRef = useComposerClearanceCallbackRef() // #980 gate round 2: hoisted out of JSX for clarity
 
   return (
-    <div ref={composerClearanceRef} className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
+    <div ref={composerClearanceRef} className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-4">
       {chips.length > 0 && (
         <QueuedChipList chips={chips} inFlightChips={inFlightChips} imageOnlyNames={imageOnlyNames} listRef={chipListRef} onFocus={handleChipListFocus} onBlur={handleChipListBlur} onSendNow={(chip) => void handleSendNow(chip)} onRemove={(chip) => void handleRemoveQueued(chip)} />
       )}
@@ -1423,7 +1423,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 font-code text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
+              className="pointer-events-none absolute inset-0 flex items-start gap-2 overflow-hidden px-2 py-2 pr-20 font-code text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
               <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
@@ -1556,7 +1556,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         </div>
         {/* Composer bottom row (#564): Approval pill, combined Role.Model pill (#766), Reasoning
             picker, then Attach. `@container` lets the pill hide its model text when narrow. */}
-        <div data-composer-row className="@container flex flex-wrap items-center gap-2 px-2.5 pb-2">
+        <div data-composer-row className="@container flex flex-wrap items-center gap-2 px-2 pb-2">
           <ApprovalModePill sessionId={sessionId} />
           <ModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />

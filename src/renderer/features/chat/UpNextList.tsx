@@ -40,7 +40,7 @@ export function UpNextList({ sessionId, stagesCount, isLastTurn }: { sessionId: 
       <span id={headingId} className="font-medium">
         Up next
       </span>
-      <ul aria-labelledby={headingId} className="mt-1 space-y-0.5">
+      <ul aria-labelledby={headingId} className="mt-1 space-y-1">
         {todoPhases.map((phase, index) => (
           <li key={`${phase.name}-${index}`}>
             {phase.name} {'\u00b7'} {phase.pendingCount} task{phase.pendingCount === 1 ? '' : 's'}

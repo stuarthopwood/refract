@@ -187,7 +187,7 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
           // bare `Button variant="ghost"` with neither `cursor-pointer` (U2) nor the enforced
           // Dark-high-contrast resting border (U1, `border-composer-control-border`,
           // transparent in Dark/Obsidian so no visual change there). Not `PICKER_TRIGGER_CLASS`
-          // itself -- that's sized as a padded text+icon pill (`h-6 px-2.5`); Attach stays the
+          // itself -- that's sized as a padded text+icon pill (`h-6 px-2`); Attach stays the
           // icon-only square `size="icon-xs"` square its own design already is.
           className={cn(
             'cursor-pointer border-composer-control-border',

@@ -42,7 +42,7 @@ export function RoleOption({
         if (event.button === 0 && !disabled) onSelect()
       }}
       className={cn(
-        'flex min-w-0 shrink-0 cursor-default flex-col gap-0.5 rounded-md border border-border px-2 py-1 text-xs',
+        'flex min-w-0 shrink-0 cursor-default flex-col gap-1 rounded-md border border-border px-2 py-1 text-xs',
         active && 'font-medium outline-2 outline-solid outline-offset-[-2px] outline-active-indicator',
         disabled && 'cursor-not-allowed opacity-60'
       )}

@@ -117,7 +117,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
 
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="flex shrink-0 items-center gap-2">
       <Button
         variant="ghost"
         size="sm"
@@ -160,7 +160,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                           void handleOpenConversation(conversation.file)
                         }}
                         data-choice-item
-                        className="flex w-full min-w-0 flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left outline-none focus-visible:outline-hidden hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
+                        className="flex w-full min-w-0 flex-col gap-1 border-l-2 border-transparent px-2 py-2 text-left outline-none focus-visible:outline-hidden hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
                       >
                         <span className="flex items-center gap-2 text-sm">
                           <span className="min-w-0 truncate">{conversation.title || 'Untitled conversation'}</span>
