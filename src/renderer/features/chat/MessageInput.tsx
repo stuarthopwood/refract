@@ -53,6 +53,7 @@ import { ComposerBranchLabel } from './ComposerBranchLabel'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import { stopAndRestore } from './restoreQueue'
+import { isFocusStranded } from '@/lib/focus'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
@@ -280,11 +281,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   const isWorking = status === 'working'
-  useEffect(() => {
+  // Layout effect: no frame without a focus ring. A disabled composer (stop banner) cannot take
+  // focus; that case is tracked in the #897 follow-up.
+  useLayoutEffect(() => {
     if (isWorking || !stopHadFocusRef.current) return
     stopHadFocusRef.current = false
-    const active = document.activeElement
-    if (!active || active === document.body) textareaRef.current?.focus()
+    if (isFocusStranded(document.activeElement, null)) textareaRef.current?.focus()
   }, [isWorking])
   // Issue #1205 (FR-104): any stop without a stop banner (not started, or stopped on request)
   // keeps the composer usable; a send starts the agent.
