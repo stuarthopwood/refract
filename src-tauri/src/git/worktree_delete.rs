@@ -129,6 +129,10 @@ fn map_remove_tree_error(err: RemoveTreeError, worktree_path: &Path) -> GitError
                 worktree_path.display()
             ),
         ),
+        RemoveTreeError::Unreadable { path, source, after_partial } => {
+            let note = if after_partial { "Some files may already have been deleted. " } else { "" };
+            GitError::new(GitErrorCode::WorktreeFailed, format!("{note}Refract could not check {}: {source}. Close any terminal or editor open in that folder, then choose Retry.", path.display()))
+        }
         RemoveTreeError::Io { path, source } => GitError::new(
             GitErrorCode::WorktreeFailed,
             partial_removal_message(&source, &path),
