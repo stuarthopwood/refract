@@ -308,8 +308,7 @@ pub fn chat_stop(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .get_or_create_agent(session_id)
             .stop()
             .await
-            .map_err(map_chat_error)?;
-        Ok(Value::Null)
+            .map_err(map_chat_error)
     })
 }
 
