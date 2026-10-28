@@ -33,7 +33,7 @@
 // Freed from competing with the caption-button spacer, the strip's available width is `pane width
 // - 16px` (this row's own `px-2`) instead of `pane width - 118px` -- live-measured at the 240px
 // floor with three panels: `clientWidth` 224px (see the geometry table in tasks.md). The
-// close-button reserve was tightened from `pr-8` (32px, the round-1/round-2 value) to `pr-7` (28px), and the 8px grid put it back at `pr-8`
+// close-button reserve was tightened from `pr-8` (32px, the round-1/round-2 value) to 28px, and the 8px grid put it back at `pr-8`
 // (32px: `CLOSE_BUTTON_PX` 24 + its own 4px inset rounded up to the grid, the button's real drawn footprint, not an extra
 // margin on top of it). Round 4 gate remediation (High, Code3/A11y3/Verif3 converged): a tab's
 // live count has its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks, so the figure itself
