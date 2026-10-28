@@ -39,10 +39,10 @@ Open:
 | Size | Height | Use |
 |---|---|---|
 | `default` | 32px | First run and Settings primary actions (for example Add repository), and anywhere outside a denser `sm`/`xs` context. |
-| `sm` | 28px | Cards, dialogs, and panes. |
+| `sm` | 24px | Cards, dialogs, and panes. |
 | `xs` | 24px | Dense rows. |
 | `icon` | 32px | Icon-only buttons outside a dense context. |
-| `icon-sm` | 28px | Icon-only buttons (standard). |
+| `icon-sm` | 24px | Icon-only buttons (standard). |
 | `icon-xs` | 24px | Icon-only buttons in dense rows. |
 
 `icon-sm` and `icon-xs` match a 24px minimum target (WCAG 2.5.8); see [accessibility.md](accessibility.md#targets). `icon-lg` exists in `buttonVariants` but has no documented role in this system.
@@ -53,11 +53,11 @@ Decided (Stuart, 2026-10-21, #1144): one rule for the space between a control's 
 
 | Control | Padding each side |
 |---|---|
-| Text tokens inside running text (the composer's slash command pill, the inline attachment chips in the message box) | 6 px |
-| Pills, chips and badges up to 24 px tall, and `xs` buttons | 8 px |
-| Text buttons 28 px and taller (`sm`, `default`, `lg`) | 10 px |
+| Text tokens inside running text (the composer's slash command pill, the inline attachment chips in the message box) | 4 px |
+| Pills, chips and badges up to 24 px tall, `xs` and `sm` buttons | 8 px |
+| Text buttons 32 px and taller (`default`, `lg`) | 8 px (10 px before #1252 moved the app to the 8px grid) |
 
-- The side next to a leading or trailing icon is 2 px tighter, through `has-data-[icon=inline-start]` and `has-data-[icon=inline-end]`. `Badge` and `Button` `xs`, `default` and `lg` already do this; `Button` `sm` does not yet (its icon side is 6 px, 4 px tighter than its 10 px) and moves to 8 px under #1144.
+- The side next to a leading or trailing icon uses the same padding (8 px) since #1252: the 2 px tightening through `has-data-[icon=inline-start]` and `has-data-[icon=inline-end]` no longer applies, because 6 px is off the 8px grid.
 - Use the primitive's own padding. A call-site `px-*`, `pl-*` or `pr-*` that breaks this table is a defect.
 - Composer text tokens sit in a mirror layer under the masked textarea, so their padding is drawn with `box-shadow`, never real `padding` (real padding would move the caret off the text).
 - Exceptions: icon-only buttons stay square (their padding comes from their fixed size), and inline code in prose keeps 4 px.

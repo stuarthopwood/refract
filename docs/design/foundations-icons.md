@@ -44,9 +44,10 @@ Known gap: neither control has its tooltip today (`AttachmentStrip.tsx:41-49`, `
 
 | Size | Tailwind class | Use |
 | --- | --- | --- |
-| 12px | `size-3` | Beside `text-xs` in metadata and chips, and `xs` buttons. |
-| 14px | `size-3.5` | Inline status, notices, and `sm` buttons. |
-| 16px | `size-4` | Default: buttons, menu items, and headers. |
+| 16px | `size-4` | Default: buttons, menu items, headers, metadata, chips, inline status and notices. |
+| 24px | `size-6` | Large glyphs in empty states and avatars. |
+
+Icon boxes are 8, 16, 24 or 32px (#1252); the old 12px and 14px steps moved to 16px.
 
 ## Colour and decoration
 
