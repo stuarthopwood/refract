@@ -282,7 +282,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   const isWorking = status === 'working'
   // Layout effect: no frame without a focus ring. A disabled composer (stop banner) cannot take
-  // focus; that case is tracked in the #897 follow-up.
+  // focus; that case is tracked in #1285.
   useLayoutEffect(() => {
     if (isWorking || !stopHadFocusRef.current) return
     stopHadFocusRef.current = false
