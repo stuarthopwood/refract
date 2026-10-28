@@ -32,10 +32,11 @@
 // level is DROPPED -- no write, no announcement; round 2's flush-on-unmount effect is deleted
 // (it was the mechanism that let a stale held level write itself after a Select save had already
 // landed on a different model -- N1/N2's actual root cause).
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Loader2Icon } from 'lucide-react'
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem, RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
+import { COMPOSER_DISABLED_OPACITY_CLASS } from '../chat/pickerShared'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { splitThinkingSuffix } from './modelRoleSuffix'
 
@@ -147,6 +148,8 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   const ownWriteInFlightRef = useRef(false)
   const wasDisabledRef = useRef(disabled)
   const queuedAnnouncedRef = useRef(false)
+  const lastUnknownLevelRef = useRef<string | null>(null)
+  const [focusedLevel, setFocusedLevel] = useState<string | null>(null)
   const latestRef = useRef({ base, currentValue })
   latestRef.current = { base, currentValue }
 
@@ -165,7 +168,9 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
     onPick(built)
   }
 
-  useEffect(() => {
+  // A layout effect, not a passive one (#1127): it runs before paint, so a click cannot land
+  // between the DOM update that re-enables the radios and this settle step observing it.
+  useLayoutEffect(() => {
     if (wasDisabledRef.current && !disabled) {
       // A save just settled. Only flush a held level if it was OUR OWN write that was pending --
       // if some OTHER save (a Select model change) was pending instead, every pick made during
@@ -193,10 +198,11 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   // clicked (native button click behaviour) even though no state changes -- if that level is
   // supported by the OLD model but not the NEW one once a Select model save lands, the focused
   // item goes from enabled to natively `disabled`, and the browser blurs a disabled element to
-  // `<body>` synchronously, as part of React applying that attribute. A layout effect (runs
-  // after every commit, still before paint) can't stop that blur, but moves focus back to the
-  // group's own CHECKED item (always enabled by definition) before the user perceives it,
-  // falling back to Inherit (never disabled) on the rare chance even that fails.
+  // `<body>`. A layout effect runs after the commit and before paint, so it can move focus back
+  // to the group's own CHECKED item (always enabled by definition) before the user perceives the
+  // loss, falling back to Inherit (never disabled) on the rare chance even that fails. It only
+  // helps while the focused button is still mounted; an unmounting one is handled by keeping it
+  // rendered (`unknownLevelToShow` below).
   useLayoutEffect(() => {
     const active = document.activeElement
     if (!(active instanceof HTMLButtonElement)) return
@@ -221,10 +227,12 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
         return
       }
       // Gate round 3 fix (decision 1): some OTHER save for this role (a Select model change) is
-      // in flight -- REFUSE outright. Focus stays, the dot doesn't move, nothing is held.
+      // in flight -- REFUSE outright. Focus stays, the dot doesn't move, nothing is held. The
+      // same path also refuses a pick after a Settings remount while the radios' OWN write is
+      // still in flight (`ownWriteInFlightRef` resets on remount); the wording is true for both.
       if (!queuedAnnouncedRef.current) {
         queuedAnnouncedRef.current = true
-        announcePolite(`${roleLabel} model is still saving; choose a level when it finishes`)
+        announcePolite(`${roleLabel} is still saving; choose a level when it finishes`)
       }
       return
     }
@@ -267,7 +275,14 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   // Radix's own roving tabindex has anywhere else to send focus.
   const isStoredUnknownLevel = storedLevel !== INHERIT_VALUE && !KNOWN_LEVELS.has(storedLevel)
   const isCurrentUnknownLevel = currentLevel !== INHERIT_VALUE && !KNOWN_LEVELS.has(currentLevel)
-  const unknownLevelToShow = isStoredUnknownLevel ? storedLevel : isCurrentUnknownLevel ? currentLevel : null
+  const storedOrCurrentUnknown = isStoredUnknownLevel ? storedLevel : isCurrentUnknownLevel ? currentLevel : null
+  // #1127 (WCAG 2.4.3): once the stored token is gone (a save landed on a model that cannot carry
+  // it), the radio that still holds keyboard focus must not unmount under the user -- focus would
+  // fall to `<body>`. Keep the last shown unknown radio rendered (dimmed, `aria-disabled`) until
+  // focus leaves it. Idempotent for a given (storedOrCurrentUnknown, focusedLevel) pair, so safe to replay.
+  if (storedOrCurrentUnknown !== null) lastUnknownLevelRef.current = storedOrCurrentUnknown
+  else if (focusedLevel !== lastUnknownLevelRef.current) lastUnknownLevelRef.current = null
+  const unknownLevelToShow = storedOrCurrentUnknown ?? lastUnknownLevelRef.current
 
   return (
     <>
@@ -277,9 +292,19 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
         aria-busy={disabled || undefined}
         className="mt-2 flex flex-row flex-wrap gap-x-4 gap-y-2"
         value={currentLevel}
+        onFocus={(e) => setFocusedLevel(e.target instanceof HTMLElement ? e.target.id.slice(`model-role-${role}-reasoning-`.length) : null)}
+        // A blur with no `relatedTarget` while the window lost focus (Alt-Tab, native dialog) keeps the radio.
+        onBlur={(e) => {
+          if (e.relatedTarget === null && !document.hasFocus()) return
+          setFocusedLevel(null)
+        }}
         onValueChange={(value) => {
           if (value === INHERIT_VALUE) pick(INHERIT_VALUE)
-          else if (hasValue && !unresolvedModel) pick(value)
+          // An unrecognised token (`auto`/`max`) is only ever written back while it is still the
+          // STORED value (arrowing off it and back); the kept-focused radio of a token the saved
+          // model could not carry must not re-write it (#1127).
+          else if (hasValue && !unresolvedModel && (KNOWN_LEVELS.has(value) || value === storedLevel)) pick(value)
+          else if (hasValue && !unresolvedModel) announcePolite(`${roleLabel} reasoning: ${UNKNOWN_LEVEL_LABEL[value] ?? value} is no longer set for this model`)
         }}
       >
         <span id={reasoningLabelId} className="sr-only">
@@ -302,6 +327,7 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
             value={unknownLevelToShow}
             label={UNKNOWN_LEVEL_LABEL[unknownLevelToShow] ?? unknownLevelToShow}
             disabled={false}
+            unavailable={unknownLevelToShow !== storedOrCurrentUnknown}
             pending={disabled && currentLevel === unknownLevelToShow}
           />
         )}
@@ -330,21 +356,26 @@ function ReasoningRadioItem({
   value,
   label,
   disabled,
-  pending
+  pending,
+  unavailable = false
 }: {
   id: string
   value: string
   label: string
   disabled: boolean
   pending: boolean
+  /** Kept mounted only to hold keyboard focus (never natively `disabled`, which would drop it). */
+  unavailable?: boolean
 }) {
   return (
     <RadioGroupItem
       id={id}
       value={value}
       disabled={disabled}
+      aria-disabled={unavailable || undefined}
       className={cn(
         'min-h-6 w-auto flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
+        COMPOSER_DISABLED_OPACITY_CLASS,
         // Gate round 2 fix (Visual Medium #2): a filled background makes the pending item
         // unmistakable. Gate round 3 fix (Medium #6): the base `data-[state=checked]:bg-
         // transparent` and a plain `bg-accent/70` have the SAME specificity once checked (the

@@ -2043,7 +2043,12 @@ The developer types a slash command and finds the ones the agent offers. If a se
   own `thinking` array lists it. A disabled option MUST state why (`aria-describedby`), never a
   silently-greyed control with no explanation. Picking an enabled level MUST write it as the role's
   existing `:level` suffix via the existing suffix helpers (`modelRoleSuffix.ts`); picking Inherit
-  MUST clear it.
+  MUST clear it. (Amended 2026-10-28, issue #1127: a radio that holds keyboard focus MUST NOT
+  unmount, so focus never falls to `<body>` (WCAG 2.4.3): the radio for a stored token outside the
+  seven levels stays rendered while it holds focus. Selecting such a token once it is no longer the
+  role's stored value MUST be a no-op, never a write. A pick refused because the role's model is
+  saving, and a pick refused after a Settings remount while the radios' own write is in flight,
+  MUST announce that the role "is still saving" (one wording, true for both causes).)
 - **FR-100** (new, 2026-10-22, issue #762): A bare `/models` typed in the message box MUST open
   Settings at the Model roles section, clear the draft, and send nothing to the agent. The slash
   menu MUST list it as a native command ("Open model role settings"); the name MUST stay reserved
