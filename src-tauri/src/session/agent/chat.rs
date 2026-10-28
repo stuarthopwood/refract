@@ -3,6 +3,7 @@
 
 use serde_json::{json, Value};
 
+use super::chat_restore::{empty_restored_queue, parse_restored_queue};
 use super::{
     AgentError, SessionAgent, SessionStatus, ABORT_SETTLE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS,
 };
@@ -73,10 +74,11 @@ impl SessionAgent {
         Ok(json!({ "queued": working }))
     }
 
-    /// `chat.stop` (contracts/omp-usage.md "Stop"): sends `abort`, then waits for the turn to
+    /// `chat.stop` (contracts/omp-usage.md "Stop"): sends `abort_and_restore_queue` (falling back
+    /// to `abort`) and returns the withdrawn queued messages, then waits for the turn to
     /// fully settle before the Session accepts another prompt. A no-op while idle or with no
     /// live process.
-    pub async fn stop(&self) -> Result<(), AgentError> {
+    pub async fn stop(&self) -> Result<Value, AgentError> {
         let (proc, status) = {
             let mut state = self.state.lock().await;
             let proc = state.process.clone();
@@ -95,14 +97,33 @@ impl SessionAgent {
             }
             (proc, status)
         };
-        let Some(proc) = proc else { return Ok(()) };
+        let Some(proc) = proc else {
+            return Ok(empty_restored_queue());
+        };
         if status == SessionStatus::Idle {
-            return Ok(());
+            return Ok(empty_restored_queue());
         }
-        match proc
-            .request(json!({ "type": "abort" }), DEFAULT_REQUEST_TIMEOUT_MS)
+        // Spec 030 (#517): withdraw the queue and abort in one call; an older runtime rejects the
+        // command, so fall back to a plain `abort` (the queue then behaves as it always did).
+        let mut restored = empty_restored_queue();
+        let abort_result = match proc
+            .request(
+                json!({ "type": "abort_and_restore_queue" }),
+                DEFAULT_REQUEST_TIMEOUT_MS,
+            )
             .await
         {
+            Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true) => {
+                restored = parse_restored_queue(res.get("data").unwrap_or(&Value::Null));
+                Ok(res)
+            }
+            Ok(_) => {
+                proc.request(json!({ "type": "abort" }), DEFAULT_REQUEST_TIMEOUT_MS)
+                    .await
+            }
+            Err(err) => Err(err),
+        };
+        match abort_result {
             Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true) => {}
             Ok(res) => {
                 // Issue #911 (gate-fix): the abort did not actually take effect -- never leave
@@ -123,7 +144,7 @@ impl SessionAgent {
         }
         let mut rx = self.status_tx.subscribe();
         if matches!(*rx.borrow(), SessionStatus::Idle | SessionStatus::Stopped) {
-            return Ok(());
+            return Ok(restored);
         }
         let wait = async {
             while rx.changed().await.is_ok() {
@@ -147,7 +168,7 @@ impl SessionAgent {
                 ),
             ));
         }
-        Ok(())
+        Ok(restored)
     }
 
     /// Shared by `remove_queued`/`send_now` (gate-fix, Medium: DRY, same request/success/notice

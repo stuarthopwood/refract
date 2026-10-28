@@ -28,8 +28,8 @@
 {"type":"tool_execution_start","toolCallId":"call-911-read","toolName":"read","args":{"path":"README.md"},"intent":"Reading README.md"}
 {"type":"tool_execution_end","toolCallId":"call-911-read","toolName":"read","result":{"content":[{"type":"text","text":"issue-911 fixture readme content"}]},"isError":false}
 {"type":"tool_execution_start","toolCallId":"call-911-bash","toolName":"bash","args":{"command":"sleep 30"},"intent":"Running a long command"}
-{"__wait__":["abort"]}
-{"id":"$lastId","type":"response","command":"abort","success":true}
+{"__wait__":["abort_and_restore_queue"]}
+{"id":"$lastId","type":"response","command":"abort_and_restore_queue","success":true,"data":{"steering":[],"followUp":[]}}
 {"type":"tool_execution_end","toolCallId":"call-911-bash","toolName":"bash","result":{"content":[{"type":"text","text":"Command aborted"}]},"isError":true}
 {"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
 {"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}

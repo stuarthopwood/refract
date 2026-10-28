@@ -498,6 +498,15 @@ export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 /** An unsubscribe function returned by every `on*` event subscription. */
 export type Unsubscribe = () => void;
 
+/** Spec 030 (#517): what `chat.stop` returns -- the queued messages OMP withdrew. */
+export interface StopResult {
+  messages: { text: string; images: ImageContent[] }[];
+  /** OMP omitted every image because the full result exceeded its transport limit. */
+  imagesDropped: boolean;
+  /** OMP listed only an oldest-first prefix of the queue. */
+  truncated: boolean;
+}
+
 export interface RefractApi extends UpdatesApi, ImagesApi {
   repositories: {
     /** Issue #528, gate round 3 fix (Medium): returns immediately with `remote: { kind:
@@ -598,7 +607,9 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * the outgoing command (FR-018), returning `unsupported-image-type`/`image-too-large` on the
      * first failing entry and sending nothing. */
     send(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ queued: boolean }>>;
-    stop(sessionId: string): Promise<Result<void>>;
+    /** Spec 030 (#517): Stop withdraws every queued message (OMP's `abort_and_restore_queue`) and
+     * returns them, steering first then follow-ups, each oldest first, for the composer. */
+    stop(sessionId: string): Promise<Result<StopResult>>;
     // Issue #540: carries the queue the chip actually belongs to -- the old hard-coded
     // `'followUp'` meant a steering chip's Remove always reported `removed: false` (OMP never
     // had it in that queue), so a steering chip could never be removed at all.

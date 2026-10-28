@@ -245,8 +245,8 @@ async function main() {
     });
     await cdp.screenshot(path.join(SHOTS_DIR, '01-turn-a-bash-running.png'));
 
-    // Real Stop click -- sends OMP's own `abort` command, which `stop-911.jsonl`'s tape is
-    // paused waiting for (`{"__wait__":["abort"]}`) before it ever settles the running call.
+    // Real Stop click -- sends OMP's own `abort_and_restore_queue` command, which `stop-911.jsonl`'s tape is
+    // paused waiting for (`{"__wait__":["abort_and_restore_queue"]}`) before it ever settles the running call.
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[aria-label="Stop"]'); return !!b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 15_000, label: 'Stop button enabled' }
