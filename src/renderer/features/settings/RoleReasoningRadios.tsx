@@ -36,6 +36,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Loader2Icon } from 'lucide-react'
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem, RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
+import { COMPOSER_DISABLED_OPACITY_CLASS } from '../chat/pickerShared'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { splitThinkingSuffix } from './modelRoleSuffix'
 
@@ -292,14 +293,18 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
         className="mt-2 flex flex-row flex-wrap gap-x-4 gap-y-2"
         value={currentLevel}
         onFocus={(e) => setFocusedLevel(e.target instanceof HTMLElement ? e.target.id.slice(`model-role-${role}-reasoning-`.length) : null)}
-        onBlur={() => setFocusedLevel(null)}
+        // A blur with no `relatedTarget` while the window lost focus (Alt-Tab, native dialog) keeps the radio.
+        onBlur={(e) => {
+          if (e.relatedTarget === null && !document.hasFocus()) return
+          setFocusedLevel(null)
+        }}
         onValueChange={(value) => {
           if (value === INHERIT_VALUE) pick(INHERIT_VALUE)
           // An unrecognised token (`auto`/`max`) is only ever written back while it is still the
           // STORED value (arrowing off it and back); the kept-focused radio of a token the saved
           // model could not carry must not re-write it (#1127).
           else if (hasValue && !unresolvedModel && (KNOWN_LEVELS.has(value) || value === storedLevel)) pick(value)
-          else if (hasValue && !unresolvedModel) announcePolite(`${UNKNOWN_LEVEL_LABEL[value] ?? value} isn't supported by this model`)
+          else if (hasValue && !unresolvedModel) announcePolite(`${roleLabel} reasoning: ${UNKNOWN_LEVEL_LABEL[value] ?? value} is no longer set for this model`)
         }}
       >
         <span id={reasoningLabelId} className="sr-only">
@@ -370,7 +375,7 @@ function ReasoningRadioItem({
       aria-disabled={unavailable || undefined}
       className={cn(
         'min-h-6 w-auto flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
-        unavailable && 'cursor-not-allowed opacity-50',
+        COMPOSER_DISABLED_OPACITY_CLASS,
         // Gate round 2 fix (Visual Medium #2): a filled background makes the pending item
         // unmistakable. Gate round 3 fix (Medium #6): the base `data-[state=checked]:bg-
         // transparent` and a plain `bg-accent/70` have the SAME specificity once checked (the
