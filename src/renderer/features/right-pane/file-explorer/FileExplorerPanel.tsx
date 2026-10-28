@@ -880,7 +880,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
         </Empty>
       ) : (
         <>
-          <div className="no-drag-region flex shrink-0 items-center justify-between gap-2 border-b border-divider px-1 pb-1.5">
+          <div className="no-drag-region flex shrink-0 items-center justify-between gap-2 border-b border-divider px-1 pb-1">
             <label htmlFor="file-explorer-show-ignored" className="text-xs text-muted-foreground">
               Show ignored files
             </label>
@@ -931,7 +931,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                           tabIndex={-1}
                           data-tree-more-key={row.key}
                           style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
-                          className="px-1 py-0.5 text-xs text-muted-foreground"
+                          className="px-1 py-1 text-xs text-muted-foreground"
                         >
                           {row.count} more…
                         </div>
@@ -1073,7 +1073,7 @@ function TreeNodeRow({
       tabIndex={tabbable ? 0 : -1}
       data-tree-row-path={node.path}
       style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
-      className="group no-drag-region relative flex w-full cursor-default items-center gap-1 rounded px-1 py-0.5 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
+      className="group no-drag-region relative flex w-full cursor-default items-center gap-1 rounded px-1 py-1 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
       onClick={() => onRowClick(node)}
       onFocus={() => onRowFocus(node)}
       onKeyDown={(event) => onRowKeyDown(event, row, absIndex)}
@@ -1118,7 +1118,7 @@ function TreeNodeRow({
               // PR #671 gate round 4 fix (Medium, A11y4): visible whenever this row is SELECTED
               // (not hover/focus-within only, which read as hover-only on a touch device with no
               // hover concept at all), and raised to a `size-6` (24px) target -- the previous
-              // ~18px (icon `size-3.5` plus `p-0.5`) sat under the 24px minimum.
+              // ~18px (icon `size-3.5` plus `p-1`) sat under the 24px minimum.
               className={`flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 ${selected ? 'opacity-100' : 'opacity-0'}`}
               // The whole row (not a separate open button, unlike `SessionList.tsx`) carries
               // `onClick`/`onRowClick` above -- without this, clicking the trigger would bubble

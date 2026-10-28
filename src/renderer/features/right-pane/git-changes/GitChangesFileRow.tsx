@@ -150,12 +150,12 @@ export function GitChangesFileRow({
   }
 
   return (
-    <div className="group/row flex w-full items-center gap-1.5 rounded px-1 py-1 text-sm hover:bg-accent/50" aria-busy={actionPending}>
+    <div className="group/row flex w-full items-center gap-2 rounded px-1 py-1 text-sm hover:bg-accent/50" aria-busy={actionPending}>
       <button
         type="button"
         data-git-row-path={entry.path}
         onClick={onOpenDiff}
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
         {/* Item 3 (#1101): the row's own status icon becomes a spinner while a stage/unstage
             round trip for THIS file is in flight -- the kebab menu that triggered it has
@@ -169,7 +169,7 @@ export function GitChangesFileRow({
         <span className="sr-only">{`${mark.label} — Open diff for ${entry.path}`}</span>
         <span aria-hidden className="min-w-0 flex-1 truncate" title={entry.path}>
           {fileName}
-          {entry.folder && <span className="ml-1.5 text-xs text-muted-foreground">{entry.folder}</span>}
+          {entry.folder && <span className="ml-1 text-xs text-muted-foreground">{entry.folder}</span>}
         </span>
       </button>
       <DiffStatCounts added={entry.additions} removed={entry.deletions} compact accessibleLabel />

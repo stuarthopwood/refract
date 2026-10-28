@@ -142,7 +142,7 @@ export function GitChangesGroup({
           )}
         </div>
         <CollapsibleContent>
-          <ul data-git-group-list={kind} aria-label={`${label} files`} className="flex flex-col gap-0 py-0.5">
+          <ul data-git-group-list={kind} aria-label={`${label} files`} className="flex flex-col gap-0 py-1">
             {entries.map((entry) => (
               <li key={entry.path}>
                 <GitChangesFileRow

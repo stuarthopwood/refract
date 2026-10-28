@@ -33,7 +33,7 @@
 // Freed from competing with the caption-button spacer, the strip's available width is `pane width
 // - 16px` (this row's own `px-2`) instead of `pane width - 118px` -- live-measured at the 240px
 // floor with three panels: `clientWidth` 224px (see the geometry table in tasks.md). The
-// close-button reserve was tightened from `pr-8` (32px, the round-1/round-2 value) to `pr-7`
+// close-button reserve was tightened from `pr-8` (32px, the round-1/round-2 value) to `pr-6`
 // (28px: `CLOSE_BUTTON_PX` 24 + its own 4px inset, the button's real drawn footprint, not an extra
 // margin on top of it). Round 4 gate remediation (High, Code3/A11y3/Verif3 converged): a tab's
 // live count has its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks, so the figure itself
@@ -43,14 +43,14 @@
 // word gives way before the label does (`shrink-[1000]` against the label's own `shrink-[100]`),
 // since a label collapsed to nothing with a meaningless word fragment left over is worse than the
 // word disappearing first and the label truncating normally with an ellipsis. Every plain tab's
-// own content needs only `54px` (`pl-2` 8 + icon 14 + one `gap-1` 4 + `pr-7` 28), but `min-w-14`
+// own content needs only `54px` (`pl-2` 8 + icon 14 + one `gap-1` 4 + `pr-6` 28), but `min-w-14`
 // (56px) is a hard CSS minimum that still binds on top of that -- a plain tab's actual RENDERED
 // floor is `56px`, not its own lower content requirement. A count-showing tab's content floor is
 // `62px` (the same four terms, but THREE `gap-1`s -- icon-label, label-number, number-word --
 // since the word is always a rendered sibling even once it shrinks to 0 width, and CSS `gap`
 // spaces every flex item regardless of its own final size) plus that tab's number's own digit
 // width. `min-w-14` is the only CSS-enforced floor for every tab; the count tab's `62px` + digit
-// width is what its own content NEEDS to avoid spilling its `shrink-0` number into the `pr-7`
+// width is what its own content NEEDS to avoid spilling its `shrink-0` number into the `pr-6`
 // close reserve, but the flex layout does not enforce that -- it holds today only because of how
 // flex shares space among today's three panel labels (measured `82.375px` live), not because of
 // any CSS minimum (see the "known limit" note in tasks.md). Three tabs' worst case with a
@@ -199,7 +199,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
 
     return (
       <div className="flex shrink-0 flex-col">
-        <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
+        <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-2 px-4">
           <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-medium">
             {descriptor.name}
           </h2>
@@ -287,7 +287,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
           itself. */}
       <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 border-t border-border px-2">
         <div ref={wrapRef} className="relative flex min-w-0 flex-1 items-center overflow-x-auto">
-          <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-0.5">
+          <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
             {openPanelIds.map((id) => (
               <TabButton
                 key={id}
@@ -402,7 +402,7 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       aria-controls={selected ? `panel-content-${id}` : undefined}
       tabIndex={selected ? 0 : -1}
       className={cn(
-        'relative inline-flex h-7 min-w-14 shrink items-center gap-1 rounded-md px-2 pr-7 text-sm font-medium',
+        'relative inline-flex h-7 min-w-14 shrink items-center gap-1 rounded-md px-2 pr-6 text-sm font-medium',
         FOCUS_VISIBLE,
         selected
           ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
