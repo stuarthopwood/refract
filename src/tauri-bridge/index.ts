@@ -39,6 +39,7 @@ import type {
   Unsubscribe
 } from '../shared/ipc'
 import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-attachments'
+import type { StopResult } from '../shared/stop-result'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
 import type { MessageImageData } from '../shared/ipc-images'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
@@ -191,7 +192,7 @@ const refract: RefractApi = {
   chat: {
     send: (sessionId, text, images?: ImageContent[]) =>
       request<{ queued: boolean }>(IPC_REQUESTS.CHAT_SEND, sessionId, text, images),
-    stop: (sessionId) => request<void>(IPC_REQUESTS.CHAT_STOP, sessionId),
+    stop: (sessionId) => request<StopResult>(IPC_REQUESTS.CHAT_STOP, sessionId),
     removeQueued: (sessionId, text, queue) => request<{ removed: boolean }>(IPC_REQUESTS.CHAT_REMOVE_QUEUED, sessionId, text, queue),
     sendNow: (sessionId, text) => request<{ promoted: boolean }>(IPC_REQUESTS.CHAT_SEND_NOW, sessionId, text),
     answer: (sessionId, requestId, answer: ChatAnswer) =>

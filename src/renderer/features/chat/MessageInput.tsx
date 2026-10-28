@@ -52,6 +52,7 @@ import { QueuedChipList } from './QueuedChipList'
 import { ComposerBranchLabel } from './ComposerBranchLabel'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
+import { stopAndRestore } from './restoreQueue'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
@@ -463,9 +464,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       event.preventDefault()
       if (!isFocusedPaneRef.current) return
       if (statusRef.current !== 'working') return
-      void window.refract.chat.stop(sessionIdRef.current).then((result) => {
-        if (!result.ok) notify(result.error)
-      })
+      void stopAndRestore(sessionIdRef.current, () => textareaRef.current?.focus())
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -892,8 +891,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }
 
   async function handleStop() {
-    const result = await window.refract.chat.stop(sessionId)
-    if (!result.ok) notify(result.error)
+    await stopAndRestore(sessionId, () => textareaRef.current?.focus())
   }
 
   // Issue #540 (#591 cycle 3): single-flight per chip (keyed by the chip's own stable identity,

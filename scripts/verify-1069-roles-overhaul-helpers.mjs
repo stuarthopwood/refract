@@ -118,6 +118,10 @@ export async function runUnmountDropsHeldLevelCase(cdp, findings, failures, debu
   await cdp.click(`document.getElementById('model-role-default-reasoning-medium')`);
   await cdp.waitFor(defaultBusyExpr, { timeoutMs: 2_000, label: 'Default radiogroup busy: the radios\u2019 OWN Medium write is in flight (unmount case)' });
   await cdp.click(`document.getElementById('model-role-default-reasoning-low')`);
+  await cdp.waitFor(`document.getElementById('model-role-default-reasoning-low')?.getAttribute('data-state') === 'checked'`, {
+    timeoutMs: 2_000,
+    label: 'The held Low pick registered (optimistic checked) before the section unmounts'
+  });
   await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Appearance')`);
   await cdp.waitFor(`!document.getElementById('model-role-default')`, { timeoutMs: 5_000, label: 'Model roles section unmounted (navigated to Appearance mid-save)' });
   await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5:medium')`, {
@@ -126,6 +130,7 @@ export async function runUnmountDropsHeldLevelCase(cdp, findings, failures, debu
   });
   const rolesNow = await cdp.evaluate(`window.refract.modelRoles.list().then((r) => (r.ok ? r.value : null))`);
   assertEqual(rolesNow?.default, 'anthropic/claude-opus-5.5:medium', 'Gate round 3: unmount drops the HELD level (Low) -- only the first write (Medium) ever lands', findings, failures);
+  await sleep(500); // give a (buggy) second write time to land before reading the log and counting
   const configSetLogAfterUnmount = readFileSync(debugLogPath, 'utf8');
   assertTrue(!configSetLogAfterUnmount.includes('claude-opus-5.5:low'), 'No stale-model write for the dropped held level (:low) appears in fake-omp-invocations.log', findings, failures);
   const configSetDuringUnmountCase = countConfigSetCalls(debugLogPath) - configSetBeforeMediumClick;
@@ -141,7 +146,7 @@ export async function runUnmountDropsHeldLevelCase(cdp, findings, failures, debu
  * Haiku 5.5 (thinking: minimal, low only -- no Extra high), clicks Extra high while the OLD model
  * (Opus 5.5, which DOES support it) is still showing, so the click is refused but still focuses
  * it; once Haiku lands, Extra high is natively disabled and focus must have already moved to the
- * checked item (Inherit, since High isn't carryable to Haiku either), never `<body>`. */
+ * checked item (Inherit, since Extra high isn't carryable to Haiku either), never `<body>`. */
 export async function runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings, failures, debugLogPath, defaultBusyExpr, assertEqual, assertTrue) {
   const configSetBeforeHaikuSwitch = countConfigSetCalls(debugLogPath);
   await cdp.click(`document.getElementById('model-role-default')`);
@@ -149,6 +154,7 @@ export async function runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings,
   await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('Claude Haiku 5.5'))`);
   await cdp.waitFor(defaultBusyExpr, { timeoutMs: 2_000, label: 'Default radiogroup busy: the Claude Haiku 5.5 model save is in flight (unsupported-transition check)' });
   await cdp.click(`document.getElementById('model-role-default-reasoning-xhigh')`);
+  await sleep(300); // let a (buggy) optimistic re-render land before reading, so "unchecked" is not vacuous
   const xhighCheckedWhileRefused = await cdp.evaluate(`document.getElementById('model-role-default-reasoning-xhigh')?.getAttribute('aria-checked')`);
   assertEqual(xhighCheckedWhileRefused, 'false', 'A pick made during the Haiku save is refused too: the dot does not move', findings, failures);
   await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-haiku-5.5')`, {
@@ -175,4 +181,26 @@ export async function runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings,
   const logAfterHaikuSwitch = readFileSync(debugLogPath, 'utf8');
   assertTrue(!logAfterHaikuSwitch.includes('claude-haiku-5.5:xhigh'), 'No :xhigh write for Claude Haiku 5.5 appears in fake-omp-invocations.log -- the refused pick never reached the backend', findings, failures);
   assertEqual(countConfigSetCalls(debugLogPath) - configSetBeforeHaikuSwitch, 1, 'Exactly one config-set call (the Haiku model switch) landed; the refused Extra high pick fired no write', findings, failures);
+}
+
+/** #1127 finding 1 (WCAG 2.4.3): the focused Auto radio must not unmount under the user when a model
+ * save lands that cannot carry `:auto`. Plan -> GPT 3.5 Turbo (no reasoning); the Auto click is
+ * refused mid-save but still focuses it; once the save lands the stored value is bare, and focus
+ * must NOT have fallen to `<body>`. */
+export async function runKeptAutoRadioKeepsFocusCase(cdp, findings, failures, assertEqual, assertTrue) {
+  const planBusy = `document.getElementById('model-role-plan-reasoning-inherit')?.closest('[role="radiogroup"]')?.getAttribute('aria-busy') === 'true'`;
+  await cdp.click(`document.getElementById('model-role-plan')`);
+  await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Plan dropdown opened (focus-loss check)' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('GPT 3.5 Turbo'))`);
+  await cdp.waitFor(planBusy, { timeoutMs: 2_000, label: 'Plan radiogroup busy: the GPT 3.5 Turbo model save is in flight' });
+  await cdp.click(`document.getElementById('model-role-plan-reasoning-auto')`);
+  await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.plan === 'github-copilot/gpt-3.5-turbo')`, {
+    timeoutMs: 8_000,
+    label: 'The GPT 3.5 Turbo save lands bare -- :auto cannot be carried'
+  });
+  await sleep(500);
+  const focusedAfterUnmountingToken = await cdp.evaluate(`document.activeElement?.id ?? null`);
+  assertTrue(focusedAfterUnmountingToken !== null && focusedAfterUnmountingToken.startsWith('model-role-plan-reasoning-'), `Focus stays inside Plan's radiogroup (never <body>) when the focused Auto radio's token can no longer be carried (got ${focusedAfterUnmountingToken})`, findings, failures);
+  const rolesAfter = await cdp.evaluate(`window.refract.modelRoles.list().then((r) => (r.ok ? r.value : null))`);
+  assertEqual(rolesAfter?.plan, 'github-copilot/gpt-3.5-turbo', 'Activating the kept Auto radio never wrote :auto back onto a model that cannot carry it', findings, failures);
 }

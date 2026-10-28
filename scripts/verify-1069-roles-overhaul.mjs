@@ -70,7 +70,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
-import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState, runUnmountDropsHeldLevelCase, runFocusRecoveryOnUnsupportedTransitionCase } from './verify-1069-roles-overhaul-helpers.mjs';
+import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState, runUnmountDropsHeldLevelCase, runFocusRecoveryOnUnsupportedTransitionCase, runKeptAutoRadioKeepsFocusCase } from './verify-1069-roles-overhaul-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -105,12 +105,12 @@ function assertEqual(actual, expected, label, findings, failures) {
  * INSIDE the viewport (a corner then an interior point, so Chromium genuinely fires
  * `pointerleave` on whatever was last hovered), blurs, presses Escape, then FAILS loudly if a
  * tooltip or hover card is still open immediately before a screenshot. */
-async function settleForScreenshot(cdp, findings, failures) {
+async function settleForScreenshot(cdp, findings, failures, { keepFocus = false } = {}) {
   const { width, height } = await cdp.evaluate(`({ width: window.innerWidth, height: window.innerHeight })`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
   await sleep(80);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.floor(width / 2), y: Math.floor(height / 2) });
-  await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+  if (!keepFocus) await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
   await sleep(100);
@@ -152,8 +152,8 @@ async function main() {
   const dirtyLines = dirtyResult.status === 0 ? dirtyResult.stdout.split('\n').filter(Boolean) : null;
   const dirty = dirtyLines === null ? 'unknown' : dirtyLines.length > 0;
 
-  async function shot(name) {
-    await settleForScreenshot(cdp, findings, failures);
+  async function shot(name, options) {
+    await settleForScreenshot(cdp, findings, failures, options);
     await cdp.screenshot(path.join(SHOTS_DIR, name));
     screenshotNames.push(name);
   }
@@ -440,11 +440,10 @@ async function main() {
     await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('Claude Opus 5.5'))`);
     await cdp.waitFor(defaultBusy, { timeoutMs: 2_000, label: 'Default radiogroup busy: the Claude Opus 5.5 model save is in flight' });
     await cdp.click(`document.getElementById('model-role-default-reasoning-high')`);
+    await sleep(300); // let a (buggy) optimistic re-render land before reading, so "unchecked" is not vacuous
     const highCheckedWhileRefused = await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.getAttribute('aria-checked')`);
     assertEqual(highCheckedWhileRefused, 'false', 'A pick made during a Select model save is refused outright: the dot does not move', findings, failures);
-    await shot('04-pending-save-in-row.png');
-    // `shot()` deliberately blurs (its own `settleForScreenshot`) -- restore focus before checking it survives the save landing.
-    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.focus()`);
+    await shot('04-pending-save-in-row.png', { keepFocus: true }); // keepFocus: the assertion below proves the APP holds focus
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5')`, {
       timeoutMs: 8_000,
       label: 'The Claude Opus 5.5 model save lands bare -- the refused "High" pick never applied'
@@ -537,6 +536,7 @@ async function main() {
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.plan, 'github-copilot/claude-fable-5:auto', 'Plan ends on :auto again after arrowing off and back, read via modelRoles.list()', findings, failures);
 
+    await runKeptAutoRadioKeepsFocusCase(cdp, findings, failures, assertEqual, assertTrue); // #1127 finding 1
     // Gate round 2 (Medium #6 evidence): a failed catalog fetch is simulated by
     // `REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND`, fixed for this process's WHOLE lifetime -- it
     // cannot be toggled on for just one assertion without breaking every OTHER assertion above
