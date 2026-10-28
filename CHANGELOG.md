@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.12.1 (2026-10-28)
+
+### Fixes
+
+- fix(worktree): diff_stat no longer follows symlinks outside the worktree (https://github.com/stuarthopwood/refract/pull/1280)
+- fix(chat): Stop returns queued messages to the composer (https://github.com/stuarthopwood/refract/pull/1281)
+- fix(settings): keep focused reasoning radio mounted (#1127) (https://github.com/stuarthopwood/refract/pull/1282)
+- fix(file-explorer): show keyboard focus ring on tree and preview (https://github.com/stuarthopwood/refract/pull/1288)
+- fix(delete): honest wording and success on retry after a partial delete (https://github.com/stuarthopwood/refract/pull/1290)
+- fix(updates): Update now counts live agents, verifies before quit, guards double quit (https://github.com/stuarthopwood/refract/pull/1291)
+- fix(chat): refocus composer when Stop unmounts at turn end (https://github.com/stuarthopwood/refract/pull/1292)
+- fix(delete): bound delete lock waits and use worktree-busy code (https://github.com/stuarthopwood/refract/pull/1293)
+
+### Other
+
+- docs: wave 1 tokens grill outcomes (https://github.com/stuarthopwood/refract/pull/1277)
+- docs(plan): place #1283 and #1284 in wave 3; note #839 and #1267 amendments (https://github.com/stuarthopwood/refract/pull/1286)
+- docs(plan): note #1287 beside #1284 in wave 3 (https://github.com/stuarthopwood/refract/pull/1289)
+
 ## v0.12.0 (2026-10-28)
 
 ### Features
