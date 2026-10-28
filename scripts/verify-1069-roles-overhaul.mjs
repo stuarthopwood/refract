@@ -105,12 +105,12 @@ function assertEqual(actual, expected, label, findings, failures) {
  * INSIDE the viewport (a corner then an interior point, so Chromium genuinely fires
  * `pointerleave` on whatever was last hovered), blurs, presses Escape, then FAILS loudly if a
  * tooltip or hover card is still open immediately before a screenshot. */
-async function settleForScreenshot(cdp, findings, failures) {
+async function settleForScreenshot(cdp, findings, failures, { keepFocus = false } = {}) {
   const { width, height } = await cdp.evaluate(`({ width: window.innerWidth, height: window.innerHeight })`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
   await sleep(80);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.floor(width / 2), y: Math.floor(height / 2) });
-  await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+  if (!keepFocus) await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
   await sleep(100);
@@ -152,8 +152,8 @@ async function main() {
   const dirtyLines = dirtyResult.status === 0 ? dirtyResult.stdout.split('\n').filter(Boolean) : null;
   const dirty = dirtyLines === null ? 'unknown' : dirtyLines.length > 0;
 
-  async function shot(name) {
-    await settleForScreenshot(cdp, findings, failures);
+  async function shot(name, options) {
+    await settleForScreenshot(cdp, findings, failures, options);
     await cdp.screenshot(path.join(SHOTS_DIR, name));
     screenshotNames.push(name);
   }
@@ -440,11 +440,11 @@ async function main() {
     await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('Claude Opus 5.5'))`);
     await cdp.waitFor(defaultBusy, { timeoutMs: 2_000, label: 'Default radiogroup busy: the Claude Opus 5.5 model save is in flight' });
     await cdp.click(`document.getElementById('model-role-default-reasoning-high')`);
+    await sleep(300); // let a (buggy) optimistic re-render land before reading, so "unchecked" is not vacuous
     const highCheckedWhileRefused = await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.getAttribute('aria-checked')`);
     assertEqual(highCheckedWhileRefused, 'false', 'A pick made during a Select model save is refused outright: the dot does not move', findings, failures);
-    await shot('04-pending-save-in-row.png');
-    // `shot()` deliberately blurs (its own `settleForScreenshot`) -- restore focus before checking it survives the save landing.
-    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.focus()`);
+    // `keepFocus`: the screenshot step must not move focus, so the assertion below proves the APP holds it.
+    await shot('04-pending-save-in-row.png', { keepFocus: true });
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5')`, {
       timeoutMs: 8_000,
       label: 'The Claude Opus 5.5 model save lands bare -- the refused "High" pick never applied'
@@ -537,6 +537,25 @@ async function main() {
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.plan, 'github-copilot/claude-fable-5:auto', 'Plan ends on :auto again after arrowing off and back, read via modelRoles.list()', findings, failures);
 
+    // ---- #1127 finding 1 (WCAG 2.4.3): the focused Auto radio must not unmount under the user
+    // when a model save lands that cannot carry :auto. Plan -> GPT 3.5 Turbo (no reasoning); the
+    // Auto click is refused mid-save but still focuses it; once the save lands the stored value
+    // is bare, and focus must NOT have fallen to <body>. ----
+    const planBusy = `document.getElementById('model-role-plan-reasoning-inherit')?.closest('[role="radiogroup"]')?.getAttribute('aria-busy') === 'true'`;
+    await cdp.click(`document.getElementById('model-role-plan')`);
+    await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Plan dropdown opened (focus-loss check)' });
+    await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('GPT 3.5 Turbo'))`);
+    await cdp.waitFor(planBusy, { timeoutMs: 2_000, label: 'Plan radiogroup busy: the GPT 3.5 Turbo model save is in flight' });
+    await cdp.click(`document.getElementById('model-role-plan-reasoning-auto')`);
+    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.plan === 'github-copilot/gpt-3.5-turbo')`, {
+      timeoutMs: 8_000,
+      label: 'The GPT 3.5 Turbo save lands bare -- :auto cannot be carried'
+    });
+    await sleep(500);
+    const focusedAfterUnmountingToken = await cdp.evaluate(`document.activeElement?.id ?? null`);
+    assertTrue(focusedAfterUnmountingToken !== null && focusedAfterUnmountingToken.startsWith('model-role-plan-reasoning-'), `Focus stays inside Plan's radiogroup (never <body>) when the focused Auto radio's token can no longer be carried (got ${focusedAfterUnmountingToken})`, findings, failures);
+    rolesNow = await readModelRolesViaIpc();
+    assertEqual(rolesNow?.plan, 'github-copilot/gpt-3.5-turbo', 'Re-clicking the kept Auto radio never wrote :auto back onto a model that cannot carry it', findings, failures);
     // Gate round 2 (Medium #6 evidence): a failed catalog fetch is simulated by
     // `REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND`, fixed for this process's WHOLE lifetime -- it
     // cannot be toggled on for just one assertion without breaking every OTHER assertion above
