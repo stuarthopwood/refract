@@ -116,6 +116,7 @@ pub fn checked_canonical_path(path: &Path, boundary_root: &Path) -> ContainmentC
 
     let canonical_path = match dunce::canonicalize(path) {
         Ok(p) => p,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return ContainmentCheck::Missing,
         Err(e) => return ContainmentCheck::Unreadable(e),
     };
     let canonical_root = match dunce::canonicalize(boundary_root) {
@@ -173,6 +174,10 @@ fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveT
                 return Err(RemoveTreeError::OutsideBoundary)
             }
             ContainmentCheck::Unreadable(source) => {
+                if is_retryable_remove_error(&source) && attempt < REMOVE_RETRY_ATTEMPTS {
+                    std::thread::sleep(REMOVE_RETRY_DELAY);
+                    continue;
+                }
                 return Err(RemoveTreeError::Unreadable {
                     path: path.to_path_buf(),
                     source,
