@@ -5438,5 +5438,5 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T410 `verify-1069-roles-overhaul.mjs` and `-helpers.mjs`: focus assertion without re-focusing,
   assert the held pick registered and wait before counting `config-set`, poll the "dot does not
   move" reads, fix the "High" docstring, per FR-099 (missing)
-- [ ] T411 Verify live with the fake-omp harness, update `docs/PLAN.md`, then run
+- [x] T411 Verify live with the fake-omp harness, update `docs/PLAN.md`, then run
   `node scripts/ci-local.mjs` per FR-099 (missing)
