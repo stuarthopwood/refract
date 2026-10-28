@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.12.0 (2026-10-28)
+
+### Features
+
+- feat(right-pane): drag to rearrange rail buttons with keyboard alternative and new default order (https://github.com/stuarthopwood/refract/pull/1244)
+- feat(chat): show attached images in the user message bubble (https://github.com/stuarthopwood/refract/pull/1245)
+- feat(chat): collapse mid-turn assistant prose to a Note row (https://github.com/stuarthopwood/refract/pull/1261)
+- feat(chat): accent, shimmer and larger composer status text (https://github.com/stuarthopwood/refract/pull/1257)
+- feat(chat): remove banner timer, make finished turn totals optional (https://github.com/stuarthopwood/refract/pull/1264)
+- feat(chat): show AI credits and plan usage in the Context usage readout (https://github.com/stuarthopwood/refract/pull/1263)
+- feat(ui): Geist and Geist Mono defaults with lighter weight scale (https://github.com/stuarthopwood/refract/pull/1266)
+- feat(ui): move the app to an 8px spacing grid (https://github.com/stuarthopwood/refract/pull/1269)
+
+### Fixes
+
+- fix(holiday): lift Halloween artwork to 3:1 and keep bat flight countdown across pauses (https://github.com/stuarthopwood/refract/pull/1255)
+- fix(chat): split chip label first line on CR so CRLF pastes survive keystrokes (https://github.com/stuarthopwood/refract/pull/1259)
+
+### Other
+
+- docs(plan): add Halloween artwork visibility polish issue (https://github.com/stuarthopwood/refract/pull/1234)
+- docs(plan): add #1235 and #1236, index #1233 (https://github.com/stuarthopwood/refract/pull/1237)
+- docs(plan): add #1238 AI credits in context usage chip (https://github.com/stuarthopwood/refract/pull/1239)
+- docs(plan): amend #1238 to the individual Copilot plan allowance (https://github.com/stuarthopwood/refract/pull/1240)
+- docs(plan): note keystroke trigger on #1235 row (https://github.com/stuarthopwood/refract/pull/1241)
+- docs(plan): add #1242 composer status text row (https://github.com/stuarthopwood/refract/pull/1243)
+- docs(plan): add #1246 Geist and lighter weight scale row (https://github.com/stuarthopwood/refract/pull/1247)
+- docs(plan): amend #1246 row with code ligatures default and toggle (https://github.com/stuarthopwood/refract/pull/1249)
+- docs(plan): add #1250 row and mark session UI polish issues p1 (https://github.com/stuarthopwood/refract/pull/1251)
+- docs(plan): add #1252 spacing 8px grid row (https://github.com/stuarthopwood/refract/pull/1253)
+- docs(plan): record the 2026-10-28 P2 triage (https://github.com/stuarthopwood/refract/pull/1274)
+- docs(plan): raise UI polish and design issues to p1 (https://github.com/stuarthopwood/refract/pull/1275)
+
 ## v0.11.0 (2026-10-26)
 
 ### Features
