@@ -206,3 +206,13 @@ download (FR-012, FR-014). Task ids continue after the #881 convergence phase (T
 - [ ] T036 [US3] FR-035 (missing): the confirm dialog "N agents are running; restarting stops them" with Cancel and "Restart and update", built on the shared `AlertDialog`, shown only when an agent is mid-turn.
 - [ ] T037 [US3] Verify live (`scripts/verify-883-updates.mjs`): fake `gh` on `PATH`, debug interval override, assert no prompt at launch, periodic detection, automatic download, the notice row and footer badge, and the confirm dialog where the fake-omp fixtures allow; screenshots of each state.
 - [ ] T038 [US3] Docs: update `specs/006-installer-and-updates/quickstart.md` Story 3 for the periodic check and Update now, and `docs/PLAN.md` row #883 to `done`.
+
+## Phase 11: Convergence (issue #1175, FR-035)
+
+Appended by `/speckit.converge` on 2026-10-28: the Update now confirm undercounts, `installNow` can quit
+without installing, and a repeated `ExitRequested` can double the hand-off. Task ids continue after T038.
+
+- [ ] T039 [US3] FR-035 (partial): `useUpdateNow.tsx` counts every non-archived session whose status is not `stopped`, and keeps the confirm count as state set when the confirm opens (no ref written during render).
+- [ ] T040 [US3] FR-035 (partial): `updates.installNow` calls `install_on_quit::verify_installer_before_quit` (bounded) before flagging the relaunch and exiting, returning a `checksum-mismatch`/`update-unavailable` IPC error on failure so Refract stays open.
+- [ ] T041 [US3] FR-035 (missing): `lib.rs`'s `ExitRequested` handler runs the stop-all and install hand-off once, guarded by a process-global `AtomicBool` quit-in-progress flag.
+- [ ] T042 [US3] Verify live on a scratch exe, update `docs/PLAN.md` row #1175, then run `node scripts/ci-local.mjs`.
