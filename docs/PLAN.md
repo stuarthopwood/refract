@@ -850,6 +850,8 @@ Also filed 2026-10-27: **#1233** (`p1`), Halloween bats and watermark glyph near
 
 Also filed 2026-10-27: **#1235** (`p1`), a large CRLF paste losing its text on send, and **#1236** (`p1`), mid-turn assistant prose collapsed to a row; placed as rows after #1233.
 
+Also filed 2026-10-28: **#1298** (`p1`), follow-up to #1233: the Halloween ghost and bats sit at about 3:1 and are now too strong, and the plain watermark at 0.06 is too faint; all go to about 1.6:1 (opacity 0.30 on Dark) through per-theme values of the existing `--holiday-artwork-opacity` and `--watermark-opacity`, with no new token; placed as an index line after #1233's row.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
