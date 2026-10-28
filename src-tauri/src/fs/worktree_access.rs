@@ -68,9 +68,18 @@ pub const STILL_CHECKING_MESSAGE: &str =
     "Refract is still checking this folder, so nothing was deleted. Choose Retry in a moment.";
 
 /// `write_guard` with `WRITE_GUARD_TIMEOUT`: an honest refusal (nothing touched yet, Retry
-/// works) instead of an unbounded wait.
+/// works) instead of an unbounded wait. Issue #1163: `WorktreeBusy`, not `WorktreeHeld`.
 pub async fn write_guard_bounded(session_id: &str) -> Result<OwnedRwLockWriteGuard<()>, GitError> {
     tokio::time::timeout(WRITE_GUARD_TIMEOUT, write_guard(session_id))
         .await
-        .map_err(|_| GitError::new(GitErrorCode::WorktreeHeld, STILL_CHECKING_MESSAGE))
+        .map_err(|_| GitError::new(GitErrorCode::WorktreeBusy, STILL_CHECKING_MESSAGE))
+}
+
+/// Issue #1163: `read_guard` with `READER_TIMEOUT`. A pending writer (a Delete waiting on a
+/// hung reader) makes the fair `RwLock` queue new readers behind it, so the read-guard wait
+/// must be bounded too, with the same honest "still checking" refusal.
+pub async fn read_guard_bounded(session_id: &str) -> Result<OwnedRwLockReadGuard<()>, GitError> {
+    tokio::time::timeout(READER_TIMEOUT, read_guard(session_id))
+        .await
+        .map_err(|_| GitError::new(GitErrorCode::WorktreeBusy, STILL_CHECKING_MESSAGE))
 }

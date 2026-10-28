@@ -303,7 +303,9 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
         // worktree; `sessions.delete`'s own write guard blocks until this releases, so a Retry
         // can never start removing the worktree while a STALE `deleteCheck` call (the P4
         // post-refusal refresh) still has git children running with a cwd inside it.
-        let _read_guard = crate::fs::worktree_access::read_guard(&id).await;
+        let _read_guard = crate::fs::worktree_access::read_guard_bounded(&id)
+            .await
+            .map_err(map_git_error)?;
         let check = delete_check_for_session(
             Path::new(&repository.path),
             Path::new(&session.worktree_path),
@@ -388,7 +390,10 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // opened may still be running against this exact worktree -- cancel it and wait for it
         // to actually exit BEFORE any holder check, so Refract's own open file handles during
         // "Checking files…" can never be mistaken for an external holder. A no-op if no walk
-        // is currently in flight for this Session.
+        // is currently in flight for this Session. Issue #1163: this stops only that read-only
+        // walk, never the agent turn (stopped later, after the holder check), so a refusal
+        // from the bounded write guard below still leaves the Session exactly as it was. It
+        // must run first: it shortens the write-guard wait.
         cancel_and_wait(&id).await;
 
         // Issue #891 gate round 3 (H1): the write guard blocks until EVERY Refract-owned reader
