@@ -92,7 +92,7 @@ p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
 
 | Wave | Bundle | Issues | Shape |
 |---|---|---|---|
-| 0 | Non-UI p1 fixes | #517 (done, spec 030, PR #1281), #1115, #1158, #1163, #1175, #1127, #897, #903 | small separate PRs, in parallel |
+| 0 | Non-UI p1 fixes | #517 (done, spec 030, PR #1281), #1115, #1158, #1163, #1175, #1127, #897 (done, spec 031), #903 | small separate PRs, in parallel |
 | 1 | App-wide tokens | #843, #1144, #1267, #1270, #1073, #1124, #1125, #682, #738, #1065 (product items only) | one PR; later bundles build on it. **Grilled 2026-10-28** (outcomes in a comment on each issue; #1112 and the verify-script bullets of #1065 and #1270 moved to #1137 at p3); next: Spec Kit, then implement |
 | 2 | Settings | #714, #717, #1070, #1141, #450, #842 | one PR, parallel with the other wave 2 bundles |
 | 2 | Session list | #1203, #1204, #731, #934, #646, #482, #887 | one PR |

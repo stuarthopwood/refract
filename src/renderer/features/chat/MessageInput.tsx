@@ -196,6 +196,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const isFocusedPaneRef = useRef(isFocusedPane)
   isFocusedPaneRef.current = isFocusedPane
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // #897: Chromium fires no blur when a focused element unmounts, so this still reads true after
+  // Stop disappears at the end of a turn.
+  const stopHadFocusRef = useRef(false)
   // PR #723 gate round 3 fix (A11y3 HIGH): scopes `handleRemoveImage`'s own focus query to THIS
   // composer's own attachment strip -- in split view each pane renders its own MessageInput, so
   // a `document`-wide query always found whichever pane's strip happened to render first.
@@ -277,6 +280,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   const isWorking = status === 'working'
+  useEffect(() => {
+    if (isWorking || !stopHadFocusRef.current) return
+    stopHadFocusRef.current = false
+    const active = document.activeElement
+    if (!active || active === document.body) textareaRef.current?.focus()
+  }, [isWorking])
   // Issue #1205 (FR-104): any stop without a stop banner (not started, or stopped on request)
   // keeps the composer usable; a send starts the agent.
   const notStarted = status === 'stopped' && (stopReason === 'not-started' || stopReason === undefined)
@@ -1494,6 +1503,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                     aria-label="Stop"
                     aria-keyshortcuts="Control+Shift+X"
                     onClick={() => void handleStop()}
+                    onFocus={() => { stopHadFocusRef.current = true }}
+                    onBlur={() => { stopHadFocusRef.current = false }}
                   >
                     {/* Gate round 1 fix: `SquareIcon` is an outline-only glyph at this size, read
                         by a reviewer as "an outlined square" on a solid fill -- `fill-current`
