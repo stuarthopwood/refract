@@ -5428,3 +5428,15 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   with the switch off and "Turn took Ns" with it on; the running line always ticks; the switch
   applies live and persists), update `docs/PLAN.md`, then run `node scripts/ci-local.mjs` per
   FR-046 and FR-119 (missing)
+
+## Phase 83: Convergence (#1127 reasoning radios gate follow-ups, FR-099)
+
+- [x] T409 `RoleReasoningRadios.tsx`: keep the stored-unknown-token radio mounted while it holds focus
+  or a save is pending (WCAG 2.4.3), make the settle step a layout effect, guard re-selecting the
+  unknown token as a no-op, give the remount refusal its own message, and reword the focus-recovery
+  comment, per FR-099 (missing)
+- [x] T410 `verify-1069-roles-overhaul.mjs` and `-helpers.mjs`: focus assertion without re-focusing,
+  assert the held pick registered and wait before counting `config-set`, poll the "dot does not
+  move" reads, fix the "High" docstring, per FR-099 (missing)
+- [x] T411 Verify live with the fake-omp harness, update `docs/PLAN.md`, then run
+  `node scripts/ci-local.mjs` per FR-099 (missing)
