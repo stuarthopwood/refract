@@ -112,7 +112,7 @@ pub async fn check_named_holders(
         .unwrap_or(ContainmentCheck::OutsideBoundary);
     let canonical_path = match check {
         ContainmentCheck::Missing => return Ok(()),
-        ContainmentCheck::OutsideBoundary => {
+        ContainmentCheck::OutsideBoundary | ContainmentCheck::Unreadable(_) => {
             return Err(outside_worktrees_root_refusal(worktree_path))
         }
         ContainmentCheck::Ok(p) => p,
@@ -180,7 +180,7 @@ pub async fn check_folder_in_use(
             }
             return Ok(());
         }
-        ContainmentCheck::OutsideBoundary => {
+        ContainmentCheck::OutsideBoundary | ContainmentCheck::Unreadable(_) => {
             return Err(outside_worktrees_root_refusal(worktree_path))
         }
         ContainmentCheck::Ok(p) => p,

@@ -52,13 +52,22 @@ pub enum RemoveTreeError {
         path: PathBuf,
         source: std::io::Error,
     },
+    /// The containment check could not read `path` (issue #1158); `after_partial` is true when
+    /// an earlier retry attempt had already run `remove_dir_all`, so files may be gone.
+    Unreadable {
+        path: PathBuf,
+        source: std::io::Error,
+        after_partial: bool,
+    },
 }
 
 impl std::fmt::Display for RemoveTreeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::OutsideBoundary => write!(f, "refused: outside the worktrees root"),
-            Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
+            Self::Io { path, source } | Self::Unreadable { path, source, .. } => {
+                write!(f, "{}: {source}", path.display())
+            }
         }
     }
 }
@@ -87,6 +96,9 @@ pub async fn remove_tree(path: &Path, boundary_root: &Path) -> Result<(), Remove
 pub enum ContainmentCheck {
     Missing,
     OutsideBoundary,
+    /// lstat or canonicalize failed for a reason other than "not found" (issue #1158): the
+    /// folder could not be checked, which says nothing about whether it is outside the root.
+    Unreadable(std::io::Error),
     Ok(PathBuf),
 }
 
@@ -99,14 +111,16 @@ pub fn checked_canonical_path(path: &Path, boundary_root: &Path) -> ContainmentC
         // an I/O error) is refused outright, never silently treated the same as "nothing
         // there, nothing to hold/remove".
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return ContainmentCheck::Missing,
-        Err(_) => return ContainmentCheck::OutsideBoundary,
+        Err(e) => return ContainmentCheck::Unreadable(e),
     }
 
-    let Ok(canonical_path) = dunce::canonicalize(path) else {
-        return ContainmentCheck::OutsideBoundary;
+    let canonical_path = match dunce::canonicalize(path) {
+        Ok(p) => p,
+        Err(e) => return ContainmentCheck::Unreadable(e),
     };
-    let Ok(canonical_root) = dunce::canonicalize(boundary_root) else {
-        return ContainmentCheck::OutsideBoundary;
+    let canonical_root = match dunce::canonicalize(boundary_root) {
+        Ok(p) => p,
+        Err(e) => return ContainmentCheck::Unreadable(e),
     };
     // Same lexical lowercasing `worktree_validity::canonical_comparable_path` uses for its own
     // final compare, reused directly here (`comparable_path` is `pub(crate)`) rather than
@@ -151,8 +165,19 @@ fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveT
             // remove as an out-of-bounds one, matching this function's original behaviour
             // (both outcomes used the same `_ => Err(OutsideBoundary)` arm). Never retried:
             // containment is a hard refusal, not a transient condition.
+            //
+            // Issue #1158: after attempt 1 a vanished root means an earlier pass finished the
+            // job, so it is success; an unreadable root is its own error, never "outside".
+            ContainmentCheck::Missing if attempt > 1 => return Ok(()),
             ContainmentCheck::Missing | ContainmentCheck::OutsideBoundary => {
                 return Err(RemoveTreeError::OutsideBoundary)
+            }
+            ContainmentCheck::Unreadable(source) => {
+                return Err(RemoveTreeError::Unreadable {
+                    path: path.to_path_buf(),
+                    source,
+                    after_partial: attempt > 1,
+                })
             }
         };
 
