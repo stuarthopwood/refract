@@ -277,7 +277,8 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   const storedOrCurrentUnknown = isStoredUnknownLevel ? storedLevel : isCurrentUnknownLevel ? currentLevel : null
   // #1127 (WCAG 2.4.3): once the stored token is gone (a save landed on a model that cannot carry
   // it), the radio that still holds keyboard focus must not unmount under the user -- focus would
-  // fall to `<body>`. Keep the last shown unknown radio rendered until focus leaves it.
+  // fall to `<body>`. Keep the last shown unknown radio rendered (dimmed, `aria-disabled`) until
+  // focus leaves it. Idempotent for a given (storedOrCurrentUnknown, focusedLevel) pair, so safe to replay.
   if (storedOrCurrentUnknown !== null) lastUnknownLevelRef.current = storedOrCurrentUnknown
   else if (focusedLevel !== lastUnknownLevelRef.current) lastUnknownLevelRef.current = null
   const unknownLevelToShow = storedOrCurrentUnknown ?? lastUnknownLevelRef.current
@@ -298,6 +299,7 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
           // STORED value (arrowing off it and back); the kept-focused radio of a token the saved
           // model could not carry must not re-write it (#1127).
           else if (hasValue && !unresolvedModel && (KNOWN_LEVELS.has(value) || value === storedLevel)) pick(value)
+          else if (hasValue && !unresolvedModel) announcePolite(`${UNKNOWN_LEVEL_LABEL[value] ?? value} isn't supported by this model`)
         }}
       >
         <span id={reasoningLabelId} className="sr-only">
@@ -320,6 +322,7 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
             value={unknownLevelToShow}
             label={UNKNOWN_LEVEL_LABEL[unknownLevelToShow] ?? unknownLevelToShow}
             disabled={false}
+            unavailable={unknownLevelToShow !== storedOrCurrentUnknown}
             pending={disabled && currentLevel === unknownLevelToShow}
           />
         )}
@@ -348,21 +351,26 @@ function ReasoningRadioItem({
   value,
   label,
   disabled,
-  pending
+  pending,
+  unavailable = false
 }: {
   id: string
   value: string
   label: string
   disabled: boolean
   pending: boolean
+  /** Kept mounted only to hold keyboard focus (never natively `disabled`, which would drop it). */
+  unavailable?: boolean
 }) {
   return (
     <RadioGroupItem
       id={id}
       value={value}
       disabled={disabled}
+      aria-disabled={unavailable || undefined}
       className={cn(
         'min-h-6 w-auto flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
+        unavailable && 'cursor-not-allowed opacity-50',
         // Gate round 2 fix (Visual Medium #2): a filled background makes the pending item
         // unmistakable. Gate round 3 fix (Medium #6): the base `data-[state=checked]:bg-
         // transparent` and a plain `bg-accent/70` have the SAME specificity once checked (the
