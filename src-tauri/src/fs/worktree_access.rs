@@ -81,6 +81,17 @@ pub async fn write_guard_bounded(session_id: &str) -> Result<OwnedRwLockWriteGua
         .map_err(|_| GitError::new(GitErrorCode::WorktreeBusy, STILL_CHECKING_MESSAGE))
 }
 
+/// Issue #1163: `leftover_summary::cancel_and_wait` with `WRITE_GUARD_TIMEOUT`, so a walk that
+/// ignores its cancel flag yields the same honest refusal instead of hanging Delete.
+pub async fn cancel_walk_bounded(session_id: &str) -> Result<(), GitError> {
+    tokio::time::timeout(
+        WRITE_GUARD_TIMEOUT,
+        crate::fs::leftover_summary::cancel_and_wait(session_id),
+    )
+    .await
+    .map_err(|_| GitError::new(GitErrorCode::WorktreeBusy, STILL_CHECKING_MESSAGE))
+}
+
 /// Issue #1163: `read_guard` with `READER_TIMEOUT`. A pending writer (a Delete waiting on a
 /// hung reader) makes the fair `RwLock` queue new readers behind it, so the read-guard wait
 /// must be bounded too, with the same honest "still checking" refusal.
