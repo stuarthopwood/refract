@@ -244,9 +244,9 @@ async function runB(ctx) {
     // (e) leave one agent mid-turn (fake omp holds the turn until aborted).
     await cdp.typeIntoByLabel('Message', 'keep working for the update check');
     await cdp.clickByLabel('Send message');
-    await cdp.waitFor(`(() => { const b = document.querySelector('[aria-label="Stop"]'); return !!b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, {
+    await cdp.waitFor(`document.body.textContent.includes('Running a long command')`, {
       timeoutMs: 20_000,
-      label: 'agent mid-turn (Stop button enabled)'
+      label: 'agent mid-turn (long command running)'
     });
     await cdp.clickByLabel('Restart and install the update now');
     await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'confirm dialog opened' });
@@ -260,13 +260,14 @@ async function runB(ctx) {
     check(processAlive(targetPid), '(e) Cancel leaves the app running');
     check((await readyRowText(cdp)) !== null, '(e) Cancel keeps the "ready" row');
 
-    // Restart and update: the app quits; the quit hook's signature re-check refuses the stub.
+    // Restart and update: the pre-quit re-verification (Authenticode) refuses the stub, so the
+    // error returns over IPC, the dialog closes, and the app stays running (issue #1175).
     await cdp.clickByLabel('Restart and install the update now');
     await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'confirm dialog reopened' });
     await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((b) => b.textContent.trim() === 'Restart and update')`);
-    const deadline = Date.now() + 45_000;
-    while (processAlive(targetPid) && Date.now() < deadline) await sleep(500);
-    check(!processAlive(targetPid), '(e) "Restart and update" quit the app', { targetPid });
+    await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 45_000, label: 'dialog closed after refused install' });
+    await sleep(1500);
+    check(processAlive(targetPid), '(e) a failed pre-quit verification leaves the app running', { targetPid });
   } finally {
     cdp.close();
     await stopLauncher(child).catch(() => {});

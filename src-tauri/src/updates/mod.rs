@@ -152,6 +152,55 @@ pub fn request_restart_after_install() {
     RESTART_AFTER_INSTALL.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Set by the first `ExitRequested`; a repeated close during the stop-all window must not run the
+/// stop-all and install hand-off a second time (issue #1175). The process exits when the first
+/// run finishes, so the flag is never reset.
+static QUIT_IN_PROGRESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// True only for the first caller; every later one is a repeat and must do nothing.
+pub fn begin_quit() -> bool {
+    !QUIT_IN_PROGRESS.swap(true, std::sync::atomic::Ordering::SeqCst)
+}
+
+/// `updates.installNow`'s pre-flight (issue #1175): the same re-verification the quit hook makes,
+/// run before Refract starts quitting so a failure returns over IPC and the app stays open.
+pub async fn verify_downloaded_installer(
+    store: &SharedUpdateState,
+    updates_dir: &Path,
+) -> Result<(), (installer::UpdateErrorCode, String)> {
+    let not_ready = || {
+        (
+            installer::UpdateErrorCode::UpdateUnavailable,
+            "No downloaded update is ready to install.".to_string(),
+        )
+    };
+    let installer_path = {
+        let guard = store.lock().await;
+        let current = guard.get();
+        if current.phase != state::UpdatePhase::Downloaded {
+            return Err(not_ready());
+        }
+        current.installer_path.clone().ok_or_else(not_ready)?
+    };
+    match tokio::time::timeout(
+        VERIFY_AND_SCHEDULE_TIMEOUT,
+        install_on_quit::verify_installer_before_quit(
+            &std::path::PathBuf::from(installer_path),
+            updates_dir,
+        ),
+    )
+    .await
+    {
+        Ok(result) => {
+            result.map_err(|reason| (installer::UpdateErrorCode::ChecksumMismatch, reason))
+        }
+        Err(_) => Err((
+            installer::UpdateErrorCode::UpdateUnavailable,
+            "Verifying the update timed out.".to_string(),
+        )),
+    }
+}
+
 /// `lib.rs`'s own `ExitRequested` hook (FR-015/FR-016): runs after every live agent has already
 /// been asked to stop, so install-on-quit never interrupts a running agent. A `phase` other
 /// than `Downloaded` is a no-op (data-model.md: "A `before-quit` that fires while `phase` is
