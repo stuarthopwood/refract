@@ -86,7 +86,24 @@ p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
 - #777 is renderer CPU (re-rendering the transcript), not model token cost; it is p1 for responsiveness, not for budget.
 - #660 (Session notes appended to every OMP launch; lowered to p3 on 2026-10-28) stayed p2 on 2026-10-22: Refract launches `omp --mode rpc` with context files on, so the global agent rules (including working rule 13) already reach Refract Sessions.
 
-**2026-10-28 UI polish raised to p1 (Stuart: "I want it to look pretty"):** every open issue with the `design` label, including Feats and ideas, plus every issue titled "UI polish" without that label, is now p1 (90 issues relabelled from p2 or p3). Live counts after the change: p1 98, p2 51, p3 110. The order within p1 is not yet set.
+**2026-10-28 UI polish raised to p1 (Stuart: "I want it to look pretty"):** every open issue with the `design` label, including Feats and ideas, plus every issue titled "UI polish" without that label, is now p1 (90 issues relabelled from p2 or p3). Live counts after the change: p1 98, p2 51, p3 110.
+
+**p1 delivery waves (Stuart approved, 2026-10-28):** surface bundles, not one story per issue. Each bundle gets one grill, one Spec Kit run, one PR and one five-reviewer gate. Waves run in order; bundles within a wave run in parallel only where marked. Not started.
+
+| Wave | Bundle | Issues | Shape |
+|---|---|---|---|
+| 0 | Non-UI p1 fixes | #517, #1115, #1158, #1163, #1175, #1127, #897, #903 | small separate PRs, in parallel |
+| 1 | App-wide tokens | #843, #1144, #1267, #1270, #1073, #1124, #1125, #682, #738, #1065, #1112 | one PR; later bundles build on it |
+| 2 | Settings | #714, #717, #1070, #1141, #450, #842 | one PR, parallel with the other wave 2 bundles |
+| 2 | Session list | #1203, #1204, #731, #934, #646, #482, #887 | one PR |
+| 2 | Right pane and Explorer | #674, #800, #1126, #756, #768 | one PR |
+| 2 | Pull requests (#1273) | #915, #1196, #1198 | one PR |
+| 3 | Composer | #839, #1149, #1145, #1129, #675, #1258, #1265, #1268, #496, #865, #1084 | one PR, before the transcript bundle (shared files) |
+| 3 | Chat transcript | #907, #1130, #1210, #1220, #1262, #1041, #473, #719, #684, #746, #1098, #896 | one PR |
+| 4 | Chat navigation | #751, #752, #753, #754 | one PR on one shared message index |
+| 5 | Larger features and ideas | #132, #137, #406, #456, #458, #471, #503, #504, #505, #506, #507, #525, #545, #549, #552, #553, #561, #566, #571, #678, #732, #748, #867, #869, #874, #878, #1048, #1256, #1140, #1170 | one story each, full grill |
+
+Umbrellas #579, #935 and #71 close as the bundles land; they are not work items.
 
 **2026-10-28 P2 triage (Stuart approved; four read-only scouts against `origin/main` 520e662f, closes verified by hand):**
 
@@ -555,7 +572,7 @@ One agent, read-only. The supported OMP range is moving to a **minimum of 18.6.3
 - **Conversation history dialog truncation (Skippy, delegated by Stuart 2026-10-18, #439):** reconfirmed on current `origin/main` by the #862 live check -- `ConversationSwitcher.tsx` already marks the title (163) and preview (170) `truncate`, but the `ul`/`li`/row `button` have no `min-w-0` and `DialogContent` (139, `overflow-y-auto sm:max-w-md`) has no `overflow-x` handling, so the dialog still gets a horizontal scrollbar and a long preview clips mid-word. Decided: title and preview truncate to one line with an ellipsis (full text via the row's accessible name or a `title` attribute), and the dialog never shows a horizontal scrollbar at any width. Recorded on the issue (no new issue filed; folds into #439 per rule 8).
 - **Priority review (Stuart, 2026-10-22):** p1 order set in "Queue > Priority order"; 10 issues closed and 32 relabelled (listed there). FDB integrations #391/#392 dropped to p3 while FDB discovery is outstanding.
 - **P2 triage (Stuart, 2026-10-28):** 14 issues closed (4 done or duplicate, 10 spec verification chores folded into #650), 9 raised to p1, 57 lowered to p3, 7 narrowed, and epics #1271 (Worktree lifecycle), #1272 (Agents and subagents) and #1273 (Pull requests polish) created; #691 is the parent for OMP feature settings. Full lists under "Queue > Priority order".
-- **UI polish is p1 (Stuart, 2026-10-28):** all `design`-labelled issues (Feats and ideas included) and all "UI polish" titled issues moved to p1, 90 issues.
+- **UI polish is p1 (Stuart, 2026-10-28):** all `design`-labelled issues (Feats and ideas included) and all "UI polish" titled issues moved to p1, 90 issues. p1 is delivered in six waves of surface bundles (table under "Queue > Priority order").
 - **Token cost and worker limits (Stuart, 2026-10-22):** OMP's `~/.omp/stats.db` showed October at ~$15.4k list price: cache reads $7.6k and cache writes $6.4k, output $1.4k; `earnest-stork` $11.8k (Sonnet 5 lane subagents averaging 396k tokens per call). The Advisor on Opus made 85% of premium requests (mostly 2026-10-01 to 10-06) but only 4% of token cost; it now runs on Gemini 4 Argon. Stuart's org is billed by tokens. Applied outside the repo (personal OMP and Copilot config, not repo files): `task.softRequestBudget` 200 to 80; `compaction.modelThresholds` caps Sonnet 5.5, Sonnet 5 and Haiku 5.5 at 120k tokens (`task.agentCompactionThresholdOverrides` is ignored in `--mode rpc`, so Refract relies on the per-model cap); the five quality-gate reviewers and `test-developer` moved from Opus (`@slow`) to Sonnet 5.5 (`@task`); the shared agent instructions gained a "Director model" rule. Working rule 13 is the repo-side copy.
 - **#469 tool-row icons (Stuart's grill, 2026-10-26):** new spec 023 on the full Specify route (not a converge on 001). The tool icon leads each row and the status icon moves to the trailing slot; rows never show a raw tool id (it lives in the icon's tooltip, or muted after the label with the new Settings > Chat switch "Show tool names on rows", off by default); the label is the model's intent when given, else the verb from the one shared verb map, extended with an icon per tool; `bash` and `grep` rows now show a verb (supersedes spec 022's 2026-10-26 call); `wait` joins the map; MCP rows show Plug plus the humanised raw name, with the server › tool split deferred to #1226. Full record in `specs/023-tool-row-icons/spec.md` Clarifications.
 
