@@ -31,7 +31,6 @@ import type {
   Readiness,
   Result,
   SessionSnapshot,
-  StopResult,
   SessionStatusEvent,
   SessionSummary,
   SlashCommand,
@@ -40,6 +39,7 @@ import type {
   Unsubscribe
 } from '../shared/ipc'
 import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-attachments'
+import type { StopResult } from '../shared/stop-result'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
 import type { MessageImageData } from '../shared/ipc-images'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'

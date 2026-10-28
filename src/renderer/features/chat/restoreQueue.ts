@@ -2,7 +2,7 @@
 // and Ctrl+Shift+X so both behave the same (FR-006).
 import { toast } from 'sonner'
 import { IMAGE_ONLY_QUEUE_TEXT, notify, useDraftStore } from '@/state'
-import type { StopResult } from '../../../shared/ipc'
+import type { StopResult } from '../../../shared/stop-result'
 import { SUPPORTED_IMAGE_MIME_TYPES } from '../../../shared/images'
 import type { PendingImageAttachment } from './attachments'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
