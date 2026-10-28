@@ -299,6 +299,14 @@ _Avoid_: concern group, advisory batch
 The 8px grid with a 4px half-step that every padding, margin and gap in `src/renderer` follows: allowed steps 4, 8, 16, 24, 32, 40 and 48 px (plus 0), 4px only for tight icon-to-text gaps and inline chip padding. Control heights are 24px (`xs`/`sm`) and 32px (`default`); icon boxes are 8, 16, 24 or 32 px. Enforced by `pnpm check:spacing`, with exceptions in an allowlist file. Supersedes the 4px grid of #474 (issue #1252, `specs/028-8px-spacing-grid/`).
 _Avoid_: 4px grid, spacing scale
 
+**Functional circle**:
+A control or mark whose round shape carries meaning, so it stays fully round whatever the corner radius token is: status dots, avatars, the switch, the radio mark, the scrollbar thumb, the composer Send/Stop button and the pane resize grip. Text pills, chips and badges are not functional circles; they take the corner radius token (wave 1 grill, 2026-10-28, #843 and #738).
+_Avoid_: pill (for these), round button
+
+**Chrome band**:
+The window title bar (logo, Session title, window controls) and the menu bar under it, drawn as one surface with one soft divider below and none between them, so the drag area is visible (wave 1 grill, 2026-10-28, #682).
+_Avoid_: header, top bar (when the whole band is meant)
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
