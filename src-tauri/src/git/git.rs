@@ -28,6 +28,10 @@ pub enum GitErrorCode {
     /// Windows Restart Manager, or an unnamed one detected only by the rename-probe failing).
     /// Never raised for anything this Session's own recorded `omp` pids hold.
     WorktreeHeld,
+    /// Issue #1163: Refract's OWN per-Session worktree lock stayed busy past its bound (a slow
+    /// or hung reader of the same worktree). Distinct from `WorktreeHeld`, which means an
+    /// external file-handle holder was found. Nothing was touched; Retry works.
+    WorktreeBusy,
     /// 2026-10-20 security hardening (Skippy, delegated by Stuart): a pathspec this module was
     /// about to pass to `git` (`changes_status::stage_files`/`unstage_files`,
     /// `changes_diff::diff_text`) failed `changes_status::validate_pathspec`'s own containment
@@ -50,6 +54,7 @@ impl GitErrorCode {
             Self::BranchMissing => "branch-missing",
             Self::CheckoutFailed => "checkout-failed",
             Self::WorktreeHeld => "worktree-held",
+            Self::WorktreeBusy => "worktree-busy",
             Self::OutsideWorktree => "outside-worktree",
         }
     }

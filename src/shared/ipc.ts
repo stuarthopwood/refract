@@ -108,7 +108,7 @@ export type IpcErrorCode =
   | 'checkout-failed'
   | 'disabled'
   | 'session-archived'
-  | 'worktree-held'
+  | 'worktree-held' | 'worktree-busy'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch'; // lane R11b (#794)
 
 export interface IpcError {
