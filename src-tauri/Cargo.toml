@@ -123,4 +123,6 @@ windows = { version = "0.62.2", features = [
   # (`git/worktree_holders.rs`) name a program (and pid) holding a file open inside a Session's
   # worktree before Delete touches anything.
   "Win32_System_RestartManager",
+  # Issue #561: `GetProcessMemoryInfo` (`session::health`) reads each agent's own working set.
+  "Win32_System_ProcessStatus",
 ] }

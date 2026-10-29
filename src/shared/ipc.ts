@@ -3,12 +3,7 @@
 
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
 import type { LowMemoryWarning } from './lowMemoryWarning';
-import type {
-  TokenGuardCalls,
-  TokenGuardHandoffResult,
-  TokenGuardLaunchWarning,
-  TokenGuardSnapshot,
-} from './tokenGuard';
+import type { TokenGuardCalls, TokenGuardHandoffResult, TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';
 
 import type {
   ApprovalMode,
@@ -479,6 +474,7 @@ export const IPC_EVENTS = {
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   ADVISOR_UPDATE: 'advisor:update',
+  SESSION_HEALTH: 'session:health',
   SUBAGENT_PATCH: 'subagent:patch',
   SIDE_CHAT_PATCH: 'side-chat:patch',
   SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
@@ -859,6 +855,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;
+  /** Issue #561: degraded-only health; a `null` field means that measure is healthy. */
+  onSessionHealth(handler: (payload: { sessionId: string; rpcSlowMs: number | null; agentMemoryBytes: number | null }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
   onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void): Unsubscribe;
   /** Gate-fix (round 4, Sec4 Medium): fired whenever the Session's agent process exits, even an

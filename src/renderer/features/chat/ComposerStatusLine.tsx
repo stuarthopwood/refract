@@ -31,6 +31,7 @@ import {
 import { ContextUsageReadout } from './readout/ContextUsageReadout'
 import { AiCreditsReadout } from './readout/AiCreditsReadout'
 import { LongConversationChip } from './LongConversation'
+import { AgentMemoryReadout, RpcSlowReadout } from './readout/HealthReadouts'
 
 export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
@@ -53,6 +54,9 @@ export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: stri
           falls in that same already-shifting row, not a guarantee against the shift itself. */}
       <AdvisorReadout sessionId={sessionId} textareaRef={textareaRef} />
       <LongConversationChip sessionId={sessionId} />
+      {/* #561 (spec 044): degraded-only, quiet by default; each renders nothing while healthy. */}
+      <RpcSlowReadout sessionId={sessionId} />
+      <AgentMemoryReadout sessionId={sessionId} />
       {sessionReadout['current-time'] && <CurrentTimeReadout className="ml-auto" />}
     </div>
   )
