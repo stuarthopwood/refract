@@ -748,7 +748,7 @@ export function Transcript({
           <MessageScrollerContent
             ref={contentRef}
             data-text-role="chat"
-            className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16')}
+            className={cn('w-full px-4 pe-16 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 pe-16 @min-[40rem]:px-10 @min-[40rem]:pe-16 @min-[48rem]:px-14 @min-[48rem]:pe-16 @min-[64rem]:px-16')}
             // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default (an
             // implicit polite live region; its ARIA default is `aria-relevant="additions text"`, not
             // merely "additions") -- `off` for the one frame window `handleLoadEarlier`'s reveal
@@ -948,7 +948,7 @@ export function Transcript({
           inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
-            "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-surface-1 text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
+            "absolute inset-e-6 bottom-4 border-border bg-surface-1 text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground",
             isAtEnd
               ? "pointer-events-none translate-y-full scale-95 opacity-0 duration-400 ease-[cubic-bezier(0.7,0,0.84,0)]"
               : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"

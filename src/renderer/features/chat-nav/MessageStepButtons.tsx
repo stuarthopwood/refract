@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { FloatingLayer } from '@/components/floating-layer'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import { EMPTY_CHAT_NAV, useChatNavStore } from '@/state/chat-nav-store'
-import { stepToMessage, type StepDirection } from './stepToMessage'
+import type { StepDirection } from './messageIndex'
+import { stepToMessage } from './stepToMessage'
 import { useMessageStepShortcut } from './useMessageStepShortcut'
 
 const FADE_OUT_DELAY_MS = 2000
@@ -41,42 +43,68 @@ function useRecentScrollActivity(anchorRef: React.RefObject<HTMLElement | null>)
   return active
 }
 
-const STEPS: readonly { direction: StepDirection; label: string; Icon: typeof ChevronUpIcon; key: string }[] = [
-  { direction: 'previous', label: 'Previous message', Icon: ChevronUpIcon, key: '↑' },
-  { direction: 'next', label: 'Next message', Icon: ChevronDownIcon, key: '↓' }
+const STEPS: readonly { direction: StepDirection; label: string; Icon: typeof ChevronUpIcon; key: string; shortcut: string }[] = [
+  { direction: 'previous', label: 'Previous message', Icon: ChevronUpIcon, key: '↑', shortcut: 'Alt+ArrowUp' },
+  { direction: 'next', label: 'Next message', Icon: ChevronDownIcon, key: '↓', shortcut: 'Alt+ArrowDown' }
 ]
 
-/** Previous / Next message buttons, floating at the transcript's right edge. Render inside the
- * transcript's `MessageScroller` root (the positioned container). Also wires Alt+Up / Alt+Down. */
+/** Previous / Next message buttons, stacked above "Scroll to end" in the transcript's right-edge
+ * column. Both stay mounted in fixed slots: an inapplicable one is `invisible` and `inert`, and if
+ * it held focus, focus moves to its sibling (or the transcript) first so it never drops to the
+ * body. Render inside the transcript's `MessageScroller` root. Also wires Alt+Up / Alt+Down. */
 export function MessageStepButtons({ sessionId }: { sessionId: string }) {
   useMessageStepShortcut(sessionId)
   const anchorRef = useRef<HTMLSpanElement>(null)
+  const buttonRefs = useRef<Record<StepDirection, HTMLButtonElement | null>>({ previous: null, next: null })
   const recentScroll = useRecentScrollActivity(anchorRef)
   const scrollable = useChatNavStore((state) => (state.bySession[sessionId] ?? EMPTY_CHAT_NAV).view.scrollable)
-  const shown = STEPS.filter((step) => (step.direction === 'previous' ? scrollable.start : scrollable.end))
+  const applicable: Record<StepDirection, boolean> = { previous: scrollable.start, next: scrollable.end }
+
+  useLayoutEffect(() => {
+    for (const { direction } of STEPS) {
+      const button = buttonRefs.current[direction]
+      if (applicable[direction] || !button || document.activeElement !== button) continue
+      const sibling = buttonRefs.current[direction === 'previous' ? 'next' : 'previous']
+      const other = direction === 'previous' ? 'next' : 'previous'
+      if (applicable[other] && sibling) sibling.focus({ preventScroll: true })
+      else anchorRef.current?.parentElement?.querySelector<HTMLElement>('[data-slot="message-scroller-viewport"]')?.focus({ preventScroll: true })
+    }
+  }, [applicable.previous, applicable.next])
+
   return (
     <>
       <span ref={anchorRef} hidden />
-      {shown.length > 0 && (
-        <FloatingLayer visible={recentScroll} className="inset-e-4 bottom-16" role="group" aria-label="Message navigation">
-          {shown.map(({ direction, label, Icon, key }) => (
-            <Tooltip key={direction}>
-              <TooltipTrigger asChild>
-                <Button type="button" variant="ghost" size="icon-sm" aria-label={label} onClick={() => stepToMessage(sessionId, direction)}>
-                  <Icon />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left">
-                {label}
-                <KbdGroup>
-                  <Kbd>Alt</Kbd>
-                  <Kbd>{key}</Kbd>
-                </KbdGroup>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </FloatingLayer>
-      )}
+      <FloatingLayer bare visible={recentScroll} className="inset-e-6 bottom-[3.25rem]" role="group" aria-label="Message navigation">
+        {STEPS.map(({ direction, label, Icon, key, shortcut }) => (
+          <Tooltip key={direction}>
+            <TooltipTrigger asChild>
+              <Button
+                ref={(node) => {
+                  buttonRefs.current[direction] = node
+                }}
+                type="button"
+                variant="secondary"
+                size="icon-sm"
+                aria-label={label}
+                aria-keyshortcuts={shortcut}
+                inert={!applicable[direction]}
+                onClick={() => stepToMessage(sessionId, direction)}
+                className={cn('border-border bg-surface-1 text-foreground hover:bg-muted hover:text-foreground', !applicable[direction] && 'invisible')}
+              >
+                <Icon />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {label}
+              <KbdGroup>
+                <Kbd>Alt</Kbd>
+                <Kbd>{key}</Kbd>
+              </KbdGroup>
+            </TooltipContent>
+          </Tooltip>
+        ))}
+      </FloatingLayer>
     </>
   )
 }
+
