@@ -14,6 +14,17 @@ pub enum ChatRowDensity {
     Comfy,
 }
 
+impl ChatRowDensity {
+    pub fn parse_str(value: &str) -> Option<Self> {
+        match value {
+            "tight" => Some(Self::Tight),
+            "compact" => Some(Self::Compact),
+            "comfy" => Some(Self::Comfy),
+            _ => None,
+        }
+    }
+}
+
 pub(super) const KEY: &str = "chatRowDensity";
 
 /// Default `Compact`: an absent or malformed value reads as compact, never trusted.
@@ -30,7 +41,10 @@ pub(super) fn write(map: &mut Map<String, Value>, value: ChatRowDensity) {
 
 impl SettingsStore {
     /// `settings.setChatRowDensity(value)`: plain-replace shape, as `set_status_style` uses.
-    pub async fn set_chat_row_density(&mut self, value: ChatRowDensity) -> std::io::Result<Settings> {
+    pub async fn set_chat_row_density(
+        &mut self,
+        value: ChatRowDensity,
+    ) -> std::io::Result<Settings> {
         let next = Settings {
             chat_row_density: value,
             ..self.data.clone()

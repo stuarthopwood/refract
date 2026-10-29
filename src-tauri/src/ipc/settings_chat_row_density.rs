@@ -14,8 +14,10 @@ pub fn settings_set_chat_row_density(state: AppState, args: Vec<Value>) -> Handl
         let value = args
             .first()
             .and_then(|v| v.as_str())
-            .and_then(|v| serde_json::from_value::<ChatRowDensity>(Value::String(v.to_string())).ok())
-            .ok_or_else(|| invalid_argument("settings.setChatRowDensity expects 'tight' | 'compact' | 'comfy'"))?;
+            .and_then(|v| ChatRowDensity::parse_str(v))
+            .ok_or_else(|| {
+                invalid_argument("settings.setChatRowDensity expects 'tight' | 'compact' | 'comfy'")
+            })?;
         let value = state
             .settings
             .lock()
