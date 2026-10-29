@@ -46,6 +46,9 @@ pub const READINESS_INSTALL_PROGRESS: &str = "readiness:install-progress";
 pub const READINESS_CHANGED: &str = "readiness:changed";
 pub const UPDATES_STATE_CHANGED: &str = "updates:state-changed";
 
+/// Spec 054 (#867): Clone from GitHub progress/terminal events, `{ cloneId, phase, ... }`.
+pub const REPOSITORIES_CLONE_PROGRESS: &str = "repositories:clone-progress";
+
 /// Wire-identical to `transcript:patch`'s payload shape (`{ sessionId, ops }`), borrowed instead
 /// of built through `serde_json::Value` (performance finding, 2026-10-13): lets `app.emit`
 /// serialise straight from `ops` in one pass instead of two extra `Value`-tree copies first.

@@ -110,6 +110,9 @@ pub struct Settings {
     /// Issue #772 (lane R6): the word-prediction ghost-text off switch; Rust-only, default
     /// `false` (the shared prediction daemon measured 463 MB private commit with two Sessions).
     pub word_prediction_enabled: bool,
+    /// Spec 054 (#867): where Clone from GitHub lands by default; `None` when unset
+    /// (`default_clone_folder.rs`).
+    pub default_clone_folder: Option<String>,
     /// Unrecognised settings.json keys ride along like Electron's untyped `this.data`:
     /// `#[serde(flatten)]` merges them into the TOP-LEVEL object (never under an `"extra"` key).
     /// Never overlaps a known field above (`SettingsStore::open` excludes them by name).
@@ -142,6 +145,8 @@ pub use chat_row_density::ChatRowDensity;
 mod animated_status_text;
 #[path = "code_ligatures.rs"]
 mod code_ligatures;
+#[path = "default_clone_folder.rs"]
+mod default_clone_folder;
 #[path = "finished_turn_times.rs"]
 mod finished_turn_times;
 #[path = "scrollbar_map.rs"]
@@ -231,6 +236,7 @@ impl SettingsStore {
         let show_ai_credits = ai_credits::parse(&object);
         let animated_status_text = animated_status_text::parse(&object);
         let code_ligatures = code_ligatures::parse(&object);
+        let default_clone_folder = default_clone_folder::parse(&object);
         let show_scrollbar_map = scrollbar_map::parse(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
         let typography = typography::parse(&object);
@@ -260,7 +266,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 26] = [
+        const KNOWN_FIELDS: [&str; 27] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -287,6 +293,7 @@ impl SettingsStore {
             "sessionListCollapse",
             "pullRequestsListWidthPx",
             right_pane::KEY,
+            default_clone_folder::KEY,
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -321,6 +328,7 @@ impl SettingsStore {
             session_list_collapse,
             pull_requests_list_width_px,
             right_pane,
+            default_clone_folder,
             extra,
         };
 
@@ -415,6 +423,7 @@ impl SettingsStore {
             json!(self.data.pull_requests_list_width_px),
         );
         map.insert(right_pane::KEY.to_string(), json!(self.data.right_pane));
+        default_clone_folder::write(&mut map, &self.data.default_clone_folder);
         // Re-inserts every key captured at `open()` with no slot here, verbatim (never overwrites
         // a known key; `data.extra` excludes all twelve), so an unported setting survives every
         // save, and `settings.get`/`settings:changed` flatten it onto the wire too.

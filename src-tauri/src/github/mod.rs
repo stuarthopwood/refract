@@ -26,3 +26,8 @@ pub mod gh_viewer;
 pub mod images;
 pub mod pr_lookup;
 pub mod profile;
+pub mod clone_destination;
+pub mod repo_clone;
+pub mod repo_list;
+pub mod repo_match;
+pub mod repo_ref;
