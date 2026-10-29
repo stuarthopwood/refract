@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react'
 import { BotIcon, UserIcon } from 'lucide-react'
 import { Virtuoso, type ItemProps, type VirtuosoHandle } from 'react-virtuoso'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { Button } from '@/components/ui/button'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 import { MATCH_CAP } from './findMatcher'
@@ -41,13 +42,14 @@ export function FindResultsList({ matches, cursor, capped, onSelect }: { matches
           const current = index === cursor
           const Icon = match.kind === 'user' ? UserIcon : BotIcon
           return (
-            <button
+            <Button
               type="button"
+              variant="ghost"
               aria-current={current ? 'true' : undefined}
               onClick={() => onSelect(index)}
               className={cn(
-                'relative flex h-12 w-full flex-col items-start justify-center gap-1 px-2 text-start text-compact hover:bg-accent/50',
-                current && 'bg-accent text-accent-foreground',
+                'relative h-12 w-full flex-col items-start justify-center gap-1 rounded-none px-2 text-start text-compact font-normal hover:bg-accent/50',
+                current && 'bg-accent text-accent-foreground hover:bg-accent',
                 COMPOSER_BUTTON_FOCUS_CLASS
               )}
             >
@@ -63,7 +65,7 @@ export function FindResultsList({ matches, cursor, capped, onSelect }: { matches
                 <mark className="bg-find-match rounded-sm font-semibold text-inherit underline decoration-1 underline-offset-2">{match.snippet.match}</mark>
                 {match.snippet.after}
               </span>
-            </button>
+            </Button>
           )
         }}
       />

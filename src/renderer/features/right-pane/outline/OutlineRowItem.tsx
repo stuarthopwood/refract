@@ -52,9 +52,9 @@ export function OutlineRowItem({ row, current, tabbable, onActivate, onToggle, o
           variant="ghost"
           size="icon-xs"
           tabIndex={-1}
-          aria-expanded={!row.collapsed}
+          aria-hidden
           aria-label={`${row.collapsed ? 'Expand' : 'Collapse'} replies to: ${label}`}
-          className="no-drag-region my-auto text-muted-foreground hover:bg-transparent hover:text-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground dark:hover:bg-transparent"
+          className="no-drag-region my-auto text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent"
           onClick={() => onToggle(row)}
         >
           {row.collapsed ? <ChevronRightIcon aria-hidden /> : <ChevronDownIcon aria-hidden />}
