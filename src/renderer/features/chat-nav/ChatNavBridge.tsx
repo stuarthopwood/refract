@@ -2,9 +2,10 @@ import * as React from 'react'
 import { useMessageScroller, useMessageScrollerScrollable, useMessageScrollerVisibility } from '@/components/ui/message-scroller'
 import { useChatNavStore, type ScrollBridge } from '@/state/chat-nav-store'
 import type { TranscriptItem } from '../../../shared/model'
-import { JUMP_SCROLL_TOP_MARGIN_PX } from '../chat/stageJump'
 import { flashRowHighlight } from './highlightRow'
+import { jumpTopInset } from './jumpTopInset'
 import { isTurnWindowedOut } from './messageIndex'
+import { findMessageRow as findRow } from './messageRow'
 import { startRowJumpLoop, type JumpControl } from './rowJumpLoop'
 import { useMessageIndexSync } from './useMessageIndexSync'
 
@@ -20,10 +21,6 @@ export interface ChatNavBridgeProps {
   control: JumpControl
   /** Reveals the turns `windowTranscriptTurns` hides, with no scroll anchor restore. */
   revealEarlier: () => void
-}
-
-function findRow(root: HTMLElement, messageId: string): HTMLElement | null {
-  return root.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
 }
 
 /** Renders nothing. Mounted inside `MessageScrollerProvider`, it keeps the Session's message index
@@ -60,7 +57,7 @@ export function ChatNavBridge(props: ChatNavBridgeProps) {
         if (!viewport || !root || !message) return false
         const highlight = options?.highlight !== false
         const land = (row: HTMLElement) => {
-          s.scrollToMessage(id, { align: 'start', behavior: 'instant', scrollMargin: JUMP_SCROLL_TOP_MARGIN_PX })
+          s.scrollToMessage(id, { align: 'start', behavior: 'instant', scrollMargin: jumpTopInset(viewport) })
           startRowJumpLoop({
             sessionId: p.sessionId,
             root,

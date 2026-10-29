@@ -26,6 +26,7 @@ export function FindResultsList({ matches, cursor, capped, onSelect }: { matches
     <div className="border-t">
       <Virtuoso
         style={{ height: Math.min(matches.length * ROW_HEIGHT_PX, MAX_LIST_HEIGHT_PX) }}
+        className="max-h-[max(3rem,calc(100dvh-32rem))]"
         data={matches as FlatMatch[]}
         fixedItemHeight={ROW_HEIGHT_PX}
         components={LIST_COMPONENTS}

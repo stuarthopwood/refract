@@ -1,6 +1,6 @@
 import type * as React from 'react'
 import { isAtScrollEnd, runScrollSettleLoop } from '../chat/scrollLanding'
-import { JUMP_SCROLL_TOP_MARGIN_PX } from '../chat/stageJump'
+import { jumpTopInset } from './jumpTopInset'
 import { useChatScrollStore } from '@/state'
 
 /** The `Transcript` state a programmatic jump has to claim and release around its settle loop. */
@@ -41,7 +41,7 @@ export function startRowJumpLoop({ sessionId, root, viewport, row, control, onLa
       const rowRect = row.getBoundingClientRect()
       const viewportRect = viewport.getBoundingClientRect()
       const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
-      const raw = scrollTop + (rowRect.top - viewportRect.top) - JUMP_SCROLL_TOP_MARGIN_PX
+      const raw = scrollTop + (rowRect.top - viewportRect.top) - jumpTopInset(viewport)
       return Math.max(0, Math.min(raw, maxScrollTop))
     },
     onSettled: (landedAtEnd) => {
