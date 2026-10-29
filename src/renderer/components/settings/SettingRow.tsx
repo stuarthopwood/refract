@@ -19,10 +19,12 @@ interface SettingRowProps {
   controlId?: string
   /** Render the label as a plain `span` (for a control group that is labelled through `aria-labelledby`). */
   labelAsText?: boolean
+  /** Rendered inline after the label (for example a decorative colour swatch). */
+  labelAddon?: ReactNode
   children?: ReactNode
 }
 
-export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, children }: SettingRowProps) {
+export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, labelAddon, children }: SettingRowProps) {
   const groupHasIconSlot = useSettingsGroupIconSlot()
   return (
     <div className="@container">
@@ -34,15 +36,18 @@ export function SettingRow({ id, label, description, note, icon: Icon, controlId
             </span>
           )}
           <div className="flex min-w-0 flex-col gap-1">
-            {labelAsText ? (
-              <span id={`${id}-label`} className="text-sm">
-                {label}
-              </span>
-            ) : (
-              <label id={`${id}-label`} htmlFor={controlId ?? id} className="text-sm">
-                {label}
-              </label>
-            )}
+            <div className="flex items-center gap-2">
+              {labelAsText ? (
+                <span id={`${id}-label`} className="text-sm">
+                  {label}
+                </span>
+              ) : (
+                <label id={`${id}-label`} htmlFor={controlId ?? id} className="text-sm">
+                  {label}
+                </label>
+              )}
+              {labelAddon}
+            </div>
             {description && (
               <span id={`${id}-description`} className="text-xs text-muted-foreground">
                 {description}

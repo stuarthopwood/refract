@@ -58,6 +58,10 @@ row's hover) in every theme by `scripts/theme-contrast-pairs.mjs`. It shares the
 with the brand spinner's `--agent-spinner-core` (a brand mark, not a meaning colour, and never
 drawn on a chat line), so the two cannot be confused in context.
 
+### Role colour tokens (spec 035)
+
+`--role-default`, `--role-smol`, `--role-slow` and `--role-plan` (blue, cyan, violet, magenta) identify the four chat roles in Settings > Models as a swatch beside the role name. Every theme preset defines them at 3:1 or better against background, card, popover and accent (`scripts/theme-contrast-pairs.mjs`). They avoid the reserved green, amber and red hues, and the swatch is decorative (`aria-hidden`); other roles stay neutral.
+
 ### Reserved hues
 
 Each categorical colour that carries meaning, so a new one is checked against the others first.

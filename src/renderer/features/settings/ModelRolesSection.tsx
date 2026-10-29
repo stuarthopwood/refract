@@ -41,22 +41,23 @@
 // anything but sighted users, since an `aria-label` replaces the element's own text content as
 // its accessible name).
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SettingsGroup } from '@/components/settings/SettingsGroup'
+import { SettingsPage } from '@/components/settings/SettingsPage'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 // `@/lib/providerLabels`, never `@/lib/modelRoles` -- see `ProviderSwitch.tsx`'s own import
 // comment for why (that file imports this one's `CHAT_ROLE_DESCRIPTORS` at its module top level).
 import { friendlyProviderLabel } from '@/lib/providerLabels'
 import { useModelRolesStore } from '@/state'
 import { CHAT_MODEL_ROLES, MODEL_KIND_ROLES, ROLE_CATALOG_KIND } from '../../../shared/model'
-import type { CatalogKind, ModelCatalogEntry, ModelRoleId } from '../../../shared/model'
-import { applyThinkingSuffixCarryOver, splitThinkingSuffix } from './modelRoleSuffix'
-import { defaultProvider, filterCatalogByProvider, providersInCatalog, resolveCatalogEntry } from './modelProviderFilter'
+import type { CatalogKind, ModelRoleId } from '../../../shared/model'
+import { defaultProvider, providersInCatalog } from './modelProviderFilter'
+import { AdvisorModelRow } from './AdvisorModelRow'
 import { ProviderSwitch } from './ProviderSwitch'
-import { isLevelCarryable, RoleReasoningRadios } from './RoleReasoningRadios'
+import { CATALOG_KIND_LABEL, RoleCatalogStatus } from './RoleCatalogStatus'
+import { RoleRow } from './RoleRow'
 
 export interface RoleDescriptor {
   role: ModelRoleId
@@ -101,19 +102,6 @@ function firstRoleIdForKind(kind: CatalogKind): string | undefined {
   return descriptor ? `model-role-${descriptor.role}` : undefined
 }
 
-// Human-readable catalog-kind names for error text and labels (accessibility-auditor LOW, gate
-// cycle 4): the raw `CatalogKind` ids ("tts", "stt") are spelled letter by letter by a screen
-// reader and don't match the role labels shown next to them (Speech, Dictation, Web).
-const CATALOG_KIND_LABEL: Record<CatalogKind, string> = {
-  chat: 'chat',
-  tiny: 'tiny',
-  image: 'image',
-  tts: 'text-to-speech',
-  stt: 'speech-to-text',
-  search: 'web search',
-  judge: 'judge'
-}
-
 // Documented fallback chains (`omp://models.md`, confirmed live via `model_support.rs`'s own
 // `direct_selector_with_fallback`): shown next to "Inherited" so the sentinel says what it
 // actually resolves to, not just that it is unset. Exported (gate round 5, #564 follow-up): the
@@ -134,9 +122,20 @@ export const ROLE_FALLBACK_LABEL: Partial<Record<ModelRoleId, string>> = {
   advisor: 'Slow'
 }
 
-// `Select` needs a non-empty item value; this sentinel stands for "unset" (inherits the role's
-// documented fallback) and is translated back to `null` before the IPC call.
-const INHERITED_VALUE = '__inherited__'
+// Spec 035 T7 groups, in display order. Advisor's row reads Refract's launch value (T9).
+const ROLE_GROUPS: ReadonlyArray<{ title: string; roles: readonly ModelRoleId[] }> = [
+  { title: 'Conversation', roles: ['default', 'plan', 'slow'] },
+  { title: 'Background', roles: ['smol', 'tiny', 'widget', 'memory', 'commit'] },
+  { title: 'Delegated', roles: ['task', 'advisor'] },
+  { title: 'Media', roles: ['vision'] },
+  { title: 'Model kinds', roles: ['image', 'web', 'speech', 'dictation', 'judge'] }
+]
+
+// Only the two links the probe confirmed (omp-probe.md) name a fallback; every other unset role
+// is described by OMP picking one automatically.
+function unsetLabelFor(role: ModelRoleId): string {
+  return role === 'smol' || role === 'slow' ? 'Inherit Default' : 'OMP picks one automatically'
+}
 
 export function ModelRolesSection() {
   const roles = useModelRolesStore((state) => state.roles)
@@ -282,259 +281,80 @@ export function ModelRolesSection() {
     }
   }
 
-  /** Renders the loading/error status for ONE catalog kind, ONCE -- callers must only call this
-   * for the first role of each kind within a group (see `renderGroup`'s own `seenKinds`
-   * tracking). */
+  /** The loading/error status of ONE catalog kind, rendered once per kind within a group. */
   function renderCatalogStatus(kind: CatalogKind) {
-    const catalog = catalogs[kind]
-    const catalogError = catalogErrors[kind]
-    const isRetrying = retryingKinds.has(kind)
-    const catalogLoading = catalog === undefined && !catalogError && !isRetrying
-    const catalogErrorId = `model-role-catalog-error-${kind}`
-
-    if (catalogLoading) {
-      return (
-        <p key={kind} className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
-          Loading models…
-        </p>
-      )
-    }
-    if (catalogError) {
-      const kindLabel = CATALOG_KIND_LABEL[kind]
-      return (
-        <p key={kind} id={catalogErrorId} className="mb-2 flex items-center gap-2 text-xs text-destructive">
-          <span className="flex items-center gap-1">
-            <OctagonXIcon aria-hidden className="size-4 shrink-0" />
-            Could not load {kindLabel} models: {catalogError}
-          </span>
-          <Button
-            id={`model-role-catalog-retry-${kind}`}
-            variant="outline"
-            size="xs"
-            aria-disabled={isRetrying || undefined}
-            // Quality-gate remediation (accessibility-auditor MEDIUM): the accessible name now
-            // follows the in-flight state the same way the visible text does -- a fixed label
-            // never exposed "Retrying…" to anything but sighted users.
-            aria-label={isRetrying ? `Retrying ${kindLabel} models` : `Retry loading ${kindLabel} models`}
-            onClick={() => void handleCatalogRetry(kind)}
-          >
-            {isRetrying ? 'Retrying…' : 'Retry'}
-          </Button>
-        </p>
-      )
-    }
-    return null
+    return (
+      <RoleCatalogStatus
+        key={kind}
+        kind={kind}
+        catalog={catalogs[kind]}
+        error={catalogErrors[kind]}
+        isRetrying={retryingKinds.has(kind)}
+        onRetry={(retryKind) => void handleCatalogRetry(retryKind)}
+      />
+    )
   }
 
   function renderRole(descriptor: RoleDescriptor) {
     const { role, label, description } = descriptor
-    const currentValue = roles[role]
     const kind = ROLE_CATALOG_KIND[role]
-    const catalog = catalogs[kind]
-    const catalogError = catalogErrors[kind]
-    const isPending = pendingRoles.has(role)
-    const saveError = saveErrors[role]
-    const overrideNote = overrideNotes[role]
-    const selectId = `model-role-${role}`
-    const labelId = `${selectId}-label`
-    const descriptionId = `${selectId}-description`
-    const saveErrorId = `${selectId}-save-error`
-    const overrideNoteId = `${selectId}-override-note`
-    const catalogErrorId = `model-role-catalog-error-${kind}`
-    const describedBy = [descriptionId, saveError ? saveErrorId : null, overrideNote ? overrideNoteId : null, catalogError ? catalogErrorId : null]
-      .filter(Boolean)
-      .join(' ')
-
-    // Issue #1069 decision 1: a chat role's own dropdown lists only the selected provider's
-    // models (decision 6: the five model-kind roles are unaffected and keep today's unfiltered
-    // list and `{name} ({provider})` item labels).
-    const isChat = kind === 'chat'
-    const displayCatalog = isChat ? filterCatalogByProvider(catalog, selectedProvider) : (catalog ?? [])
-    // Gate round 2 fix (Medium #6): the reasoning radios' own caption must stay silent while the
-    // catalog is still loading or failed -- `catalog === undefined` with no error means "not
-    // fetched yet", never "this model is unknown".
-    const catalogStatus: 'loading' | 'loaded' | 'error' = catalogError ? 'error' : catalog === undefined ? 'loading' : 'loaded'
-
-    // The displayed list may not list a role's current selector verbatim (a comma-list, an
-    // `@alias`, a selector from a provider the catalog fetch temporarily missed, one carrying a
-    // `:thinking` suffix, or -- for a chat role -- simply a different provider than the one
-    // selected) -- render it as its own pinned option so the picker never silently shows the
-    // wrong thing for a value the displayed list does not contain verbatim.
-    const knownSelectors = new Set(displayCatalog.map((entry) => entry.selector))
-    // Gate round 1 fix (#1114, High #2/Visual H1): compare on the BASE selector (suffix
-    // stripped), never the raw suffixed value -- every suffixed chat role (the common case:
-    // Stuart's real profile carries one on every chat role) previously failed this check
-    // regardless of whether its own model was actually still in the displayed list, pinning a
-    // DUPLICATE item showing the exact same text as the real catalog entry
-    // (`report.json`: `["Claude Fable 5","Claude Fable 5"]`).
-    const currentBase = currentValue !== undefined ? splitThinkingSuffix(currentValue).base : undefined
-    const hasUnknownCurrent = currentBase !== undefined && !knownSelectors.has(currentBase)
-    const inheritedLabel = ROLE_FALLBACK_LABEL[role] ? `Inherited (${ROLE_FALLBACK_LABEL[role]})` : 'Inherited'
-    // Decisions 3 and 5: resolved against the FULL (unfiltered) catalog, never `displayCatalog`,
-    // so a role on a different provider is still identified by its real model, and the reasoning
-    // radios below read the model's own `reasoning`/`thinking` fields regardless of which
-    // provider is currently selected on the switch.
-    const resolvedCurrentEntry: ModelCatalogEntry | undefined = isChat ? resolveCatalogEntry(currentValue, catalog) : undefined
-    // Gate round 1 fix (High #2): the Select's own `value` matches the BASE selector whenever
-    // that base is already a real, displayed catalog item -- Radix then shows that SAME item
-    // selected, instead of a redundant pinned duplicate; only a genuinely off-list base (a
-    // different provider, an alias, or an unresolvable model) falls back to the raw suffixed
-    // value, matched by the pinned item below.
-    const selectValue = hasUnknownCurrent ? (currentValue ?? INHERITED_VALUE) : (currentBase ?? INHERITED_VALUE)
-
+    const common = {
+      role,
+      label,
+      description,
+      roles,
+      catalog: catalogs[kind],
+      catalogError: catalogErrors[kind],
+      selectedProvider,
+      announcePolite
+    }
+    if (role === 'advisor') {
+      return (
+        <AdvisorModelRow
+          key={role}
+          description="Reviews a Session's turns while the Advisor is on (/advisor on). Refract sets this when it starts a Session, so a change applies to new Sessions."
+          roles={roles}
+          catalog={common.catalog}
+          catalogError={common.catalogError}
+          selectedProvider={selectedProvider}
+          announcePolite={announcePolite}
+          announceAssertive={announceAssertive}
+        />
+      )
+    }
     return (
-      <div key={role} className="py-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <label id={labelId} htmlFor={selectId} className="text-sm">
-              {label}
-            </label>
-            <span id={descriptionId} className="text-xs text-muted-foreground">
-              {description}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {isPending && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
-                Saving…
-              </span>
-            )}
-            <Select
-              value={selectValue}
-              onValueChange={(pickedValue) => {
-                // Quality-gate remediation (accessibility-auditor HIGH): the trigger stays a
-                // real, focusable, non-`disabled` element while a save is pending (see below) so
-                // Radix can still return focus to it when the popup closes -- ignoring a change
-                // while pending here, rather than disabling the control, is what keeps that
-                // focus return working.
-                if (isPending) {
-                  // Quality-gate remediation (code-reviewer/accessibility-auditor LOW): a pick
-                  // made while a save for this role is still pending used to be silently
-                  // dropped -- the combobox still opens (it stays non-`disabled`, see above), so
-                  // say so instead of leaving a screen-reader user with no feedback at all.
-                  announcePolite(`${label} is still saving`)
-                  return
-                }
-                // Gate round 1 fix (High #2): picking the item the Select ALREADY shows
-                // selected (whether the regular list's own matching base, or the pinned item's
-                // exact raw value) writes nothing -- this can only be a re-pick of the exact
-                // current model, never a real change.
-                if (pickedValue === selectValue) return
-                if (pickedValue === INHERITED_VALUE) {
-                  void handleRoleChange(role, label, null)
-                  return
-                }
-                // Gate round 1 fix (Medium #5): if the role's EXISTING level is not supported by
-                // the newly picked model, write the bare selector (never a silently-dropped
-                // level masquerading as "saved") and announce the reset explicitly. Gate round 2
-                // fix (Medium #2): `isLevelCarryable`, not the plain per-level support check --
-                // `auto` is model-independent (real `omp` never reports it as a catalog level at
-                // all) so it must not be dropped on every single model change.
-                const carried = applyThinkingSuffixCarryOver(pickedValue, currentValue)
-                const carriedSuffix = splitThinkingSuffix(carried).suffix
-                if (carriedSuffix) {
-                  const pickedEntry = resolveCatalogEntry(pickedValue, catalog)
-                  if (!isLevelCarryable(carriedSuffix.slice(1), pickedEntry)) {
-                    void handleRoleChange(role, label, pickedValue, `${label} saved; reasoning reset to Inherit`)
-                    return
-                  }
-                }
-                void handleRoleChange(role, label, carried)
-              }}
-            >
-              <SelectTrigger
-                id={selectId}
-                aria-describedby={describedBy || undefined}
-                aria-disabled={isPending || undefined}
-                aria-invalid={Boolean(saveError) || undefined}
-                className="w-64"
-              >
-                <SelectValue placeholder="Inherited" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={INHERITED_VALUE}>{inheritedLabel}</SelectItem>
-                {hasUnknownCurrent && (
-                  <SelectItem value={currentValue as string}>
-                    {resolvedCurrentEntry ? (
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="min-w-0 truncate">{resolvedCurrentEntry.name}</span>
-                        {resolvedCurrentEntry.provider !== selectedProvider && (
-                          <span className="shrink-0 text-xs text-muted-foreground">{' '}via {friendlyProviderLabel(resolvedCurrentEntry.provider)}</span>
-                        )}
-                      </span>
-                    ) : (
-                      currentValue
-                    )}
-                  </SelectItem>
-                )}
-                {displayCatalog.map((entry) => (
-                  <SelectItem key={entry.selector} value={entry.selector}>
-                    {isChat ? entry.name : `${entry.name} (${entry.provider})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        {saveError && (
-          <p id={saveErrorId} className="mt-1 flex items-center gap-1 text-xs text-destructive">
-            <OctagonXIcon aria-hidden className="size-4 shrink-0" />
-            Could not save: {saveError}
-          </p>
-        )}
-        {!saveError && overrideNote && (
-          <p id={overrideNoteId} className="mt-1 text-xs text-muted-foreground">
-            Saved, but {overrideNote} still controls the effective model for this role.
-          </p>
-        )}
-        {isChat && (
-          <RoleReasoningRadios
-            role={role}
-            roleLabel={label}
-            labelId={labelId}
-            currentValue={currentValue}
-            catalogEntry={resolvedCurrentEntry}
-            catalogStatus={catalogStatus}
-            disabled={isPending}
-            onPick={(nextValue) => void handleRoleChange(role, label, nextValue)}
-            announcePolite={announcePolite}
-          />
-        )}
-      </div>
+      <RoleRow
+        key={role}
+        {...common}
+        value={roles[role]}
+        isPending={pendingRoles.has(role)}
+        saveError={saveErrors[role]}
+        overrideNote={overrideNotes[role]}
+        unsetLabel={unsetLabelFor(role)}
+        onCommit={(value, announcement) => void handleRoleChange(role, label, value, announcement)}
+        onBusy={() => announcePolite(`${label} is still saving`)}
+      />
     )
   }
 
-  function renderGroup(descriptors: RoleDescriptor[]) {
-    const seenKinds = new Set<CatalogKind>()
-    const statusBlocks: ReactNode[] = []
-    for (const descriptor of descriptors) {
-      const kind = ROLE_CATALOG_KIND[descriptor.role]
-      if (seenKinds.has(kind)) continue
-      seenKinds.add(kind)
-      const status = renderCatalogStatus(kind)
-      if (status) statusBlocks.push(status)
-    }
+  function renderGroup(group: (typeof ROLE_GROUPS)[number]) {
+    const descriptors = group.roles.flatMap((role) => ALL_ROLE_DESCRIPTORS.filter((entry) => entry.role === role))
+    const kinds = [...new Set(descriptors.map((descriptor) => ROLE_CATALOG_KIND[descriptor.role]))]
     return (
-      <>
-        {statusBlocks}
-        <div className="flex flex-col divide-y divide-divider">{descriptors.map(renderRole)}</div>
-      </>
+      <SettingsGroup key={group.title} title={group.title} iconSlot>
+        {kinds.map(renderCatalogStatus)}
+        {descriptors.map(renderRole)}
+      </SettingsGroup>
     )
   }
 
   return (
-    <div>
-      <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
-        Model roles
-      </h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Choose which model OMP uses for each role. Changes save immediately to OMP's global
-        configuration and apply to new sessions, unless a repository's own .omp config overrides a
-        role.
-      </p>
-      <div aria-live="polite" className="sr-only">
+    <SettingsPage
+      title="Models"
+      width="wide"
+      headingRef={headingRef}
+      intro="Choose which model OMP uses for each role. Changes save immediately to OMP's global configuration and apply to new sessions, unless a repository's own .omp config overrides a role."
+    >      <div aria-live="polite" className="sr-only">
         {polite}
       </div>
       <div aria-live="assertive" className="sr-only">
@@ -558,31 +378,18 @@ export function ModelRolesSection() {
         </Alert>
       ) : (
         <>
-          <h3 id="model-roles-chat-heading" className="mb-1 text-sm font-medium">
-            Chat roles
-          </h3>
           <ProviderSwitch
             providers={providersInCatalog(catalogs.chat)}
             selected={selectedProvider}
             onSelect={(provider) => {
               setSelectedProvider(provider)
-              // Gate round 1 fix (#1114, Flow/Visual Medium #7): the switch's own change was
-              // never announced -- the issue itself asks for it, and a filter change elsewhere
-              // in this app (e.g. `ManageSessionsToolbar.tsx`'s archive filter) always is.
+              // The switch's own change is announced, like any other filter change in this app.
               announcePolite(`Showing ${friendlyProviderLabel(provider)} models`)
             }}
           />
-          <div role="group" aria-labelledby="model-roles-chat-heading" className="mb-6">
-            {renderGroup(CHAT_ROLE_DESCRIPTORS)}
-          </div>
-          <h3 id="model-roles-kind-heading" className="mb-1 text-sm font-medium">
-            Model-kind roles
-          </h3>
-          <div role="group" aria-labelledby="model-roles-kind-heading">
-            {renderGroup(KIND_ROLE_DESCRIPTORS)}
-          </div>
+          {ROLE_GROUPS.map(renderGroup)}
         </>
       )}
-    </div>
+    </SettingsPage>
   )
 }
