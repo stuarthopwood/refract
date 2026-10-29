@@ -3,9 +3,9 @@
 Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and push after every task. Every worker reports changed files. Safe deletion: literal absolute paths only, nothing deleted inside the repo except named scratch files. No cargo or tauri command until the director grants the build slot.
 
 ## WP-A Foundation (#750)
-- [ ] T1 Probe row ids vs navigable messages (user, `assistant-text`, grouped Note rows); record in `probe-notes.md`.
-- [ ] T2 Pure `messageIndex` builder and per-session nav store with the scroller bridge.
-- [ ] T3 `Transcript.tsx` registers the bridge; `jumpToMessage` reveals windowed turns, lands, detaches autoscroll, highlights, announces once.
+- [x] T1 Probe row ids vs navigable messages (user, `assistant-text`, grouped Note rows); record in `probe-notes.md`.
+- [x] T2 Pure `messageIndex` builder and per-session nav store with the scroller bridge.
+- [x] T3 `Transcript.tsx` registers the bridge; `jumpToMessage` reveals windowed turns, lands, detaches autoscroll, highlights, announces once.
 
 ## WP-B Previous/Next (#751)
 - [ ] T4 Step target rule, `MessageStepButtons`, floating layer, scroll-reveal and focus-reveal, 2 s fade, reduced motion.

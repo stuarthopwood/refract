@@ -2126,3 +2126,24 @@ samp {
     color: CanvasText !important;
   }
 }
+
+/* Chat navigation (spec 041): the row a jump landed on shows a ring outline for about 800 ms. The
+ * outline is a shape, so it does not rely on colour; it fades out unless motion is reduced, where
+ * it simply appears and is removed (highlightRow.ts removes the attribute). */
+[data-slot='message-scroller-item'][data-nav-highlight] {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot='message-scroller-item'][data-nav-highlight] {
+    animation: nav-highlight-fade 800ms ease-out forwards;
+  }
+}
+@keyframes nav-highlight-fade {
+  from {
+    outline-color: var(--ring);
+  }
+  to {
+    outline-color: transparent;
+  }
+}
