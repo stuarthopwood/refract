@@ -116,7 +116,7 @@ Control heights are 24 and 32px (`xs`/`sm` and `icon-xs`/`icon-sm` at 24px, `def
 
 ## Transcript rhythm
 
-Keep the rhythm as built (`Transcript.tsx`): `mt-6` (24px) between turns and real user/assistant messages, and `mt-1` (4px) inside a run of consecutive bookkeeping rows (tool calls, thinking, notices, and, since 2026-10-29 (#473), a settled ask row with its Answered lines and resolved approvals). A pending question or approval card keeps `mt-6`, as does the row before and after a run. This settles #360.
+Keep the rhythm as built (`Transcript.tsx`): `mt-6` (24px) between turns and real user/assistant messages, and the Settings **Chat row spacing** gap inside a run of consecutive bookkeeping rows: Tight `mt-1` (4px), Compact `mt-2` (8px, the default), Comfy `mt-4` (16px) (#1300, 2026-10-29; tool calls, thinking, notices, Note rows, and, since 2026-10-29 (#473), a settled ask row with its Answered lines and resolved approvals). A pending question or approval card keeps `mt-6`, as does the row before and after a run. This settles #360.
 
 ## Panel header height
 

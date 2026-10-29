@@ -76,6 +76,8 @@ pub struct Settings {
     pub holiday_touches: HolidayTouches,
     /// Issue #482: how the shared status icon draws a state; default `Icons` (`status_style.rs`).
     pub status_style: StatusStyle,
+    /// Issue #1300: gap between consecutive bookkeeping rows; default `Compact` (`chat_row_density.rs`).
+    pub chat_row_density: ChatRowDensity,
     /// Issue #526 (FR-111): the Session row Activity line's wording; default `Plain`.
     pub activity_text: ActivityText,
     pub transcript_display: TranscriptDisplaySettings,
@@ -133,6 +135,9 @@ pub use activity_text::ActivityText;
 #[path = "status_style.rs"]
 mod status_style;
 pub use status_style::StatusStyle;
+#[path = "chat_row_density.rs"]
+mod chat_row_density;
+pub use chat_row_density::ChatRowDensity;
 #[path = "animated_status_text.rs"]
 mod animated_status_text;
 #[path = "code_ligatures.rs"]
@@ -207,6 +212,7 @@ impl SettingsStore {
 
         let holiday_touches = super::holiday_touches::parse(&object);
         let status_style = status_style::parse(&object);
+        let chat_row_density = chat_row_density::parse(&object);
         let activity_text = activity_text::parse(&object);
         let transcript_display = transcript_display::parse(&object);
 
@@ -264,6 +270,7 @@ impl SettingsStore {
             "chatWidth",
             super::holiday_touches::KEY,
             status_style::KEY,
+            chat_row_density::KEY,
             activity_text::KEY,
             "transcriptDisplay",
             "showSampleData",
@@ -297,6 +304,7 @@ impl SettingsStore {
             chat_width,
             holiday_touches,
             status_style,
+            chat_row_density,
             activity_text,
             transcript_display,
             show_sample_data,
@@ -364,6 +372,7 @@ impl SettingsStore {
         map.insert("chatWidth".to_string(), json!(self.data.chat_width));
         super::holiday_touches::write(&mut map, self.data.holiday_touches);
         status_style::write(&mut map, self.data.status_style);
+        chat_row_density::write(&mut map, self.data.chat_row_density);
         let activity_text = self.data.activity_text;
         map.insert(activity_text::KEY.to_string(), json!(activity_text));
         map.insert(

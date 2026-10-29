@@ -36,7 +36,6 @@ export function MidTurnProseRow({ group }: { group: MidTurnProse }) {
         icon={<StickyNoteIcon className="size-4 shrink-0 text-muted-foreground" />}
         label="Note"
         summary={firstLineSummary(item.text) || undefined}
-        summaryClassName="text-chat-foreground"
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}
         clampLines={MID_TURN_CLAMP_LINES}
       >

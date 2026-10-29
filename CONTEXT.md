@@ -28,6 +28,10 @@ _Avoid_: Sub-session, nested session, spawned session
 The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Paused, Stopped, Unread response or Idle, in that order of precedence.
 _Avoid_: state dot, status badge
 
+**Chat row spacing**:
+The Settings choice (Appearance) between **Tight** (4px), **Compact** (8px, default) and **Comfy** (16px) for the gap between consecutive bookkeeping rows in the transcript (#1300). Turn and message gaps stay 24px.
+_Avoid_: row density (in UI copy)
+
 **Status style**:
 The Settings choice (Appearance, "Session status style") between **Icons** (default) and **Dots** for how the shared status icon draws a **Session status**. Every state is colour-coded in its state colour in both styles, including Working (Icons tints the spinner with `--state-working`); Dots keep a shape cue per state so colour is never the only signal. It applies live, applies to the shared status icon only (not the Subagent panel or Transcript icons), and shows a preview of all five states.
 _Avoid_: status mode, dot mode

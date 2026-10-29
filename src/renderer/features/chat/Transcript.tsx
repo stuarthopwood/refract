@@ -26,6 +26,7 @@ import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
+import { CHAT_ROW_GAP_CLASS, DEFAULT_CHAT_ROW_DENSITY } from '../../../shared/chatRowDensity'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
 import { toolRunningAnnouncement, toolVerb } from './toolVerbs'
@@ -185,10 +186,9 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
 }
 
 // `MessageScrollerContent` no longer sets a uniform `gap` (see message-scroller.tsx): every row
-// gets its own top margin instead, `mt-6` for the turns/real-message rhythm and `mt-1` only
+// gets its own top margin instead, `mt-6` for the turns/real-message rhythm and the Settings density gap (#1300, `CHAT_ROW_GAP_CLASS`) only
 // between two consecutive bookkeeping rows, computed once per render by `renderTurn` below.
 const TURN_GAP_CLASS = 'mt-6'
-const BOOKKEEPING_GAP_CLASS = 'mt-1'
 
 // Time-gap divider (docs/DESIGN.md "Time-gap divider", Stuart 2026-10-04, new): shown between two
 // consecutive turns that cross a calendar-day boundary, or sit more than an hour apart on the same
@@ -237,6 +237,7 @@ export function Transcript({
   const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
   const session = useSessionsStore((state) => state.sessions.find((s) => s.id === sessionId))
   const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
+  const rowDensity = useSettingsStore((state) => state.settings.chatRowDensity ?? DEFAULT_CHAT_ROW_DENSITY)
   // Issue #554 (FR-073): 'reading-column' caps at 64rem, centred, transcript only.
   const chatWidth = useActiveChatWidth()
   const items = transcript.items
@@ -874,7 +875,7 @@ export function Transcript({
                       const marginClass = isFirstRow
                         ? undefined
                         : previousRow && isBookkeepingRow(previousRow) && isBookkeepingRow(row)
-                          ? BOOKKEEPING_GAP_CLASS
+                          ? CHAT_ROW_GAP_CLASS[rowDensity]
                           : TURN_GAP_CLASS
                       isFirstRow = false
                       previousRow = row
