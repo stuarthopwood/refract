@@ -47,7 +47,7 @@ export function ProjectColorPopover({
   const hexErrorId = `${hexId}-error`
 
   useEffect(() => {
-    if (!open) return
+    // Reset on close as well as open, so a reopen never renders the cancelled draft for a frame.
     setDraft(repository.color ?? null)
     setHexText(repository.color?.kind === 'custom' ? repository.color.hex : '')
     setError(null)
@@ -127,7 +127,7 @@ export function ProjectColorPopover({
           presetValue={draft?.kind === 'preset' ? draft.id : null}
           onPresetChange={pickPreset}
           presetsAction={
-            <Button variant="outline" size="sm" disabled={!draft} onClick={resetDraft}>
+            <Button variant="outline" size="sm" aria-disabled={!draft || undefined} className="aria-disabled:opacity-50" onClick={() => draft && resetDraft()}>
               Reset to default
             </Button>
           }
@@ -153,7 +153,7 @@ export function ProjectColorPopover({
             </p>
           )}
         </div>
-        <div className="flex min-h-5 flex-col gap-1">
+        <div className="flex min-h-6 flex-col gap-1">
           <p className="truncate text-sm font-medium text-muted-foreground" style={preview ? { color: preview.css } : undefined}>
             {repository.name}
           </p>
