@@ -15,7 +15,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T8 Turn error row with hints and Retry; Retry line with Stop; keep banner and session-row retry text. (#1284)
 
 ## WP-C Transcript rows
-- [ ] T9 Mid-turn Note follow-ups, shared disclosure class and shared clamp, `product-chat.md` hierarchy. (#1262)
+- [x] T9 Mid-turn Note follow-ups, shared disclosure class and shared clamp, `product-chat.md` hierarchy. (#1262)
 - [ ] T10 Shared `SourceTag` and advisory rows. (#1041)
 - [ ] T11 Newest running row shimmer; motion and accessibility docs. (#1210)
 

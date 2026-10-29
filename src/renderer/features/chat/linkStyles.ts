@@ -12,3 +12,7 @@ export const linkClassName =
 // colour and relies on the ambient (already-passing) text colour it already inherits, instead.
 export const mutedLinkClassName =
   'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
+// The one muted text-link disclosure toggle (Show more / Show less, Show full brief, Show source):
+// the muted link look plus a 24px target (WCAG 2.5.8). Callers add their own spacing above it.
+export const disclosureToggleClassName = `min-h-6 inline-flex items-center text-xs text-muted-foreground ${mutedLinkClassName}`

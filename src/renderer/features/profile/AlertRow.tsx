@@ -42,7 +42,7 @@ export function AlertRow({
       <Button
         ref={actionRef}
         type="button"
-        variant="link"
+        variant="text"
         size="xs"
         aria-label={actionAriaLabel}
         className={cn(COMPOSER_BUTTON_FOCUS_CLASS, '-mx-1 h-auto px-1 py-1 text-state-needs-you underline')}
