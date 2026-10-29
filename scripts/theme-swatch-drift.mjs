@@ -52,5 +52,13 @@ export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds
     }
     if (mismatches.length > 0) fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, mismatches.join('; '))
   }
+  // #1256: Cyber Amber's canvas tokens are deliberately byte-identical to Dark's (every shared
+  // contrast pair and themes.ts's swatch rely on it); fail loudly when one drifts.
+  for (const token of ['background', 'card', 'popover']) {
+    const amber = themes['cyber-amber']?.[token]
+    const dark = themes.dark?.[token]
+    checkedCount++
+    if (!amber || !dark || JSON.stringify(amber) !== JSON.stringify(dark)) fail('cyber-amber', `--${token}`, `.theme-dark --${token}`, 'cyber-amber no longer matches Dark (or a token is missing)')
+  }
   return { checkedCount, failCount, rows }
 }

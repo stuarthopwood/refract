@@ -192,11 +192,33 @@ export async function launchBuiltExe(launcherExe, exePath, { port, dataDir, impo
   return { child, targetPid };
 }
 
+function isStrictlyUnderTmpdir(target) {
+  try {
+    const realTmp = realpathSync.native(tmpdir()).toLowerCase();
+    const resolved = path.resolve(target);
+    // Realpath the deepest existing ancestor so a junction/symlink cannot lead out of the temp dir.
+    let existing = resolved;
+    while (!existsSync(existing)) {
+      const parent = path.dirname(existing);
+      if (parent === existing) return false;
+      existing = parent;
+    }
+    const real = path.join(realpathSync.native(existing), path.relative(existing, resolved)).toLowerCase();
+    return real.startsWith(realTmp + path.sep.toLowerCase()) && real.length > realTmp.length + 1;
+  } catch {
+    return false;
+  }
+}
+
 export async function safeRmSync(dir, label = 'verify') {
   if (!dir) return;
+  if (!isStrictlyUnderTmpdir(dir)) {
+    console.warn(`${label}: refusing to remove ${dir} -- not strictly inside the OS temp dir`);
+    return;
+  }
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(path.resolve(dir), { recursive: true, force: true });
       return;
     } catch (err) {
       if (attempt === 2) {
