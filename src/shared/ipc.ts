@@ -4,7 +4,6 @@
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
 import type { LowMemoryWarning } from './lowMemoryWarning';
 import type { TokenGuardCalls, TokenGuardHandoffResult, TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';
-
 import type {
   ApprovalMode,
   CatalogKind,
@@ -31,10 +30,8 @@ import type {
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
-import type { ModelApi, RoleChangeSummary } from './ipc-model';
-import type { AttachmentsApi } from './ipc-attachments';
-import type { DebugApi } from './ipc-debug';
-import type { LeftoverSummary } from './ipc-sessions';
+import type { ModelApi, RoleChangeSummary } from './ipc-model'; import type { AttachmentsApi } from './ipc-attachments';
+import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { IssuesApi } from './ipc-issues';
 import type { FileExplorerApi } from './ipc-file-explorer';
 import type {
@@ -348,6 +345,10 @@ export const IPC_REQUESTS = {
   CHAT_STOP: 'chat.stop',
   CHAT_REMOVE_QUEUED: 'chat.removeQueued',
   CHAT_SEND_NOW: 'chat.sendNow',
+  CHAT_PAUSE: 'chat.pause',
+  CHAT_RESUME: 'chat.resume',
+  CHAT_PAUSE_ALL: 'chat.pauseAll',
+  CHAT_RESUME_ALL: 'chat.resumeAll',
   CHAT_ANSWER: 'chat.answer',
   CHAT_COMMANDS: 'chat.commands',
   CHAT_PREDICT_WORD: 'chat.predictWord',
@@ -636,7 +637,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * it, before patches arrive. Error `not-found` when the id does not match a `SubagentSummary`
      * of the current turn. */
     subagentSnapshot(sessionId: string, subagentId: string): Promise<Result<TranscriptItem[]>>;
-  };
+  } & ChatPauseApi;
 
   sideChat: {
     /** Spec 014 contracts/ipc.md "Side chat": issues `{type:"btw", question, recordId?}` to that

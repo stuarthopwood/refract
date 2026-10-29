@@ -1,7 +1,7 @@
 // Small display helpers shared between `SessionRow.tsx` (the row) and `SessionDetailsCard.tsx`
 // (the hover card), split out so neither file has to import the other.
 
-import { BellRingIcon, CircleCheckIcon, CirclePauseIcon, MessageSquareTextIcon } from 'lucide-react'
+import { BellRingIcon, CircleCheckIcon, CirclePauseIcon, MessageSquareTextIcon, PauseIcon } from 'lucide-react'
 import type { Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
@@ -16,13 +16,21 @@ import type { StatusStyle } from '../../../shared/statusStyle'
  * reads as **Unread response** instead of Idle. Derived in exactly one place (`displayStatus`
  * below) so the icon, the word and every sort order stay in lockstep; nothing else may read
  * `session.status` and `session.unread` separately to decide what to show. */
-export type SessionDisplayStatus = SessionStatus | 'unread-response'
+export type SessionDisplayStatus = SessionStatus | 'unread-response' | 'paused'
 
 /** The one place a Session's raw `status`/`unread` pair becomes the status actually shown.
  * `#735` (collapsed group header), `#748` (Show hidden badge) and `#846` (sleeping) will all
- * read this, not the raw fields. */
-export function displayStatus(s: Pick<SessionSummary, 'status' | 'unread'>): SessionDisplayStatus {
+ * read this, not the raw fields. Issue #477: a paused Session shows Paused unless it needs the
+ * user (a pending question must stay visible); a Pausing Session (turn still running) also
+ * shows Paused, labelled "Pausing…" by `displayLabel`. */
+export function displayStatus(s: Pick<SessionSummary, 'status' | 'unread' | 'pause'>): SessionDisplayStatus {
+  if (s.pause && s.status !== 'needs-you') return 'paused'
   return s.status === 'idle' && s.unread ? 'unread-response' : s.status
+}
+
+/** The word for a Session's displayed status: "Pausing…" while a pause waits on a running turn. */
+export function displayLabel(s: Pick<SessionSummary, 'status' | 'unread' | 'pause'>): string {
+  return s.pause === 'pausing' && s.status !== 'needs-you' ? 'Pausing…' : STATUS_LABEL[displayStatus(s)]
 }
 
 export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
@@ -30,7 +38,8 @@ export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
   idle: 'Idle',
   'needs-you': 'Needs you',
   stopped: 'Stopped',
-  'unread-response': 'Unread response'
+  'unread-response': 'Unread response',
+  paused: 'Paused'
 }
 
 /** Issue #559 decision 12 (reused by `manageSessionsHelpers.ts`'s `filterAndSortSessions`,
@@ -246,6 +255,8 @@ export function StateIcon({ status, style }: { status: SessionDisplayStatus; sty
       return <CirclePauseIcon aria-hidden className={cn(className, 'text-state-stopped')} />
     case 'unread-response':
       return <MessageSquareTextIcon aria-hidden className={cn(className, 'text-state-unread-response')} />
+    case 'paused':
+      return <PauseIcon aria-hidden className={cn(className, 'text-state-paused')} />
   }
 }
 

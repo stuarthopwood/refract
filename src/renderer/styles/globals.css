@@ -149,6 +149,7 @@
   --color-state-working-foreground: var(--state-working-foreground);
   --color-state-idle: var(--state-idle);
   --color-state-unread-response: var(--state-unread-response);
+  --color-state-paused: var(--state-unread-response);
   --color-agent-message: var(--agent-message);
   --color-state-needs-you: var(--state-needs-you);
   --color-state-needs-you-foreground: var(--state-needs-you-foreground);

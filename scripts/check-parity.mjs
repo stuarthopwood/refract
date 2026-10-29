@@ -308,6 +308,10 @@ const REQUEST_LANES = {
   CHAT_STOP: 'R4',
   CHAT_REMOVE_QUEUED: 'R4',
   CHAT_SEND_NOW: 'R4',
+  CHAT_PAUSE: 'R4', // #477, ipc/chat_pause.rs
+  CHAT_RESUME: 'R4',
+  CHAT_PAUSE_ALL: 'R4',
+  CHAT_RESUME_ALL: 'R4',
   CHAT_ANSWER: 'R4',
   CHAT_COMMANDS: 'R4',
   CHAT_PREDICT_WORD: 'R6', // #789, word prediction is R6's work, despite chat.ts housing it
