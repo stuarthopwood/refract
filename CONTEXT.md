@@ -247,6 +247,14 @@ _Avoid_: Sidebar, drawer
 The user's saved order of the **Panel**s, shared by the **Icon rail** and the launcher (not the tab bar, which keeps open order). Default: Git changes, File explorer, Subagents, Side chat, FDB Knowledge, Agent Builder. Changed by dragging a rail button or Alt+Shift+Up/Down on it, restored by "Reset panel order" in Settings (issue #730).
 _Avoid_: Rail order, button order
 
+**Right pane surface**:
+The background of the right pane and the **Icon rail**, one surface: the `--sidebar-right` token, a per-theme midpoint between `--background` and `--sidebar` (the left Session list), so the right edge reads as its own region, neither page nor left panel (decided 2026-10-29, issue #674). The pane has no Min / Default / Max buttons; its width is set by dragging, double-click (reset to 320 px), the handle's context menu and the View menu (Narrow 240, Default 320, Wide 520, Close pane), which are the WCAG 2.5.7 non-drag alternative. Dragging below 240 px closes it.
+_Avoid_: width preset, sidebar background
+
+**Git decoration**:
+The colour a file or folder name and icon in the File explorer take from the `--git-*` tokens (modified, added, untracked, deleted, ignored, renamed, conflicted, staged), separate from the session-state colours. A folder takes the most significant status among its descendants (conflicted, deleted, modified, staged, renamed, added, untracked; ignored does not roll up). The trailing status icon and its screen-reader word stay (issue #768).
+_Avoid_: status colour (the session-state colours)
+
 **Pane**:
 An unboxed, resizable region of the main content area, one of possibly several side by side, each independently scrollable (for example, a **Chat pane**). Inside a **Split**, say **Chat pane**, not the bare word, per that entry's own _Avoid_ note.
 _Avoid_: Panel (a distinct, secondary tool or view, not this region), split view (for the arrangement itself -- see **Split**)
