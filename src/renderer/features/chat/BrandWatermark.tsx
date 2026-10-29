@@ -24,14 +24,17 @@ interface BrandWatermarkProps {
   /** 'live': the real, responsively-clamped corner mark. 'preview': a small, fixed-size
    *  rendering meant to sit inline inside a bordered preview container in Settings. */
   variant: 'live' | 'preview'
+  /** #1256: false where conversation text sits over the corner (a transcript pane), so the plain
+   *  low-opacity mark renders instead of the holiday glyph. */
+  allowHoliday?: boolean
 }
 
-export function BrandWatermark({ variant }: BrandWatermarkProps) {
+export function BrandWatermark({ variant, allowHoliday = true }: BrandWatermarkProps) {
   const watermarkEnabled = useSettingsStore((s) => s.settings.watermarkEnabled)
   const holidayTouches = useSettingsStore((s) => s.settings.holidayTouches)
   const holiday = useHolidayStore((s) => s.activeHoliday)
   if (!watermarkEnabled) return null
-  const holidayEntry = holidayTouches !== 'off' && holiday ? HOLIDAY_CONTENT[holiday] : null
+  const holidayEntry = allowHoliday && holidayTouches !== 'off' && holiday ? HOLIDAY_CONTENT[holiday] : null
   // Quality-gate remediation (code-reviewer/ui-architect, Medium): `-z-10` on the 'live' variant
   // (research.md decision 8 -- previously undone in code) so this absolutely-positioned mark
   // paints BEHIND its normal-flow sibling content (App.tsx's no-pane-open text, this ChatPane's

@@ -1707,6 +1707,21 @@ samp {
 .holiday-ambient-loop-bat-wrap:nth-child(1) { top: max(12%, 72px); left: 8%; }
 .holiday-ambient-loop-bat-wrap:nth-child(2) { top: 32%; left: 55%; }
 .holiday-ambient-loop-bat-wrap:nth-child(3) { top: 58%; left: 22%; }
+/* #1256: in a transcript pane (`avoidTextColumn`) the bats must never pass behind muted text
+ * (the #1233 3:1 decision), so they live only in the gutters beside the 64rem reading column
+ * (`Transcript.tsx`) and are hidden when the pane is too narrow to have gutters wide enough for
+ * a bat (48px) plus its 120px flight, or when the chat width is 'full' (no gutter at all). */
+.holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(1) { left: 8px; }
+.holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(2) { left: calc(50cqw + 32rem + 8px); }
+.holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(3) { left: 8px; }
+.holiday-ambient-loop--gutters[data-chat-width='full'] .holiday-ambient-loop-bat-wrap {
+  display: none;
+}
+@container (max-width: 86rem) {
+  .holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap {
+    display: none;
+  }
+}
 
 @media (prefers-reduced-motion: reduce), (forced-colors: active), (prefers-reduced-transparency: reduce) {
   .holiday-ambient-loop {
