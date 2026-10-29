@@ -100,7 +100,7 @@ pub fn defaults() -> ValueMap {
 
 const MAX_TEXT_CHARS: usize = 200;
 const MAX_ENTRIES: usize = 64;
-const METHODS: &[&str] = &["snapcompact", "shake", "handoff", "soft"];
+const METHODS: &[&str] = &["remote", "snapcompact", "shake", "handoff", "soft"];
 const REVIEW_MODES: &[&str] = &["agent-end", "turn"];
 
 /// Upper bound for a count key (thresholds and line/size counts share the token ceiling).

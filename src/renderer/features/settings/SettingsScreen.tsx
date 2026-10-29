@@ -11,7 +11,7 @@ import { useViewStore } from '@/state'
 import { AppearanceSection } from './AppearanceSection'
 import { ChatDisplaySection } from './ChatDisplaySection'
 import { ModelRolesSection } from './ModelRolesSection'
-import { OmpSection } from './OmpSection'
+import { AdvancedSection } from './AdvancedSection'
 import { RightPaneSection } from './RightPaneSection'
 import { SessionsSection } from './SessionsSection'
 import { SettingsBrand } from './SettingsBrand'
@@ -60,9 +60,7 @@ export function SettingsScreen() {
               <ModelRolesSection />
             </SettingsPage>
           ) : settingsSection === 'advanced' ? (
-            <SettingsPage>
-              <OmpSection />
-            </SettingsPage>
+            <AdvancedSection />
           ) : settingsSection === 'sessions' ? (
             <SessionsSection />
           ) : settingsSection === 'panels' ? (
