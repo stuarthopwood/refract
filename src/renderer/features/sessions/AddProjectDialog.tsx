@@ -14,15 +14,22 @@ import {
 import { Input } from '@/components/ui/input'
 import { notify, useRepositoriesStore } from '@/state'
 
-export interface AddRepositoryDialogProps {
-  /** The element (usually a Button) that opens the dialog. */
-  trigger: ReactNode
+export interface AddProjectDialogProps {
+  /** The element (usually a Button) that opens the dialog; omit when `open` is controlled. */
+  trigger?: ReactNode
+  open?: boolean
+  onOpenChange?(open: boolean): void
 }
 
-// Repository path entry (docs/DESIGN.md "First run and empty states"): paste an absolute path,
+// Local project path entry (docs/DESIGN.md "First run and empty states"): paste an absolute path,
 // or Browse for one with the native folder picker (contracts/ipc.md `repositories.pickFolder`).
-export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
-  const [open, setOpen] = useState(false)
+export function AddProjectDialog({ trigger, open: controlledOpen, onOpenChange }: AddProjectDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = (next: boolean): void => {
+    setInternalOpen(next)
+    onOpenChange?.(next)
+  }
   const [path, setPath] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [browsing, setBrowsing] = useState(false)
@@ -55,10 +62,10 @@ export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add repository</DialogTitle>
+          <DialogTitle>Add project</DialogTitle>
           <DialogDescription>
             Paste the folder path of a local git repository, or browse for one.
           </DialogDescription>
@@ -66,7 +73,7 @@ export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
         <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
           <div className="flex flex-col gap-2">
             <label htmlFor="repository-path" className="text-sm">
-              Repository path
+              Project path
             </label>
             <div className="flex gap-2">
               <Input
@@ -92,7 +99,7 @@ export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
               Cancel
             </Button>
             <Button type="submit" disabled={!path.trim() || submitting}>
-              {submitting ? 'Adding…' : 'Add repository'}
+              {submitting ? 'Adding…' : 'Add project'}
             </Button>
           </DialogFooter>
         </form>

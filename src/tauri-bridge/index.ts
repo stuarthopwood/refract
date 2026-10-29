@@ -11,6 +11,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import { chatPauseBridge } from './chatPause'
+import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch } from '../shared/ipc-issues'
 import type { SessionActivity } from '../shared/activity'
 import type {
@@ -136,7 +137,11 @@ const refract: RefractApi = {
     remotes: () => request<Record<string, RepositoryRemote>>(IPC_REQUESTS.REPOSITORIES_REMOTES),
     branches: (id) => request<BranchEntry[]>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id),
     pickFolder: () => request<string | null>(IPC_REQUESTS.REPOSITORIES_PICK_FOLDER),
-    userName: (id) => request<string>(IPC_REQUESTS.REPOSITORIES_USER_NAME, id)
+    userName: (id) => request<string>(IPC_REQUESTS.REPOSITORIES_USER_NAME, id),
+    listGitHub: (owner) => request<GitHubRepoListing>(IPC_REQUESTS.REPOSITORIES_LIST_GITHUB, ...(owner === undefined ? [] : [owner])),
+    clone: (cloneRequest) => request<CloneStartResult>(IPC_REQUESTS.REPOSITORIES_CLONE, cloneRequest),
+    cloneCancel: (cloneId) => request<void>(IPC_REQUESTS.REPOSITORIES_CLONE_CANCEL, cloneId),
+    onCloneProgress: (handler) => on<CloneProgressEvent>(IPC_EVENTS.REPOSITORIES_CLONE_PROGRESS, handler)
   },
 
   sessions: {
@@ -278,7 +283,8 @@ const refract: RefractApi = {
     setHolidayTouches: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_HOLIDAY_TOUCHES, value),
     setActivityText: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ACTIVITY_TEXT, value),
     setStatusStyle: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_STATUS_STYLE, value),
-    setChatRowDensity: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_ROW_DENSITY, value)
+    setChatRowDensity: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_ROW_DENSITY, value),
+    setDefaultCloneFolder: (path) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_DEFAULT_CLONE_FOLDER, path)
   },
 
   debug: {

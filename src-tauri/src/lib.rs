@@ -473,6 +473,7 @@ pub fn run() {
                     session_manager.stop_all(),
                 )
                 .await;
+                ipc::repositories_clone::shutdown_all().await;
                 // Lane R11b (issue #794), FR-015/FR-016: runs after every live agent has
                 // already been asked to stop above, so install-on-quit never interrupts a
                 // running agent. Logic lives in `updates::run_install_on_quit_hook` (`AGENTS.md`
