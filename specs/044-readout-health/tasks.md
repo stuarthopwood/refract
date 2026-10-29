@@ -10,6 +10,6 @@
 - [x] T008 `HealthReadouts.tsx` and mount in `ComposerStatusLine.tsx` (FR-001, FR-006, FR-007)
 - [x] T009 `pnpm typecheck`, `pnpm test`, `check:file-size`, `check:parity`
 - [x] T010 `docs/PLAN.md` row 4b, `CONTEXT.md` note
-- [ ] T011 Review gate (code-reviewer, test-reviewer, security-auditor, accessibility-auditor, ui-architect-v3)
-- [ ] T012 Build slot: merge `origin/main`, `pnpm ci:local`, live check with the force hooks
+- [x] T011 Review gate (code-reviewer, test-reviewer, security-auditor, accessibility-auditor, ui-architect-v3)
+- [x] T012 Build slot: merge `origin/main`, `pnpm ci:local`, live check with the force hooks
 - [ ] T013 PR (not merged)
