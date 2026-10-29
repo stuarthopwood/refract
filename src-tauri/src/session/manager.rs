@@ -385,6 +385,9 @@ impl SessionManager {
                     object.insert("unread".to_string(), Value::Bool(false));
                     object.insert("launchedMode".to_string(), launched_mode.clone());
                     object.insert("pendingMode".to_string(), Value::Null);
+                    if session.paused_held.is_some() {
+                        object.insert("pause".to_string(), "paused".into());
+                    }
                 }
             }
             let activity = crate::session::readout::current_activity(agent.as_deref()).await;
@@ -504,6 +507,7 @@ mod tests {
             last_activity_at: "2026-01-01T00:00:00.000Z".to_string(),
             archived_at: None,
             hidden_at: None,
+            paused_held: None,
             current_turn_subagents: None,
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,

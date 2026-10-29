@@ -81,6 +81,11 @@ pub struct Session {
     /// from here on always includes it explicitly.
     #[serde(default)]
     pub pinned_model: bool,
+    /// Pause mode (#477, spec 056): `Some` while the Session is paused, holding the queued message
+    /// texts (text only) that send again on Resume. Persisted so a pause survives restarts and
+    /// never auto-resumes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused_held: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +126,8 @@ pub struct SessionPatch {
     /// pin and every `apply_role_now` un-pin -- a plain `Option<bool>` (no tri-state) since a
     /// bool has no "unset" state to preserve across patches.
     pub pinned_model: Option<bool>,
+    /// Pause mode (#477): tri-state (`Some(None)` = resume).
+    pub paused_held: Option<Option<Vec<String>>>,
 }
 
 /// The full contents of `registry.json`.
@@ -472,6 +479,9 @@ impl RegistryStore {
             }
             if let Some(value) = patch.pinned_model {
                 session.pinned_model = value;
+            }
+            if let Some(value) = patch.paused_held {
+                session.paused_held = value;
             }
         }
         if let Err(err) = self.persist().await {

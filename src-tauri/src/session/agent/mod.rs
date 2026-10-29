@@ -61,6 +61,7 @@ mod handoff;
 mod lane_support;
 mod launch;
 mod launch_support;
+mod pause;
 mod requests;
 mod status;
 mod sync_from_state;
@@ -125,6 +126,7 @@ struct AgentState {
     #[allow(dead_code)]
     termination: crate::session::termination::State,
     token_guard: crate::session::token_guard::State,
+    pause: pause::State,
 }
 
 /// One per opened Session (`session::manager::SessionManager::get_or_create_agent`). See this
@@ -215,6 +217,7 @@ impl SessionAgent {
                 start_queue: Default::default(),
                 termination: Default::default(),
                 token_guard: Default::default(),
+                pause: Default::default(),
             }),
             status_tx,
             start_lock: AsyncMutex::new(()),
@@ -281,6 +284,7 @@ impl SessionAgent {
     // -----------------------------------------------------------------------------------------
 
     pub(super) async fn emit_status(&self) {
+        self.ensure_pause_loaded().await;
         let state = self.state.lock().await;
         let payload = self.status_event_locked(&state);
         drop(state);
@@ -369,6 +373,7 @@ impl SessionAgent {
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
         let pending_selection = crate::session::pending_selection::wire(self).await;
+        self.ensure_pause_loaded().await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "status": state.status,
@@ -389,12 +394,16 @@ impl SessionAgent {
         if let Some(progress) = state.start_queue.to_wire() {
             object.insert("startProgress".to_string(), progress);
         }
+        if let Some(pause) = pause::wire_value(&state) {
+            object.insert("pause".to_string(), pause.into());
+        }
         payload
     }
 
     /// `SessionRuntimeView` (`sessions.open`/`.recover`/`conversations.startNew`/`.open`'s own
     /// `SessionSnapshot.runtime`).
     pub async fn runtime_view(&self) -> Value {
+        self.ensure_pause_loaded().await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "sessionId": self.session_id,
@@ -410,7 +419,7 @@ impl SessionAgent {
             // before any turn even runs. Fixed live (tasks.md T032 verification, first Session
             // ever opened in this build).
             "transcript": state.transcript.items(),
-            "queue": { "followUp": state.queue_follow_up, "steering": state.queue_steering },
+            "queue": { "followUp": pause::queue_view(&state, &state.queue_follow_up, &state.queue_steering).0, "steering": state.queue_steering },
             "pending": state.pending,
         });
         let obj = payload
