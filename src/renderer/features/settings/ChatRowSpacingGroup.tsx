@@ -19,7 +19,7 @@ export function ChatRowSpacingGroup() {
     <SettingsGroup title="Chat row spacing">
       <SettingRow
         id="chat-row-density"
-        label="Row spacing"
+        label="Spacing"
         labelAsText
         description="Space between activity lines in the chat. Compact is the default."
       >
