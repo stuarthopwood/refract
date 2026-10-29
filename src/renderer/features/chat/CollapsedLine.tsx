@@ -13,6 +13,8 @@ import { ClampedContent } from '@/components/ClampedContent'
 export const LABEL_COLUMN_CONTENT_CLASS = 'pl-8'
 
 export interface CollapsedLineProps {
+  /** Optional decoration rendered before the icon slot (an advisory row's `SourceTag`, #1041). */
+  leading?: React.ReactNode
   /** Icon slot: the consumer picks a shape that differs by state (running spinner, check,
    * cross, warning triangle, ...) so a warning or error is never signalled by colour alone
    * (T080, WCAG 2.1 AA). */
@@ -114,6 +116,7 @@ export interface CollapsedLineProps {
 // to once the Ask card's own resolution replaces it (`ask-focus-intent.ts`).
 export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(function CollapsedLine(
   {
+    leading,
     icon,
     iconTooltip,
     label,
@@ -184,6 +187,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
 
   const row = (
     <>
+      {leading !== undefined && <span className="flex h-5 shrink-0 items-center">{leading}</span>}
       {/* #565 decision 7: 16px slot (icon is `size-4` (16px), centred within it) so
        * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly.
        * Gate round 1 (Main, D1): the row is `items-start` (not `items-center`), so this slot's
