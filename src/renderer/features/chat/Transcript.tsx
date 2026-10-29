@@ -1,6 +1,7 @@
 import * as React from 'react'
-import { ArrowDownIcon } from 'lucide-react'
+import { ArrowDownToLineIcon } from 'lucide-react'
 import {
+  FLOATING_ICON_BUTTON_CLASS,
   MessageScroller,
   MessageScrollerContent,
   MessageScrollerItem,
@@ -34,7 +35,10 @@ import { newestRunningRowId } from './newestRunningRow'
 import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
-import { JUMP_SCROLL_TOP_MARGIN_PX, JumpToStageContext, stageRowDomId } from './stageJump'
+import { JumpToStageContext, stageRowDomId } from './stageJump'
+import { ChatNavBridge } from '../chat-nav/ChatNavBridge'
+import { ChatNavOverlays } from '../chat-nav/ChatNavOverlays'
+import { startRowJumpLoop, type JumpControl } from '../chat-nav/rowJumpLoop'
 
 // A running group's live announcement reads its intent, cut to 80 characters with an ellipsis.
 const ANNOUNCEMENT_MAX_CHARS = 80
@@ -657,6 +661,12 @@ export function Transcript({
   // ask for, Stage 3/Stage 4 below, are unaffected and hold correctly). No
   // `prefers-reduced-motion` branch: `runScrollSettleLoop` never animates -- every frame is a
   // plain instant `scrollTop =` assignment, the same as the landing effect above already uses.
+  const jumpControl: JumpControl = { jumpCancelRef, jumpTokenRef, landingInProgressRef, resetGesture, setAutoScrollSuppressed, setIsAtEnd }
+  // `jumpToMessage` reveals windowed-out turns without "Load earlier"'s anchor restore (it would fight the jump).
+  const revealEarlierForJump = () => {
+    setSuppressLogAnnouncements(true)
+    setRevealedEarlier(true)
+  }
   const jumpToStageRow = React.useCallback(
     (stageId: string) => {
       const row = document.getElementById(stageRowDomId(sessionId, stageId))
@@ -666,51 +676,7 @@ export function Transcript({
       const viewport = viewportRef.current
       const root = scrollerRootRef.current ?? viewport
       if (!viewport || !root) return
-      // Gate round 4 fix (M1): a new jump always wins over a still-running previous one -- cancel
-      // it first, then claim a fresh token this jump's own `onAborted` checks before touching
-      // shared state, so a stale abort can never stomp a landing or newer jump that took over.
-      jumpCancelRef.current?.()
-      const myToken = ++jumpTokenRef.current
-      landingInProgressRef.current = true; resetGesture()
-      setAutoScrollSuppressed(true)
-      const cancel = runScrollSettleLoop(root, viewport, {
-        // Gate round 2 fix (item 3, Medium): a Session/Conversation switch mid-loop can remove
-        // `row` from the DOM before the loop settles -- stop touching `scrollTop` for a gone
-        // target, and release this jump's claim via `onAborted` below (gate round 4, M1).
-        shouldAbort: () => !row.isConnected || !viewport.contains(row),
-        computeTarget: ({ scrollTop, scrollHeight, clientHeight }) => {
-          const rowRect = row.getBoundingClientRect()
-          const viewportRect = viewport.getBoundingClientRect()
-          const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
-          const raw = scrollTop + (rowRect.top - viewportRect.top) - JUMP_SCROLL_TOP_MARGIN_PX
-          return Math.max(0, Math.min(raw, maxScrollTop))
-        },
-        onSettled: (landedAtEnd) => {
-          landingInProgressRef.current = false
-          // Gate round 4 fix (M2): save position on settle too, like `onInterrupted` below --
-          // previously a jump that settled on its own left the scroll-memory store stale.
-          useChatScrollStore.getState().record(sessionId, { atEnd: landedAtEnd, scrollTop: viewport.scrollTop })
-          setAutoScrollSuppressed(!landedAtEnd)
-          setIsAtEnd(landedAtEnd)
-        },
-        onInterrupted: (atEnd) => {
-          useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-          landingInProgressRef.current = false
-          setAutoScrollSuppressed(!atEnd)
-          setIsAtEnd(atEnd)
-        },
-        // Gate round 4 fix (M1, falsified live): previously `shouldAbort` stopped the loop
-        // silently, stuck `landingInProgressRef`/`autoScrollSuppressed` dead. Re-measures fresh
-        // and releases this jump's claim, guarded by the token in case a newer one took over.
-        onAborted: () => {
-          if (jumpTokenRef.current !== myToken) return
-          landingInProgressRef.current = false
-          const atEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight })
-          setAutoScrollSuppressed(!atEnd)
-          setIsAtEnd(atEnd)
-        }
-      })
-      jumpCancelRef.current = cancel
+      startRowJumpLoop({ sessionId, root, viewport, row, control: jumpControl })
     },
     [sessionId]
   )
@@ -754,6 +720,15 @@ export function Transcript({
     <JumpToStageContext.Provider value={jumpToStageRow}>
     <LinkContext.Provider value={sessionId}>
     <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
+      <ChatNavBridge
+        sessionId={sessionId}
+        items={items}
+        hiddenTurnCount={hiddenCount}
+        viewportRef={viewportRef}
+        scrollerRootRef={scrollerRootRef}
+        control={jumpControl}
+        revealEarlier={revealEarlierForJump}
+      />
       <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
         <MessageScrollerViewport
           ref={viewportRef}
@@ -774,7 +749,7 @@ export function Transcript({
           <MessageScrollerContent
             ref={contentRef}
             data-text-role="chat"
-            className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16')}
+            className={cn('w-full px-4 pe-16 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 pe-16 @min-[40rem]:px-10 @min-[40rem]:pe-16 @min-[48rem]:px-14 @min-[48rem]:pe-16 @min-[64rem]:px-16')}
             // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default (an
             // implicit polite live region; its ARIA default is `aria-relevant="additions text"`, not
             // merely "additions") -- `off` for the one frame window `handleLoadEarlier`'s reveal
@@ -964,6 +939,7 @@ export function Transcript({
         <span role="status" aria-live="polite" className="sr-only">
           {stageAnnouncement}
         </span>
+        <ChatNavOverlays sessionId={sessionId} />
         <Button
           ref={buttonRef}
           type="button"
@@ -973,13 +949,14 @@ export function Transcript({
           inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
-            "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-surface-1 text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
+            FLOATING_ICON_BUTTON_CLASS,
+            "absolute inset-e-6 bottom-4 transition-[translate,scale,opacity] duration-200",
             isAtEnd
               ? "pointer-events-none translate-y-full scale-95 opacity-0 duration-400 ease-[cubic-bezier(0.7,0,0.84,0)]"
               : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"
           )}
         >
-          <ArrowDownIcon />
+          <ArrowDownToLineIcon />
           <span className="sr-only">Scroll to end</span>
         </Button>
       </MessageScroller>

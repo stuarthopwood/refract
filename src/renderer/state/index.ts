@@ -32,6 +32,7 @@ import { useChatWidthStore } from './chat-width-store'
 import { useStageToggleStore } from './stage-toggle-store'
 import { useTodoPinStore } from './todo-pin-store'
 import { useUpdateStore } from './update-store'
+import { EMPTY_CHAT_NAV, useChatNavStore } from './chat-nav-store'
 
 export { initStores }
 export { dismissSlashCommandRefusalToast, notify }
@@ -70,6 +71,8 @@ export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-w
 export { useUpdateStore }
 export { useStageToggleStore }
 export { useTodoPinStore }
+export { EMPTY_CHAT_NAV, useChatNavStore }
+export type { ScrollBridge, ScrollBridgeJumpOptions, ScrollView, ChatNavEntry } from './chat-nav-store'
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {

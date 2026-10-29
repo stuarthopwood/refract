@@ -41,6 +41,8 @@ export function ChatDisplaySection() {
   const setWordPredictionEnabled = useSettingsStore((state) => state.setWordPredictionEnabled)
   const codeLigatures = useSettingsStore((state) => state.settings.codeLigatures !== false)
   const setCodeLigatures = useSettingsStore((state) => state.setCodeLigatures)
+  const showScrollbarMap = useSettingsStore((state) => state.settings.showScrollbarMap !== false)
+  const setShowScrollbarMap = useSettingsStore((state) => state.setShowScrollbarMap)
 
   return (
     <SettingsPage
@@ -90,6 +92,14 @@ export function ChatDisplaySection() {
           description="Join characters such as => and != into single glyphs in code, diffs and the message box."
           checked={codeLigatures}
           onCheckedChange={(checked) => void setCodeLigatures(checked)}
+        />
+        {/* Issue #754 (spec 041): on by default. */}
+        <SettingSwitchRow
+          id="show-scrollbar-map"
+          label="Show scrollbar map"
+          description="A strip beside the transcript's scrollbar with a mark for each of your messages and the agent's replies. Click or drag it to move around a long chat."
+          checked={showScrollbarMap}
+          onCheckedChange={(checked) => void setShowScrollbarMap(checked)}
         />
       </SettingsGroup>
       <SettingsGroup title="Message box">

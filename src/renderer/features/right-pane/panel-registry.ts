@@ -1,4 +1,4 @@
-import { BotIcon, FolderTreeIcon, GitBranchIcon, HammerIcon, LibraryIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, FolderTreeIcon, GitBranchIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
 
 // Spec 013 (data-model.md `HostedPanelDescriptor`/`PanelId`): the single source of which right
@@ -9,7 +9,7 @@ import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/stat
 // no content behind it. `side-chat` (spec 014 T005) and `file-explorer` (spec 015 T006) each add
 // a tenant the same way, no change to the rail/tab-bar/launcher rendering logic itself
 // (research.md decision 4, spec 014; decision 9, spec 015).
-export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes'
+export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline'
 
 export interface HostedPanelDescriptor {
   id: PanelId
@@ -40,7 +40,10 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   // count is asked for by either issue.
   { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false },
   { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false },
-  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false }
+  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false },
+  // Spec 041 (#752): last by default; a saved order keeps its own arrangement and
+  // `mergePanelOrder` slots this one in after the nearest earlier default panel.
+  { id: 'outline', name: 'Outline', icon: ListTreeIcon, hasCount: false }
 ]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {

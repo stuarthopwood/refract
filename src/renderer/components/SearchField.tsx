@@ -24,6 +24,13 @@ export interface SearchFieldProps {
   /** Which side the clear button's tooltip opens on; a narrow host (the 220px-minimum session
    *  list) needs `"right"` so the tooltip clears its own neighbours. */
   tooltipSide?: 'top' | 'right' | 'bottom' | 'left'
+  /** Overrides what the clear button is called (accessible name and tooltip); default "Clear filter". */
+  clearLabel?: string
+  /** Replaces Esc-clears: when given, Esc anywhere in the field calls this instead (a find bar
+   *  that closes on Esc, say), and the Esc hints are not shown. */
+  onEscape?(): void
+  /** Called on Enter in the input (not while composing text), with whether Shift was held. */
+  onSubmit?(shift: boolean): void
   /** Applied to the field's own wrapper, never the `<input>` directly -- a caller that needs a
    *  landmark role or a width override wraps or classes this component from outside instead of
    *  it owning one itself (#559 decision 3: the `role="search"` region lives at the call site,
@@ -48,7 +55,19 @@ export interface SearchFieldProps {
   }
 }
 
-export function SearchField({ value, onValueChange, label, placeholder, tooltipSide = 'top', className, inputRef, inputProps }: SearchFieldProps) {
+export function SearchField({
+  value,
+  onValueChange,
+  label,
+  placeholder,
+  tooltipSide = 'top',
+  clearLabel = 'Clear filter',
+  onEscape,
+  onSubmit,
+  className,
+  inputRef,
+  inputProps
+}: SearchFieldProps) {
   const localRef = useRef<HTMLInputElement>(null)
   const resolvedRef = inputRef ?? localRef
   const hasValue = value !== ''
@@ -66,7 +85,20 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
   // only ever saw keydowns that landed directly on the input itself); a keydown on either child
   // element bubbles to this div, so Esc now clears from both.
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    if (event.key !== 'Escape' || !hasValue || event.nativeEvent.isComposing) return
+    if (event.nativeEvent.isComposing) return
+    if (event.key === 'Enter' && onSubmit && event.target instanceof HTMLInputElement) {
+      event.preventDefault()
+      onSubmit(event.shiftKey)
+      return
+    }
+    if (event.key !== 'Escape') return
+    if (onEscape) {
+      event.preventDefault()
+      event.stopPropagation()
+      onEscape()
+      return
+    }
+    if (!hasValue) return
     event.preventDefault()
     event.stopPropagation()
     clear()
@@ -85,7 +117,7 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
         onChange={(event) => onValueChange(event.target.value)}
         placeholder={placeholder}
         aria-label={label}
-        aria-describedby={hasValue ? clearHintId : undefined}
+        aria-describedby={hasValue && !onEscape ? clearHintId : undefined}
         // Issue #559 decision 28 (gate round 3 correction, ui-visual-system-v3 Medium): `Input`'s
         // own default fill (`bg-transparent dark:bg-input/30`) is kept -- an earlier "fix" here
         // forced it opaque based on a wrong contrast reading. `--input` is ITSELF translucent
@@ -101,7 +133,7 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
         className="h-8 pl-8 pr-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
         {...inputProps}
       />
-      {hasValue && (
+      {hasValue && !onEscape && (
         <span id={clearHintId} className="sr-only">
           Press Escape to clear
         </span>
@@ -113,7 +145,7 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
               type="button"
               variant="ghost"
               size="icon-xs"
-              aria-label="Clear filter"
+              aria-label={clearLabel}
               // Gate-fix precedent (GroupHeader.tsx's own `describedByPath`): an explicit
               // `undefined` here wins over Radix's own injected `aria-describedby` (the Slot
               // merge), so the Tooltip's text is never read twice over for this button.
@@ -138,10 +170,12 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
           </TooltipTrigger>
           <TooltipContent side={tooltipSide}>
             <span className="inline-flex items-center gap-2">
-              Clear filter
-              <KbdGroup>
-                <Kbd>Esc</Kbd>
-              </KbdGroup>
+              {clearLabel}
+              {!onEscape && (
+                <KbdGroup>
+                  <Kbd>Esc</Kbd>
+                </KbdGroup>
+              )}
             </span>
           </TooltipContent>
         </Tooltip>

@@ -1,6 +1,5 @@
 // Contract for the renderer-to-main typed IPC, per
-// specs/001-core-session-workspace/contracts/ipc.md. Imported by main, preload, and
-// renderer; this is the only file that may cross that boundary (constitution V).
+// specs/001-core-session-workspace/contracts/ipc.md. Imported by main, preload, and renderer; this is the only file that may cross that boundary (constitution V).
 
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
 import type { LowMemoryWarning } from './lowMemoryWarning';
@@ -405,6 +404,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_AI_CREDITS: 'settings.setShowAiCredits',
   SETTINGS_SET_ANIMATED_STATUS_TEXT: 'settings.setAnimatedStatusText',
   SETTINGS_SET_CODE_LIGATURES: 'settings.setCodeLigatures',
+  SETTINGS_SET_SHOW_SCROLLBAR_MAP: 'settings.setShowScrollbarMap',
   SETTINGS_SET_TYPOGRAPHY: 'settings.setTypography',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
@@ -695,7 +695,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
-    setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; // Issue #1246
+    setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; setShowScrollbarMap(enabled: boolean): Promise<Result<Settings>>; // Issue #1246; #754 (spec 041) scrollbar map switch
     setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
     setStatusStyle(value: StatusStyle): Promise<Result<Settings>>; setActivityText(value: ActivityText): Promise<Result<Settings>>; // #482 setStatusStyle (Appearance Status style, applies live). #526 (FR-111): same pattern as setHolidayTouches; applies live.

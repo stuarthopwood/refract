@@ -8,7 +8,7 @@ import {
 import { cn } from "@/lib/utils"
 
 import { Button } from "@/components/ui/button"
-import { ArrowDownIcon } from "lucide-react"
+import { ArrowDownToLineIcon } from "lucide-react"
 
 function MessageScrollerProvider(
   props: React.ComponentProps<typeof MessageScrollerPrimitive.Provider>
@@ -85,6 +85,9 @@ function MessageScrollerItem({
   )
 }
 
+/** The sanctioned look for icon buttons floating over the transcript: Previous, Next and Scroll to end. */
+const FLOATING_ICON_BUTTON_CLASS = "border-border bg-surface-1 text-foreground hover:bg-muted hover:text-foreground"
+
 function MessageScrollerButton({
   direction = "end",
   className,
@@ -111,7 +114,7 @@ function MessageScrollerButton({
     >
       {children ?? (
         <>
-          <ArrowDownIcon
+          <ArrowDownToLineIcon
           />
           <span className="sr-only">
             {direction === "end" ? "Scroll to end" : "Scroll to start"}
@@ -123,6 +126,7 @@ function MessageScrollerButton({
 }
 
 export {
+  FLOATING_ICON_BUTTON_CLASS,
   MessageScrollerProvider,
   MessageScroller,
   MessageScrollerViewport,
