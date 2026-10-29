@@ -140,10 +140,10 @@ pub use typography::Typography;
 #[path = "transcript_display.rs"]
 mod transcript_display;
 pub use transcript_display::TranscriptDisplaySettings;
-#[path = "settings_setters.rs"]
-mod settings_setters;
 #[path = "right_pane.rs"]
 pub(crate) mod right_pane;
+#[path = "settings_setters.rs"]
+mod settings_setters;
 use right_pane::RightPaneState;
 
 pub struct SettingsStore {

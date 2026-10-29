@@ -482,7 +482,7 @@ pub fn is_chat_answer(value: &Value) -> bool {
         return false;
     };
     (matches!(obj.get("approve"), Some(Value::Bool(_)))
-        && obj.get("option").map_or(true, Value::is_string))
+        && obj.get("option").is_none_or(Value::is_string))
         || matches!(obj.get("value"), Some(Value::String(_)))
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
         || obj.get("cancelled") == Some(&Value::Bool(true))
