@@ -4,13 +4,10 @@
 // here, written back to the shared `view-store.ts` so the choice survives switching away and
 // back (research.md decision 7).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { PanelImperativeHandle } from 'react-resizable-panels'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { ListDetailSplit } from '@/components/ListDetailSplit'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX,
-  PULL_REQUESTS_LIST_MIN_WIDTH_PX,
   usePullRequestsLayoutStore,
   usePullRequestsStore,
   useRepositoriesStore,
@@ -26,47 +23,8 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const repositoryId = viewRepositoryId ?? repositories[0]?.id ?? null
   const selectedNumber = usePullRequestsStore((s) => s.stateFor(repositoryId ?? '').selectedNumber)
   const headingRef = useRef<HTMLHeadingElement>(null)
-  // #930 (bug caught by the live-check driver, first real build of this story): `defaultSize`
-  // is ALSO `react-resizable-panels`' own double-click-reset target (`onDocumentDoubleClick`
-  // reads `itemWithDefaultSize.constraintProps.defaultSize` live, from whatever this Panel's own
-  // `defaultSize` prop currently evaluates to) -- binding it to the layout store's reactively-
-  // subscribed `widthPx` meant every drag's own `onResize` -> `setWidth` -> re-render cycle silently
-  // moved the "reset to" target to wherever the panel already was, making double-click reset a
-  // no-op. `defaultSize` below stays pinned at the true default; the panel's INITIAL render
-  // honours a remembered non-default width via one imperative `resize()` call instead (same
-  // `panelRef`/`useLayoutEffect` pattern `App.tsx`'s own `rightPaneRef` uses for its collapse/
-  // expand), applied once per mount via `hasAppliedInitialWidth`, never on every Project switch.
-  // Gate-fix (relaunch-restore race, caught via code review of the #930 onResize-persists
-  // redesign): `useRef`'s own initial-value argument is evaluated on every render but only ever
-  // KEPT from this component's FIRST render -- which happens strictly BEFORE any layout effect
-  // (child or parent) can fire. Reading the store FRESH, inside the effect below, would race the
-  // `ResizablePanel`'s own child layout effect, which reports its very first `onResize` using
-  // its hardcoded `defaultSize` (320) before this parent effect ever runs (children's layout
-  // effects run before their parent's) -- now that `setWidth` persists unconditionally, that
-  // premature `onResize(320)` would both clobber the live `widthPx` back to the default AND
-  // schedule a write of 320, so this effect's own `!== DEFAULT` check would then (wrongly) see
-  // the already-clobbered 320 and skip calling `resize()` at all, permanently erasing whatever
-  // non-default width the user actually had saved, on every single relaunch. Capturing the
-  // value here instead reads it before that race can ever begin.
-  const initialWidthPxRef = useRef(usePullRequestsLayoutStore.getState().widthPx)
-  const panelRef = useRef<PanelImperativeHandle>(null)
-  const hasAppliedInitialWidth = useRef(false)
-  useLayoutEffect(() => {
-    if (!repositoryId) {
-      // Gate-fix (L1, caught live 2026-10-18): used to return here with no reset, so if every
-      // Project were removed and a new one added later, `hasAppliedInitialWidth.current` was
-      // already (permanently) `true` from the very first mount and the remembered width was
-      // never re-applied to the newly-added Project's own panel.
-      hasAppliedInitialWidth.current = false
-      return
-    }
-    if (hasAppliedInitialWidth.current) return
-    hasAppliedInitialWidth.current = true
-    const persistedWidthPx = initialWidthPxRef.current
-    if (persistedWidthPx !== PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) {
-      panelRef.current?.resize(persistedWidthPx)
-    }
-  }, [repositoryId])
+  // The split itself (resizable list column, remembered width, max-size clamp) is the shared
+  // `ListDetailSplit`; this view only measures the panel so its header tracks the list column.
 
   // Issue #930 gate-fix (caught live 2026-10-17, round 2): the heading row's own wrapper used to
   // track the layout store's `widthPx` (an integer read off `react-resizable-panels`' own
@@ -89,22 +47,8 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const [listColumnWidthPx, setListColumnWidthPx] = useState(
     () => usePullRequestsLayoutStore.getState().widthPx
   )
-  // Gate-fix (M6, caught live 2026-10-18, re-diagnosed): a STATIC `maxSize="50%"` and a STATIC
-  // `minSize={280}` (pixels) are a straight-up numeric conflict whenever the Group's own width
-  // drops below 560px (2 x 280) -- read `react-resizable-panels`' own per-item clamp (`Me` in
-  // the built dist): it clamps UP to `minSize` first, but then runs an UNCONDITIONAL
-  // `Math.min(maxSize, size)` afterward, so `maxSize` always wins a genuine conflict, for every
-  // trigger (passive container resize, drag, arrow-key, and this component's own prior
-  // imperative `panelRef.current?.resize(280)` attempt -- confirmed live: that call went
-  // through the exact same clamp and landed back at `maxSize`'s resolved pixel value every
-  // time, a no-op that also corrupted the panel's internally-stored percentage for whatever
-  // width was current at the time, surfacing later as a stuck/wrong width once the real window
-  // was restored). The only way to make the 280px floor actually win is to never let the two
-  // constraints conflict in the first place: compute `maxSize` as a live percentage of the
-  // Group's OWN measured width, floored so it can never resolve below the 280px minimum.
-  // `Panel`'s own `useLayoutEffect` re-registers (and the library recomputes) whenever its
-  // `maxSize` prop changes, so this needs no imperative nudge of its own.
-  const [listMaxSizePercent, setListMaxSizePercent] = useState(50)
+  // The max-size clamp (a live percentage of the group, floored at the minimum width) lives in
+  // `ListDetailSplit`.
   useLayoutEffect(() => {
     const panelEl = panelElementRef.current
     const wrapperEl = headerWrapperRef.current
@@ -114,11 +58,6 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
       const panelRect = panelEl.getBoundingClientRect()
       const wrapperLeft = wrapperEl.getBoundingClientRect().left
       setListColumnWidthPx(panelRect.right - wrapperLeft)
-      const groupWidth = groupEl.getBoundingClientRect().width
-      if (groupWidth > 0) {
-        const minPercentForFloor = (PULL_REQUESTS_LIST_MIN_WIDTH_PX / groupWidth) * 100
-        setListMaxSizePercent(Math.max(50, minPercentForFloor))
-      }
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -230,71 +169,22 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           Add a repository to browse its pull requests.
         </div>
       ) : (
-        <ResizablePanelGroup
-          elementRef={groupElementRef}
-          orientation="horizontal"
-          className="min-h-0 flex-1"
-        >
-          {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered
-              320px, one width for every Project. Native to `react-resizable-panels` 4.14.1:
-              `defaultSize`/`minSize` as plain numbers are pixels, `maxSize` as a percentage
-              string is relative to the Group's own measured width -- no manual px/percent
-              conversion needed. Double-click-to-reset and arrow-key resize on the handle are
-              both this library's own built-in `Separator` behaviour (`disableDoubleClick`
-              defaults to `false`; keyboard handling needs no code here -- `App.tsx`'s own
-              comment records how wrapping the Separator once broke it by accident).
-              `defaultSize` is pinned at the fixed default (not the live `widthPx` state) so
-              double-click-reset keeps resetting to 320px even after a drag; the `panelRef`
-              effect above applies a remembered non-default width once, imperatively.
-              `maxSize` is `listMaxSizePercent`, not a static "50%" -- see the M6 gate-fix
-              comment above the measuring effect for why a static percentage genuinely
-              conflicts with the 280px floor below a 560px Group width. */}
-          {/* Gate-fix (final root cause, caught live via tagged call-site instrumentation):
-              three prior rounds (M3's coordinate-proximity check, round 4's capture-phase
-              before/after width snap, `onLayoutChanged`'s own `isUserInteraction` gate) all
-              tried to detect "was this interaction ours" from DOM/event signals that turned out
-              unreliable -- `onDoubleClickCapture` always observed the library's OWN capture-
-              phase reset having ALREADY applied (it runs on `document`, ahead of any React
-              component handler, so `before` and `after` were both already ~the default,
-              permanently defeating the snap-to-default gate: confirmed live, zero
-              `resetToDefault` calls fired in an entire run) and `onLayoutChanged`'s own
-              `isUserInteraction` flag was confirmed live to fire true for some genuine resets
-              on THIS group and not others, for the identical interaction. `onResize`
-              (`PanelSize.inPixels`), by contrast, fired RELIABLY and ACCURATELY for every single
-              case observed live -- a drag, an arrow-key resize, the library's own internal
-              double-click reset, AND a passive reflow cascading down from the OUTER session-
-              list handle's own resize (confirmed: that cascade's real pixel width showed up
-              here, correctly, on every occurrence) -- it is the one source of truth for "what is
-              this panel's real width right now", for ANY reason it changed. `setWidth` itself
-              now owns persisting it (debounced ~300ms, `pull-requests-layout-store.ts`), so the
-              persisted value can never go stale behind a sibling's own resize again; a drag's
-              many intermediate `onResize` ticks still coalesce to one write via that same
-              debounce, exactly as the removed `onLayoutChanged`-gated `commit()` did. */}
-          <ResizablePanel
-            id="pull-requests-list"
-            panelRef={panelRef}
-            elementRef={panelElementRef}
-            defaultSize={PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX}
-            minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
-            maxSize={`${listMaxSizePercent}%`}
-            className="overflow-hidden"
-            onResize={(size) => usePullRequestsLayoutStore.getState().setWidth(size.inPixels)}
-          >
-            <PullRequestList repositoryId={repositoryId} />
-          </ResizablePanel>
-          <ResizableHandle withHandle aria-label="Resize pull request list" />
-          <ResizablePanel id="pull-requests-detail">
-            <div className="h-full min-w-0 overflow-hidden">
-              {selectedNumber !== null ? (
-                <PullRequestDetail key={`${repositoryId}#${selectedNumber}`} repositoryId={repositoryId} number={selectedNumber} />
-              ) : (
-                <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-                  Select a pull request to view its details.
-                </div>
-              )}
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        <ListDetailSplit
+          idPrefix="pull-requests"
+          resizeLabel="Resize pull request list"
+          panelElementRef={panelElementRef}
+          groupElementRef={groupElementRef}
+          list={<PullRequestList repositoryId={repositoryId} />}
+          detail={
+            selectedNumber !== null ? (
+              <PullRequestDetail key={`${repositoryId}#${selectedNumber}`} repositoryId={repositoryId} number={selectedNumber} />
+            ) : (
+              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+                Select a pull request to view its details.
+              </div>
+            )
+          }
+        />
       )}
     </div>
   )

@@ -18,6 +18,7 @@ pub mod cli;
 pub mod copilot_plan;
 pub mod gh;
 pub mod gh_close;
+pub mod gh_issue_list;
 pub mod gh_issues;
 pub mod gh_mutations;
 pub mod gh_pull_requests;

@@ -7,7 +7,7 @@ import { create } from 'zustand'
 // `settingsSection`, `manageSessionsFilters`) each screen needs to survive being unmounted and
 // remounted when `view` changes (App.tsx swaps the whole main area on it).
 
-export type MainView = 'chat' | 'pull-requests' | 'settings' | 'manage-sessions'
+export type MainView = 'chat' | 'pull-requests' | 'issues' | 'settings' | 'manage-sessions'
 export const SETTINGS_SECTION_IDS = ['appearance', 'chat', 'status-line', 'models', 'advanced', 'sessions', 'panels'] as const
 export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number]
 
@@ -43,6 +43,7 @@ interface ViewState {
   manageSessionsFilters: SessionFilters
   openChat(repositoryId?: string): void
   openPullRequests(repositoryId: string): void
+  openIssues(): void
   openSettings(section?: SettingsSectionId): void
   openManageSessions(): void
   setManageSessionsFilters(filters: SessionFilters): void
@@ -57,6 +58,7 @@ export const useViewStore = create<ViewState>((set) => ({
   manageSessionsFilters: DEFAULT_FILTERS,
   openChat: (repositoryId) => set((state) => ({ view: 'chat', repositoryId: repositoryId ?? state.repositoryId })),
   openPullRequests: (repositoryId) => set({ view: 'pull-requests', repositoryId }),
+  openIssues: () => set({ view: 'issues' }),
   openSettings: (section) =>
     set({
       view: 'settings',

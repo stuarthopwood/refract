@@ -1,19 +1,17 @@
 import { useEffect, useId, useRef } from 'react'
-import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, GitPullRequestIcon, SearchXIcon } from 'lucide-react'
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, SearchXIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
-import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
-import { useDefaultRepositoryId } from '@/lib/defaultRepository'
-import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { SearchField } from '@/components/SearchField'
+import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
+import { GitHubNavGroup } from './GitHubNavGroup'
 import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
-import { useAccountsStore, useHolidayStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore, useViewStore } from '@/state'
+import { useHolidayStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 import { ShowHiddenToggle } from './ShowHiddenToggle'
@@ -31,9 +29,6 @@ import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
 export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
-  const openPullRequests = useViewStore((state) => state.openPullRequests)
-  const view = useViewStore((state) => state.view)
-  const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
   // Issue #1048 (Holiday touches): the sidebar accessory beside the "Refract" wordmark below.
   const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
   const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
@@ -175,41 +170,6 @@ export function SessionList() {
   // `origin/main`) instead of a local region here, so they survive the view swapping to
   // Settings or Manage sessions during the multi-second checkout (gate round 2, a11y High) --
   // no `onAnnounce` prop or local live region needed in this file any more.
-  // specs/003-pull-request-management FR-001, T011: the left-nav entry has no row of its own to
-  // scope a repository from, unlike a Session row -- defaults to the currently focused pane's
-  // Session's repository (App.tsx's own `frontSessionId` derivation), falling back to the first
-  // added repository. `PullRequestsView.tsx`'s own repository dropdown (T012) is where the
-  // developer changes this afterward. Issue #569: pulled into a shared, reactive
-  // `useDefaultRepositoryId()` (`@/lib/defaultRepository`) so the trailing active-count readout
-  // below can react to a real repository change, not just whatever re-render this component sees.
-  const defaultRepositoryId = useDefaultRepositoryId()
-  // Issue #569 decisions 1, 3, 4: the sidebar count. `null` covers "never fetched", "zero", and
-  // "unavailable" alike -- all three render as nothing (decision 4), and `activeCountLabel` below
-  // is the one place that distinction actually matters.
-  const githubStatus = useAccountsStore((state) => state.githubStatus)
-  const activeCount = usePullRequestsStore((state) =>
-    defaultRepositoryId ? state.activeCountFor(defaultRepositoryId).count : null
-  )
-  const activeCountLabel =
-    githubStatus === 'ready' && activeCount !== null && activeCount > 0 ? (activeCount >= 30 ? '30+' : String(activeCount)) : null
-  // Issue #569 decision 2(a)/(b): fetches once per default repository that has no cached count
-  // yet (covers both app startup and a genuine default-repository change) -- never on a timer.
-  // The window focus/visibility refresh, the active-account-change clear, and the pull request
-  // list's own explicit Refresh button all live in `init-stores.ts` / `PullRequestList.tsx`, not
-  // here, and all skip while signed out of GitHub (`githubStatus !== 'ready'`).
-  useEffect(() => {
-    if (!defaultRepositoryId) return
-    if (githubStatus !== 'ready') return
-    if (usePullRequestsStore.getState().activeCountByRepository[defaultRepositoryId]) return
-    void usePullRequestsStore.getState().refreshActiveCount(defaultRepositoryId)
-  }, [defaultRepositoryId, githubStatus])
-
-  function handleOpenPullRequests(): void {
-    if (!defaultRepositoryId) return
-    selectPullRequest(defaultRepositoryId, null)
-    openPullRequests(defaultRepositoryId)
-  }
-
   return (
     <nav
       aria-label="Sessions"
@@ -228,41 +188,7 @@ export function SessionList() {
             `aria-hidden`, the "Refract" accessible name above is unchanged either way. */}
         {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-4 shrink-0 text-muted-foreground" />}
       </div>
-      {/* specs/003-pull-request-management FR-001, T011: above the repository groups, Stuart's
-          placement answer (spec 003 Clarifications). `aria-current` gives the selected state a
-          visible AND accessible signal while the view is open, never colour alone (FR-030). */}
-      <Button
-        variant="ghost"
-        aria-current={view === 'pull-requests' ? 'page' : undefined}
-        // Issue #1122: `data-choice-item` joins this nav entry to the shared square-choice
-        // selector (globals.css) -- the unlayered rule there overrides the Button base's own
-        // `rounded-lg` regardless of source order (same pattern `RequestCard.tsx` already uses).
-        data-choice-item
-        // `Button`'s base `outline-none` shows no focus change under forced colours (which strips
-        // its box-shadow ring), so the forced-colors outline classes draw a real one there.
-        className={cn(
-          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
-          'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
-          view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
-        )}
-        aria-label={activeCountLabel ? `Pull requests, ${activeCountLabel} active` : 'Pull requests'}
-        onClick={handleOpenPullRequests}
-      >
-        {/* #567 decision 18, superseded by issue #1122: the shared `ActiveIndicatorBar` --
-            square, flush full-height, 2px -- not this nav entry's own hand-copied span. */}
-        {view === 'pull-requests' && <ActiveIndicatorBar />}
-        <GitPullRequestIcon aria-hidden className="size-4" />
-        <span className="min-w-0 truncate">Pull requests</span>
-        {/* Issue #569 decisions 3-4: a plain trailing count, never a box or `(N)` brackets
-            (`GroupHeader.tsx`'s own "Archived" count convention) -- rendered only when a
-            positive count is known; folded into the button's own `aria-label` above rather than
-            a second announced region. */}
-        {activeCountLabel && (
-          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
-            {activeCountLabel} active
-          </span>
-        )}
-      </Button>
+      <GitHubNavGroup />
       {restored && (
         <>
           {/* #735 decision 26 reserved this slot: between Pull requests and the toolbar. The

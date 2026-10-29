@@ -17,9 +17,11 @@ export interface ScreenHeaderProps {
   count?: string
   /** Right-aligned actions. */
   children?: ReactNode
+  /** Reserves the native window-controls overlay width at the right end (the screen spans the title bar). */
+  reservesWindowControls?: boolean
 }
 
-export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children }: ScreenHeaderProps) {
+export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children, reservesWindowControls = false }: ScreenHeaderProps) {
   return (
     <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
       <Tooltip>
@@ -35,6 +37,13 @@ export function ScreenHeader({ title, headingRef, backLabel, onBack, count, chil
       </h1>
       {count && <span className="truncate text-xs text-muted-foreground">{count}</span>}
       {children && <div className="no-drag-region ml-auto flex items-center gap-2">{children}</div>}
+      {reservesWindowControls && (
+        <div
+          aria-hidden
+          className={`no-drag-region shrink-0${children ? '' : ' ml-auto'}`}
+          style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }}
+        />
+      )}
     </div>
   )
 }
