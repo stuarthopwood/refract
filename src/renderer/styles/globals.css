@@ -2082,11 +2082,21 @@ samp {
 
 /* Issue #1242 (spec 004 FR-042): the one shared status-text shimmer (#1210 reuses it). A band
  * brighter than the text sweeps across a gradient clipped to the glyphs; the base stops are the
- * plain base colour (`--shimmer-base`, default `--accent-text`; `ShimmerText`'s `tone` sets it), so the text never drops below that colour's own contrast, and the
+ * plain base colour (`--shimmer-base`, default the row's own text colour via `.text-shimmer-host`; `ShimmerText`'s `tone` sets it), so the text never drops below that colour's own contrast, and the
  * band is lighter/darker toward `--foreground`, never lower contrast. `background-position` is
  * paint-only on one short line (no layout), the one exception to "opacity and transform only"
  * (foundations-motion.md). `ShimmerText` drops the class while the window is hidden or the
  * Settings switch is off; reduced motion and forced colours show the plain colour. */
+/* `--shimmer-host-color` is registered as a <color> so `currentColor` resolves on the wrapper
+ * (`.text-shimmer-host`, the row's own text colour) rather than on the transparent shimmer span. */
+@property --shimmer-host-color {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+.text-shimmer-host {
+  --shimmer-host-color: currentColor;
+}
 @keyframes text-shimmer-sweep {
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }
@@ -2095,9 +2105,9 @@ samp {
   color: transparent;
   background-image: linear-gradient(
     100deg,
-    var(--shimmer-base, var(--accent-text)) 0 40%,
-    color-mix(in oklab, var(--shimmer-base, var(--accent-text)) 45%, var(--foreground)) 50%,
-    var(--shimmer-base, var(--accent-text)) 60% 100%
+    var(--shimmer-base, var(--shimmer-host-color)) 0 40%,
+    color-mix(in oklab, var(--shimmer-base, var(--shimmer-host-color)) 45%, var(--foreground)) 50%,
+    var(--shimmer-base, var(--shimmer-host-color)) 60% 100%
   );
   background-size: 250% 100%;
   -webkit-background-clip: text;

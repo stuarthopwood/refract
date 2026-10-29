@@ -18,6 +18,8 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        focused:
+          "h-auto border-active-indicator bg-focused-badge-bg py-1 font-medium text-active-indicator-foreground",
       },
     },
     defaultVariants: {

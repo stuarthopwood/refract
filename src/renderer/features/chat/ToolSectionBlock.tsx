@@ -21,14 +21,14 @@ const OUTPUT_LINE_CAP = 200
 // A value capped at `OUTPUT_LINE_CAP` visible lines with its own "Show all" opt-in (T083, WCAG
 // 1.4.10, kept from `ToolCallBody`'s pre-#628 Output/write-content blocks); Copy always copies
 // the full, untruncated text regardless of how much is currently visible (#524).
-export function CappedCodeBlock({ code, lang }: { code: string; lang: string | null }) {
+export function CappedCodeBlock({ code, lang, hideCopy = false }: { code: string; lang: string | null; hideCopy?: boolean }) {
   const [showAll, setShowAll] = React.useState(false)
   const lines = React.useMemo(() => code.split('\n'), [code])
   const truncated = !showAll && lines.length > OUTPUT_LINE_CAP
   const visible = truncated ? lines.slice(0, OUTPUT_LINE_CAP).join('\n') : code
   return (
     <div>
-      <CodeBlock code={visible} lang={lang} copyText={code} wrap={lang === null} />
+      <CodeBlock code={visible} lang={lang} copyText={code} wrap={lang === null} hideCopy={hideCopy} />
       {truncated && (
         <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAll(true)}>
           Show all ({lines.length} lines)
@@ -38,52 +38,74 @@ export function CappedCodeBlock({ code, lang }: { code: string; lang: string | n
   )
 }
 
+function isSectionView(value: string): value is SectionView {
+  return value === 'rendered' || value === 'source'
+}
+
+// One Copy control per section, in the header, in both views; it always copies the source text,
+// and the code block's own Copy is suppressed so it never duplicates this one.
+function SectionHeader({ section, children }: { section: Section; children?: React.ReactNode }) {
+  return (
+    <div className="mb-1 flex items-center justify-between gap-2">
+      <span className="text-xs text-muted-foreground">{section.label}</span>
+      <div className="flex items-center gap-1">
+        {section.code !== '' && (
+          <CopyButton getText={() => section.code} label={`Copy ${section.label}`} announcement="Copied" />
+        )}
+        {children}
+      </div>
+    </div>
+  )
+}
+
 // Plain-text sections (no highlight language) get a Rendered/Source toggle (#719). Rendered goes
-// through the sanitising `Markdown` (no `resolveImage`, so images are never fetched or shown);
-// Copy always copies the source text in both views.
+// through the sanitising `Markdown` (no `resolveImage`, so images are never fetched or shown).
+// A large value stays on Source until the user opts in with "Render anyway".
 function RenderableSection({ section }: { section: Section }) {
   const large = React.useMemo(() => isLargeValue(section.code), [section.code])
-  const [view, setView] = React.useState<SectionView>(large ? 'source' : section.defaultView)
+  const [view, setView] = React.useState<SectionView>(section.defaultView)
   const [renderAnyway, setRenderAnyway] = React.useState(false)
-  const showRendered = view === 'rendered'
-  const blocked = showRendered && large && !renderAnyway
+  const blocked = large && !renderAnyway
+  const effectiveView: SectionView = blocked ? 'source' : view
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">{section.label}</span>
-        <div className="flex items-center gap-1">
-          {showRendered && !blocked && (
-            <CopyButton getText={() => section.code} label={`Copy ${section.label} source`} announcement="Source copied" />
-          )}
-          <ToggleGroup
-            type="single"
-            value={view}
-            onValueChange={(value) => {
-              if (value) setView(value as SectionView)
+      <SectionHeader section={section}>
+        <ToggleGroup
+          type="single"
+          value={effectiveView}
+          onValueChange={(value) => {
+            if (isSectionView(value) && !blocked) setView(value)
+          }}
+          variant="outline"
+          size="sm"
+          spacing={0}
+          aria-label={`${section.label} view`}
+        >
+          <ToggleGroupItem value="rendered" className={SELECTED_SEGMENT_CLASS}>
+            Rendered
+          </ToggleGroupItem>
+          <ToggleGroupItem value="source" className={SELECTED_SEGMENT_CLASS}>
+            Source
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </SectionHeader>
+      {blocked && (
+        <p className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+          Too large to render.
+          <Button
+            variant="text"
+            size="xs"
+            onClick={() => {
+              setRenderAnyway(true)
+              setView('rendered')
             }}
-            variant="outline"
-            size="sm"
-            spacing={0}
-            aria-label={`${section.label} view`}
           >
-            <ToggleGroupItem value="rendered" className={SELECTED_SEGMENT_CLASS}>
-              Rendered
-            </ToggleGroupItem>
-            <ToggleGroupItem value="source" className={SELECTED_SEGMENT_CLASS}>
-              Source
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-      </div>
-      {!showRendered || blocked ? (
-        <>
-          <CappedCodeBlock code={section.code} lang={null} />
-          {blocked && (
-            <Button variant="outline" size="sm" className="mt-1" onClick={() => setRenderAnyway(true)}>
-              Render anyway
-            </Button>
-          )}
-        </>
+            Render anyway
+          </Button>
+        </p>
+      )}
+      {effectiveView === 'source' ? (
+        <CappedCodeBlock code={section.code} lang={null} hideCopy />
       ) : (
         <div className="overflow-x-auto rounded-md border border-border p-2">
           <Markdown text={section.code} id={`tool-dialog-${section.label}`} />
@@ -97,8 +119,9 @@ export function SectionBlock({ section }: { section: Section }) {
   if (section.lang === null) return <RenderableSection section={section} />
   return (
     <div>
-      <div className="mb-1 text-xs text-muted-foreground">{section.label}</div>
-      <CappedCodeBlock code={section.code} lang={section.lang} />
+      <SectionHeader section={section} />
+      <CappedCodeBlock code={section.code} lang={section.lang} hideCopy />
     </div>
   )
 }
+

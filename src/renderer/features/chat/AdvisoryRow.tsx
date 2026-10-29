@@ -81,7 +81,7 @@ function turnsAgoPhrase(turnsAgo: number): string {
 function buildTriggerLabel(item: AdvisoryItem): string {
   const preview = item.text.replace(/\s+/g, ' ').trim().slice(0, 120)
   const parts = [item.advisor ? `Advisor (${item.advisor})` : 'Advisor', item.severity, preview]
-  if (item.turnsAgo !== undefined) parts.push(turnsAgoPhrase(item.turnsAgo))
+  if (item.turnsAgo !== undefined) parts.push(`T-${item.turnsAgo}`, turnsAgoPhrase(item.turnsAgo))
   return parts.join(', ')
 }
 

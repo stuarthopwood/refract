@@ -17,6 +17,7 @@
 // code and has been removed.
 import { MessageSquareXIcon, SplitSquareHorizontalIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionsStore } from '@/state'
@@ -71,9 +72,7 @@ export function ChatHeader({
           // `--active-indicator-foreground` token (plain solid white in every theme). #684: the
           // fill is the `--focused-badge-bg` token (no opacity modifier on a token class); the
           // caller gates `focused` on `showSplit`.
-          <span className="shrink-0 rounded-md border border-active-indicator bg-focused-badge-bg px-2 py-1 text-xs font-medium text-active-indicator-foreground">
-            Focused
-          </span>
+          <Badge variant="focused">Focused</Badge>
         )}
       </div>
       <div className="no-drag-region flex shrink-0 items-center gap-2">

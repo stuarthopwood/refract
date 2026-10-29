@@ -394,7 +394,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         </p>
       )}
       <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>
-        {clampLines !== undefined ? <ClampedContent maxHeight={`${clampLines}lh`}>{children}</ClampedContent> : children}
+        {clampLines !== undefined ? <ClampedContent maxHeight={`${clampLines}lh`} fade>{children}</ClampedContent> : children}
       </CollapsibleContent>
     </Collapsible>
   )

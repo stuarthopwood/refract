@@ -855,7 +855,7 @@ export function Transcript({
                 // `streaming` flag can cover both at once (its tool calls can already be `running`
                 // while it still reads `streaming: true`), and the promoted row is the more specific
                 // of the two signals, so one announcement is enough.
-                const shimmerRowId = isActiveTurn ? newestRunningRowId(rows.map(([row]) => row)) : undefined
+                const shimmerRowId = isActiveTurn ? newestRunningRowId(rows.filter(([, visibility]) => visibility === 'visible').map(([row]) => row)) : undefined
                 const announceThinking =
                   !transcriptDisplay.thinking &&
                   turn.items.some((item) => item.kind === 'thinking' && item.streaming) &&

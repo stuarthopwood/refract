@@ -2,7 +2,9 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { disclosureToggleClassName } from '@/features/chat/linkStyles'
 
-const FADE_HEIGHT_PX = 24 // h-6, the bottom fade overlay's own height
+const FADE_HEIGHT_PX = 24 // h-6, the bottom fade's own height
+// A mask on the body (not a background-coloured overlay) so the fade works on any surface tint.
+const FADE_MASK = `linear-gradient(to bottom, #000 calc(100% - ${FADE_HEIGHT_PX}px), transparent)`
 const FOCUSABLE_SELECTOR = 'a[href], button, [tabindex]'
 
 export interface ClampedContentProps {
@@ -125,16 +127,13 @@ export function ClampedContent({
         ref={bodyRef}
         id={bodyId}
         className={cn('relative -m-1 p-1', !expanded && 'overflow-hidden')}
-        style={expanded ? undefined : { maxHeight: `calc(${maxHeight} + 0.5rem)` }}
+        style={{
+          ...(expanded ? null : { maxHeight: `calc(${maxHeight} + 0.5rem)` }),
+          ...(fade && !expanded && overflowing ? { maskImage: FADE_MASK, WebkitMaskImage: FADE_MASK } : null)
+        }}
         onFocusCapture={handleFocusCapture}
       >
         {children}
-        {fade && !expanded && overflowing && (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-1 bottom-1 h-6 bg-linear-to-t from-background to-transparent"
-          />
-        )}
       </div>
       {overflowing && (
         <button
