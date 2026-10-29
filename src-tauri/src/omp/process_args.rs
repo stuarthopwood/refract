@@ -16,3 +16,13 @@ pub(super) async fn build_args(opts: &OmpProcessOptions) -> (Vec<String>, Vec<St
     args.extend(guard_args);
     (args, warnings)
 }
+
+/// Makes the agent trust the live OS certificate store (issue #1287), so TLS-inspecting networks
+/// work without setup. Bun ignores the OS store unless `NODE_USE_SYSTEM_CA` is set; a rotated
+/// inspection CA is picked up by restarting the agent. The child only: the user's environment is
+/// untouched, and a value the user already set (and any `NODE_EXTRA_CA_CERTS`) wins.
+pub(super) fn trust_system_ca(command: &mut tokio::process::Command) {
+    if std::env::var_os("NODE_USE_SYSTEM_CA").is_none() {
+        command.env("NODE_USE_SYSTEM_CA", "1");
+    }
+}
