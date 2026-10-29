@@ -29,7 +29,7 @@ export function SettingRow({ id, label, description, note, icon: Icon, controlId
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-4 @max-md:flex-col @max-md:items-start">
         <div className="flex min-w-0 flex-1 items-start gap-2">
           {(Icon || groupHasIconSlot) && (
-            <span aria-hidden className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+            <span aria-hidden className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground">
               {Icon && <Icon aria-hidden className="size-4" />}
             </span>
           )}

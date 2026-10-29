@@ -19,7 +19,7 @@ export function OmpSection() {
   return (
     <div>
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
-        OMP
+        Advanced
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
         Values Refract sets for OMP every time it starts a Session, to keep token use down. Changes apply to Sessions started afterwards; running Sessions keep the values they launched with.

@@ -21,7 +21,8 @@
 // `settings.ts` never sets it), so the toggle is simply never rendered on Electron (no
 // "unsupported" toast to show); Electron keeps ghost text always on instead (`MessageInput.tsx`'s
 // own `wordPredictionEnabled !== false` read treats absent as enabled).
-import { useEffect, useRef } from 'react'
+import { SettingsGroup } from '@/components/settings/SettingsGroup'
+import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { useSettingsStore } from '@/state'
 
@@ -40,22 +41,18 @@ export function ChatDisplaySection() {
   const setWordPredictionEnabled = useSettingsStore((state) => state.setWordPredictionEnabled)
   const codeLigatures = useSettingsStore((state) => state.settings.codeLigatures !== false)
   const setCodeLigatures = useSettingsStore((state) => state.setCodeLigatures)
-  const headingRef = useRef<HTMLHeadingElement>(null)
-
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [])
 
   return (
-    <div>
-      <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
-        Chat
-      </h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Choose what the chat transcript shows, how pasted content is handled, and how context usage is drawn
-        {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
-      </p>
-      <div className="flex flex-col divide-y divide-divider">
+    <SettingsPage
+      title="Chat"
+      intro={
+        <>
+          Choose what the chat transcript shows, how pasted content is handled, and how context usage is drawn
+          {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
+        </>
+      }
+    >
+      <SettingsGroup title="Transcript">
         <SettingSwitchRow
           id="transcript-display-thinking"
           label="Show thinking output"
@@ -86,13 +83,6 @@ export function ChatDisplaySection() {
           checked={showFinishedTurnTimes}
           onCheckedChange={(checked) => void setShowFinishedTurnTimes(checked)}
         />
-        <SettingSwitchRow
-          id="detect-image-paths-on-paste"
-          label="Attach images pasted as a file path"
-          description={'A pasted path to an image file (for example, Explorer\'s "Copy as path") attaches the image above the message box.'}
-          checked={detectImagePathsOnPaste}
-          onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
-        />
         {/* Issue #1246: on by default. */}
         <SettingSwitchRow
           id="code-ligatures"
@@ -101,6 +91,26 @@ export function ChatDisplaySection() {
           checked={codeLigatures}
           onCheckedChange={(checked) => void setCodeLigatures(checked)}
         />
+      </SettingsGroup>
+      <SettingsGroup title="Message box">
+        <SettingSwitchRow
+          id="detect-image-paths-on-paste"
+          label="Attach images pasted as a file path"
+          description={'A pasted path to an image file (for example, Explorer\'s "Copy as path") attaches the image above the message box.'}
+          checked={detectImagePathsOnPaste}
+          onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
+        />
+        {wordPredictionEnabled !== undefined && (
+          <SettingSwitchRow
+            id="word-prediction-enabled"
+            label="Word prediction (ghost text)"
+            description="Suggests how to finish the word you're typing in the message box. Off by default: the shared prediction engine can use several hundred MB of memory once started."
+            checked={wordPredictionEnabled}
+            onCheckedChange={(checked) => void setWordPredictionEnabled(checked)}
+          />
+        )}
+      </SettingsGroup>
+      <SettingsGroup title="Context usage">
         {/* Issue #1082 (spec 004 FR-034): on by default. */}
         <SettingSwitchRow
           id="show-context-usage-bar"
@@ -117,16 +127,7 @@ export function ChatDisplaySection() {
           checked={showAiCredits}
           onCheckedChange={(checked) => void setShowAiCredits(checked)}
         />
-        {wordPredictionEnabled !== undefined && (
-          <SettingSwitchRow
-            id="word-prediction-enabled"
-            label="Word prediction (ghost text)"
-            description="Suggests how to finish the word you're typing in the message box. Off by default: the shared prediction engine can use several hundred MB of memory once started."
-            checked={wordPredictionEnabled}
-            onCheckedChange={(checked) => void setWordPredictionEnabled(checked)}
-          />
-        )}
-      </div>
-    </div>
+      </SettingsGroup>
+    </SettingsPage>
   )
 }
