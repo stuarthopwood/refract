@@ -30,6 +30,11 @@ const buttonVariants = cva(
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 font-normal",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/80 focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
+        // An outlined destructive action at rest (e.g. "Close pull request"): the destructive
+        // colour on the edge and label only, never a fill, so the surface's one filled button
+        // stays the primary action. The confirm dialog then uses the filled `destructive`.
+        "destructive-outline":
+          "border-destructive bg-background text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:bg-input/30 dark:hover:bg-muted",
         link: "text-primary underline underline-offset-4 font-normal",
         // #746: a non-primary action beside an `outline` primary (PaneBanner). Foreground text, no
         // border or fill; underlined on hover AND keyboard focus so it still reads as an action,

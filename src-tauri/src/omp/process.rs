@@ -287,6 +287,7 @@ impl OmpProcess {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        super::process_args::trust_system_ca(&mut command);
 
         let spawned_at = Instant::now();
         let spawned_at_system = SystemTime::now();

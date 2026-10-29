@@ -2,7 +2,7 @@
 // (`SideChatPanel.tsx`), #675: the box (border, radius, focus ring), the field block with its
 // Send/Stop action slot, the optional bottom row, the text field and the Send and Stop buttons.
 // A new consumer extends this by prop or slot; it never copies the markup.
-import type { ComponentProps, ReactNode } from 'react'
+import type { ComponentProps, KeyboardEventHandler, ReactNode } from 'react'
 import { ArrowUpIcon, SquareIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -28,16 +28,23 @@ const COMPOSER_TEXTAREA_CLASS =
  * `transition-colors` so a fill swap (a command pill mounting) never fades against its mirror.
  * `actionCount` sizes the right padding to the round buttons in `ComposerActions` (an
  * `icon-sm` button plus its gap is 2.5rem), so text never runs under them. */
-export function ComposerTextarea({ className, actionCount = 2, ...props }: ComponentProps<'textarea'> & { actionCount?: 1 | 2 }) {
-  return <Textarea className={cn(COMPOSER_SELECTION_CLASS, COMPOSER_TEXT_CLASS, COMPOSER_TEXTAREA_CLASS, actionCount === 1 ? 'pr-10' : 'pr-20', className)} {...props} />
+export function ComposerTextarea({ className, actionCount = 2, ...props }: ComponentProps<'textarea'> & { actionCount?: 0 | 1 | 2 }) {
+  const reservedPadding = actionCount === 0 ? undefined : actionCount === 1 ? 'pr-10' : 'pr-20'
+  return <Textarea className={cn(COMPOSER_SELECTION_CLASS, COMPOSER_TEXT_CLASS, COMPOSER_TEXTAREA_CLASS, reservedPadding, className)} {...props} />
 }
 
 /** The box: border, radius and fill from the per-theme composer tokens. The ring shows only on the
  * textarea's own `:focus-visible`; each control inside draws its own focus outline. Holds a
  * `ComposerField` and optionally a `ComposerFooter`. */
-export function ComposerBox({ children }: { children: ReactNode }) {
+export function ComposerBox({ children, className, onKeyDown }: { children: ReactNode; className?: string; onKeyDown?: KeyboardEventHandler<HTMLDivElement> }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring">
+    <div
+      onKeyDown={onKeyDown}
+      className={cn(
+        'flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring',
+        className
+      )}
+    >
       {children}
     </div>
   )
@@ -62,9 +69,9 @@ export function ComposerActions({ children }: { children: ReactNode }) {
 }
 
 /** The bottom row inside the box. `@container` lets the pickers hide their text when narrow. */
-export function ComposerFooter({ children }: { children: ReactNode }) {
+export function ComposerFooter({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div data-composer-row className="@container flex flex-wrap items-center gap-2 px-2 pb-2">
+    <div data-composer-row className={cn('@container flex flex-wrap items-center gap-2 px-2 pb-2', className)}>
       {children}
     </div>
   )

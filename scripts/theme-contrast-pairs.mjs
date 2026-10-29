@@ -43,6 +43,7 @@ export const PAIRS = [
   { fg: 'popover-foreground', bg: 'popover', min: 4.5 },
   { fg: 'primary-foreground', bg: 'primary', min: 4.5 },
   { fg: 'send-foreground', bg: 'send', min: 3 },
+  { fg: 'foreground', bg: 'viewer-tint', min: 4.5 }, { fg: 'muted-foreground', bg: 'viewer-tint', min: 4.5 }, // spec 038: the viewer's own PR card header text
   { fg: 'agent-message', bg: 'background', min: 4.5 }, { fg: 'agent-message', bg: 'muted', min: 4.5 }, // #838: AgentMessageRow glyph + label, at rest and on the trigger's hover:bg-muted
   // #927 (quiet composer): `--composer-background` is now `transparent` in Dark and Obsidian
   // (the field shows the chat background through instead of a solid fill), so Send no longer
@@ -160,6 +161,11 @@ export const PAIRS = [
   { fg: 'severity-info', bg: 'background', min: 3 },
   { fg: 'severity-info', bg: 'card', min: 3 },
   { fg: 'severity-info', bg: 'popover', min: 3 },
+  // Spec 038 FR-004: GitHub alert bars and icons (non-text, 3:1) on the chat and card surfaces.
+  ...['note', 'tip', 'important', 'warning', 'caution'].flatMap((kind) => [
+    { fg: `alert-${kind}`, bg: 'background', min: 3 },
+    { fg: `alert-${kind}`, bg: 'card', min: 3 }
+  ]),
   // `muted-foreground` and `destructive` are rendered as actual BODY TEXT (code-block/diff-path
   // headers, inactive tab labels, notice text, dropdown-menu destructive items, alert
   // descriptions), not just against the page `--background` the two pre-existing pairs above

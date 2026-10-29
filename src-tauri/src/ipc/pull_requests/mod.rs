@@ -9,6 +9,8 @@
 // Wire shapes and gh-wire-shape -> renderer-shape mapping live in the sibling `mapping.rs`
 // (issue #806, keeps this file under the 600-line cap).
 
+mod checks;
+mod extra_handlers;
 mod handlers;
 mod mapping;
 
@@ -22,8 +24,10 @@ use serde_json::Value;
 use crate::github::gh::{self, GhError};
 use crate::github::gh_mutations;
 use crate::github::gh_pull_requests::{self, GhStalenessCheck};
+use crate::github::gh_viewer::viewer_login;
 
 use super::{not_found, AppState, Dispatcher, IpcError};
+use checks::map_checks;
 use handlers::PullRequestStateFilter;
 
 use mapping::{
@@ -36,6 +40,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("pullRequests.list", handlers::pull_requests_list);
     d.register("pullRequests.detail", handlers::pull_requests_detail);
     d.register("pullRequests.comment", handlers::pull_requests_comment);
+    extra_handlers::register(d);
     d.register(
         "pullRequests.replyToThread",
         handlers::pull_requests_reply_to_thread,
@@ -349,6 +354,7 @@ pub(super) async fn build_detail(
     let threads_fut = gh_mutations::get_review_threads_and_timeline(repo_path, number);
     let methods_fut = gh_mutations::get_allowed_merge_methods(repo_path);
     let owner_repo_fut = gh::owner_repo_for(repo_path);
+    let viewer_fut = viewer_login(repo_path);
 
     // Perf finding (code review, 2026-10-14): `files_fut` (an REST `--paginate` call, often the
     // slowest of the five) used to run only after every other detail call had already finished,
@@ -356,9 +362,10 @@ pub(super) async fn build_detail(
     // `GhError`-typed futures above directly (`get_changed_files_with_patch` never fails the
     // caller -- it resolves to `None` instead, so every caller falls back to the porcelain
     // `files` field), so the two futures run under a plain `tokio::join!` instead.
-    let (result, files_with_patch) = tokio::join!(
+    let (result, files_with_patch, viewer) = tokio::join!(
         async { tokio::try_join!(view_fut, threads_fut, methods_fut, owner_repo_fut) },
-        files_fut
+        files_fut,
+        viewer_fut
     );
     let (view, threads_and_timeline, allowed_merge_methods, owner_repo) = result?;
 
@@ -387,6 +394,8 @@ pub(super) async fn build_detail(
         description: view.body.clone(),
         timeline,
         check_state: map_check_state(view.status_check_rollup.as_deref()),
+        checks: map_checks(view.status_check_rollup.as_deref()),
+        viewer_login: viewer,
         mergeable_state,
         review_disabled_reason,
         merge_disabled_reason,

@@ -251,8 +251,9 @@ fn resolve_avatar_mime_type(content_type: Option<&str>) -> Option<&'static str> 
 }
 
 /// Matches `shared/images.ts`'s own `matchesImageSignature`: checks only the first few bytes of
-/// `body` against `mime_type`'s real magic-byte signature, never the whole payload.
-fn matches_image_signature(body: &[u8], mime_type: &str) -> bool {
+/// `body` against `mime_type`'s real magic-byte signature, never the whole payload. Also used by
+/// `images.rs` for the pull request image allow-list (ADR 0004).
+pub(super) fn matches_image_signature(body: &[u8], mime_type: &str) -> bool {
     match mime_type {
         "image/png" => {
             body.len() >= 16
@@ -260,6 +261,8 @@ fn matches_image_signature(body: &[u8], mime_type: &str) -> bool {
                 && &body[12..16] == b"IHDR"
         }
         "image/jpeg" => body.len() >= 3 && body[0] == 0xff && body[1] == 0xd8 && body[2] == 0xff,
+        "image/gif" => body.starts_with(b"GIF87a") || body.starts_with(b"GIF89a"),
+        "image/webp" => body.len() >= 12 && &body[0..4] == b"RIFF" && &body[8..12] == b"WEBP",
         _ => false,
     }
 }

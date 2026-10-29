@@ -24,7 +24,6 @@ import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Textarea } from '@/components/ui/textarea'
 import { Markdown } from '@/features/chat/Markdown'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
@@ -32,6 +31,9 @@ import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
 import { CHECK_STATE_DISPLAY } from './PullRequestRow'
 import { Timeline } from './Timeline'
+import { CommentBox } from './CommentBox'
+import { ChecksSection } from './ChecksSection'
+import { resolvePullRequestImage } from './prImages'
 import { ChangesTab } from './ChangesTab'
 import { ReviewDialog } from './ReviewDialog'
 import { MergeDialog } from './MergeDialog'
@@ -63,11 +65,12 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const [reviewOpen, setReviewOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
   const [forkWarningOpen, setForkWarningOpen] = useState(false)
-  const [commentText, setCommentText] = useState('')
-  const [commentBusy, setCommentBusy] = useState(false)
-  const [commentError, setCommentError] = useState<string | null>(null)
   const [newSessionBusy, setNewSessionBusy] = useState(false)
   const [newSessionError, setNewSessionError] = useState<string | null>(null)
+  // Unsent drafts live here, not in the tab content (which unmounts on an Overview/Changes switch);
+  // they reset when the repository or pull request changes.
+  const [commentDraft, setCommentDraft] = useState('')
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({})
   const openChat = useViewStore((s) => s.openChat)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -114,6 +117,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
 
   useEffect(() => {
     setDetail(null)
+    setCommentDraft('')
+    setReplyDrafts({})
     void load()
     // Only the identity of the pull request being viewed should re-trigger the initial load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,21 +137,6 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.checkState, repositoryId, number])
-
-  async function handleComment(): Promise<void> {
-    const body = commentText.trim()
-    if (!body) return
-    setCommentBusy(true)
-    setCommentError(null)
-    const result = await window.refract.pullRequests.comment(repositoryId, number, body)
-    setCommentBusy(false)
-    if (!result.ok) {
-      setCommentError(result.error.message)
-      return
-    }
-    setCommentText('')
-    void load()
-  }
 
   // FR-022: creates a Session on the pull request's head branch, then switches to it exactly as
   // the existing "created and opened" convention does (sessions-store.ts's own `create()`).
@@ -324,27 +314,21 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
         <TabsContent value="overview" className="relative min-h-0 flex-1 overflow-auto">
           <div className="p-4">
             <ReviewConsensus timeline={detail.timeline} authorLogin={detail.author.login} />
-            <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} />
+            <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} githubStyle resolveImage={resolvePullRequestImage} />
           </div>
-          <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} onChanged={() => void load()} />
-          <div className="border-t border-border p-4">
-            <Textarea
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder="Add a comment"
-              aria-label="Add a comment to this pull request"
-              className="min-h-20"
-              disabled={commentBusy}
-            />
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <p role="alert" className={cn('text-xs text-destructive', !commentError && 'sr-only')}>
-                {commentError ?? ''}
-              </p>
-              <Button size="sm" onClick={() => void handleComment()} disabled={commentBusy || !commentText.trim()}>
-                {commentBusy ? 'Commenting…' : 'Comment'}
-              </Button>
-            </div>
-          </div>
+          <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} viewerLogin={detail.viewerLogin} replyDrafts={replyDrafts} onReplyDraftChange={(threadId, value) => setReplyDrafts((prev) => ({ ...prev, [threadId]: value }))} onChanged={() => void load()} />
+          <ChecksSection checks={detail.checks} checkState={detail.checkState} />
+          <CommentBox
+            repositoryId={repositoryId}
+            number={number}
+            state={detail.state}
+            title={title}
+            prTitle={detail.title}
+            text={commentDraft}
+            onTextChange={setCommentDraft}
+            headingRef={headingRef}
+            onChanged={() => void load()}
+          />
         </TabsContent>
         <TabsContent value="changes" className="relative min-h-0 flex-1 overflow-auto">
           <ChangesTab

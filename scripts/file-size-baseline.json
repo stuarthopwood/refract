@@ -14,6 +14,6 @@
   "src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx": 928,
   "src/renderer/state/file-explorer-store.ts": 601,
   "src/shared/frames.ts": 715,
-  "src/shared/ipc.ts": 898,
+  "src/shared/ipc.ts": 902,
   "src/shared/model.ts": 656
 }

@@ -22,6 +22,8 @@ pub struct GhReviewThreadComment {
     pub author: Option<GhActor>,
     pub body: String,
     pub created_at: String,
+    #[serde(default)]
+    pub last_edited_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -77,6 +79,8 @@ pub struct GhTimelineNode {
     pub state: Option<String>,
     #[serde(default)]
     pub submitted_at: Option<String>,
+    #[serde(default)]
+    pub last_edited_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,7 +111,7 @@ pub type GhThreadsAndTimeline = GhReviewThreadsAndTimelineInner;
 /// count the same way a commit or comment past it is invisible to the Timeline today. Recorded
 /// in `specs/003-pull-request-management/spec.md`'s own Clarifications; a pagination fix is
 /// tracked separately (issue #918), not fixed here.
-const THREADS_AND_TIMELINE_QUERY: &str = "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { login ... on User { name } } body createdAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { login ... on User { name } } body createdAt } ... on PullRequestReview { id author { login ... on User { name } } state body submittedAt } } } } } }";
+const THREADS_AND_TIMELINE_QUERY: &str = "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } }";
 
 #[derive(Deserialize)]
 struct ThreadsAndTimelineRepo {
