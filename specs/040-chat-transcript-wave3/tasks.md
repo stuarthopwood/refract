@@ -20,7 +20,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T11 Newest running row shimmer; motion and accessibility docs. (#1210)
 
 ## WP-D Tool dialog
-- [ ] T12 Rendered or Source toggle, default rules, large-value guard. (#719)
+- [x] T12 Rendered or Source toggle, default rules, large-value guard. (#719)
 
 ## WP-E Split focus
 - [ ] T13 Pane tint tokens, layer, badge token, contrast pairs, docs. (#684)
