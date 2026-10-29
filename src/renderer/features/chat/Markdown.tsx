@@ -514,9 +514,10 @@ interface ExternalLinkProps extends Omit<React.ComponentPropsWithoutRef<'a'>, 'h
   href: string
   className: string
   children: React.ReactNode
+  wrapLink?: (link: React.ReactNode) => React.ReactNode
 }
 
-function ExternalLink({ href, className, children, title: _title, ...rest }: ExternalLinkProps) {
+function ExternalLink({ href, className, children, wrapLink, title: _title, ...rest }: ExternalLinkProps) {
   // Quality-gate fix (A11y3 Low, round 4): a markdown link's own `title` (`[x](url "t")`,
   // forwarded here via `rest` since round 3) is agent-written text that could show a plausible
   // but FAKE destination in the browser's native `title` tooltip, layered right on top of this
@@ -543,6 +544,7 @@ function ExternalLink({ href, className, children, title: _title, ...rest }: Ext
       copyText={shown}
       copyLabel="Copy link"
       copiedMessage="Link copied"
+      wrapLink={wrapLink}
       // Activating the anchor itself reuses the one external-link policy (tauri-bridge/externalLinks.ts).
       actions={[{ label: 'Open in browser', onSelect: () => anchorRef.current?.click() }]}
     >
@@ -595,13 +597,16 @@ interface FileLinkButtonProps {
   className?: string
   /** Layout-only: forwarded to the link wrapper (`LinkActions`) when the link renders as a control, e.g. `DiffView`'s flex header. */
   wrapperClassName?: string
-} control app-wide, exported for `ToolRow.tsx` (write/edit path
+  /** Wraps just the link, e.g. in an inline-code chip, so the Copy slot sits outside the chip. */
+  wrapLink?: (link: React.ReactNode) => React.ReactNode
+}
 
-// Issue #610: the one file-link control app-wide, exported for `ToolRow.tsx` (write/edit path control app-wide, exported for `ToolRow.tsx` (write/edit path// lines) and `DiffView.tsx` (header path) to reuse, the same pattern `CodeBlock` below already
+// Issue #610: the one file-link control app-wide, exported for `ToolRow.tsx` (write/edit path
+// lines) and `DiffView.tsx` (header path) to reuse, the same pattern `CodeBlock` below already
 // establishes for tool-call Arguments/Output. "Show in File Explorer", never "Open" -- running a
 // file's own OS default verb (`shell.openPath`) would execute a `.cmd`/`.ps1`/`.lnk` an agent or
 // tool wrote; `sessions.revealFile` only ever calls `shell.showItemInFolder`.
-export function FileLinkButton({ path, display, muted = false, streaming = false, className, wrapperClassName }: FileLinkButtonProps) {
+export function FileLinkButton({ path, display, muted = false, streaming = false, className, wrapperClassName, wrapLink }: FileLinkButtonProps) {
   const sessionId = React.useContext(LinkContext)
   const worktreePath = useSessionsStore((state) =>
     sessionId ? state.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
@@ -617,19 +622,21 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
   // obviously outside the worktree -- PLAIN, unstyled text, not a link-styled span that does
   // nothing. `title` restores the full path a caller's own truncation would otherwise hide.
   if (!sessionId || !withinWorktree) {
-    return (
+    const plain = (
       <span className={className} title={label}>
         {label}
       </span>
     )
+    return wrapLink ? <>{wrapLink(plain)}</> : plain
   }
 
   if (streaming) {
-    return (
+    const inert = (
       <span className={cn(muted ? mutedInertLinkClassName : inertLinkClassName, className)} title={label}>
         {label}
       </span>
     )
+    return wrapLink ? <>{wrapLink(inert)}</> : inert
   }
 
   const activeClassName = muted ? mutedLinkClassName : linkClassName
@@ -645,6 +652,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
       copyLabel="Copy path"
       copiedMessage="Path copied"
       wrapperClassName={wrapperClassName}
+      wrapLink={wrapLink}
       actions={[{ label: 'Show in File Explorer', onSelect: reveal }]}
     >
     <Tooltip>
@@ -827,17 +835,18 @@ const components: Components = {
         // whole span is one URL" -- `new URL` would otherwise percent-encode the spaces and
         // treat a path-with-spaces string as a (wrong) URL.
         const safe = trimmed && !/\s/.test(trimmed) ? safeUrl(trimmed) : undefined
+        const chip = (inner: React.ReactNode): React.ReactNode => (
+          <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
+            {inner}
+          </code>
+        )
         if (safe) {
-          return (
-            <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
-              {streaming ? (
-                <span className={mutedInertLinkClassName}>{text}</span>
-              ) : (
-                <ExternalLink href={safe} className={mutedLinkClassName}>
-                  {text}
-                </ExternalLink>
-              )}
-            </code>
+          return streaming ? (
+            chip(<span className={mutedInertLinkClassName}>{text}</span>)
+          ) : (
+            <ExternalLink href={safe} className={mutedLinkClassName} wrapLink={chip}>
+              {text}
+            </ExternalLink>
           )
         }
         // Quality-gate fix (A11y Medium, round 2): a file-link candidate is only ever attempted
@@ -846,11 +855,7 @@ const components: Components = {
         // the plain chip below never even builds a `fileRef` for it.
         const fileRef = sessionId && trimmed ? parseFileReference(trimmed) : null
         if (fileRef) {
-          return (
-            <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
-              <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} />
-            </code>
-          )
+          return <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} wrapLink={chip} />
         }
       }
       return (

@@ -18,6 +18,8 @@ interface LinkActionsProps {
   /** Items after the Copy item. */
   actions: LinkAction[]
   /** Layout-only, for a caller whose link sits in a flex row (e.g. `DiffView`'s truncating header). */
+  /** Wraps just the link (not the Copy slot), e.g. in an inline-code chip, so the slot sits outside the chip. */
+  wrapLink?: (link: React.ReactNode) => React.ReactNode
   wrapperClassName?: string
   children: React.ReactNode
 }
@@ -27,7 +29,7 @@ interface LinkActionsProps {
 // Shift+F10 / Menu key context menu. Callers never render it for an inert, plain-text, nested or
 // footnote link. `ContextMenuTrigger` is a plain span, so Radix would return focus to it (not
 // focusable) when the menu closes; the focused link is remembered on open and refocused instead.
-export function LinkActions({ copyText, copyLabel, copiedMessage, actions, wrapperClassName, children }: LinkActionsProps) {
+export function LinkActions({ copyText, copyLabel, copiedMessage, actions, wrapperClassName, wrapLink, children }: LinkActionsProps) {
   const wrapperRef = React.useRef<HTMLSpanElement>(null)
   const openerRef = React.useRef<HTMLElement | null>(null)
 
@@ -42,13 +44,13 @@ export function LinkActions({ copyText, copyLabel, copiedMessage, actions, wrapp
             openerRef.current = active instanceof HTMLElement && wrapperRef.current?.contains(active) ? active : null
           }}
         >
-          {children}
+          {wrapLink ? wrapLink(children) : children}
           <CopyButton
             getText={() => copyText}
             label={copyLabel}
             announcement={copiedMessage}
             tabIndex={-1}
-            className="pointer-events-none ml-0.5 size-5 align-middle opacity-0 transition-opacity group-focus-within/link:pointer-events-auto group-focus-within/link:opacity-100 group-hover/link:pointer-events-auto group-hover/link:opacity-100 [&_svg]:size-3"
+            className="pointer-events-none ml-1 size-5 align-middle text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-has-[:focus-visible]/link:pointer-events-auto group-has-[:focus-visible]/link:opacity-100 group-hover/link:pointer-events-auto group-hover/link:opacity-100 group-data-[state=open]/link:pointer-events-auto group-data-[state=open]/link:opacity-100 [&_svg:not([class*='size-'])]:size-3"
           />
         </span>
       </ContextMenuTrigger>
