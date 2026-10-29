@@ -16,6 +16,9 @@ import { cn } from '@/lib/utils'
  * typed text. */
 export const COMPOSER_TEXT_CLASS = 'font-ui text-readout md:text-readout leading-normal tracking-normal'
 
+/** Box-model-matching classes for every inert composer mirror (see `CommandPillOverlay.tsx` for why each one). */
+export const COMPOSER_MIRROR_CLASS = `pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2 py-2 pr-20 text-foreground [scrollbar-gutter:stable] ${COMPOSER_TEXT_CLASS}`
+
 /** The composer's selection highlight: a translucent accent tint with a dedicated text colour,
  * and the OS `Highlight` pair in forced colours (`CommandPillOverlay.tsx` has the history). */
 export const COMPOSER_SELECTION_CLASS =
