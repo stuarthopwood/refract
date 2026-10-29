@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.13.0 (2026-10-29)
+
+### Features
+
+- feat(ui): app-wide design tokens (wave 1) (https://github.com/stuarthopwood/refract/pull/1303)
+- feat(explorer): right pane resize and surface, rail sizing, row actions, git colours (https://github.com/stuarthopwood/refract/pull/1309)
+- feat(settings): grouped Settings pages, Advanced, role colours, text sizes (https://github.com/stuarthopwood/refract/pull/1312)
+- feat(sessions): session list wave 2 (status style, project colour, group headers, manage sessions) (https://github.com/stuarthopwood/refract/pull/1313)
+- feat(composer): shared ComposerBox, queued panel, split Approve, Ask and remember, background agents banner (https://github.com/stuarthopwood/refract/pull/1318)
+- feat(pull-requests): timeline restyle, rich comment editor and Checks section (https://github.com/stuarthopwood/refract/pull/1320)
+- feat(chat): wave 3 chat transcript bundle (retry, banners, tool rows, focus tint) (https://github.com/stuarthopwood/refract/pull/1321)
+- feat(chat): chat navigation — step, outline, find and scrollbar map (https://github.com/stuarthopwood/refract/pull/1324)
+- feat(chat): show the user's GitHub avatar on their messages (https://github.com/stuarthopwood/refract/pull/1327)
+
+### Fixes
+
+- fix(agents): trust the OS certificate store at every agent start (https://github.com/stuarthopwood/refract/pull/1319)
+- fix(halloween): keep artwork out of the text column, fade bats on pause, harden verify script (https://github.com/stuarthopwood/refract/pull/1326)
+
+### Other
+
+- docs(plan): OMP 18.13.3 review row (https://github.com/stuarthopwood/refract/pull/1297)
+- docs(plan): add watermark opacity polish issue #1298 (https://github.com/stuarthopwood/refract/pull/1299)
+- docs(plan): add chat row density issue #1300 (https://github.com/stuarthopwood/refract/pull/1301)
+- docs(plan): file #1304 child Sessions and add the Child Session term (https://github.com/stuarthopwood/refract/pull/1305)
+- docs(plan): pause mode, command palette, chat tree, new session from issue (https://github.com/stuarthopwood/refract/pull/1311)
+- docs(plan): chat header PR and issue badges (#1315) (https://github.com/stuarthopwood/refract/pull/1316)
+- docs(plan): comment cull and comment-density gate (#1322) (https://github.com/stuarthopwood/refract/pull/1323)
+- docs(plan): file #1331 Usage view and ADR 0006 (https://github.com/stuarthopwood/refract/pull/1332)
+
 ## v0.12.1 (2026-10-28)
 
 ### Fixes
