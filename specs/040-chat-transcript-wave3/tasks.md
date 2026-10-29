@@ -12,7 +12,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 
 ## WP-B Banners and errors
 - [x] T7 Shared `PaneBanner`, Button `text` variant, migrate the ChatPane banners; `components.md` and `patterns.md`. (#746)
-- [ ] T8 Turn error row with hints and Retry; Retry line with Stop; keep banner and session-row retry text. (#1284)
+- [x] T8 Turn error row with hints and Retry; Retry line with Stop; keep banner and session-row retry text. (#1284)
 
 ## WP-C Transcript rows
 - [ ] T9 Mid-turn Note follow-ups, shared disclosure class and shared clamp, `product-chat.md` hierarchy. (#1262)
