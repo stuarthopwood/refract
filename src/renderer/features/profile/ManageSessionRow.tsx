@@ -36,6 +36,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { buildSessionRowActions } from '@/features/sessions/sessionActions'
+import { useHideSession } from '@/features/sessions/useHideSession'
+import { HiddenMarker } from '@/features/sessions/HiddenMarker'
 import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
 import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
@@ -129,16 +131,9 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   const focusFallbackRef = useRef<() => void>(() => searchInputRef.current?.focus())
 
   // Post-build review fix (Phase7PostBuild, HIGH, WCAG 2.4.3): archive/restore/delete only
-  // SOMETIMES unmount this row (under the Active/Archived filter they do; under All, archive and
-  // restore never do -- the row survives with its quick-action button simply relabelled, and the
-  // browser keeps focus on that same DOM node with no code needed). The previous version armed a
-  // 3-second timer after each action and only ran the fallback if it was still armed when THIS
-  // instance unmounted -- any row's unrelated quick action within that 3s window disarmed it, so
-  // confirming a delete dialog read for longer than 3 seconds (the normal case for a dialog
-  // listing data loss) dropped focus to `<body>` with nothing left to catch it. The unmount
-  // itself is the only signal this needs: whenever this instance is actually torn down, if focus
-  // has nowhere left to go (null or `<body>`), send it to the fallback captured while the row was
-  // still mounted.
+  // SOMETIMES unmount this row (under All they do not), so the unmount itself is the signal: when
+  // this instance is torn down and focus has nowhere left to go (null or `<body>`), send it to
+  // the fallback captured while the row was still mounted.
   useEffect(() => {
     return () => {
       requestAnimationFrame(() => {
@@ -365,6 +360,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   // (labels/order/archived-or-not/stopped-or-not) is shared with SessionList.tsx via
   // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
   // this row's own rename/delete-dialog state) stay local, since they differ per screen.
+  const hideSession = useHideSession(session, { captureFocusFallback, focusRow: () => openButtonRef.current?.focus(), onAnnounce })
   const actions = buildSessionRowActions(
     session,
     {
@@ -396,6 +392,8 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
           else onAnnounce(message)
         })
       },
+      onHide: hideSession.hide,
+      onUnhide: hideSession.unhide,
       onStopAgent: () => void stopAgent(session.id),
       onDelete: () => {
         captureFocusFallback()
@@ -564,6 +562,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                       Archived
                     </Badge>
                   )}
+                  {session.hiddenAt && <HiddenMarker />}
                 </span>
                 <span className="text-right text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
               </button>

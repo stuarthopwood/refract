@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
+import { EllipsisVerticalIcon, EyeOffIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import {
@@ -123,6 +123,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
     session.name,
     session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : STATUS_LABEL[displayStatus(session)],
     session.archivedAt ? 'Archived' : null,
+    session.hiddenAt ? 'Hidden' : null,
     isSplitOpen && isFocusedPane ? 'focused pane' : null
   ]
     .filter((part): part is string => Boolean(part))
@@ -274,7 +275,13 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                     ) : (
                       <StateIcon status={displayStatus(session)} />
                     )}
-                    <span className="truncate text-sm font-normal text-sidebar-foreground">{session.name}</span>
+                    <span className={cn('truncate text-sm font-normal', session.hiddenAt ? 'text-muted-foreground' : 'text-sidebar-foreground')}>{session.name}</span>
+                    {session.hiddenAt && (
+                      <span aria-hidden className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                        <EyeOffIcon className="size-3.5" />
+                        Hidden
+                      </span>
+                    )}
                   </span>
                   {/* Line 2: one slot, first match wins (`lineTwoKind` above). Gate round 1 fix
                       (Medium, decision 9.4): an archived row's Project name gets the same

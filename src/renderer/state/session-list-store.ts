@@ -29,6 +29,9 @@ interface SessionListState {
    * open -- the default for every newly added Project (decision 16). */
   collapsedRepositoryIds: Set<string>
   archivedOpen: boolean
+  /** Issue #748: the Show hidden toggle; persisted with the rest of the list view state. */
+  showHidden: boolean
+  setShowHidden(show: boolean): void
   /** False until `restore()` has run once at startup (decision 19): `SessionList` renders
    * only its own fixed chrome until this flips true, so a Repository group never paints open
    * and then immediately snaps shut once the persisted state loads a moment later -- Repositories
@@ -89,10 +92,11 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       persistTimer = undefined
     }
     const run = (): void => {
-      const { collapsedRepositoryIds, archivedOpen } = get()
+      const { collapsedRepositoryIds, archivedOpen, showHidden } = get()
       const value: SessionListCollapse = {
         collapsedRepositoryIds: [...collapsedRepositoryIds],
-        archivedOpen
+        archivedOpen,
+        showHidden
       }
       window.refract.settings.setSessionListCollapse(value).then(
         (result) => {
@@ -122,6 +126,12 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
   return {
     collapsedRepositoryIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.collapsedRepositoryIds),
     archivedOpen: DEFAULT_SESSION_LIST_COLLAPSE.archivedOpen,
+    showHidden: DEFAULT_SESSION_LIST_COLLAPSE.showHidden,
+    setShowHidden: (show) => {
+      if (get().showHidden === show) return
+      set({ showHidden: show })
+      persist()
+    },
     restored: false,
     query: '',
     searchOverride: null,
@@ -232,6 +242,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       set({
         collapsedRepositoryIds: new Set(value.collapsedRepositoryIds),
         archivedOpen: value.archivedOpen,
+        showHidden: value.showHidden ?? false,
         restored: true
       })
     },

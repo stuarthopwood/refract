@@ -48,6 +48,8 @@ interface SessionsState {
    * toast (#560 gate round-2 fix: a caller awaiting this unconditionally previously announced
    * "Stopped" even when `result.ok` was false). */
   stopAgent(id: string): Promise<boolean>
+  /** Issue #748: Hide/Unhide; resolves `result.ok` like `archive`. */
+  setHidden(id: string, hidden: boolean): Promise<boolean>
 }
 
 // Callers that arrive while an `open(id)` is already in flight JOIN that call instead of getting
@@ -239,6 +241,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     const result = await window.refract.sessions.restore(id)
     if (!result.ok) notify(result.error)
     else if (repositoryId) useSessionListStore.getState().openRepositoryGroup(repositoryId)
+    return result.ok
+  },
+  setHidden: async (id, hidden) => {
+    const result = await window.refract.sessions.setHidden(id, hidden)
+    if (!result.ok) notify(result.error)
     return result.ok
   },
   stopAgent: async (id) => {

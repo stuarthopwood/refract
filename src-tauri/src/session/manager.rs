@@ -4,11 +4,10 @@
 // agent`, `set_visible`, and `stop_all` (the app-exit path, `lib.rs`'s `ExitRequested` handler).
 //
 // The event fan-out itself (`src/main/ipc/register.ts`'s own `forwardEvent`) is not a separate
-// listener loop here the way it is in TS (`SessionManager.onEvent`/`EventEmitter`): each
-// `SessionAgent` already holds its own `events::EventSink` clone and calls it directly, since
-// Rust has no single-process-wide event bus to subscribe a second listener to without adding one
-// (see `events.rs`'s own doc comment). `SessionManager` itself only owns the `visible_ids` set
-// every agent's `EventSink`-backed patch coalescer reads to decide whether to forward a patch.
+// listener loop here: each `SessionAgent` already holds its own `events::EventSink` clone and
+// calls it directly (see `events.rs`'s own doc comment). `SessionManager` itself only owns the
+// `visible_ids` set every agent's `EventSink`-backed patch coalescer reads to decide whether to
+// forward a patch.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

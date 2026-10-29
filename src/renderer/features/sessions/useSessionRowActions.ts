@@ -13,6 +13,7 @@ import { describeStopReason } from '@/features/chat/ChatPane'
 import { focusSessionPane, focusSessionRow, focusSessionsNav } from '@/lib/focus'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { createdSessionAnnouncement } from './createdSessionAnnouncement'
+import { useHideSession } from './useHideSession'
 
 // Issue #811 (SessionList.tsx split): this is SessionRow's own body, moved unchanged -- archive,
 // restore, delete, resume and rename state and handlers, plus the focus-after-removal fallback
@@ -364,6 +365,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   // (labels/order/archived-or-not/stopped-or-not) is shared with ManageSessionRow.tsx via
   // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
   // this row's own rename/delete-dialog state) stay local, since they differ per screen.
+  const hideSession = useHideSession(session, { captureFocusFallback, focusRow: () => menuTriggerRef.current?.focus() })
   const actions: SessionRowAction[] = buildSessionRowActions(
     session,
     {
@@ -485,6 +487,8 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
           })
           .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
       },
+      onHide: hideSession.hide,
+      onUnhide: hideSession.unhide,
       onStopAgent: () => void stopAgent(session.id),
       onDelete: () => {
         captureFocusFallback()

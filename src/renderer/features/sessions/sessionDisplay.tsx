@@ -81,22 +81,24 @@ export interface SearchedSessions {
  *  its debounced announcement (previously two independent copies that could silently drift
  *  apart, for example once #748 Hidden Sessions exist and only one copy excludes them).
  *  `query` is raw (not yet trimmed/lower-cased) -- this does that once, internally. */
-export function searchSessions(sessions: SessionSummary[], repositories: Repository[], query: string): SearchedSessions {
+export function searchSessions(sessions: SessionSummary[], repositories: Repository[], query: string, showHidden = false): SearchedSessions {
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
   const trimmed = query.trim().toLowerCase()
   const matches = (session: SessionSummary): boolean =>
     matchesSessionSearch(session, repositoriesById.get(session.repositoryId)?.name ?? '', trimmed)
+  // Issue #748: a hidden Session is listed while Show hidden is on, and ALWAYS matches a search.
+  const listed = (session: SessionSummary): boolean => !session.hiddenAt || showHidden || trimmed !== ''
   const matchingByRepository = new Map<string, SessionSummary[]>()
   for (const repository of repositories) {
     matchingByRepository.set(
       repository.id,
-      sessions.filter((session) => session.repositoryId === repository.id && !session.archivedAt && matches(session))
+      sessions.filter((session) => session.repositoryId === repository.id && !session.archivedAt && listed(session) && matches(session))
     )
   }
-  const matchingArchived = sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId) && matches(session))
-  const totalCount =
-    sessions.filter((session) => !session.archivedAt && repositoriesById.has(session.repositoryId)).length +
-    sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId)).length
+  const matchingArchived = sessions.filter(
+    (session) => session.archivedAt && repositoriesById.has(session.repositoryId) && listed(session) && matches(session)
+  )
+  const totalCount = sessions.filter((session) => repositoriesById.has(session.repositoryId) && listed(session)).length
   const shownCount = trimmed
     ? [...matchingByRepository.values()].reduce((sum, list) => sum + list.length, 0) + matchingArchived.length
     : totalCount
@@ -198,6 +200,18 @@ export function groupWaitingState(sessions: SessionSummary[]): GroupWaitingState
     return { status: 'unread-response', label: STATUS_LABEL['unread-response'] }
   }
   return null
+}
+
+/** Issue #748: what the Show hidden toggle's badge and name report -- how many Sessions are
+ * hidden, and how many of those would show an attention state (the same `groupWaitingState`
+ * rule the row icons use, applied per Session so the counts agree with them). */
+export function hiddenSummary(sessions: SessionSummary[]): { hidden: number; attention: number; needsYou: number } {
+  const hidden = sessions.filter((session) => session.hiddenAt)
+  return {
+    hidden: hidden.length,
+    attention: hidden.filter((session) => groupWaitingState([session]) !== null).length,
+    needsYou: hidden.filter((session) => session.status === 'needs-you').length
+  }
 }
 
 // A distinct icon per Session state, never colour alone (docs/design/product-look-and-feel.md

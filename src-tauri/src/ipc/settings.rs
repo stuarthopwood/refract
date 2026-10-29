@@ -1,16 +1,12 @@
 // IPC handlers for `settings.*` (contracts/ipc.md "Settings", tasks.md T015/T028; remaining
 // setters wired lane R8, issue #791). `settings.setApprovalMode` persists the mode and
-// broadcasts `settings:changed` (T028, port of `ipc/broadcast.ts`'s own
-// `broadcastSettingsChanged`) so every window stays in sync even for a caller that reaches this
-// channel directly instead of through the renderer store's own self-updating action. Not ported
-// (`session::agent`'s own header): fanning `pendingMode` out to every LIVE Session and restarting
-// each at its own next settle (`SessionManager.applyPendingModeChange`/`SessionAgent.restart`,
-// T031/T032) -- this build has no `restart()`, so an already-running Session keeps its OLD mode
-// until the next time it is stopped and reopened; only a Session started (or restarted by this
-// channel in the Electron build) AFTER this call picks up the new mode. Every other setter below
-// is a direct port of `src/main/ipc/settings.ts`'s own basic-shape-validation-then-persist
-// pattern: a malformed argument is `invalid-argument`, a valid one is persisted via
-// `store::settings::SettingsStore` and broadcast the same way.
+// broadcasts `settings:changed` (T028) so every window stays in sync. Not ported (`session::
+// agent`'s own header): fanning `pendingMode` out to every LIVE Session and restarting each at
+// its next settle (T031/T032) -- this build has no `restart()`, so a running Session keeps its
+// OLD mode until it is stopped and reopened. Every other setter below is a direct port of
+// `src/main/ipc/settings.ts`'s basic-shape-validation-then-persist pattern: a malformed
+// argument is `invalid-argument`, a valid one is persisted via `store::settings::SettingsStore`
+// and broadcast the same way.
 
 use serde_json::Value;
 
