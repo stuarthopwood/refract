@@ -546,21 +546,20 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
   .eventWrapper {
     filter: none !important;
   }
-  /* #456 accent source (flowchart family): borders, edge lines and arrowheads in the preset accent, node fill a faint accent tint, labels stay in the prose colour. */
-  .node rect, .node polygon, .node circle, .node ellipse, .node path {
-    stroke: ${accent} !important;
-    fill: ${fill} !important;
+  /* #456 accent source, flowcharts only: borders, edge lines and arrowheads in the preset accent, node fill a faint accent tint, labels stay in the prose colour. Fill carries no !important so author classDef/style colours win. */
+  &[aria-roledescription^="flowchart"] .node rect, &[aria-roledescription^="flowchart"] .node polygon, &[aria-roledescription^="flowchart"] .node circle, &[aria-roledescription^="flowchart"] .node ellipse, &[aria-roledescription^="flowchart"] .node path {
+    stroke: ${accent};
+    fill: ${fill};
   }
-  .cluster rect {
-    stroke: ${accent} !important;
+  &[aria-roledescription^="flowchart"] .cluster rect {
+    stroke: ${accent};
   }
-  .flowchart-link, .edgePath .path {
-    stroke: ${accent} !important;
+  &[aria-roledescription^="flowchart"] .flowchart-link {
+    stroke: ${accent};
   }
-  .arrowMarkerPath, marker.arrowMarker path {
-    fill: ${accent} !important;
-    stroke: ${accent} !important;
-  }
+  &[aria-roledescription^="flowchart"] .arrowMarkerPath {
+    fill: ${accent};
+    stroke: ${accent};
   /* Quality-gate remediation (round 6): gitGraph's own \`.commit-label-bkg\` rect ships at
      \`opacity: 0.5\`, so wherever a commit sits on a bright \`git<N>\` branch line, the line shows
      through the label's own background at 50% strength and the default commit-label text colour
