@@ -20,6 +20,7 @@
 - FR-002: The user's own environment is never modified.
 - FR-003: Nothing is exported, cached or logged; the OS store is read by the agent at its start, so restarting the agent after a CA rotation fixes the failure.
 - FR-004: Networks without TLS inspection are unaffected (the system store is a superset of Bun's bundled roots).
+- Accepted risk (security review): the agent now trusts any root in the OS store, the same trust browsers use; anyone who can write to that store already controls the machine.
 
 ## Success criteria
 
