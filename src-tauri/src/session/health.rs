@@ -42,11 +42,7 @@ struct SessionHealth {
     last_emit: Option<(Shown, Instant)>,
 }
 
-fn rpc_next(
-    current: Option<u64>,
-    sample: Option<RpcSample>,
-    held_for: Duration,
-) -> Option<u64> {
+fn rpc_next(current: Option<u64>, sample: Option<RpcSample>, held_for: Duration) -> Option<u64> {
     let Some(sample) = sample else {
         return if current.is_some() && held_for < MIN_DISPLAY {
             current

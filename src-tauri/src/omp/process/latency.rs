@@ -13,7 +13,12 @@ use super::OmpProcess;
 
 /// Quick state or acknowledgement commands only: a command that legitimately runs long
 /// (`new_session`, `get_login_providers`, a model switch) would read as a slow agent.
-const TRACKED_COMMANDS: &[&str] = &["get_state", "get_session_stats", "abort", "set_thinking_level"];
+const TRACKED_COMMANDS: &[&str] = &[
+    "get_state",
+    "get_session_stats",
+    "abort",
+    "set_thinking_level",
+];
 
 /// A sample older than this no longer says anything about the agent's current responsiveness.
 const SAMPLE_FRESH_FOR: Duration = Duration::from_secs(60);
