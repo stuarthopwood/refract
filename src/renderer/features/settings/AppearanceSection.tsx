@@ -20,6 +20,7 @@ import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
+import { TextSizeGroup } from './TextSizeGroup'
 
 export function AppearanceSection() {
   // Issue #554: the Save/Cancel row below now governs both pickers -- dirty if EITHER has an
@@ -197,6 +198,8 @@ export function AppearanceSection() {
             Cancel
           </Button>
         </div>
+        {/* Spec 035 (#842): applies live, no Save/Cancel. */}
+        <TextSizeGroup />
         {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live, no Save/Cancel --
             the Save/Cancel row above governs only the two pickers. */}
         <SettingsGroup title="Decoration">
