@@ -240,3 +240,5 @@ first if desired.
 - T013 (partly verified, unchecked): Settings > Appearance shows "Background watermark" with a switch and a bordered preview box with the mark; a real click turns the switch off, the live watermark count drops to 0, and the value persists across a page reload; turning it back on restores it. Default is on for a fresh profile. NOT verified: a hand-edited missing or non-boolean stored value falling back to on.
 - Forced colors and `prefers-reduced-transparency: reduce` (emulated): the mark computes `display: none` in both.
 - NOT verified: T015 (text selection and clicks through the mark; `pointer-events: none` is confirmed), T016 (drag-resize behaviours), T018 (the full quickstart pass), and the settings screen's dark high-contrast appearance.
+
+- [ ] T020 Retune opacity (issue #1298): set `--watermark-opacity` and `--holiday-artwork-opacity` per theme to about 1.6:1 (0.30 Dark/Amber, 0.28 Obsidian/Nordic, 0.24 high contrast) and refresh the stale ~3:1 comments, per research decision 5

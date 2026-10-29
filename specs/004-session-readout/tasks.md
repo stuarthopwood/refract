@@ -848,3 +848,4 @@ driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
 - [x] T242 Add the `showAiCredits` setting (Rust settings store, `model.ts`, settings store) and a "Show AI credits" switch in Settings > Chat, per FR-053
 - [x] T243 Extend `ContextUsageChip` with the credits text, a keyboard-reachable tooltip ("Plan: P% used" or "Plan usage unavailable"), the FR-033 colour on the plan figure and the extended `sr-only` phrase, per FR-050 to FR-052
 - [x] T244 Add `scripts/verify-1238-ai-credits.mjs`, a live check with the fake omp covering credits, plan available and unavailable, and the Setting off, per FR-050 to FR-053
+- [ ] T245 Treat OMP 18.13.3's manual_compaction_start/_end frames like the automatic ones in eadout_activity.rs so a manual /compact shows Compacting, per FR-037 (issue #1294)
