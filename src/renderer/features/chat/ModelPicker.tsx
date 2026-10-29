@@ -291,7 +291,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             onKeyDown={handleFilterKeyDown}
             placeholder="Filter models…"
             aria-label="Filter models"
-            className="h-6"
+            className="h-6 rounded-[max(0px,calc(var(--radius-lg)-0.25rem))]"
           />
         </div>
         <div ref={listRef} id={listboxId} role="listbox" aria-label="Models" className="min-h-0 flex-1 overflow-y-auto" onMouseDown={(event) => event.preventDefault()}>

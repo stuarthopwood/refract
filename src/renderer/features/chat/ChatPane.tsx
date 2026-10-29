@@ -42,6 +42,8 @@ import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
 import { ComposerAboveStack } from './ComposerAboveStack'
+import { QueuedPanel } from './QueuedPanel'
+import { useQueuedMessages } from './useQueuedMessages'
 import { SessionStartNotice } from './SessionStartNotice'
 import { pickStartingMessageIndex, STARTING_MESSAGES, STARTING_MESSAGE_EMOJI } from './startingMessages'
 import { Transcript } from './Transcript'
@@ -109,6 +111,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // Issue #1205 (FR-104): a forced open (Start agent, a send) bumps this, re-running the snapshot
   // effect below so the live transcript replaces the saved history this pane was showing.
   const startSeq = useSessionsStore((s) => s.startSeq[sessionId] ?? 0)
+  const queued = useQueuedMessages(sessionId)
   // Spec 005 (research.md Decision 4): a just-restored pane that has not yet been opened by a
   // real user action skips the snapshot-fetch effect below entirely.
   const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
@@ -1359,8 +1362,10 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         />
       </div>
       <ComposerAboveStack key={`todo-${sessionId}`} sessionId={sessionId} stoppedBarAllowed={!showBanner && !effectiveStartProgress} />
+      <QueuedPanel key={`queued-${sessionId}`} queued={queued} />
       <MessageInput
         key={`composer-${sessionId}`}
+        queued={queued}
         sessionId={sessionId}
         stopReason={effectiveStopReason}
         stopDetail={effectiveStopDetail}
