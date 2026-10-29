@@ -504,6 +504,7 @@ export type TranscriptItem =
     }
   | { kind: 'request'; id: string; requestId: string; resolved?: 'approved' | 'denied' | 'answered' | 'cancelled' }
   | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string }
+  | { kind: 'turn-error'; id: string; text: string }
   | {
       /** A user-invoked `/skill:<name>` custom message (issue #547): OMP's `role: 'custom'`
        * `customType: 'skill-prompt'` message, `attribution: 'user'`, `display: true`. Rendered as

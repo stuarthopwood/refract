@@ -43,6 +43,8 @@ mod user_images;
 use user_images::ImageRef;
 mod agent_message;
 use agent_message::try_build_agent_message;
+mod turn_error;
+use turn_error::{build_turn_error_item, current_turn_has_error};
 
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
@@ -196,6 +198,12 @@ pub enum TranscriptItem {
         level: NoticeLevel,
         text: String,
     },
+    /// #1284: the end-of-turn model error (`transcript/turn_error.rs`); `text` is OMP's own
+    /// `errorMessage`, untrusted.
+    TurnError {
+        id: String,
+        text: String,
+    },
 }
 
 impl TranscriptItem {
@@ -210,7 +218,8 @@ impl TranscriptItem {
             | TranscriptItem::AgentMessage { id, .. }
             | TranscriptItem::Advisory { id, .. }
             | TranscriptItem::Request { id, .. }
-            | TranscriptItem::Notice { id, .. } => id,
+            | TranscriptItem::Notice { id, .. }
+            | TranscriptItem::TurnError { id, .. } => id,
         }
     }
 }
@@ -1055,7 +1064,10 @@ fn apply_message_snapshot(
     match role {
         "assistant" => {
             let parts = content_parts(message);
-            let built = build_assistant_items(message_id, parts, streaming, &items, true);
+            let mut built = build_assistant_items(message_id, parts, streaming, &items, true);
+            if !streaming {
+                built.extend(build_turn_error_item(message_id, message));
+            }
             replace_message_items(items, message_id, built.into_iter().map(Arc::new).collect())
         }
         "user" => {
@@ -1339,6 +1351,9 @@ fn apply_prompt_result_notice(
     let mut items = items;
     match status {
         "error" => {
+            if current_turn_has_error(&items) {
+                return items;
+            }
             let text = match frame.get("error") {
                 Some(Value::String(s)) => s.clone(),
                 Some(other) => other
@@ -1609,7 +1624,8 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
         match role {
             "assistant" => {
                 let parts = content_parts(message);
-                let built = build_assistant_items(&message_id, parts, false, &items, false);
+                let mut built = build_assistant_items(&message_id, parts, false, &items, false);
+                built.extend(build_turn_error_item(&message_id, message));
                 items.extend(built.into_iter().map(Arc::new));
             }
             "user" => {
