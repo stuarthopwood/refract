@@ -20,6 +20,10 @@ _Avoid_: Accent, tag colour, label colour
 One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Project** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
 _Avoid_: Task, thread, chat (for the whole unit)
 
+**Child Session**:
+A **Session** created by another Session's agent (#1304), linked to that parent Session and nested under it in the session list. It has its own **Worktree** and branch and is otherwise a full Session the developer can open, message, stop and archive. Only one level deep: a child Session cannot create its own. Not a **Subagent**, which runs inside its parent's Worktree through OMP's `task` tool and is not a Session.
+_Avoid_: Sub-session, nested session, spawned session
+
 **Session status**:
 The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Stopped, Unread response or Idle, in that order of precedence.
 _Avoid_: state dot, status badge
@@ -250,6 +254,14 @@ _Avoid_: Sidebar, drawer
 **Panel order**:
 The user's saved order of the **Panel**s, shared by the **Icon rail** and the launcher (not the tab bar, which keeps open order). Default: Git changes, File explorer, Subagents, Side chat, FDB Knowledge, Agent Builder. Changed by dragging a rail button or Alt+Shift+Up/Down on it, restored by "Reset panel order" in Settings (issue #730).
 _Avoid_: Rail order, button order
+
+**Right pane surface**:
+The background of the right pane and the **Icon rail**, one surface: the `--sidebar-right` token, a per-theme midpoint between `--background` and `--sidebar` (the left Session list), so the right edge reads as its own region, neither page nor left panel (decided 2026-10-29, issue #674). The pane has no Min / Default / Max buttons; its width is set by dragging, double-click (reset to 320 px), the handle's context menu and the View menu (Narrow 240, Default 320, Wide 520, Close pane), which are the WCAG 2.5.7 non-drag alternative. Dragging below 240 px closes it.
+_Avoid_: width preset, sidebar background
+
+**Git decoration**:
+The colour a file or folder name and icon in the File explorer take from the `--git-*` tokens (modified, added, untracked, deleted, ignored, renamed, conflicted, staged), separate from the session-state colours. A folder takes the most significant status among its descendants (conflicted, deleted, modified, staged, renamed, added, untracked; ignored does not roll up). The trailing status icon and its screen-reader word stay (issue #768).
+_Avoid_: status colour (the session-state colours)
 
 **Pane**:
 An unboxed, resizable region of the main content area, one of possibly several side by side, each independently scrollable (for example, a **Chat pane**). Inside a **Split**, say **Chat pane**, not the bare word, per that entry's own _Avoid_ note.

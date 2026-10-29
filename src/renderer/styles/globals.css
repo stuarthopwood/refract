@@ -107,6 +107,7 @@
   --radius-3xl: calc(var(--radius) * 4);
   --radius-4xl: calc(var(--radius) * 5);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-right: var(--sidebar-right);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
@@ -114,6 +115,14 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-git-modified: var(--git-modified);
+  --color-git-added: var(--git-added);
+  --color-git-untracked: var(--git-untracked);
+  --color-git-deleted: var(--git-deleted);
+  --color-git-ignored: var(--git-ignored);
+  --color-git-renamed: var(--git-renamed);
+  --color-git-conflicted: var(--git-conflicted);
+  --color-git-staged: var(--git-staged);
   --color-state-working: var(--state-working);
   --color-state-working-foreground: var(--state-working-foreground);
   --color-state-idle: var(--state-idle);
@@ -182,6 +191,16 @@
 
 .theme-dark {
   color-scheme: dark;
+  /* #768 Git decoration: file-explorer name/icon colours, hues kept apart from the --state-* and
+   * --severity-* tokens; each is gated at 4.5:1 against the sidebar, hover and selected rows. */
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
@@ -306,6 +325,7 @@
   --project-8: oklch(0.78 0.11 355);
   --project-9: oklch(0.78 0.02 250);
   --project-10: oklch(0.78 0.05 90);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -523,6 +543,14 @@
  * covers Nordic Frost/Cyber Amber, not this issue. */
 .theme-obsidian {
   color-scheme: dark;
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
 
   /* ---- Layer 2: semantic roles. Canonical here (the opposite of Dark/HC above): --card/
    * --popover/--muted etc below alias INTO these, not the other way round. ------------------ */
@@ -556,6 +584,7 @@
   --project-8: oklch(0.76 0.11 355);
   --project-9: oklch(0.76 0.02 250);
   --project-10: oklch(0.76 0.05 90);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: #1C1F28;
   --surface-2: #242834;
   --surface-3: #2A3040;
@@ -752,6 +781,14 @@
  * starkest possible background this design system can express. */
 .theme-dark-high-contrast {
   color-scheme: dark;
+  --git-modified: oklch(0.9 0.14 95);
+  --git-added: oklch(0.88 0.17 135);
+  --git-untracked: oklch(0.88 0.12 180);
+  --git-deleted: oklch(0.86 0.15 12);
+  --git-ignored: oklch(0.82 0.01 260);
+  --git-renamed: oklch(0.88 0.11 250);
+  --git-conflicted: oklch(0.88 0.18 330);
+  --git-staged: oklch(0.88 0.12 295);
   --scrollbar-thumb: #d4d4d4;
   --scrollbar-thumb-hover: #ffffff;
   --scrollbar-track: transparent;
@@ -849,6 +886,7 @@
   --project-8: oklch(0.86 0.11 355);
   --project-9: oklch(0.86 0.02 250);
   --project-10: oklch(0.86 0.05 90);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --sidebar-foreground: oklch(1 0 0);
   --sidebar-primary: oklch(0.75 0.17 264);
   --sidebar-primary-foreground: oklch(0 0 0);
@@ -993,6 +1031,14 @@
  */
 .theme-nordic-frost {
   color-scheme: dark;
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
   --scrollbar-thumb: var(--muted-foreground);
   --scrollbar-thumb-hover: var(--foreground);
   --scrollbar-track: transparent;
@@ -1029,6 +1075,7 @@
   --project-8: oklch(0.78 0.11 355);
   --project-9: oklch(0.78 0.02 250);
   --project-10: oklch(0.78 0.05 90);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: #101b2b;
   --surface-2: #1c2738;
   --surface-3: #293342;
@@ -1252,6 +1299,14 @@
  * pair re-verified by `scripts/check-theme-contrast.mjs`. */
 .theme-cyber-amber {
   color-scheme: dark;
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
@@ -1275,6 +1330,7 @@
   --project-8: oklch(0.78 0.11 355);
   --project-9: oklch(0.78 0.02 250);
   --project-10: oklch(0.78 0.05 90);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: oklch(0.205 0 0);
   --surface-2: oklch(0.205 0 0);
   --surface-3: oklch(0.269 0 0);

@@ -25,10 +25,13 @@ function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
 
 function ResizableHandle({
   withHandle,
+  noDragHit,
   className,
   ...props
 }: ResizablePrimitive.SeparatorProps & {
   withHandle?: boolean
+  // #674: gives the 12px hit area back when it overlaps a `drag-region` (title bar rows).
+  noDragHit?: boolean
 }) {
   return (
     <ResizablePrimitive.Separator
@@ -44,6 +47,12 @@ function ResizableHandle({
           aria-hidden="true"
           data-slot="resizable-grip"
           className="pointer-events-none z-10 h-8 min-h-8 w-1 min-w-1 shrink-0 rounded-full bg-border transition-colors group-hover/handle:bg-muted-foreground group-focus-visible/handle:bg-accent-text group-focus-visible/handle:outline-2 group-focus-visible/handle:outline-offset-2 group-focus-visible/handle:outline-accent-text group-data-[separator=active]/handle:bg-accent-text group-data-[separator=disabled]/handle:opacity-0 forced-colors:bg-[CanvasText] forced-colors:group-hover/handle:bg-[Highlight] forced-colors:group-focus-visible/handle:bg-[Highlight] forced-colors:group-focus-visible/handle:outline-[Highlight] forced-colors:group-data-[separator=active]/handle:bg-[Highlight] motion-reduce:transition-none"
+        />
+      )}
+      {noDragHit && (
+        <div
+          aria-hidden="true"
+          className="no-drag-region pointer-events-none absolute inset-y-0 left-1/2 w-3 -translate-x-1/2"
         />
       )}
     </ResizablePrimitive.Separator>

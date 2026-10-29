@@ -8,7 +8,6 @@ import { useRightPaneStore, useSideChatStore, useSubagentPanelStore } from '@/st
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { PanelLauncher } from './PanelLauncher'
 import { PanelTabBar } from './PanelTabBar'
-import { WidthPresetControl } from './WidthPresetControl'
 import { WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 import { FdbKnowledgePanel } from './placeholders/FdbKnowledgePanel'
 import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
@@ -25,13 +24,9 @@ interface RightPaneShellProps {
    * thread has no independent binding of its own (FR-005: it always follows whichever Session
    * the chat pane currently shows). */
   sessionId: string | null
-  /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7) -- `App.tsx`'s own
-   * `ResizablePanel` ref, forwarded to `WidthPresetControl` in every state the pane can be open
-   * in, including the 0-panel launcher below. */
-  resize(widthPx: number): void
 }
 
-export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
+export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
@@ -70,12 +65,12 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
 
   if (openPanelIds.length === 0) {
     return (
-      <div data-right-pane-shell className="flex h-full flex-col overflow-hidden">
+      <div data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
         <WindowControlsSpacerRow />
-        <WidthPresetControl resize={resize} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <PanelLauncher sessionId={sessionId} />
         </div>
+        <HandleHitStrip />
       </div>
     )
   }
@@ -83,8 +78,8 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   const isTabBar = openPanelIds.length >= 2
 
   return (
-    <div id="right-pane-active-panel" data-right-pane-shell className="flex h-full flex-col overflow-hidden">
-      <PanelTabBar sessionId={sessionId} resize={resize} />
+    <div id="right-pane-active-panel" data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
+      <PanelTabBar sessionId={sessionId} />
       <div
         ref={contentRef}
         data-right-pane-content
@@ -114,6 +109,14 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
         {activePanelId === 'file-explorer' && <FileExplorerPanel sessionId={sessionId} />}
         {activePanelId === 'git-changes' && <GitChangesPanel sessionId={sessionId} />}
       </div>
+      <HandleHitStrip />
     </div>
   )
+}
+
+// #674: the header rows above are `drag-region`, and an overlapping `-webkit-app-region` resolves
+// by DOM order, so they would swallow the resize handle's hit area at the pane's left edge. This
+// strip is the shell's LAST child, so it wins that tie and hands the pixels back to the handle.
+function HandleHitStrip() {
+  return <div aria-hidden className="no-drag-region pointer-events-none absolute inset-y-0 left-0 w-1.5" />
 }

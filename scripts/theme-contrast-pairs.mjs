@@ -36,6 +36,8 @@ export const PAIRS = [
   // #887: the ten Project colour presets on the Session list background.
   ...Array.from({ length: 10 }, (_, i) => ({ fg: `project-${i + 1}`, bg: 'sidebar', min: 4.5 })),
   ...Array.from({ length: 10 }, (_, i) => ({ fg: `project-${i + 1}`, bg: 'sidebar-accent', min: 4.5 })),
+  { fg: 'active-indicator', bg: 'sidebar-right', min: 3 }, // #1126: the pressed IconRail's ActiveIndicatorBar (non-colour cue; its muted fill alone is only ~1.3:1 against the rail)
+  { fg: 'foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'muted-foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'accent-text', bg: 'sidebar-right', min: 4.5 }, // #674: the right pane and rail surface
   { fg: 'foreground', bg: 'background', min: 4.5 },
   { fg: 'card-foreground', bg: 'card', min: 4.5 },
   { fg: 'popover-foreground', bg: 'popover', min: 4.5 },
@@ -135,7 +137,7 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
-  { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125
+  { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125, #1126: also the pressed IconRail glyph on its bg-muted fill
   // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
   // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
   // entry (it would fail both themes today). Issue #610 reads `--accent-text` now
@@ -325,6 +327,10 @@ export const PAIRS = [
   { fg: 'state-working', bg: 'sidebar-accent', min: 3 },
   { fg: 'severity-info', bg: 'sidebar', min: 3 },
   { fg: 'severity-info', bg: 'sidebar-accent', min: 3 },
+  // #768 Git decoration: file-explorer names and icons are body text on the pane surface, the hover row and the selected row (`--accent`).
+  ...['modified', 'added', 'untracked', 'deleted', 'ignored', 'renamed', 'conflicted', 'staged'].flatMap((mark) =>
+    ['background', 'sidebar', 'sidebar-right', 'sidebar-accent', 'accent'].map((bg) => ({ fg: `git-${mark}`, bg, min: 4.5 }))
+  ),
   // Issue #568/#529: the pull request StatePill (solid fill, icon + word) -- its own text
   // colour against its own fill, in every theme. `pr-open`/`pr-closed` alias existing already-
   // gated fills (`state-working`/`destructive`), but the ALIAS NAME itself was never a PAIRS

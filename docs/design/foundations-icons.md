@@ -45,7 +45,7 @@ Known gap: the pasted-image remove control (`AttachmentStrip.tsx:67-80`) has no 
 | Size | Tailwind class | Use |
 | --- | --- | --- |
 | 16px | `size-4` | Default: buttons, menu items, headers, metadata, chips, inline status and notices. |
-| 24px | `size-6` | Large glyphs in empty states and avatars. |
+| 24px | `size-6` | Large glyphs in empty states and avatars, and the primary-nav icons in the right-pane icon rail (40px `icon-xl` buttons in a 48px rail, `RAIL_WIDTH_PX`). |
 
 Icon boxes are 8, 16, 24 or 32px (#1252); the old 12px and 14px steps moved to 16px.
 
