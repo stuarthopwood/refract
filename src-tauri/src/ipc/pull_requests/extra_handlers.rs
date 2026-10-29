@@ -5,12 +5,17 @@ use serde_json::Value;
 
 use crate::github::gh_close::close_pull_request_mutation;
 use crate::github::images::fetch_pr_image;
-use crate::ipc::{invalid_argument, AppState, HandlerFuture, IpcError};
+use crate::ipc::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
 use super::{
     check_not_stale, forget_cache, map_gh_error, repo_path_for, stale_error,
     valid_pull_request_number, STALE_ERROR,
 };
+
+pub(super) fn register(d: &mut Dispatcher) {
+    d.register("pullRequests.close", pull_requests_close);
+    d.register("pullRequests.fetchImage", pull_requests_fetch_image);
+}
 
 /// Closes without merging. The staleness check is lenient (no cache entry is fine, like
 /// `comment`): closing is never pinned to a head commit, but a pull request that changed since the
