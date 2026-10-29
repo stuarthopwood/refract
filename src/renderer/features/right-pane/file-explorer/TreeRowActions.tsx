@@ -3,8 +3,8 @@
 // shortcuts only (`tabIndex={-1}`, grill 2026-10-29): the keyboard route stays the kebab menu and
 // Shift+F10. How many show follows the PANE's width, via a container query on the Explorer
 // panel's `@container` root: below 300px none; 300px up to 380px Open in VS Code + Copy path; 380px
-// and wider all three. Tailwind needs the literals in the class strings below, so keep them in
-// step with these two numbers.
+// and wider all three. The container is the panel's content box (p-2 = 16px of padding), so the
+// literals below are 284 (300 - 16) and 365 (381 - 16); keep them in step with these numbers.
 import { PathActionButtons, type PathActionHandlers } from './path-actions'
 
 interface TreeRowActionsProps {
@@ -20,9 +20,9 @@ export function TreeRowActions({ selected, handlers }: TreeRowActionsProps) {
       handlers={handlers}
       tabIndex={-1}
       classNames={{
-        openInVSCode: `${reveal} hidden @min-[300px]:inline-flex`,
-        reveal: `${reveal} hidden @min-[380px]:inline-flex`,
-        copyPath: `${reveal} hidden @min-[300px]:inline-flex`
+        openInVSCode: `${reveal} hidden @min-[284px]:inline-flex`,
+        reveal: `${reveal} hidden @min-[365px]:inline-flex`,
+        copyPath: `${reveal} hidden @min-[284px]:inline-flex`
       }}
     />
   )
