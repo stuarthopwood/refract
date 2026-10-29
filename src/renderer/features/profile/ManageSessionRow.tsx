@@ -38,7 +38,7 @@ import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { buildSessionRowActions } from '@/features/sessions/sessionActions'
 import { useHideSession } from '@/features/sessions/useHideSession'
 import { HiddenMarker } from '@/features/sessions/HiddenMarker'
-import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTime } from '@/features/sessions/sessionDisplay'
+import { StateIcon, displayLabel, displayStatus, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
 import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
@@ -534,7 +534,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                     comes from this visible content, in the same order it is read. */}
                 <span className="flex min-w-0 items-center gap-2">
                   <StateIcon status={displayStatus(session)} />
-                  <span className="truncate text-xs text-muted-foreground">{STATUS_LABEL[displayStatus(session)]}</span>
+                  <span className="truncate text-xs text-muted-foreground">{displayLabel(session)}</span>
                 </span>
                 {isVisible && <span className="sr-only">Shown in chat</span>}
                 <span className="flex min-w-0 flex-col">

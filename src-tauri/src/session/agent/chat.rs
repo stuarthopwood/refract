@@ -20,6 +20,15 @@ impl SessionAgent {
         if let Some(held) = self.hold_if_paused(&text, &images).await? {
             return Ok(held);
         }
+        self.send_unheld(text, images).await
+    }
+
+    /// The send path proper, without the pause gate (`resume` drains held messages through it).
+    pub(super) async fn send_unheld(
+        &self,
+        text: String,
+        images: Option<Vec<Value>>,
+    ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
         let (proc, working) = {
             let idle_with_process = {

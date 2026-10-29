@@ -7,6 +7,7 @@
 // capture, local rename/delete-dialog state) via the handlers it passes in, since those differ
 // between a repository-grouped row and a flat cross-repository one.
 import type { SessionSummary } from '../../../shared/ipc'
+import { canTogglePause } from '../chat/pauseActions'
 
 export type SessionRowAction =
   | { kind: 'separator' }
@@ -67,12 +68,13 @@ export function buildSessionRowActions(
     isArchived
       ? { kind: 'item', key: 'restore', label: 'Restore', onSelect: handlers.onRestore }
       : { kind: 'item', key: 'archive', label: 'Archive', onSelect: handlers.onArchive },
-    ...(session.status !== 'stopped' || session.pause
+    ...(canTogglePause(session)
       ? ([
+          { kind: 'separator' },
           {
             kind: 'item',
             key: 'pause',
-            label: session.pause ? 'Resume' : 'Pause',
+            label: session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause',
             onSelect: handlers.onTogglePause
           }
         ] as const)

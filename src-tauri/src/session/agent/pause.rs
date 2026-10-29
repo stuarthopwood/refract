@@ -7,16 +7,25 @@
 // is still running, `paused` once it settles. The held list mirrors to `Session.paused_held` in
 // the registry so a pause survives app and agent restarts and never auto-resumes.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
 use serde_json::{json, Value};
 
 use crate::store::registry::SessionPatch;
 
-use super::{AgentError, AgentState, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
+use super::{AgentError, AgentState, SessionAgent, SessionStatus};
+
+const MAX_HELD_MESSAGES: usize = 100;
+const MAX_HELD_BYTES: usize = 256 * 1024;
 
 #[derive(Default)]
 pub(super) struct State {
     loaded: bool,
     held: Option<Vec<String>>,
+    resuming: bool,
+    seq: u64,
+    written: Arc<AtomicU64>,
 }
 
 /// Pure: `pausing` while a turn is running, `paused` otherwise, `None` when not paused.
@@ -74,11 +83,24 @@ impl SessionAgent {
         }
     }
 
-    async fn persist_pause(&self, held: Option<Vec<String>>) {
-        let result = self
-            .registry
-            .lock()
-            .await
+    /// Writes the current held list. Each call snapshots under the state lock with a rising
+    /// sequence number; the registry lock then serialises writes, and a stale snapshot is
+    /// skipped, so concurrent mutations can never persist out of order.
+    pub(super) async fn persist_pause(&self) {
+        let (held, seq, written) = {
+            let mut state = self.state.lock().await;
+            state.pause.seq += 1;
+            (
+                state.pause.held.clone(),
+                state.pause.seq,
+                state.pause.written.clone(),
+            )
+        };
+        let mut registry = self.registry.lock().await;
+        if written.load(Ordering::SeqCst) > seq {
+            return;
+        }
+        let result = registry
             .update_session(
                 &self.session_id,
                 SessionPatch {
@@ -87,6 +109,7 @@ impl SessionAgent {
                 },
             )
             .await;
+        written.store(seq, Ordering::SeqCst);
         if let Err(err) = result {
             log::warn!("pause: could not persist for {}: {err:?}", self.session_id);
         }
@@ -121,6 +144,7 @@ impl SessionAgent {
                 state.queue_steering.clone(),
             )
         };
+        self.persist_pause().await;
         if has_process {
             for (queue, texts) in [("followUp", follow_up), ("steering", steering)] {
                 for text in texts {
@@ -138,62 +162,70 @@ impl SessionAgent {
                         if let Some(held) = self.state.lock().await.pause.held.as_mut() {
                             held.push(text);
                         }
+                        self.persist_pause().await;
                     }
                 }
             }
         }
-        let held = self.state.lock().await.pause.held.clone();
-        self.persist_pause(held).await;
         self.emit_status().await;
         self.emit_pause_queue().await;
         Ok(json!({ "paused": true }))
     }
 
-    /// `chat.resume`: clears the pause and sends the held messages in order. With held messages
-    /// and no live process the pause stays and the caller sees `agent-not-running`.
+    /// `chat.resume`: drains the held messages in order through the normal send path, then
+    /// clears the pause. The pause stays set while draining, so a concurrent send appends behind
+    /// the held ones. A failed send leaves the unsent messages held and the Session paused. With
+    /// held messages and no live process the pause stays and the caller sees `agent-not-running`.
     pub async fn resume(&self) -> Result<Value, AgentError> {
         self.ensure_pause_loaded().await;
-        let (proc, working, held) = {
+        {
             let mut state = self.state.lock().await;
-            let Some(held) = state.pause.held.clone() else {
+            let Some(held) = state.pause.held.as_ref() else {
                 return Ok(json!({ "paused": false }));
             };
-            let proc = state.process.clone();
-            if proc.is_none() && !held.is_empty() {
+            if state.pause.resuming {
+                return Ok(json!({ "paused": true }));
+            }
+            if state.process.is_none() && !held.is_empty() {
                 return Err(AgentError::new(
                     "agent-not-running",
                     "Start the agent before resuming: held messages are waiting.",
                 ));
             }
-            state.pause.held = None;
-            let working = matches!(
-                state.status,
-                SessionStatus::Working | SessionStatus::NeedsYou
-            );
-            (proc, working, held)
-        };
-        self.persist_pause(None).await;
+            state.pause.resuming = true;
+        }
+        let outcome = self.drain_held().await;
+        self.state.lock().await.pause.resuming = false;
+        self.persist_pause().await;
         self.emit_status().await;
         self.emit_pause_queue().await;
-        if let Some(proc) = proc {
-            for (index, text) in held.into_iter().enumerate() {
-                let mut cmd = json!({ "type": "prompt", "message": text });
-                if working || index > 0 {
-                    cmd["streamingBehavior"] = Value::String("followUp".to_string());
+        outcome?;
+        Ok(json!({ "paused": false }))
+    }
+
+    async fn drain_held(&self) -> Result<(), AgentError> {
+        loop {
+            let next = {
+                let mut state = self.state.lock().await;
+                match state.pause.held.as_ref().and_then(|h| h.first().cloned()) {
+                    Some(text) => text,
+                    None => {
+                        state.pause.held = None;
+                        return Ok(());
+                    }
                 }
-                let res = proc
-                    .request(cmd, DEFAULT_REQUEST_TIMEOUT_MS)
-                    .await
-                    .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
-                if res.get("success").and_then(Value::as_bool) != Some(true) {
-                    return Err(AgentError::new(
-                        "prompt-failed",
-                        "a held message failed to send",
-                    ));
+            };
+            self.send_unheld(next.clone(), None).await?;
+            let mut state = self.state.lock().await;
+            if let Some(held) = state.pause.held.as_mut() {
+                if held.first() == Some(&next) {
+                    held.remove(0);
                 }
             }
+            drop(state);
+            self.persist_pause().await;
+            self.emit_pause_queue().await;
         }
-        Ok(json!({ "paused": false }))
     }
 
     pub async fn toggle_pause(&self) -> Result<Value, AgentError> {
@@ -222,10 +254,17 @@ impl SessionAgent {
                     "Images can't be queued while paused. Resume first, or send text only.",
                 ));
             }
+            if held.len() >= MAX_HELD_MESSAGES
+                || held.iter().map(String::len).sum::<usize>() + text.len() > MAX_HELD_BYTES
+            {
+                return Err(AgentError::new(
+                    "paused-full",
+                    "Too many messages are held while paused. Resume first.",
+                ));
+            }
             held.push(text.to_string());
-            held.clone()
         };
-        self.persist_pause(Some(held)).await;
+        self.persist_pause().await;
         self.emit_pause_queue().await;
         Ok(Some(json!({ "queued": true })))
     }
@@ -242,9 +281,8 @@ impl SessionAgent {
                 return false;
             };
             held.remove(index);
-            held.clone()
         };
-        self.persist_pause(Some(held)).await;
+        self.persist_pause().await;
         self.emit_pause_queue().await;
         true
     }

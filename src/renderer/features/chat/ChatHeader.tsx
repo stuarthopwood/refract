@@ -23,7 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useSessionsStore } from '@/state'
 import { closeChatFind, EMPTY_CHAT_FIND, openChatFind, useChatFindStore } from '@/state/chat-find-store'
 import { displayLabel, displayStatus, StateIcon } from '@/features/sessions/sessionDisplay'
-import { setSessionPaused } from './pauseActions'
+import { canTogglePause, setSessionPaused } from './pauseActions'
 import { HiddenMarker } from '@/features/sessions/HiddenMarker'
 import { ConversationSwitcher } from './ConversationSwitcher'
 
@@ -97,7 +97,7 @@ export function ChatHeader({
         <div className="shrink-0">
           <ConversationSwitcher sessionId={sessionId} />
         </div>
-        {(session.status !== 'stopped' || session.pause) && (
+        {canTogglePause(session) && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -105,12 +105,12 @@ export function ChatHeader({
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => void setSessionPaused(sessionId, !session.pause)}
-                aria-label={session.pause ? `Resume ${session.name}` : `Pause ${session.name}`}
+                aria-label={session.pause === 'pausing' ? `Cancel pause for ${session.name}` : session.pause ? `Resume ${session.name}` : `Pause ${session.name}`}
               >
                 {session.pause ? <PlayIcon aria-hidden className="size-4" /> : <PauseIcon aria-hidden className="size-4" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{session.pause ? 'Resume' : 'Pause after this turn'}</TooltipContent>
+            <TooltipContent>{session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause after this turn'}</TooltipContent>
           </Tooltip>
         )}
         <Tooltip>

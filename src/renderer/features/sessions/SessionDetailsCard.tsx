@@ -9,7 +9,7 @@ import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import { friendlyProviderLabel } from '@/lib/providerLabels'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { DiffStatLine, StateIcon, STATUS_LABEL, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'
+import { DiffStatLine, StateIcon, displayLabel, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
 /** The session details card (T069/T070): wraps the row's open button (`children`, passed through
@@ -91,7 +91,7 @@ export function SessionDetailsCard({
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <StateIcon status={displayStatus(session)} />
-                <span>{STATUS_LABEL[displayStatus(session)]}</span>
+                <span>{displayLabel(session)}</span>
                 <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
               </div>
               {activityText && <p className="break-words pl-6 text-xs text-muted-foreground">{activityText}</p>}

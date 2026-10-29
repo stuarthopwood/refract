@@ -3,7 +3,10 @@
 // everywhere: a notice carrying the backend's own error text.
 
 import { notify } from '@/state'
-import { toast } from 'sonner'
+
+export function canTogglePause(session: { status: string; pause?: string }): boolean {
+  return session.status !== 'stopped' || !!session.pause
+}
 
 export async function setSessionPaused(sessionId: string, paused: boolean): Promise<boolean> {
   const result = paused ? await window.refract.chat.pause(sessionId) : await window.refract.chat.resume(sessionId)
@@ -19,9 +22,9 @@ export async function setAllPaused(paused: boolean): Promise<void> {
   }
   const failed = (result.value as { failed?: number }).failed ?? 0
   if (failed > 0) {
-    toast.error(`${failed} paused ${failed === 1 ? 'session' : 'sessions'} could not resume (agent not running). Resume ${failed === 1 ? 'it' : 'them'} from the session.`, {
-      duration: Infinity,
-      closeButton: true
+    notify({
+      code: 'agent-not-running',
+      message: `${failed} paused ${failed === 1 ? 'session' : 'sessions'} could not resume (start the agent first, or see the notice). Resume ${failed === 1 ? 'it' : 'them'} from the session.`
     })
   }
 }

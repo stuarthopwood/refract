@@ -20,11 +20,11 @@ export type SessionDisplayStatus = SessionStatus | 'unread-response' | 'paused'
 
 /** The one place a Session's raw `status`/`unread` pair becomes the status actually shown.
  * `#735` (collapsed group header), `#748` (Show hidden badge) and `#846` (sleeping) will all
- * read this, not the raw fields. Issue #477: a paused Session shows Paused unless it needs the
- * user (a pending question must stay visible); a Pausing Session (turn still running) also
- * shows Paused, labelled "Pausing…" by `displayLabel`. */
+ * read this, not the raw fields. Issue #477: a Session whose pause has settled shows Paused; a
+ * Pausing Session (turn still running) keeps Working/Needs you, and `displayLabel` reads
+ * "Pausing…" for it. */
 export function displayStatus(s: Pick<SessionSummary, 'status' | 'unread' | 'pause'>): SessionDisplayStatus {
-  if (s.pause && s.status !== 'needs-you') return 'paused'
+  if (s.pause === 'paused') return 'paused'
   return s.status === 'idle' && s.unread ? 'unread-response' : s.status
 }
 
