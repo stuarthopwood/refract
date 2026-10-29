@@ -11,8 +11,8 @@
 pub mod advisor;
 pub mod agent;
 mod ai_credits;
-pub mod manager;
 pub mod health;
+pub mod manager;
 pub mod model;
 pub mod pending_selection;
 pub mod readout;

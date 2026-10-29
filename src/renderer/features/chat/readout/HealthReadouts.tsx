@@ -24,9 +24,10 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 const gigabytes = (bytes: number) => (bytes / 1e9).toFixed(1)
 
 /** Text for the polite status: set on a null-to-value change for the same Session only. */
-function useEnterAnnouncement(sessionId: string, value: number | null, message: (prefix: string) => string): string {
+const lastSpokeAt = new Map<string, number>()
+
+function useEnterAnnouncement(measure: string, sessionId: string, value: number | null, message: (prefix: string) => string): string {
   const previous = useRef<{ sessionId: string; value: number | null }>({ sessionId, value })
-  const lastSpokeAt = useRef(0)
   const inSplit = useSplitStore((s) => s.paneSessionIds.length > 1)
   const name = useSessionsStore((s) => s.sessions.find((candidate) => candidate.id === sessionId)?.name)
   const [text, setText] = useState('')
@@ -39,8 +40,9 @@ function useEnterAnnouncement(sessionId: string, value: number | null, message: 
     }
     if (before.value === null && value !== null) {
       const now = Date.now()
-      if (now - lastSpokeAt.current >= REANNOUNCE_MS) {
-        lastSpokeAt.current = now
+      const key = `${sessionId}:${measure}`
+      if (now - (lastSpokeAt.get(key) ?? 0) >= REANNOUNCE_MS) {
+        lastSpokeAt.set(key, now)
         setText(message(inSplit && name ? `${name}: ` : ''))
       }
     } else if (value === null) {
@@ -90,7 +92,7 @@ function HealthReadout({ value, icon: Icon, dataAttr, label, accessibleName, too
 
 export function RpcSlowReadout({ sessionId }: { sessionId: string }) {
   const ms = useSessionHealthStore((s) => s.bySession[sessionId]?.rpcSlowMs ?? null)
-  const announcement = useEnterAnnouncement(sessionId, ms, (prefix) => `${prefix}Agent responses are slow, ${seconds(ms ?? 0)} seconds.`)
+  const announcement = useEnterAnnouncement('rpc', sessionId, ms, (prefix) => `${prefix}Agent responses are slow, ${seconds(ms ?? 0)} seconds.`)
   const secs = seconds(ms ?? 0)
   return (
     <HealthReadout
@@ -107,7 +109,7 @@ export function RpcSlowReadout({ sessionId }: { sessionId: string }) {
 
 export function AgentMemoryReadout({ sessionId }: { sessionId: string }) {
   const bytes = useSessionHealthStore((s) => s.bySession[sessionId]?.agentMemoryBytes ?? null)
-  const announcement = useEnterAnnouncement(sessionId, bytes, (prefix) => `${prefix}Agent memory is high, ${gigabytes(bytes ?? 0)} gigabytes.`)
+  const announcement = useEnterAnnouncement('memory', sessionId, bytes, (prefix) => `${prefix}Agent memory is high, ${gigabytes(bytes ?? 0)} gigabytes.`)
   const gb = gigabytes(bytes ?? 0)
   return (
     <HealthReadout
