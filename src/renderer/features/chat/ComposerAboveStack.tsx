@@ -8,6 +8,7 @@ import { CurrentWorkBanner } from './CurrentWorkBanner'
 import { LongConversationBanner } from './LongConversation'
 import { PinnedTodoPanel } from './PinnedTodoPanel'
 import { QueuedPanel } from './QueuedPanel'
+import { RetryLine } from './RetryLine'
 import type { QueuedMessages } from './useQueuedMessages'
 
 /** `stoppedBarAllowed` is false while a stop banner shows or a start is running (FR-105). */
@@ -19,6 +20,7 @@ export function ComposerAboveStack({ sessionId, stoppedBarAllowed, queued }: { s
       <LongConversationBanner sessionId={sessionId} />
       <BackgroundAgentsBanner sessionId={sessionId} />
       <CurrentWorkBanner sessionId={sessionId} />
+      <RetryLine sessionId={sessionId} />
       <AgentStoppedBar sessionId={sessionId} allowed={stoppedBarAllowed} />
     </>
   )

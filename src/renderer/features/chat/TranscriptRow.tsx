@@ -15,6 +15,7 @@ import { ToolGroupRow } from './ToolRow'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { UserMessageRow } from './UserMessageRow'
 import { NoticeRow } from './NoticeRow'
+import { TurnErrorRow } from './TurnErrorRow'
 import { SkillPromptRow } from './SkillPromptRow'
 
 export type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -146,6 +147,9 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, as
 
     case 'notice':
       return <NoticeRow level={item.level} text={item.text} />
+
+    case 'turn-error':
+      return <TurnErrorRow item={item} sessionId={sessionId} />
 
     case 'skill-prompt':
       return <SkillPromptRow item={item} />
