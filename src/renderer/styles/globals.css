@@ -2154,11 +2154,7 @@ samp {
  * (a dotted underline in High contrast), not by colour alone. WP-F adds the contrast pairs. */
 :root {
   --find-match-bg: color-mix(in oklab, var(--accent-text) 22%, transparent);
-  --find-match-current-bg: color-mix(in oklab, var(--accent-text) 55%, transparent);
-}
-.theme-dark-high-contrast {
-  --find-match-bg: color-mix(in oklab, var(--accent-text) 40%, transparent);
-  --find-match-current-bg: color-mix(in oklab, var(--accent-text) 80%, transparent);
+  --find-match-current-bg: color-mix(in oklab, var(--accent-text) 45%, transparent);
 }
 /* Scrollbar map (spec 041, #754): two neutral tones, user (brighter, left half) and agent (dimmer,
  * right half), so the halves differ by position as well as tone; no new hue. WP-F adds the contrast pairs. */
@@ -2167,12 +2163,6 @@ samp {
   --scrollbar-map-agent: color-mix(in oklab, var(--foreground) 55%, transparent);
   --scrollbar-map-track: color-mix(in oklab, var(--foreground) 5%, transparent);
   --scrollbar-map-window: color-mix(in oklab, var(--foreground) 14%, transparent);
-}
-.theme-dark-high-contrast {
-  --scrollbar-map-user: var(--foreground);
-  --scrollbar-map-agent: color-mix(in oklab, var(--foreground) 75%, transparent);
-  --scrollbar-map-track: color-mix(in oklab, var(--foreground) 12%, transparent);
-  --scrollbar-map-window: color-mix(in oklab, var(--foreground) 28%, transparent);
 }
 @media (forced-colors: active) {
   :root {

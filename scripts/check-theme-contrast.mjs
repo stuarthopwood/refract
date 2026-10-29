@@ -22,7 +22,7 @@ import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { addDerivedTokens } from './derived-tokens.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
 import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
-import { contextUsageContrastRows } from './context-usage-contrast.mjs'
+import { contextUsageContrastRows } from './context-usage-contrast.mjs'; import { findNavContrastRows } from './find-nav-contrast.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -703,7 +703,7 @@ for (const [themeId, props] of Object.entries(themes)) {
 // baseline; merged into one loop for the same reason.
 // `composerSelectionContrastRows` (#1050), `focusedBadgeContrastRows` (#1074) and #1082's
 // `contextUsageContrastRows` (the OKLCH blend at every 10%) each live in their own module, merged into this loop.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...contextUsageContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...contextUsageContrastRows(themes), ...findNavContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)

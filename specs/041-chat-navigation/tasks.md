@@ -24,4 +24,4 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T11 Settings toggle "Show scrollbar map" (Chat group, default on).
 
 ## WP-F Contrast and docs
-- [ ] T12 Contrast pairs and tokens; `components.md`; `docs/PLAN.md` row; `check:ui-text` and `check:theme-contrast` pass.
+- [x] T12 Contrast pairs and tokens; `components.md`; `docs/PLAN.md` row; `check:ui-text` and `check:theme-contrast` pass.
