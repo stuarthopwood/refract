@@ -76,7 +76,7 @@ export function IssueList() {
   const filtersLabel = activeFilterCount > 0 ? `Filters, ${activeFilterCount} active` : 'Filters'
 
   const everySkipped = store.items.length === 0 && store.skipped.length > 0 && store.skipped.length === scopeIds.length
-  const allErrorCode = everySkipped ? store.skipped[0].code : null
+  const allErrorCode = everySkipped ? (store.skipped[0]?.code ?? null) : null
   const friendlyError = store.error
     ? (ERROR_MESSAGES[store.error.code] ?? store.error.message)
     : allErrorCode && (allErrorCode === 'gh-unavailable' || allErrorCode === 'rate-limited')

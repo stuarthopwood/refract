@@ -20,6 +20,9 @@ use super::{arg_str, invalid_argument, now_iso8601, Dispatcher, HandlerFuture};
 const MAX_PROJECTS: usize = 40;
 const LIST_CONCURRENCY: usize = 4;
 
+/// One Project's listing: its lower-cased `owner/repo` slug and rows, or why it was skipped.
+type ProjectOutcome = Result<(String, Vec<IssueRow>), GhError>;
+
 pub fn register(d: &mut Dispatcher) {
     d.register("issues.labels", issues_labels);
     d.register("issues.search", issues_search);
@@ -85,9 +88,8 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
         }
         let label = args.get(3).and_then(Value::as_str);
         let search = arg_str(&args, 4);
-        let query = Arc::new(
-            IssueListQuery::new(tab, state_filter, label, search).map_err(map_gh_error)?,
-        );
+        let query =
+            Arc::new(IssueListQuery::new(tab, state_filter, label, search).map_err(map_gh_error)?);
 
         let mut resolved: Vec<Resolved> = Vec::new();
         for id in ids {
@@ -111,7 +113,7 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
             // duplicate slug is dropped when its result comes back.
             tasks.spawn(async move {
                 let _permit = semaphore.acquire_owned().await.ok();
-                let outcome: Result<(String, Vec<IssueRow>), GhError> = async {
+                let outcome: ProjectOutcome = async {
                     let (owner, repo) = owner_repo_for(&path).await?;
                     let rows = gh_issue_list::list_issues(&path, &owner, &repo, &query).await?;
                     Ok((format!("{owner}/{repo}").to_lowercase(), rows))
@@ -120,7 +122,7 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
                 (index, outcome)
             });
         }
-        let mut outcomes: Vec<(usize, Result<(String, Vec<IssueRow>), GhError>)> = Vec::new();
+        let mut outcomes: Vec<(usize, ProjectOutcome)> = Vec::new();
         while let Some(joined) = tasks.join_next().await {
             if let Ok(outcome) = joined {
                 outcomes.push(outcome);
