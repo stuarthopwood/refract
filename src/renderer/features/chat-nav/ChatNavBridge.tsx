@@ -47,7 +47,9 @@ export function ChatNavBridge(props: ChatNavBridgeProps) {
         const { viewportRef, scrollerRootRef } = latest.current.props
         const viewport = viewportRef.current
         const row = viewport ? findRow(scrollerRootRef.current ?? viewport, id) : null
-        return row && viewport ? row.getBoundingClientRect().top - viewport.getBoundingClientRect().top : null
+        return row && viewport
+          ? row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - jumpTopInset(viewport)
+          : null
       },
       jump: (id, options) => {
         const { props: p, scroller: s } = latest.current

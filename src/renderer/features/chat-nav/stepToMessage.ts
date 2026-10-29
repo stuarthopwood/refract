@@ -9,13 +9,19 @@ export function stepToMessage(sessionId: string, direction: StepDirection): bool
   const entry = useChatNavStore.getState().bySession[sessionId]
   if (!entry?.bridge) return false
   const currentId = entry.view.currentMessageId
-  const target = resolveStepTarget({
-    direction,
-    orderedIds: entry.index.map((message) => message.id),
-    currentId,
-    currentTopOffset: currentId === null ? 0 : (entry.bridge.getMessageTopOffset(currentId) ?? 0),
-    tolerancePx: 2
-  })
+  const canScroll =
+    direction === 'previous'
+      ? entry.view.scrollable.start || entry.bridge.getHiddenTurnCount() > 0
+      : entry.view.scrollable.end
+  const target = canScroll
+    ? resolveStepTarget({
+        direction,
+        orderedIds: entry.index.map((message) => message.id),
+        currentId,
+        currentTopOffset: currentId === null ? 0 : (entry.bridge.getMessageTopOffset(currentId) ?? 0),
+        tolerancePx: 2
+      })
+    : null
   if (!target) {
     useChatAreaAnnouncer.getState().announce(direction === 'previous' ? 'First message' : 'Last message')
     return false

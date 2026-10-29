@@ -50,8 +50,8 @@ export function FindResultsList({ matches, cursor, capped, onSelect }: { matches
               className={cn(
                 'relative h-12 w-full flex-col items-start justify-center gap-1 rounded-none px-2 text-start text-compact font-normal hover:bg-accent/50',
                 current && 'bg-accent text-accent-foreground hover:bg-accent',
-                COMPOSER_BUTTON_FOCUS_CLASS
-              )}
+                COMPOSER_BUTTON_FOCUS_CLASS,
+                'focus-visible:-outline-offset-2'              )}
             >
               {current && <ActiveIndicatorBar />}
               <span className="flex items-center gap-1 text-muted-foreground">

@@ -34,7 +34,7 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | `destructive-outline` | A destructive action at rest that must stay visually below the surface's filled primary (spec 038: "Close pull request" in the comment box footer, left edge, away from Comment). Destructive-coloured edge and label, no fill; always confirms through `ConfirmAlertDialog tone="destructive"`. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `text` | A non-primary action in a banner (#746): foreground text, no border or fill, underlined on hover and keyboard focus, 2px focus ring, 24px minimum target. `text-destructive` is the same shape with a red label, for a destructive action that opens a confirm dialog. |
-| `secondary`, `link` | Not part of the design system, except the one decided `link` use below. |
+| `secondary`, `link` | Not part of the design system, except the one decided `link` use below and the floating transcript icon buttons (see "Floating icon buttons"). |
 
 **Quiet dismiss text button (Stuart, 2026-10-26, #1205):** the "Agent stopped" bar's **Don't show again** is a `text` variant button underlined at rest (`underline underline-offset-2`) and muted with `text-muted-foreground`, beside the bar's `outline` **Start agent**. A dismiss-forever action on a quiet bar reads as a text action, not a second button; the muted colour keeps **Start agent** the stronger action. The `link` variant stays unused.
 
