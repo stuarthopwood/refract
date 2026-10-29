@@ -25,7 +25,7 @@ use crate::omp::config::{
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
-const MODEL_ROLE_IDS: [&str; 15] = [
+const MODEL_ROLE_IDS: [&str; 16] = [
     "default",
     "smol",
     "slow",
@@ -33,6 +33,7 @@ const MODEL_ROLE_IDS: [&str; 15] = [
     "plan",
     "commit",
     "tiny",
+    "widget",
     "memory",
     "task",
     "advisor",

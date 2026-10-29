@@ -93,6 +93,8 @@ pub struct Settings {
     pub code_ligatures: bool,
     /// Issue #1250 (FR-119): the settled turn total under each turn; default off.
     pub show_finished_turn_times: bool,
+    /// Spec 035: text size scales (`typography.rs`).
+    pub typography: Typography,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
@@ -100,21 +102,12 @@ pub struct Settings {
     pub pull_requests_list_width_px: i64,
     /// Spec 024 (#538): the right pane's open/width/panels/active tab; see `right_pane.rs`.
     pub right_pane: RightPaneState,
-    /// Issue #772 (lane R6): the word-prediction ghost-text off switch -- Rust-only (Electron
-    /// main-process features are frozen, epic #797), so this field has no TypeScript
-    /// counterpart. Default `false`: the shared prediction daemon measured 463 MB private commit
-    /// with two live Sessions (more than Electron's whole main process), starts lazily on the
-    /// first `predict_word` call and is never otherwise probed to confirm it is reliably shared
-    /// machine-wide rather than per-profile -- "default to OFF when the evidence is unclear"
-    /// (per the issue's own decision rule).
+    /// Issue #772 (lane R6): the word-prediction ghost-text off switch; Rust-only, default
+    /// `false` (the shared prediction daemon measured 463 MB private commit with two Sessions).
     pub word_prediction_enabled: bool,
-    /// Quality-gate correction (code review, 2026-10-14): Electron's `this.data` is an untyped
-    /// JS object, so an unrecognised settings.json key rides along through every
-    /// `{...this.data, ...}` spread into `settings.get`'s reply and every `settings:changed`
-    /// broadcast with no code needed for it. `#[serde(flatten)]` reproduces that on the wire:
-    /// every entry here is merged into the TOP-LEVEL serialised object (never nested under its
-    /// own `"extra"` key), so a caller sees the exact same shape Electron's reply has. Never
-    /// overlaps a known field above (`SettingsStore::open` excludes all twelve by name).
+    /// Unrecognised settings.json keys ride along like Electron's untyped `this.data`:
+    /// `#[serde(flatten)]` merges them into the TOP-LEVEL object (never under an `"extra"` key).
+    /// Never overlaps a known field above (`SettingsStore::open` excludes them by name).
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -140,6 +133,9 @@ mod animated_status_text;
 mod code_ligatures;
 #[path = "finished_turn_times.rs"]
 mod finished_turn_times;
+#[path = "typography.rs"]
+mod typography;
+pub use typography::Typography;
 #[path = "transcript_display.rs"]
 mod transcript_display;
 pub use transcript_display::TranscriptDisplaySettings;
@@ -224,6 +220,7 @@ impl SettingsStore {
         let animated_status_text = animated_status_text::parse(&object);
         let code_ligatures = code_ligatures::parse(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
+        let typography = typography::parse(&object);
 
         // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
         // comment for the memory-cost evidence behind that default.
@@ -250,7 +247,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 22] = [
+        const KNOWN_FIELDS: [&str; 23] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -269,6 +266,7 @@ impl SettingsStore {
             animated_status_text::KEY,
             code_ligatures::KEY,
             finished_turn_times::KEY,
+            typography::KEY,
             "wordPredictionEnabled",
             "sessionListCollapse",
             "pullRequestsListWidthPx",
@@ -299,6 +297,7 @@ impl SettingsStore {
             animated_status_text,
             code_ligatures,
             show_finished_turn_times,
+            typography,
             word_prediction_enabled,
             session_list_collapse,
             pull_requests_list_width_px,
@@ -382,6 +381,7 @@ impl SettingsStore {
         map.insert(code_ligatures::KEY.to_string(), json!(ligatures));
         let turn_times = self.data.show_finished_turn_times;
         map.insert(finished_turn_times::KEY.to_string(), json!(turn_times));
+        typography::write(&mut map, self.data.typography);
         map.insert(
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),
