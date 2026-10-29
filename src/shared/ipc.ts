@@ -95,7 +95,7 @@ export type IpcErrorCode =
   | 'checkout-failed'
   | 'disabled'
   | 'session-archived'
-  | 'worktree-held' | 'worktree-busy'
+  | 'worktree-held' | 'worktree-busy' | 'destination-not-empty' | 'too-many-clones' | 'destination-in-use'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed'; // lane R11b (#794); #1265 settings.json write failed
 
 export interface IpcError {
@@ -486,7 +486,7 @@ export const IPC_EVENTS = {
   READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
   READINESS_CHANGED: 'readiness:changed',
   UPDATES_STATE_CHANGED: 'updates:state-changed',
-  REPOSITORIES_CLONE_PROGRESS: 'repositories.cloneProgress',
+  REPOSITORIES_CLONE_PROGRESS: 'repositories:clone-progress',
 } as const;
 
 /** Spec 007 contracts/ipc.md "Bootstrap": the one channel that is not `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync`/`ipcMain.on`

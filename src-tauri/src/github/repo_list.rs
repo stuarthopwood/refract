@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::gh::{gh_raw, map_gh_failure, GhError, GhErrorCode};
+use super::gh::{gh_raw_with, map_gh_failure, GhError, GhErrorCode};
 use super::repo_ref::{is_valid_name, is_valid_owner};
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -98,7 +98,7 @@ pub async fn signed_in_logins() -> Result<Vec<String>, GhError> {
 /// Organisations of the ACTIVE account (`gh api user/orgs`), A to Z, each re-validated.
 pub async fn list_orgs() -> Result<Vec<String>, GhError> {
     let args = ["api", "user/orgs", "--paginate", "--jq", ".[].login"];
-    let result = gh_raw(&cwd(), &args, None, LIST_TIMEOUT).await?;
+    let result = gh_raw_with(&cwd(), &args, None, LIST_TIMEOUT, true).await?;
     if result.timed_out {
         return Err(failure(GhErrorCode::Timeout, "GitHub did not respond."));
     }
@@ -132,7 +132,7 @@ pub async fn list_owner_repos(owner: &str) -> Result<Vec<RepoListItem>, GhError>
         "--limit",
         "100",
     ];
-    let result = gh_raw(&cwd(), &args, None, LIST_TIMEOUT).await?;
+    let result = gh_raw_with(&cwd(), &args, None, LIST_TIMEOUT, true).await?;
     if result.timed_out {
         return Err(failure(GhErrorCode::Timeout, "GitHub did not respond."));
     }

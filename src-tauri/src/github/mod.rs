@@ -15,6 +15,7 @@
 // own doc comment that it is unmodified by the spec-003 `gh.ts` module.
 
 pub mod cli;
+pub mod clone_destination;
 pub mod copilot_plan;
 pub mod gh;
 pub mod gh_close;
@@ -26,7 +27,6 @@ pub mod gh_viewer;
 pub mod images;
 pub mod pr_lookup;
 pub mod profile;
-pub mod clone_destination;
 pub mod repo_clone;
 pub mod repo_list;
 pub mod repo_match;

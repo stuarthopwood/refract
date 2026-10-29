@@ -248,6 +248,8 @@ impl CloneJob {
             .args(["--", "--progress"])
             .current_dir(std::env::temp_dir())
             .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GH_HOST", "github.com")
+            .env_remove("GH_ENTERPRISE_TOKEN")
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -259,7 +261,7 @@ impl CloneJob {
             } else {
                 GhErrorCode::GhFailed
             };
-            GhError::new(code, format!("gh repo clone failed to spawn: {err}"))
+            GhError::new(code, "gh repo clone failed to start.")
         })?;
 
         let pid = child.id();
@@ -283,6 +285,7 @@ impl CloneJob {
             tokio::spawn(async move {
                 let mut buf = [0u8; 4096];
                 let mut pending = String::new();
+                let mut pending_len = 0usize;
                 loop {
                     let n = match stderr.read(&mut buf).await {
                         Ok(0) | Err(_) => break,
@@ -293,9 +296,11 @@ impl CloneJob {
                             if !pending.is_empty() {
                                 shared.handle_line(&pending);
                                 pending.clear();
+                                pending_len = 0;
                             }
-                        } else if pending.chars().count() < MAX_LINE_CHARS {
+                        } else if pending_len < MAX_LINE_CHARS {
                             pending.push(c);
+                            pending_len += 1;
                         }
                     }
                 }

@@ -47,10 +47,19 @@ pub fn path_key(path: &Path) -> String {
 
 fn is_reserved_device_name(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
-    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem.len() == 4
-            && (stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.as_bytes()[3].is_ascii_digit())
+    matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || (stem.len() == 4
+        && (stem.starts_with("COM") || stem.starts_with("LPT"))
+        && stem.as_bytes()[3].is_ascii_digit())
+}
+
+fn inside_project(path: &Path, project_paths: &[String]) -> bool {
+    let key = path_key(path);
+    project_paths
+        .iter()
+        .any(|p| key.starts_with(&format!("{}\\", path_key(Path::new(p)))))
 }
 
 fn same_as_project(path: &Path, project_paths: &[String]) -> bool {
@@ -59,7 +68,7 @@ fn same_as_project(path: &Path, project_paths: &[String]) -> bool {
 }
 
 /// FR-027: absolute, existing parent folder, not a drive root, no reserved device name, no
-/// trailing dot or space, not inside `.git`, not a Project path; an existing non-empty folder is
+/// trailing dot or space, no UNC/verbatim prefix, no `:` in the name, not the home folder or inside a Project, not inside `.git`, not a Project path; an existing non-empty folder is
 /// refused and an existing empty one is allowed but flagged as pre-existing.
 pub async fn validate(
     raw: &str,
@@ -70,7 +79,7 @@ pub async fn validate(
         return Err(invalid("Choose a folder to clone into."));
     }
     let path = PathBuf::from(text);
-    if !path.is_absolute() || text.starts_with(r"\\.\") {
+    if !path.is_absolute() || text.starts_with(r"\\") || text.starts_with("//") {
         return Err(invalid(
             "Choose a full folder path, for example C:\\Projects\\name.",
         ));
@@ -86,7 +95,11 @@ pub async fn validate(
         .and_then(|n| n.to_str())
         .ok_or_else(|| invalid("Choose a folder inside a drive, not the drive itself."))?
         .to_string();
-    if name.ends_with('.') || name.ends_with(' ') || is_reserved_device_name(&name) {
+    if name.contains(':')
+        || name.ends_with('.')
+        || name.ends_with(' ')
+        || is_reserved_device_name(&name)
+    {
         return Err(invalid("That folder name isn't allowed on Windows."));
     }
     let parent = path
@@ -105,8 +118,21 @@ pub async fn validate(
     {
         return Err(invalid("Choose a folder outside a .git folder."));
     }
+    if resolved.parent().is_none() {
+        return Err(invalid(
+            "Choose a folder inside a drive, not the drive itself.",
+        ));
+    }
+    if dirs::home_dir().is_some_and(|home| path_key(&home) == path_key(&resolved)) {
+        return Err(invalid(
+            "Choose a folder inside your home folder, not the home folder itself.",
+        ));
+    }
     if same_as_project(&resolved, project_paths) {
         return Err(invalid("That folder is already a Project."));
+    }
+    if inside_project(&resolved, project_paths) {
+        return Err(invalid("That folder is inside an existing Project."));
     }
     let existed = match tokio::fs::symlink_metadata(&resolved).await {
         Ok(meta) => {
@@ -135,6 +161,18 @@ pub async fn validate(
     })
 }
 
+/// Creates `path` exclusively (non-recursive), closing the gap between `validate` and the clone.
+/// An already-existing folder is `NotEmpty`.
+pub async fn create_exclusive(path: &Path) -> Result<(), DestinationError> {
+    match tokio::fs::create_dir(path).await {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(DestinationError::NotEmpty)
+        }
+        Err(_) => Err(invalid("Couldn't create that folder.")),
+    }
+}
+
 /// FR-029: removes `path` (the exact recorded clone folder this attempt created) and nothing
 /// else. Refuses a root, the home folder, a Project path, or any parent of a Project path.
 /// A path that is already gone counts as removed (`true`).
@@ -146,6 +184,13 @@ pub async fn remove_created(path: &Path, project_paths: &[String]) -> bool {
         if path_key(&home) == path_key(path) {
             return false;
         }
+    }
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    match dunce::canonicalize(parent) {
+        Ok(canonical) if path_key(&canonical) == path_key(parent) => {}
+        _ => return false,
     }
     let key = path_key(path);
     let guarded = project_paths.iter().any(|p| {

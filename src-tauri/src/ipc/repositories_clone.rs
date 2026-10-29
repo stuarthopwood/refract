@@ -2,7 +2,7 @@
 // `repositories.clone`, `repositories.cloneCancel`, and the `repositories:clone-progress` event
 // (contracts/ipc.md). The `gh` plumbing lives in `github/repo_*.rs` and `github/clone_*.rs`.
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
@@ -176,18 +176,41 @@ pub fn repositories_clone(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "Too many clones are running. Wait for one to finish.",
             ));
         }
+        let nested = |a: &str, b: &str| {
+            a == b || a.starts_with(&format!("{b}\\")) || b.starts_with(&format!("{a}\\"))
+        };
         if running
             .values()
-            .any(|e| e.destination_key == destination_key)
+            .any(|e| nested(&e.destination_key, &destination_key))
         {
             return Err(IpcError::new(
                 "destination-in-use",
                 "Another clone is already using that folder.",
             ));
         }
-        let (job, events) = CloneJob::start(&repo, &destination.path)
-            .await
-            .map_err(|err| gh_ipc_error(&err))?;
+        // Create the folder exclusively so only a folder this attempt made is ever cleaned up.
+        let created_by_us = if destination.existed {
+            false
+        } else {
+            clone_destination::create_exclusive(&destination.path)
+                .await
+                .map_err(|err| match err {
+                    DestinationError::NotEmpty => {
+                        IpcError::new("destination-not-empty", err.message().to_string())
+                    }
+                    DestinationError::Invalid(_) => invalid_argument(err.message().to_string()),
+                })?;
+            true
+        };
+        let (job, events) = match CloneJob::start(&repo, &destination.path).await {
+            Ok(started) => started,
+            Err(err) => {
+                if created_by_us {
+                    clone_destination::remove_created(&destination.path, &project_paths).await;
+                }
+                return Err(gh_ipc_error(&err));
+            }
+        };
         let clone_id = uuid::Uuid::new_v4().to_string();
         running.insert(
             clone_id.clone(),
@@ -198,7 +221,6 @@ pub fn repositories_clone(state: AppState, args: Vec<Value>) -> HandlerFuture {
         );
         drop(running);
 
-        let created_by_us = !destination.existed;
         let path_text = destination.path.to_string_lossy().into_owned();
         tokio::spawn(supervise(
             state,
@@ -269,8 +291,9 @@ fn progress_payload(clone_id: &str, stage: &str, percent: Option<u8>) -> Value {
     json!({ "cloneId": clone_id, "phase": "progress", "stage": stage, "percent": percent })
 }
 
-/// Removes the folder this attempt created (FR-029); returns the path when removal failed.
-async fn clean_up(state: &AppState, destination: &PathBuf, created_by_us: bool) -> Option<String> {
+/// Removes the folder this attempt created (FR-029); returns the path when removal failed. A
+/// pre-existing empty destination is left untouched, whatever the attempt wrote into it.
+async fn clean_up(state: &AppState, destination: &Path, created_by_us: bool) -> Option<String> {
     if !created_by_us {
         return None;
     }
