@@ -96,17 +96,23 @@ export function nearStateColor(hex: string): string | null {
   return hit ? hit.name : null
 }
 
-/** Keeps hue and chroma, moves lightness away from the background until `min` is met. */
-export function adjustForContrast(hex: string, background: Rgb, min = MIN_PROJECT_CONTRAST): { hex: string; adjusted: boolean } {
+type Backgrounds = Rgb | readonly Rgb[]
+const asList = (background: Backgrounds): readonly Rgb[] => (typeof background[0] === 'number' ? [background as Rgb] : (background as readonly Rgb[]))
+const worstContrast = (rgb: Rgb, backgrounds: readonly Rgb[]) => Math.min(...backgrounds.map((bg) => contrastRatio(rgb, bg)))
+
+/** Keeps hue and chroma, moves lightness away from the background(s) until `min` is met against
+ * every one (the strictest of e.g. `--sidebar` and its hover `--sidebar-accent`). */
+export function adjustForContrast(hex: string, background: Backgrounds, min = MIN_PROJECT_CONTRAST): { hex: string; adjusted: boolean } {
   const rgb = parseHex(hex)
   if (!rgb) return { hex, adjusted: false }
-  if (contrastRatio(rgb, background) >= min) return { hex: rgbToHex(rgb), adjusted: false }
+  const backgrounds = asList(background)
+  if (backgrounds.length === 0 || worstContrast(rgb, backgrounds) >= min) return { hex: rgbToHex(rgb), adjusted: false }
   const { l, c, h } = rgbToOklch(rgb)
-  const lighten = luminance(background) < 0.5
+  const lighten = backgrounds.reduce((sum, bg) => sum + luminance(bg), 0) / backgrounds.length < 0.5
   let [lo, hi] = lighten ? [l, 1] : [0, l]
   for (let i = 0; i < 24; i++) {
     const mid = (lo + hi) / 2
-    const ok = contrastRatio(oklchToRgb(mid, c, h), background) >= min
+    const ok = worstContrast(oklchToRgb(mid, c, h), backgrounds) >= min
     if (lighten === ok) hi = mid
     else lo = mid
   }
@@ -115,27 +121,38 @@ export function adjustForContrast(hex: string, background: Rgb, min = MIN_PROJEC
   return { hex: rgbToHex(candidate), adjusted: true }
 }
 
-/** The Session list's actual background, read from the live `--sidebar` token so it follows
- * the active theme. `null` outside a browser (no layout, no canvas). */
-export function readSidebarRgb(): Rgb | null {
-  if (typeof document === 'undefined') return null
+const UNPARSED = '#010203'
+
+function readTokenRgb(ctx: CanvasRenderingContext2D, token: string): Rgb | null {
   const probe = document.createElement('span')
-  probe.style.cssText = 'position:absolute;visibility:hidden;color:var(--sidebar)'
+  probe.style.cssText = `position:absolute;visibility:hidden;color:var(${token})`
   document.body.appendChild(probe)
   const computed = getComputedStyle(probe).color
   probe.remove()
-  const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
-  if (!ctx) return null
-  ctx.fillStyle = '#000'
+  // A canvas that cannot parse the colour (for example oklch) keeps the sentinel; reading it as
+  // black would adjust a custom colour against the wrong background.
+  ctx.fillStyle = UNPARSED
   ctx.fillStyle = computed
+  if (ctx.fillStyle === UNPARSED) return null
   ctx.fillRect(0, 0, 1, 1)
   const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
   return [(r ?? 0) / 255, (g ?? 0) / 255, (b ?? 0) / 255]
 }
 
+/** The Session list's actual backgrounds (`--sidebar` and its hover/selected `--sidebar-accent`),
+ * read from the live tokens so they follow the active theme. `null` outside a browser or when
+ * the colours cannot be read. */
+export function readSidebarRgbs(): Rgb[] | null {
+  if (typeof document === 'undefined') return null
+  const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+  if (!ctx) return null
+  const found = ['--sidebar', '--sidebar-accent'].map((token) => readTokenRgb(ctx, token))
+  const list = found.filter((rgb): rgb is Rgb => rgb !== null)
+  return list.length === 0 ? null : list
+}
 /** The CSS colour a Project header draws with, or `undefined` for no colour. Presets resolve
  * through their theme token; a custom hex is contrast-adjusted against `background` when known. */
-export function projectColorCss(color: ProjectColor | undefined, background: Rgb | null): { css: string; adjusted: boolean } | undefined {
+export function projectColorCss(color: ProjectColor | undefined, background: readonly Rgb[] | null): { css: string; adjusted: boolean } | undefined {
   if (!color) return undefined
   if (color.kind === 'preset') {
     const token = presetToken(color.id)

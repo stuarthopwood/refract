@@ -1,19 +1,46 @@
-import { useEffect, useState } from 'react'
-import { readSidebarRgb } from '@/lib/projectColor'
+import { useSyncExternalStore } from 'react'
+import { readSidebarRgbs } from '@/lib/projectColor'
 
-// The Session list background as RGB, re-read whenever the root element's theme class changes,
-// so a custom Project colour is re-adjusted for the active theme.
-export function useSidebarRgb(): [number, number, number] | null {
-  const [rgb, setRgb] = useState(() => readSidebarRgb())
-  useEffect(() => {
-    const update = () => setRgb((previous) => {
-      const next = readSidebarRgb()
-      return previous && next && previous.every((v, i) => v === next[i]) ? previous : next
-    })
-    update()
-    const observer = new MutationObserver(update)
+type Rgb = [number, number, number]
+
+// The Session list backgrounds as RGB, shared by every Project header and the colour popover:
+// one MutationObserver on the root element's theme class and one cached read, so a custom
+// Project colour is re-adjusted for the active theme without a probe per consumer.
+let cached: Rgb[] | null | undefined
+const listeners = new Set<() => void>()
+let observer: MutationObserver | null = null
+
+const same = (a: Rgb[] | null, b: Rgb[] | null) =>
+  a === b || (!!a && !!b && a.length === b.length && a.every((rgb, i) => rgb.every((v, j) => v === b[i]![j])))
+
+function refresh() {
+  const next = readSidebarRgbs()
+  if (cached !== undefined && same(cached, next)) return
+  cached = next
+  listeners.forEach((listener) => listener())
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  if (!observer) {
+    observer = new MutationObserver(refresh)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
-  return rgb
+  }
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      observer?.disconnect()
+      observer = null
+      cached = undefined
+    }
+  }
+}
+
+function getSnapshot(): Rgb[] | null {
+  if (cached === undefined) cached = readSidebarRgbs()
+  return cached
+}
+
+export function useSidebarRgb(): Rgb[] | null {
+  return useSyncExternalStore(subscribe, getSnapshot, () => null)
 }

@@ -19,7 +19,7 @@ import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, useRepositoriesStore, useSessionListStore, useSessionsStore, useSplitStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
-import type { Repository } from '../../../shared/model'
+import type { ProjectColor, Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
 import { remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
@@ -93,7 +93,10 @@ export function RepositoryGroup({
   const setRepositoryColor = useRepositoriesStore((state) => state.setColor)
   const [colorOpen, setColorOpen] = useState(false)
   const sidebarRgb = useSidebarRgb()
-  const projectColor = projectColorCss(repository.color, sidebarRgb)?.css
+  // The popover's draft colour while it is open, so Cancel visibly reverts the header.
+  const [previewColor, setPreviewColor] = useState<ProjectColor | null | undefined>(undefined)
+  const projectColor = projectColorCss(previewColor === undefined ? repository.color : (previewColor ?? undefined), sidebarRgb)?.css
+  const headerRowRef = useRef<HTMLDivElement>(null)
   // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
   // row's own rename (`SessionRow.tsx`) -- the model the issue names to copy.
   const [renaming, setRenaming] = useState(false)
@@ -106,6 +109,7 @@ export function RepositoryGroup({
   const renameInputRef = useRef<HTMLInputElement>(null)
   const restoreFocusRef = useRef(false)
   const renameRequestedRef = useRef(false)
+  const colourRequestedRef = useRef(false)
   const renameErrorId = `repository-rename-error-${repository.id}`
   const groupRootRef = useRef<HTMLDivElement>(null)
   // Issue #559 gate round 3 (the #900 pattern, finding 1): a rename that makes this whole group
@@ -213,7 +217,7 @@ export function RepositoryGroup({
   return (
     <div ref={groupRootRef} className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>
-        <div className="group flex items-center gap-1 px-1">
+        <div ref={headerRowRef} className="group flex items-center gap-1 px-1">
           {renaming ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <input
@@ -324,7 +328,9 @@ export function RepositoryGroup({
             onOpenChange={setColorOpen}
             onApply={(color) => setRepositoryColor(repository.id, color)}
             returnFocusRef={menuTriggerRef}
-          >
+            anchorRef={headerRowRef}
+            onPreviewChange={setPreviewColor}
+          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -339,8 +345,9 @@ export function RepositoryGroup({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               onCloseAutoFocus={(event) => {
-                if (!renameRequestedRef.current) return
+                if (!renameRequestedRef.current && !colourRequestedRef.current) return
                 renameRequestedRef.current = false
+                colourRequestedRef.current = false
                 event.preventDefault()
               }}
             >
@@ -352,14 +359,20 @@ export function RepositoryGroup({
               >
                 Rename
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setColorOpen(true)}>Colour…</DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  colourRequestedRef.current = true
+                  setColorOpen(true)
+                }}
+              >
+                Colour…
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
                 Remove repository…
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          </ProjectColorPopover>
         </div>
         <CollapsibleContent>
           {active.length === 0 ? (

@@ -11,8 +11,8 @@ const TONE: Record<SessionDisplayStatus, string> = {
 
 /** Issue #482: the Dots **Status style**. One shape per state so colour is never the only cue
  * (WCAG 1.4.1): Idle a hollow ring, Working a pulsing filled dot (static under reduced motion),
- * Needs you a filled dot inside a ring, Stopped a small squarish dot, Unread response a ring with
- * an inner dot. Drawn in `currentColor` from the state token; forced colours fall back to
+ *  Needs you a filled dot inside a ring, Stopped a small squarish dot, Unread response an open
+  * ring with a badge dot at the top right. Drawn in `currentColor` from the state token; forced colours fall back to
  * CanvasText. Decorative: the caller's `sr-only` status word carries the meaning. */
 export function StatusDot({ status, className }: { status: SessionDisplayStatus; className?: string }) {
   return (
@@ -45,8 +45,8 @@ function DotShape({ status }: { status: SessionDisplayStatus }) {
     case 'unread-response':
       return (
         <>
-          <circle cx="8" cy="8" r="2" fill="currentColor" />
-          <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="7.5" cy="8.5" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="12.5" cy="3.5" r="2.5" fill="currentColor" />
         </>
       )
   }
