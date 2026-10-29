@@ -14,7 +14,7 @@ const toggleVariants = cva(
         outline: "border border-input bg-transparent hover:bg-muted",
         // A quiet pressed state (accent fill) for toggles sitting in a toolbar beside ghost icon buttons.
         subtle:
-          "bg-transparent aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:hover:bg-accent/80 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground data-[state=on]:hover:bg-accent/80",
+          "bg-transparent aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:hover:bg-accent/80 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground data-[state=on]:hover:bg-accent/80 forced-colors:aria-pressed:border forced-colors:aria-pressed:border-[Highlight] forced-colors:data-[state=on]:border forced-colors:data-[state=on]:border-[Highlight]",
       },
       size: {
         default:
