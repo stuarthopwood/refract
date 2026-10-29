@@ -23,7 +23,24 @@ export function formatFullDateTime(iso: string): string {
 // A relative time as a `<time datetime>` with the full local date and time in a shared Tooltip,
 // on hover and keyboard focus. Focusable so keyboard users can reach the tooltip; the visible
 // relative text stays the accessible name (WCAG 2.5.3) and Radix describes it with the tooltip.
-export function RelativeTime({ value, className }: { value: string; className?: string }) {
+// `focusable={false}` renders a plain `<time>` (no tab stop, no tooltip) for places inside another
+// interactive element, where the caller puts the full date in its own accessible description.
+export function RelativeTime({
+  value,
+  className,
+  focusable = true
+}: {
+  value: string
+  className?: string
+  focusable?: boolean
+}) {
+  if (!focusable) {
+    return (
+      <time dateTime={value} className={className}>
+        {formatRelativeTime(value)}
+      </time>
+    )
+  }
   const full = formatFullDateTime(value)
   return (
     <Tooltip>

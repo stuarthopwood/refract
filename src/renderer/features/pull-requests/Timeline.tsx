@@ -11,6 +11,9 @@ interface TimelineProps {
   number: number
   entries: TimelineEntry[]
   viewerLogin: string | null
+  /** Unsent reply drafts by thread id, owned by PullRequestDetail. */
+  replyDrafts: Record<string, string>
+  onReplyDraftChange(threadId: string, value: string): void
   /** Re-fetches `pullRequests.detail` after a reply/resolve/unresolve succeeds, so the timeline
    * and staleness cache both reflect the new state without a manual refresh (FR-018). */
   onChanged(): void
@@ -37,7 +40,7 @@ function Item({ children }: { children: ReactNode }) {
   return <li className="relative">{children}</li>
 }
 
-export function Timeline({ repositoryId, number, entries, viewerLogin, onChanged }: TimelineProps) {
+export function Timeline({ repositoryId, number, entries, viewerLogin, replyDrafts, onReplyDraftChange, onChanged }: TimelineProps) {
   if (entries.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">No activity yet.</p>
   }
@@ -92,6 +95,8 @@ export function Timeline({ repositoryId, number, entries, viewerLogin, onChanged
                     number={number}
                     entry={entry}
                     viewerLogin={viewerLogin}
+                    draft={replyDrafts[entry.thread.id] ?? ''}
+                    onDraftChange={(value) => onReplyDraftChange(entry.thread.id, value)}
                     onChanged={onChanged}
                   />
                 </Item>

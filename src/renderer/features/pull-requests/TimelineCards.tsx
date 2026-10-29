@@ -1,17 +1,18 @@
 // The Overview timeline's entries (spec 038 FR-001 to FR-003): commits are unboxed single rows on
 // the history line; comments, reviews and threads are cards with a soft `border-divider` hung off
 // it. Card headers carry the shared Avatar, login, a muted "Bot" badge, and -- for the signed-in
-// viewer -- an accent tint plus a "You" badge (text, never colour alone). All Markdown goes
+// viewer -- an viewer tint plus a "You" badge (text, never colour alone). All Markdown goes
 // through `githubStyle` and the image proxy (ADR 0004).
 import type { ReactNode } from 'react'
-import { GitCommitHorizontalIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleHelpIcon, GitCommitHorizontalIcon, InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
+import type { ComponentType } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { RelativeTime } from '@/components/relative-time'
 import { Markdown } from '@/features/chat/Markdown'
 import { cn } from '@/lib/utils'
 import type { AutomatedFinding, PullRequestActor, Review, TimelineEntry } from '../../../shared/github'
-import { resolvePullRequestImage, useAvatarDataUrl } from './prImages'
+import { PREVIEW_PROPS, useAvatarDataUrl } from './prImages'
 import { ThreadActions } from './ThreadReply'
 
 export function actorLabel(actor: PullRequestActor): string {
@@ -35,12 +36,18 @@ function reviewSentence(review: Review): string {
   return ` ${VERDICT_LABEL[review.verdict]}`
 }
 
-const SEVERITY_LABEL: Record<AutomatedFinding['severity'], string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  critical: 'Critical',
-  unknown: 'Severity unknown'
+interface SeverityDisplay {
+  label: string
+  Icon: ComponentType<{ 'aria-hidden'?: boolean }>
+  variant: 'outline' | 'destructive'
+}
+
+const SEVERITY_DISPLAY: Record<AutomatedFinding['severity'], SeverityDisplay> = {
+  low: { label: 'Low', Icon: InfoIcon, variant: 'outline' },
+  medium: { label: 'Medium', Icon: CircleAlertIcon, variant: 'outline' },
+  high: { label: 'High', Icon: TriangleAlertIcon, variant: 'destructive' },
+  critical: { label: 'Critical', Icon: OctagonAlertIcon, variant: 'destructive' },
+  unknown: { label: 'Severity unknown', Icon: CircleHelpIcon, variant: 'outline' }
 }
 
 function ActorAvatar({ actor }: { actor: PullRequestActor }) {
@@ -60,7 +67,8 @@ function CardHeader({
   suffix,
   time,
   edited,
-  trailing
+  trailing,
+  timeFocusable = true
 }: {
   actor: PullRequestActor
   viewerLogin: string | null
@@ -68,13 +76,15 @@ function CardHeader({
   time: string
   edited: boolean
   trailing?: ReactNode
+  /** Only one focusable time per card, so a thread's later comments pass false. */
+  timeFocusable?: boolean
 }) {
   const isViewer = viewerLogin !== null && actor.login === viewerLogin
   return (
     <div
       className={cn(
         'flex flex-wrap items-center gap-2 rounded-t-md border-b border-divider px-3 py-2 text-xs text-muted-foreground',
-        isViewer && 'bg-accent/50'
+        isViewer && 'bg-viewer-tint'
       )}
     >
       <ActorAvatar actor={actor} />
@@ -82,11 +92,11 @@ function CardHeader({
         <span className="font-medium">{actorLabel(actor)}</span>
         {suffix}
       </span>
-      {actor.kind === 'bot' && <Badge variant="secondary">Bot</Badge>}
-      {isViewer && <Badge variant="secondary">You</Badge>}
+      {actor.kind === 'bot' && <Badge variant="outline">Bot</Badge>}
+      {isViewer && <Badge variant="outline">You</Badge>}
       <span className="ml-auto flex items-center gap-2">
         {edited && <span>edited</span>}
-        <RelativeTime value={time} />
+        <RelativeTime value={time} focusable={timeFocusable} />
         {trailing}
       </span>
     </div>
@@ -98,7 +108,17 @@ function Card({ children }: { children: ReactNode }) {
 }
 
 function PrMarkdown({ id, text, className }: { id: string; text: string; className?: string }) {
-  return <Markdown id={id} text={text} githubStyle resolveImage={resolvePullRequestImage} className={className} />
+  return <Markdown id={id} text={text} {...PREVIEW_PROPS} className={className} />
+}
+
+function SeverityBadge({ severity }: { severity: AutomatedFinding['severity'] }) {
+  const { label, Icon, variant } = SEVERITY_DISPLAY[severity]
+  return (
+    <Badge variant={variant}>
+      <Icon aria-hidden />
+      {label}
+    </Badge>
+  )
 }
 
 export function CommitRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'commit' }> }) {
@@ -154,9 +174,7 @@ export function ReviewCard({
             <ul className="mt-2 space-y-2">
               {review.findings.map((finding, i) => (
                 <li key={i} className="flex items-start gap-2 text-xs">
-                  <span className="shrink-0 rounded border border-border px-1 py-1">
-                    {SEVERITY_LABEL[finding.severity]}
-                  </span>
+                  <SeverityBadge severity={finding.severity} />
                   <PrMarkdown id={`${review.id}-finding-${i}`} text={finding.body} className="text-xs" />
                 </li>
               ))}
@@ -173,12 +191,16 @@ export function ThreadCard({
   number,
   entry,
   viewerLogin,
+  draft,
+  onDraftChange,
   onChanged
 }: {
   repositoryId: string
   number: number
   entry: Extract<TimelineEntry, { kind: 'review-thread' }>
   viewerLogin: string | null
+  draft: string
+  onDraftChange(value: string): void
   onChanged(): void
 }) {
   const { thread } = entry
@@ -194,9 +216,15 @@ export function ThreadCard({
         </span>
       </div>
       <div className="divide-y divide-divider">
-        {thread.comments.map((comment) => (
+        {thread.comments.map((comment, index) => (
           <div key={comment.id}>
-            <CardHeader actor={comment.author} viewerLogin={viewerLogin} time={comment.createdAt} edited={comment.edited} />
+            <CardHeader
+              actor={comment.author}
+              viewerLogin={viewerLogin}
+              time={comment.createdAt}
+              edited={comment.edited}
+              timeFocusable={index === 0}
+            />
             <div className="px-3 py-2">
               <PrMarkdown id={comment.id} text={comment.body} />
             </div>
@@ -204,7 +232,7 @@ export function ThreadCard({
         ))}
       </div>
       <div className="px-3 pb-2">
-        <ThreadActions repositoryId={repositoryId} number={number} thread={thread} onChanged={onChanged} />
+        <ThreadActions repositoryId={repositoryId} number={number} thread={thread} draft={draft} onDraftChange={onDraftChange} onChanged={onChanged} />
       </div>
     </Card>
   )

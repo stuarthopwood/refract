@@ -11,10 +11,10 @@ import {
   LoaderCircleIcon,
   XCircleIcon
 } from 'lucide-react'
-import type { ComponentType } from 'react'
+import { useId, type ComponentType } from 'react'
 import type { PullRequestState, PullRequestSummary } from '../../../shared/github'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { RelativeTime } from '@/components/relative-time'
+import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
 import { cn } from '@/lib/utils'
 
 interface PullRequestRowProps {
@@ -60,12 +60,14 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
   const state = PULL_REQUEST_STATE_DISPLAY[pullRequest.state]
   const StateIcon = state.icon
   const authorLabel = pullRequest.author.name ?? pullRequest.author.login
+  const updatedId = useId()
 
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
+      aria-describedby={updatedId}
       // Gate-fix (round 3, script): a stable, intentional hook for the live-check driver --
       // replaces brittle class-based row/state scraping (`.divide-y > button`, a text-content
       // read of an inner span sharing classes with its own parent) with real data, never parsed
@@ -101,9 +103,10 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
         <span aria-hidden="true">{'\u00b7'}</span>
         <span className="truncate">{pullRequest.repository}</span>
         <span aria-hidden="true">{'\u00b7'}</span>
-        <span className="tabular-nums"><RelativeTime value={pullRequest.updatedAt} /></span>
+        <span className="tabular-nums"><RelativeTime value={pullRequest.updatedAt} focusable={false} /></span>
       </span>
       <span className="truncate text-xs text-muted-foreground">{authorLabel}</span>
+      <span id={updatedId} className="sr-only">Updated {formatFullDateTime(pullRequest.updatedAt)}</span>
     </button>
   )
 }

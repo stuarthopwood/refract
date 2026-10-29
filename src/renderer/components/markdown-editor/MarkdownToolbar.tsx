@@ -49,6 +49,7 @@ export function MarkdownToolbar({ onAction, disabled }: { onAction: (action: Mar
                 variant="ghost"
                 size="icon-xs"
                 aria-label={action.label}
+                aria-keyshortcuts={action.shortcut}
                 disabled={disabled}
                 // Keep the textarea's selection: a mouse press on the button must not blur it.
                 onMouseDown={(event) => event.preventDefault()}

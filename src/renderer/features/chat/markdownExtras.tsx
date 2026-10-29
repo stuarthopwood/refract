@@ -62,7 +62,7 @@ export function MarkdownBlockquote({ className, children, node: _node, ...props 
   const { title, Icon, bar, icon } = ALERTS[alert.kind]
   return (
     <blockquote className={cn('space-y-1 border-l-4 pl-4', bar, className)} {...props}>
-      <p className="flex items-center gap-1.5 font-medium">
+      <p className="flex items-center gap-2 font-medium">
         <Icon aria-hidden="true" className={cn('size-4 shrink-0', icon)} />
         <span>{title}</span>
       </p>
@@ -92,7 +92,7 @@ export function MarkdownTh({ className, node: _node, ...props }: React.Component
   return (
     <th
       className={cn(
-        githubStyle ? 'border border-divider px-3 py-1.5 font-semibold' : 'border border-border bg-muted/50 px-2 py-1 font-medium',
+        githubStyle ? 'border border-divider px-4 py-2 font-semibold' : 'border border-border bg-muted/50 px-2 py-1 font-medium',
         className
       )}
       {...props}
@@ -102,7 +102,7 @@ export function MarkdownTh({ className, node: _node, ...props }: React.Component
 
 export function MarkdownTd({ className, node: _node, ...props }: React.ComponentProps<'td'> & ExtraProps) {
   const { githubStyle } = React.useContext(MarkdownOptionsContext)
-  return <td className={cn(githubStyle ? 'border border-divider px-3 py-1.5 align-top' : 'border border-border px-2 py-1 align-top', className)} {...props} />
+  return <td className={cn(githubStyle ? 'border border-divider px-4 py-2 align-top' : 'border border-border px-2 py-1 align-top', className)} {...props} />
 }
 
 // Renders the resolved image; while loading, or when resolution fails, shows `fallback` (the

@@ -23,6 +23,8 @@ export interface MarkdownEditorProps {
   footer?: React.ReactNode
   textareaRef?: React.Ref<HTMLTextAreaElement>
   className?: string
+  // Extra props for the Preview's Markdown (githubStyle, resolveImage); keep the reference stable.
+  previewProps?: Omit<React.ComponentProps<typeof Markdown>, 'text' | 'id'>
 }
 
 type Mode = 'write' | 'preview'
@@ -41,7 +43,8 @@ export function MarkdownEditor({
   autoFocus,
   footer,
   textareaRef,
-  className
+  className,
+  previewProps
 }: MarkdownEditorProps) {
   const [mode, setMode] = React.useState<Mode>('write')
   const innerRef = React.useRef<HTMLTextAreaElement | null>(null)
@@ -73,15 +76,16 @@ export function MarkdownEditor({
     if (!textarea || disabled) return
     const state: EditState = { value, selectionStart: textarea.selectionStart, selectionEnd: textarea.selectionEnd }
     const result = action.apply(state)
-    pendingSelection.current = { start: result.selectionStart, end: result.selectionEnd }
     if (result.value === value) {
+      pendingSelection.current = null
       textarea.setSelectionRange(result.selectionStart, result.selectionEnd)
       return
     }
+    pendingSelection.current = { start: result.selectionStart, end: result.selectionEnd }
     onChange(result.value)
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     const modifier = event.ctrlKey || event.metaKey
     if (modifier && event.key === 'Enter') {
       if (onSubmit) {
@@ -110,6 +114,7 @@ export function MarkdownEditor({
 
   return (
     <div
+      onKeyDown={handleKeyDown}
       className={cn(
         'flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring',
         className
@@ -125,10 +130,10 @@ export function MarkdownEditor({
             if (next === 'write' || next === 'preview') setMode(next)
           }}
         >
-          <ToggleGroupItem value="write" className={SELECTED_SEGMENT_CLASS} disabled={disabled}>
+          <ToggleGroupItem value="write" className={SELECTED_SEGMENT_CLASS}>
             Write
           </ToggleGroupItem>
-          <ToggleGroupItem value="preview" className={SELECTED_SEGMENT_CLASS} disabled={disabled}>
+          <ToggleGroupItem value="preview" className={SELECTED_SEGMENT_CLASS}>
             Preview
           </ToggleGroupItem>
         </ToggleGroup>
@@ -140,20 +145,20 @@ export function MarkdownEditor({
           aria-label={ariaLabel}
           placeholder={placeholder}
           value={value}
-          disabled={disabled}
+          readOnly={disabled}
+          aria-busy={disabled || undefined}
           autoFocus={autoFocus}
           onChange={(event) => onChange(event.target.value)}
-          onKeyDown={handleKeyDown}
           className={cn(
             COMPOSER_SELECTION_CLASS,
             minHeight,
-            'max-h-96 resize-y overflow-y-auto border-none bg-transparent font-code shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]'
+            'max-h-96 resize-y overflow-y-auto border-none bg-transparent font-code shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent [scrollbar-gutter:stable]'
           )}
         />
       ) : (
-        <div className={cn('max-h-96 overflow-y-auto px-2 py-2', minHeight)} aria-label={`${ariaLabel} preview`} role="region">
+        <div className={cn('max-h-96 overflow-y-auto px-2 py-2', minHeight)} aria-label={`${ariaLabel} preview`} role="region" tabIndex={0}>
           {value.trim() ? (
-            <Markdown text={value} id={previewId} />
+            <Markdown text={value} id={previewId} {...previewProps} />
           ) : (
             <p className="text-sm text-muted-foreground">Nothing to preview</p>
           )}

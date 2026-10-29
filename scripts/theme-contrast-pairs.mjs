@@ -43,6 +43,7 @@ export const PAIRS = [
   { fg: 'popover-foreground', bg: 'popover', min: 4.5 },
   { fg: 'primary-foreground', bg: 'primary', min: 4.5 },
   { fg: 'send-foreground', bg: 'send', min: 3 },
+  { fg: 'foreground', bg: 'viewer-tint', min: 4.5 }, { fg: 'muted-foreground', bg: 'viewer-tint', min: 4.5 }, // spec 038: the viewer's own PR card header text
   { fg: 'agent-message', bg: 'background', min: 4.5 }, { fg: 'agent-message', bg: 'muted', min: 4.5 }, // #838: AgentMessageRow glyph + label, at rest and on the trigger's hover:bg-muted
   // #927 (quiet composer): `--composer-background` is now `transparent` in Dark and Obsidian
   // (the field shows the chat background through instead of a solid fill), so Send no longer

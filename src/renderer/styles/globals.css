@@ -52,6 +52,7 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
+  --color-viewer-tint: var(--viewer-tint);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -349,6 +350,8 @@ samp {
   --holiday-artwork-opacity: 0.58;
   --accent: oklch(0.269 0 0);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: oklch(0.21 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
   /* Quality-gate remediation (HIGH, 3 independent reviewers + corrected check-theme-contrast.mjs):
@@ -792,6 +795,8 @@ samp {
   --muted: var(--surface-hover);
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: #171922;
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --input: oklch(1 0 0 / 36%);
@@ -931,6 +936,8 @@ samp {
   --holiday-artwork-opacity: 0.45; /* #1233: about 3:1 over pure black (opaque muted grey) */
   --accent: oklch(0.26 0 0);
   --accent-foreground: oklch(1 0 0);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: oklch(0.18 0 0);
   /* #552 fix (Skippy, delegated by Stuart 2026-10-18, gate round): the mock's own 0.78
    * lightness measured only 6.65:1 against this theme's `--muted` hover fill (#570 decision 20,
    * recorded on #552 2026-10-16) -- under this theme's OWN declared 7:1 high-contrast text
@@ -1198,6 +1205,8 @@ samp {
   --muted: var(--surface-hover);
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: #0c1a2e;
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --input: oklch(1 0 0 / 38%);
@@ -1452,6 +1461,8 @@ samp {
   --muted: var(--surface-hover);
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: oklch(0.2 0.01 70);
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --input: oklch(1 0 0 / 36%);

@@ -1,9 +1,9 @@
 // The Overview's Checks section (spec 038 FR-011, FR-012): the overall state, then the checks
-// grouped by outcome -- Action required and Failing expanded, Pending, then Successful, Neutral
+// grouped by outcome -- only Action required and Failing expanded; Pending, Successful, Neutral
 // and Skipped collapsed. Every row pairs its status icon with the outcome word (never colour
 // alone) and offers "Open details" through a plain http(s) anchor, as ChangesTab does (no IPC).
-import { ChevronRightIcon, CircleAlertIcon, EllipsisIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
-import type { ComponentType } from 'react'
+import { ChevronRightIcon, CircleAlertIcon, EllipsisVerticalIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
+import { useState, type ComponentType } from 'react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -29,7 +29,7 @@ const CHECK_OUTCOME_DISPLAY: Record<CheckOutcome, OutcomeDisplay> = {
 const GROUPS: { outcome: CheckOutcome; defaultOpen: boolean }[] = [
   { outcome: 'action-required', defaultOpen: true },
   { outcome: 'failing', defaultOpen: true },
-  { outcome: 'pending', defaultOpen: true },
+  { outcome: 'pending', defaultOpen: false },
   { outcome: 'successful', defaultOpen: false },
   { outcome: 'neutral', defaultOpen: false },
   { outcome: 'skipped', defaultOpen: false }
@@ -55,29 +55,37 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   const display = CHECK_OUTCOME_DISPLAY[check.outcome]
   const Icon = display.icon
   const duration = formatCheckDuration(check.startedAt, check.completedAt)
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
-    <li className="flex items-center gap-2 py-1 pl-6 text-sm">
+    <li
+      className="flex items-center gap-2 py-1 pl-6 text-sm"
+      // Right-click, Shift+F10 and the Menu key all fire contextmenu; they open the same menu as the trigger.
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setMenuOpen(true)
+      }}
+    >
       <span className={cn('flex shrink-0 items-center gap-1 text-xs', display.colorClass)}>
         <Icon aria-hidden className={cn('size-4', check.outcome === 'pending' && 'animate-spin')} />
         {display.label}
       </span>
       <span className="min-w-0 flex-1 truncate">{check.name}</span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${check.name}`}>
-            <EllipsisIcon aria-hidden className="size-4" />
+          <Button variant="ghost" size="icon-xs" aria-label={`Actions for ${check.name}`}>
+            <EllipsisVerticalIcon aria-hidden />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isHttpUrl(check.detailsUrl) ? (
             <DropdownMenuItem asChild>
               <a href={check.detailsUrl} target="_blank" rel="noreferrer noopener">
-                Open details
+                Open details<span className="sr-only"> (opens in browser)</span>
               </a>
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem disabled>Open details</DropdownMenuItem>
+            <DropdownMenuItem disabled>Open details (no link available)</DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -90,8 +98,8 @@ export function ChecksSection({ checks, checkState }: { checks: PullRequestDetai
   const overall = CHECK_STATE_DISPLAY[checkState]
   const OverallIcon = overall.icon
   return (
-    <section aria-label="Checks" className="border-t border-border p-4">
-      <h3 className={cn('mb-2 flex items-center gap-2 text-sm font-medium', overall.colorClass)}>
+    <section aria-label="Checks" className="border-t border-divider p-4">
+      <h3 className={cn('mb-2 flex items-center gap-2 text-base font-semibold', overall.colorClass)}>
         <OverallIcon aria-hidden className={cn('size-4', checkState === 'pending' && 'animate-spin')} />
         {overall.label}
       </h3>

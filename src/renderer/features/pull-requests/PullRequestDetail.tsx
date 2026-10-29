@@ -67,6 +67,10 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const [forkWarningOpen, setForkWarningOpen] = useState(false)
   const [newSessionBusy, setNewSessionBusy] = useState(false)
   const [newSessionError, setNewSessionError] = useState<string | null>(null)
+  // Unsent drafts live here, not in the tab content (which unmounts on an Overview/Changes switch);
+  // they reset when the repository or pull request changes.
+  const [commentDraft, setCommentDraft] = useState('')
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({})
   const openChat = useViewStore((s) => s.openChat)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -113,6 +117,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
 
   useEffect(() => {
     setDetail(null)
+    setCommentDraft('')
+    setReplyDrafts({})
     void load()
     // Only the identity of the pull request being viewed should re-trigger the initial load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -310,13 +316,16 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             <ReviewConsensus timeline={detail.timeline} authorLogin={detail.author.login} />
             <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} githubStyle resolveImage={resolvePullRequestImage} />
           </div>
-          <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} viewerLogin={detail.viewerLogin} onChanged={() => void load()} />
+          <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} viewerLogin={detail.viewerLogin} replyDrafts={replyDrafts} onReplyDraftChange={(threadId, value) => setReplyDrafts((prev) => ({ ...prev, [threadId]: value }))} onChanged={() => void load()} />
           <ChecksSection checks={detail.checks} checkState={detail.checkState} />
           <CommentBox
             repositoryId={repositoryId}
             number={number}
             state={detail.state}
             title={title}
+            prTitle={detail.title}
+            text={commentDraft}
+            onTextChange={setCommentDraft}
             headingRef={headingRef}
             onChanged={() => void load()}
           />

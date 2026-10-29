@@ -31,6 +31,7 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | `default` (filled) | The single commit action in a dialog or form, and in first run (Add repository, Create, Save). One filled button per surface. |
 | `ghost` | Icon-only toolbar and row actions. |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
+| `destructive-outline` | A destructive action at rest that must stay visually below the surface's filled primary (spec 038: "Close pull request" in the comment box footer, left edge, away from Comment). Destructive-coloured edge and label, no fill; always confirms through `ConfirmAlertDialog tone="destructive"`. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `secondary`, `link` | Not part of the design system, except the one decided `link` use below. |
 
