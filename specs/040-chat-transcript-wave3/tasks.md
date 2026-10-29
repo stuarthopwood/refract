@@ -11,7 +11,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T6 Tight run for ask, Answered lines and resolved approvals; `DESIGN.md` rhythm. (#473)
 
 ## WP-B Banners and errors
-- [ ] T7 Shared `PaneBanner`, Button `text` variant, migrate the ChatPane banners; `components.md` and `patterns.md`. (#746)
+- [x] T7 Shared `PaneBanner`, Button `text` variant, migrate the ChatPane banners; `components.md` and `patterns.md`. (#746)
 - [ ] T8 Turn error row with hints and Retry; Retry line with Stop; keep banner and session-row retry text. (#1284)
 
 ## WP-C Transcript rows

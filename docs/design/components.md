@@ -21,11 +21,12 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 
 | Variant | Use |
 |---|---|
-| `outline` | The normal button everywhere. Cards, banners and pane headers (Approve, Recover, Merge, Refresh) use `outline`, with emphasis coming from position and order, not weight. Settles #531 (Merge no longer outweighs the title). |
+| `outline` | The normal button everywhere. Cards and pane headers (Approve, Merge, Refresh) use `outline`, with emphasis coming from position and order, not weight. A banner's one primary action is `outline` too (see "Banners" below). Settles #531 (Merge no longer outweighs the title). |
 | `default` (filled) | The single commit action in a dialog or form, and in first run (Add repository, Create, Save). One filled button per surface. |
 | `ghost` | Icon-only toolbar and row actions. |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
+| `text` | A non-primary action in a banner (#746): foreground text, no border or fill, underlined on hover and keyboard focus, 2px focus ring, 24px minimum target. `text-destructive` is the same shape with a red label, for a destructive action that opens a confirm dialog. |
 | `secondary`, `link` | Not part of the design system, except the one decided `link` use below. |
 
 **Quiet dismiss text button (Stuart, 2026-10-26, #1205):** the "Agent stopped" bar's **Don't show again** is a `link` variant, muted at rest with `text-muted-foreground`, beside the bar's `outline` **Start agent**. A dismiss-forever action on a quiet bar reads as a text action, not a second button; the muted colour keeps **Start agent** the stronger action. Any other new `link` use still needs its own decision.
@@ -212,7 +213,7 @@ Colour only reinforces the icon and the word; it is never the only signal (WCAG 
 
 | Channel | Scope | Dismissal |
 |---|---|---|
-| Banner | A Session- or pane-scoped problem | Stays until the problem is fixed. |
+| Banner | A Session- or pane-scoped problem | Stays until the problem is fixed. Built from `PaneBanner` (see "Banners"). |
 | Toast | A transient app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation state. |
 | Transcript notice | Agent-originated news | Stays in the transcript like any other row. |
@@ -232,3 +233,14 @@ Every panel and pane (chat, Agents, Pull requests, FDB panes, side chat) shares 
 Tab pattern details are deferred to #394.
 
 **Settings pages (wave 2):** every Settings section is a `SettingsPage` (`components/settings/`; `max-w-2xl`, `wide` = `max-w-3xl` for Models) holding `SettingsGroup` blocks (`role=group` labelled by its h3) of `SettingRow` rows (label, description, optional 16px `icon`, control; stacks under about 480px). `SettingFieldRow` and `SettingSwitchRow` wrap `SettingRow`. Do not hand-copy row markup.
+
+## Banners
+
+A pane banner (Worktree missing, Terminated unexpectedly, The agent stopped, start failed) is the shared `PaneBanner` (`src/renderer/components/PaneBanner.tsx`), decided for #746 (Stuart, 2026-10-29).
+
+- **Unboxed.** A flat row at the pane's left edge: no border, no fill. A banner is not on the zero-box list.
+- **Icon and title.** The severity icon (octagon for an error, triangle only for a warning) is the only red; the title is normal foreground, a short sentence with no trailing full stop.
+- **Detail line.** The path, id or reason goes on a second muted line in the Code font, wrapping anywhere and selectable. Pass `detailMono={false}` for a prose sentence.
+- **Actions.** One `outline` primary first (the action that fixes it; it takes the pane focus through `data-pane-banner`), the other actions as `text` buttons, a destructive action last as `text-destructive` with no fill. `destructive` stays the dialog confirm button only.
+- **Live region.** `role="alert"` applies at appearance only. An expanding disclosure (Details) sits outside the banner element so toggling it never re-announces the banner.
+- Other rows in the family (for example the Turn error row, #1284) reuse `PaneBanner` rather than a hand-styled copy.

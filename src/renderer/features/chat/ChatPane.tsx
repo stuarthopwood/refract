@@ -4,9 +4,9 @@
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
-import { AlertTriangleIcon, MessageSquareIcon, PaperclipIcon } from 'lucide-react'
+import { MessageSquareIcon, PaperclipIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { StopBanner } from './StopBanner'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
@@ -1181,136 +1181,26 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         {startAnnouncement}
       </div>
       {showBanner && (
-        <div data-pane-banner className="shrink-0 px-4 pt-4">
-          <Alert variant="destructive">
-            <AlertTriangleIcon />
-            <AlertTitle>
-              {showTerminatedTitle ? 'Terminated unexpectedly' : describeStopReason(effectiveStopReason, effectiveStopDetail)}
-            </AlertTitle>
-            {showTerminatedTitle && (
-              <AlertDescription>
-                Its Conversation ended mid-turn, not a clean stop.
-                {effectivePendingToolNames && effectivePendingToolNames.length > 0
-                  ? ` Still waiting on ${effectivePendingToolNames.join(', ')}.`
-                  : ''}
-              </AlertDescription>
-            )}
-            {canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly, !!session.archivedAt) && (
-              // Quality-gate fix (2026-10-08): normal flow (`col-start-2 mt-2`, matching the
-              // start-failed/worktree-missing banners below), not `AlertAction` -- `AlertAction`
-              // is `absolute top-2 right-2` (alert.tsx), which covered the terminated-unexpectedly
-              // description text instead of flowing after it. Recover (when shown) comes FIRST in
-              // DOM order: `focusPaneContent`'s generic banner-button query (lib/focus.ts) always
-              // focuses the first enabled `[data-pane-banner]` button, and Recover is the safe,
-              // non-money-spending one -- Resume sends a real turn and must never be where focus
-              // lands by accident.
-              <div className="col-start-2 mt-2 flex gap-2">
-                {effectiveStopReason === 'agent-exited' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={recovering || startingNew || resuming}
-                    onClick={() => void handleRecover()}
-                  >
-                    {recovering ? 'Retrying…' : 'Recover'}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-disabled={recovering || startingNew || resuming || undefined}
-                  className="aria-disabled:opacity-50"
-                  onClick={() => void handleResume()}
-                >
-                  {resuming ? 'Resuming…' : 'Resume'}
-                </Button>
-              </div>
-            )}
-            {effectiveStopReason === 'start-failed' && (
-              <div className="col-start-2 mt-2 flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={recovering || startingNew}
-                  onClick={() => void handleRecover()}
-                >
-                  {recovering ? 'Retrying…' : 'Retry'}
-                </Button>
-                <Button
-                  ref={startNewButtonRef}
-                  size="sm"
-                  variant="outline"
-                  disabled={recovering || startingNew}
-                  onClick={() => void handleStartNewConversation()}
-                >
-                  {startingNew ? 'Starting…' : 'Start new conversation'}
-                </Button>
-              </div>
-            )}
-            {effectiveStopReason === 'worktree-missing' && (
-              <div className="col-start-2 mt-2 flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => void handleRecreateWorktree()}>
-                  Recreate worktree
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => void handleArchive()}>
-                  Archive
-                </Button>
-                <Button
-                  ref={deleteBannerButtonRef}
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setDeleteForId(sessionId)}
-                >
-                  Delete
-                </Button>
-              </div>
-            )}
-          </Alert>
-          {/* Gate-fixes a11y Medium finding (cycle 6): moved OUT of `<Alert>` (which has
-              `role="alert"`, implying `aria-live="assertive"`/`aria-atomic`) -- toggling this
-              used to re-announce the ENTIRE alert assertively on every click (title, Retry/
-              Start new, and on expand the whole stderr/omp-log/memory text), interrupting the
-              user mid-read. A sibling here never mutates a live region. */}
-          {startFailureDetails && (
-            <div className="mt-2 pl-8 pb-4">
-              {/* Issue #512 requirement 2 (gate-fixes Medium finding, cycle 5): the stderr/
-                  omp-log warnings-and-errors tails and memory figures `buildStartFailure`
-                  appends, hidden behind a disclosure instead of always shown inline -- the
-                  title above already covers the one-line reason most users need. */}
-              <button
-                type="button"
-                aria-expanded={detailsOpen}
-                aria-controls={detailsId}
-                onClick={() => setDetailsOpen((open) => !open)}
-                className="inline-flex min-h-11 items-center px-1 text-xs underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                {/* Gate-fixes a11y Low finding (cycle 6): a constant label -- `aria-expanded`
-                    already carries the toggle state; flipping the label TOO had a screen reader
-                    announce the state twice ("Hide details, expanded"). Gate-fixes a11y Medium
-                    finding (cycle 7): `min-h-11`/padding so the tap target meets WCAG 2.5.5 --
-                    this was previously just the ~16px-tall inline text. */}
-                Details
-              </button>
-              {/* Gate-fixes a11y Low finding (cycle 7): always rendered (never conditionally
-                  mounted/unmounted) with `hidden` toggling visibility instead -- `aria-controls`
-                  pointing at an id only present in the DOM while expanded is a dangling
-                  reference some assistive technology and validators report. Gate-fixes a11y
-                  Medium finding (cycle 7): `aria-label` is prohibited on a bare `<pre>`, which
-                  maps to the ARIA `generic` role (ARIA 1.2 forbids naming `generic` elements) --
-                  `role="region"` makes the name valid. */}
-              <pre
-                id={detailsId}
-                hidden={!detailsOpen}
-                role="region"
-                tabIndex={0}
-                aria-label="Start failure details"
-                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words p-1 text-xs text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-              >
-                {startFailureDetails}
-              </pre>
-            </div>
-          )}
-        </div>
+        <StopBanner
+          stopReason={effectiveStopReason}
+          stopDetail={effectiveStopDetail}
+          showTerminatedTitle={showTerminatedTitle}
+          pendingToolNames={effectivePendingToolNames}
+          canResume={canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly, !!session.archivedAt)}
+          busy={{ recovering, startingNew, resuming }}
+          startFailureDetails={startFailureDetails}
+          detailsOpen={detailsOpen}
+          detailsId={detailsId}
+          onToggleDetails={() => setDetailsOpen((open) => !open)}
+          onRecover={() => void handleRecover()}
+          onResume={() => void handleResume()}
+          onStartNew={() => void handleStartNewConversation()}
+          onRecreateWorktree={() => void handleRecreateWorktree()}
+          onArchive={() => void handleArchive()}
+          onDelete={() => setDeleteForId(sessionId)}
+          startNewButtonRef={startNewButtonRef}
+          deleteButtonRef={deleteBannerButtonRef}
+        />
       )}
       <DeleteDialog
         session={session}

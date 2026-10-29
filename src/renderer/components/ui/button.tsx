@@ -31,6 +31,13 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/80 focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
         link: "text-primary underline underline-offset-4 font-normal",
+        // #746: a non-primary action beside an `outline` primary (PaneBanner). Foreground text, no
+        // border or fill; underlined on hover AND keyboard focus so it still reads as an action,
+        // with a 2px focus ring (the border it lacks cannot carry the focus state).
+        text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
+        // Same shape as `text` for a destructive action (always opens a confirm dialog): red label, no fill.
+        "text-destructive":
+          "min-h-6 rounded-md text-destructive hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
       },
       size: {
         default:

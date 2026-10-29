@@ -35,6 +35,16 @@ Agenda item 2 and its follow-up (reversible removals) define "destructive":
 
 Verified in code: `AttachmentStrip.tsx:41-49` ("Remove pasted image") and `MessageInput.tsx:714-722` ("Remove queued message") already have the `aria-label` but are missing the required `Tooltip` — an open audit finding, tracked by the #474 follow-up sweep issue, not fixed by this documentation change.
 
+## Banners
+
+The five rules for a Session- or pane-scoped problem row (#746; the component is in [components.md](components.md), "Banners"):
+
+1. A banner is unboxed: no border, no fill.
+2. Red is for the severity icon and for a destructive action's label only; the title stays foreground.
+3. Actions: one `outline` primary, every other action a `text` button.
+4. A destructive action is red text, last in the row, and always confirms in a dialog.
+5. Message and detail are two lines: a short title, then the path or reason in the Code font.
+
 ## Loading
 
 A loading state is a lucide spinner (`Loader2Icon`) plus words (for example, "Checking GitHub sign-in…"). The animating agent-working spinner (`AgentSpinner`, issue #612, supersedes the brand mark spinner `BrandSpinner`/spec 011) is reserved for exactly one meaning: an agent is working. Do not reuse it for any other kind of loading.
