@@ -35,8 +35,7 @@ import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type { AttachmentsApi } from './ipc-attachments';
 import type { DebugApi } from './ipc-debug';
 import type { LeftoverSummary } from './ipc-sessions';
-import type { GitChangesApi } from './ipc-git-changes';
-import type { IssuesApi } from './ipc-issues';
+import type { GitChangesApi } from './ipc-git-changes'; import type { IssuesApi } from './ipc-issues';
 import type { FileExplorerApi } from './ipc-file-explorer';
 import type {
   ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
