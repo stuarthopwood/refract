@@ -43,6 +43,9 @@ interface RepositoriesState {
    * rare. */
   setRemotes(remotes: Record<string, RepositoryRemote>): void
   add(path: string): Promise<Repository | null>
+  /** Adds an already-persisted Repository (for example one a background clone just added in Rust);
+   * a no-op when its id is already present. */
+  addLocal(repository: Repository): void
   remove(id: string): Promise<boolean>
   /** Quality-gate fix (a11y, Medium, 2026-10-08): returns the error message (not a bare
    * `false`) so the rename input can show it inline (`aria-describedby`) instead of only a
@@ -80,6 +83,12 @@ export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
     set({ repositories: [...get().repositories, result.value] })
     return result.value
   },
+  addLocal: (repository) =>
+    set((state) =>
+      state.repositories.some((existing) => existing.id === repository.id)
+        ? state
+        : { repositories: [...state.repositories, repository] }
+    ),
   remove: async (id) => {
     const result = await window.refract.repositories.remove(id)
     if (!result.ok) {

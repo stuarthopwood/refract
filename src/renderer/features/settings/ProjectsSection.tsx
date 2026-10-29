@@ -37,9 +37,7 @@ export function ProjectsSection() {
         >
           <div role="group" aria-labelledby="default-clone-folder-label" className="flex min-w-0 items-center gap-2">
             {folder ? (
-              <span title={folder} className="min-w-0 max-w-64 truncate font-mono text-xs">
-                {folder}
-              </span>
+              <span className="min-w-0 max-w-64 break-all font-mono text-xs">{folder}</span>
             ) : (
               <span className="text-xs text-muted-foreground">Not set</span>
             )}

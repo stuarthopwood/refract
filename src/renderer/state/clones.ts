@@ -1,13 +1,13 @@
 // Background clones (spec 054 FR-020..FR-030): one loading toast per clone, driven by the
-// `repositories.cloneProgress` event. The Clone dialog closes the moment a clone starts, so this
+// `repositories:clone-progress` event. The Clone dialog closes the moment a clone starts, so this
 // module (not a component) owns each clone's toast for its whole life.
 import type { CloneProgressEvent, CloneStage } from '../../shared/ipc-repositories-clone'
-import { notify, notifyProgress } from './notify'
+import { notifyPersistentError, notifyProgress } from './notify'
 import type { ProgressToast } from './notify'
 import { useRepositoriesStore } from './repositories-store'
 import { useSettingsStore } from './settings-store'
 import { useViewStore } from './view-store'
-import { parentOf } from '../features/sessions/clone-destination'
+import { parentOf } from '../lib/parent-path'
 
 const STAGE_LABELS: Record<CloneStage, string> = {
   starting: 'Starting',
@@ -44,10 +44,7 @@ function handle(event: CloneProgressEvent): void {
       return
     case 'done': {
       active.delete(event.cloneId)
-      const { repositories } = useRepositoriesStore.getState()
-      if (!repositories.some((repository) => repository.id === event.project.id)) {
-        useRepositoriesStore.setState({ repositories: [...repositories, event.project] })
-      }
+      useRepositoriesStore.getState().addLocal(event.project)
       clone.toast.succeed(`Cloned ${clone.name}`, { label: 'Open', onClick: () => openProject(event.project.id) })
       return
     }
@@ -85,7 +82,7 @@ export async function startClone({ source, destination, saveAsDefault }: StartCl
   ensureSubscribed()
   const result = await window.refract.repositories.clone({ source, destination })
   if (!result.ok) {
-    notify(result.error)
+    notifyPersistentError(result.error.message)
     return
   }
   if (result.value.kind === 'existing') {
@@ -105,6 +102,6 @@ export async function startClone({ source, destination, saveAsDefault }: StartCl
   if (saveAsDefault && parent) {
     const saved = await window.refract.settings.setDefaultCloneFolder(parent)
     if (saved.ok) useSettingsStore.getState().setSettings(saved.value)
-    else notify(saved.error)
+    else notifyPersistentError(saved.error.message)
   }
 }

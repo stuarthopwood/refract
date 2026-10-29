@@ -1,8 +1,9 @@
 // "Add project" menu (spec 054, #867; UI ruling from ui-architect-v3): one trigger, two text-only
-// items -- Local folder... and Clone from GitHub... -- shared by the session list footer and the
+// items -- Local folder… and Clone from GitHub… -- shared by the session list footer and the
 // first-run screen. Owns both dialogs so a caller only picks a `variant`.
 import { useRef, useState } from 'react'
 import { ChevronDownIcon, ChevronUpIcon, FolderPlusIcon } from 'lucide-react'
+import { SIDEBAR_NAV_BUTTON_CLASS } from '@/components/sidebarNavButtonClass'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -21,6 +22,7 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
   const [localOpen, setLocalOpen] = useState(false)
   const [cloneOpen, setCloneOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const openingDialogRef = useRef(false)
   const footer = variant === 'footer'
   const menuSide = side ?? (footer ? 'top' : 'bottom')
   const Chevron = menuSide === 'top' ? ChevronUpIcon : ChevronDownIcon
@@ -43,7 +45,7 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
             data-readiness-primary={footer ? undefined : ''}
             className={cn(
               footer
-                ? 'h-8 w-full justify-start gap-2 px-2 text-sm text-muted-foreground hover:text-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent'
+                ? cn(SIDEBAR_NAV_BUTTON_CLASS, 'w-full text-muted-foreground hover:text-foreground')
                 : 'flex-1',
               className
             )}
@@ -53,9 +55,34 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
             <Chevron aria-hidden className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side={menuSide} align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
-          <DropdownMenuItem onSelect={() => setLocalOpen(true)}>Local folder...</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setCloneOpen(true)}>Clone from GitHub...</DropdownMenuItem>
+        <DropdownMenuContent
+          side={menuSide}
+          align="start"
+          onCloseAutoFocus={(event) => {
+            // Only a menu item that opens a dialog takes focus away; Esc or an outside click lets
+            // Radix put it back on the trigger.
+            if (openingDialogRef.current) {
+              event.preventDefault()
+              openingDialogRef.current = false
+            }
+          }}
+        >
+          <DropdownMenuItem
+            onSelect={() => {
+              openingDialogRef.current = true
+              setLocalOpen(true)
+            }}
+          >
+            Local folder…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              openingDialogRef.current = true
+              setCloneOpen(true)
+            }}
+          >
+            Clone from GitHub…
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <AddProjectDialog

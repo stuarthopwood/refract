@@ -61,10 +61,38 @@ export function dismissSlashCommandRefusalToast(sessionId: string): void {
   }
 }
 
+// No app-wide assertive announcer exists (each dialog owns its own), and a sonner toast is only
+// polite, so a failure that must interrupt gets one small shared role=alert region.
+let alertRegion: HTMLElement | null = null
+
+function announceAssertive(text: string): void {
+  if (typeof document === 'undefined') return
+  if (!alertRegion || !alertRegion.isConnected) {
+    alertRegion = document.createElement('div')
+    alertRegion.setAttribute('role', 'alert')
+    alertRegion.setAttribute('aria-live', 'assertive')
+    alertRegion.setAttribute('aria-atomic', 'true')
+    alertRegion.className = 'sr-only'
+    document.body.appendChild(alertRegion)
+  }
+  const region = alertRegion
+  region.textContent = ''
+  // A fresh text node on the next tick, so repeating identical text is still announced.
+  setTimeout(() => {
+    region.textContent = text
+  }, 0)
+}
+
+/** A persistent error toast (no auto-dismiss, close button), also announced assertively. */
+export function notifyPersistentError(text: string): void {
+  toast.error(text, { duration: Infinity, closeButton: true })
+  announceAssertive(text)
+}
+
 export interface ProgressToast {
   /** Replaces the loading text in place (same toast, no new one). */
   update(text: string): void
-  /** Success toast with an optional action; auto-dismisses after about 5 s. */
+  /** Success toast with an optional action; stays until dismissed so a keyboard user can reach it. */
   succeed(text: string, action?: { label: string; onClick(): void }): void
   /** Persistent error toast with a close button. */
   fail(text: string): void
@@ -76,24 +104,40 @@ export interface ProgressToast {
  * single stable id per operation, so every later call updates the same toast. */
 export function notifyProgress(id: string, text: string, onCancel?: () => void): ProgressToast {
   const toastId = `progress-${id}`
-  toast.loading(text, {
+  let cancelling = false
+  const loadingOptions = () => ({
     id: toastId,
     duration: Infinity,
     dismissible: false,
-    action: onCancel ? { label: 'Cancel', onClick: onCancel } : undefined
+    action: onCancel && !cancelling
+      ? {
+          label: 'Cancel',
+          onClick: (event: { preventDefault(): void }) => {
+            // sonner deletes the toast after an action click unless it is prevented.
+            event.preventDefault()
+            cancelling = true
+            toast.loading('Cancelling…', loadingOptions())
+            onCancel()
+          }
+        }
+      : undefined
   })
+  toast.loading(text, loadingOptions())
   return {
-    update: (next) =>
-      toast.loading(next, {
+    update: (next) => toast.loading(cancelling ? 'Cancelling…' : next, loadingOptions()),
+    succeed: (next, action) =>
+      toast.success(next, {
         id: toastId,
         duration: Infinity,
-        dismissible: false,
-        action: onCancel ? { label: 'Cancel', onClick: onCancel } : undefined
+        dismissible: true,
+        closeButton: true,
+        action: action ?? undefined
       }),
-    succeed: (next, action) =>
-      toast.success(next, { id: toastId, duration: 5000, dismissible: true, action: action ?? undefined }),
-    fail: (next) =>
-      toast.error(next, { id: toastId, duration: Infinity, dismissible: true, closeButton: true, action: undefined }),
+    fail: (next) => {
+      toast.error(next, { id: toastId, duration: Infinity, dismissible: true, closeButton: true, action: undefined })
+      announceAssertive(next)
+    },
     info: (next) => toast.message(next, { id: toastId, duration: 5000, dismissible: true, action: undefined })
   }
 }
+

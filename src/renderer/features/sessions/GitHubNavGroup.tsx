@@ -5,6 +5,7 @@
 import { useEffect, type ComponentType, type ReactNode } from 'react'
 import { CircleDotIcon, GitPullRequestIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { SIDEBAR_NAV_BUTTON_CLASS } from '@/components/sidebarNavButtonClass'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
@@ -28,7 +29,8 @@ function NavItem({ active, label, icon: Icon, onClick, children, text }: NavItem
       data-choice-item
       // The forced-colors outline classes draw a real focus ring where `Button`'s box-shadow ring is stripped.
       className={cn(
-        'relative mx-2 h-8 justify-start gap-2 px-2 text-sm hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
+        'relative mx-2',
+        SIDEBAR_NAV_BUTTON_CLASS,
         'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
         active && 'bg-sidebar-accent text-sidebar-accent-foreground'
       )}

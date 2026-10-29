@@ -4,6 +4,7 @@
 // extends this instead of copying it. Rows are plain text: callers pass already-safe nodes.
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode, RefObject } from 'react'
+import { CheckIcon } from 'lucide-react'
 import { SearchField } from '@/components/SearchField'
 import { PICKER_OPTION_ACTIVE_CLASS, PICKER_OPTION_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
@@ -31,8 +32,8 @@ export interface FilterableGroupedListboxProps<T extends ListboxItem> {
   renderItem(item: T): ReactNode
   /** The item shown as chosen (`aria-selected`). */
   selectedId?: string | null
-  /** Shown when no group has items or errors. */
-  emptyText: string
+  /** Shown outside the listbox when no group has items or errors (plain text or a node, for example an alert with Retry). */
+  empty: ReactNode
   /** Visible line under the list (for example "Showing 5 of 12"). */
   countText?: string
   /** Mirrored into a polite sr-only live region so a screen reader hears filter results. */
@@ -54,7 +55,7 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
   onSelect,
   renderItem,
   selectedId,
-  emptyText,
+  empty,
   countText,
   announcement,
   inputRef,
@@ -94,18 +95,28 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     if (rows.length === 0) return
     const index = activeRow ? rows.indexOf(activeRow) : 0
+    const moveTo = (target: number): void => {
+      const row = rows[Math.min(Math.max(target, 0), rows.length - 1)]
+      if (row) setActiveKey(row.key)
+    }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setActiveKey(rows[Math.min(index + 1, rows.length - 1)].key)
+      moveTo(index + 1)
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setActiveKey(rows[Math.max(index - 1, 0)].key)
+      moveTo(index - 1)
     } else if (event.key === 'Home' && event.ctrlKey) {
       event.preventDefault()
-      setActiveKey(rows[0].key)
+      moveTo(0)
     } else if (event.key === 'End' && event.ctrlKey) {
       event.preventDefault()
-      setActiveKey(rows[rows.length - 1].key)
+      moveTo(rows.length - 1)
+    } else if (event.key === 'PageDown') {
+      event.preventDefault()
+      moveTo(index + 10)
+    } else if (event.key === 'PageUp') {
+      event.preventDefault()
+      moveTo(index - 10)
     } else if (event.key === 'Enter' && activeRow) {
       event.preventDefault()
       activate(activeRow)
@@ -123,16 +134,18 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
         combobox={{ listboxId, activeDescendantId: activeRow ? optionId(activeRow.key) : undefined }}
         onInputKeyDown={handleKeyDown}
       />
+      {rows.length === 0 && (
+        <div className="rounded-md border border-border px-2 py-3 text-sm text-muted-foreground">{empty}</div>
+      )}
       <div
         ref={listRef}
         id={listboxId}
         role="listbox"
         aria-label={label}
-        className="max-h-64 min-h-24 overflow-y-auto rounded-md border border-border"
+        className={cn('max-h-64 min-h-24 overflow-y-auto rounded-md border border-border', rows.length === 0 && 'hidden')}
         // Options never take focus; keep it on the input when one is clicked.
         onMouseDown={(event) => event.preventDefault()}
       >
-        {rows.length === 0 && <p className="px-2 py-3 text-sm text-muted-foreground">{emptyText}</p>}
         {groups.map((group) => {
           if (group.items.length === 0 && !group.error) return null
           const headingId = `${baseId}-group-${group.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
@@ -155,11 +168,18 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
                     role="option"
                     aria-selected={selectedId === item.id}
                     data-active={active ? 'true' : undefined}
-                    className={cn(PICKER_OPTION_CLASS, active && PICKER_OPTION_ACTIVE_CLASS)}
+                    className={cn(
+                      PICKER_OPTION_CLASS,
+                      'aria-selected:font-medium',
+                      active && PICKER_OPTION_ACTIVE_CLASS
+                    )}
                     onClick={() => onSelect(item)}
-                    onMouseMove={() => active || setActiveKey(key)}
+                    onMouseMove={() => {
+                      if (!active) setActiveKey(key)
+                    }}
                   >
                     {renderItem(item)}
+                    {selectedId === item.id && <CheckIcon aria-hidden className="size-4 shrink-0" />}
                   </div>
                 )
               })}
