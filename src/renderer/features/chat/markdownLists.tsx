@@ -18,7 +18,7 @@ export function UnorderedList({ className, ...props }: React.ComponentProps<'ul'
       className={cn(
         typeof className === 'string' && className.includes('contains-task-list')
           ? 'list-none space-y-1 pl-0'
-          : 'list-disc pl-4',
+          : 'list-disc pl-4 marker:text-md-marker',
         className
       )}
       {...props}
@@ -26,7 +26,7 @@ export function UnorderedList({ className, ...props }: React.ComponentProps<'ul'
   )
 }
 export function OrderedList({ className, ...props }: React.ComponentProps<'ol'> & ExtraProps) {
-  return <ol className={cn('list-decimal pl-4', className)} {...props} />
+  return <ol className={cn('list-decimal pl-4 marker:text-md-marker', className)} {...props} />
 }
 // Task-list checkboxes (GFM): rehype-sanitize's default (GitHub-style) schema already allows
 // `input[type=checkbox][disabled]` and `li.task-list-item` (hast-util-sanitize

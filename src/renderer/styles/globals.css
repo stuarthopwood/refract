@@ -84,6 +84,14 @@
   --color-titlebar: var(--titlebar);
   --color-border-strong: var(--border-strong);
   --color-accent-text: var(--accent-text);
+  --color-md-heading: var(--md-heading);
+  --color-md-marker: var(--md-marker);
+  --color-md-quote-bar: var(--md-quote-bar);
+  --color-md-code-label: var(--md-code-label);
+  --color-md-code-bg: var(--md-code-bg);
+  --color-md-code-fg: var(--md-code-fg);
+  --color-md-table-header-fg: var(--md-table-header-fg);
+  --color-code-block: var(--code-block-bg);
   --color-command-pill-bg: var(--command-pill-bg);
   --color-command-pill-fg: var(--command-pill-fg);
   --color-composer-selection-bg: var(--composer-selection-bg);
@@ -254,6 +262,21 @@ samp {
   /* #1233, #1298: safe default for the Halloween artwork (bats and glyph); every `.theme-*` block
      overrides it with the value that gives about 1.6:1 against its own background. */
   --holiday-artwork-opacity: 0.30;
+}
+
+/* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (Dark (high contrast) uses a bundled Shiki theme and never reads them). */
+:root {
+  --shiki-foreground: var(--code-block-fg);
+  --shiki-background: transparent;
+  --shiki-token-keyword: var(--syntax-keyword);
+  --shiki-token-function: var(--syntax-function);
+  --shiki-token-string: var(--syntax-string);
+  --shiki-token-string-expression: var(--syntax-string);
+  --shiki-token-constant: var(--syntax-constant);
+  --shiki-token-parameter: var(--syntax-parameter);
+  --shiki-token-punctuation: var(--syntax-punctuation);
+  --shiki-token-comment: var(--syntax-comment);
+  --shiki-token-link: var(--accent-text);
 }
 
 .theme-dark {
@@ -496,6 +519,23 @@ samp {
    * nothing token: a lighter indigo step that clears 4.5:1 against both this theme's existing
    * `--background` (5.24:1) and `--card`/`--popover` (4.74:1). */
   --accent-text: #7375F2;
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  --md-heading: var(--accent-text);
+  --md-marker: var(--accent-text);
+  --md-quote-bar: var(--accent-text);
+  --md-code-label: var(--accent-text);
+  --md-code-bg: var(--muted);
+  --md-code-fg: oklch(0.85 0.09 279);
+  --md-table-header-fg: var(--md-code-fg);
+  --code-block-bg: var(--card);
+  --code-block-fg: oklch(0.93 0 0);
+  --syntax-keyword: oklch(0.78 0.13 279);
+  --syntax-function: oklch(0.86 0.09 262);
+  --syntax-string: oklch(0.83 0.11 160);
+  --syntax-constant: oklch(0.83 0.11 75);
+  --syntax-parameter: oklch(0.85 0.07 220);
+  --syntax-punctuation: oklch(0.80 0 0);
+  --syntax-comment: oklch(0.72 0 0);
   /* Issue #1050 (composer command pill, gate round 2 remediation -- round 1's `--card`-aliased
    * fill is superseded): `--accent-text` itself cannot be the pill's own text colour and still
    * let ONE fill clear both the accent-text floor (4.5:1) and the gate's own "visibly distinct
@@ -709,6 +749,23 @@ samp {
    * popover (4.78:1, the binding constraint -- the earlier `#7A7DF3` cleared only 4.24:1
    * there). */
   --accent-text: #8588F4;
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  --md-heading: var(--accent-text);
+  --md-marker: var(--accent-text);
+  --md-quote-bar: var(--accent-text);
+  --md-code-label: var(--accent-text);
+  --md-code-bg: var(--muted);
+  --md-code-fg: oklch(0.85 0.09 279);
+  --md-table-header-fg: var(--md-code-fg);
+  --code-block-bg: var(--card);
+  --code-block-fg: oklch(0.93 0 0);
+  --syntax-keyword: oklch(0.78 0.13 280);
+  --syntax-function: oklch(0.86 0.09 262);
+  --syntax-string: oklch(0.83 0.11 160);
+  --syntax-constant: oklch(0.83 0.11 75);
+  --syntax-parameter: oklch(0.85 0.07 220);
+  --syntax-punctuation: oklch(0.80 0 0);
+  --syntax-comment: oklch(0.72 0 0);
   /* Issue #1050 (gate round 2 remediation, see Dark's own comment for the full reasoning): two
    * independent tokens. `--command-pill-bg` is a plain blue-grey neutral step clearing 1.4:1
    * against `--background` (1.50:1). `--command-pill-fg` is the same hue as `--accent-text`
@@ -1077,6 +1134,16 @@ samp {
    * ordinary 4.5:1 text floor (the enhanced 7:1 this preset's own design intent calls for is
    * also cleared, incidentally, but is not the floor this story enforces -- see above). */
   --accent-text: oklch(0.75 0.17 264);
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  --md-heading: var(--accent-text);
+  --md-marker: var(--accent-text);
+  --md-quote-bar: var(--accent-text);
+  --md-code-label: var(--accent-text);
+  --md-code-bg: var(--muted);
+  --md-code-fg: oklch(0.93 0.06 264);
+  --md-table-header-fg: var(--md-code-fg);
+  --code-block-bg: var(--card);
+  /* No --syntax-* tokens: this preset keeps github-dark-high-contrast for code (#456 grill item 5). */
   /* Issue #1050 (gate round 2 remediation, see `.theme-dark`'s own comment for the full
    * reasoning): two independent tokens. `--command-pill-bg` is a plain neutral step clearing
    * 1.4:1 against `--composer-background` (1.52:1). `--command-pill-fg` is the same hue as
@@ -1287,6 +1354,23 @@ samp {
   /* ---- Layer 2 continued: surface ladder, severity, accent-text ------------------------- */
   --surface-hover: var(--surface-3);
   --accent-text: #1ad1d1;
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  --md-heading: var(--accent-text);
+  --md-marker: var(--accent-text);
+  --md-quote-bar: var(--accent-text);
+  --md-code-label: var(--accent-text);
+  --md-code-bg: var(--muted);
+  --md-code-fg: oklch(0.87 0.09 195);
+  --md-table-header-fg: var(--md-code-fg);
+  --code-block-bg: var(--card);
+  --code-block-fg: oklch(0.93 0 0);
+  --syntax-keyword: oklch(0.80 0.11 195);
+  --syntax-function: oklch(0.87 0.08 215);
+  --syntax-string: oklch(0.83 0.11 150);
+  --syntax-constant: oklch(0.83 0.11 80);
+  --syntax-parameter: oklch(0.85 0.07 260);
+  --syntax-punctuation: oklch(0.80 0 0);
+  --syntax-comment: oklch(0.72 0 0);
   /* Issue #1050: `--muted` clears BOTH floors here -- 1.50:1 against `--background` (>=1.4)
    * and 6.73:1 for `--accent-text` on it (>=4.5) -- so this preset's pill fill is visibly
    * distinct from the composer surface with no Dark/Obsidian/Dark-HC-style conflict (gate round
@@ -1554,6 +1638,23 @@ samp {
 
   --surface-hover: var(--surface-3);
   --accent-text: #fb923c;
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  --md-heading: var(--accent-text);
+  --md-marker: var(--accent-text);
+  --md-quote-bar: var(--accent-text);
+  --md-code-label: var(--accent-text);
+  --md-code-bg: var(--muted);
+  --md-code-fg: oklch(0.87 0.10 60);
+  --md-table-header-fg: var(--md-code-fg);
+  --code-block-bg: var(--card);
+  --code-block-fg: oklch(0.93 0 0);
+  --syntax-keyword: oklch(0.78 0.14 55);
+  --syntax-function: oklch(0.87 0.10 80);
+  --syntax-string: oklch(0.83 0.10 150);
+  --syntax-constant: oklch(0.83 0.09 230);
+  --syntax-parameter: oklch(0.86 0.06 95);
+  --syntax-punctuation: oklch(0.80 0 0);
+  --syntax-comment: oklch(0.72 0 0);
   /* Issue #1050, retuned for #1039 (2026-10-20): Cyber Amber's `--background` is now byte-
    * identical to Default Dark's, so `--command-pill-bg` reuses Dark's own literal
    * (`oklch(0.31 0 0)`, hex `#303030`, 1.50:1 against `--background`) instead of aliasing

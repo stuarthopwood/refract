@@ -457,6 +457,7 @@ export interface MermaidThemeVariables {
 // `getMermaidThemeCSS` below, are unaffected.
 export { MERMAID_THEME_VARIABLES } from './mermaidThemeData'
 import { MERMAID_THEME_VARIABLES } from './mermaidThemeData'
+import { MERMAID_ACCENTS } from './mermaidAccent'
 
 // Quality-gate remediation (round 5, corroborated by two independent reviewers measuring the
 // real rendered DOM): three real Mermaid CSS gaps that no `themeVariables` key can patch alone
@@ -497,6 +498,7 @@ import { MERMAID_THEME_VARIABLES } from './mermaidThemeData'
 // until that function is widened to match.
 export function getMermaidThemeCSS(themeId: ThemeId): string {
  const t = MERMAID_THEME_VARIABLES[themeId]
+ const { accent, fill } = MERMAID_ACCENTS[themeId]
  const overflowStates = ['activeText', 'activeCritText']
  const overflowSelectors = overflowStates
   .flatMap((state) => [0, 1, 2, 3].map((n) => `${state}${n}`))
@@ -543,6 +545,21 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
   }
   .eventWrapper {
     filter: none !important;
+  }
+  /* #456 accent source (flowchart family): borders, edge lines and arrowheads in the preset accent, node fill a faint accent tint, labels stay in the prose colour. */
+  .node rect, .node polygon, .node circle, .node ellipse, .node path {
+    stroke: ${accent} !important;
+    fill: ${fill} !important;
+  }
+  .cluster rect {
+    stroke: ${accent} !important;
+  }
+  .flowchart-link, .edgePath .path {
+    stroke: ${accent} !important;
+  }
+  .marker, marker path {
+    fill: ${accent} !important;
+    stroke: ${accent} !important;
   }
   /* Quality-gate remediation (round 6): gitGraph's own \`.commit-label-bkg\` rect ships at
      \`opacity: 0.5\`, so wherever a commit sits on a bright \`git<N>\` branch line, the line shows

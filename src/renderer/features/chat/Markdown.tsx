@@ -4,8 +4,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
 import { cn } from '@/lib/utils'
 import type { Highlighter } from 'shiki'
-import { createHighlighter } from 'shiki'
-import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
+import { getHighlighter, highlightToHtml } from './shikiHighlighter'
 import type { MermaidConfig } from 'mermaid'
 import { safeUrl } from '@/lib/safe-url'
 import { parseFileReference, looksWithinWorktree } from '@/lib/linkify'
@@ -59,20 +58,6 @@ function markdownUrlTransform(value: string, _key: string, node: { properties?: 
   return safeUrl(value) ?? ''
 }
 
-// One Shiki highlighter for the whole renderer, created lazily on first code block and reused.
-// `createJavaScriptRegexEngine` avoids loading the WASM oniguruma engine in the sandboxed
-// renderer (research.md decision 2, "Not verified": chosen for that reason, not benchmarked).
-// Languages are loaded on demand, not bundled up front.
-let highlighterPromise: Promise<Highlighter> | null = null
-function getHighlighter(): Promise<Highlighter> {
-  highlighterPromise ??= createHighlighter({
-    themes: Object.values(THEMES).map((theme) => theme.syntaxTheme),
-    langs: [],
-    engine: createJavaScriptRegexEngine()
-  })
-  return highlighterPromise
-}
-
 // Small header shown above every code block -- a markdown fence, and (via ToolRow's own
 // language inference) a tool call's Arguments/Output (T083, FR-049/FR-050): the language's name
 // when it is both known and actually highlighted, else "text" -- including when `lang` was given
@@ -90,8 +75,8 @@ function getHighlighter(): Promise<Highlighter> {
 // multiple blocks in one transcript are distinguishable in a screen reader's button list.
 function CodeBlockHeader({ label, copyText, hideCopy = false }: { label: string; copyText: string; hideCopy?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2 py-1 font-code text-xs text-muted-foreground">
-      <span className="truncate">{label}</span>
+    <div className="flex items-center justify-between gap-2 border-b border-border bg-code-block px-2 py-1 font-code text-xs text-muted-foreground">
+      <span className="truncate text-md-code-label">{label}</span>
       {copyText !== '' && !hideCopy && (
         <CopyButton
           getText={() => copyText}
@@ -174,8 +159,7 @@ export function CodeBlock({
         // #975: body now shares `bg-card` with the header/gutter; Shiki's own fixed root
         // background is neutralised via `colorReplacements` (keyed on the theme's own `.bg`, probed against shiki@4.4.3 -- the one per-call override for background alone).
         const syntaxTheme = THEMES[activeThemeId].syntaxTheme
-        const themeBg = highlighter.getTheme(syntaxTheme).bg.toLowerCase()
-        setHtml(highlighter.codeToHtml(code, { lang, theme: syntaxTheme, colorReplacements: { [themeBg]: 'transparent' } }))
+        setHtml(highlightToHtml(highlighter, code, lang, syntaxTheme))
       } catch {
         if (!cancelled) setHtml(null)
       }
@@ -215,7 +199,7 @@ export function CodeBlock({
   const gutter = showLineNumbers ? (
     <pre
       aria-hidden
-      className="m-0 select-none border-r border-border bg-card py-4 pl-4 pr-2 text-right leading-[1.6] text-muted-foreground tabular-nums"
+      className="m-0 select-none border-r border-border bg-code-block py-4 pl-4 pr-2 text-right leading-[1.6] text-muted-foreground tabular-nums"
     >
       {Array.from({ length: lineCount }, (_, i) => i + 1).join('\n')}
     </pre>
@@ -235,7 +219,7 @@ export function CodeBlock({
             role="region"
             aria-label={regionLabel}
             className={cn(
-              'min-w-0 flex-1 bg-card',
+              'min-w-0 flex-1 bg-code-block',
               wrap ? wrapClassName : scrollableClassName,
               wrap ? '[&>pre]:m-0 [&>pre]:p-4 [&>pre]:whitespace-pre-wrap [&>pre]:break-words' : '[&>pre]:m-0 [&>pre]:p-4 [&>pre]:leading-[1.6]'
             )}
@@ -254,7 +238,7 @@ export function CodeBlock({
           tabIndex={0}
           role="region"
           aria-label={regionLabel}
-          className={cn('min-w-0 flex-1', wrap ? wrapClassName : scrollableClassName, 'bg-card p-4 leading-[1.6]')}
+          className={cn('min-w-0 flex-1', wrap ? wrapClassName : scrollableClassName, 'bg-code-block p-4 leading-[1.6]')}
         >
           <code>{code}</code>
         </pre>
@@ -470,7 +454,7 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
 
 function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
   return function Heading({ className, ...props }: React.ComponentProps<typeof Tag> & ExtraProps) {
-    return <Tag className={cn('font-bold', className)} {...props} />
+    return <Tag className={cn('font-bold', (Tag === 'h1' || Tag === 'h2' || Tag === 'h3') && 'text-md-heading', className)} {...props} />
   }
 }
 
@@ -830,7 +814,7 @@ const components: Components = {
         const safe = trimmed && !/\s/.test(trimmed) ? safeUrl(trimmed) : undefined
         if (safe) {
           return (
-            <code className="rounded bg-muted px-1 py-1 font-code text-code-inline" {...props}>
+            <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
               {streaming ? (
                 <span className={mutedInertLinkClassName}>{text}</span>
               ) : (
@@ -848,14 +832,14 @@ const components: Components = {
         const fileRef = sessionId && trimmed ? parseFileReference(trimmed) : null
         if (fileRef) {
           return (
-            <code className="rounded bg-muted px-1 py-1 font-code text-code-inline" {...props}>
+            <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
               <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} />
             </code>
           )
         }
       }
       return (
-        <code className="rounded bg-muted px-1 py-1 font-code text-code-inline" {...props}>
+        <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
           {children}
         </code>
       )
