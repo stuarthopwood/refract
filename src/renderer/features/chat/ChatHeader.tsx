@@ -52,11 +52,11 @@ export function ChatHeader({
 
   return (
     <header className="drag-region titlebar-surface flex h-10 shrink-0 items-center justify-between gap-2 px-4">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <StateIcon status={session.status} />
         <span className="sr-only">{STATUS_LABEL[session.status]}</span>
-        <span className="truncate text-sm font-medium">{session.name}</span>
-        <span className="shrink-0 truncate text-xs text-muted-foreground">{session.branch}</span>
+        <span className="min-w-0 truncate text-sm font-medium" title={session.name}>{session.name}</span>
+        <span className="min-w-0 truncate text-xs text-muted-foreground" title={session.branch}>{session.branch}</span>
         {focused && (
           // Quality-gate remediation (accessibility-auditor, Critical): the previous
           // `text-active-indicator` on `bg-active-indicator/15` composited to 2.69:1 against the
