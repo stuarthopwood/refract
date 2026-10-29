@@ -1,5 +1,5 @@
 // Gate round 5 fix (#1050, test review): `--composer-selection-bg` is now a TRANSLUCENT
-// accent-text tint (`color-mix(in oklab, var(--accent-text) 34%, transparent)`, globals.css),
+// accent-text tint (`color-mix(in oklab, var(--accent-text) N%, transparent)`, per-theme N, globals.css),
 // not an opaque alias -- `CommandPillOverlay.tsx`'s own header comment has the full product
 // reasoning (round 3's opaque `var(--accent)` fill happened to measure EQUAL to
 // `--command-pill-bg` in Nordic Frost/Cyber Amber, painting a completely invisible highlight
@@ -13,12 +13,12 @@
 //
 // Two questions per backdrop: is the highlight itself legible under its own `--composer-
 // selection-fg` text (>=4.5:1, >=7:1 in Dark high contrast -- enforced), and is the highlight
-// visibly distinct from what it sits on (enforced >=1.5:1 against `--command-pill-bg` only --
-// the test-review finding this round fixes; informational-only, never failing the run, against
-// `--background`/`--composer-background`, since no alpha anywhere near the 30-40% window this
-// decision specified reaches a full 3:1 over a near-black backdrop without blowing the text-
-// legibility floor above -- a clearly accent-hued tint there, not a WCAG-enforced one, the same
-// accepted-gap shape `sidebarBorderContrastRows` in theme-contrast-pairs.mjs already uses).
+// visibly distinct from what it sits on (enforced >=1.5:1 against `--command-pill-bg` only;
+// informational-only, never failing the run, against `--background`/`--composer-background`).
+// The real constraint on the alpha is the text floor: Dark high contrast's 7:1 floor leaves no
+// headroom at the 34% it keeps, while the other themes carry the highest alpha (42%-50%,
+// `globals.css`) their own 4.5:1 floor allows (#1084). No theme reaches 3:1 over its near-black
+// backdrop, so those rows stay informational (accepted departure, `docs/design/accessibility.md`).
 //
 // A brand-new file, not an addition to theme-contrast-pairs.mjs: that file is 599 lines on
 // `origin/main` with no #806 baseline entry (naturally under its 600-line cap) -- every PAIRS
@@ -119,7 +119,7 @@ export function composerSelectionContrastRows(themes) {
       note:
         bgDistinctRatio >= 3
           ? 'informational, not enforced'
-          : `informational -- below 3:1 (${bgDistinctRatio.toFixed(2)}:1); a 34% accent tint cannot reach 3:1 over a near-black background without exceeding the text-legibility floor above, so this is a clearly accent-hued tint, not a WCAG-enforced one (#1050 gate round 5, accepted)`,
+          : `informational -- below 3:1 (${bgDistinctRatio.toFixed(2)}:1); a near-black backdrop is below 3:1 in every theme, an accepted departure (accessibility.md), not a WCAG-enforced one (#1050 gate round 5, #1084)`,
     })
 
     if (composerBackground) {

@@ -25,7 +25,7 @@ interface SettingsState {
   /** Issue #1205 (FR-107): resolves `true` on success, so **Don't show again** only toasts a real change. */
   setShowAgentStoppedBar(enabled: boolean): Promise<boolean>
   setShowAiCredits(enabled: boolean): Promise<void>
-  setAnimatedStatusText(enabled: boolean): Promise<void>
+  setAnimatedStatusText(enabled: boolean): Promise<boolean>
   setCodeLigatures(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
 }
@@ -166,6 +166,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const result = await window.refract.settings.setAnimatedStatusText(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
+    return result.ok
   },
   setCodeLigatures: async (enabled) => {
     const result = await window.refract.settings.setCodeLigatures(enabled)

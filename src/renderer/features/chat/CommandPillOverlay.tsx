@@ -28,7 +28,8 @@
 // comment has the full stacking order).
 // Gate round 5 fix (#1050, test review): the composer's text-selection highlight is now a
 // TRANSLUCENT accent-text tint (`--composer-selection-bg`, `color-mix(in oklab, var(--accent-
-// text) 34%, transparent)`), applied UNCONDITIONALLY by `COMPOSER_SELECTION_CLASS` below --
+// text) N%, transparent)`, per-theme N), applied UNCONDITIONALLY by `COMPOSER_SELECTION_CLASS`
+// (now in `components/ComposerBox.tsx`) --
 // `MessageInput.tsx`'s own `<textarea>` carries it regardless of whether a pill shows, so a
 // draft's selection looks identical whether or not the leading token happens to be a recognised
 // command. The previous opaque `var(--accent)` fill (round 3) measured EQUAL to
@@ -39,8 +40,8 @@
 // underneath it, so the highlight is always visibly distinct from whatever it sits on, by
 // construction, in every theme (`scripts/composer-selection-contrast.mjs`'s own
 // `composerSelectionContrastRows` has the measured numbers: >=1.5:1 against the pill, enforced;
-// against the near-black `--background`/`--composer-background` themselves, no alpha in this
-// window reaches 3:1 without exceeding the text-legibility floor below, so that comparison is
+// against the near-black `--background`/`--composer-background` themselves, no theme reaches 3:1
+// (accepted departure, accessibility.md), so that comparison is
 // informational only, same shape as this codebase's other accepted gaps). Text still restores
 // via `color: var(--composer-selection-fg)` (a dedicated declaration, not an inherited default)
 // with `-webkit-text-fill-color: currentColor` re-asserting the fill to track it -- WebView2
@@ -53,6 +54,7 @@ import type { ReactNode, RefObject } from 'react'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { classifySlashInvocation, parseSlashCommand } from '../../../shared/slash-commands'
 import type { SlashCommand } from '../../../shared/ipc'
+import { COMPOSER_TEXT_CLASS } from '@/components/ComposerBox'
 
 /** The character range of a recognised leading command/skill token in `text`, or `undefined`
  * when the draft does not start with one. Reuses `parseSlashCommand`/`classifySlashInvocation`
@@ -88,8 +90,7 @@ export function findRecognisedCommandToken(text: string, commands: readonly Slas
  * every mirror out from under the real glyphs on any line past that point. `MessageInput.tsx`'s
  * own `<textarea>` reserves the same gutter unconditionally (not only while a pill shows) so the
  * two widths always match, pill or no pill. */
-export const COMPOSER_MIRROR_CLASS =
-  'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2 py-2 pr-20 font-code text-base text-foreground [scrollbar-gutter:stable] md:text-sm'
+export const COMPOSER_MIRROR_CLASS = `pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2 py-2 pr-20 text-foreground [scrollbar-gutter:stable] ${COMPOSER_TEXT_CLASS}`
 
 /** Decision 3's pill colours: two INDEPENDENT dedicated tokens (gate round 2 remediation --
  * round 1's single `--card`-or-`--muted`-aliased fill, paired with `--accent-text` directly, is
@@ -157,12 +158,13 @@ const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-command-pill-fg shadow-[-
 export const COMMAND_PILL_TEXTAREA_CLASS =
   'relative z-[1] [-webkit-text-fill-color:transparent] forced-colors:[-webkit-text-fill-color:CanvasText] caret-foreground'
 
-/** `MessageInput.tsx`'s own `<textarea>` carries this UNCONDITIONALLY (gate round 5 fix, test
+/** `COMPOSER_SELECTION_CLASS` (now defined in `components/ComposerBox.tsx`, carried by the
+ * textarea UNCONDITIONALLY, gate round 5 fix, test
  * review: see this file's own header comment for the full reasoning) -- the composer's
  * selection highlight looks identical whether or not a pill shows, so there is no visible
  * discontinuity the instant a recognised command's own leading token appears or disappears.
  *
- * `selection:bg-composer-selection-bg`: a TRANSLUCENT accent-text tint (34% alpha,
+ * `selection:bg-composer-selection-bg`: a TRANSLUCENT accent-text tint (per-theme alpha,
  * `globals.css`), not an opaque fill -- round 3's opaque `var(--accent)` alias happened to
  * measure EQUAL to `--command-pill-bg` in Nordic Frost (Cyber Amber too, until #1039,
  * 2026-10-20, retuned it off that same alias), so selecting the pilled
@@ -179,9 +181,6 @@ export const COMMAND_PILL_TEXTAREA_CLASS =
  * `forced-colors:` pair: the OS's own `Highlight`/`HighlightText` system colours, the forced-
  * colours-safe equivalent of the same override (not live-exercised, no forced-colours harness;
  * `notExercised` on #1050's own live check). */
-export const COMPOSER_SELECTION_CLASS =
-  'selection:bg-composer-selection-bg selection:text-composer-selection-fg selection:[-webkit-text-fill-color:currentColor] forced-colors:selection:bg-[Highlight] forced-colors:selection:text-[HighlightText] forced-colors:selection:[-webkit-text-fill-color:HighlightText]'
-
 /** Renders the composer mirror for a recognised command/skill token: the WHOLE draft, visibly --
  * plain `--foreground` text before and after the token, the token itself as the pill. `null`
  * when there is no recognised token (the caller never even mounts this, but the guard keeps the

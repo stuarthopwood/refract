@@ -241,6 +241,12 @@ export const PAIRS = [
   // `transparent`, so the hint text there actually sits on `--background`, already covered by
   // the generic `muted-foreground`/`background` pair above.
   { fg: 'muted-foreground', bg: 'composer-background', min: 4.5, onlyThemes: ['dark-high-contrast'] },
+  // #1149: the composer placeholder and empty-state hint use `--composer-placeholder` (about 40%
+  // white, quieter than `--muted-foreground`) in the four quiet-composer themes, drawn on
+  // `--background` because their composer fill is transparent. Own accepted-departure floor
+  // (docs/design/accessibility.md "Accepted departures"), below the 4.5:1 body-text floor but
+  // above the 3:1 non-text one. Dark high contrast keeps `--muted-foreground`, covered above.
+  { fg: 'composer-placeholder', bg: 'background', min: 3.5, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   // `--input`/`--ring`, the control-edge tokens every dialog footer's outline Cancel button and
   // every focus ring actually render, checked only against `--background` before -- dialogs
   // and menus sit on `--popover`/`--muted`, not the page.

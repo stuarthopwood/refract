@@ -15,7 +15,7 @@
 // mode instead; a stale `launchedMode` from the session's last run would otherwise freeze the pill
 // on a mode the app-wide setting has since moved on from (regression fixed here).
 import type { ComponentType } from 'react'
-import { CheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
+import { BookmarkCheckIcon, CheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,16 +34,18 @@ interface ModeItem {
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
 }
 
-// FR-015's three levels, each with the lucide icon FR-056 asks for and a one-line description of
-// what it prompts for (reads are never prompted in any mode).
+// FR-015's levels plus #496's Ask and remember (second, after Ask), each with the lucide icon
+// FR-056 asks for and a one-line description of what it prompts for.
 const MODE_ITEMS: ModeItem[] = [
   { value: 'ask', label: 'Ask', hint: 'Prompts for file changes and commands.', icon: HandIcon },
+  { value: 'ask-and-remember', label: 'Ask and remember', hint: 'Prompts for file reads, changes and commands; remembers the files and folders you approve.', icon: BookmarkCheckIcon },
   { value: 'edit-freely', label: 'Edit freely', hint: 'Prompts for commands only.', icon: PencilLineIcon },
   { value: 'auto', label: 'Auto', hint: 'Never prompts.', icon: ZapIcon }
 ]
 
 const MODE_LABEL: Record<ApprovalMode, string> = {
   ask: 'Ask',
+  'ask-and-remember': 'Ask and remember',
   'edit-freely': 'Edit freely',
   auto: 'Auto'
 }

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
 import { type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { FadeCollapse } from '@/components/FadeCollapse'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
 import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
@@ -161,20 +162,20 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
     isTurnRunning &&
     (lastSettledEnd === undefined || (lastSettledEnd === null ? settledEnd !== undefined : hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd)))
   const end = running ? Date.now() : settledEnd
-  if (end === undefined) return null
-  // Issue #1250 (FR-119): the settled total is opt-in; the running line always shows.
-  if (!running && !showFinishedTurnTimes) return null
-  const elapsedMs = Math.max(0, end - turn.userItem.at)
-  const elapsed = formatElapsed(elapsedMs)
-  return (
-    <div aria-hidden={running || undefined} className="mt-6 px-2 py-1 text-xs text-muted-foreground">
-      {/* Visible text stays the bare minimal duration; the sr-only text adds the framing a
-       * screen reader needs once this un-hides at turn end inside the transcript's `log` live
-       * region, where a bare "28s" would otherwise be announced with no context. */}
-      <span aria-hidden="true">{elapsed}</span>
-      <span className="sr-only">Turn took {elapsed}</span>
-    </div>
-  )
+  // Issue #1250 (FR-119): the settled total is opt-in; the running line always shows. Issue #1265:
+  // the line fades and collapses out instead of vanishing, so the content below does not jump.
+  const elapsed = end === undefined ? '' : formatElapsed(Math.max(0, end - turn.userItem.at))
+  const content =
+    end === undefined || (!running && !showFinishedTurnTimes) ? null : (
+      <div aria-hidden={running || undefined} className="mt-6 px-2 py-1 text-xs text-muted-foreground">
+        {/* Visible text stays the bare minimal duration; the sr-only text adds the framing a
+         * screen reader needs once this un-hides at turn end inside the transcript's `log` live
+         * region, where a bare "28s" would otherwise be announced with no context. */}
+        <span aria-hidden="true">{elapsed}</span>
+        <span className="sr-only">Turn took {elapsed}</span>
+      </div>
+    )
+  return <FadeCollapse show={content !== null}>{content}</FadeCollapse>
 }
 
 // `MessageScrollerContent` no longer sets a uniform `gap` (see message-scroller.tsx): every row

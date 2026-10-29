@@ -9,6 +9,7 @@
 // carry both); `aria-live="off"`, so a screen reader is never interrupted by it.
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSessionsStore, useSettingsStore, useTodoPinStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { FadeCollapse } from '@/components/FadeCollapse'
 import { ShimmerText } from '@/components/ShimmerText'
 import { deriveActivity } from '../../../shared/activity'
 import { deriveCurrentTask, deriveTodoTotals } from './readout/todoDerive'
@@ -36,13 +37,14 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
   })
   const text = useHeldActivityText(sessionId, visible ? activity : null)
 
-  if (!visible || text === null) return null
+  if (!visible || text === null) return <FadeCollapse show={false}>{null}</FadeCollapse>
   return (
+    <FadeCollapse show>
     <div
       data-slot="current-work-banner"
       data-testid="current-work-banner"
       aria-live="off"
-      className="mb-1 flex h-6 shrink-0 items-center px-4 text-sm"
+      className="flex h-6 shrink-0 items-center px-4 text-sm"
     >
       <Tooltip>
         <TooltipTrigger asChild>
@@ -63,5 +65,6 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
         <TooltipContent className="max-w-md break-words">{text}</TooltipContent>
       </Tooltip>
     </div>
+    </FadeCollapse>
   )
 }

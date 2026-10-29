@@ -132,6 +132,10 @@
             "hi"
           ],
           "kind": "approval",
+          "options": [
+            "Approve",
+            "Deny"
+          ],
           "requestId": "dlg-1",
           "target": "note.txt",
           "tool": "write"

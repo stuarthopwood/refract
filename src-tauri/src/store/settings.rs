@@ -13,13 +13,7 @@ use super::atomic_json::write_json_file;
 pub use super::chat_width::ChatWidth;
 pub use super::holiday_touches::HolidayTouches;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ApprovalMode {
-    Ask,
-    EditFreely,
-    Auto,
-}
+pub use super::approval_mode::ApprovalMode;
 
 // `ThemeId` extracted to `theme_id.rs` (issue #551 gate round 1, #806 ratchet -- see that
 // file's own header comment): re-exported here so every existing caller keeps importing it
@@ -88,6 +82,8 @@ pub struct Settings {
     pub show_context_usage_bar: bool,
     /// Issue #1205 (FR-107): the "Agent stopped" bar; default on (`agent_stopped_bar.rs`).
     pub show_agent_stopped_bar: bool,
+    /// Issue #1238 (FR-053): the AI credits chip next to the Context usage chip; default on
+    /// (`ai_credits.rs`). Independent of the context usage switch.
     pub show_ai_credits: bool,
     /// Issue #1242 (FR-042): the shared status-text shimmer switch; default on.
     pub animated_status_text: bool,
@@ -146,6 +142,8 @@ mod transcript_display;
 pub use transcript_display::TranscriptDisplaySettings;
 #[path = "right_pane.rs"]
 pub(crate) mod right_pane;
+#[path = "settings_setters.rs"]
+mod settings_setters;
 use right_pane::RightPaneState;
 
 pub struct SettingsStore {
@@ -484,27 +482,6 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    pub async fn set_chat_width(&mut self, width: ChatWidth) -> std::io::Result<Settings> {
-        let next = Settings {
-            chat_width: width,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
-    /// `settings.setHolidayTouches(value)` (issue #1048): plain-replace shape, as `set_chat_width`
-    /// above uses -- no raw/lazy-correction tracking needed.
-    pub async fn set_holiday_touches(
-        &mut self,
-        value: HolidayTouches,
-    ) -> std::io::Result<Settings> {
-        let next = Settings {
-            holiday_touches: value,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
     /// `settings.setTranscriptDisplay(field, visible)` (issue #457): merges ONE field into
     /// `transcript_display`, never a whole-object replace (a quick second toggle built from a
     /// stale value must not revert the first).
@@ -533,60 +510,6 @@ impl SettingsStore {
         self.raw_show_sample_data = Some(enabled);
         let next = Settings {
             show_sample_data: enabled,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
-    /// `settings.setDetectImagePathsOnPaste(enabled)` (#514): no raw/lazy-correction tracking
-    /// needed, the same plain-boolean migration shape `set_transcript_display` above uses.
-    pub async fn set_detect_image_paths_on_paste(
-        &mut self,
-        enabled: bool,
-    ) -> std::io::Result<Settings> {
-        let next = Settings {
-            detect_image_paths_on_paste: enabled,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
-    /// `settings.setWordPredictionEnabled(enabled)` (issue #772, lane R6): no raw/lazy-correction
-    /// tracking needed, the same plain-boolean migration shape `set_detect_image_paths_on_paste`
-    /// above uses.
-    pub async fn set_word_prediction_enabled(
-        &mut self,
-        enabled: bool,
-    ) -> std::io::Result<Settings> {
-        let next = Settings {
-            word_prediction_enabled: enabled,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
-    /// `settings.setSessionListCollapse(value)` (#735, data-model.md): persists the whole
-    /// `SessionListCollapse` row -- the renderer's `session-list-store.ts` is the sole writer
-    /// and never reads a broadcast back (its own doc comment explains why), so there is no
-    /// raw/lazy-correction tracking here, the same plain-replace shape `set_split` uses.
-    pub async fn set_session_list_collapse(
-        &mut self,
-        value: SessionListCollapse,
-    ) -> std::io::Result<Settings> {
-        let next = Settings {
-            session_list_collapse: value,
-            ..self.data.clone()
-        };
-        self.persist_whole(next).await
-    }
-
-    /// `settings.setPullRequestsListWidth(px)` (#930): plain-replace shape, as `set_split` uses.
-    pub async fn set_pull_requests_list_width_px(
-        &mut self,
-        width_px: i64,
-    ) -> std::io::Result<Settings> {
-        let next = Settings {
-            pull_requests_list_width_px: clamp_pull_requests_list_width_px(width_px),
             ..self.data.clone()
         };
         self.persist_whole(next).await

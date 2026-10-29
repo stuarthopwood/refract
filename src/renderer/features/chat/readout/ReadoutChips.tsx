@@ -62,11 +62,10 @@ export function TurnTimeChip({ sessionId }: { sessionId: string }) {
     (s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.turnTime?.startedAt ?? null
   )
   const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (startedAt === null) return
-    // Low remediation: a stale `now` from the *previous* turn (or mount) otherwise shows for up
-    // to a full second before the first interval tick, briefly reading an elapsed time that
-    // doesn't belong to this turn at all.
+    // Layout effect (not a passive one): a stale `now` from the previous turn (or the mount) must
+    // never paint, so a resumed turn does not flash an elapsed time that is not its own.
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
@@ -74,7 +73,7 @@ export function TurnTimeChip({ sessionId }: { sessionId: string }) {
   if (startedAt === null) return null
   return (
     <ReadoutChip icon={READOUT_KIND_ICONS['turn-time']}>
-      <span>{formatElapsed(now - startedAt)}</span>
+      <span>{formatElapsed(Math.max(0, now - startedAt))}</span>
     </ReadoutChip>
   )
 }
