@@ -1,5 +1,5 @@
 // DOM side of chat Find (spec 041, #753): reads rendered row text and turns match spans into Ranges.
-import { findSpans, type TextSpan } from './findMatcher'
+import { findSpans, MATCH_CAP, type TextSpan } from './findMatcher'
 import { MESSAGE_ROW_SELECTOR } from '../messageRow'
 
 const SKIPPED_TEXT_PARENTS =
@@ -69,7 +69,7 @@ export function rangeForSpan(rowText: RowText, span: TextSpan): Range | null {
 }
 
 /** One Range per match of `query` in the row's rendered text, in order, at most `limit` of them. */
-export function renderedRanges(row: HTMLElement, query: string, matchCase: boolean, limit = Number.POSITIVE_INFINITY): Range[] {
+export function renderedRanges(row: HTMLElement, query: string, matchCase: boolean, limit = MATCH_CAP): Range[] {
   const rowText = collectRowText(row)
   const ranges: Range[] = []
   for (const span of findSpans(rowText.text, query, matchCase, undefined, limit)) {

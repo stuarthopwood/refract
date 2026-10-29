@@ -7,25 +7,11 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { closeChatFind, EMPTY_CHAT_FIND, useChatFindStore } from '@/state/chat-find-store'
-import { getPane } from './findDom'
+import { focusChatFallback } from '../focusChatFallback'
 import { FindResultsList } from './FindResultsList'
 import { useChatFind } from './useChatFind'
 
 const SETTLE_MS = 400
-
-/** Focus when the element that opened Find is gone: the composer, else the transcript viewport. */
-function focusChatFallback(sessionId: string): void {
-  const pane = getPane(sessionId)
-  const composer = pane?.querySelector<HTMLElement>('textarea')
-  if (composer) {
-    composer.focus({ preventScroll: true })
-    return
-  }
-  const viewport = pane?.querySelector<HTMLElement>('[data-slot="message-scroller-viewport"]')
-  if (!viewport) return
-  if (!viewport.hasAttribute('tabindex')) viewport.setAttribute('tabindex', '-1')
-  viewport.focus({ preventScroll: true })
-}
 
 /** Delays a live-region message until typing has paused, so a screen reader is not interrupted per keystroke. */
 function useSettledText(text: string): string {
