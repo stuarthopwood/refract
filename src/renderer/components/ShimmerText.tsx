@@ -14,14 +14,12 @@ export function ShimmerText({ active, tone, className, children }: { active: boo
   const visible = useWindowVisible()
   const shimmer = active && enabled && visible
   return (
-    <span className="text-shimmer-host">
-      <span
-        data-shimmer={shimmer ? 'on' : 'off'}
-        style={tone ? ({ '--shimmer-base': tone } as CSSProperties) : undefined}
-        className={cn(shimmer && 'text-shimmer', className)}
-      >
-        {children}
-      </span>
+    <span
+      data-shimmer={shimmer ? 'on' : 'off'}
+      style={tone ? ({ '--shimmer-base': tone } as CSSProperties) : undefined}
+      className={cn(shimmer && 'text-shimmer', className)}
+    >
+      {children}
     </span>
   )
 }
