@@ -68,7 +68,9 @@ pub fn validate_title(raw: &str) -> Result<String, GhError> {
         return Err(invalid("The title is longer than 256 characters."));
     }
     if has_control_char(title) {
-        return Err(invalid("The title cannot contain line breaks or control characters."));
+        return Err(invalid(
+            "The title cannot contain line breaks or control characters.",
+        ));
     }
     Ok(title.to_string())
 }
@@ -128,7 +130,8 @@ pub fn parse_created_issue(stdout: &str, owner: &str, repo: &str) -> Option<GhCr
         .find(|line| line.starts_with("https://"))?;
     let rest = url.strip_prefix("https://github.com/")?;
     let mut parts = rest.split('/');
-    let (url_owner, url_repo, kind, number) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    let (url_owner, url_repo, kind, number) =
+        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
     if parts.next().is_some()
         || kind != "issues"
         || !url_owner.eq_ignore_ascii_case(owner)
@@ -149,7 +152,13 @@ pub async fn list_labels(repo_path: &Path) -> Result<Vec<GhIssueLabel>, GhError>
     gh_json(
         repo_path,
         &[
-            "label", "list", "--repo", &slug, "--limit", LABEL_LIMIT, "--json",
+            "label",
+            "list",
+            "--repo",
+            &slug,
+            "--limit",
+            LABEL_LIMIT,
+            "--json",
             "name,color,description",
         ],
     )
@@ -166,8 +175,17 @@ pub async fn search_issues(repo_path: &Path, query: &str) -> Result<Vec<GhIssueM
     gh_json(
         repo_path,
         &[
-            "issue", "list", "--repo", &slug, "--state", "all", &search, "--limit",
-            DUPLICATE_LIMIT, "--json", "number,title,state,url",
+            "issue",
+            "list",
+            "--repo",
+            &slug,
+            "--state",
+            "all",
+            &search,
+            "--limit",
+            DUPLICATE_LIMIT,
+            "--json",
+            "number,title,state,url",
         ],
     )
     .await
@@ -225,16 +243,15 @@ pub async fn create_issue(
     });
     let output = tokio::time::timeout(CREATE_TIMEOUT, child.wait_with_output()).await;
     let _ = writer.await;
-    let output = match output {
-        Ok(Ok(output)) => output,
-        Ok(Err(err)) => return Err(GhError::new(GhErrorCode::GhFailed, err.to_string())),
-        Err(_) => {
-            return Err(GhError::new(
+    let output =
+        match output {
+            Ok(Ok(output)) => output,
+            Ok(Err(err)) => return Err(GhError::new(GhErrorCode::GhFailed, err.to_string())),
+            Err(_) => return Err(GhError::new(
                 GhErrorCode::Timeout,
                 "GitHub did not answer in time; check the repository's issues before trying again.",
-            ))
-        }
-    };
+            )),
+        };
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     if !output.status.success() {
