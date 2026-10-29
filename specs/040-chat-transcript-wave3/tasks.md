@@ -6,7 +6,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T1 Rename Readout Chip files and components to Readout; update imports, docs and CONTEXT.md avoid-notes. (#896)
 - [x] T2 Todo icon alignment in `TodoTree.tsx`. (#1283)
 - [x] T3 Chat header title and branch truncation with tooltip. (#907)
-- [ ] T4 Pinned todo scrollbar flush with the pane edge. (#1130)
+- [x] T4 Pinned todo scrollbar flush with the pane edge. (#1130)
 - [ ] T5 Agent stopped bar and Sessions section polish, stale comments. (#1220)
 - [ ] T6 Tight run for ask, Answered lines and resolved approvals; `DESIGN.md` rhythm. (#473)
 

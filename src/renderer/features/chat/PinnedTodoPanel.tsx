@@ -241,29 +241,27 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
         </Tooltip>
       }
     >
-      <div className="px-4">
-        <ComposerPanelBody
-          ref={listRef}
-          id={listId}
-          role="group"
-          aria-label="Todo task list"
-          tabIndex={overflowing ? 0 : undefined}
-          onWheel={() => {
-            userScrolledRef.current = true
-          }}
-          onPointerDown={() => {
-            userScrolledRef.current = true
-          }}
-          onKeyDown={() => {
-            userScrolledRef.current = true
-          }}
-          className="focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-        >
-          {todoTree.map((phase, phaseIndex) => (
-            <TodoPhaseGroup key={phaseIndex} phase={phase} phaseIndex={phaseIndex} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
-          ))}
-        </ComposerPanelBody>
-      </div>
+      <ComposerPanelBody
+        ref={listRef}
+        id={listId}
+        role="group"
+        aria-label="Todo task list"
+        tabIndex={overflowing ? 0 : undefined}
+        onWheel={() => {
+          userScrolledRef.current = true
+        }}
+        onPointerDown={() => {
+          userScrolledRef.current = true
+        }}
+        onKeyDown={() => {
+          userScrolledRef.current = true
+        }}
+        className="px-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      >
+        {todoTree.map((phase, phaseIndex) => (
+          <TodoPhaseGroup key={phaseIndex} phase={phase} phaseIndex={phaseIndex} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
+        ))}
+      </ComposerPanelBody>
     </ComposerPanel>
   )
 }
