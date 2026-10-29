@@ -20,6 +20,10 @@ _Avoid_: Accent, tag colour, label colour
 One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Project** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
 _Avoid_: Task, thread, chat (for the whole unit)
 
+**Child Session**:
+A **Session** created by another Session's agent (#1304), linked to that parent Session and nested under it in the session list. It has its own **Worktree** and branch and is otherwise a full Session the developer can open, message, stop and archive. Only one level deep: a child Session cannot create its own. Not a **Subagent**, which runs inside its parent's Worktree through OMP's `task` tool and is not a Session.
+_Avoid_: Sub-session, nested session, spawned session
+
 **Session status**:
 The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Stopped, Unread response or Idle, in that order of precedence.
 _Avoid_: state dot, status badge
