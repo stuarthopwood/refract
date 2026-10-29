@@ -14,7 +14,7 @@ export function RightPaneResizeHandle({ disabled }: { disabled: boolean }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild disabled={disabled}>
-        <ResizableHandle withHandle aria-label={name} disabled={disabled} />
+        <ResizableHandle withHandle noDragHit aria-label={name} disabled={disabled} />
       </ContextMenuTrigger>
       <ContextMenuContent>
         <PaneWidthContextMenuItems />
