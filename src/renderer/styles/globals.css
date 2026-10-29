@@ -77,6 +77,7 @@
   --color-surface-3: var(--surface-3);
   --color-surface-hover: var(--surface-hover);
   --color-divider: var(--divider);
+  --color-titlebar: var(--titlebar);
   --color-border-strong: var(--border-strong);
   --color-accent-text: var(--accent-text);
   --color-command-pill-bg: var(--command-pill-bg);
@@ -98,13 +99,13 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 3);
+  --radius-3xl: calc(var(--radius) * 4);
+  --radius-4xl: calc(var(--radius) * 5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -169,7 +170,7 @@
   /* Theme-independent values only (spec 007 T008): everything else that used to live here as an
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
-  --radius: 0.625rem;
+  --radius: 0.25rem;
   /* Spec 012 (brand watermark, research.md decision 5): the mark's own starting opacity, kept
      theme-independent since it is a flat alpha over whatever `--muted-foreground`/`--background`
      resolve to per theme. Documented ceiling for a future aesthetic tuning pass: 0.12. */
@@ -371,6 +372,7 @@
    * alias of `--border`, so a future component migrated onto the "control edge" name reads the
    * exact same value `border-border` already renders today. */
   --divider: oklch(1 0 0 / 16%);
+  --titlebar: var(--card);
   --border-strong: var(--border);
   /* Accent (#550 item 6): NOT delivered for Dark in this remediated cut -- `--primary` stays
    * its existing near-white fill above (the indigo "#550 item 4" fill is Obsidian-only; folding
@@ -547,6 +549,7 @@
   --border: #6F7C9D;
   --border-strong: var(--border);
   --divider: #2E3342;
+  --titlebar: var(--card);
   /* Accent (#550 item 6): `--primary` keeps the mock's indigo fill for the one filled
    * ("commit") button variant -- `#6366F1` itself measures 4.467:1 for white text, just under
    * the 4.5:1 AA floor, so the fill is nudged to `#5A5EEE` (4.92:1 for white text, verified by
@@ -876,6 +879,7 @@
   --surface-3: var(--muted);
   --surface-hover: var(--surface-3);
   --divider: var(--border);
+  --titlebar: var(--card);
   --border-strong: var(--border);
   /* `--accent-text`: a new token, reusing this preset's own existing `--active-indicator`/
    * `--chart-1` hue (264, the brand indigo family) at the same lightness -- already 8.92:1
@@ -995,6 +999,7 @@
   /* The mock's own soft literal (~1.6:1, no floor -- `--divider` is exempt, see DIVIDER_PAIRS in
    * `scripts/check-theme-contrast.mjs`), used by #606's panel separators. */
   --divider: oklch(1 0 0 / 14%);
+  --titlebar: var(--card);
   /* Accent: the mock's "cyan accent" (hue 195), corrected off the mock's own merged
    * accent/info hue -- `--primary` (the one filled/"commit" button) is a deeper, saturated step
    * so white text clears 4.5:1 (5.18:1, verified); `--accent-text`, the lighter text/link step,
@@ -1224,6 +1229,7 @@
   --border: oklch(0.56 0 0);
   --border-strong: var(--border);
   --divider: oklch(1 0 0 / 16%);
+  --titlebar: var(--card);
   --primary: #c2410c;
   --primary-foreground: #ffffff;
   --send: #c2410c;
@@ -1484,6 +1490,41 @@
     @apply bg-background text-foreground font-ui font-normal;
   }
 
+  /* Issue #1267 (spec 032 FR-004): non-white text renders one weight step heavier at every size
+   * (300 -> 400, 400 -> 500, 500 -> 600; bold stays 600, the top of the scale). The weight tokens
+   * are remapped on the coloured element, so an explicit `font-medium` there resolves one step up
+   * too, while the unclassed weight is set here. This is the base layer, so an explicit weight
+   * utility still wins. Children inherit the remapped tokens. White (`text-foreground`) stays 300. */
+  .text-muted-foreground,
+  .text-accent-text,
+  .text-destructive,
+  .text-severity-success,
+  .text-severity-warning,
+  .text-severity-error,
+  .text-severity-info,
+  [class^='text-muted-foreground/'],
+  [class*=' text-muted-foreground/'] {
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    font-weight: var(--font-weight-normal);
+  }
+
+  /* Destructive menu rows take the same weight step as other coloured text. */
+  [role^='menuitem'][data-variant='destructive'] {
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    font-weight: var(--font-weight-normal);
+  }
+
+  /* An explicit weight utility on white text inside a coloured parent resolves on the white scale. */
+  .text-foreground {
+    --font-weight-normal: 300;
+    --font-weight-medium: 400;
+    --font-weight-semibold: 500;
+  }
+
   /* Preflight sets `bolder`, which from a 300 body lands on 400; strong text takes the
    * semibold step instead (issue #1246). */
   b,
@@ -1731,6 +1772,12 @@
  * the left nav header and the chat header as the window's draggable area; `.no-drag-region`
  * carves out their own interactive children (buttons, inputs, menus) so dragging still works
  * everywhere else in that row, matching Electron's `-webkit-app-region` contract. */
+/* Chrome band (#682, CONTEXT.md): every drag-region row paints the per-theme `--titlebar` surface with the one
+ * soft `--divider` line along its bottom edge (an inset shadow, so the row stays exactly 40px). The menu bar
+ * shares it, so there is no line between them. In High contrast dark `--divider` is the solid `--border`. */
+@layer components {
+  .titlebar-surface { background-color: var(--titlebar); box-shadow: inset 0 -1px 0 var(--divider); }
+}
 .drag-region { -webkit-app-region: drag; }
 .no-drag-region { -webkit-app-region: no-drag; }
 

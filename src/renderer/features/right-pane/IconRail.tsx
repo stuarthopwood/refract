@@ -69,7 +69,7 @@ export function IconRail({ sessionId }: IconRailProps) {
     <div className="flex w-10 shrink-0 flex-col items-center border-l border-divider bg-background">
       {/* Stuart, 2026-10-10: the rail starts below a spacer matching the window's own
           `titleBarOverlay` height, so its top button never sits under the caption buttons. */}
-      <div aria-hidden className="w-full shrink-0" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />
+      <div aria-hidden className="titlebar-surface w-full shrink-0" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

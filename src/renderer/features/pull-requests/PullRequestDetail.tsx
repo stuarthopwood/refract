@@ -20,6 +20,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -38,20 +39,11 @@ import { StatePill } from './StatePill'
 import { RefreshButton } from './RefreshButton'
 import { ReviewConsensus } from './ReviewConsensus'
 
-// Gate round 1 fix (#568 decision 3 amended): the trigger's own base class already carries
-// `border border-transparent` (tabs.tsx), a 1px border on all four sides that `cn`'s tailwind-
-// merge never strips from a plain, non-merged className string -- `data-[state=active]:border-
-// accent-text` and `hover:border-border` then coloured all four sides into a box, not the
-// decided underline. `border-0` zeroes every side's width first; the more specific `border-b-2`
-// utility (and the bottom-only colour variants) still win the bottom edge in Tailwind's own
-// generated layer order, so only the bottom border ever paints. One shared constant (not two
-// pasted copies) so the Overview and Changes triggers can never drift apart again. Forced-
-// colors fallback mirrors the active-indicator bar's own pattern (StatePill.tsx, PullRequestRow
-// .tsx): the resting edge reads as `Canvas` (invisible, matching the surrounding chrome) and the
-// active edge reads as the system `Highlight` colour, so forced-colors mode can still tell the
-// two tabs apart once the box problem above is fixed.
-const PR_DETAIL_TAB_TRIGGER_CLASS =
-  'rounded-none border-0 border-b-2 border-transparent px-1 py-1 text-muted-foreground shadow-none data-[state=active]:border-b-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-b-border hover:text-foreground forced-colors:border-b-[Canvas] forced-colors:data-[state=active]:border-b-[Highlight]'
+// The Overview and Changes triggers share the one selected-tab treatment (ui/tab-classes.ts).
+const PR_DETAIL_TAB_TRIGGER_CLASS = cn(
+  'rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground',
+  TAB_ACTIVE_UNDERLINE_CLASS
+)
 
 // research.md "Polling interval and rate-limit headroom": re-calls `detail()` every 15s while
 // `checkState === 'pending'`, stops once checks finish or this view closes; `list()` is never
@@ -319,18 +311,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           </div>
         )}
       </div>
-      {/* Issue #568 decision 3: underline tabs as a call-site-local override only -- the
-          shared `tabs.tsx` primitive and its default pill classes stay untouched, since the
-          same primitive also renders the five filter tabs in `PullRequestList.tsx` (deferred
-          to #499). Focus-visible classes are left completely alone; only box/border/colour
-          utilities are overridden here. */}
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* drag-regions-allow: the underline tab strip's own `border-b` (needed for the visual
-            underline look, decision 3) happens to match this script's window-chrome-header
-            heuristic (`border-b` + `shrink-0`), but this row sits deep in the content area, well
-            below `PullRequestsView.tsx`'s own separate `h-10` drag-region strip -- it never
-            touches `App.tsx`'s drag strip despite the coincidental shape; drag-regions-allow: see above. */}
-        <TabsList className="mx-2 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none border-b border-border bg-transparent p-0">
+        <TabsList className="mx-2 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none bg-transparent p-0">
           <TabsTrigger value="overview" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
             Overview
           </TabsTrigger>

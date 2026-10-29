@@ -22,7 +22,7 @@ const PRESETS: Array<{ label: string; widthPx: number }> = [
 export function WidthPresetControl({ resize }: WidthPresetControlProps) {
   const widthPx = useRightPaneStore((s) => s.widthPx)
   return (
-    <div className="no-drag-region flex h-10 shrink-0 items-center border-t border-border px-2">
+    <div className="no-drag-region flex h-10 shrink-0 items-center border-t border-divider px-2">
       <div role="group" aria-label="Pane width" className="flex items-center gap-1">
         {PRESETS.map((preset) => {
           const pressed = Math.round(widthPx) === preset.widthPx

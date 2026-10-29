@@ -195,7 +195,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
               (past the open button), pinned to line 1's own height only -- they used to be flex
               siblings of the open button here, which permanently narrowed line 2 below decision
               8's own "full row width" (by the slot's reserved space, more with Resume mounted).
-              Line 1's own `pr-28` reserves the matching space instead, so line 2 (no such
+              Line 1's own padding (`pr-10`/`pr-18`/`pr-24`, below) reserves the matching space instead, so line 2 (no such
               padding) spans the row again. */}
           <div
             className={cn(
@@ -323,7 +323,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                 row with line 1 AND line 2), which permanently narrowed line 2 below decision 8's
                 own "full row width" -- by the slot's reserved space, more with Resume mounted.
                 Pinned instead to `absolute right-2 top-1` on the row (now `relative` above),
-                anchored to line 1's own height only; line 1's own `pr-28` reserves the matching
+                anchored to line 1's own height only; line 1's own `pr-10`/`pr-18`/`pr-24` reserves the matching
                 space so nothing overlaps, and line 2 (no such padding) spans the row again.
                 `h-5 items-center` here (was `h-4` on the inner cell alone) centres both Resume
                 and the time/"..." cell on the same baseline (gate round 2 fix, Low, L-c: they

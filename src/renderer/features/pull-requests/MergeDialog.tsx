@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
+import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import type { MergeMethod } from '../../../shared/github'
 
@@ -170,7 +170,7 @@ export function MergeDialog({
                    * visible while focused (it lives outside the border this component already
                    * recolours on focus) and only renders for the checked item (Radix mounts
                    * `Indicator` conditionally). */}
-                  <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary">
+                  <span aria-hidden className={RADIO_RING_CLASS}>
                     <RadioGroupIndicator />
                   </span>
                   <span id={labelId} className="min-w-0 flex-1 break-words">{METHOD_LABEL[candidate]}</span>

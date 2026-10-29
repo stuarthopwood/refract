@@ -1416,13 +1416,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               `shrink-[100]` weight on each hint group (CSS flexbox shrinks proportionally to
               basis * shrink-factor, so at 100x the groups absorb nearly all of any shrink deficit
               before the main prompt gives up any width) means a narrow pane truncates the hint
-              labels first; only once both groups hit their own `min-w-[1.125rem]` floor (the
-              14px icon plus its 4px `gap-1` to the label, the narrowest the group can go without
-              the icon itself getting clipped by `overflow-hidden`) does the main prompt start
+              labels first; only once both groups hit their own `min-w-4` floor (16px, enough
+              to keep the icon from being clipped by `overflow-hidden`) does the main prompt start
               truncating too, with an ellipsis instead of the earlier hard clip. Gate-fixes
               (quality gate, PR #644 round 2): `100` was not nearly large enough -- flexbox shares
               a shortfall by `basis * shrink-factor`, so even at 100x the main prompt's own small
-              basis (about 113px) still worked out to roughly 0.46% of any shortfall (113 /
+              basis (about 113px in the old UI font; the Code font is wider) still worked out to roughly 0.46% of any shortfall (113 /
               (113 + 100 * 243)), enough to show an ellipsis from a wide pane down (confirmed in
               headless Chromium against this exact CSS). `100000` instead keeps the main prompt's
               share under one sub-pixel layout step (1/64px) until the groups are fully at their
@@ -1435,11 +1434,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               className="pointer-events-none absolute inset-0 flex items-start gap-2 overflow-hidden px-2 py-2 pr-20 font-code text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
               <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
-              <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
+              <span className="flex min-w-4 shrink-[100000] items-center gap-1 overflow-hidden">
                 <SlashIcon aria-hidden="true" className="size-4 shrink-0" />
                 <span className="min-w-0 truncate">for commands</span>
               </span>
-              <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
+              <span className="flex min-w-4 shrink-[100000] items-center gap-1 overflow-hidden">
                 <TypeIcon aria-hidden="true" className="size-4 shrink-0" />
                 <span className="min-w-0 truncate">Markdown supported</span>
               </span>

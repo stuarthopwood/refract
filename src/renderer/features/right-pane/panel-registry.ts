@@ -78,6 +78,13 @@ export function splitPanelCount(count: PanelCount): PanelCountParts | null {
   return { number: `+${count.additions} -${count.deletions}`, word: '' }
 }
 
+/** #1270: the ONE figure a tab shows once the strip is too tight for the full count (the rail
+ * badge's own figure: running agents, or changed files for Git). */
+export function compactPanelCount(count: PanelCount): string | null {
+  const label = railCountLabel(count)
+  return label ? String(label.value) : null
+}
+
 export function formatPanelCount(count: PanelCount): string {
   const parts = splitPanelCount(count)
   if (!parts) return ''

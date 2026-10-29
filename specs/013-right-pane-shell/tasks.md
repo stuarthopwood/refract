@@ -344,6 +344,8 @@ clipped the number itself, the one thing that must never visually disappear (FR-
 "Measured facts" / "What CSS actually enforces" below for the current measured facts and what CSS
 actually enforces, with `overflow-x-auto` on the whole strip staying as the strip's own safety net.
 
+**Current values (#1270):** the shipped classes are `pr-8` (32px close reserve), `gap-1` (4px) and `min-w-15` (60px), not the `pr-7`/`gap-0.5`/`min-w-14` figures below, which are kept as the round 3-8 history. At those values a plain tab's floor is `60px`, a count tab's content need is `68px` plus its number, and three tabs with a two-digit running count total `60 + 60 + 68 + 15.546875 + 2*4 = ~211.5px` against `224px` (`~12.5px` slack). Two count tabs (Git `+a -d` and Subagents running) can need ~255px, so below a 280px strip (`@max-[17.5rem]` container query on the strip) a count tab collapses to its icon, label and one compact figure (running agents, or changed files for Git); the full count stays in the accessible name and tooltip.
+
 **Measured facts** (`getBoundingClientRect()` on every tab child at the 240px floor): a plain
 tab's rendered floor is `56px` (its `min-w-14` Tailwind class, not its own `54px` content need). A
 count tab's content need is `62px` plus its number's own digit width (measured `82.375px` live with

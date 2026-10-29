@@ -52,9 +52,9 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // #1074 (app-wide text-opacity softening): `--foreground` is now translucent
     // (`oklch(1 0 0 / 90%)`, globals.css), but `setTitleBarOverlay` takes an opaque hex with no
     // alpha channel, so this is hand-recomputed to the real composited colour -- white at 90%
-    // alpha over this theme's own `--background` -- not the raw pre-alpha value. Verified
+    // alpha over this theme's own `--titlebar` (#682, the Chrome band surface; `color` equals it) -- not the raw pre-alpha value. Verified
     // against `check-theme-contrast.mjs`'s own `symbolColor` drift check.
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e7e7e7' }
+    titleBarOverlay: { color: '#171717', symbolColor: '#e8e8e8' }
   },
   'dark-high-contrast': {
     id: 'dark-high-contrast',
@@ -65,7 +65,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#000000',
     swatchPrimary: '#ffffff',
     syntaxTheme: 'github-dark-high-contrast',
-    titleBarOverlay: { color: '#000000', symbolColor: '#ffffff' }
+    titleBarOverlay: { color: '#090909', symbolColor: '#ffffff' }
   },
   // #550 (theme foundation, palette v2): a further dark preset, additive per the module comment
   // above -- the mock's own Obsidian canvas and palette, taken literally (`.theme-obsidian`,
@@ -82,7 +82,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     syntaxTheme: 'github-dark-default',
     // #1074: see `dark`'s own `titleBarOverlay` comment above -- same rationale, this preset's
     // own composited colour (white at 90% alpha over `#0F1014`).
-    titleBarOverlay: { color: '#0F1014', symbolColor: '#e7e7e7' }
+    titleBarOverlay: { color: '#1c1f28', symbolColor: '#e8e9e9' }
   },
   // #551 (Nordic Frost / Cyber Amber dark presets): two further additive dark presets, built
   // out in full the same way #550 built Obsidian. Shiki theme choice (one of #551's own open
@@ -128,7 +128,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     syntaxTheme: 'github-dark-default',
     // #1074: see `dark`'s own `titleBarOverlay` comment above -- this preset's own composited
     // colour (white at 90% alpha over `#060f1e`).
-    titleBarOverlay: { color: '#060f1e', symbolColor: '#e6e7e8' }
+    titleBarOverlay: { color: '#101b2b', symbolColor: '#e7e8ea' }
   },
   'cyber-amber': {
     id: 'cyber-amber',
@@ -142,7 +142,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#0a0a0a',
     swatchPrimary: '#c2410c',
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e7e7e7' }
+    titleBarOverlay: { color: '#171717', symbolColor: '#e8e8e8' }
   }
 }
 

@@ -163,6 +163,11 @@ for (const file of isDirectory(root) ? walk(root) : []) {
       const closes = (rest.match(new RegExp('</' + tagName + '\\s*>', 'g')) || []).length;
       closedThisLine = closes > opens;
       if (!selfClosing) stack.push({ indent, region, headerShaped, allowed });
+      // Chrome band (#682): a visible drag row must paint the shared `titlebar-surface`; only the invisible `-z-10` hit-test strip in App.tsx is exempt.
+      if (region === 'drag' && !allowed && !text.includes('titlebar-surface') && !text.includes('-z-10')) {
+        console.log(relative + ':' + (i + 1) + ' drag-region element does not use the shared titlebar-surface class (Chrome band, #682)');
+        violationCount++;
+      }
     }
 
     // Quality-gate remediation (cycle 2, Medium, test-reviewer fixtures): runs on every line that

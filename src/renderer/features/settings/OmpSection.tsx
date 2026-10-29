@@ -30,7 +30,7 @@ export function OmpSection() {
         </p>
       )}
       {loaded && (
-        <div className="flex flex-col divide-y divide-border">
+        <div className="flex flex-col divide-y divide-divider">
           {TOKEN_GUARD_KEYS.map((info) => (
             <OmpValueRow
               key={info.key}

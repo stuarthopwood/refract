@@ -28,7 +28,7 @@ export function ImageThumbnail({ state, src, label, onClick, single, maxHeight, 
   const badge =
     overflow > 0 ? (
       <span aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="rounded-full border border-border bg-popover/90 px-2 py-1 text-sm font-medium text-popover-foreground forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]">
+        <span className="rounded-md border border-border bg-popover/90 px-2 py-1 text-sm font-medium text-popover-foreground forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]">
           +{overflow}
         </span>
       </span>

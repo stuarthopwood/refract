@@ -178,7 +178,7 @@ export function ChipOverlaySegments({
           <span
             role="button"
             tabIndex={-1}
-            className="pointer-events-auto cursor-pointer rounded-sm bg-secondary/80 text-secondary-foreground underline decoration-dotted underline-offset-2 [box-decoration-break:clone] hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className="pointer-events-auto cursor-pointer rounded-sm bg-secondary/80 text-secondary-foreground shadow-[-2px_0_0_2px_var(--secondary),2px_0_0_2px_var(--secondary)] underline decoration-dotted underline-offset-2 [box-decoration-break:clone] hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             {occurrence.chip.label}
           </span>

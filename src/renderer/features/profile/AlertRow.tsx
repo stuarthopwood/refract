@@ -36,7 +36,7 @@ export function AlertRow({
   onDismiss
 }: AlertRowProps) {
   return (
-    <div ref={containerRef} className="flex min-h-6 items-center gap-2 py-1 pl-2 text-xs">
+    <div ref={containerRef} className={cn('flex items-center gap-2 py-1 pl-2 text-xs', wrapLabel && 'items-start')}>
       <AlertTriangleIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />
       <span className={cn('min-w-0 flex-1 text-muted-foreground', wrapLabel ? 'whitespace-normal' : 'truncate')}>{label}</span>
       <Button
@@ -57,7 +57,7 @@ export function AlertRow({
             variant="ghost"
             size="icon-xs"
             aria-label={dismissAriaLabel}
-            className={cn(COMPOSER_BUTTON_FOCUS_CLASS, 'text-state-needs-you hover:text-state-needs-you')}
+            className={cn(COMPOSER_BUTTON_FOCUS_CLASS, 'text-state-needs-you hover:text-state-needs-you', wrapLabel && '-my-1')}
             onClick={onDismiss}
           >
             <XIcon aria-hidden />

@@ -123,7 +123,7 @@ export const COMPOSER_MIRROR_CLASS =
  * position -- the standard "fake padding via box-shadow" technique. `[box-decoration-break:
  * clone]` repeats the fill/rounding/shadow cleanly on every visual line fragment a wrapped
  * token could cross. */
-const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-command-pill-fg shadow-[0_0_0_2px_var(--command-pill-bg)] [box-decoration-break:clone]'
+const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-command-pill-fg shadow-[-2px_0_0_2px_var(--command-pill-bg),2px_0_0_2px_var(--command-pill-bg)] [box-decoration-break:clone]'
 
 /** `MessageInput.tsx`'s own `<textarea>` adds this ONLY while `commandToken` is truthy (gate
  * round 1 HIGH remediation, item 1) -- the glyph-masking half of the highlight-within-textarea

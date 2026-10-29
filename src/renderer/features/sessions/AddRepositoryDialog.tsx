@@ -63,28 +63,30 @@ export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
             Paste the folder path of a local git repository, or browse for one.
           </DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-2" onSubmit={(event) => void handleSubmit(event)}>
-          <label htmlFor="repository-path" className="text-sm">
-            Repository path
-          </label>
-          <div className="flex gap-2">
-            <Input
-              id="repository-path"
-              autoFocus
-              value={path}
-              onChange={(event) => setPath(event.target.value)}
-              placeholder="C:\Repos\my-project"
-              aria-describedby="repository-path-hint"
-              className="flex-1"
-            />
-            <Button type="button" variant="outline" disabled={browsing} onClick={() => void handleBrowse()}>
-              <FolderOpenIcon aria-hidden />
-              {browsing ? 'Browsing…' : 'Browse'}
-            </Button>
+        <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="repository-path" className="text-sm">
+              Repository path
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="repository-path"
+                autoFocus
+                value={path}
+                onChange={(event) => setPath(event.target.value)}
+                placeholder="C:\Repos\my-project"
+                aria-describedby="repository-path-hint"
+                className="flex-1"
+              />
+              <Button type="button" variant="outline" disabled={browsing} onClick={() => void handleBrowse()}>
+                <FolderOpenIcon aria-hidden />
+                {browsing ? 'Browsing…' : 'Browse'}
+              </Button>
+            </div>
+            <p id="repository-path-hint" className="text-xs text-muted-foreground">
+              Paste the folder path
+            </p>
           </div>
-          <p id="repository-path-hint" className="text-xs text-muted-foreground">
-            Paste the folder path
-          </p>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel

@@ -458,7 +458,7 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
 
 function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
   return function Heading({ className, ...props }: React.ComponentProps<typeof Tag> & ExtraProps) {
-    return <Tag className={cn('font-medium', className)} {...props} />
+    return <Tag className={cn('font-bold', className)} {...props} />
   }
 }
 

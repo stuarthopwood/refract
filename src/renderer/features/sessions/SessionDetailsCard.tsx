@@ -106,7 +106,7 @@ export function SessionDetailsCard({
               <span className="shrink-0 text-muted-foreground">from {session.baseBranch}</span>
             </div>
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <MapPinIcon aria-hidden className="mt-1 size-4 shrink-0" />
+              <MapPinIcon aria-hidden className="size-4 shrink-0" />
               <p className="min-w-0 break-all">
                 {worktreeMissing ? (
                   <>
@@ -141,7 +141,7 @@ export function SessionDetailsCard({
               </div>
               {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map,
                   raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this
-                  card has room for it that the composer strip does not. `pl-4` aligns it under
+                  card has room for it that the composer strip does not. `pl-6` aligns it under
                   the model name's own text, past the CpuIcon (`size-4` + `gap-2` above it). */}
               {session.lastModel && <p className="truncate pl-6 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>

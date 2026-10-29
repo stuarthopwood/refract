@@ -94,9 +94,9 @@ export interface ProfileMenuContentProps {
  *  ring-and-dot mark, filled for the checked row, so THIS submenu carries no bespoke marker of
  *  its own any more -- the colour swatch moves after the name as a small two-colour chip
  *  (`h-3 w-5 rounded-[3px] border-border`, decorative, a `--background`/`--primary` gradient
- *  split, never a round shape that could read as a
- *  second radio), the exact swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already
- *  uses (each theme's own real `--background` and `--primary` values, not an invented accent); "Current" is
+ *  split, never a round shape that could read as a second radio), the same swatch-by-data
+ *  approach ThemePicker.tsx uses (each theme's own real `--background` and `--primary` values,
+ *  not an invented accent); "Current" is
  *  dropped -- the checked radio's filled dot plus the screen reader's own "checked" state carry
  *  that now. Gate round 5/6 history (`agent://Arch877`): in a DROPDOWN MENU specifically, the
  *  2px `--active-indicator` bar follows focus, never selection (Stuart, 2026-10-15) -- unchanged by
@@ -173,7 +173,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
                     edge so the chip still reads as a bordered control there. */}
                 <span
                   aria-hidden
-                  className="h-3 w-5 shrink-0 rounded-[3px] border border-border forced-color-adjust-none forced-colors:border-[CanvasText]"
+                  className="h-3 w-5 shrink-0 rounded-sm border border-border forced-color-adjust-none forced-colors:border-[CanvasText]"
                   style={{ background: `linear-gradient(90deg, ${theme.swatch} 50%, ${theme.swatchPrimary} 50%)` }}
                 />
               </DropdownMenuRadioItem>
@@ -330,8 +330,7 @@ export function ProfileMenuContent({
   const signedIn = githubStatus === 'ready' && account !== undefined
   // A11y M1 (quality-gate remediation, gate-3): reactive, not a `getState()` read -- while a
   // window-focus-triggered refresh (init-stores.ts) is already in flight when this menu opens,
-  // the 'error' row below shows "Checking…" instead of re-offering "Check again" for a read
-  // that is already running.
+  // the 'error' row below shows "Checking…" instead of re-offering "Check again".
   const githubRefreshing = useAccountsStore((state) => state.githubRefreshing)
   // UI N4 (quality-gate remediation, gate-3): an unreachable host (the `problem` field, or the
   // legacy `timeout` state before it existed) reads "Can't reach GitHub"/"Check GitHub

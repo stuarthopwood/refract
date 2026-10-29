@@ -199,7 +199,7 @@ export function AppearanceSection() {
       {/* Spec 012 (research.md decisions 9, 14): applies live, no Save/Cancel -- the divider
           plus this control's own clear labelling keeps that from reading as governed by the
           row above it. */}
-      <hr className="my-6 border-border" />
+      <hr className="my-6 border-divider" />
       <div className="flex items-center justify-between gap-4">
         {/* Quality-gate remediation (accessibility-auditor, Low): the whole two-line block (title
             plus description) used to sit inside the <label>, so a screen reader announced both

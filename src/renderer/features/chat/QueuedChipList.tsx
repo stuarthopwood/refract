@@ -62,7 +62,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
                   aria-label={sendBusy ? `Sending now: ${displayText}` : `Send now: ${displayText}`}
                   aria-busy={sendBusy}
                   aria-disabled={anyBusy}
-                  className="rounded-full px-2 text-[0.7rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  className="text-[0.7rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   onClick={() => {
                     if (anyBusy) return
                     onSendNow(chip)
@@ -83,7 +83,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
                     aria-label={removeLabel}
                     aria-busy={removeBusy}
                     aria-disabled={anyBusy}
-                    className="rounded-full text-muted-foreground hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                    className="text-muted-foreground hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                     onClick={() => {
                       if (anyBusy) return
                       onRemove(chip)

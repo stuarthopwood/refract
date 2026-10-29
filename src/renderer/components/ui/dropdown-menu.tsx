@@ -4,6 +4,15 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { ChevronRightIcon } from "lucide-react"
 import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
+import {
+  MENU_ITEM_CLASS,
+  MENU_ITEM_DESTRUCTIVE_CLASS,
+  MENU_CONTENT_CLASS,
+  MENU_LABEL_CLASS,
+  MENU_SEPARATOR_CLASS,
+  MENU_SUB_CONTENT_CLASS,
+  MENU_SUB_TRIGGER_CLASS,
+} from "@/components/ui/menu-item-classes"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 function DropdownMenu({
@@ -41,7 +50,8 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         align={align}
         className={cn(
-          "z-50 min-w-40 origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "origin-(--radix-dropdown-menu-content-transform-origin)",
+          MENU_CONTENT_CLASS,
           className
         )}
         {...props}
@@ -64,17 +74,10 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       data-variant={variant}
       data-inset={inset}
-      // Gate round 5 fix (Visual Medium #11): the active-row inset shadow used the plain focus-
-      // ring token (`--color-ring`), a different cue from the composer's own pickers, which use
-      // the opaque `--active-indicator` token for the SAME purpose (gate round 2) -- unified so
-      // every menu's active-row cue is the same colour. Gate round 6 fix (`agent://Arch877`
-      // Medium 2): a destructive item (Sign out, Remove repository...) keeps its OWN focus cue,
-      // `--color-destructive` instead of the indigo `--active-indicator`, so the bar never reads
-      // as "active/current" sitting on top of the red tint it already gets below.
-      className={cn(
-        "relative flex w-full cursor-default items-center gap-2 px-2 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:focus:shadow-[inset_2px_0_0_0_var(--color-destructive)] data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
+      // The active-row cue is the opaque `--active-indicator` token, the same as the composer's
+      // pickers. A destructive item (Sign out, Remove repository...) keeps its own
+      // `--color-destructive` cue so the bar never reads as "current" on top of its red tint.
+      className={cn(MENU_ITEM_CLASS, MENU_ITEM_DESTRUCTIVE_CLASS, className)}
       {...props}
     />
   )
@@ -100,10 +103,10 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      // Issue #1043 (grilled 2026-10-19, ADR 0003): the TRAILING `CheckIcon` the Gate round 1
-      // history above (`DropdownMenuRadioGroup`'s own comment) records read as an unselected
-      // (the round swatches in the Theme submenu, its first caller, looked identical whether
-      // checked or not). Moves to the SAME leading ring-and-dot mark the Ask card's radios use
+      // Issue #1043 (grilled 2026-10-19, ADR 0003): the TRAILING `CheckIcon` (see the Gate round 1
+      // note on `DropdownMenuRadioGroup`) read as unselected: the round swatches in the Theme
+      // submenu, its first caller, looked identical whether checked or not. Moves to the SAME
+      // leading ring-and-dot mark the Ask card's radios use
       // (`RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, `radio-group.tsx`'s own shared source, ADR 0003 --
       // never a second hand-rolled copy), so the checked row is visibly filled, not merely
       // inferred from a trailing glyph. `group/radio-item` plus Radix's own `data-state`
@@ -117,10 +120,7 @@ function DropdownMenuRadioItem({
       // comment documents, just with no outer border to lean on this time). The inset shadow
       // stays on `--active-indicator`, same as `DropdownMenuItem` above -- unrelated to this
       // fix, that cue follows focus, never selection (2026-10-15 decision, unchanged).
-      className={cn(
-        "group/radio-item relative flex w-full cursor-default items-center gap-2 px-2 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
+      className={cn("group/radio-item", MENU_ITEM_CLASS, className)}
       {...props}
     >
       <span
@@ -168,10 +168,7 @@ function DropdownMenuSubTrigger({
     <DropdownMenuPrimitive.SubTrigger
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
-      className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
+      className={cn(MENU_SUB_TRIGGER_CLASS, className)}
       {...props}
     >
       {children}
@@ -188,7 +185,8 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       className={cn(
-        "z-50 min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "origin-(--radix-dropdown-menu-content-transform-origin)",
+        MENU_SUB_CONTENT_CLASS,
         className
       )}
       {...props}
@@ -207,10 +205,7 @@ function DropdownMenuLabel({
     <DropdownMenuPrimitive.Label
       data-slot="dropdown-menu-label"
       data-inset={inset}
-      className={cn(
-        "px-2 py-1 text-sm data-[inset=true]:pl-8",
-        className
-      )}
+      className={cn(MENU_LABEL_CLASS, className)}
       {...props}
     />
   )
@@ -223,7 +218,7 @@ function DropdownMenuSeparator({
   return (
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("pointer-events-none -mx-1 my-1 h-px bg-border", className)}
+      className={cn(MENU_SEPARATOR_CLASS, className)}
       {...props}
     />
   )
