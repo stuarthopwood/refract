@@ -73,6 +73,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 20 | #730 | Right-pane rail drag to rearrange | **In-flight** (grilled 2026-10-27 with Stuart; spec 001 FR-112 to FR-116, Converge Phase 80, T395 to T400: drag and Alt+Shift+Up/Down reorder of the rail via a shared `useReorderable` hook, saved as `Settings.rightPane.panelOrder`, rail and launcher follow it while the tab bar keeps open order, default Git changes first, Reset in Settings; default-panel-for-a-new-Session stays out of scope). Raised to p1 2026-10-22; built on #538 |
 | 21 | #513 | Attached images in the user's message bubble, click to enlarge | Raised to p1 2026-10-22; PR #783 closed (Electron-era), reuse its renderer files, port the blob reader to `src-tauri/`; grilled 2026-10-27, spec `026-user-bubble-images`, PR open (not merged) |
 | alongside | #935 | Reusable-component audit, one group per PR | Whenever its files are quiet |
+| alongside | #1322 | **Comment cull (Stuart 2026-10-29, grilled, none deferred, p1):** keep only one- or two-line "why" comments and one-line docs on exported items; delete history, gate narration, spec IDs and restated code. Slice 1: AGENTS.md rule plus a `check:comment-density` gate (cap about 25% per file, no block over 6 lines, baseline file). Slices 2 to 4: `src/renderer` with `src/shared`, `src-tauri/src`, `scripts`, comment-only diffs proved by a strip-comments equivalence check plus `pnpm ci:local` | Token budget: 41,552 of 178,153 lines (23%) are comments and every read pays for them; slice 1 first, then each area when no lane has open work in it (recut on fresh `main`, never hand-merge) |
 
 p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
 
@@ -877,3 +878,5 @@ Also filed 2026-10-29 (Stuart, grilled, none deferred): **#1304** agents create 
 Also filed or amended 2026-10-29 (Stuart, grilled, none deferred): **#1310** new Session from an issue or pull request (p2), **#477** Pause mode (p1), **#5** Command palette (reopened, p1), **#696** Chat tree (p2); rows after #1304.
 
 Also filed 2026-10-29 (Stuart, grilled, none deferred): **#1315** chat header PR and issue badges with right-pane panels (p2), placed after #1310.
+
+Also filed 2026-10-29 (Stuart, grilled, none deferred): **#1322** repo-wide comment cull plus a comment-density gate (p1), placed in the priority order alongside #935.
