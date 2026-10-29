@@ -76,8 +76,16 @@ The branch a new **Session**'s **Worktree** branches from. One-click creation us
 _Avoid_: Parent branch, source branch
 
 **Approval mode**:
-The app-wide setting for how much the agent may do without asking: **Ask** (prompts for file changes and commands), **Edit freely** (prompts only for commands), or **Auto** (never prompts). Applies to every **Session**; reads are never prompted.
+The app-wide setting for how much the agent may do without asking: **Ask** (prompts for file changes and commands), **Ask and remember** (as Ask, and remembers the files and folders you approve), **Edit freely** (prompts only for commands), or **Auto** (never prompts). Applies to every **Session**; reads are never prompted.
 _Avoid_: Permission level, yolo (internal OMP name for Auto)
+
+**Queued panel**:
+The panel above the message box listing the messages waiting to send, one row each with Send now and Remove (#1145). It sits below the pinned Todo panel and shows only while something is queued.
+_Avoid_: Queue chips, queued pills
+
+**Status banner**:
+A pinned, non-modal strip above the message box reporting routine, non-problem activity, such as running background agents (#865). It is the `status` feedback channel in `docs/design/patterns.md`, distinct from a Banner, which reports a problem and stays until fixed.
+_Avoid_: Telemetry dock
 
 **Conversation**:
 One continuous exchange with the agent inside a **Session**. A **Session** has many **Conversations**, one of which is current; starting a fresh one keeps the same **Session** and **Worktree** and keeps the earlier ones reachable as history.
