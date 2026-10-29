@@ -1,0 +1,7 @@
+# One message index and one jump for chat navigation
+
+Four asks (Previous/Next buttons #751, the Outline panel #752, chat search #753, the scrollbar map #754) all need to find, order and scroll to chat messages, and the message scroller's hooks only work inside its provider in `Transcript.tsx`. On 2026-10-29 (the wave 4 grill, with the foundation #750 folded in) Stuart decided to ship them as one PR on one shared index rather than four independent scroll implementations.
+
+Rules: a per-pane store holds the **navigable message** index (user and `assistant-text` only) and a bridge to the scroller (`scrollToMessage`, `scrollable`, visibility), registered by the transcript and read by anything outside the provider. Every feature moves the chat through the single `jumpToMessage`, which reveals windowed-out turns, runs the existing landing correction (`scrollLanding.ts`), detaches from autoscroll and highlights the target. Search counts rendered text for rendered messages and source text for the rest, and paints with the CSS Custom Highlight API so the React tree is untouched. The map draws rendered rows only, with a stub for the turns "Load earlier" has not revealed.
+
+**Consequences:** Transcript changes that move or re-key rows must keep the index in step. A feature that needs a different message set extends the index instead of keeping its own. The map is approximate until `content-visibility` rows settle.
