@@ -30,6 +30,7 @@ import { describeStartProgress, describeStartProgressLabel } from './startProgre
 import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTimeShort } from './sessionDisplay'
 import { useSessionRowActions } from './useSessionRowActions'
 import { useSessionRowActivity } from './useSessionRowActivity'
+import { SessionAgentsButton } from './SessionAgentsButton'
 
 // Gate round 1 fix (High, code/a11y/architect): a `hidden` (display:none) trigger can never take
 // focus, so every keyboard close path (Escape, a dropdown item, Delete > Cancel, Shift+F10) that
@@ -114,6 +115,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
   // one thing that forces a render once a minute even when nothing else about the row changed.
   useMinuteTick()
 
+  const runningAgents = session.status === 'stopped' ? 0 : (session.activity?.runningSubagents ?? 0)
   const activityText = useSessionRowActivity(session)
   const lineTwo = lineTwoKind(session, activityText)
   // Gate round 1 fix (Medium, a11y/architect): "focused pane" is only meaningful while a real
@@ -268,7 +270,15 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                   <span
                     className={cn(
                       'flex min-w-0 items-center gap-2',
-                      canResume ? 'pr-18 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-18'
+                      // #507: the agents button adds 40px (36px plus the gap); on touch the time cell
+                      // hides while it shows, so touch needs only the button plus the menu.
+                      runningAgents > 0
+                        ? canResume
+                          ? 'pr-28 [@media(hover:none)]:pr-28'
+                          : 'pr-20 [@media(hover:none)]:pr-28'
+                        : canResume
+                          ? 'pr-18 [@media(hover:none)]:pr-24'
+                          : 'pr-10 [@media(hover:none)]:pr-18'
                     )}
                   >
                     {session.startProgress ? (
@@ -366,8 +376,18 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                   hover:hover overlay to this cell specifically, not the whole absolutely-
                   positioned group above; `gap-1` only matters under hover:none, once the button
                   is back in flow beside the time. */}
+              <SessionAgentsButton
+                sessionId={session.id}
+                sessionName={session.name}
+                running={runningAgents}
+                onSelect={() => {
+                  replaceFocused(session.id)
+                  if (isFocusedPane) void open(session.id)
+                }}
+                className={ROW_ACTION_HOVER_CLASS}
+              />
               <span className="relative flex min-h-4 min-w-6 shrink-0 items-center justify-end gap-1">
-                <span aria-hidden className={TRAILING_TIME_CLASS}>
+                <span aria-hidden className={cn(TRAILING_TIME_CLASS, runningAgents > 0 && '[@media(hover:none)]:hidden')}>
                   {formatRelativeTimeShort(session.lastActivityAt)}
                 </span>
                 <DropdownMenu
