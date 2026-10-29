@@ -2,14 +2,15 @@
 // through the user's own `gh` CLI (no stored token). Read-only; never fails the whole listing for
 // one owner (the caller reports a per-owner error).
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::gh::{gh_raw_with, map_gh_failure, GhError, GhErrorCode};
+use super::gh::{map_gh_failure, resolve_gh, GhError, GhErrorCode, GhRawResult};
 use super::repo_ref::{is_valid_name, is_valid_owner};
 
+/// Windows-only: `CREATE_NO_WINDOW`.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_DESCRIPTION_CHARS: usize = 300;
 
@@ -33,8 +34,44 @@ struct RawRepo {
     updated_at: Option<String>,
 }
 
-fn cwd() -> PathBuf {
-    std::env::temp_dir()
+/// `gh <args>` pinned to github.com (`GH_HOST` set, enterprise token dropped), no shell.
+async fn gh_pinned(args: &[&str]) -> Result<GhRawResult, GhError> {
+    let gh_path = resolve_gh().map_err(|_| {
+        GhError::new(
+            GhErrorCode::GhUnavailable,
+            "The GitHub CLI (gh) is not installed or not on PATH.",
+        )
+    })?;
+    let mut command = tokio::process::Command::new(&gh_path);
+    command
+        .args(args)
+        .current_dir(std::env::temp_dir())
+        .env("GH_HOST", "github.com")
+        .env_remove("GH_ENTERPRISE_TOKEN")
+        .creation_flags(CREATE_NO_WINDOW)
+        .kill_on_drop(true);
+    Ok(
+        match tokio::time::timeout(LIST_TIMEOUT, command.output()).await {
+            Ok(Ok(output)) => GhRawResult {
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                code: output.status.code().unwrap_or(1),
+                timed_out: false,
+            },
+            Ok(Err(_)) => GhRawResult {
+                stdout: String::new(),
+                stderr: String::new(),
+                code: 1,
+                timed_out: false,
+            },
+            Err(_) => GhRawResult {
+                stdout: String::new(),
+                stderr: String::new(),
+                code: 1,
+                timed_out: true,
+            },
+        },
+    )
 }
 
 fn is_hidden_format_char(c: char) -> bool {
@@ -98,7 +135,7 @@ pub async fn signed_in_logins() -> Result<Vec<String>, GhError> {
 /// Organisations of the ACTIVE account (`gh api user/orgs`), A to Z, each re-validated.
 pub async fn list_orgs() -> Result<Vec<String>, GhError> {
     let args = ["api", "user/orgs", "--paginate", "--jq", ".[].login"];
-    let result = gh_raw_with(&cwd(), &args, None, LIST_TIMEOUT, true).await?;
+    let result = gh_pinned(&args).await?;
     if result.timed_out {
         return Err(failure(GhErrorCode::Timeout, "GitHub did not respond."));
     }
@@ -132,7 +169,7 @@ pub async fn list_owner_repos(owner: &str) -> Result<Vec<RepoListItem>, GhError>
         "--limit",
         "100",
     ];
-    let result = gh_raw_with(&cwd(), &args, None, LIST_TIMEOUT, true).await?;
+    let result = gh_pinned(&args).await?;
     if result.timed_out {
         return Err(failure(GhErrorCode::Timeout, "GitHub did not respond."));
     }

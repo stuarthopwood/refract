@@ -120,18 +120,6 @@ pub async fn gh_raw(
     not_found_code: Option<GhErrorCode>,
     timeout: Duration,
 ) -> Result<GhRawResult, GhError> {
-    gh_raw_with(cwd, args, not_found_code, timeout, false).await
-}
-
-/// `gh_raw`, optionally pinned to github.com (`GH_HOST` set, enterprise token dropped) so a
-/// clone-feature call can never reach another host.
-pub async fn gh_raw_with(
-    cwd: &Path,
-    args: &[&str],
-    not_found_code: Option<GhErrorCode>,
-    timeout: Duration,
-    pin_github_com: bool,
-) -> Result<GhRawResult, GhError> {
     let gh_path = resolve_gh().map_err(|_| {
         GhError::new(
             not_found_code.unwrap_or(GhErrorCode::GhUnavailable),
@@ -144,11 +132,6 @@ pub async fn gh_raw_with(
         .args(args)
         .current_dir(cwd)
         .creation_flags(CREATE_NO_WINDOW);
-    if pin_github_com {
-        command
-            .env("GH_HOST", "github.com")
-            .env_remove("GH_ENTERPRISE_TOKEN");
-    }
     command.kill_on_drop(true);
 
     let output_future = command.output();
