@@ -141,16 +141,15 @@ export type ModelRoleId =
   | 'tiny'
   | 'memory'
   | 'task'
-  | 'advisor'
+  | 'advisor' | 'widget'
   | 'image'
   | 'web'
   | 'speech'
   | 'dictation'
   | 'judge';
 
-/** Chat roles (`omp://models.md`): accept ordinary chat models (`tiny`/`memory` also accept
- * `tiny`-catalog models, grouped under the same `chat` catalog kind here for a first picker cut). */
-export const CHAT_MODEL_ROLES: readonly ModelRoleId[] = ['default', 'smol', 'slow', 'vision', 'plan', 'commit', 'tiny', 'memory', 'task', 'advisor'];
+/** Chat roles (`omp://models.md`): accept ordinary chat models (`tiny`/`memory` also accept `tiny`-catalog ones). */
+export const CHAT_MODEL_ROLES: readonly ModelRoleId[] = ['default', 'smol', 'slow', 'vision', 'plan', 'commit', 'tiny', 'widget', 'memory', 'task', 'advisor'];
 
 /** Model-kind roles (`omp://models.md`): each selects a different catalog kind's runner. */
 export const MODEL_KIND_ROLES: readonly ModelRoleId[] = ['image', 'web', 'speech', 'dictation', 'judge'];
@@ -189,6 +188,7 @@ export const ROLE_CATALOG_KIND: Record<ModelRoleId, CatalogKind> = {
   memory: 'chat',
   task: 'chat',
   advisor: 'chat',
+  widget: 'chat',
   image: 'image',
   web: 'search',
   speech: 'tts',

@@ -76,6 +76,7 @@ export const CHAT_ROLE_DESCRIPTORS: RoleDescriptor[] = [
   { role: 'plan', label: 'Plan', description: 'Used while plan mode is active.' },
   { role: 'commit', label: 'Commit', description: 'Writes commit messages.' },
   { role: 'tiny', label: 'Tiny', description: 'Lightweight background work such as session titles; falls back to Smol.' },
+  { role: 'widget', label: 'Widget', description: 'Designs background job charts; uses Smol until set.' },
   { role: 'memory', label: 'Memory', description: 'Recall and memory work; falls back to Tiny.' },
   { role: 'task', label: 'Task', description: 'Subagents started by the task tool.' },
   { role: 'advisor', label: 'Advisor', description: "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow." }
@@ -129,6 +130,7 @@ export const ROLE_FALLBACK_LABEL: Partial<Record<ModelRoleId, string>> = {
   slow: 'Default',
   tiny: 'Smol',
   memory: 'Tiny',
+  widget: 'Smol',
   advisor: 'Slow'
 }
 
