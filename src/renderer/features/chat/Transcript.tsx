@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { ArrowDownToLineIcon } from 'lucide-react'
 import {
+  FLOATING_ICON_BUTTON_CLASS,
   MessageScroller,
   MessageScrollerContent,
   MessageScrollerItem,
@@ -948,7 +949,8 @@ export function Transcript({
           inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
-            "absolute inset-e-6 bottom-4 border-border bg-surface-1 text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground",
+            FLOATING_ICON_BUTTON_CLASS,
+            "absolute inset-e-6 bottom-4 transition-[translate,scale,opacity] duration-200",
             isAtEnd
               ? "pointer-events-none translate-y-full scale-95 opacity-0 duration-400 ease-[cubic-bezier(0.7,0,0.84,0)]"
               : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"

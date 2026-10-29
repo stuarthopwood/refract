@@ -2,10 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { FloatingLayer } from '@/components/floating-layer'
 import { Button } from '@/components/ui/button'
+import { FLOATING_ICON_BUTTON_CLASS } from '@/components/ui/message-scroller'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { EMPTY_CHAT_NAV, useChatNavStore } from '@/state/chat-nav-store'
+import { focusTranscriptViewport } from './focusChatFallback'
 import type { StepDirection } from './messageIndex'
 import { stepToMessage } from './stepToMessage'
 import { useMessageStepShortcut } from './useMessageStepShortcut'
@@ -67,7 +69,7 @@ export function MessageStepButtons({ sessionId }: { sessionId: string }) {
       const sibling = buttonRefs.current[direction === 'previous' ? 'next' : 'previous']
       const other = direction === 'previous' ? 'next' : 'previous'
       if (applicable[other] && sibling) sibling.focus({ preventScroll: true })
-      else anchorRef.current?.parentElement?.querySelector<HTMLElement>('[data-slot="message-scroller-viewport"]')?.focus({ preventScroll: true })
+      else focusTranscriptViewport(sessionId)
     }
   }, [applicable.previous, applicable.next])
 
@@ -89,7 +91,7 @@ export function MessageStepButtons({ sessionId }: { sessionId: string }) {
                 aria-keyshortcuts={shortcut}
                 inert={!applicable[direction]}
                 onClick={() => stepToMessage(sessionId, direction)}
-                className={cn('border-border bg-surface-1 text-foreground hover:bg-muted hover:text-foreground', !applicable[direction] && 'invisible')}
+                className={cn(FLOATING_ICON_BUTTON_CLASS, !applicable[direction] && 'invisible')}
               >
                 <Icon />
               </Button>
@@ -107,4 +109,3 @@ export function MessageStepButtons({ sessionId }: { sessionId: string }) {
     </>
   )
 }
-

@@ -85,6 +85,9 @@ function MessageScrollerItem({
   )
 }
 
+/** The sanctioned look for icon buttons floating over the transcript: Previous, Next and Scroll to end. */
+const FLOATING_ICON_BUTTON_CLASS = "border-border bg-surface-1 text-foreground hover:bg-muted hover:text-foreground"
+
 function MessageScrollerButton({
   direction = "end",
   className,
@@ -123,6 +126,7 @@ function MessageScrollerButton({
 }
 
 export {
+  FLOATING_ICON_BUTTON_CLASS,
   MessageScrollerProvider,
   MessageScroller,
   MessageScrollerViewport,

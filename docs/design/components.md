@@ -245,6 +245,10 @@ Tab pattern details are deferred to #394.
 
 A small floating panel over content (the previous and next message buttons) is the shared `FloatingLayer` (`src/renderer/components/floating-layer.tsx`): elevated `bg-popover` surface, border, shadow, a 120 ms fade (instant under reduced motion). When `visible` is false it fades out but stays reachable by keyboard focus (`focus-within` reveals it). Position it with `className`; do not hand-style a second floating box.
 
+### Floating icon buttons
+
+The icon buttons that float over the transcript (Previous message, Next message, Scroll to end) are a `secondary` `Button` with `size="icon-sm"` and the shared `FLOATING_ICON_BUTTON_CLASS` (`components/ui/message-scroller.tsx`): bordered `bg-surface-1`, `text-foreground`, `hover:bg-muted`. That secondary-surface floating button is the sanctioned style; do not copy the class string into a new button. Previous and Next sit in a `FloatingLayer` in `bare` mode (no panel chrome of its own, only the fade and focus-reveal), so each button is its own surface.
+
 ## Chat navigation (spec 041)
 
 - **Previous and next message** (`MessageStepButtons`, in a `FloatingLayer`): reveal on scroll; Previous hides at the top, Next at the bottom. Keyboard shortcut via `useMessageStepShortcut`.
