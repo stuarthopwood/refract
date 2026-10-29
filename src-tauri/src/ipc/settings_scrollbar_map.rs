@@ -6,7 +6,10 @@ use super::settings::require_bool;
 use super::{AppState, Dispatcher, HandlerFuture};
 
 pub fn register(d: &mut Dispatcher) {
-    d.register("settings.setShowScrollbarMap", settings_set_show_scrollbar_map);
+    d.register(
+        "settings.setShowScrollbarMap",
+        settings_set_show_scrollbar_map,
+    );
 }
 
 pub fn settings_set_show_scrollbar_map(state: AppState, args: Vec<Value>) -> HandlerFuture {
