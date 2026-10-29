@@ -168,9 +168,61 @@
   --font-weight-semibold: 500;
   --font-weight-bold: 600;
   --text-readout: 13px;
+  /* Spec 035 (#842): named steps replacing former arbitrary `text-[...]` sizes. */
+  --text-compact: 0.8rem;
+  --text-micro: 0.7rem;
+  --text-badge: 10px;
+  --text-emoji: 2.5rem;
+  --text-code-inline: 0.85em;
+}
+
+/* Spec 035 (#842, docs/design/foundations-typography-spacing.md "Text size"): text-only scaling.
+ * Each role's `--scale-*` multiplies the Tailwind size variables; line heights stay the unitless
+ * ratios Tailwind declares. A size never drops below 11px when scaled down (a step already
+ * smaller than 11px keeps its own size as the floor). The variables are redeclared on the role
+ * containers so a custom property resolves against that role's scale: the transcript is Chat;
+ * code blocks, inline code, tool output, diffs, file headers and the composer are Code. */
+:root,
+[data-text-role],
+.font-code,
+pre,
+code,
+kbd,
+samp {
+  --text-xs: max(min(0.75rem, 11px), calc(0.75rem * var(--text-scale)));
+  --text-sm: max(min(0.875rem, 11px), calc(0.875rem * var(--text-scale)));
+  --text-base: max(min(1rem, 11px), calc(1rem * var(--text-scale)));
+  --text-lg: max(min(1.125rem, 11px), calc(1.125rem * var(--text-scale)));
+  --text-xl: max(min(1.25rem, 11px), calc(1.25rem * var(--text-scale)));
+  --text-2xl: max(min(1.5rem, 11px), calc(1.5rem * var(--text-scale)));
+  --text-3xl: max(min(1.875rem, 11px), calc(1.875rem * var(--text-scale)));
+  --text-4xl: max(min(2.25rem, 11px), calc(2.25rem * var(--text-scale)));
+  --text-5xl: max(min(3rem, 11px), calc(3rem * var(--text-scale)));
+  --text-readout: max(min(13px, 11px), calc(13px * var(--text-scale)));
+  --text-compact: max(min(0.8rem, 11px), calc(0.8rem * var(--text-scale)));
+  --text-micro: max(min(0.7rem, 11px), calc(0.7rem * var(--text-scale)));
+  --text-badge: max(min(10px, 11px), calc(10px * var(--text-scale)));
+  --text-emoji: calc(2.5rem * var(--text-scale));
+}
+
+[data-text-role='chat'] {
+  --text-scale: var(--scale-chat);
+}
+
+[data-text-role='code'],
+.font-code,
+pre,
+code,
+kbd,
+samp {
+  --text-scale: var(--scale-code);
 }
 
 :root {
+  --scale-app: 1;
+  --scale-chat: 1;
+  --scale-code: 1;
+  --text-scale: var(--scale-app);
   /* Theme-independent values only (spec 007 T008): everything else that used to live here as an
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */

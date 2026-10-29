@@ -62,7 +62,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
                   aria-label={sendBusy ? `Sending now: ${displayText}` : `Send now: ${displayText}`}
                   aria-busy={sendBusy}
                   aria-disabled={anyBusy}
-                  className="text-[0.7rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  className="text-micro aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   onClick={() => {
                     if (anyBusy) return
                     onSendNow(chip)
@@ -71,7 +71,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
                   {sendBusy ? 'Sending now…' : 'Send now'}
                 </Button>
               ) : (
-                <span className="px-1 text-[0.7rem] text-muted-foreground">Sending at the next step</span>
+                <span className="px-1 text-micro text-muted-foreground">Sending at the next step</span>
               )}
               <Tooltip>
                 <TooltipTrigger asChild>

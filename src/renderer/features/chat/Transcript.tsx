@@ -771,6 +771,7 @@ export function Transcript({
         >
           <MessageScrollerContent
             ref={contentRef}
+            data-text-role="chat"
             className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16')}
             // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default (an
             // implicit polite live region; its ARIA default is `aria-relevant="additions text"`, not

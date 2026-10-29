@@ -114,7 +114,7 @@ export function SessionStartNotice({
           <span
             aria-hidden="true"
             data-start-emoji
-            className="block text-[40px] leading-none animate-[session-start-emoji-bob_2.4s_ease-in-out_2] @min-[40rem]:text-5xl"
+            className="block text-emoji leading-none animate-[session-start-emoji-bob_2.4s_ease-in-out_2] @min-[40rem]:text-5xl"
           >
             {emoji}
           </span>
