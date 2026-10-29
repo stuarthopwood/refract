@@ -24,3 +24,14 @@ Decision: the navigable id is the `TranscriptItem.id` of a `user` or `assistant-
 - **read** `visibleMessageIds` includes every intersecting row, not only messages (tool groups and notes too); the bridge filters to the index.
 - **read** A programmatic jump during streaming: the existing `jumpToStageRow` already documents (#1021) that the vendored provider's content mutation observer can re-anchor to newly streamed content even with `autoScroll` off. `jumpToMessage` reuses the same settle loop and `autoScrollSuppressed` mechanism; the mid-stream pull-back stays **unverified live** and needs the live check.
 - **unverified live** Frames needed for a 500-row far jump and landing on a not-yet-rendered row; index cost at 5,000 messages and on the 48 MB Session.
+
+
+## Custom Highlight API in WebView2 (T8)
+
+Method: reasoning from repo records, no live run (no cargo or tauri command is allowed in this work package).
+
+- **read** `specs/016-tauri-rust-build/spike-r10a-shell.md` section 5 exercised `CSS.highlights` and `::highlight()` live over CDP against the installed WebView2 Evergreen runtime 155.0.4283.45 (Chromium 155) and recorded that both work.
+- **read** The Custom Highlight API shipped in Chromium 105, and `tauri.conf.json` installs the Evergreen runtime (`webviewInstallMode: downloadBootstrapper`), so any current install has it.
+- **read** `::highlight()` accepts only `color`, `background-color`, `text-decoration` and `text-shadow`, so the current match is distinguished by a heavier fill plus a solid underline, and other matches by a lighter fill (a dotted underline in High contrast), not by colour alone.
+
+Decision: paint with `CSS.highlights`, but detect `typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight === 'function'` first. When absent, `findPainter.ts` paints nothing; the match list, counts, previous/next and jump still work.
