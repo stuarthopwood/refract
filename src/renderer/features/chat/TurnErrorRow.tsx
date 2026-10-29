@@ -7,7 +7,7 @@
 // sign-in action to offer for TLS or auth errors yet.
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
-import { notify, EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useReadoutStore, useTranscriptStore } from '@/state'
+import { notify, EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useReadoutStore, useSessionsStore, useTranscriptStore } from '@/state'
 import { classifyTurnError, TURN_ERROR_HINTS } from '../../../shared/turnError'
 import type { TranscriptItem } from '../../../shared/model'
 import { ClampedContent } from '../../components/ClampedContent'
@@ -32,6 +32,8 @@ function resendableText(user: UserItem): string | null {
 
 export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; sessionId: string | null }) {
   const [sending, setSending] = React.useState(false)
+  const sendingRef = React.useRef(false)
+  const retryHadFocus = React.useRef(false)
   // One selector: SUPERSEDED when any later item exists, else the nearest earlier user item (or null).
   const prompt = useTranscriptStore((s): UserItem | null | typeof SUPERSEDED => {
     const items = (sessionId ? s.bySession[sessionId] : undefined)?.items ?? EMPTY_TRANSCRIPT.items
@@ -48,13 +50,25 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
   // Same readout the Retry line reads: while OMP auto-retries, a manual Retry would double-send.
   const autoRetrying = useReadoutStore((s) => !!(sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.retry : null))
 
+  // A working session queues chat.send, and `agent_start` clears the retry readout, so Retry must
+  // also hide while the session works or an auto-retried request would be sent twice.
+  const working = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'working')
+  const blocked = autoRetrying || working
+
+  React.useEffect(() => {
+    if (!working || !retryHadFocus.current) return
+    retryHadFocus.current = false
+    if (sessionId) focusSessionPane(sessionId)
+  }, [working, sessionId])
+
   if (prompt === SUPERSEDED) return null
   const kind = classifyTurnError(item.text)
   const text = prompt ? resendableText(prompt) : null
   const needsReattach = !!prompt && hasAttachments(prompt)
 
   async function handleRetry() {
-    if (!sessionId || !text || sending) return
+    if (!sessionId || !text || sendingRef.current) return
+    sendingRef.current = true
     setSending(true)
     try {
       const result = await window.refract.chat.send(sessionId, text)
@@ -67,9 +81,35 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
       console.error('[refract] turn error retry failed', error)
       notify({ code: 'prompt-failed', message: 'Could not resend this prompt.' }, sessionId)
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
+
+  const showHint = needsReattach && !blocked
+  const showRetry = !!sessionId && !!text && !blocked
+
+  const actions = (
+    <>
+      {showHint && (
+        <span className="text-xs text-muted-foreground">Re-attach and resend from the composer.</span>
+      )}
+      {showRetry && (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          aria-disabled={sending || undefined}
+          className="aria-disabled:opacity-50"
+          onFocus={() => { retryHadFocus.current = true }}
+          onBlur={() => { retryHadFocus.current = false }}
+          onClick={() => void handleRetry()}
+        >
+          {sending ? 'Retrying…' : 'Retry'}
+        </Button>
+      )}
+    </>
+  )
 
   return (
     <PaneBanner
@@ -79,21 +119,7 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
       detail={<ClampedContent maxHeight="5lh">{item.text}</ClampedContent>}
       className="px-2"
     >
-      {needsReattach && !autoRetrying && (
-        <span className="text-xs text-muted-foreground">Re-attach and resend from the composer.</span>
-      )}
-      {sessionId && text && !autoRetrying && (
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          aria-disabled={sending || undefined}
-          className="aria-disabled:opacity-50"
-          onClick={() => void handleRetry()}
-        >
-          {sending ? 'Retrying…' : 'Retry'}
-        </Button>
-      )}
+      {showHint || showRetry ? actions : undefined}
     </PaneBanner>
   )
 }
