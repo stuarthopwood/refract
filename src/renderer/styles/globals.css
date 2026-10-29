@@ -87,6 +87,7 @@
   --color-command-pill-bg: var(--command-pill-bg);
   --color-command-pill-fg: var(--command-pill-fg);
   --color-composer-selection-bg: var(--composer-selection-bg);
+  --color-find-match: var(--find-match-bg);
   --color-composer-selection-fg: var(--composer-selection-fg);
   --color-severity-success: var(--severity-success);
   --color-severity-warning: var(--severity-warning);
@@ -2139,5 +2140,73 @@ samp {
 @media (forced-colors: active) {
   [data-project-colored] {
     color: CanvasText !important;
+  }
+}
+
+/* Chat navigation (spec 041): the row a jump landed on shows a ring outline for about 800 ms. The
+ * outline is a shape, so it does not rely on colour; it fades out unless motion is reduced, where
+ * it simply appears and is removed (highlightRow.ts removes the attribute). */
+[data-slot='message-scroller-item'][data-nav-highlight] {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot='message-scroller-item'][data-nav-highlight] {
+    animation: nav-highlight-fade 800ms ease-out forwards;
+  }
+}
+@keyframes nav-highlight-fade {
+  from {
+    outline-color: var(--ring);
+  }
+  to {
+    outline-color: transparent;
+  }
+}
+/* Chat Find (spec 041, #753): matches painted with the CSS Custom Highlight API (findPainter.ts).
+ * ::highlight() allows only colour, background, text-decoration and text-shadow, so the current
+ * match is told apart by a heavier fill AND a solid underline, and the others by a lighter fill
+ * (a dotted underline in High contrast), not by colour alone. WP-F adds the contrast pairs. */
+:root {
+  --find-match-bg: color-mix(in oklab, var(--accent-text) 22%, transparent);
+  --find-match-current-bg: color-mix(in oklab, var(--accent-text) 45%, transparent);
+}
+/* Scrollbar map (spec 041, #754): two neutral tones, user (brighter, left half) and agent (dimmer,
+ * right half), so the halves differ by position as well as tone; no new hue. WP-F adds the contrast pairs. */
+:root {
+  --scrollbar-map-user: color-mix(in oklab, var(--foreground) 85%, transparent);
+  --scrollbar-map-agent: color-mix(in oklab, var(--foreground) 55%, transparent);
+  --scrollbar-map-track: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --scrollbar-map-window: color-mix(in oklab, var(--foreground) 14%, transparent);
+}
+@media (forced-colors: active) {
+  :root {
+    --scrollbar-map-user: CanvasText;
+    --scrollbar-map-agent: GrayText;
+    --scrollbar-map-track: Canvas;
+    --scrollbar-map-window: Highlight;
+  }
+}
+::highlight(chat-find) {
+  background-color: var(--find-match-bg);
+}
+::highlight(chat-find-current) {
+  background-color: var(--find-match-current-bg);
+  text-decoration: underline 2px solid;
+  text-underline-offset: 2px;
+}
+.theme-dark-high-contrast ::highlight(chat-find) {
+  text-decoration: underline 1px dotted;
+}
+@media (forced-colors: active) {
+  ::highlight(chat-find) {
+    background-color: Highlight;
+    color: HighlightText;
+    text-decoration: underline 1px dotted;
+  }
+  ::highlight(chat-find-current) {
+    background-color: Highlight;
+    color: HighlightText;
+    text-decoration: underline 2px solid;
   }
 }

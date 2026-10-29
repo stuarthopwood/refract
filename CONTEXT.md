@@ -394,6 +394,22 @@ _Avoid_: Idle, Completed (for a resumable agent)
 The subtle background tint on the focused chat pane body in a split view (`--pane-focused`), replacing the left accent bar; the header stays untinted and keeps the "Focused" badge, which carries the non-colour cue. Gated on `showSplit`, not `isSplit`. High contrast uses a 2 px edge instead of a tint (#684).
 _Avoid_: dimming the unfocused pane
 
+**Navigable message**:
+A transcript item that chat navigation can land on: a user message or an `assistant-text` item (each agent text between tool calls is its own message). Tool calls, thinking, subagents, agent-to-agent messages, advisories, requests and notices are not navigable. One per-pane **message index** lists them in order; Previous/Next, the Outline, chat search and the scrollbar map all read it and all move the chat through one `jumpToMessage` (wave 4 grill, 2026-10-29, #750 to #754, ADR 0005).
+_Avoid_: turn (a turn holds several messages), row
+
+**Message step**:
+Previous message / Next message: two chevron buttons that fade in while the transcript scrolls, step through any navigable message (user or agent), hide Previous at the top and Next at the bottom, and answer Alt+Up and Alt+Down in the transcript and composer. Scroll to end becomes `ArrowDownToLineIcon` so the two down glyphs differ (#751).
+
+**Outline**:
+The right-pane panel (`outline`, last in the default rail order after Side chat) listing the shown pane's Session messages, agent replies nested under their user prompt; click jumps the chat (#752).
+
+**Chat search**:
+Ctrl+F (only with focus inside a chat pane) or the header ghost search icon opens a floating find bar over the user and agent messages. Counts and highlights come from the rendered text for rendered messages and from source text for messages the window has not rendered (#753).
+
+**Scrollbar map**:
+A canvas strip in the scrollbar gutter with one mark per navigable message (user left, agent right) and a viewport window; covers rendered rows only plus an "N earlier turns" stub that triggers Load earlier. Hidden under 1.5 viewports of content. Has a Settings toggle "Show scrollbar map" in the Chat group, default on (#754).
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.

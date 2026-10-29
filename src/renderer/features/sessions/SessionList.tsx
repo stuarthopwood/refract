@@ -11,8 +11,8 @@ import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { SearchField } from '@/components/SearchField'
+import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useAccountsStore, useHolidayStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
@@ -20,31 +20,6 @@ import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { searchSessions, showingCountLabel } from './sessionDisplay'
 import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
 import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
-
-// Gate round 1 fix (High, ui-visual-system-v3): decision 23's literal focus class string
-// (`focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2
-// focus-visible:outline-ring`) draws nothing on `Button` -- its base `outline-none`
-// (`button.tsx:7`) sets `outline-style: none`, which the decision's own classes never reset.
-// `COMPOSER_BUTTON_FOCUS_CLASS` already carries the fix (`outline-solid`) for exactly this
-// trap, so both toolbar buttons share one definition instead of two pasted ~260-character
-// strings. Not exported: #748's Show hidden button (its own future reuse) does not exist yet.
-//
-// Gate round 2 fixes (ui-accessibility-auditor Medium/Low):
-// - Dims only the glyph (`[&_svg]:opacity-50`), never the whole button, so the focus ring (also
-//   inside this className) keeps its full contrast the moment the pressed button becomes
-//   `aria-disabled` -- decision 13 keeps focus right there, so this is the ring's weakest moment.
-// - The composer's own `COMPOSER_DISABLED_HOVER_RESET_CLASS` doesn't work for this toolbar:
-//   `aria-disabled:hover:text-current` resolves to the *inherited* colour (this nav's
-//   `text-sidebar-foreground`, near-white), not this button's own resting `muted-foreground`, so
-//   a disabled icon still brightened on hover; and `aria-disabled:hover:bg-transparent` tied on
-//   specificity with the adjacent `dark:hover:bg-sidebar-border` and lost, because `.dark` is
-//   always set regardless of the active theme (`globals.css:18`) -- screenshot 04 showed the
-//   grey hover fill behind a disabled button. Both resets below are written toolbar-specific and
-//   `dark`-prefixed to actually win.
-const SESSION_LIST_TOOLBAR_BUTTON_CLASS = cn(
-  'text-muted-foreground hover:bg-sidebar-border hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:[&_svg]:opacity-50 dark:hover:bg-sidebar-border dark:aria-disabled:hover:bg-transparent aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground',
-  COMPOSER_BUTTON_FOCUS_CLASS
-)
 
 // The session list (docs/DESIGN.md "Layout"): a collapsible group per Repository, Sessions
 // sorted by most recent activity, and one cross-repository Archived group at the bottom of the
@@ -313,7 +288,7 @@ export function SessionList() {
                   aria-label="Collapse all groups"
                   aria-disabled={allCollapsed || undefined}
                   aria-describedby={allCollapsed ? collapseAllReasonId : undefined}
-                  className={SESSION_LIST_TOOLBAR_BUTTON_CLASS}
+                  className={TOOLBAR_BUTTON_CLASS}
                   onClick={handleCollapseAll}
                 >
                   <ChevronsDownUpIcon aria-hidden />
@@ -344,7 +319,7 @@ export function SessionList() {
                   aria-label="Expand all groups"
                   aria-disabled={allExpanded || undefined}
                   aria-describedby={allExpanded ? expandAllReasonId : undefined}
-                  className={SESSION_LIST_TOOLBAR_BUTTON_CLASS}
+                  className={TOOLBAR_BUTTON_CLASS}
                   onClick={handleExpandAll}
                 >
                   <ChevronsUpDownIcon aria-hidden />

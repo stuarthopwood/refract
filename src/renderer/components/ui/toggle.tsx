@@ -12,11 +12,15 @@ const toggleVariants = cva(
       variant: {
         default: "bg-transparent",
         outline: "border border-input bg-transparent hover:bg-muted",
+        // A quiet pressed state (accent fill) for toggles sitting in a toolbar beside ghost icon buttons.
+        subtle:
+          "bg-transparent aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:hover:bg-accent/80 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground data-[state=on]:hover:bg-accent/80 forced-colors:aria-pressed:border forced-colors:aria-pressed:border-[Highlight] forced-colors:data-[state=on]:border forced-colors:data-[state=on]:border-[Highlight]",
       },
       size: {
         default:
           "h-8 min-w-8 px-2 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         sm: "min-h-6 min-w-6 rounded-md px-2 text-compact has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-4",
+        "icon-xs": "size-6 rounded-md p-0 [&_svg:not([class*='size-'])]:size-4",
         lg: "h-9 min-w-9 px-2 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
       },
     },

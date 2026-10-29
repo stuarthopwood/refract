@@ -34,7 +34,7 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | `destructive-outline` | A destructive action at rest that must stay visually below the surface's filled primary (spec 038: "Close pull request" in the comment box footer, left edge, away from Comment). Destructive-coloured edge and label, no fill; always confirms through `ConfirmAlertDialog tone="destructive"`. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `text` | A non-primary action in a banner (#746): foreground text, no border or fill, underlined on hover and keyboard focus, 2px focus ring, 24px minimum target. `text-destructive` is the same shape with a red label, for a destructive action that opens a confirm dialog. |
-| `secondary`, `link` | Not part of the design system, except the one decided `link` use below. |
+| `secondary`, `link` | Not part of the design system, except the one decided `link` use below and the floating transcript icon buttons (see "Floating icon buttons"). |
 
 **Quiet dismiss text button (Stuart, 2026-10-26, #1205):** the "Agent stopped" bar's **Don't show again** is a `text` variant button underlined at rest (`underline underline-offset-2`) and muted with `text-muted-foreground`, beside the bar's `outline` **Start agent**. A dismiss-forever action on a quiet bar reads as a text action, not a second button; the muted colour keeps **Start agent** the stronger action. The `link` variant stays unused.
 
@@ -240,6 +240,23 @@ Every panel and pane (chat, Agents, Pull requests, FDB panes, side chat) shares 
 Tab pattern details are deferred to #394.
 
 **Settings pages (wave 2):** every Settings section is a `SettingsPage` (`components/settings/`; `max-w-2xl`, `wide` = `max-w-3xl` for Models) holding `SettingsGroup` blocks (`role=group` labelled by its h3) of `SettingRow` rows (label, description, optional 16px `icon`, control; stacks under about 480px). `SettingFieldRow` and `SettingSwitchRow` wrap `SettingRow`. Do not hand-copy row markup.
+
+## Floating layer
+
+A small floating panel over content (the previous and next message buttons) is the shared `FloatingLayer` (`src/renderer/components/floating-layer.tsx`): elevated `bg-popover` surface, border, shadow, a 120 ms fade (instant under reduced motion). When `visible` is false it fades out but stays reachable by keyboard focus (`focus-within` reveals it). Position it with `className`; do not hand-style a second floating box.
+
+### Floating icon buttons
+
+The icon buttons that float over the transcript (Previous message, Next message, Scroll to end) are a `secondary` `Button` with `size="icon-sm"` and the shared `FLOATING_ICON_BUTTON_CLASS` (`components/ui/message-scroller.tsx`): bordered `bg-surface-1`, `text-foreground`, `hover:bg-muted`. That secondary-surface floating button is the sanctioned style; do not copy the class string into a new button. Previous and Next sit in a `FloatingLayer` in `bare` mode (no panel chrome of its own, only the fade and focus-reveal), so each button is its own surface.
+
+## Chat navigation (spec 041)
+
+- **Previous and next message** (`MessageStepButtons`, in a `FloatingLayer`): reveal on scroll; Previous hides at the top, Next at the bottom. Keyboard shortcut via `useMessageStepShortcut`.
+- **Outline** (`features/right-pane/outline/`): a right pane panel listing user and agent messages, following the active pane; a row jumps to the message.
+- **Chat Find** (`features/chat-nav/search/`): Ctrl+F inside a chat pane opens `FindBar` and `FindResultsList`. Matches are painted with the CSS Custom Highlight API, not DOM edits. The current match is told apart by a heavier fill and a solid underline, the others by a lighter fill (a dotted underline in High contrast), so colour is never the only cue.
+- **Scrollbar map** (`ScrollbarMap`): a canvas strip beside the scrollbar, `aria-hidden` because the buttons, Outline and Find are the keyboard routes. User marks are brighter (left half), agent marks dimmer (right half). Toggled by the Show scrollbar map setting.
+- **Jump highlight:** the row a jump lands on shows a 2 px `--ring` outline for about 800 ms (`data-nav-highlight`).
+- **Tokens and contrast:** `--find-match-bg`, `--find-match-current-bg` and `--scrollbar-map-*` have High contrast and forced-colors variants. `scripts/find-nav-contrast.mjs` (run by `check:theme-contrast`) checks text on each fill at 4.5:1, the two fills against each other, and the map marks against the track and the viewport window at 3:1, in every preset including High contrast.
 
 ## Banners
 

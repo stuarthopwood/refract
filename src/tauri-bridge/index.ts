@@ -261,6 +261,7 @@ const refract: RefractApi = {
     setShowAgentStoppedBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AGENT_STOPPED_BAR, enabled),
     setAnimatedStatusText: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ANIMATED_STATUS_TEXT, enabled),
     setCodeLigatures: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CODE_LIGATURES, enabled),
+    setShowScrollbarMap: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SCROLLBAR_MAP, enabled),
     setTypography: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TYPOGRAPHY, value),
     setShowFinishedTurnTimes: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_FINISHED_TURN_TIMES, enabled),
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),

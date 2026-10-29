@@ -89,6 +89,8 @@ pub struct Settings {
     pub animated_status_text: bool,
     /// Issue #1246: code ligatures on the Code font; default on (`code_ligatures.rs`).
     pub code_ligatures: bool,
+    /// Issue #754 (spec 041): the chat scrollbar map; default on (scrollbar_map.rs).
+    pub show_scrollbar_map: bool,
     /// Issue #1250 (FR-119): the settled turn total under each turn; default off.
     pub show_finished_turn_times: bool,
     /// Spec 036: text size scales (`typography.rs`).
@@ -134,6 +136,8 @@ mod animated_status_text;
 mod code_ligatures;
 #[path = "finished_turn_times.rs"]
 mod finished_turn_times;
+#[path = "scrollbar_map.rs"]
+mod scrollbar_map;
 #[path = "typography.rs"]
 mod typography;
 pub use typography::Typography;
@@ -218,6 +222,7 @@ impl SettingsStore {
         let show_ai_credits = ai_credits::parse(&object);
         let animated_status_text = animated_status_text::parse(&object);
         let code_ligatures = code_ligatures::parse(&object);
+        let show_scrollbar_map = scrollbar_map::parse(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
         let typography = typography::parse(&object);
 
@@ -246,7 +251,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 24] = [
+        const KNOWN_FIELDS: [&str; 25] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -265,6 +270,7 @@ impl SettingsStore {
             ai_credits::KEY,
             animated_status_text::KEY,
             code_ligatures::KEY,
+            scrollbar_map::KEY,
             finished_turn_times::KEY,
             typography::KEY,
             "wordPredictionEnabled",
@@ -297,6 +303,7 @@ impl SettingsStore {
             show_ai_credits,
             animated_status_text,
             code_ligatures,
+            show_scrollbar_map,
             show_finished_turn_times,
             typography,
             word_prediction_enabled,
@@ -378,6 +385,8 @@ impl SettingsStore {
         map.insert(animated_status_text::KEY.to_string(), json!(animated));
         let ligatures = self.data.code_ligatures;
         map.insert(code_ligatures::KEY.to_string(), json!(ligatures));
+        let scrollbar_map = self.data.show_scrollbar_map;
+        map.insert(scrollbar_map::KEY.to_string(), json!(scrollbar_map));
         let turn_times = self.data.show_finished_turn_times;
         map.insert(finished_turn_times::KEY.to_string(), json!(turn_times));
         typography::write(&mut map, self.data.typography);

@@ -27,6 +27,7 @@ interface SettingsState {
   setShowAiCredits(enabled: boolean): Promise<void>
   setAnimatedStatusText(enabled: boolean): Promise<boolean>
   setCodeLigatures(enabled: boolean): Promise<void>
+  setShowScrollbarMap(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
 }
 
@@ -170,6 +171,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setCodeLigatures: async (enabled) => {
     const result = await window.refract.settings.setCodeLigatures(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
+  setShowScrollbarMap: async (enabled) => {
+    const result = await window.refract.settings.setShowScrollbarMap(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   },
