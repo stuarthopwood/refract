@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { PAIRS, searchFieldContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows } from './theme-contrast-pairs.mjs'
 import { swatchMetadataDriftCheck } from './theme-swatch-drift.mjs'
 import { switchTrackContrastRows } from './switch-track-contrast.mjs'
+import { addDerivedTokens } from './derived-tokens.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
 import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
 import { contextUsageContrastRows } from './context-usage-contrast.mjs'
@@ -179,10 +180,9 @@ for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
     if (rawValue === undefined) continue
     const parsed = parseColorLiteral(rawValue, rawProps)
     if (parsed) props[name] = parsed
-    // Non-colour values (`transparent`, bare keywords) are intentionally left unparsed -- no
-    // pair below references them as a colour operand.
+    // Non-colour values (`transparent`, bare keywords) stay unparsed: no pair references them.
   }
-  themes[themeId] = props
+  themes[themeId] = addDerivedTokens(props, rawProps)
 }
 
 // A theme registered in `src/shared/themes.ts`'s `ThemeId` union with no matching `.theme-<id>`

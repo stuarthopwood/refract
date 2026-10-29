@@ -9,6 +9,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { notify } from '@/state'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { PaneWidthDropdownItems } from '@/features/right-pane/PaneWidthMenu'
 import { APP_MENU_IDS } from '../../../shared/ipc'
 import type { AppMenuId } from '../../../shared/ipc'
 
@@ -76,6 +78,8 @@ export function AppMenuBar() {
     if (!visible) return
     function onMouseDown(event: MouseEvent): void {
       if (barRef.current?.contains(event.target as Node)) return
+      // The Right pane dropdown's items are portalled outside the bar.
+      if ((event.target as Element).closest('[role="menu"]')) return
       // A click away is itself the user choosing a new focus target (e.g. clicking straight into
       // the message textarea): clear the captured ref so the restore effect below does not then
       // fight that click by yanking focus back to the pre-bar element on the next render.
@@ -130,7 +134,7 @@ export function AppMenuBar() {
 
   function focusButton(index: number): void {
     const buttons = barRef.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]')
-    buttons?.[(index + MENUS.length) % MENUS.length]?.focus()
+    if (buttons?.length) buttons[(index + buttons.length) % buttons.length]?.focus()
   }
 
   function onButtonKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void {
@@ -167,6 +171,25 @@ export function AppMenuBar() {
           {menu.label}
         </button>
       ))}
+      {/* View > "Right pane width" (spec 013 FR-025, WCAG 2.5.7): the native View menu is built in
+          Rust (src-tauri/src/shell/menu.rs), so the renderer-drawn bar carries this entry as its
+          own dropdown until the native submenu exists. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            onKeyDown={(event) => onButtonKeyDown(event, MENUS.length)}
+            className="px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            Right pane width
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <PaneWidthDropdownItems />
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }

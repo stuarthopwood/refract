@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeftRightIcon } from 'lucide-react'
-import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { EmptyChatState } from '@/features/chat/EmptyChatState'
@@ -16,6 +15,7 @@ import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { toast } from 'sonner'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import {
+  RIGHT_PANE_DEFAULT_WIDTH_PX,
   RIGHT_PANE_MAX_WIDTH_PX,
   RIGHT_PANE_MIN_WIDTH_PX,
   useRepositoriesStore,
@@ -26,6 +26,8 @@ import {
 } from '@/state'
 import { IconRail } from '@/features/right-pane/IconRail'
 import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
+import { RightPaneResizeHandle } from '@/features/right-pane/RightPaneResizeHandle'
+import { rightPaneRef } from '@/features/right-pane/right-pane-handle'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
 import { useRightPaneShortcut } from '@/features/right-pane/use-right-pane-shortcut'
 import { closeChatPane } from '@/features/chat/closeChatPane'
@@ -78,7 +80,6 @@ export function App() {
   const paneSessionIds = useSplitStore((state) => state.paneSessionIds)
   const focusedIndex = useSplitStore((state) => state.focusedIndex)
   const dividerPercent = useSplitStore((state) => state.dividerPercent)
-  const rightPaneRef = useRef<PanelImperativeHandle>(null)
   const focusMoveButtonRef = useRef<HTMLButtonElement>(null)
   // Round 3 (code-reviewer, Low): starting this at `+Infinity` made `canShowSplit` wrongly
   // assume a wide window before the chat panel's first real `onResize` measurement lands (e.g.
@@ -623,11 +624,11 @@ export function App() {
                 )}
               </ErrorBoundary>
             </ResizablePanel>
-            <ResizableHandle withHandle aria-label="Resize right pane" disabled={view !== 'chat'} />
+            <RightPaneResizeHandle disabled={view !== 'chat'} />
             <ResizablePanel
               id="right-pane"
               panelRef={rightPaneRef}
-              defaultSize={useRightPaneStore.getState().widthPx}
+              defaultSize={RIGHT_PANE_DEFAULT_WIDTH_PX}
               minSize={RIGHT_PANE_MIN_WIDTH_PX}
               maxSize={RIGHT_PANE_MAX_WIDTH_PX}
               collapsible
@@ -696,10 +697,7 @@ export function App() {
             >
               <ErrorBoundary>
                 <div className="h-full" inert={!paneShown} aria-hidden={!paneShown || undefined}>
-                  <RightPaneShell
-                    sessionId={frontSessionId ?? null}
-                    resize={(widthPx) => rightPaneRef.current?.resize(widthPx)}
-                  />
+                  <RightPaneShell sessionId={frontSessionId ?? null} />
                 </div>
               </ErrorBoundary>
             </ResizablePanel>

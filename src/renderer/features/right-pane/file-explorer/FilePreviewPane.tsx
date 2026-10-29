@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { Code2Icon, CopyIcon, FileIcon, FileWarningIcon, FolderOpenIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { CodeBlock, Markdown } from '@/features/chat/Markdown'
 import { formatByteSize } from '@/features/chat/attachments'
@@ -19,7 +20,7 @@ interface FilePreviewPaneProps {
   previewLoading: boolean
   onOpenInVSCode: (path: string) => Promise<boolean>
   onReveal: (path: string) => Promise<void>
-  onCopyPath: (path: string) => Promise<void>
+  onCopyPath: (path: string) => Promise<boolean>
 }
 
 /** Last path segment, `FileTreeNode.path`'s own POSIX-`/`-separated convention -- never a raw
@@ -148,24 +149,38 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
       className="flex h-full flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {showToolbar && preview && (
-        <div className="no-drag-region mb-2 flex shrink-0 flex-wrap items-center justify-end gap-1 border-b border-divider pb-2">
+        <div className="no-drag-region mb-2 flex shrink-0 flex-wrap items-center justify-end gap-1">
           {vscodeNotFound && (
             <span role="status" className="mr-auto text-xs text-muted-foreground">
               VS Code not found
             </span>
           )}
-          <Button type="button" variant="outline" size="sm" onClick={() => void runOpenInVSCode(preview.path)}>
-            <Code2Icon aria-hidden className="size-4" />
-            Open in VS Code
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => void onReveal(preview.path)}>
-            <FolderOpenIcon aria-hidden className="size-4" />
-            Reveal
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => void onCopyPath(preview.path)}>
-            <CopyIcon aria-hidden className="size-4" />
-            Copy path
-          </Button>
+          {[
+            { label: 'Open in VS Code', Icon: Code2Icon, run: () => void runOpenInVSCode(preview.path) },
+            { label: 'Reveal in File Explorer', Icon: FolderOpenIcon, run: () => void onReveal(preview.path) },
+            { label: 'Copy path', Icon: CopyIcon, run: () => void onCopyPath(preview.path) }
+          ].map(({ label, Icon, run }) => (
+            <Tooltip key={label}>
+              <TooltipTrigger asChild aria-describedby={undefined}>
+                <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={run}>
+                  <Icon aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{label}</TooltipContent>
+            </Tooltip>
+          ))}
+          {preview.kind === 'markdown' && (
+            // `aria-pressed` alone carries the toggle state: the accessible name stays constant ("Source"), never flipping with its own pressed state (gate remediation, Medium).
+            <Button type="button" variant="ghost" size="sm" aria-pressed={showSource} onClick={() => setShowSource((v) => !v)}>
+              Source
+            </Button>
+          )}
+          {preview.kind === 'text' && (
+            <Button type="button" variant="ghost" size="sm" aria-pressed={wrap} aria-label="Wrap long lines" onClick={() => setWrap((v) => !v)}>
+              <WrapTextIcon aria-hidden className="size-4" />
+              Wrap
+            </Button>
+          )}
         </div>
       )}
       {previewLoading ? (
@@ -228,15 +243,6 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
         />
       ) : preview.kind === 'markdown' ? (
         <div className="flex flex-col gap-2">
-          <div className="flex justify-end">
-            {/* `aria-pressed` alone carries the toggle state -- the accessible name stays
-                constant ("Source"), never flipping to a second word describing the OTHER state,
-                the same fix `IconRail.tsx`'s own rail buttons already apply (gate remediation,
-                Medium: a toggle's name must not change with its own pressed state). */}
-            <Button type="button" variant="outline" size="sm" aria-pressed={showSource} onClick={() => setShowSource((v) => !v)}>
-              Source
-            </Button>
-          </div>
           {showSource ? (
             <CodeBlock code={preview.content ?? ''} lang="markdown" wrap={wrap} lineNumbers />
           ) : (
@@ -246,19 +252,6 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
       ) : (
         // `kind: 'text'` (every other preview kind is handled above).
         <div className="flex flex-col gap-2">
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-pressed={wrap}
-              aria-label="Wrap long lines"
-              onClick={() => setWrap((v) => !v)}
-            >
-              <WrapTextIcon aria-hidden className="size-4" />
-              Wrap
-            </Button>
-          </div>
           <CodeBlock code={preview.content ?? ''} lang={guessLangFromPath(preview.path)} wrap={wrap} lineNumbers />
         </div>
       )}
