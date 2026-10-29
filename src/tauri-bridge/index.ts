@@ -129,6 +129,7 @@ const refract: RefractApi = {
     add: (path) => request<Repository>(IPC_REQUESTS.REPOSITORIES_ADD, path),
     remove: (id) => request<void>(IPC_REQUESTS.REPOSITORIES_REMOVE, id),
     rename: (id, name) => request<Repository>(IPC_REQUESTS.REPOSITORIES_RENAME, id, name),
+    setColor: (id, color) => request<Repository>(IPC_REQUESTS.REPOSITORIES_SET_COLOR, id, color),
     remotes: () => request<Record<string, RepositoryRemote>>(IPC_REQUESTS.REPOSITORIES_REMOTES),
     branches: (id) => request<BranchEntry[]>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id),
     pickFolder: () => request<string | null>(IPC_REQUESTS.REPOSITORIES_PICK_FOLDER),
@@ -268,7 +269,8 @@ const refract: RefractApi = {
     setPullRequestsListWidth: (widthPx) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH, widthPx),
     setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width),
     setHolidayTouches: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_HOLIDAY_TOUCHES, value),
-    setActivityText: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ACTIVITY_TEXT, value)
+    setActivityText: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ACTIVITY_TEXT, value),
+    setStatusStyle: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_STATUS_STYLE, value)
   },
 
   debug: {

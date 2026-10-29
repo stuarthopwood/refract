@@ -17,6 +17,7 @@ import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
+import { StatusStylePicker } from './StatusStylePicker'
 
 export function AppearanceSection() {
   // Issue #554: the Save/Cancel row below now governs both pickers -- dirty if EITHER has an
@@ -268,6 +269,10 @@ export function AppearanceSection() {
           <ToggleGroupItem value="playful" className={SELECTED_SEGMENT_CLASS}>Playful</ToggleGroupItem>
         </ToggleGroup>
       </div>
+      {/* Issue #482: applies live, same posture as Activity text; the picker carries its own preview. */}
+      <h3 id="status-style-heading" className="mt-6 mb-1 text-sm font-medium">Status style</h3>
+      <p id="status-style-hint" className="mb-2 text-xs text-muted-foreground">How each Session&rsquo;s state is drawn in the Session list, chat header and details card.</p>
+      <StatusStylePicker labelledBy="status-style-heading" describedBy="status-style-hint" />
       {/* Issue #1242 (FR-042): applies live; also lets the user stop the looping shimmer (WCAG 2.2.2). */}
       <div className="mt-6">
         <SettingSwitchRow

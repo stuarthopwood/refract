@@ -77,6 +77,8 @@ pub struct Settings {
     /// `HolidayTouches`'s own doc comment. No raw/lazy-correction tracking needed, the same
     /// plain-enum shape `chat_width` above uses.
     pub holiday_touches: HolidayTouches,
+    /// Issue #482: how the shared status icon draws a state; default `Icons` (`status_style.rs`).
+    pub status_style: StatusStyle,
     /// Issue #526 (FR-111): the Session row Activity line's wording; default `Plain`.
     pub activity_text: ActivityText,
     pub transcript_display: TranscriptDisplaySettings,
@@ -134,6 +136,9 @@ mod agent_stopped_bar;
 #[path = "ai_credits.rs"]
 mod ai_credits;
 pub use activity_text::ActivityText;
+#[path = "status_style.rs"]
+mod status_style;
+pub use status_style::StatusStyle;
 #[path = "animated_status_text.rs"]
 mod animated_status_text;
 #[path = "code_ligatures.rs"]
@@ -199,12 +204,8 @@ impl SettingsStore {
             .and_then(|v| serde_json::from_value::<ChatWidth>(v.clone()).ok())
             .unwrap_or(ChatWidth::Full);
 
-        // Issue #1048: default `Full` -- a missing/malformed value is never trusted, the same
-        // lazy-correction pattern `chat_width` above uses.
-        let holiday_touches = object
-            .get("holidayTouches")
-            .and_then(|v| serde_json::from_value::<HolidayTouches>(v.clone()).ok())
-            .unwrap_or(HolidayTouches::Full);
+        let holiday_touches = super::holiday_touches::parse(&object);
+        let status_style = status_style::parse(&object);
         let activity_text = activity_text::parse(&object);
         let transcript_display = transcript_display::parse(&object);
 
@@ -250,7 +251,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 22] = [
+        const KNOWN_FIELDS: [&str; 23] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -258,7 +259,8 @@ impl SettingsStore {
             "theme",
             "watermarkEnabled",
             "chatWidth",
-            "holidayTouches",
+            super::holiday_touches::KEY,
+            status_style::KEY,
             activity_text::KEY,
             "transcriptDisplay",
             "showSampleData",
@@ -289,6 +291,7 @@ impl SettingsStore {
             watermark_enabled,
             chat_width,
             holiday_touches,
+            status_style,
             activity_text,
             transcript_display,
             show_sample_data,
@@ -352,10 +355,8 @@ impl SettingsStore {
             map.insert("watermarkEnabled".to_string(), json!(enabled));
         }
         map.insert("chatWidth".to_string(), json!(self.data.chat_width));
-        map.insert(
-            "holidayTouches".to_string(),
-            json!(self.data.holiday_touches),
-        );
+        super::holiday_touches::write(&mut map, self.data.holiday_touches);
+        status_style::write(&mut map, self.data.status_style);
         let activity_text = self.data.activity_text;
         map.insert(activity_text::KEY.to_string(), json!(activity_text));
         map.insert(
