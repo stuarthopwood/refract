@@ -433,6 +433,8 @@ export const IPC_REQUESTS = {
   PULL_REQUESTS_UNRESOLVE_THREAD: 'pullRequests.unresolveThread',
   PULL_REQUESTS_SUBMIT_REVIEW: 'pullRequests.submitReview',
   PULL_REQUESTS_MERGE: 'pullRequests.merge',
+  PULL_REQUESTS_CLOSE: 'pullRequests.close',
+  PULL_REQUESTS_FETCH_IMAGE: 'pullRequests.fetchImage',
   PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST: 'pullRequests.newSessionFromPullRequest',
   THEME_PREVIEW: 'theme.preview',
   THEME_SET: 'theme.set',
@@ -775,6 +777,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     /** FR-016, FR-017, FR-020: `method` must be one of `PullRequestDetail.allowedMergeMethods`;
      * the renderer's own confirmation (MergeDialog.tsx) names the pull request and this method. */
     merge(repositoryId: string, number: number, input: MergeInput): Promise<Result<void>>;
+    /** Spec 038: closes without merging. */ close(repositoryId: string, number: number): Promise<Result<Record<string, never>>>;
+    /** Spec 038, ADR 0004: allow-listed image proxy; returns a data: URL. */ fetchImage(url: string): Promise<Result<{ dataUrl: string }>>;
     /** FR-022: fetches the pull request's head branch and creates a Session exactly as
      * `sessions.create` does, substituting the fetched branch for a new one cut from a base. */
     newSessionFromPullRequest(repositoryId: string, number: number): Promise<Result<Session>>;

@@ -413,12 +413,20 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
 /// ...,"slug":...}` for a team review request or assignee, with no `login` field at all) --
 /// `map_actor` falls back to `'unknown'` for that case, exactly like the ported TS's own
 /// `actor?.login ?? 'unknown'` (a plain optional-chain, not a runtime-validated shape).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct GhActor {
     #[serde(default)]
     pub login: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
+    /// GraphQL actors send `__typename` (`Bot` for an app); `gh`'s porcelain authors send
+    /// `is_bot` instead. Either marks the actor as a bot.
+    #[serde(default, rename = "__typename")]
+    pub typename: Option<String>,
+    #[serde(default)]
+    pub is_bot: bool,
+    #[serde(default, rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -426,7 +434,10 @@ pub struct GhLabel {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// A `statusCheckRollup` entry: a `CheckRun` (`name`/`status`/`conclusion`/`detailsUrl`) or a
+/// `StatusContext` (`context`/`state`/`targetUrl`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhCheckRun {
     #[serde(default)]
     pub status: Option<String>,
@@ -434,6 +445,18 @@ pub struct GhCheckRun {
     pub conclusion: Option<String>,
     #[serde(default)]
     pub state: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub context: Option<String>,
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub completed_at: Option<String>,
+    #[serde(default)]
+    pub details_url: Option<String>,
+    #[serde(default)]
+    pub target_url: Option<String>,
 }
 
 #[cfg(test)]

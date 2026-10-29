@@ -160,6 +160,11 @@ export const PAIRS = [
   { fg: 'severity-info', bg: 'background', min: 3 },
   { fg: 'severity-info', bg: 'card', min: 3 },
   { fg: 'severity-info', bg: 'popover', min: 3 },
+  // Spec 038 FR-004: GitHub alert bars and icons (non-text, 3:1) on the chat and card surfaces.
+  ...['note', 'tip', 'important', 'warning', 'caution'].flatMap((kind) => [
+    { fg: `alert-${kind}`, bg: 'background', min: 3 },
+    { fg: `alert-${kind}`, bg: 'card', min: 3 }
+  ]),
   // `muted-foreground` and `destructive` are rendered as actual BODY TEXT (code-block/diff-path
   // headers, inactive tab labels, notice text, dropdown-menu destructive items, alert
   // descriptions), not just against the page `--background` the two pre-existing pairs above

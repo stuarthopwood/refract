@@ -64,6 +64,7 @@ fn check_run(status: Option<&str>, conclusion: Option<&str>, state: Option<&str>
         status: status.map(str::to_string),
         conclusion: conclusion.map(str::to_string),
         state: state.map(str::to_string),
+        ..Default::default()
     }
 }
 
@@ -211,6 +212,7 @@ fn sample_pr_view_detail(files: Vec<GhRestFileLite>) -> GhPrViewDetail {
         author: GhActor {
             login: Some("octocat".to_string()),
             name: None,
+            ..Default::default()
         },
         base_ref_name: "main".to_string(),
         head_ref_name: "feature".to_string(),
@@ -303,6 +305,7 @@ fn gh_timeline_node_commit(
         created_at: None,
         state: None,
         submitted_at: None,
+        last_edited_at: None,
     }
 }
 
@@ -314,11 +317,13 @@ fn gh_timeline_node_comment(id: &str, login: &str, body: &str, created_at: &str)
         author: Some(GhActor {
             login: Some(login.to_string()),
             name: None,
+            ..Default::default()
         }),
         body: Some(body.to_string()),
         created_at: Some(created_at.to_string()),
         state: None,
         submitted_at: None,
+        last_edited_at: None,
     }
 }
 
@@ -336,11 +341,13 @@ fn gh_timeline_node_review(
         author: Some(GhActor {
             login: Some(login.to_string()),
             name: None,
+            ..Default::default()
         }),
         body: Some(body.to_string()),
         created_at: None,
         state: Some(state.to_string()),
         submitted_at: Some(submitted_at.to_string()),
+        last_edited_at: None,
     }
 }
 
@@ -365,9 +372,11 @@ fn build_timeline_sorts_commit_review_comment_and_thread_chronologically() {
                         author: Some(GhActor {
                             login: Some("reviewer".to_string()),
                             name: None,
+                            ..Default::default()
                         }),
                         body: "Please fix this.".to_string(),
                         created_at: "2024-04-01T00:00:00Z".to_string(),
+                        last_edited_at: None,
                     }],
                 },
             }],
@@ -444,11 +453,13 @@ fn build_timeline_maps_team_actor_to_unknown_login() {
                 author: Some(GhActor {
                     login: None,
                     name: Some("Some Team".to_string()),
+                    ..Default::default()
                 }),
                 body: Some("On behalf of the team.".to_string()),
                 created_at: Some("2024-06-01T00:00:00Z".to_string()),
                 state: None,
                 submitted_at: None,
+                last_edited_at: None,
             }],
         },
     };
@@ -490,6 +501,7 @@ fn build_timeline_skips_unknown_typename_node() {
                     created_at: None,
                     state: None,
                     submitted_at: None,
+                    last_edited_at: None,
                 },
             ],
         },
