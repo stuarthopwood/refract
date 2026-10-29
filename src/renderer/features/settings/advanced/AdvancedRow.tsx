@@ -1,6 +1,7 @@
 // One Settings > Advanced row: picks the control for the key's kind, shows the description,
-// "Default: X" only when the value differs, and a Reset button only then too. A dependent row
-// (`info.dependsOn` off) stays visible, indented and aria-disabled, and says why.
+// "Default: X" only when the value differs, and a Reset button that is always there but disabled at\r\n// the default (so the control never jumps). A dependent row
+// (`info.dependsOn` off) stays visible, indented, with every control disabled, and says why.
+import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { Button } from '@/components/ui/button'
@@ -39,10 +40,16 @@ function describeDefault(info: TokenGuardKeyInfo, def: TokenGuardValue | undefin
   return 'none'
 }
 
+// The first control to focus after Reset (the Reset button itself is skipped).
+const FIRST_CONTROL = 'input:not(:disabled), [role="switch"], [role="radio"][aria-checked="true"], [role="checkbox"], button:not([data-reset]):not(:disabled)'
+
 export function AdvancedRow({ info, value, defaultValue, disabledReason, fallbackTokens, onChange, onReset }: AdvancedRowProps) {
   const id = `advanced-${info.key}`
   const isDefault = same(value, defaultValue)
   const disabled = disabledReason !== undefined
+  const rowRef = useRef<HTMLDivElement>(null)
+  const describedBy = [`${id}-description`, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
+  const stacked = info.kind === 'order' || info.kind === 'record'
 
   const description: ReactNode = (
     <>
@@ -50,13 +57,15 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, fallbac
       {!isDefault && <> Default: {describeDefault(info, defaultValue)}.</>}
     </>
   )
-  const reset = isDefault ? null : (
+  const reset = (
     <Button
       variant="ghost"
       size="sm"
+      data-reset
+      disabled={isDefault || disabled}
       aria-label={`Reset ${info.label} to default`}
       onClick={() => {
-        void onReset().then(() => document.getElementById(id)?.focus())
+        void onReset().then(() => requestAnimationFrame(() => rowRef.current?.querySelector<HTMLElement>(FIRST_CONTROL)?.focus()))
       }}
     >
       Reset
@@ -75,9 +84,12 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, fallbac
         id={id}
         label={info.label}
         description={description}
+        note={note}
         options={info.options ?? []}
         value={String(value ?? '')}
         actions={reset}
+        disabled={disabled}
+        describedBy={describedBy}
         onChange={(next) => void onChange(next)}
       />
     )
@@ -85,7 +97,13 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, fallbac
     let control: ReactNode
     if (info.kind === 'toggle') {
       control = (
-        <Switch id={id} aria-describedby={`${id}-description`} checked={value === true} onCheckedChange={(next) => void onChange(next)} />
+        <Switch
+          id={id}
+          aria-describedby={describedBy}
+          disabled={disabled}
+          checked={value === true}
+          onCheckedChange={(next) => void onChange(next)}
+        />
       )
     } else if (info.kind === 'count') {
       control = (
@@ -94,36 +112,57 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, fallbac
           value={typeof value === 'number' ? value : 0}
           unit={info.unit ?? ''}
           labelId={`${id}-label`}
-          describedBy={[`${id}-description`, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')}
+          describedBy={describedBy}
           disabled={disabled}
           onCommit={onChange}
         />
       )
     } else if (info.kind === 'order') {
-      control = <MethodOrderChecklist id={id} value={Array.isArray(value) ? value : []} onChange={onChange} />
+      control = (
+        <MethodOrderChecklist
+          id={id}
+          value={Array.isArray(value) ? value : []}
+          disabled={disabled}
+          describedBy={describedBy}
+          onChange={onChange}
+        />
+      )
     } else {
       control = (
         <PerModelThresholdTable
           id={id}
           value={value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}}
           fallbackTokens={fallbackTokens}
+          disabled={disabled}
+          describedBy={describedBy}
           onChange={onChange}
         />
       )
     }
     row = (
-      <SettingRow id={id} label={info.label} description={description} note={note} labelAsText={info.kind === 'order' || info.kind === 'record'}>
-        <div className="flex flex-wrap items-center gap-2">
-          {control}
-          {reset}
-        </div>
+      <SettingRow
+        id={id}
+        label={info.label}
+        description={description}
+        note={note}
+        labelAsText={stacked}
+        layout={stacked ? 'stacked' : 'inline'}
+        labelAddon={stacked ? reset : undefined}
+      >
+        {stacked ? (
+          control
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {control}
+            {reset}
+          </div>
+        )}
       </SettingRow>
     )
   }
 
-  if (!info.dependsOn) return row
   return (
-    <div aria-disabled={disabled || undefined} className="pl-6">
+    <div ref={rowRef} className={info.dependsOn ? 'pl-6' : undefined}>
       {row}
     </div>
   )

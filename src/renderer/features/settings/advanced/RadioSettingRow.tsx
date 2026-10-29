@@ -11,19 +11,27 @@ interface RadioSettingRowProps {
   options: readonly TokenGuardOption[]
   value: string
   actions?: ReactNode
+  disabled?: boolean
+  describedBy?: string
+  note?: ReactNode
   onChange: (value: string) => void
 }
 
-export function RadioSettingRow({ id, label, description, options, value, actions, onChange }: RadioSettingRowProps) {
+export function RadioSettingRow({ id, label, description, options, value, actions, disabled, describedBy, note, onChange }: RadioSettingRowProps) {
   return (
-    <SettingRow id={id} label={label} description={description} labelAsText>
-      <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-describedby={`${id}-description`}>
+    <SettingRow id={id} label={label} description={description} note={note} labelAsText>
+      <fieldset
+        className="flex flex-wrap items-center gap-x-4 gap-y-2"
+        disabled={disabled}
+        aria-describedby={describedBy ?? `${id}-description`}
+      >
         <legend className="sr-only">{label}</legend>
         <RadioGroup
           aria-labelledby={`${id}-label`}
           orientation="horizontal"
           className="flex-row flex-wrap gap-x-4"
           value={value}
+          disabled={disabled}
           onValueChange={onChange}
         >
           {options.map((option) => (
@@ -31,6 +39,8 @@ export function RadioSettingRow({ id, label, description, options, value, action
               key={option.value}
               id={`${id}-${option.value}`}
               value={option.value}
+              disabled={disabled}
+              aria-describedby={describedBy}
               className="min-h-6 w-auto flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-sm hover:bg-transparent data-[state=checked]:border-none data-[state=checked]:bg-transparent"
             >
               <span aria-hidden className={RADIO_RING_CLASS}>

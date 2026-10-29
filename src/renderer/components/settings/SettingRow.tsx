@@ -21,14 +21,20 @@ interface SettingRowProps {
   labelAsText?: boolean
   /** Rendered inline after the label (for example a decorative colour swatch). */
   labelAddon?: ReactNode
+  /** `stacked` puts the control below the label at every width (for wide controls such as lists and tables). */
+  layout?: 'inline' | 'stacked'
   children?: ReactNode
 }
 
-export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, labelAddon, children }: SettingRowProps) {
+export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, labelAddon, layout = 'inline', children }: SettingRowProps) {
   const groupHasIconSlot = useSettingsGroupIconSlot()
+  const layoutClass =
+    layout === 'stacked'
+      ? 'flex-col items-stretch'
+      : 'flex-wrap items-center justify-between @max-md:flex-col @max-md:items-start'
   return (
     <div className="@container">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-4 @max-md:flex-col @max-md:items-start">
+      <div className={`flex gap-x-4 gap-y-2 py-4 ${layoutClass}`}>
         <div className="flex min-w-0 flex-1 items-start gap-2">
           {(Icon || groupHasIconSlot) && (
             <span aria-hidden className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground">

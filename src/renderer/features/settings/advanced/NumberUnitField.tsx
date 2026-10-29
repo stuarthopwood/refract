@@ -79,7 +79,7 @@ export function NumberUnitField({ id, value, unit, labelId, ariaLabel, described
         </span>
       </div>
       {showError && (
-        <span id={errorId} className="text-xs text-destructive">
+        <span id={errorId} role="alert" className="text-xs text-destructive">
           {invalid ? 'Enter a whole number, 0 or more, for example 1,000.' : 'Could not save this value. Try again.'}
         </span>
       )}
