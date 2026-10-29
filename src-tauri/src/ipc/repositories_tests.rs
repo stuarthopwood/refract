@@ -131,6 +131,7 @@ async fn repositories_rename_notifies_the_list_and_returns_the_updated_repositor
         name: "old-name".to_string(),
         default_branch: "main".to_string(),
         added_at: "2026-01-01T00:00:00.000Z".to_string(),
+        color: None,
     };
     state
         .registry
@@ -180,6 +181,7 @@ async fn repositories_rename_recomputes_the_real_remote_for_a_configured_origin(
         name: "old-name".to_string(),
         default_branch: "main".to_string(),
         added_at: "2026-01-01T00:00:00.000Z".to_string(),
+        color: None,
     };
     state
         .registry
@@ -197,7 +199,9 @@ async fn repositories_rename_recomputes_the_real_remote_for_a_configured_origin(
         .expect("rename must succeed");
     assert_eq!(
         result.get("remote"),
-        Some(&serde_json::json!({ "kind": "has", "host": "github.com" }))
+        Some(
+            &serde_json::json!({ "kind": "has", "host": "github.com", "owner": "owner", "repo": "repo" })
+        )
     );
 }
 
@@ -233,6 +237,7 @@ async fn repositories_remotes_shares_a_single_in_flight_sweep_across_concurrent_
             name: "repo".to_string(),
             default_branch: "main".to_string(),
             added_at: "2026-01-01T00:00:00.000Z".to_string(),
+            color: None,
         })
         .await
         .expect("add_repository");
@@ -249,6 +254,8 @@ async fn repositories_remotes_shares_a_single_in_flight_sweep_across_concurrent_
     );
     assert_eq!(
         first.get("repo-1"),
-        Some(&serde_json::json!({ "kind": "has", "host": "github.com" }))
+        Some(
+            &serde_json::json!({ "kind": "has", "host": "github.com", "owner": "owner", "repo": "repo" })
+        )
     );
 }

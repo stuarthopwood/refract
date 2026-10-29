@@ -194,6 +194,7 @@ pub fn repositories_add(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 .unwrap_or_else(|| info.path.clone()),
             default_branch: branch,
             added_at: now_iso8601(),
+            color: None,
         };
         state
             .registry

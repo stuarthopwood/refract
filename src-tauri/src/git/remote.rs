@@ -118,6 +118,7 @@ fn url_parts(trimmed: &str) -> Option<(String, &str)> {
 /// `https://x-access-token:ghp_xxx@github.com/owner/repo.git`) -- a privacy requirement, never a
 /// display nicety. Handles the scp-like SSH form (`user@host:owner/repo.git`, no scheme) in
 /// addition to any `://`-schemed URL (`https://`, `ssh://`, `git://`, ...).
+#[cfg(test)]
 fn host_from_remote_url(url: &str) -> Option<String> {
     remote_parts(url).map(|(host, _)| host)
 }

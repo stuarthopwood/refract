@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Repository, RepositoryRemote } from '../../shared/model'
+import type { ProjectColor, Repository, RepositoryRemote } from '../../shared/model'
 import { notify } from './notify'
 import { useSessionListStore } from './session-list-store'
 
@@ -50,6 +50,9 @@ interface RepositoriesState {
    * means the rename succeeded and `repositories` was already updated with the server's
    * resolved value. */
   rename(id: string, name: string): Promise<string | null>
+  /** Issue #887: sets or (with `null`) clears the Project colour; returns an error message or
+   * `null`, like `rename`. The saved `remote` is kept, since the IPC result carries none. */
+  setColor(id: string, color: ProjectColor | null): Promise<string | null>
 }
 
 // Repositories the developer has added to Refract (contracts/ipc.md "Repositories").
@@ -98,6 +101,16 @@ export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
     const result = await window.refract.repositories.rename(id, name)
     if (!result.ok) return result.error.message
     set({ repositories: get().repositories.map((repository) => (repository.id === id ? result.value : repository)) })
+    return null
+  },
+  setColor: async (id, color) => {
+    const result = await window.refract.repositories.setColor(id, color)
+    if (!result.ok) return result.error.message
+    set({
+      repositories: get().repositories.map((repository) =>
+        repository.id === id ? { ...result.value, remote: repository.remote } : repository
+      )
+    })
     return null
   }
 }))

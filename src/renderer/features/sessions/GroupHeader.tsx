@@ -51,7 +51,8 @@ export function GroupHeaderTrigger({
   onDoubleClick,
   onKeyDown,
   marker,
-  containsOpenSession
+  containsOpenSession,
+  color
 }: {
   label: string
   /** #567 decision 5: the Archived header's own count, shown as a separate `tabular-nums` span
@@ -71,6 +72,10 @@ export function GroupHeaderTrigger({
   marker?: GroupWaitingState | null
   /** #735 decision 22: this (closed) Group contains the currently visible Session. */
   containsOpenSession?: boolean
+  /** Issue #887: the Project colour as a CSS colour (a `var(--project-N)` token or a validated,
+   * contrast-adjusted hex). Tints the whole trigger; the chevron and icon follow through
+   * `currentColor`. Dropped under forced-colors by `.project-colored` in globals.css. */
+  color?: string
 }) {
   const pathId = useId()
   // Gate round 2 fix (Low, a11y-auditor): dropping the native `title` below (so it never shows
@@ -106,6 +111,8 @@ export function GroupHeaderTrigger({
       // Issue #1122: `data-choice-item` joins the shared square-choice selector (globals.css),
       // which overrides `rounded-md` below; the focus-visible outline is unaffected.
       data-choice-item
+      data-project-colored={color ? '' : undefined}
+      style={color ? { color } : undefined}
       className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {/* #735 decision 22: the visible Session's group, while closed -- the existing

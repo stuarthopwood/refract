@@ -23,6 +23,9 @@ import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
 import { remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
+import { ProjectColorPopover } from './ProjectColorPopover'
+import { useSidebarRgb } from './useSidebarRgb'
+import { projectColorCss } from '@/lib/projectColor'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
@@ -86,6 +89,11 @@ export function RepositoryGroup({
   const renameRepository = useRepositoriesStore((state) => state.rename)
   const [removeOpen, setRemoveOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
+  // Issue #887: the Project colour popover, opened from the actions menu's Colour item.
+  const setRepositoryColor = useRepositoriesStore((state) => state.setColor)
+  const [colorOpen, setColorOpen] = useState(false)
+  const sidebarRgb = useSidebarRgb()
+  const projectColor = projectColorCss(repository.color, sidebarRgb)?.css
   // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
   // row's own rename (`SessionRow.tsx`) -- the model the issue names to copy.
   const [renaming, setRenaming] = useState(false)
@@ -240,6 +248,7 @@ export function RepositoryGroup({
               onKeyDown={handleTriggerKeyDown}
               marker={marker}
               containsOpenSession={containsOpenSession}
+              color={projectColor}
             />
           )}
           {/* These three action buttons' total width feeds BOTH `GROUP_HEADER_ACTIONS_OFFSET_PX`
@@ -309,6 +318,13 @@ export function RepositoryGroup({
             />
             <TooltipContent>New session from a branch…</TooltipContent>
           </Tooltip>
+          <ProjectColorPopover
+            repository={repository}
+            open={colorOpen}
+            onOpenChange={setColorOpen}
+            onApply={(color) => setRepositoryColor(repository.id, color)}
+            returnFocusRef={menuTriggerRef}
+          >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -336,12 +352,14 @@ export function RepositoryGroup({
               >
                 Rename
               </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setColorOpen(true)}>Colour…</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
                 Remove repository…
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </ProjectColorPopover>
         </div>
         <CollapsibleContent>
           {active.length === 0 ? (

@@ -33,6 +33,8 @@ import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 
 export const PAIRS = [
+  // #887: the ten Project colour presets on the Session list background.
+  ...Array.from({ length: 10 }, (_, i) => ({ fg: `project-${i + 1}`, bg: 'sidebar', min: 4.5 })),
   { fg: 'foreground', bg: 'background', min: 4.5 },
   { fg: 'card-foreground', bg: 'card', min: 4.5 },
   { fg: 'popover-foreground', bg: 'popover', min: 4.5 },
