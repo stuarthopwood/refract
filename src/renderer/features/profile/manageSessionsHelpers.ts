@@ -52,10 +52,10 @@ export function filterAndSortSessions(
   })
 }
 
-/** The header's own count line: "N sessions across M repositories", singular for N=1/M=1. */
+/** The header's own count line: "N sessions across M projects", singular for N=1/M=1. */
 export function sessionCountLabel(sessionCount: number, repositoryCount: number): string {
   const sessionWord = sessionCount === 1 ? 'session' : 'sessions'
-  const repoWord = repositoryCount === 1 ? 'repository' : 'repositories'
+  const repoWord = repositoryCount === 1 ? 'project' : 'projects'
   return `${sessionCount} ${sessionWord} across ${repositoryCount} ${repoWord}`
 }
 

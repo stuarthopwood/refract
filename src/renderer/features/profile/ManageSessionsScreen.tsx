@@ -6,11 +6,10 @@
 // the list is plain DOM (no virtualisation: 5 to 60 sessions is lightweight, and virtualising
 // would break both in-page find and the row-unmount focus-fallback chain below).
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { ArrowLeftIcon, FolderKanbanIcon, SearchXIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { FolderKanbanIcon, SearchXIcon } from 'lucide-react'
+import { ScreenHeader } from '@/components/ScreenHeader'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { focusProfileItemName } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
@@ -156,26 +155,13 @@ export function ManageSessionsScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="no-drag-region size-6"
-              aria-label="Back to chat"
-              onClick={handleBackToChat}
-            >
-              <ArrowLeftIcon aria-hidden className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Back to chat</TooltipContent>
-        </Tooltip>
-        <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
-          Manage sessions
-        </h1>
-        <Badge variant="secondary">{sessionCountLabel(sessions.length, distinctRepositoryCount(sessions))}</Badge>
-      </div>
+      <ScreenHeader
+        title="Manage sessions"
+        headingRef={headingRef}
+        backLabel="Back to chat"
+        onBack={handleBackToChat}
+        count={sessionCountLabel(sessions.length, distinctRepositoryCount(sessions))}
+      />
 
       <ManageSessionsToolbar
         filters={filters}
@@ -194,7 +180,7 @@ export function ManageSessionsScreen() {
                 <FolderKanbanIcon aria-hidden />
               </EmptyMedia>
               <EmptyTitle>No sessions yet</EmptyTitle>
-              <EmptyDescription>Create a session from a repository in the left nav.</EmptyDescription>
+              <EmptyDescription>Create a session from a project in the left nav.</EmptyDescription>
               <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
             </EmptyHeader>
             <EmptyContent>
@@ -210,7 +196,7 @@ export function ManageSessionsScreen() {
                 <SearchXIcon aria-hidden />
               </EmptyMedia>
               <EmptyTitle>No matching sessions</EmptyTitle>
-              <EmptyDescription>No session's name, branch, repository, or archive state matches the current filters.</EmptyDescription>
+              <EmptyDescription>No session's name, branch, project, or archive state matches the current filters.</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" onClick={handleClearFilters}>
@@ -222,7 +208,7 @@ export function ManageSessionsScreen() {
           <ul
             ref={listRef}
             role="list"
-            aria-label="All sessions across repositories"
+            aria-label="All sessions across projects"
             className="flex flex-col gap-1"
             onFocusCapture={(event) => {
               lastFocusedRef.current = event.target as HTMLElement
@@ -233,7 +219,7 @@ export function ManageSessionsScreen() {
                 key={session.id}
                 session={session}
                 repository={repositoryById.get(session.repositoryId)}
-                repositoryName={repositoryNameById.get(session.repositoryId) ?? 'Unknown repository'}
+                repositoryName={repositoryNameById.get(session.repositoryId) ?? 'Unknown project'}
                 searchInputRef={searchInputRef}
                 onAnnounce={announce}
               />

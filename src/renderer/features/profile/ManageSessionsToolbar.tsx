@@ -1,11 +1,10 @@
-// The Manage sessions screen's toolbar (spec 008 FR-025, T026): a search Input (name/branch),
-// a repository Select, an archive-state ToggleGroup, and a sort Select -- the minimum genuinely
-// useful set, all built from existing primitives.
-import type { KeyboardEvent, RefObject } from 'react'
-import { SearchIcon } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+// The Manage sessions screen's toolbar (spec 008 FR-025, T026; rebuilt on the shared ListToolbar
+// for #934): Filter tabs (All / Active / Archived), a Project select, a Sort select, the shared
+// SearchField, and a plain muted "Showing X of Y" line while filtering.
+import type { RefObject } from 'react'
+import { ListToolbar } from '@/components/ListToolbar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Repository } from '../../../shared/model'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import type { ArchiveFilter, SessionFilters, SortKey } from '@/state/view-store'
@@ -28,7 +27,7 @@ export interface ManageSessionsToolbarProps {
 const SORT_LABELS: Record<SortKey, string> = {
   recent: 'Recently active',
   name: 'Name, A to Z',
-  repo: 'Repository, A to Z',
+  repo: 'Project, A to Z',
   status: 'Status'
 }
 
@@ -40,35 +39,36 @@ export function ManageSessionsToolbar({
   shownCount,
   totalCount
 }: ManageSessionsToolbarProps) {
-  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === 'Escape' && filters.search) {
-      event.preventDefault()
-      onFiltersChange({ ...filters, search: '' })
-    }
-  }
-
   return (
     // drag-regions-allow: renders inside ManageSessionsScreen, below its own drag-region header (SettingsScreen.tsx's pattern), so it never touches App.tsx's strip despite the same shape.
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-4">
-      <div className="relative w-64">
-        <SearchIcon aria-hidden className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          ref={searchInputRef}
-          value={filters.search}
-          onChange={(event) => onFiltersChange({ ...filters, search: event.target.value })}
-          onKeyDown={handleSearchKeyDown}
-          placeholder="Filter sessions…"
-          aria-label="Filter sessions by name or branch"
-          className="pl-6"
-        />
-      </div>
+    <ListToolbar
+      search={{
+        value: filters.search,
+        onValueChange: (search) => onFiltersChange({ ...filters, search }),
+        label: 'Filter sessions by name or branch',
+        placeholder: 'Filter sessions…',
+        inputRef: searchInputRef
+      }}
+      countLine={shownCount !== totalCount ? showingCountLabel(shownCount, totalCount) : undefined}
+    >
+      <Tabs
+        value={filters.archiveFilter}
+        onValueChange={(value) => onFiltersChange({ ...filters, archiveFilter: value as ArchiveFilter })}
+        className="gap-0"
+      >
+        <TabsList aria-label="Filter by archive status">
+          <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="active">Active</TabsTrigger>
+          <TabsTrigger value="archived">Archived</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       <Select value={filters.repositoryId} onValueChange={(value) => onFiltersChange({ ...filters, repositoryId: value })}>
-        <SelectTrigger aria-label="Filter by repository" className="w-48">
+        <SelectTrigger aria-label="Filter by project" className="w-48">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All repositories</SelectItem>
+          <SelectItem value="all">All projects</SelectItem>
           {repositories.map((repository) => (
             <SelectItem key={repository.id} value={repository.id}>
               {repository.name}
@@ -76,29 +76,6 @@ export function ManageSessionsToolbar({
           ))}
         </SelectContent>
       </Select>
-
-      <ToggleGroup
-        type="single"
-        value={filters.archiveFilter}
-        onValueChange={(value) => {
-          // Radix emits '' when the already-selected item is clicked again (deselecting it);
-          // this group always keeps exactly one of the three selected.
-          if (value) onFiltersChange({ ...filters, archiveFilter: value as ArchiveFilter })
-        }}
-        variant="outline"
-        spacing={0}
-        aria-label="Filter by archive status"
-      >
-        <ToggleGroupItem value="all" className={SELECTED_SEGMENT_CLASS}>
-          All
-        </ToggleGroupItem>
-        <ToggleGroupItem value="active" className={SELECTED_SEGMENT_CLASS}>
-          Active
-        </ToggleGroupItem>
-        <ToggleGroupItem value="archived" className={SELECTED_SEGMENT_CLASS}>
-          Archived
-        </ToggleGroupItem>
-      </ToggleGroup>
 
       <Select value={filters.sort} onValueChange={(value) => onFiltersChange({ ...filters, sort: value as SortKey })}>
         <SelectTrigger aria-label="Sort sessions" className="w-44">
@@ -112,10 +89,6 @@ export function ManageSessionsToolbar({
           ))}
         </SelectContent>
       </Select>
-
-      {shownCount !== totalCount && (
-        <span className="shrink-0 text-xs text-muted-foreground">{showingCountLabel(shownCount, totalCount)}</span>
-      )}
-    </div>
+    </ListToolbar>
   )
 }
