@@ -159,7 +159,7 @@ function MapStrip({ sessionId, viewport }: { sessionId: string; viewport: HTMLEl
       }}
       onPointerLeave={hideTooltip}
     >
-      <span ref={probeRef} hidden />
+      <span ref={probeRef} hidden className="forced-color-adjust-none" />
       <canvas ref={canvasRef} className="block size-full" />
       <Tooltip open={tooltip !== null}>
         <TooltipTrigger asChild>

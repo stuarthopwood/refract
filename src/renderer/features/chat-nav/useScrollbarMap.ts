@@ -171,10 +171,17 @@ export function useScrollbarMap(sessionId: string, viewport: HTMLElement | null,
       requestDraw()
     })
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
+    const forcedColors = typeof matchMedia === 'function' ? matchMedia('(forced-colors: active)') : null
+    const onForcedColorsChange = () => {
+      colors = null
+      requestDraw()
+    }
+    forcedColors?.addEventListener('change', onForcedColorsChange)
     scheduleMeasure()
     return () => {
       observer.disconnect()
       themeObserver.disconnect()
+      forcedColors?.removeEventListener('change', onForcedColorsChange)
       viewport.removeEventListener('scroll', requestDraw)
       window.clearTimeout(throttleTimer)
       cancelAnimationFrame(measureFrame)
