@@ -106,7 +106,7 @@ export function GroupHeaderTrigger({
       // Issue #1122: `data-choice-item` joins the shared square-choice selector (globals.css),
       // which overrides `rounded-md` below; the focus-visible outline is unaffected.
       data-choice-item
-      className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-xs text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {/* #735 decision 22: the visible Session's group, while closed -- the existing
           selected cue (`SessionRow.tsx`'s own left-edge bar), no fill, reserved for hover.
