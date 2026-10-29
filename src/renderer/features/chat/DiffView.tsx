@@ -103,7 +103,7 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
          * to resolve against and deliberately keeps its own header plain text, not sharing this
          * markup. */}
         <span className="min-w-0 flex">
-          <FileLinkButton path={path} muted className="block max-w-full truncate focus-visible:outline-offset-[-2px]" />
+          <FileLinkButton path={path} muted wrapperClassName="flex max-w-full min-w-0" className="block max-w-full truncate focus-visible:outline-offset-[-2px]" />
         </span>
         <span className="flex shrink-0 items-center gap-2">
           {/* #630: added/removed line counts from the parsed hunks, never colour alone (the

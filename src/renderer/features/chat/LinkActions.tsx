@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { cn } from '@/lib/utils'
 import { CopyButton } from '@/components/ui/copy-button'
 import { copyLinkText } from './linkClipboard'
 
@@ -16,6 +17,8 @@ interface LinkActionsProps {
   copiedMessage: string
   /** Items after the Copy item. */
   actions: LinkAction[]
+  /** Layout-only, for a caller whose link sits in a flex row (e.g. `DiffView`'s truncating header). */
+  wrapperClassName?: string
   children: React.ReactNode
 }
 
@@ -24,7 +27,7 @@ interface LinkActionsProps {
 // Shift+F10 / Menu key context menu. Callers never render it for an inert, plain-text, nested or
 // footnote link. `ContextMenuTrigger` is a plain span, so Radix would return focus to it (not
 // focusable) when the menu closes; the focused link is remembered on open and refocused instead.
-export function LinkActions({ copyText, copyLabel, copiedMessage, actions, children }: LinkActionsProps) {
+export function LinkActions({ copyText, copyLabel, copiedMessage, actions, wrapperClassName, children }: LinkActionsProps) {
   const wrapperRef = React.useRef<HTMLSpanElement>(null)
   const openerRef = React.useRef<HTMLElement | null>(null)
 
@@ -33,7 +36,7 @@ export function LinkActions({ copyText, copyLabel, copiedMessage, actions, child
       <ContextMenuTrigger asChild>
         <span
           ref={wrapperRef}
-          className="group/link select-text"
+          className={cn('group/link select-text', wrapperClassName)}
           onContextMenu={() => {
             const active = document.activeElement
             openerRef.current = active instanceof HTMLElement && wrapperRef.current?.contains(active) ? active : null
@@ -45,7 +48,7 @@ export function LinkActions({ copyText, copyLabel, copiedMessage, actions, child
             label={copyLabel}
             announcement={copiedMessage}
             tabIndex={-1}
-            className="ml-0.5 size-5 align-middle opacity-0 transition-opacity group-focus-within/link:opacity-100 group-hover/link:opacity-100 [&_svg]:size-3"
+            className="pointer-events-none ml-0.5 size-5 align-middle opacity-0 transition-opacity group-focus-within/link:pointer-events-auto group-focus-within/link:opacity-100 group-hover/link:pointer-events-auto group-hover/link:opacity-100 [&_svg]:size-3"
           />
         </span>
       </ContextMenuTrigger>

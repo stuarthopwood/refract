@@ -593,14 +593,15 @@ interface FileLinkButtonProps {
    * of the three branches below actually renders, so a caller's own sizing rule always applies
    * regardless of state. */
   className?: string
-}
+  /** Layout-only: forwarded to the link wrapper (`LinkActions`) when the link renders as a control, e.g. `DiffView`'s flex header. */
+  wrapperClassName?: string
+} control app-wide, exported for `ToolRow.tsx` (write/edit path
 
-// Issue #610: the one file-link control app-wide, exported for `ToolRow.tsx` (write/edit path
-// lines) and `DiffView.tsx` (header path) to reuse, the same pattern `CodeBlock` below already
+// Issue #610: the one file-link control app-wide, exported for `ToolRow.tsx` (write/edit path control app-wide, exported for `ToolRow.tsx` (write/edit path// lines) and `DiffView.tsx` (header path) to reuse, the same pattern `CodeBlock` below already
 // establishes for tool-call Arguments/Output. "Show in File Explorer", never "Open" -- running a
 // file's own OS default verb (`shell.openPath`) would execute a `.cmd`/`.ps1`/`.lnk` an agent or
 // tool wrote; `sessions.revealFile` only ever calls `shell.showItemInFolder`.
-export function FileLinkButton({ path, display, muted = false, streaming = false, className }: FileLinkButtonProps) {
+export function FileLinkButton({ path, display, muted = false, streaming = false, className, wrapperClassName }: FileLinkButtonProps) {
   const sessionId = React.useContext(LinkContext)
   const worktreePath = useSessionsStore((state) =>
     sessionId ? state.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
@@ -643,6 +644,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
       copyText={path}
       copyLabel="Copy path"
       copiedMessage="Path copied"
+      wrapperClassName={wrapperClassName}
       actions={[{ label: 'Show in File Explorer', onSelect: reveal }]}
     >
     <Tooltip>
