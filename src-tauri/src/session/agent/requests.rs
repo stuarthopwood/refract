@@ -146,6 +146,7 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
+            let options = string_array(frame.get("options"));
             if title.starts_with(APPROVAL_PREFIX) {
                 let (tool, details) = parse_approval_title(&title);
                 let target = pick_approval_target(&tool, &details);
@@ -154,9 +155,9 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
                     tool,
                     target,
                     details,
+                    options,
                 });
             }
-            let options = string_array(frame.get("options"));
             let option_details = frame
                 .get("optionDetails")
                 .and_then(Value::as_array)
@@ -375,6 +376,52 @@ fn validate_ask_answers(questions: &[AskQuestion], answers: &[Value]) -> Result<
     Ok(())
 }
 
+/// #1140/#496: OMP (18.12.5 to 18.13.3, read from the compiled binary) builds an approval
+/// `select`'s options as `[...grant labels, ...always-grant labels, plain approve, session item?,
+/// deny]` and maps any label it does not recognise to deny. The plain approve option ("Approve",
+/// or "Approve Once" when grants exist) is found by position, never by guessing its text.
+fn plain_approve_label(options: &[String]) -> Option<&str> {
+    let n = options.len();
+    if n < 2 {
+        return None;
+    }
+    let has_session = n >= 3 && options[n - 2].ends_with(" for this session");
+    let index = if has_session { n - 3 } else { n - 2 };
+    Some(options[index].as_str())
+}
+
+/// The exact label to answer an approval with: the renderer's chosen `option` (which must be one
+/// the request offered and agree with `approve`), else the plain approve or the deny option.
+fn approval_answer_label(
+    options: &[String],
+    approve: bool,
+    chosen: Option<&str>,
+) -> Result<String, String> {
+    if options.is_empty() {
+        // A frame that carried no options at all: OMP's own fixed pair is all that can match.
+        return match chosen {
+            None => Ok(if approve { "Approve" } else { "Deny" }.to_string()),
+            Some(label) => Err(format!("option not offered: {label}")),
+        };
+    }
+    let deny = options[options.len() - 1].as_str();
+    if let Some(label) = chosen {
+        if !options.iter().any(|o| o == label) {
+            return Err(format!("option not offered: {label}"));
+        }
+        if (label == deny) == approve {
+            return Err(format!("option {label} does not match approve={approve}"));
+        }
+        return Ok(label.to_string());
+    }
+    if !approve {
+        return Ok(deny.to_string());
+    }
+    plain_approve_label(options)
+        .map(str::to_string)
+        .ok_or_else(|| "no approve option offered".to_string())
+}
+
 /// Port of `dialogs.ts`'s own `buildDialogResponse`.
 fn build_dialog_response(
     request_id: &str,
@@ -384,16 +431,17 @@ fn build_dialog_response(
     if answer.get("cancelled") == Some(&Value::Bool(true)) {
         return Ok(json!({ "type": "extension_ui_response", "id": request_id, "cancelled": true }));
     }
-    if matches!(request, PendingRequest::Approval { .. }) {
+    if let PendingRequest::Approval { options, .. } = request {
         let approve = answer
             .get("approve")
             .and_then(Value::as_bool)
             .ok_or_else(|| {
                 format!("expected an approve answer for approval request {request_id}")
             })?;
-        return Ok(
-            json!({ "type": "extension_ui_response", "id": request_id, "value": if approve { "Approve" } else { "Deny" } }),
-        );
+        let chosen = answer.get("option").and_then(Value::as_str);
+        let label = approval_answer_label(options, approve, chosen)
+            .map_err(|err| format!("{err} (approval request {request_id})"))?;
+        return Ok(json!({ "type": "extension_ui_response", "id": request_id, "value": label }));
     }
     if let PendingRequest::Ask { questions, .. } = request {
         let answers = answer
@@ -432,7 +480,8 @@ pub fn is_chat_answer(value: &Value) -> bool {
     let Some(obj) = value.as_object() else {
         return false;
     };
-    matches!(obj.get("approve"), Some(Value::Bool(_)))
+    (matches!(obj.get("approve"), Some(Value::Bool(_)))
+        && obj.get("option").map_or(true, Value::is_string))
         || matches!(obj.get("value"), Some(Value::String(_)))
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
         || obj.get("cancelled") == Some(&Value::Bool(true))

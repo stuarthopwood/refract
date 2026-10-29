@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { ChevronRightIcon } from "lucide-react"
+import { CheckIcon, ChevronRightIcon } from "lucide-react"
 import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
 import {
   MENU_ITEM_CLASS,
@@ -150,6 +150,29 @@ function DropdownMenuRadioItem({
   )
 }
 
+/** #496: a toggle row (for example the approval card's "Remember across sessions"), exposed as
+ * `role="menuitemcheckbox"` with `aria-checked` by Radix; the leading check mark is decorative. */
+function DropdownMenuCheckboxItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+  return (
+    <DropdownMenuPrimitive.CheckboxItem
+      data-slot="dropdown-menu-checkbox-item"
+      className={cn(MENU_ITEM_CLASS, className)}
+      {...props}
+    >
+      <span aria-hidden className="flex size-4 items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <CheckIcon className="size-4" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.CheckboxItem>
+  )
+}
+
 function DropdownMenuSub({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>) {
@@ -226,6 +249,7 @@ function DropdownMenuSeparator({
 
 export {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,

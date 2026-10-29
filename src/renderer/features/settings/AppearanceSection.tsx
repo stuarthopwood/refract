@@ -290,7 +290,7 @@ export function AppearanceSection() {
           <SettingSwitchRow
             id="animated-status-text"
             label="Animated status text"
-            description="A moving highlight on the status line above the message box while the agent is working. Always still when you have reduced motion on."
+            description="A moving highlight on the banner above the composer while the agent is working. Always still when you have reduced motion on."
             checked={animatedStatusText}
             onCheckedChange={(checked) => void setAnimatedStatusText(checked)}
           />

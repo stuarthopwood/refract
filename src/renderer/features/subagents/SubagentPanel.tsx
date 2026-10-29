@@ -60,6 +60,8 @@ interface SubagentTreeNode {
   nameOrTask: string
   status: SubagentSummary['status']
   durationMs?: number
+  /** Issue #712: a detached background job, shown as a muted "Background" word on its row. */
+  background?: boolean
   children: SubagentTreeNode[]
   /** Issue #941 part 2: true only for a Stage HEADER row (2+ members) -- never selectable (no
    * single subagent id to show a stream for), its own `id` stays `''`. */
@@ -98,6 +100,7 @@ export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNod
         nameOrTask: item.nameOrTask,
         status: item.status,
         durationMs: item.durationMs,
+        background: item.background,
         children: [],
         isStage: false
       }
@@ -121,6 +124,7 @@ export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNod
         nameOrTask: item.nameOrTask,
         status: item.status,
         durationMs: item.durationMs,
+        background: item.background,
         children: [],
         isStage: false
       })),
@@ -478,6 +482,9 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                       <span aria-hidden className="min-w-0 shrink truncate text-xs text-muted-foreground" title={stageRollupDisplayText(row.node)}>
                         {stageRollupDisplayText(row.node)}
                       </span>
+                    )}
+                    {!row.node.isStage && row.node.background && (
+                      <span className="shrink-0 text-xs text-muted-foreground">Background</span>
                     )}
                     {!row.node.isStage && row.node.status !== 'running' && row.node.durationMs != null && (
                       <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatElapsed(row.node.durationMs)}</span>

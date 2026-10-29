@@ -21,7 +21,7 @@ pub fn settings_set_show_finished_turn_times(state: AppState, args: Vec<Value>) 
             .await
             .set_show_finished_turn_times(enabled)
             .await
-            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+            .map_err(|err| super::IpcError::new("settings-write-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
         state.session_manager.emit_settings_changed(&value_json);
         Ok(value_json)

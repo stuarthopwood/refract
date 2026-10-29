@@ -4,6 +4,7 @@
 // `ipc::read_settings`/`ipc::read_bootstrap_theme` outright (`ipc::mod`'s own real,
 // store-backed `settings_get`/theme bootstrap now go through `SettingsStore` directly).
 
+pub mod approval_mode;
 pub mod atomic_json;
 pub mod chat_width;
 pub mod holiday_touches;

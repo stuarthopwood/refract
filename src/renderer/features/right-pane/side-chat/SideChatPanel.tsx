@@ -7,10 +7,19 @@
 // Retry, and the question rendered right-aligned (spec.md User Story 1 Scenario 2).
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { MessageCircleIcon, TriangleAlertIcon } from 'lucide-react'
+import { EraserIcon, MessageCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  ComposerActions,
+  ComposerBox,
+  ComposerField,
+  ComposerFooter,
+  ComposerSendButton,
+  ComposerStopButton,
+  ComposerTextarea
+} from '@/components/ComposerBox'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Textarea } from '@/components/ui/textarea'
+import { Kbd } from '@/components/ui/kbd'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
@@ -289,6 +298,8 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     announce('Thread cleared.')
   }
 
+  const clearBlocked = running || records.length === 0
+
   if (!sessionId) {
     return (
       <Empty className="h-full">
@@ -391,16 +402,63 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
           )}
         </div>
         <div className="no-drag-region shrink-0 border-t border-border p-2">
-          <Textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a side question…"
-            aria-label="Side chat question"
-            aria-describedby={loaded ? undefined : unavailableHintId}
-            className="max-h-48 min-h-16 resize-none overflow-y-auto"
-          />
+          <ComposerBox>
+            <ComposerField>
+              <ComposerTextarea
+                ref={textareaRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask a side question…"
+                aria-label="Side chat question"
+                aria-describedby={loaded ? undefined : unavailableHintId}
+              />
+              <ComposerActions>
+                {running && (
+                  // Spec 014: Cancel issues `btw_cancel` for the running request. It takes the Stop
+                  // slot left of Send, so it sits in the field, away from Clear thread.
+                  <ComposerStopButton label="Cancel side question" tooltip="Cancel" onClick={handleCancelClick} />
+                )}
+                <ComposerSendButton
+                  blocked={!draft.trim() || running || !loaded}
+                  onSend={() => void send()}
+                  tooltip={<Kbd>Enter</Kbd>}
+                  keyShortcuts="Enter"
+                />
+              </ComposerActions>
+            </ComposerField>
+            <ComposerFooter>
+              {/* T021 (FR-003): starts a genuinely new topic for the next question. Blocked while
+                  `running` (clearing out from under an in-flight answer would let it reappear once
+                  it settles) or with nothing to clear. `aria-disabled`, not native `disabled`, so
+                  the button keeps focus and its tooltip can name the reason. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Clear thread"
+                    aria-disabled={clearBlocked}
+                    className="aria-disabled:cursor-not-allowed aria-disabled:opacity-60 focus-visible:aria-disabled:opacity-100"
+                    onClick={() => {
+                      if (clearBlocked) return
+                      handleClearThread()
+                    }}
+                  >
+                    <EraserIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {running
+                    ? 'Wait for the answer to finish'
+                    : records.length === 0
+                      ? 'Nothing to clear'
+                      : 'Hides this thread for now; the next question starts a fresh topic. History returns after a restart or switching conversations.'}
+                </TooltipContent>
+              </Tooltip>
+            </ComposerFooter>
+          </ComposerBox>
           {!loaded && (
             // Gate-fix (round 4, A11y4 Medium): Send disables with no visible or announced
             // reason while `!loaded` (the Session's agent is not running yet, or a permanent
@@ -424,51 +482,6 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                   : SIDE_CHAT_LOADING_HINT}
             </p>
           )}
-          <div className="mt-2 flex justify-end gap-2">
-            {/* T021 (FR-003): starts a genuinely new topic for the next question. Disabled while
-                `running` (clearing out from under an in-flight answer would let it reappear once
-                it settles -- `applyPatch` re-appends any record id it has never seen while
-                `loaded` stays `true`) or with nothing displayed to clear. Gate-fix (round 2,
-                Code1 HIGH): `mr-auto` anchors this button on the LEFT regardless of whether
-                Cancel is rendered -- without it, Cancel unmounting (cancelled, or the answer
-                settling) slides Clear thread right into Cancel's own screen position, so a
-                double-click on Cancel (or a click landing just as the answer settles) could hit
-                Clear thread by mistake and empty the whole thread with no undo. Cancel
-                unmounting now leaves an empty gap instead -- nothing slides under the pointer. */}
-            {/* A11y (A11y1 Low). Corrected round 2 (Main): a disabled native `<button>` has
-                `pointer-events: none` and cannot take focus, so this tooltip can never open
-                while Clear thread is disabled -- it only ever appears while the button is
-                ENABLED, and explains that clearing is a temporary hide, not a deletion. The
-                reason for being disabled while `running` is not shown by this tooltip; Cancel
-                sits right next to it as the obvious action in that state. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mr-auto"
-                  disabled={running || records.length === 0}
-                  onClick={handleClearThread}
-                >
-                  Clear thread
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Hides this thread for now; the next question starts a fresh topic. History
-                returns after a restart or switching conversations.
-              </TooltipContent>
-            </Tooltip>
-            {running && (
-              // Spec 014: Cancel issues `btw_cancel` for the running request.
-              <Button type="button" variant="outline" size="sm" onClick={handleCancelClick}>
-                Cancel
-              </Button>
-            )}
-            <Button type="button" size="sm" onClick={() => void send()} disabled={!draft.trim() || running || !loaded}>
-              Send
-            </Button>
-          </div>
         </div>
       </div>
     </LinkContext.Provider>

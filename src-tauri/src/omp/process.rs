@@ -71,6 +71,7 @@ const MAX_REASSEMBLED_BYTES: u64 = 64 * 1024 * 1024;
 #[serde(rename_all = "kebab-case")]
 pub enum ApprovalMode {
     Ask,
+    AskAndRemember,
     EditFreely,
     Auto,
 }
@@ -81,6 +82,7 @@ impl ApprovalMode {
     pub(super) fn omp_flag(self) -> &'static str {
         match self {
             ApprovalMode::Ask => "always-ask",
+            ApprovalMode::AskAndRemember => "always-ask-cached",
             ApprovalMode::EditFreely => "write",
             ApprovalMode::Auto => "yolo",
         }

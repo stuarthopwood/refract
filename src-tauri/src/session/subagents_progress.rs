@@ -47,7 +47,10 @@ fn map_progress_status(status: &str) -> SummaryStatus {
     if lower.contains("fail") || lower.contains("error") {
         return SummaryStatus::Failed;
     }
-    if lower == "pending" || lower == "running" || lower.is_empty() {
+    if matches!(
+        lower.as_str(),
+        "pending" | "running" | "started" | "queued" | "spawned" | ""
+    ) {
         return SummaryStatus::Running;
     }
     // "completed", "finished", "done", or anything else OMP might send that isn't one of the
@@ -190,6 +193,104 @@ pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
     super::super::readout::schedule_readout_update(agent).await;
 }
 
+/// Issue #712: asks OMP (default level `off`) to push `subagent_lifecycle`/`subagent_progress`
+/// frames for every subagent, including detached background jobs. Best effort: an older OMP
+/// without the command just answers `success:false`, leaving `apply_jobs`/`on_exit` as the
+/// settle paths.
+pub(super) async fn subscribe_to_subagent_frames(agent: &SessionAgent) {
+    let _ = agent
+        .request_rpc(
+            json!({ "type": "set_subagent_subscription", "level": "progress" }),
+            10_000,
+        )
+        .await;
+}
+
+/// Issue #712: applies one standalone `subagent_lifecycle`/`subagent_progress` payload, matched to
+/// a summary by `(parentToolCallId, index)`. Only a `Running` entry moves, so a late frame never
+/// rewrites an already-settled status. The lifecycle frame carries no duration, so a settled
+/// entry keeps the larger of the last progress `durationMs` and the time Refract observed.
+pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str, payload: &Value) {
+    let Some(parent) = payload.get("parentToolCallId").and_then(Value::as_str) else {
+        return;
+    };
+    let Some(index) = payload.get("index").and_then(Value::as_u64) else {
+        return;
+    };
+    let detached = payload.get("detached").and_then(Value::as_bool) == Some(true);
+    let is_lifecycle = frame_type == "subagent_lifecycle";
+    let (summaries_value, visible_ops) = agent
+        .with_subagents_state(|s| {
+            let Some(target) = s
+                .summaries
+                .iter()
+                .position(|e| e.tool_call_id == parent && u64::from(e.spec_index) == index)
+            else {
+                return (None, Vec::new());
+            };
+            let mut changed = false;
+            let entry = &mut s.summaries[target];
+            if detached && !entry.background {
+                entry.background = true;
+                changed = true;
+            }
+            if entry.status != SummaryStatus::Running {
+                return (
+                    changed.then(|| summaries_to_value(&s.summaries)),
+                    Vec::new(),
+                );
+            }
+            if is_lifecycle {
+                let status = payload.get("status").and_then(Value::as_str).unwrap_or("");
+                let new_status = map_progress_status(status);
+                if new_status != SummaryStatus::Running {
+                    let observed = super::now_ms() - entry.started_at;
+                    entry.status = new_status;
+                    entry.duration_ms = Some(entry.duration_ms.unwrap_or(0).max(observed));
+                    changed = true;
+                }
+                return (
+                    changed.then(|| summaries_to_value(&s.summaries)),
+                    Vec::new(),
+                );
+            }
+            let Some(progress) = payload.get("progress") else {
+                return (
+                    changed.then(|| summaries_to_value(&s.summaries)),
+                    Vec::new(),
+                );
+            };
+            if let Some(d) = progress.get("durationMs").and_then(Value::as_i64) {
+                if d > 0 {
+                    entry.duration_ms = Some(d);
+                }
+            }
+            let stream_id = entry.id.clone();
+            let is_visible = s.visible_id.as_deref() == Some(stream_id.as_str());
+            let new_rows = apply_subagent_progress_in_place(s, &stream_id, progress);
+            let ops = if is_visible {
+                new_rows
+                    .into_iter()
+                    .map(|item| json!({ "op": "upsert", "item": item }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (changed.then(|| summaries_to_value(&s.summaries)), ops)
+        })
+        .await;
+    let settled = summaries_value.is_some();
+    if let Some(value) = summaries_value {
+        emit_subagents_update(agent, value).await;
+    }
+    if !visible_ops.is_empty() {
+        queue_patch_ops(agent, visible_ops).await;
+    }
+    if settled {
+        super::super::readout::schedule_readout_update(agent).await;
+    }
+}
+
 fn tool_item_id(subagent_id: &str, tool: &str, end_ms: i64) -> String {
     format!("subagent-tool:{subagent_id}:{end_ms}:{tool}")
 }
@@ -320,6 +421,11 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
                     obj.as_object_mut()
                         .expect("summary entry serialises to a JSON object")
                         .insert("taskSummary".to_string(), json!(task_summary));
+                }
+                if e.background {
+                    obj.as_object_mut()
+                        .expect("summary entry serialises to a JSON object")
+                        .insert("background".to_string(), json!(true));
                 }
                 obj
             })

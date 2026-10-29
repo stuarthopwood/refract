@@ -93,6 +93,8 @@ export const SUPPORTED_OMP_COMMANDS: Readonly<Record<string, readonly string[]>>
   force: [],
   autoresearch: [],
   annotate: [],
+  // #496 (Decided, Stuart 2026-10-29): clears every Ask and remember grant in OMP's approval cache.
+  'forget-approvals': [],
 };
 
 /** Refract's own native/reserved command names (constitution I: "Refract ... supplies natively

@@ -378,6 +378,11 @@ fn scrub_known_divergences(value: &mut Value) {
             if map.get("kind") == Some(&json!("tool")) {
                 map.remove("intent");
             }
+            // Issue #1140: a pending approval's own `options` (OMP's labels, answered verbatim)
+            // is a brand-new, Rust-only field. Discriminated by `kind: "approval"`.
+            if map.get("kind") == Some(&json!("approval")) {
+                map.remove("options");
+            }
             if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null))
             {
                 map.remove("value");

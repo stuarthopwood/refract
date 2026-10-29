@@ -9,12 +9,19 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon } from 'lucide-react'
+import { SlashIcon, TypeIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import {
+  COMPOSER_TEXT_CLASS,
+  ComposerActions,
+  ComposerBox,
+  ComposerField,
+  ComposerFooter,
+  ComposerSendButton,
+  ComposerStopButton,
+  ComposerTextarea
+} from '@/components/ComposerBox'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
-import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
@@ -26,9 +33,8 @@ import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ReasoningPicker } from './ComposerPickers'
 import { ModelPicker } from './ModelPicker'
 import { openRoleSwitcher } from './useRoleCycleShortcut'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
-import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, COMPOSER_SELECTION_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
+import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
@@ -1293,39 +1299,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           announcement itself (`useEffect` below) fires once per 0-to-positive transition, not on
           every re-render while the count stays above 0. */}
       {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching…</p>}
-      {/* T063/quality-gate fix, Composer tone remediation (2026-10-04), SUPERSEDED 2026-10-16
-          (#927 grill, "Composer tone" in product-chat.md): the composer's fill, border and
-          focus outline are per-theme custom properties (globals.css) -- in Dark and Obsidian
-          the fill is now `transparent` (the chat background shows straight through, like the
-          GitHub Copilot composer Stuart's screenshot referenced) with a faint
-          `--composer-border` (around the `--divider` tone) instead of the original solid,
-          strictly-darker-than-`--background` fill; Dark (high contrast) is explicitly excluded
-          from this change and keeps its old solid fill and opaque 3:1 border, now token-ized as
-          `--composer-border` for exact parity (see each token's own comment in globals.css for
-          the full history, including why an alpha composite over `--card`/`--muted` never
-          worked here). Send/Stop stay round icon-only buttons centered on the field's right
-          edge, with the provider/model/effort readout along the bottom. The box's own focus
-          outline is scoped to the textarea alone (gate round 5; see the composer-dimming
-          comment below). */}
-      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4):
-          the box no longer grows a grey fill on its own text area while disabled (`Textarea`'s
-          vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the
-          unusable parts (text field, Send/Stop, Model/Reasoning pickers, Attach) dim as one
-          `opacity-60` layer instead, never a colour-opacity modifier. The outer box's own
-          border/background never dims: the Approval pill DOES still work while stopped, so it
-          sits on the undimmed `bg-composer-background` with its own full-strength border either
-          way in Dark (high contrast) (measured, WCAG 1.4.11) -- in Dark/Obsidian the border is
-          deliberately faint instead (#927's own accepted departure, not a floor this comment's
-          "3:1" claims there anymore). `disabled` is the same boolean already driving the native
-          `disabled` attribute below; the 3:1 control-edge rule still applies to the enabled
-          border in Dark (high contrast). Gate round 5 fix (Visual Medium #4): the ring shows
-          only on the TEXTAREA's own `:focus-visible` (`has-[textarea:focus-visible]`, was
-          `focus-within`, which lit the whole box for a pill/picker/Attach/Send focus too -- each
-          now draws its OWN outline, `pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS` (Send/Stop,
-          still opaque) or `GHOST_FOCUS_CLASS`/`GHOST_BUTTON_FOCUS_CLASS` (the Approval pill,
-          Model, Reasoning, Attach, muted since #927), gate4 `11-pill-keyboard-focused.png`). */}
-      <div className="flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring">
-        <div className={cn('relative flex items-end', disabled && 'opacity-60')}>
+      {/* Composer tone (#927): fill, border and focus ring are per-theme tokens (globals.css).
+          Composer dimming (Stuart, 2026-10-15, PR #877): while disabled the unusable parts dim
+          as one `opacity-60` layer in `ComposerField`; the box edge and the Approval pill (still
+          usable while stopped) never dim. */}
+      <ComposerBox>
+        <ComposerField disabled={disabled}>
           {showSlashMenu && (
             <SlashMenu
               id={slashMenuId}
@@ -1340,8 +1319,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             />
           )}
           <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} />
-          <Textarea
-            ref={textareaRef}
+          <ComposerTextarea
             role="combobox"
             aria-label="Message"
             aria-autocomplete="list"
@@ -1380,58 +1358,32 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
-            // Gate round 5 fix (Visual LOW): the field block's own 0.6 dim left the base
-            // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
-            // read the stop reason it carries -- `disabled:placeholder:text-foreground`
-            // brightens the placeholder itself so the dim lands it back near readable.
-            // Gate round 3 fix (#1050, Medium, flicker): the shared `Textarea` primitive's own `transition-colors` fades a 150ms colour change on ANY toggle, including this textarea's own fill-colour swap the instant a pill mounts/unmounts -- while the mirror underneath mounts instantly, visibly desyncing the two for ~150ms. `transition-[border-color,box-shadow]` (merged over `transition-colors` by `cn`'s tailwind-merge, same class group) narrows this textarea to border/ring-only transitions, without touching the shared primitive.
-            className={cn(
-              COMPOSER_SELECTION_CLASS,
-              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 font-code shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
-              commandToken && COMMAND_PILL_TEXTAREA_CLASS
-            )}
+            // The disabled placeholder carries the stop reason, so it brightens to
+            // `text-foreground` (in `ComposerTextarea`) to stay readable under the 0.6 dim.
+            className={commandToken ? COMMAND_PILL_TEXTAREA_CLASS : undefined}
           />
-          {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
-              icons, so this inert sibling (same technique as the ghost-text overlay below) shows
-              "Message the agent" plus two short hints (slash commands, Markdown), each with a
-              leading icon, spaced apart rather than bracketed (docs/design/product-look-and-
-              feel.md:27 "No bracket/parenthetical UI copy"). Hidden as soon as there is any text,
-              so it never draws over the draft or the ghost-text suggestion, and whenever disabled
-              (the native `placeholder` carries the stop-reason text for that state instead,
-              unchanged). The accessible name stays "Message"; `composerHintId` above carries the
-              same wording through `aria-describedby` since an overlay is never read as a
-              `placeholder`. Gate-fixes (quality gate, PR #644 round 1): `TypeIcon` (lucide), not
-              Tabler's `IconMarkdown` -- at the time, Stuart's 2026-10-08 rule (PLAN.md "Icon set
-              and style") limited `@tabler/icons-react` to GitHub/GitLab/Bitbucket brand marks
-              only, and a Markdown glyph is not a brand mark (resolved, `docs/design/
-              foundations-icons.md` "Status, action, tool, and brand icons"); that brand-marks-only
-              limit was itself superseded 2026-10-10 (Tabler is now allowed whenever lucide lacks
-              the icon), but this choice is unaffected either way since lucide already has
-              `TypeIcon`; `@tabler/icons-react` is back out of
-              `package.json`. Responsive: the issue's own three-stage design (truncate the hint
-              labels, then icons-only with a tooltip, then truncate the main prompt) is narrowed to
-              two stages here -- a tooltip cannot attach to a `pointer-events-none` overlay, so
-              that middle tier is dropped (flagged on the issue and in the PR as a deviation,
-              Stuart's call). `min-w-0 truncate` on the leading text (no `shrink-0`) plus a
-              `shrink-[100]` weight on each hint group (CSS flexbox shrinks proportionally to
-              basis * shrink-factor, so at 100x the groups absorb nearly all of any shrink deficit
-              before the main prompt gives up any width) means a narrow pane truncates the hint
-              labels first; only once both groups hit their own `min-w-4` floor (16px, enough
-              to keep the icon from being clipped by `overflow-hidden`) does the main prompt start
-              truncating too, with an ellipsis instead of the earlier hard clip. Gate-fixes
-              (quality gate, PR #644 round 2): `100` was not nearly large enough -- flexbox shares
-              a shortfall by `basis * shrink-factor`, so even at 100x the main prompt's own small
-              basis (about 113px in the old UI font; the Code font is wider) still worked out to roughly 0.46% of any shortfall (113 /
-              (113 + 100 * 243)), enough to show an ellipsis from a wide pane down (confirmed in
-              headless Chromium against this exact CSS). `100000` instead keeps the main prompt's
-              share under one sub-pixel layout step (1/64px) until the groups are fully at their
-              floor, so it stays visually whole the entire time the labels are still truncating.
-              Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
-              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High Contrast, where `text-muted-foreground` would otherwise resolve to the same `CanvasText` as the real draft. */}
+          {/* Issue #533: empty-state hint overlay. A native `placeholder` cannot carry icons, so
+              this inert sibling shows "Message the agent" plus two hints (slash commands,
+              Markdown) with leading icons, spaced apart, not bracketed (product-look-and-feel.md
+              "No bracket/parenthetical UI copy"). Hidden once there is any text and while
+              disabled (the native `placeholder` carries the stop reason then). The accessible
+              name stays "Message"; `composerHintId` carries the same wording through
+              `aria-describedby`. Responsive: `shrink-[100000]` on each hint group makes the
+              groups absorb a narrow pane's shortfall first (flexbox shares it by basis * shrink,
+              and 100x still left the main prompt about 0.46% of it, enough for an ellipsis); the
+              main prompt truncates only once both groups sit at their `min-w-4` floor. Each label
+              span needs `min-w-0` so `truncate` can fire inside the group. A tooltip cannot attach
+              to a `pointer-events-none` overlay, so there is no icons-only stage (Stuart's call).
+              `text-composer-placeholder` is the quiet placeholder token (#1149), and
+              `forced-colors:text-[GrayText]` matches the native placeholder so the hint is never
+              mistaken for typed text in Windows High Contrast. */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-start gap-2 overflow-hidden px-2 py-2 pr-20 font-code text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
+              className={cn(
+                'pointer-events-none absolute inset-0 flex items-start gap-2 overflow-hidden px-2 py-2 pr-20 text-composer-placeholder forced-colors:text-[GrayText]',
+                COMPOSER_TEXT_CLASS
+              )}
             >
               <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-4 shrink-[100000] items-center gap-1 overflow-hidden">
@@ -1479,101 +1431,52 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           <div id={ghostHintId} role="status" aria-live="polite" className="sr-only">
             {announcedSuggestion ? `Suggestion: "${announcedSuggestion}". Tab to accept, Escape to dismiss.` : ''}
           </div>
-          {/* Vertically centered on the field's right edge via `top-1/2 -translate-y-1/2`
-              rather than `bottom-1.5`, so the button stays centered as the textarea grows to
-              multiple lines instead of drifting toward the bottom (morning UI feedback,
-              2026-10-04). Send and Stop share the same `size="icon-sm"` round treatment, but
-              each carries a different fill (2026-10-15 grill, issue #564, decision 5): Send is
-              `variant="default"`, the one accent-filled commit action on this surface
-              (docs/design/components.md "Button": "the single commit action... one filled
-              button per surface"); Stop is `variant="invert"`, a solid NEUTRAL fill (inverted
-              foreground-on-background), deliberately never red -- "stopping keeps the work, so
-              it is not destructive, and red is reserved for destructive and error states". The
-              two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
-              FR-011), a documented exception to "one filled button per surface": the two fills
-          are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). Gate round 3 CRITICAL fix (#1050): `z-[3]`, above the `relative z-[1]` the composer textarea gains ONLY while a pill shows (`CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`, full stacking order there) and the mirrors' `z-[2]` -- this container had NO z-index before, so the textarea painted over it (`elementFromPoint` at Send's centre resolved to the textarea), making Send/Stop unclickable. */}
-          <div className="absolute right-2 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">
+          {/* Send and Stop (2026-10-15 grill, #564 decision 5): Send is the one accent-filled commit
+              action (`--send`); Stop is a solid NEUTRAL fill, never red, since stopping keeps the
+              work. Both show while a turn runs because Send still queues a follow-up (FR-011),
+              a documented exception to "one filled button per surface". */}
+          <ComposerActions>
             {isWorking && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="invert"
-                    size="icon-sm"
-                    className={cn('rounded-full', COMPOSER_BUTTON_FOCUS_CLASS)}
-                    aria-label="Stop"
-                    aria-keyshortcuts="Control+Shift+X"
-                    onClick={() => void handleStop()}
-                    onFocus={() => { stopHadFocusRef.current = true }}
-                    onBlur={() => { stopHadFocusRef.current = false }}
-                  >
-                    {/* Gate round 1 fix: `SquareIcon` is an outline-only glyph at this size, read
-                        by a reviewer as "an outlined square" on a solid fill -- `fill-current`
-                        makes it a solid stop glyph instead. */}
-                    <SquareIcon className="fill-current" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
+              <ComposerStopButton
+                label="Stop"
+                keyShortcuts="Control+Shift+X"
+                tooltip={
                   <KbdGroup>
                     <Kbd>Ctrl</Kbd>
                     <Kbd>Shift</Kbd>
                     <Kbd>X</Kbd>
                   </KbdGroup>
-                </TooltipContent>
-              </Tooltip>
+                }
+                onClick={() => void handleStop()}
+                onFocus={() => { stopHadFocusRef.current = true }}
+                onBlur={() => { stopHadFocusRef.current = false }}
+              />
             )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="default"
-                  size="icon-sm"
-                  // 2026-10-15 grill decision 5, gate round 1 fix: Send's own `--send` token
-                  // overrides `variant="default"`'s `--primary` fill, which resolves to a
-                  // near-white neutral in Dark and Dark (high contrast) -- almost identical to
-                  // Stop's `invert` fill there, failing "visibly distinct in weight". `--send`
-                  // is chromatic (indigo) in every built-in theme instead. Hover mixes 15% of
-                  // the page background into the fill (gate round 2 fix: a bare
-                  // `hover:bg-send/80` opacity modifier violated the design rules' own "never a
-                  // Tailwind opacity modifier on a token class" -- `button.tsx`'s `secondary`
-                  // variant's own `color-mix` pattern instead).
-                  className={cn(
-                    'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
-                    // Composer-dimming fix (gate round 4: scoped to the field block, not the
-                    // whole box): the shared disabled OPACITY for the OTHER refusal reasons
-                    // (starting, a pending read, empty text); `disabled` can't be true with
-                    // `starting` (round 7: opacity only, no hover reset -- Send's opaque resting
-                    // fill made the shared reset drop it transparent on hover, Arch877 Medium 1).
-                    !disabled && COMPOSER_DISABLED_OPACITY_CLASS,
-                    COMPOSER_BUTTON_FOCUS_CLASS
-                  )}
-                  aria-label="Send message"
-                  aria-keyshortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
-                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
-                  onClick={() => {
-                    if (disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)) return
-                    void handleSend()
-                  }}
-                >
-                  <ArrowUpIcon />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {enterQueuedFollowUp.applies ? 'Send' /* gate round 2: aria-disabled while the rule applies (blank text) -- wired into aria-describedby by Radix, must not describe an action the button can't perform */ : <Kbd>Enter</Kbd>}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+            {/* The shared dim applies for the refusal reasons other than `disabled`, which
+                already dims the whole field block. */}
+            <ComposerSendButton
+              blocked={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
+              dimWhenBlocked={!disabled}
+              keyShortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
+              onSend={() => void handleSend()}
+              tooltip={
+                // aria-disabled while the rule applies (blank text) and Radix wires this into
+                // aria-describedby, so it must not describe an action the button cannot perform.
+                enterQueuedFollowUp.applies ? 'Send' : <Kbd>Enter</Kbd>
+              }
+            />
+          </ComposerActions>
+        </ComposerField>
         {/* Composer bottom row (#564): Approval pill, combined Role.Model pill (#766), Reasoning
-            picker, then Attach. `@container` lets the pill hide its model text when narrow. */}
-        <div data-composer-row className="@container flex flex-wrap items-center gap-2 px-2 pb-2">
+            picker, branch label, then Attach. */}
+        <ComposerFooter>
           <ApprovalModePill sessionId={sessionId} />
           <ModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />
           <ComposerBranchLabel sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
-        </div>
-      </div>
+        </ComposerFooter>
+      </ComposerBox>
     </div>
   )
 }

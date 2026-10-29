@@ -102,10 +102,10 @@ async function main() {
       label: 'Session composer enabled'
     });
 
-    // (a) The credits sit inside the Context usage chip, next to the figures.
+    // (a) The credits are their own chip (a button) in the same status line as the figures.
     let creditsSeen = true;
     try {
-      await cdp.waitFor(`!!${CREDITS}`, { timeoutMs: 30_000, label: 'AI credits shown in the Context usage chip' });
+      await cdp.waitFor(`!!${CREDITS}`, { timeoutMs: 30_000, label: 'AI credits chip shown' });
     } catch {
       creditsSeen = false;
     }
@@ -115,11 +115,12 @@ async function main() {
       return {
         figures: figures ? figures.textContent.trim() : null,
         creditsText: credits ? credits.querySelector('[aria-hidden]')?.textContent.trim() ?? null : null,
-        sameChip: !!credits && !!figures && figures.parentElement.contains(credits)
+        isButton: !!credits && credits.tagName === 'BUTTON',
+        sameChip: !!credits && !!figures && credits.parentElement === figures.closest('[data-slot="readout-chip"]')?.parentElement
       };
     })()`);
     await cdp.screenshot(path.join(SHOTS_DIR, '1-chip.png'));
-    check(creditsSeen && chip.sameChip && /(^|\s)12 credits$/.test(chip.creditsText ?? ''), '(a) Context usage chip shows "12 credits" beside the figures', chip);
+    check(creditsSeen && chip.sameChip && chip.isButton && /(^|\s)12 credits$/.test(chip.creditsText ?? ''), '(a) AI credits chip shows "12 credits" beside the context usage chip', chip);
 
     // (e) Keyboard reachable.
     const tabIndex = await cdp.evaluate(`${CREDITS} ? ${CREDITS}.tabIndex : null`);
@@ -135,8 +136,9 @@ async function main() {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
     let tooltipText = null;
     try {
-      await cdp.waitFor(`!!document.querySelector('[role="tooltip"], [data-slot="tooltip-content"]') &&       /Plan/.test(document.querySelector('[data-plan-usage]')?.textContent ?? '') && !/Checking/.test(document.querySelector('[data-plan-usage]')?.textContent ?? '')`, {
-              timeoutMs: 20_000,
+      // The 20 s wait outlasts the Rust-side bounds (3 s RPC, 10 s HTTP) so a slow lookup still lands.
+      await cdp.waitFor(`!!document.querySelector('[role="tooltip"], [data-slot="tooltip-content"]') && /Plan/.test(document.querySelector('[data-plan-usage]')?.textContent ?? '') && !/Checking/.test(document.querySelector('[data-plan-usage]')?.textContent ?? '')`, {
+        timeoutMs: 20_000,
         label: 'Tooltip with the plan line'
       });
     } catch {
@@ -151,7 +153,7 @@ async function main() {
     check(!!planMatch, `(b) Tooltip shows a plan line (observed: ${planMatch ? planMatch[0] : 'none'})`, { tooltipText });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 
-    // (d) Settings > Chat > "Show AI credits and plan usage" off removes the credits only.
+    // (d) Settings > Chat > "Show AI credits" off removes the credits only.
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: 'Settings screen opened' });
     await cdp.clickByText('Chat', { tag: 'button' });
