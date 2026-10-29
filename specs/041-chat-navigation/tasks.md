@@ -8,8 +8,8 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T3 `Transcript.tsx` registers the bridge; `jumpToMessage` reveals windowed turns, lands, detaches autoscroll, highlights, announces once.
 
 ## WP-B Previous/Next (#751)
-- [ ] T4 Step target rule, `MessageStepButtons`, floating layer, scroll-reveal and focus-reveal, 2 s fade, reduced motion.
-- [ ] T5 Alt+Up/Alt+Down in transcript and composer; Scroll to end uses `ArrowDownToLineIcon`.
+- [x] T4 Step target rule, `MessageStepButtons`, floating layer, scroll-reveal and focus-reveal, 2 s fade, reduced motion.
+- [x] T5 Alt+Up/Alt+Down in transcript and composer; Scroll to end uses `ArrowDownToLineIcon`.
 
 ## WP-C Outline (#752)
 - [ ] T6 `outline` panel id, registry entry, active-pane Session follow.

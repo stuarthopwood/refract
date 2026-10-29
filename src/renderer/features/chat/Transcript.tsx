@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ArrowDownIcon } from 'lucide-react'
+import { ArrowDownToLineIcon } from 'lucide-react'
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -36,6 +36,7 @@ import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 import { JumpToStageContext, stageRowDomId } from './stageJump'
 import { ChatNavBridge } from '../chat-nav/ChatNavBridge'
+import { MessageStepButtons } from '../chat-nav/MessageStepButtons'
 import { startRowJumpLoop, type JumpControl } from '../chat-nav/rowJumpLoop'
 
 // A running group's live announcement reads its intent, cut to 80 characters with an ellipsis.
@@ -937,6 +938,7 @@ export function Transcript({
         <span role="status" aria-live="polite" className="sr-only">
           {stageAnnouncement}
         </span>
+        <MessageStepButtons sessionId={sessionId} />
         <Button
           ref={buttonRef}
           type="button"
@@ -952,7 +954,7 @@ export function Transcript({
               : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"
           )}
         >
-          <ArrowDownIcon />
+          <ArrowDownToLineIcon />
           <span className="sr-only">Scroll to end</span>
         </Button>
       </MessageScroller>
