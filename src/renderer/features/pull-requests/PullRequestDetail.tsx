@@ -330,7 +330,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             heuristic (`border-b` + `shrink-0`), but this row sits deep in the content area, well
             below `PullRequestsView.tsx`'s own separate `h-10` drag-region strip -- it never
             touches `App.tsx`'s drag strip despite the coincidental shape; drag-regions-allow: see above. */}
-        <TabsList className="mx-2 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none border-b border-border bg-transparent p-0">
+        <TabsList className="mx-2 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none bg-transparent p-0">
           <TabsTrigger value="overview" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
             Overview
           </TabsTrigger>

@@ -375,8 +375,8 @@ function GitChangesDiffPane({
           tab" ships and this whole diff pane (Back button included) is removed. `bg-background`
           (this hosted pane's own inherited base surface, set no closer than the app root) stops
           scrolled-past diff text from showing through underneath it. Gate round 1 LOW 5 (#1101):
-          `py-1` (the Back button's own 3px focus-visible ring needs 1px more
-          clearance than `py-1` left it, or the ring clips against the sticky bar's own edge.
+          `py-1` gives the Back button's focus-visible ring clearance, so it does not clip
+          against the sticky bar's own edge.
           #1111 item 4/Low "border-b": the arrow and the file name are now ONE ghost button
           (`title={entry.path}` is the Low item's own actionable hover text, the accessible name
           comes from the visible "Back to changes from <file>" label below) instead of a

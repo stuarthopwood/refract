@@ -78,7 +78,7 @@ For both kinds:
 - The shortcut, when one exists, is a right-aligned `Kbd`.
 - Groups are split by separators.
 - The destructive item is last, after a separator, in the destructive colour.
-- Check marks and radio marks are allowed. **A single-choice menu is a real radio group** (`DropdownMenuRadioGroup`/`DropdownMenuRadioItem`, `menuitemradio` with `aria-checked`) whose leading radio mark is the same ring-and-dot indicator the Ask card's radios use, filled for the selected item; never a trailing check standing in for a radio (Stuart, 2026-10-19, #1043).
+- Check marks and radio marks are allowed. **A single-choice menu is a real radio group** (`DropdownMenuRadioGroup`/`DropdownMenuRadioItem`, `menuitemradio` with `aria-checked`) whose leading radio mark is the shared `RADIO_RING_CLASS` ring-and-dot (`radio-group.tsx`; the same mark the Ask card's and Merge dialog's radios use, a `--foreground` ring), filled for the selected item; never a trailing check standing in for a radio (Stuart, 2026-10-19, #1043; #1065).
 
 Evidence at `origin/main` 9f23d22: action-menu items carry no icons today (`SessionList.tsx:309-327` and `:420-422`, `ManageSessionRow.tsx:422-439`); the Profile and Approval mode menus already have a leading icon on nearly every item.
 
@@ -160,7 +160,7 @@ rows") already governs it and this issue's own grill confirmed it is not reopene
 
 ## Chips and pills
 
-Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Their horizontal padding follows the whitespace rule under "Button" above (#1144). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
+Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Their padding follows the 8px grid (#1144, wave 1 grill 2026-10-28): inline text tokens (the slash-command pill, inline chips) take 4px, with the fill extended by `box-shadow` only (4px left and right, 2px top and bottom, never real padding); pills, badges and buttons take 8px (`px-2`). Chips, pills and badges drop `rounded-full` and take the token radius (`rounded-md`; see "Corner radius scale" in [foundations-tokens-theming.md](foundations-tokens-theming.md)). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
 
 ## List rows
 

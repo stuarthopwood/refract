@@ -55,7 +55,7 @@ export function ChatDisplaySection() {
         Choose what the chat transcript shows, how pasted content is handled, and how context usage is drawn
         {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
       </p>
-      <div className="flex flex-col divide-y divide-border">
+      <div className="flex flex-col divide-y divide-divider">
         <SettingSwitchRow
           id="transcript-display-thinking"
           label="Show thinking output"

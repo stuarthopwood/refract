@@ -68,7 +68,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
                     href={`${url}/files`}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="flex h-6 shrink-0 items-center gap-1 -my-1 font-sans underline underline-offset-2"
+                    className="flex h-6 shrink-0 items-center gap-1 -my-1 font-ui underline underline-offset-2"
                   >
                     Open in browser
                     <ExternalLinkIcon aria-hidden className="size-4" />

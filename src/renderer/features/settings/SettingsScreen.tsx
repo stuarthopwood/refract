@@ -94,7 +94,7 @@ export function SettingsScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b px-4">
+      <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
         <Button
           variant="ghost"
           size="icon"
@@ -107,7 +107,7 @@ export function SettingsScreen() {
         <span className="text-sm font-medium">Settings</span>
       </div>
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Settings sections" className="w-48 shrink-0 overflow-y-auto border-r p-2">
+        <nav aria-label="Settings sections" className="w-48 shrink-0 overflow-y-auto border-r border-divider p-2">
           <ul className="flex flex-col gap-1">
             {SECTIONS.map((section) => (
               <li key={section.id}>
@@ -165,7 +165,7 @@ export function SettingsScreen() {
               <p className="mb-4 text-sm text-muted-foreground">
                 Choose which readouts show in the chip row above the message box, and whether the current-work line shows above it, for every open Session.
               </p>
-              <div className="flex flex-col divide-y divide-border">
+              <div className="flex flex-col divide-y divide-divider">
                 {READOUT_TOGGLES.map((toggle) => {
                   const id = `readout-toggle-${toggle.kind}`
                   return (

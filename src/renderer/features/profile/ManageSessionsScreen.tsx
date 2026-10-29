@@ -156,7 +156,7 @@ export function ManageSessionsScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
+      <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

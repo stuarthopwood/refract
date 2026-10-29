@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { CheckboxIndicator, CheckboxItem } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
+import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
@@ -287,7 +287,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
                           // Tabs' own ("active"/"inactive") -- styling and tests both key off
                           // `aria-selected` instead, which Radix Tabs sets independently and
                           // Tooltip never touches (same variant `PanelTabBar.tsx` already uses).
-                          className="relative max-w-40 flex-none gap-1 rounded-none border-b-2 border-transparent shadow-none aria-selected:bg-muted aria-selected:shadow-none aria-selected:after:opacity-100 forced-colors:aria-selected:border-[Highlight] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground after:opacity-0"
+                          className="relative max-w-40 flex-none gap-1 rounded-none border-b-2 border-transparent shadow-none aria-selected:bg-muted aria-selected:shadow-none aria-selected:after:opacity-100 forced-colors:aria-selected:border-[Highlight] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent-text after:opacity-0"
                         >
                           <span className="min-w-0 truncate">{label}</span>
                           {answered && (
@@ -505,7 +505,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                     className={ASK_ROW_CLASS}
                   >
                     <span className="flex w-full min-w-0 items-center gap-2">
-                      <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary">
+                      <span aria-hidden className={RADIO_RING_CLASS}>
                         <RadioGroupIndicator />
                       </span>
                       <span id={labelId} className="min-w-0 flex-1 break-words">
@@ -523,7 +523,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               })}
               <RadioGroupItem value={otherValue} disabled={busy} aria-label="Other" className={ASK_ROW_CLASS}>
                 <span className="flex w-full min-w-0 items-center gap-2">
-                  <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary">
+                  <span aria-hidden className={RADIO_RING_CLASS}>
                     <RadioGroupIndicator />
                   </span>
                   <span className="min-w-0 flex-1 break-words">Other</span>

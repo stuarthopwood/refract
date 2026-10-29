@@ -96,6 +96,31 @@ Edges split into two classes, and a theme can only change token values, never wh
 
 `scripts/check-theme-contrast.mjs` resolves `var()` indirection and treats `--divider` pairs as informational only (the high-contrast-specific stricter floor stays deferred to #552); `--border`/`--border-strong` are checked as real control-edge pairs in every theme. #606 wires `--divider` (via the `border-divider`/`bg-divider` utilities) into the main-split resize handle, the Pull requests list/detail divider, the status bar's top border, and the composer's top border. It also removed the bottom border outright from `ChatHeader.tsx`, `SessionList.tsx`'s own header, and `SubagentPanel.tsx`'s header -- **accepted by Stuart, 2026-10-09, as the correct rule, not a gap**: a panel header is never separated from its own content by a divider line, only by a different surface shade and/or whitespace (see "Panel header" in [components.md](components.md#panel-header)). `PullRequestsView.tsx`'s own header still carries its original full-strength `border-border` today, which does not follow this rule -- an inconsistency left for the #579 sweep to fix, not a second accepted pattern.
 
+## Wave 1 token API (spec 032)
+
+The app-wide tokens later bundles build on:
+
+- **`--titlebar`** (every theme, defaulting to `--card`): the Chrome band surface. Apply it with the shared `titlebar-surface` class (background plus an inset 1 px `--divider` bottom line, 40 px row unchanged) on every `drag-region` row; `check:drag-regions` fails a row without it. Screens with no header row render `TitlebarBand`. The native overlay colour in `src/shared/themes.ts` must equal `--titlebar` (`check:theme-contrast` checks it). In High contrast dark, `--divider` is the solid border colour.
+- **Non-white text weight:** inside `.text-muted-foreground`, `.text-accent-text`, `.text-destructive` and `.text-severity-*`, the weight tokens remap one step up (normal 400, medium 500, semibold 600); white `foreground` text stays 300. An explicit `font-*` utility still wins and resolves one step up. Wrap white text in its own element inside a muted parent.
+- **Menus:** one shared class set in `components/ui/menu-item-classes.ts` serves `dropdown-menu.tsx` and `context-menu.tsx`; never restyle an item locally.
+- **Active tab underline:** `--accent-text` (`after:bg-accent-text`), no divider under a tab bar.
+- **Resize grip:** a functional circle, 4 by 32 px, drawn from `--border`, 3:1 against both neighbours.
+
+## Corner radius scale
+
+Decided 2026-10-28 (wave 1 grill, #843): the base `--radius` in `globals.css` is `0.25rem` (4px). The rest of the scale derives from it, so every theme preset inherits it (none overrides `--radius`):
+
+| Token | Multiplier | Value |
+| --- | --- | --- |
+| `rounded-sm` | 0.6 | 2.4px |
+| `rounded-md` | 0.8 | 3.2px |
+| `rounded-lg` | 1 | 4px |
+| `rounded-xl` | 1.4 | 5.6px |
+
+Components take a token and never an arbitrary `rounded-[...]` or `min(var(--radius-md), Npx)` cap. Text pills, chips and badges use `rounded-md` (or the shared `Badge`). The square-choice rule (`border-radius: 0`) still applies to choice items.
+
+**Functional circle rule:** a control or mark whose round shape carries meaning stays `rounded-full` whatever the token is (see "Functional circle" in [CONTEXT.md](../../CONTEXT.md)). The kept circles are status and unread dots, spinners, avatars, the switch track and thumb, the radio mark, the scrollbar thumb, the composer Send/Stop button, progress bars, and the pane resize grip.
+
 ## Elevation and shadows
 
 Two levels only (agenda item 9, #549 mock review):

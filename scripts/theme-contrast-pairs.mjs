@@ -131,7 +131,7 @@ export const PAIRS = [
   { fg: 'border-strong', bg: 'muted', min: 3 },
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
-  { fg: 'accent-text', bg: 'popover', min: 4.5 },
+  { fg: 'accent-text', bg: 'popover', min: 4.5 }, { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125
   // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
   // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
   // entry (it would fail both themes today). Issue #610 reads `--accent-text` now
@@ -161,6 +161,9 @@ export const PAIRS = [
   { fg: 'muted-foreground', bg: 'muted', min: 4.5 },
   { fg: 'muted-foreground', bg: 'accent', min: 4.5 },
   { fg: 'muted-foreground', bg: 'card', min: 4.5 },
+  // Chrome band (#682): text and icons on the shared `--titlebar` surface.
+  { fg: 'foreground', bg: 'titlebar', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'titlebar', min: 4.5 },
   { fg: 'muted-foreground', bg: 'popover', min: 4.5 },
   { fg: 'muted-foreground', bg: 'surface-hover', min: 4.5 },
   { fg: 'chat-foreground', bg: 'accent', min: 4.5 }, // #1119: Explorer name span vs its own aria-selected:bg-accent fill
@@ -354,6 +357,7 @@ export const PAIRS = [
   { fg: 'diff-removed', bg: 'popover', min: 4.5 },
   { fg: 'diff-added', bg: 'muted', min: 4.5 },
   { fg: 'diff-removed', bg: 'muted', min: 4.5 },
+  { fg: 'border', bg: 'sidebar', min: 3 }, // #738 resize grip (bg-border) beside the session list
 ]
 
 // Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its
@@ -499,7 +503,7 @@ export function sidebarBorderContrastRows(themes) {
 // `--card` regardless). The scope-less root-default entry (the theme's own overall `foreground`/
 // `background` pair, redundant with the `.fg` entry already seeded below) stays skipped too.
 const SELF_BACKGROUND_SCOPES_CONFIRMED_UNREACHABLE = new Set(['markup.ignored', 'markup.untracked'])
-function hexToLinearSrgb(hex) {
+export function hexToLinearSrgb(hex) {
   let h = hex.slice(1)
   if (h.length === 3) h = [...h].map((c) => c + c).join('')
   const r = parseInt(h.slice(0, 2), 16) / 255
@@ -552,49 +556,4 @@ export async function shikiTokenContrastRows(themes, themeMetadata) {
     }
   }
   return rows
-}
-
-// #1043 (swatchPrimary vs --primary drift check), moved out of check-theme-contrast.mjs for the
-// same #806 file-size reason the composited checks above already were. Confirms
-// `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color`/
-// `titleBarOverlay.symbolColor` literals never silently drift from the preset's REAL resolved
-// `--background`/`--primary`/`--foreground` CSS tokens. #1074: `symbolColor` is now a
-// composited check (`--foreground` alpha-blended over `--background`, `resolvedLinear`, a
-// pass-through when alpha is 1) rather than byte-equality, since `--foreground` is translucent
-// in every non-HC preset while `setTitleBarOverlay` takes an opaque hex. Returns
-// `{ checkedCount, failCount, rows }` (one count per theme, a row only on failure).
-export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds) {
-  let checkedCount = 0
-  let failCount = 0
-  const rows = []
-  const fail = (id, fg, bg, note) => {
-    failCount++
-    rows.push({ themeId: id, fg, bg, min: 'n/a', ratio: null, pass: false, note })
-  }
-  for (const id of declaredThemeIds) {
-    if (!(id in themes)) continue // already reported as a missing block above
-    checkedCount++
-    const meta = themeMetadata[id]
-    const bgTag = `.theme-${id} --background`
-    if (!meta) {
-      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `could not parse swatch/titleBarOverlay fields for '${id}' out of src/shared/themes.ts`)
-      continue
-    }
-    const { background: bg, primary, foreground } = themes[id]
-    const missing = ['background', 'primary', 'foreground'].find((name) => !themes[id][name])
-    if (missing) {
-      fail(id, `themes.ts (needs --${missing})`, bgTag, `'${id}' has no --${missing} token in globals.css to compare against`)
-      continue
-    }
-    const actualBgHex = linearToHex(bg.linear)
-    const actualPrimaryHex = linearToHex(primary.linear)
-    const actualSymbolColorHex = linearToHex(resolvedLinear(foreground, bg))
-    const mismatches = []
-    if (meta.swatch !== actualBgHex) mismatches.push(`swatch '${meta.swatch}' != --background '${actualBgHex}'`)
-    if (meta.swatchPrimary !== actualPrimaryHex) mismatches.push(`swatchPrimary '${meta.swatchPrimary}' != --primary '${actualPrimaryHex}'`)
-    if (meta.titleBarOverlayColor !== actualBgHex) mismatches.push(`titleBarOverlay.color '${meta.titleBarOverlayColor}' != --background '${actualBgHex}'`)
-    if (meta.symbolColor !== actualSymbolColorHex) mismatches.push(`titleBarOverlay.symbolColor '${meta.symbolColor}' != --foreground composited over --background '${actualSymbolColorHex}'`)
-    if (mismatches.length > 0) fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, mismatches.join('; '))
-  }
-  return { checkedCount, failCount, rows }
 }

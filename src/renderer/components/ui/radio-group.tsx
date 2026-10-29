@@ -2,19 +2,16 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 
-// Issue #1043 (ADR 0003): the ring-and-dot mark every radio-style control in the app draws --
-// this file's own `RadioGroupIndicator` below, plus `AskCard.tsx`/`MergeDialog.tsx`'s identical
-// hand-rolled `<span aria-hidden className="grid size-4 ...">` ring wrapping it -- gains a
-// SECOND real consumer here, `dropdown-menu.tsx`'s `DropdownMenuRadioItem` (its old trailing
-// `CheckIcon` read as an unselected radio with nothing marking the checked row). Exported as
+// Issue #1043 (ADR 0003): the ring-and-dot mark every radio-style control in the app draws.
+// `RADIO_RING_CLASS` is shared by `dropdown-menu.tsx`'s and `context-menu.tsx`'s radio items,
+// `AskCard.tsx` and `MergeDialog.tsx` (#1065); `RadioGroupIndicator` below draws the dot for the
+// latter two.
+// Exported as
 // plain class-string constants (this codebase's established pattern for a cross-file shared
 // look, e.g. `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS`) rather than a JSX component: the two
 // Radix primitives involved (`RadioGroupPrimitive.Indicator` here, `DropdownMenuPrimitive.
 // ItemIndicator` there) mount conditionally in different, primitive-specific ways, so only the
-// CSS belongs here, not a wrapper tied to one primitive. `AskCard.tsx`/`MergeDialog.tsx` keep
-// their own pre-existing inline copy of the ring markup, unchanged by this issue's scope (#1043
-// is the shared `DropdownMenuRadioItem` only) -- a future touch of either file should migrate it
-// to `RADIO_RING_CLASS` too, so only one hand-rolled copy of the ring ever remains.
+// CSS belongs here, not a wrapper tied to one primitive.
 // IMPORTANT for every consumer: `RADIO_DOT_CLASS` must land on the ring's own DIRECT child (the
 // Radix Indicator primitive itself), never on an extra nested `<span>` one level deeper. Both
 // `RadioGroupPrimitive.Indicator` and `DropdownMenuPrimitive.ItemIndicator` render a bare,
@@ -41,8 +38,8 @@ import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 // against its own `--popover` on its own (3.46:1) -- Obsidian (2.99:1) and Nordic Frost (2.92:1)
 // still measure under the floor, so this fix stays unconditional (`border-foreground`
 // everywhere), never reverted for Cyber Amber alone.
-// `AskCard.tsx`/`MergeDialog.tsx` keep their own `border-primary`
-// ring unchanged (out of this issue's scope; D10 below still describes their design accurately).
+// `AskCard.tsx`/`MergeDialog.tsx` now use the same ring (#1065), so their checked ring is
+// `border-foreground` too, no longer `border-primary`; the row's own `border-primary` edge stays.
 export const RADIO_RING_CLASS = "grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-foreground"
 export const RADIO_DOT_CLASS = "size-2 rounded-full bg-foreground forced-colors:bg-[CanvasText]"
 

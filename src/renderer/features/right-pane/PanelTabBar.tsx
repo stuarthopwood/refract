@@ -54,8 +54,10 @@
 // close reserve, but the flex layout does not enforce that -- it holds today only because of how
 // flex shares space among today's three panel labels (measured `82.375px` live), not because of
 // any CSS minimum (see the "known limit" note in tasks.md). Three tabs' worst case with a
-// two-digit running count is `56 + 56 + 62 + 15.546875 + 2*2 = ~194px` against `224px` available
-// at the 240px floor (`~30px` slack) -- see tasks.md's "Tab-strip width geometry" for the full,
+// two-digit running count is `60 + 60 + 68 + 15.546875 + 2*4 = ~211.5px` against `224px` available
+// at the 240px floor (`~12.5px` slack, current `min-w-15`/`pr-8`/`gap-1`; #1270: below a 280px
+// strip every count tab collapses to icon, label and one compact figure, so two count tabs never
+// reach this worst case) -- see tasks.md's "Tab-strip width geometry" for the full,
 // pixel-exact derivation (rounds 7-8). Live-verified with a REAL count change (temporary
 // local-only dev-store injection in the scratch instance only, reverted before each push, never
 // shipped):
@@ -98,7 +100,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { useRightPaneStore } from '@/state'
 import { DiffStatCounts } from '../sessions/sessionDisplay'
-import { formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
+import { compactPanelCount, formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
 import { WidthPresetControl } from './WidthPresetControl'
 import { WINDOW_CONTROLS_SPACER_STYLE, WindowControlsSpacerRow } from './WindowControlsSpacerRow'
@@ -107,6 +109,7 @@ import { WINDOW_CONTROLS_SPACER_STYLE, WindowControlsSpacerRow } from './WindowC
 // drawn outside this row's `overflow` wrapper gets its top/bottom (and the first tab's left edge)
 // clipped, since the wrapper is exactly as tall as a tab (gate remediation, round 1).
 const FOCUS_VISIBLE = 'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
+const COMPACT_HIDE = '@max-[17.5rem]:hidden'
 // 24px minimum target (FR-026/WCAG 2.5.8), matching `icon-sm`'s own footprint.
 const CLOSE_BUTTON_PX = 24
 const CLOSE_BUTTON_INSET_PX = 4
@@ -199,7 +202,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
 
     return (
       <div className="flex shrink-0 flex-col">
-        <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-2 px-4">
+        <div ref={wrapperRef} className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
           <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-medium">
             {descriptor.name}
           </h2>
@@ -286,7 +289,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
       {/* Row 2: the tab strip, now with the whole pane width (less this row's own padding) to
           itself. */}
       <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 border-t border-border px-2">
-        <div ref={wrapRef} className="relative flex min-w-0 flex-1 items-center overflow-x-auto">
+        <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
           <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
             {openPanelIds.map((id) => (
               <TabButton
@@ -392,7 +395,10 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   const countNumber = parts?.number
   const countWord = parts?.word
   const runningCls = count?.kind === 'running' ? 'text-state-working' : undefined
-
+  // #1270: below a 17.5rem (280px) strip the full count collapses to ONE compact figure (the
+  // tab's icon, label and that number), so two count tabs never slide under the close button at
+  // the 240px pane floor; the full text stays in the accessible name and the tooltip.
+  const compactCount = compactPanelCount(count)
   const button = (
     <button
       ref={tabRef}
@@ -405,22 +411,28 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
         'relative inline-flex h-6 min-w-15 shrink items-center gap-1 rounded-md px-2 pr-8 text-sm font-medium',
         FOCUS_VISIBLE,
         selected
-          ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
+          ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent-text forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
           : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
       )}
+      aria-label={countText ? fullLabel : undefined}
       onClick={onSelect}
       onKeyDown={onKeyDown}
     >
       <Icon aria-hidden className="size-4 shrink-0" />
       <span className="min-w-0 shrink-[100] truncate">{descriptor.name}</span>
       {count?.kind === 'additions-deletions' ? (
-        <span className="shrink-0 text-xs">
+        <span className={cn('shrink-0 text-xs', COMPACT_HIDE)}>
           <DiffStatCounts added={count.additions} removed={count.deletions} accessibleLabel />
         </span>
       ) : (
-        countText && <span className={cn('shrink-0 tabular-nums', runningCls)}>{countNumber}</span>
+        countText && <span className={cn('shrink-0 tabular-nums', COMPACT_HIDE, runningCls)}>{countNumber}</span>
       )}
-      {countWord && <span className={cn('min-w-0 shrink-[1000] truncate', runningCls)}>{countWord}</span>}
+      {countWord && <span className={cn('min-w-0 shrink-[1000] truncate', COMPACT_HIDE, runningCls)}>{countWord}</span>}
+      {compactCount && (
+        <span aria-hidden className={cn('hidden shrink-0 text-xs tabular-nums @max-[17.5rem]:inline', runningCls)}>
+          {compactCount}
+        </span>
+      )}
     </button>
   )
 

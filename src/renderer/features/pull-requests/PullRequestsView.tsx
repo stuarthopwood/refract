@@ -150,7 +150,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           the session-list/right-pane panels stay), so `reservesWindowControls` must be `false`
           whenever the right pane shell is the one holding that corner (FR-011, "exactly once"),
           the same prop `ChatPane.tsx` takes. */}
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-4">
+      <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
         {/* Issue #930 (2026-10-16 decision): this wrapper's own width tracks the resizable list
             column's real rendered width (`listColumnWidthPx`, measured off the panel's own DOM
             element -- see the `ResizeObserver` effect above) so the heading and Project selector

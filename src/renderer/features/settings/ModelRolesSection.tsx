@@ -517,7 +517,7 @@ export function ModelRolesSection() {
     return (
       <>
         {statusBlocks}
-        <div className="flex flex-col divide-y divide-border">{descriptors.map(renderRole)}</div>
+        <div className="flex flex-col divide-y divide-divider">{descriptors.map(renderRole)}</div>
       </>
     )
   }

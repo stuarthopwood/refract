@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { LoaderCircleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { TitlebarBand } from '@/components/TitlebarBand'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import type { Check, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
@@ -56,6 +57,8 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
   }, [allPass, onReadyChange])
 
   return (
+    <div className="relative isolate h-full">
+    <TitlebarBand reservesWindowControls />
     <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
       <div className="flex items-center gap-4">
         <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0" />
@@ -80,6 +83,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
           </Button>
         </div>
       </div>
+    </div>
     </div>
   )
 }

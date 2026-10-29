@@ -31,7 +31,7 @@ Dialog and sheet Close controls follow the same bundle.
 
 **Reversible removals are the one exception**: Remove attachment and Remove queued message stay icon-only, with the full bundle above and no confirm step.
 
-Known gap: neither control has its tooltip today (`AttachmentStrip.tsx:41-49`, `MessageInput.tsx:714-722`), and the attachment control's target is a 16px button (`size-4`) around a 10px icon, short of the 24px minimum; both become part of the #474 sweep issue.
+Known gap: the pasted-image remove control (`AttachmentStrip.tsx:67-80`) has no tooltip today (the queued-message remove control, `QueuedChipList.tsx:76-96`, does); both remove controls are 24px (`size-6`) targets. The image control's tooltip is part of the #474 sweep issue.
 
 ## Library and style
 

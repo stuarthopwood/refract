@@ -51,7 +51,7 @@ export function ChatHeader({
   if (!session) return null
 
   return (
-    <header className="drag-region flex h-10 shrink-0 items-center justify-between gap-2 px-4">
+    <header className="drag-region titlebar-surface flex h-10 shrink-0 items-center justify-between gap-2 px-4">
       <div className="flex min-w-0 items-center gap-2">
         <StateIcon status={session.status} />
         <span className="sr-only">{STATUS_LABEL[session.status]}</span>
@@ -69,7 +69,7 @@ export function ChatHeader({
           // `--send-foreground`/`--composer-selection-fg`, not the softened alias cascade. A
           // re-verified ratio on the translucent value isn't the fix: moved to the dedicated
           // `--active-indicator-foreground` token (plain solid white in every theme).
-          <span className="shrink-0 rounded-full border border-active-indicator/40 bg-active-indicator/20 p-1 text-[10px] font-medium text-active-indicator-foreground">
+          <span className="shrink-0 rounded-md border border-active-indicator/40 bg-active-indicator/20 px-2 py-1 text-[10px] font-medium text-active-indicator-foreground">
             Focused
           </span>
         )}

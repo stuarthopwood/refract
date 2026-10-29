@@ -56,6 +56,13 @@ Health check; What's new; About; Help center; and Sign out in red).
   caller; the composer's Reasoning picker (the only other caller) picks up the new mark
   automatically.
 
+### Session 2026-10-29 (convergence, #1065)
+
+- Q: The shared radio ring's checked border is `--foreground`, not the Ask card's old
+  `--primary` -- which wins? -> A: `--foreground` (`--primary` measures under 3:1 on `--popover`
+  in Obsidian and Nordic Frost). `RADIO_RING_CLASS` is now the single ring for the dropdown and
+  context menus, the Ask card and the Merge dialog, so FR-030's "matching the Ask card's radio
+  look" means the shared ring, not a `--primary` ring.
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See who you are and reach Settings (Priority: P1)
@@ -378,10 +385,11 @@ a session, confirming each action's confirmation names what will be lost.
 - **FR-028**: A display name too long to fit its container MUST truncate with an ellipsis rather
   than wrap or overflow.
 - **FR-029**: The low-memory and unverified-OMP-version alert rows under the profile item are specified in full by spec 001 FR-037 and FR-072; this spec only fixes their position, directly beneath the profile item, replacing the status bar's old low-memory notice (spec 001 FR-056).
-- **FR-030**: The shared `DropdownMenuRadioItem` component (ADR 0003 -- every single-choice
-  dropdown menu draws its checked state the same way, never a second hand-rolled mark) MUST draw
-  a leading ring-and-dot radio indicator matching `radio-group.tsx`'s own `RadioGroupIndicator`
-  (the Ask card's radio look: a ring, filled with a dot when checked), never a trailing check
+- **FR-030**: The shared `DropdownMenuRadioItem` and `ContextMenuRadioItem` components (ADR 0003 -- every single-choice
+  menu draws its checked state the same way, never a second hand-rolled mark) MUST draw
+  a leading ring-and-dot radio indicator using the shared `RADIO_RING_CLASS` and `RADIO_DOT_CLASS`
+  from `radio-group.tsx` (a `--foreground` ring, filled with a dot when checked; the Ask card and
+  Merge dialog use the same ring), never a trailing check
   standing in for a radio. The Theme submenu (FR-019) and the composer's Reasoning picker are its
   two current callers.
 

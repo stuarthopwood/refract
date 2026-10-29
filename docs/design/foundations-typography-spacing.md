@@ -47,12 +47,14 @@ Use one weight scale on every theme. Do not add theme-specific weight tokens, an
 
 | Weight | Use |
 | --- | --- |
-| 300 (light, `ont-normal`) | Body text, labels, metadata, muted section labels, badges, and ghost buttons |
-| 400 (regular, `ont-medium`) | Buttons, selected states, and in-chat headings |
-| 500 (medium, `ont-semibold`) | Page titles, such as Settings section headings, and ``/`strong` |
-| 600 (semibold, `ont-bold`) | The Refract wordmark only |
+| 300 (light, `font-normal`) | White (`text-foreground`) body text, labels, and metadata |
+| 400 (regular, `font-medium`) | Buttons, selected states; non-white (muted, severity, accent) text at normal weight |
+| 500 (medium, `font-semibold`) | Page titles, such as Settings section headings, `<b>`/`<strong>` body text, and `font-medium` on non-white text |
+| 600 (semibold, `font-bold`) | Markdown headings, the Refract wordmark, and `font-semibold` on non-white text |
 
 Do not use 450, or any other weight outside this table. The scale is one step lighter than the Tailwind defaults: `@theme` in `globals.css` remaps `--font-weight-normal/medium/semibold/bold` to 300/400/500/600 (issue #1246), so write the usual utility, never a literal number. The default `App`/`Chat` font is Geist and the default `Code` font is Geist Mono, both variable (wght 100-900). Code ligatures follow the Settings > Chat "Code ligatures" switch.
+
+Non-white text is one step heavier at every size (issue #1267, amended 2026-10-28). The colour utilities `text-muted-foreground`, `text-accent-text`, `text-destructive` and `text-severity-*` remap `--font-weight-normal/medium/semibold` to 400/500/600 on the element (`@layer base` in `globals.css`), so an unclassed muted element is 400 and an explicit `font-medium` on it is 500, with no per-component edit. `font-bold` stays 600, the top of the scale. Markdown headings use `font-bold` (600) so they stay heavier than bold body text (500). Children inherit the remap; wrap white text inside a muted parent in its own element if it must stay 300.
 
 The scale caps weights. It does not raise them: a heading or label that is lighter than its role's weight keeps its current weight.
 
