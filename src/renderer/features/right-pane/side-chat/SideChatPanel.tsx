@@ -5,7 +5,7 @@
 // must be hidden entirely" rule). Gate-fix round 2 (Code2/A11y2/Sec2/Verif2): single-flight
 // guard, correct `running`/`activeTopicRecordId` tracking, a live region, focus management,
 // Retry, and the question rendered right-aligned (spec.md User Story 1 Scenario 2).
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { EraserIcon, MessageCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
+import { COMPOSER_MARKDOWN_TEXTAREA_CLASS, ComposerMarkdownMirror, useComposerMarkdownSegments } from '@/features/chat/composerMarkdownMirror'
 import { SIDE_CHAT_LOADING_HINT, useRightPaneStore, useSessionsStore, useSideChatStore } from '@/state'
 import type { SideChatRecord } from '../../../../shared/frames'
 
@@ -72,6 +73,11 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const [draft, setDraft] = useState('')
   const [announcement, setAnnouncement] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mdSegments = useComposerMarkdownSegments(draft, true) // #1170
+  const mdMirrorRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (mdSegments && mdMirrorRef.current && textareaRef.current) mdMirrorRef.current.scrollTop = textareaRef.current.scrollTop
+  }, [mdSegments, draft])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const prevStatusesRef = useRef<Record<string, SideChatRecord['status']>>({})
   const announceTimersRef = useRef<{ clear?: number; pending?: number }>({})
@@ -404,10 +410,13 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
         <div className="no-drag-region shrink-0 border-t border-border p-2">
           <ComposerBox>
             <ComposerField>
+              {mdSegments && <ComposerMarkdownMirror segments={mdSegments} text={draft} mirrorRef={mdMirrorRef} className={running ? 'pr-20' : 'pr-10'} />}
               <ComposerTextarea
                 ref={textareaRef}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                onScroll={(event) => { if (mdMirrorRef.current) mdMirrorRef.current.scrollTop = event.currentTarget.scrollTop }}
+                className={mdSegments ? COMPOSER_MARKDOWN_TEXTAREA_CLASS : undefined}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask a side question…"
                 aria-label="Side chat question"

@@ -54,7 +54,9 @@ import type { ReactNode, RefObject } from 'react'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { classifySlashInvocation, parseSlashCommand } from '../../../shared/slash-commands'
 import type { SlashCommand } from '../../../shared/ipc'
-import { COMPOSER_TEXT_CLASS } from '@/components/ComposerBox'
+import { COMPOSER_MIRROR_CLASS } from '@/components/ComposerBox'
+import { ComposerMarkdownMirror, COMPOSER_MARKDOWN_TEXTAREA_CLASS, useComposerMarkdownSegments } from './composerMarkdownMirror'
+import type { MdSegment } from '@/lib/markdownLineTokens'
 
 /** The character range of a recognised leading command/skill token in `text`, or `undefined`
  * when the draft does not start with one. Reuses `parseSlashCommand`/`classifySlashInvocation`
@@ -90,7 +92,7 @@ export function findRecognisedCommandToken(text: string, commands: readonly Slas
  * every mirror out from under the real glyphs on any line past that point. `MessageInput.tsx`'s
  * own `<textarea>` reserves the same gutter unconditionally (not only while a pill shows) so the
  * two widths always match, pill or no pill. */
-export const COMPOSER_MIRROR_CLASS = `pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2 py-2 pr-20 text-foreground [scrollbar-gutter:stable] ${COMPOSER_TEXT_CLASS}`
+export { COMPOSER_MIRROR_CLASS }
 
 /** Decision 3's pill colours: two INDEPENDENT dedicated tokens (gate round 2 remediation --
  * round 1's single `--card`-or-`--muted`-aliased fill, paired with `--accent-text` directly, is
@@ -192,13 +194,16 @@ export const COMMAND_PILL_TEXTAREA_CLASS =
 export function CommandPillOverlay({
   text,
   token,
-  overlayRef
+  overlayRef,
+  markdownSegments
 }: {
   text: string
   token: RecognisedCommandToken | undefined
   overlayRef: RefObject<HTMLDivElement | null>
+  /** #1170: live Markdown styling for a non-command draft (null or absent: nothing to style). */
+  markdownSegments?: MdSegment[] | null
 }): ReactNode {
-  if (!token) return null
+  if (!token) return markdownSegments ? <ComposerMarkdownMirror segments={markdownSegments} text={text} mirrorRef={overlayRef} /> : null
   const before = text.slice(0, token.start)
   const pillText = text.slice(token.start, token.end)
   const afterRaw = text.slice(token.end)
@@ -224,10 +229,13 @@ export function CommandPillOverlay({
 export function useCommandPillOverlay(text: string, commands: readonly SlashCommand[], textareaRef: RefObject<HTMLTextAreaElement | null>) {
   const commandToken = useMemo(() => findRecognisedCommandToken(text, commands), [text, commands])
   const commandPillOverlayRef = useRef<HTMLDivElement>(null)
+  // #1170: the same mirror slot draws Markdown styling when no command pill is showing.
+  const markdownSegments = useComposerMarkdownSegments(text, !commandToken)
   useLayoutEffect(() => {
-    if (commandToken && commandPillOverlayRef.current && textareaRef.current) {
+    if ((commandToken || markdownSegments) && commandPillOverlayRef.current && textareaRef.current) {
       commandPillOverlayRef.current.scrollTop = textareaRef.current.scrollTop
     }
-  }, [commandToken, textareaRef])
-  return { commandToken, commandPillOverlayRef }
+  }, [commandToken, markdownSegments, text, textareaRef])
+  const textareaClass = commandToken ? COMMAND_PILL_TEXTAREA_CLASS : markdownSegments ? COMPOSER_MARKDOWN_TEXTAREA_CLASS : undefined
+  return { commandToken, commandPillOverlayRef, markdownSegments, textareaClass }
 }
