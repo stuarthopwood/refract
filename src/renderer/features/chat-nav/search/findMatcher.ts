@@ -126,6 +126,8 @@ export interface SearchOptions {
   matchCase: boolean
   cache?: LowerCaseCache
   signal: AbortSignal
+  /** Message index to search outward from (nearest first), so the cap never hides nearby matches. */
+  anchor?: number
   cap?: number
   chunkSize?: number
   /** Lets the event loop breathe between chunks; defaults to a macrotask. */
@@ -134,36 +136,49 @@ export interface SearchOptions {
 
 const defaultYield = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-/** Searches messages in order, `chunkSize` at a time, yielding between chunks and stopping early
- * once `cap` matches are collected. Resolves `null` when `signal` aborts (a newer query started). */
-export async function searchMessages(options: SearchOptions): Promise<SearchOutcome | null> {
-  const { count, getMessage, query, matchCase, cache, signal, cap = MATCH_CAP, chunkSize = SEARCH_CHUNK_SIZE } = options
-  const yieldToEventLoop = options.yieldToEventLoop ?? defaultYield
-  const groups: MessageMatchGroup[] = []
-  let total = 0
-  if (query === '') return { groups, total, capped: false }
-  for (let start = 0; start < count; start += chunkSize) {
-    if (signal.aborted) return null
-    const end = Math.min(count, start + chunkSize)
-    for (let index = start; index < end; index += 1) {
-      const message = getMessage(index)
-      if (!message) continue
-      const group = matchMessage(message, query, matchCase, cache, cap - total + 1)
-      if (!group) continue
-      const room = cap - total
-      if (group.spans.length > room) {
-        group.spans.length = room
-        group.snippets.length = room
-        if (room > 0) groups.push(group)
-        return { groups, total: cap, capped: true }
-      }
-      groups.push(group)
-      total += group.spans.length
-    }
-    if (end < count) {
-      await yieldToEventLoop()
-      if (signal.aborted) return null
-    }
+/** Indices 0..count-1 from `anchor` outward: anchor, anchor+1, anchor-1, anchor+2, ... */
+function* outwardOrder(count: number, anchor: number): Generator<number> {
+  let after = Math.min(Math.max(anchor, 0), Math.max(count - 1, 0))
+  let before = after - 1
+  while (before >= 0 || after < count) {
+    if (after < count) yield after++
+    if (before >= 0) yield before--
   }
-  return { groups, total, capped: false }
+}
+
+/** Searches messages nearest `anchor` first, `chunkSize` at a time, yielding between chunks and
+ * stopping once `cap` matches are collected. Groups come back in message order. Resolves `null`
+ * when `signal` aborts (a newer query started). */
+export async function searchMessages(options: SearchOptions): Promise<SearchOutcome | null> {
+  const { count, getMessage, query, matchCase, cache, signal, anchor = 0, cap = MATCH_CAP, chunkSize = SEARCH_CHUNK_SIZE } = options
+  const yieldToEventLoop = options.yieldToEventLoop ?? defaultYield
+  const found: Array<{ index: number; group: MessageMatchGroup }> = []
+  let total = 0
+  let capped = false
+  const finish = (): SearchOutcome => ({ groups: found.sort((a, b) => a.index - b.index).map((entry) => entry.group), total, capped })
+  if (query === '') return finish()
+  let visited = 0
+  for (const index of outwardOrder(count, anchor)) {
+    if (visited > 0 && visited % chunkSize === 0) {
+      await yieldToEventLoop()
+    }
+    if (signal.aborted) return null
+    visited += 1
+    const message = getMessage(index)
+    if (!message) continue
+    const group = matchMessage(message, query, matchCase, cache, cap - total + 1)
+    if (!group) continue
+    const room = cap - total
+    if (group.spans.length > room) {
+      group.spans.length = room
+      group.snippets.length = room
+      if (room > 0) found.push({ index, group })
+      total = cap
+      capped = true
+      return finish()
+    }
+    found.push({ index, group })
+    total += group.spans.length
+  }
+  return finish()
 }

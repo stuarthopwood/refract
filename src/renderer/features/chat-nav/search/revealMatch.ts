@@ -1,9 +1,10 @@
 import { NAV_HIGHLIGHT_ATTRIBUTE } from '../highlightRow'
+import { jumpTopInset } from '../jumpTopInset'
 import { getPane, mountedRows, renderedRanges } from './findDom'
 
 const POLL_MS = 80
 const GIVE_UP_MS = 3000
-const BAR_GAP_PX = 24
+const BOTTOM_GAP_PX = 24
 
 export interface RevealTarget {
   sessionId: string
@@ -39,7 +40,6 @@ function scrollMatchIntoView(pane: HTMLElement, range: Range | undefined): void 
   if (!range || !viewport) return
   const rect = range.getBoundingClientRect()
   const view = viewport.getBoundingClientRect()
-  const barBottom = pane.querySelector('[data-chat-find]')?.getBoundingClientRect().bottom ?? view.top
-  const top = Math.max(view.top, barBottom) + BAR_GAP_PX
-  if (rect.top < top || rect.bottom > view.bottom - BAR_GAP_PX) viewport.scrollTop += rect.top - top
+  const top = view.top + jumpTopInset(viewport)
+  if (rect.top < top || rect.bottom > view.bottom - BOTTOM_GAP_PX) viewport.scrollTop += rect.top - top
 }

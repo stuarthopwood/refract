@@ -1,7 +1,8 @@
-import { forwardRef } from 'react'
+import { forwardRef, useEffect, useRef } from 'react'
 import type { ComponentProps } from 'react'
 import { BotIcon, UserIcon } from 'lucide-react'
-import { Virtuoso, type ItemProps } from 'react-virtuoso'
+import { Virtuoso, type ItemProps, type VirtuosoHandle } from 'react-virtuoso'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 import { MATCH_CAP } from './findMatcher'
@@ -21,10 +22,15 @@ function ResultsItem({ item: _item, ...rest }: ItemProps<FlatMatch>) {
 const LIST_COMPONENTS = { List: ResultsList, Item: ResultsItem }
 
 export function FindResultsList({ matches, cursor, capped, onSelect }: { matches: readonly FlatMatch[]; cursor: number; capped: boolean; onSelect(index: number): void }) {
+  const virtuoso = useRef<VirtuosoHandle>(null)
+  useEffect(() => {
+    if (cursor >= 0) virtuoso.current?.scrollIntoView({ index: cursor, behavior: 'auto' })
+  }, [cursor, matches])
   if (matches.length === 0) return null
   return (
     <div className="border-t">
       <Virtuoso
+        ref={virtuoso}
         style={{ height: Math.min(matches.length * ROW_HEIGHT_PX, MAX_LIST_HEIGHT_PX) }}
         className="max-h-[max(3rem,calc(100dvh-32rem))]"
         data={matches as FlatMatch[]}
@@ -40,11 +46,12 @@ export function FindResultsList({ matches, cursor, capped, onSelect }: { matches
               aria-current={current ? 'true' : undefined}
               onClick={() => onSelect(index)}
               className={cn(
-                'flex h-12 w-full flex-col items-start justify-center gap-1 border-s-2 border-transparent px-2 text-start text-compact hover:bg-muted',
-                current && 'border-ring bg-muted',
+                'relative flex h-12 w-full flex-col items-start justify-center gap-1 px-2 text-start text-compact hover:bg-accent/50',
+                current && 'bg-accent text-accent-foreground',
                 COMPOSER_BUTTON_FOCUS_CLASS
               )}
             >
+              {current && <ActiveIndicatorBar />}
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Icon className="size-3" aria-hidden />
                 {match.kind === 'user' ? 'You' : 'Agent'}

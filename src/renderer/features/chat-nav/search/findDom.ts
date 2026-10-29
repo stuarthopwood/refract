@@ -68,11 +68,11 @@ export function rangeForSpan(rowText: RowText, span: TextSpan): Range | null {
   return range
 }
 
-/** One Range per match of `query` in the row's rendered text, in order. */
-export function renderedRanges(row: HTMLElement, query: string, matchCase: boolean): Range[] {
+/** One Range per match of `query` in the row's rendered text, in order, at most `limit` of them. */
+export function renderedRanges(row: HTMLElement, query: string, matchCase: boolean, limit = Number.POSITIVE_INFINITY): Range[] {
   const rowText = collectRowText(row)
   const ranges: Range[] = []
-  for (const span of findSpans(rowText.text, query, matchCase)) {
+  for (const span of findSpans(rowText.text, query, matchCase, undefined, limit)) {
     const range = rangeForSpan(rowText, span)
     if (range) ranges.push(range)
   }

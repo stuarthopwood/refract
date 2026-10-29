@@ -1,16 +1,31 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CaseSensitiveIcon, ChevronDownIcon, ChevronUpIcon, XIcon } from 'lucide-react'
 import { FloatingLayer } from '@/components/floating-layer'
+import { SearchField } from '@/components/SearchField'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { closeChatFind, EMPTY_CHAT_FIND, useChatFindStore } from '@/state/chat-find-store'
+import { getPane } from './findDom'
 import { FindResultsList } from './FindResultsList'
 import { useChatFind } from './useChatFind'
 
 const SETTLE_MS = 400
+
+/** Focus when the element that opened Find is gone: the composer, else the transcript viewport. */
+function focusChatFallback(sessionId: string): void {
+  const pane = getPane(sessionId)
+  const composer = pane?.querySelector<HTMLElement>('textarea')
+  if (composer) {
+    composer.focus({ preventScroll: true })
+    return
+  }
+  const viewport = pane?.querySelector<HTMLElement>('[data-slot="message-scroller-viewport"]')
+  if (!viewport) return
+  if (!viewport.hasAttribute('tabindex')) viewport.setAttribute('tabindex', '-1')
+  viewport.focus({ preventScroll: true })
+}
 
 /** Delays a live-region message until typing has paused, so a screen reader is not interrupted per keystroke. */
 function useSettledText(text: string): string {
@@ -48,7 +63,6 @@ export function FindBar({ sessionId }: { sessionId: string }) {
   const { query, matchCase, focusTick } = entry
   const inputRef = useRef<HTMLInputElement>(null)
   const returnTo = useRef<HTMLElement | null>(entry.returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null))
-  const helpId = useId()
   const find = useChatFind(sessionId, query, matchCase)
   const announced = useSettledText(find.status)
 
@@ -62,6 +76,7 @@ export function FindBar({ sessionId }: { sessionId: string }) {
     const target = returnTo.current
     requestAnimationFrame(() => {
       if (target?.isConnected) target.focus({ preventScroll: true })
+      else focusChatFallback(sessionId)
     })
   }
 
@@ -83,25 +98,22 @@ export function FindBar({ sessionId }: { sessionId: string }) {
       }}
     >
       <div className="flex items-center gap-1 p-1">
-        <Input
-          ref={inputRef}
-          type="text"
-          role="searchbox"
-          aria-label="Find in chat"
-          aria-describedby={helpId}
-          autoComplete="off"
-          spellCheck={false}
+        <SearchField
+          className="min-w-0 flex-1"
+          inputRef={inputRef}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-            event.preventDefault()
-            find.flush()
-            if (event.shiftKey) find.previous()
-            else find.next()
-          }}
+          onValueChange={setQuery}
+          label="Find in chat"
+          placeholder="Find in chat"
+          clearLabel="Clear search"
+          tooltipSide="bottom"
+          onEscape={close}
+          onSubmit={(shift) => void find.submit(shift)}
         />
-        <span role="status" aria-live="polite" className="min-w-16 shrink-0 text-center text-compact text-muted-foreground">
+        <span aria-hidden className="min-w-16 shrink-0 text-center text-compact text-muted-foreground">
+          {find.status}
+        </span>
+        <span role="status" aria-live="polite" className="sr-only">
           {announced}
         </span>
         {stepButton('Previous match', ['Shift', 'Enter'], ChevronUpIcon, find.matches.length === 0, find.previous)}
@@ -109,7 +121,8 @@ export function FindBar({ sessionId }: { sessionId: string }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <Toggle
-              size="sm"
+              size="icon-xs"
+              variant="subtle"
               aria-label="Match case"
               pressed={matchCase}
               onPressedChange={(pressed) => useChatFindStore.getState().setMatchCase(sessionId, pressed)}
@@ -131,9 +144,7 @@ export function FindBar({ sessionId }: { sessionId: string }) {
           </TooltipContent>
         </Tooltip>
       </div>
-      <p id={helpId} className="px-2 pb-1 text-compact text-muted-foreground">
-        Searches your messages and the agent&apos;s replies
-      </p>
+      {query === '' && <p className="px-2 pb-1 text-compact text-muted-foreground">Searches your messages and the agent&apos;s replies</p>}
       <FindResultsList matches={find.matches} cursor={find.cursor} capped={find.capped} onSelect={find.select} />
     </FloatingLayer>
   )
