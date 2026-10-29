@@ -21,6 +21,7 @@ import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } f
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
 import { TextSizeGroup } from './TextSizeGroup'
+import { ChatRowSpacingGroup } from './ChatRowSpacingGroup'
 import { StatusStylePicker } from './StatusStylePicker'
 
 export function AppearanceSection() {
@@ -203,6 +204,7 @@ export function AppearanceSection() {
         </div>
         {/* Spec 036 (#842): applies live, no Save/Cancel. */}
         <TextSizeGroup />
+        <ChatRowSpacingGroup />
         {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live, no Save/Cancel --
             the Save/Cancel row above governs only the Theme and Chat width pickers. */}
         <SettingsGroup title="Decoration">

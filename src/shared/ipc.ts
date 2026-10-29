@@ -44,7 +44,7 @@ import type {
 } from './github';
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
-import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle';
+import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
 import type { ActivityText, SessionActivity } from './activity';
 import type { UpdatesApi } from './updates';
 import type { ImagesApi } from './ipc-images';
@@ -409,6 +409,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_HOLIDAY_TOUCHES: 'settings.setHolidayTouches',
   SETTINGS_SET_ACTIVITY_TEXT: 'settings.setActivityText',
   SETTINGS_SET_STATUS_STYLE: 'settings.setStatusStyle',
+  SETTINGS_SET_CHAT_ROW_DENSITY: 'settings.setChatRowDensity',
   DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
@@ -698,7 +699,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; setShowScrollbarMap(enabled: boolean): Promise<Result<Settings>>; // Issue #1246; #754 (spec 041) scrollbar map switch
     setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
-    setStatusStyle(value: StatusStyle): Promise<Result<Settings>>; setActivityText(value: ActivityText): Promise<Result<Settings>>; // #482 setStatusStyle (Appearance Status style, applies live). #526 (FR-111): same pattern as setHolidayTouches; applies live.
+    setStatusStyle(value: StatusStyle): Promise<Result<Settings>>; setChatRowDensity(value: ChatRowDensity): Promise<Result<Settings>>; setActivityText(value: ActivityText): Promise<Result<Settings>>; // #482 setStatusStyle (Appearance Status style, applies live). #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setRightPane(value: Settings['rightPane']): Promise<Result<Settings>>; // Spec 024: sole writer is `right-pane-persistence.ts`; Rust clamps width and repairs the active tab. Pushes settings:changed.
     setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.

@@ -862,7 +862,7 @@ Also filed 2026-10-27: **#1235** (`p1`), a large CRLF paste losing its text on s
 
 Also filed 2026-10-28: **#1298** (`p1`), follow-up to #1233: the Halloween ghost and bats sit at about 3:1 and are now too strong, and the plain watermark at 0.06 is too faint; all go to about 1.6:1 (opacity 0.30 on Dark) through per-theme values of the existing `--holiday-artwork-opacity` and `--watermark-opacity`, with no new token; placed as an index line after #1233's row. **In progress 2026-10-29 (PR `fix(chat)`, branch `chat-polish-1298-1294`, spec 012 converge): per-theme values 0.30 Dark and Cyber Amber, 0.28 Obsidian and Nordic Frost, 0.24 high contrast for both tokens; no light theme exists, so `:root` keeps a 0.30 fallback.**
 
-Also filed 2026-10-28: **#1300** (`p1`), chat row density and non-agent row verb emphasis: Tight / Compact / Comfy row gaps (4 / 8 / 16px, Compact default) set in Settings > Appearance, superseding the "Density: medium" line in `docs/design/product-look-and-feel.md` for chat rows; placed as an index line after #1298's line.
+Also filed 2026-10-28: **#1300** (`p1`), chat row density and non-agent row verb emphasis: Tight / Compact / Comfy row gaps (4 / 8 / 16px, Compact default) set in Settings > Appearance, superseding the "Density: medium" line in `docs/design/product-look-and-feel.md` for chat rows; placed as an index line after #1298's line. Spec 048 (branch chat-row-density): built, PR open.
 
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
