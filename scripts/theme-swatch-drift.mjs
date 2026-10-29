@@ -57,9 +57,8 @@ export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds
   for (const token of ['background', 'card', 'popover']) {
     const amber = themes['cyber-amber']?.[token]
     const dark = themes.dark?.[token]
-    if (!amber || !dark) continue
     checkedCount++
-    if (JSON.stringify(amber) !== JSON.stringify(dark)) fail('cyber-amber', `--${token}`, `.theme-dark --${token}`, 'cyber-amber no longer matches Dark')
+    if (!amber || !dark || JSON.stringify(amber) !== JSON.stringify(dark)) fail('cyber-amber', `--${token}`, `.theme-dark --${token}`, 'cyber-amber no longer matches Dark (or a token is missing)')
   }
   return { checkedCount, failCount, rows }
 }

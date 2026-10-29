@@ -1712,7 +1712,7 @@ samp {
  * a bat (48px) plus its 120px flight, or when the chat width is 'full' (no gutter at all). */
 .holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(1) { left: 8px; }
 .holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(2) { left: calc(50cqw + 32rem + 8px); }
-.holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(3) { left: 24px; }
+.holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(3) { left: 8px; }
 .holiday-ambient-loop--gutters[data-chat-width='full'] .holiday-ambient-loop-bat-wrap {
   display: none;
 }

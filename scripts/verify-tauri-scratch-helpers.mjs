@@ -218,7 +218,7 @@ export async function safeRmSync(dir, label = 'verify') {
   }
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(path.resolve(dir), { recursive: true, force: true });
       return;
     } catch (err) {
       if (attempt === 2) {

@@ -243,8 +243,10 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
 
     function runFlight() {
       timerPending = false
-      const bats = containerRef.current?.querySelectorAll<HTMLElement>('.holiday-ambient-loop-bat-wrap')
-      if (!bats || bats.length === 0) {
+      const bats = Array.from(containerRef.current?.querySelectorAll<HTMLElement>('.holiday-ambient-loop-bat-wrap') ?? []).filter(
+        (el) => el.offsetParent !== null
+      )
+      if (bats.length === 0) {
         scheduleNextFlight()
         return
       }

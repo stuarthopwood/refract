@@ -42,7 +42,7 @@ const DATE_OVERRIDE = '2026-10-27';
 const SHORT_IDLE_MS = 3_000;
 const SHORT_FLIGHT_INTERVAL_MS = 5_000;
 const MIN_CONTRAST = 3;
-const MIN_FLIGHT_DISTANCE_PX = 40;
+const MIN_FLIGHT_DISTANCE_PX = 15;
 // Fixed and independent of REFRACT_1233_SHOTS_DIR (#1256): the report always lands here.
 const REPORT_DIR = path.join(tmpdir(), 'refract-1233-report');
 
@@ -162,8 +162,8 @@ async function main() {
     const pausedAttr = () => cdp.evaluate(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`, { timeoutMs: 15_000, label: 'Loop paused by idle' });
     const before = await flightCount();
-    // A flight must move a bat well clear of its resting spot (the keyframes reach 120px right),
-    // not merely bump the counter: sample every bat's displacement while awake.
+    // A flight must move a bat clear of its resting spot, not merely bump the counter. The idle
+    // pause lands about 1s into a flight (ease-in-out, ~25-30px by then), so the bar is 15px.
     await cdp.evaluate(`(() => { window.__batRest = Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); })()`);
     const maxDisplacement = () => cdp.evaluate(`(() => { const rest = window.__batRest || []; let max = 0; Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).forEach((el, i) => { const r = el.getBoundingClientRect(); max = Math.max(max, Math.hypot(r.left - rest[i][0], r.top - rest[i][1])); }); return max; })()`);
     let pausedFlights = 0;
@@ -173,8 +173,8 @@ async function main() {
       await sleep(1_000);
       pausedFlights += (await flightCount()) - atPause;
       await dispatchNeutralPointerdown(cdp);
-      for (let sample = 0; sample < 17; sample += 1) {
-        await sleep(200);
+      for (let sample = 0; sample < 30; sample += 1) {
+        await sleep(100);
         peakDisplacement = Math.max(peakDisplacement, await maxDisplacement());
       }
     }
