@@ -7,24 +7,26 @@
 // sign-in action to offer for TLS or auth errors yet.
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
-import { notify, EMPTY_TRANSCRIPT, useTranscriptStore } from '@/state'
+import { notify, EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useReadoutStore, useTranscriptStore } from '@/state'
 import { classifyTurnError, TURN_ERROR_HINTS } from '../../../shared/turnError'
 import type { TranscriptItem } from '../../../shared/model'
 import { ClampedContent } from '../../components/ClampedContent'
 import { PaneBanner } from '../../components/PaneBanner'
 import { focusSessionPane } from '../../lib/focus'
-import { FILE_ATTACHMENTS_MARKER } from './anyFileAttachments'
 
 type TurnErrorItem = Extract<TranscriptItem, { kind: 'turn-error' }>
 type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
 const SUPERSEDED = Symbol('superseded')
 
+function hasAttachments(user: UserItem): boolean {
+  return (user.images?.length ?? 0) > 0 || (user.fileAttachments?.length ?? 0) > 0
+}
+
 /** The prompt text Retry can resend whole, or null when it cannot (images are blob refs with no
- * bytes here; file attachments are only resendable when their content sits in the text). */
+ * bytes here, and the file-attachment content is stripped from the transcript text). */
 function resendableText(user: UserItem): string | null {
-  if (user.images && user.images.length > 0) return null
-  if (user.fileAttachments && user.fileAttachments.length > 0 && !user.text.includes(FILE_ATTACHMENTS_MARKER)) return null
+  if (hasAttachments(user)) return null
   return user.text.trim() === '' ? null : user.text
 }
 
@@ -43,9 +45,13 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
     return null
   })
 
+  // Same readout the Retry line reads: while OMP auto-retries, a manual Retry would double-send.
+  const autoRetrying = useReadoutStore((s) => !!(sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.retry : null))
+
   if (prompt === SUPERSEDED) return null
   const kind = classifyTurnError(item.text)
   const text = prompt ? resendableText(prompt) : null
+  const needsReattach = !!prompt && hasAttachments(prompt)
 
   async function handleRetry() {
     if (!sessionId || !text || sending) return
@@ -73,7 +79,10 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
       detail={<ClampedContent maxHeight="5lh">{item.text}</ClampedContent>}
       className="px-2"
     >
-      {sessionId && text && (
+      {needsReattach && !autoRetrying && (
+        <span className="text-xs text-muted-foreground">Re-attach and resend from the composer.</span>
+      )}
+      {sessionId && text && !autoRetrying && (
         <Button
           type="button"
           size="xs"

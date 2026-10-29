@@ -109,7 +109,8 @@ export function ClampedContent({
     // The browser scrolls a focused clipped element into the box, so add `scrollTop` back to judge
     // it against the cut it started behind.
     const bottom = event.target.getBoundingClientRect().bottom - element.getBoundingClientRect().top + element.scrollTop
-    if (bottom > cutRef.current + 1) setExpanded(true)
+    const limit = cutRef.current + 1 - (fade ? FADE_HEIGHT_PX : 0)
+    if (bottom > limit) setExpanded(true)
   }
 
   function handleToggle() {

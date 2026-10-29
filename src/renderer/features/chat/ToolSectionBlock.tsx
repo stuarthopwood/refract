@@ -67,6 +67,15 @@ function RenderableSection({ section }: { section: Section }) {
   const [renderAnyway, setRenderAnyway] = React.useState(false)
   const blocked = large && !renderAnyway
   const effectiveView: SectionView = blocked ? 'source' : view
+  const noteId = React.useId()
+  const renderedRef = React.useRef<HTMLButtonElement>(null)
+  const focusRendered = React.useRef(false)
+  React.useEffect(() => {
+    if (!blocked && focusRendered.current) {
+      focusRendered.current = false
+      renderedRef.current?.focus()
+    }
+  }, [blocked])
   return (
     <div>
       <SectionHeader section={section}>
@@ -81,7 +90,13 @@ function RenderableSection({ section }: { section: Section }) {
           spacing={0}
           aria-label={`${section.label} view`}
         >
-          <ToggleGroupItem value="rendered" className={SELECTED_SEGMENT_CLASS}>
+          <ToggleGroupItem
+            ref={renderedRef}
+            value="rendered"
+            className={SELECTED_SEGMENT_CLASS}
+            aria-disabled={blocked || undefined}
+            aria-describedby={blocked ? noteId : undefined}
+          >
             Rendered
           </ToggleGroupItem>
           <ToggleGroupItem value="source" className={SELECTED_SEGMENT_CLASS}>
@@ -90,12 +105,13 @@ function RenderableSection({ section }: { section: Section }) {
         </ToggleGroup>
       </SectionHeader>
       {blocked && (
-        <p className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <p id={noteId} className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
           Too large to render.
           <Button
             variant="text"
             size="xs"
             onClick={() => {
+              focusRendered.current = true
               setRenderAnyway(true)
               setView('rendered')
             }}

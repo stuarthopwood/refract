@@ -16,38 +16,62 @@ export function RetryLine({ sessionId }: { sessionId: string }) {
   const retry = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.retry)
   const announce = useChatAreaAnnouncer((s) => s.announce)
   const wasRetrying = React.useRef(false)
+  const focusInside = React.useRef(false)
+  const stopping = React.useRef(false)
 
   React.useEffect(() => {
-    if (wasRetrying.current && !retry) announce('Retry finished')
+    if (retry && !wasRetrying.current) announce(`Retrying, attempt ${retry.attempt} of ${retry.maxAttempts}`)
+    if (wasRetrying.current && !retry) {
+      announce('Retry finished')
+      if (focusInside.current) {
+        focusInside.current = false
+        focusSessionPane(sessionId)
+      }
+    }
     wasRetrying.current = !!retry
-  }, [retry, announce])
+  }, [retry, announce, sessionId])
 
   async function handleStop() {
-    await stopAndRestore(sessionId, () => focusSessionPane(sessionId))
-    focusSessionPane(sessionId)
+    if (stopping.current) return
+    stopping.current = true
+    try {
+      if (await stopAndRestore(sessionId, () => focusSessionPane(sessionId))) focusSessionPane(sessionId)
+    } finally {
+      stopping.current = false
+    }
   }
 
   return (
-    <StatusBanner
-      label="Retrying"
-      testId="retry-line"
-      items={
-        retry
-          ? [
-              {
-                id: 'retry',
-                status: (
-                  <span className="flex items-center gap-2 text-severity-warning">
-                    <TriangleAlertIcon aria-hidden className="size-4" />
-                    Retrying
-                  </span>
-                ),
-                text: `Attempt ${retry.attempt} of ${retry.maxAttempts}`,
-                action: { label: 'Stop', variant: 'text', onClick: () => void handleStop() }
-              }
-            ]
-          : []
-      }
-    />
+    <div
+      onFocus={() => {
+        focusInside.current = true
+      }}
+      onBlur={(event) => {
+        // A button removed with focus fires blur on a disconnected target: keep the flag then.
+        if (event.target instanceof Node && event.target.isConnected) focusInside.current = false
+      }}
+    >
+      <StatusBanner
+        label="Retrying"
+        testId="retry-line"
+        items={
+          retry
+            ? [
+                {
+                  id: 'retry',
+                  status: (
+                    <span className="flex items-center gap-2 text-severity-warning">
+                      <TriangleAlertIcon aria-hidden className="size-4" />
+                      Retrying
+                    </span>
+                  ),
+                  text: `Attempt ${retry.attempt} of ${retry.maxAttempts}`,
+                  action: { label: 'Stop', ariaLabel: 'Stop retrying', variant: 'text', onClick: () => void handleStop() }
+                }
+              ]
+            : []
+        }
+      />
+    </div>
   )
 }

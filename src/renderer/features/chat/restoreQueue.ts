@@ -43,11 +43,13 @@ export function restoreQueuedMessages(sessionId: string, restored: StopResult, f
   if (restored.truncated) toast.warning('Some queued messages were too large to restore and were not returned.')
 }
 
-export async function stopAndRestore(sessionId: string, focusComposer: () => void): Promise<void> {
+/** Resolves true when the stop succeeded. */
+export async function stopAndRestore(sessionId: string, focusComposer: () => void): Promise<boolean> {
   const result = await window.refract.chat.stop(sessionId)
   if (!result.ok) {
     notify(result.error)
-    return
+    return false
   }
   restoreQueuedMessages(sessionId, result.value, focusComposer)
+  return true
 }

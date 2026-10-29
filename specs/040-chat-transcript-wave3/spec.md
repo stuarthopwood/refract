@@ -20,7 +20,7 @@
 
 ## Requirements
 
-- **FR-001** (#1284) A turn that ends in a model error shows a Turn error row with OMP's error text, a plain-language hint for TLS, auth and rate-limit errors, and a Retry button that resends the unanswered prompt once and removes the row when the new turn starts. While OMP retries, a live Retry line ("Retrying, attempt N of M") with Stop shows; Stop aborts the turn. The existing current-work banner and session-row retry text still show.
+- **FR-001** (#1284) A turn that ends in a model error shows a Turn error row with OMP's error text, a plain-language hint for TLS, auth and rate-limit errors, and a Retry button that resends the unanswered prompt once and removes the row when the new turn starts. While OMP retries, a live Retry line ("Retrying, attempt N of M") with Stop shows and replaces the current-work banner's retry text (the session-row retry text remains); Stop aborts the turn. Retry is hidden while OMP auto-retries.
 - **FR-002** (#1283) Todo status icons align with the first line of their item text in the pinned panel and the Todo hover card (`TodoTaskRow`).
 - **FR-003** (#907) The chat header title and branch truncate with a tooltip and never sit under the action buttons at 320 and 360 px.
 - **FR-004** (#1130) The pinned todo list's scrollbar is flush with the pane edge and matches the transcript scrollbar; content keeps its 16 px inset.

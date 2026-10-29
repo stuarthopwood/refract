@@ -57,6 +57,7 @@ Five written-down channels (agenda item 7; `status` added by #865, 2026-10-29), 
 |---|---|---|
 | Banner | A problem scoped to one Session or pane | Stays until the problem is fixed. |
 | Status | Work still running for one Session, such as background agents (`StatusBanner`, `src/renderer/components/StatusBanner.tsx`, mounted above the composer) | Non-modal and never dismissed by hand: each line leaves when its work settles. Icon plus word, never colour alone; zero-box; `aria-live="off"`, with one polite announcement per settle. No counters of pool limits. |
+| Status (Retrying) | OMP is auto-retrying a failed model call (`RetryLine`, `src/renderer/features/chat/RetryLine.tsx`) | Same `StatusBanner`, with an amber "Retrying" status (warning triangle plus word, `text-severity-warning`), "Attempt N of M" text and a `text` Stop button (`aria-label` "Stop retrying"). Announces politely at retry start and once when it ends; focus inside the line moves to the composer when it ends. |
 | Toast | A transient, app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation. |
 | Transcript notice | Agent-originated news | Renders as a normal transcript row; never dropped. |

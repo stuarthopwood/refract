@@ -3,7 +3,9 @@ import { OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // #746: the shared unboxed row for a Session- or pane-scoped problem (docs/design/components.md,
-// "Banners"). Severity icon in the severity colour (error = destructive, warning = warning token), title in normal foreground, an optional muted
+// #746: the shared unboxed row for a Session- or pane-scoped problem (docs/design/components.md,
+// "Banners"). Severity icon in the severity colour (error = destructive, warning = warning
+// token), title in normal foreground, an optional muted
 // detail line, then actions as `children`: one `outline` primary first, the rest `text` buttons,
 // a destructive one last as `text-destructive`. `role="alert"` fires at appearance only; keep any
 // expanding disclosure OUTSIDE this element so toggling it never re-announces the banner.
