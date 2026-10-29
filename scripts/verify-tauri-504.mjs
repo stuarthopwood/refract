@@ -89,7 +89,14 @@ async function main() {
         return false;
       }
     };
-    const clickTab = (name) => cdp.click(`Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(name)})`);
+    // The tab strip scrolls horizontally in the narrow list pane, so bring the tab into view first.
+    const clickTab = async (name) => {
+      const find = `Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(name)})`;
+      await cdp.waitFor(`!!(${find})`, { timeoutMs: 10_000, label: `tab ${name}` });
+      await cdp.evaluate(`(${find}).scrollIntoView({ inline: 'center', block: 'nearest' })`);
+      await sleep(300);
+      await cdp.click(find);
+    };
     const pickSelect = async (triggerLabel, optionText) => {
       await cdp.clickByLabel(triggerLabel);
       await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === ${JSON.stringify(optionText)})`);
