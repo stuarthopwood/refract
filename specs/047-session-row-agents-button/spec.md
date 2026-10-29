@@ -8,7 +8,7 @@
 
 ### Session 2026-10-29 (grill and clarify, Skippy delegated by Stuart; full text in the "Decided" comment on #507)
 
-- Origin/main check: nothing shipped. `SessionSummary.activity.runningSubagents` (#526) already carries a live per-Session running count, patched from `session:activity`, so no new IPC field, Rust change or `session:list-changed` emitter is needed. The failed/finished breakdown is not on `SessionSummary` and is deferred.
+- Origin/main check: nothing shipped. `SessionSummary.activity.runningSubagents` (#526) already carries a live per-Session running count, patched from `session:activity`, so no IPC field or `session:list-changed` emitter is needed. One Rust tweak (found by the live check): `activity_value` (`readout_activity_emit.rs`) used to return `null` whenever no turn was running, which hid a background subagent that outlives its turn; it now keeps `{runningSubagents, todo: null}` while any subagent still runs. The failed/finished breakdown is not on `SessionSummary` and is deferred.
 - Count = running only. The button renders only while running > 0 (a quiet row; the Subagents chip and panel still show finished and failed).
 - Button: `Button variant="ghost" size="xs"`, `UsersIcon` plus the count as real text ("9+" above 9), `text-muted-foreground`, after Resume and before the time cell. Tab order: row button, Resume, agents, the actions menu.
 - Name and tooltip: "3 agents running in <Session>. Open Agents panel." (singular: "1 agent running in ..."), the tooltip also on keyboard focus.
