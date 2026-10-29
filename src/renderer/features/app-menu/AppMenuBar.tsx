@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { notify } from '@/state'
+import { openChatFind } from '@/state/chat-find-store'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { PaneWidthDropdownItems } from '@/features/right-pane/PaneWidthMenu'
 import { APP_MENU_IDS } from '../../../shared/ipc'
@@ -137,6 +138,17 @@ export function AppMenuBar() {
     if (!result.ok) notify(result.error)
   }
 
+  function findInChat(): void {
+    const returnFocus = previousFocusRef.current
+    const pane = returnFocus?.closest('[data-session-pane]') ?? document.querySelector('[data-session-pane]')
+    const sessionId = pane?.getAttribute('data-session-pane')
+    if (!sessionId) return
+    // The find bar takes focus itself; clearing the ref stops the bar's own close from stealing it.
+    previousFocusRef.current = null
+    setVisible(false)
+    openChatFind(sessionId, returnFocus)
+  }
+
   function focusButton(index: number): void {
     const buttons = barRef.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]')
     if (buttons?.length) buttons[(index + buttons.length) % buttons.length]?.focus()
@@ -195,6 +207,19 @@ export function AppMenuBar() {
           <PaneWidthDropdownItems />
         </DropdownMenuContent>
       </DropdownMenu>
+      <button
+        type="button"
+        role="menuitem"
+        aria-keyshortcuts="Control+F"
+        onKeyDown={(event) => onButtonKeyDown(event, MENUS.length + 1)}
+        onClick={findInChat}
+        className={MENU_BUTTON_CLASS}
+      >
+        Find in chat
+        <span aria-hidden className="ms-2 text-muted-foreground">
+          Ctrl+F
+        </span>
+      </button>
     </div>
   )
 }

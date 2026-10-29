@@ -15,12 +15,13 @@
 // `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
 // before the double-click ever reaches the page's own JS, so a renderer-driven toggle was dead
 // code and has been removed.
-import { MessageSquareXIcon, SplitSquareHorizontalIcon } from 'lucide-react'
+import { MessageSquareXIcon, SearchIcon, SplitSquareHorizontalIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionsStore } from '@/state'
+import { openChatFind } from '@/state/chat-find-store'
 import { STATUS_LABEL, StateIcon } from '@/features/sessions/sessionDisplay'
 import { ConversationSwitcher } from './ConversationSwitcher'
 
@@ -92,6 +93,27 @@ export function ChatHeader({
         <div className="shrink-0">
           <ConversationSwitcher sessionId={sessionId} />
         </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => openChatFind(sessionId)}
+              aria-label="Find in chat"
+              aria-keyshortcuts="Control+F"
+            >
+              <SearchIcon aria-hidden className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Find in chat
+            <KbdGroup>
+              <Kbd>Ctrl</Kbd>
+              <Kbd>F</Kbd>
+            </KbdGroup>
+          </TooltipContent>
+        </Tooltip>
         {onClose && (
           <Tooltip>
             <TooltipTrigger asChild>

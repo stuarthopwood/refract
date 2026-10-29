@@ -36,7 +36,7 @@ import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 import { JumpToStageContext, stageRowDomId } from './stageJump'
 import { ChatNavBridge } from '../chat-nav/ChatNavBridge'
-import { MessageStepButtons } from '../chat-nav/MessageStepButtons'
+import { ChatNavOverlays } from '../chat-nav/ChatNavOverlays'
 import { startRowJumpLoop, type JumpControl } from '../chat-nav/rowJumpLoop'
 
 // A running group's live announcement reads its intent, cut to 80 characters with an ellipsis.
@@ -938,7 +938,7 @@ export function Transcript({
         <span role="status" aria-live="polite" className="sr-only">
           {stageAnnouncement}
         </span>
-        <MessageStepButtons sessionId={sessionId} />
+        <ChatNavOverlays sessionId={sessionId} />
         <Button
           ref={buttonRef}
           type="button"

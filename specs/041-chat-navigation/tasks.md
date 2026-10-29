@@ -16,8 +16,8 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T7 Outline list model, windowed list, roving tabindex, current marker, collapse and Collapse all / Expand all, empty state.
 
 ## WP-D Search (#753)
-- [ ] T8 Probe the Custom Highlight API on WebView2; matcher (chunked, cancellable, 500 cap, case toggle).
-- [ ] T9 `FindBar`, results list, highlight painter, Ctrl+F scoped to chat panes, header ghost icon, per-pane state.
+- [x] T8 Probe the Custom Highlight API on WebView2; matcher (chunked, cancellable, 500 cap, case toggle).
+- [x] T9 `FindBar`, results list, highlight painter, Ctrl+F scoped to chat panes, header ghost icon, per-pane state.
 
 ## WP-E Map (#754)
 - [ ] T10 Canvas `ScrollbarMap`: offsets, merge, hit-test, window, drag, tooltip, stub.

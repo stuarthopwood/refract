@@ -87,6 +87,7 @@
   --color-command-pill-bg: var(--command-pill-bg);
   --color-command-pill-fg: var(--command-pill-fg);
   --color-composer-selection-bg: var(--composer-selection-bg);
+  --color-find-match: var(--find-match-bg);
   --color-composer-selection-fg: var(--composer-selection-fg);
   --color-severity-success: var(--severity-success);
   --color-severity-warning: var(--severity-warning);
@@ -2145,5 +2146,40 @@ samp {
   }
   to {
     outline-color: transparent;
+  }
+}
+/* Chat Find (spec 041, #753): matches painted with the CSS Custom Highlight API (findPainter.ts).
+ * ::highlight() allows only colour, background, text-decoration and text-shadow, so the current
+ * match is told apart by a heavier fill AND a solid underline, and the others by a lighter fill
+ * (a dotted underline in High contrast), not by colour alone. WP-F adds the contrast pairs. */
+:root {
+  --find-match-bg: color-mix(in oklab, var(--accent-text) 22%, transparent);
+  --find-match-current-bg: color-mix(in oklab, var(--accent-text) 55%, transparent);
+}
+.theme-dark-high-contrast {
+  --find-match-bg: color-mix(in oklab, var(--accent-text) 40%, transparent);
+  --find-match-current-bg: color-mix(in oklab, var(--accent-text) 80%, transparent);
+}
+::highlight(chat-find) {
+  background-color: var(--find-match-bg);
+}
+::highlight(chat-find-current) {
+  background-color: var(--find-match-current-bg);
+  text-decoration: underline 2px solid;
+  text-underline-offset: 2px;
+}
+.theme-dark-high-contrast ::highlight(chat-find) {
+  text-decoration: underline 1px dotted;
+}
+@media (forced-colors: active) {
+  ::highlight(chat-find) {
+    background-color: Highlight;
+    color: HighlightText;
+    text-decoration: underline 1px dotted;
+  }
+  ::highlight(chat-find-current) {
+    background-color: Highlight;
+    color: HighlightText;
+    text-decoration: underline 2px solid;
   }
 }
