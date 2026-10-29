@@ -895,7 +895,7 @@ const components: Components = {
         const safe = trimmed && !/\s/.test(trimmed) ? safeUrl(trimmed) : undefined
         if (safe) {
           return (
-            <code className="rounded bg-muted px-1 py-1 font-code text-[0.85em]" {...props}>
+            <code className="rounded bg-muted px-1 py-1 font-code text-code-inline" {...props}>
               {streaming ? (
                 <span className={mutedInertLinkClassName}>{text}</span>
               ) : (
@@ -913,14 +913,14 @@ const components: Components = {
         const fileRef = sessionId && trimmed ? parseFileReference(trimmed) : null
         if (fileRef) {
           return (
-            <code className="rounded bg-muted px-1 py-1 font-code text-[0.85em]" {...props}>
+            <code className="rounded bg-muted px-1 py-1 font-code text-code-inline" {...props}>
               <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} />
             </code>
           )
         }
       }
       return (
-        <code className="rounded bg-muted px-1 py-1 font-code text-[0.85em]" {...props}>
+        <code className="rounded bg-muted px-1 py-1 font-code text-code-inline" {...props}>
           {children}
         </code>
       )

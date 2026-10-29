@@ -1,4 +1,4 @@
-// Inline row actions for a File explorer tree row (spec 035, #756): the shared path-action
+// Inline row actions for a File explorer tree row (spec 036, #756): the shared path-action
 // buttons (`path-actions.tsx`) between the name/status mark and the kebab. They are mouse
 // shortcuts only (`tabIndex={-1}`, grill 2026-10-29): the keyboard route stays the kebab menu and
 // Shift+F10. How many show follows the PANE's width, via a container query on the Explorer

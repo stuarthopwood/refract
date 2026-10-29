@@ -8,16 +8,8 @@
 // `ContextUsageChip` (#1082: gradient and bar) lives in its own module, `ContextUsageChip.tsx`.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent, RefObject } from 'react'
-import {
-  ClockIcon,
-  EyeIcon,
-  FileDiffIcon,
-  GitPullRequestIcon,
-  ListTodoIcon,
-  Loader2Icon,
-  PinIcon,
-  UsersIcon
-} from 'lucide-react'
+import { EyeIcon, Loader2Icon, PinIcon } from 'lucide-react'
+import { READOUT_KIND_ICONS } from '@/components/icons/readout-icons'
 import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { cn } from '@/lib/utils'
@@ -48,14 +40,14 @@ export function ChangesChip({ sessionId }: { sessionId: string }) {
   if (changes === null) return null
   if (changes === 'not-available') {
     return (
-      <ReadoutChip icon={FileDiffIcon} onActivate={onActivate} accessibleName="Open Git changes panel (Not available)">
+      <ReadoutChip icon={READOUT_KIND_ICONS.changes} onActivate={onActivate} accessibleName="Open Git changes panel (Not available)">
         <span>Not available</span>
       </ReadoutChip>
     )
   }
   return (
     <ReadoutChip
-      icon={FileDiffIcon}
+      icon={READOUT_KIND_ICONS.changes}
       onActivate={onActivate}
       accessibleName={`Open Git changes panel (${formatDiffStatAccessible(changes)})`}
     >
@@ -81,7 +73,7 @@ export function TurnTimeChip({ sessionId }: { sessionId: string }) {
   }, [startedAt])
   if (startedAt === null) return null
   return (
-    <ReadoutChip icon={ClockIcon}>
+    <ReadoutChip icon={READOUT_KIND_ICONS['turn-time']}>
       <span>{formatElapsed(now - startedAt)}</span>
     </ReadoutChip>
   )
@@ -107,7 +99,7 @@ export function CurrentTimeChip({ className }: { className?: string } = {}) {
   }, [])
   const formatted = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)
   return (
-    <ReadoutChip icon={ClockIcon} className={className}>
+    <ReadoutChip icon={READOUT_KIND_ICONS['current-time']} className={className}>
       {/* High remediation (a11y): a plain, non-interactive, role-less <span> cannot be named by
           aria-label per ARIA 1.2 -- several real screen readers (NVDA in browse mode, often
           Narrator/JAWS) read visible content instead, and this span's only content used to be
@@ -138,7 +130,7 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
   if (session) {
     return (
       <ReadoutChip
-        icon={GitPullRequestIcon}
+        icon={READOUT_KIND_ICONS['pull-request']}
         accessibleName={`Open pull request #${pullRequest.number}`}
         onActivate={() => {
           usePullRequestsStore.getState().selectPullRequest(session.repositoryId, pullRequest.number)
@@ -150,7 +142,7 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
     )
   }
   return (
-    <ReadoutChip icon={GitPullRequestIcon} href={pullRequest.url} accessibleName={`Open pull request #${pullRequest.number}`}>
+    <ReadoutChip icon={READOUT_KIND_ICONS['pull-request']} href={pullRequest.url} accessibleName={`Open pull request #${pullRequest.number}`}>
       <span aria-hidden>#{pullRequest.number}</span>
     </ReadoutChip>
   )
@@ -208,7 +200,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
       <PopoverAnchor asChild>
         <ReadoutChip
           ref={card.anchorRef}
-          icon={UsersIcon}
+          icon={READOUT_KIND_ICONS.subagents}
           // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
           // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
           // focus-move retarget (research.md Decision 10).
@@ -283,7 +275,7 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
       <PopoverAnchor asChild>
         <ReadoutChip
           ref={card.anchorRef}
-          icon={pinned ? PinIcon : ListTodoIcon}
+          icon={pinned ? PinIcon : READOUT_KIND_ICONS['todo-progress']}
           onActivate={onActivate}
           accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
           pressed={pinned}

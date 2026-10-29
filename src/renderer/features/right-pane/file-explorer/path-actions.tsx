@@ -1,4 +1,4 @@
-// The one definition of the three path actions (spec 035, #756): Open in VS Code, Reveal in File
+// The one definition of the three path actions (spec 036, #756): Open in VS Code, Reveal in File
 // Explorer and Copy path. Their labels, icons and handlers live here once; the tree row's inline
 // buttons (`TreeRowActions`), the preview header (`FilePreviewPane`) and the row's kebab/context
 // menu items (`TreeNodeRow`) are all built from them.

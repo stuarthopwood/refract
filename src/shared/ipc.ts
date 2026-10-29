@@ -403,6 +403,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_AI_CREDITS: 'settings.setShowAiCredits',
   SETTINGS_SET_ANIMATED_STATUS_TEXT: 'settings.setAnimatedStatusText',
   SETTINGS_SET_CODE_LIGATURES: 'settings.setCodeLigatures',
+  SETTINGS_SET_TYPOGRAPHY: 'settings.setTypography',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
@@ -675,8 +676,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
      * written value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
      * `setSplit`. Pushes `settings:changed`, no new event. */
     setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
-    /** Issue #457, quality-gate remediation (HIGH): takes ONE field at a time (not the whole
-     * `TranscriptDisplaySettings` object -- a stale second toggle could otherwise revert the
+    /** Issue #457: takes ONE field at a time (a stale second toggle could otherwise revert the
      * first), merged in main against the persisted row. Pushes `settings:changed`; hiding is a
      * renderer-side view filter only -- hidden items stay in the persisted Conversation. */
     setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<Result<Settings>>;
@@ -694,6 +694,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
     setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; // Issue #1246
+    setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
     setActivityText(value: ActivityText): Promise<Result<Settings>>; // #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
@@ -804,12 +805,11 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   copilot: { planUsage(): Promise<Result<{ percentUsed: number } | null>> }; // #1238; null = unavailable.
 
   /** Spec 007 contracts/ipc.md "Bootstrap": synchronous, called once from `main.tsx`'s very
-   * first lines, before React mounts and before any class is set on `<html>` -- replaces the old
-   * hardcoded `document.documentElement.classList.add('dark')`. Blocks the renderer's single JS
-   * thread for one cheap, one-time call (confirmed live at ~0.6ms, FINDINGS.md item 42) so
-   * nothing paints before the right theme class is already set (FR-012/SC-003). Not
-   * `Result<T>`-shaped: there is nothing to fail. */
-  themeBootstrap(): { theme: ThemeId };
+   * first lines, before React mounts and before any class is set on `<html>`. Blocks the
+   * renderer's one JS thread for one cheap call (~0.6ms, FINDINGS.md item 42) so nothing paints
+   * before the right theme class is set (FR-012/SC-003). Not `Result<T>`-shaped. `typography`
+   * (spec 036) carries the saved text scales for the same first-paint reason. */
+  themeBootstrap(): { theme: ThemeId; typography?: Settings['typography'] };
 
   // Spec 008 contracts/ipc.md: GitHub accounts and OMP provider sign-in both go through the
   // developer's own CLI (GitHub CLI / omp) -- Refract never stores a token (FR-012).

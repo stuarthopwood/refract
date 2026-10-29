@@ -1,0 +1,21 @@
+# Plan: Settings (wave 2)
+
+Spec: `spec.md`. One PR, built in five work packages (WP-A to WP-E). WP-A lands first because the others build on its components; WP-B to WP-E then run in parallel on disjoint files, with the few shared files edited in separate regions. Wave 1 tokens (weight scale, 4 px radius, `tab-classes.ts`, `menu-item-classes.ts`, `TitlebarBand`, `--divider`) are the base; build on them, do not redo them.
+
+## Architecture
+
+- **Frame (WP-A)**: `src/renderer/components/settings/` holds `SettingsPage.tsx` (title, intro, width cap, heading focus), `SettingsGroup.tsx` (`h3`, `role="group"` labelled by it, `divide-divider` rows) and `SettingRow.tsx` (label, description, control slot, optional `icon`, `aria-describedby`, stacks under 480 px via a container query). `SettingFieldRow` and `SettingSwitchRow` in `components/` become thin wrappers or are deleted once callers move. A `SettingsBrand` piece in the header reuses the `refractHero` asset and the wordmark text from `SessionList.tsx`.
+- **Icon maps (WP-A)**: `src/renderer/components/icons/readout-icons.ts` (kind to lucide icon, imported by `ReadoutChips` and Status line) and `src/renderer/components/icons/role-icons.ts` (role id to icon). The nav section map lives beside `SettingsScreen`. Turn time and Current time must not share a glyph (#717: check the chip's icon first).
+- **Models (WP-B)**: current-model resolution is a pure helper (`modelRoleCurrent.ts`, builds on `modelRoleSuffix.ts` and the catalog) returning `{ name, provider, thinking, raw, kind }`; a small `RoleCurrentModel.tsx` renders it; inheritance text comes from a probe-confirmed table (`roleInheritance.ts`) that replaces `ROLE_FALLBACK_LABEL`. Role colour: `--role-*` tokens per theme in `src/shared/themes.ts` and `globals.css`, a `RoleSwatch` component, pairs in `scripts/theme-contrast-pairs.mjs`. `widget` is added to `src/shared/model.ts` and `src-tauri/src/ipc/model_roles.rs`. `ModelRolesSection.tsx` is 562 lines, so new code goes in new files and the section shrinks.
+- **Advanced (WP-C)**: `TOKEN_GUARD_KEYS` gains `group` and `description`; the page is `AdvancedSection.tsx` (replacing `OmpSection.tsx`) with `AdvancedValueRow` variants: `NumberUnitField`, `RadioSettingRow`, `MethodOrderChecklist`, `PerModelThresholdTable`. The advisor model moves to Models > Advisor, reading and writing the token guard store.
+- **Appearance (WP-D)**: `ThemeSwatchChip.tsx` in `components/ui/` (or `components/`), used by `ProfileMenu.tsx` and `ThemePicker.tsx`. Text size: `TextSizeGroup.tsx` (presets, three `ScaleControl` rows each slider plus number field plus preview), `typography-store.ts` (renderer state that sets `--scale-app`, `--scale-chat`, `--scale-code` on `:root`), `globals.css` `--text-*` block redeclared in role containers, and the arbitrary `text-[...]` cleanup in `button.tsx`, `toggle.tsx`, `QueuedChipList.tsx`, `RequestCard.tsx`, `TodoTree.tsx`, `SessionStartNotice.tsx` and `globals.css`.
+- **Rust text size (WP-E)**: `typography` field added to `Settings` through a new `src-tauri/src/store/typography.rs` (parse, clamp, key, mirrors `store/code_ligatures.rs`); `src-tauri/src/ipc/settings_typography.rs` registers `settings.setTypography` (mirrors `ipc/settings_code_ligatures.rs`); `ipc/mod.rs` registers it; `src-tauri/src/lib.rs` bootstrap script carries the scales; `src/shared/ipc.ts`, `src/tauri-bridge/index.ts` and `main.tsx` carry the type, channel and first-paint apply. `store/settings.rs` (555) and `ipc/settings.rs` (562) get one-line hooks only.
+
+## Risks
+
+- `src/shared/ipc.ts` baseline is 898 lines (now 844) and `lib.rs` is 555: hooks only, no growth past baseline.
+- `globals.css` is shared by WP-B (role tokens), WP-D (text variables) and WP-E (none): separate regions; the director re-reads it after each package.
+- `view-store.ts` section-id rename (WP-A) is read by `ProfileMenu` and any `openSettings(...)` caller; the sibling lanes may add a call. Grep before merge.
+- The probe (T4) needs a scratch OMP profile and may confirm fewer links than documented; the UI is correct for any confirmed set.
+- The text scale must not move pixel geometry (`TITLE_BAR_OVERLAY_HEIGHT`, rail width); check at 150 percent.
+- Existing tests asserting old section ids, labels or the "Current" text are updated, never deleted; no new tests (prototyping rule).

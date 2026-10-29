@@ -1,9 +1,7 @@
-// One labelled Settings row (ADR 0003, reusable components): a label, a muted description (and an
-// optional note such as a validation message) on the left, and the control passed as children on
-// the right. The control is expected to point `aria-describedby` at `${id}-description` (and at
-// the note's id when it renders one). Wrapping on narrow panes is opt-in (wrap). Shared by `SettingSwitchRow` and the
-// Settings > OMP value rows instead of each repeating the same markup.
+// Thin wrapper kept for existing callers (Settings > OMP value rows): the shared `SettingRow` owns
+// the layout. `wrap` is now always on (the row stacks under ~480px).
 import type { ReactNode } from 'react'
+import { SettingRow } from '@/components/settings/SettingRow'
 
 interface SettingFieldRowProps {
   id: string
@@ -14,26 +12,10 @@ interface SettingFieldRowProps {
   children: ReactNode
 }
 
-export function SettingFieldRow({
-  id,
-  label,
-  description,
-  note,
-  wrap = false,
-  children
-}: SettingFieldRowProps) {
+export function SettingFieldRow({ id, label, description, note, children }: SettingFieldRowProps) {
   return (
-    <div className={`flex ${wrap ? 'flex-wrap ' : ''}items-center justify-between gap-x-4 gap-y-2 py-4`}>
-      <div className="flex min-w-0 flex-col gap-1">
-        <label htmlFor={id} className="text-sm">
-          {label}
-        </label>
-        <span id={`${id}-description`} className="text-xs text-muted-foreground">
-          {description}
-        </span>
-        {note}
-      </div>
+    <SettingRow id={id} label={label} description={description} note={note}>
       {children}
-    </div>
+    </SettingRow>
   )
 }

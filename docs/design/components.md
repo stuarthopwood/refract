@@ -223,3 +223,5 @@ Every panel and pane (chat, Agents, Pull requests, FDB panes, side chat) shares 
 ### Open
 
 Tab pattern details are deferred to #394.
+
+**Settings pages (wave 2):** every Settings section is a `SettingsPage` (`components/settings/`; `max-w-2xl`, `wide` = `max-w-3xl` for Models) holding `SettingsGroup` blocks (`role=group` labelled by its h3) of `SettingRow` rows (label, description, optional 16px `icon`, control; stacks under about 480px). `SettingFieldRow` and `SettingSwitchRow` wrap `SettingRow`. Do not hand-copy row markup.

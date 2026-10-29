@@ -51,7 +51,9 @@ Icon boxes are 8, 16, 24 or 32px (#1252); the old 12px and 14px steps moved to 1
 
 ## Colour and decoration
 
-Colour is meaning, never decoration (agenda item 9). It appears only for state, severity, brand marks, syntax highlighting, diffs, **agent-to-agent message identity** (amended 2026-10-22, #838: the glyph and label of an agent-to-agent line use `--agent-message`; see [foundations-tokens-theming.md](foundations-tokens-theming.md) "Reserved hues"), and a **Project colour** the developer chooses themselves (amended 2026-10-15, #887: a colour the user picks for a Project counts as identity, so it is meaning; the app never assigns one on its own). Never use an app-chosen per-tab accent colour or emoji as a UI icon, including in the file explorer (#463) — file types there use `lucide` glyphs in the muted tone.
+Colour is meaning, never decoration (agenda item 9). It appears only for state, severity, brand marks, syntax highlighting, diffs, **agent-to-agent message identity** (amended 2026-10-22, #838: the glyph and label of an agent-to-agent line use `--agent-message`; see [foundations-tokens-theming.md](foundations-tokens-theming.md) "Reserved hues"), a **role identity** swatch (amended 2026-10-25, wave 2 settings: the `--role-*` swatch of a model role, always beside its name and icon, never severity or state), and a **Project colour** the developer chooses themselves (amended 2026-10-15, #887: a colour the user picks for a Project counts as identity, so it is meaning; the app never assigns one on its own). Never use an app-chosen per-tab accent colour or emoji as a UI icon, including in the file explorer (#463) — file types there use `lucide` glyphs in the muted tone.
+
+**Settings:** each Settings nav item and each Settings row may carry one muted, `aria-hidden` lucide icon from the shared maps (`components/icons/readout-icons.ts`, `role-icons.ts`, and the nav map in `SettingsNav.tsx`) in a fixed 16px slot; a row with no distinct glyph carries none.
 
 ## Metadata iconography
 
