@@ -560,6 +560,7 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
   .arrowMarkerPath {
     fill: ${accent};
     stroke: ${accent};
+  }
   /* Quality-gate remediation (round 6): gitGraph's own \`.commit-label-bkg\` rect ships at
      \`opacity: 0.5\`, so wherever a commit sits on a bright \`git<N>\` branch line, the line shows
      through the label's own background at 50% strength and the default commit-label text colour
