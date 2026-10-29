@@ -42,8 +42,7 @@ import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
 import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
 import type { ActivityText, SessionActivity } from './activity';
-import type { UpdatesApi } from './updates';
-import type { ImagesApi } from './ipc-images';
+import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks the host to pop open the one real `Menu` built from this same set, so a dev-only item

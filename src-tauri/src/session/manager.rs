@@ -12,9 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
-
 use serde_json::Value;
-
 use crate::events::EventSink;
 use crate::git::worktree_validity::{
     list_registered_worktrees, registered_validity, WorktreeValidity,
@@ -385,9 +383,7 @@ impl SessionManager {
                     object.insert("unread".to_string(), Value::Bool(false));
                     object.insert("launchedMode".to_string(), launched_mode.clone());
                     object.insert("pendingMode".to_string(), Value::Null);
-                    if session.paused_held.is_some() {
-                        object.insert("pause".to_string(), "paused".into());
-                    }
+                    crate::session::agent::pause::mark_stopped(object, &session.paused_held);
                 }
             }
             let activity = crate::session::readout::current_activity(agent.as_deref()).await;

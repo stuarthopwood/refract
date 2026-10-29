@@ -42,8 +42,8 @@ import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTime } from '@/fe
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
 import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
-import type { SessionSummary } from '../../../shared/ipc'
-import type { Repository } from '../../../shared/model'
+import { setSessionPaused } from '../chat/pauseActions'
+import type { SessionSummary } from '../../../shared/ipc'; import type { Repository } from '../../../shared/model'
 
 export interface ManageSessionRowProps {
   session: SessionSummary
@@ -373,6 +373,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
       onOpenInSplit: () => handleOpen({ ctrlKey: true }),
       onCopyPath: () => void copyPath(),
       onReveal: () => void reveal(),
+      onTogglePause: () => void setSessionPaused(session.id, !session.pause),
       onArchive: () => {
         captureFocusFallback()
         deferAnnouncementRef.current = true

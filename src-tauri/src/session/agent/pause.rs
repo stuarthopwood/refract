@@ -35,6 +35,13 @@ pub(super) fn wire_value(state: &AgentState) -> Option<&'static str> {
     })
 }
 
+/// Pure: a stopped Session with persisted held messages is still Paused.
+pub fn mark_stopped(object: &mut serde_json::Map<String, Value>, held: &Option<Vec<String>>) {
+    if held.is_some() {
+        object.insert("pause".to_string(), "paused".into());
+    }
+}
+
 /// Pure: OMP's own queued messages followed by the held ones, for the chip row.
 pub(super) fn queue_view(
     state: &AgentState,

@@ -61,7 +61,7 @@ mod handoff;
 mod lane_support;
 mod launch;
 mod launch_support;
-mod pause;
+pub mod pause;
 mod requests;
 mod status;
 mod sync_from_state;

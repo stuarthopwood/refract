@@ -22,6 +22,8 @@ export interface SessionRowActionHandlers {
   onHide(): void
   onUnhide(): void
   onStopAgent(): void
+  // Issue #477: Pause when the Session is not paused, Resume when it is.
+  onTogglePause(): void
   onDelete(): void
   // Issue #620: creates a Session from the row's own repository and its default branch. Absent
   // from the Manage sessions screen's row when its repository cannot be resolved (there is no
@@ -65,6 +67,16 @@ export function buildSessionRowActions(
     isArchived
       ? { kind: 'item', key: 'restore', label: 'Restore', onSelect: handlers.onRestore }
       : { kind: 'item', key: 'archive', label: 'Archive', onSelect: handlers.onArchive },
+    ...(session.status !== 'stopped' || session.pause
+      ? ([
+          {
+            kind: 'item',
+            key: 'pause',
+            label: session.pause ? 'Resume' : 'Pause',
+            onSelect: handlers.onTogglePause
+          }
+        ] as const)
+      : []),
     ...(session.status !== 'stopped'
       ? ([{ kind: 'item', key: 'stop', label: 'Stop agent', onSelect: handlers.onStopAgent }] as const)
       : []),
