@@ -39,6 +39,7 @@ pub mod git_changes;
 pub mod images;
 pub mod model;
 pub mod model_roles;
+pub mod issues;
 pub mod pull_requests;
 pub mod readiness;
 pub mod repositories;
@@ -189,6 +190,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     repositories_color::register(dispatcher);
     sessions_lifecycle::register(dispatcher);
     sessions_visibility::register(dispatcher);
+    issues::register(dispatcher);
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
     chat::register(dispatcher);

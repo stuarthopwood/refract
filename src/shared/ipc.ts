@@ -36,6 +36,7 @@ import type { AttachmentsApi } from './ipc-attachments';
 import type { DebugApi } from './ipc-debug';
 import type { LeftoverSummary } from './ipc-sessions';
 import type { GitChangesApi } from './ipc-git-changes';
+import type { IssuesApi } from './ipc-issues';
 import type { FileExplorerApi } from './ipc-file-explorer';
 import type {
   ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
@@ -278,13 +279,10 @@ export interface PullRequestListResult {
   fetchedAt: string;
 }
 
-/** `pullRequests.submitReview` (FR-015): the caller-side confirmation for 'approve'/'request-changes'
- * already happened (ReviewDialog.tsx) before this is ever sent; 'comment' needs no confirmation.
- * Security remediation (round 3, High): `expectedHeadSha` is the pull request's `headSha` the
- * renderer had on screen the MOMENT the dialog opened (captured before the 15s background poll
- * can silently overwrite it) -- main refuses with `stale` unless this matches a FRESH re-fetch's
- * `headSha` taken right before the mutation, not just whatever the in-process staleness cache
- * happens to hold (which the poll keeps re-seeding even while the dialog is open). */
+/** `pullRequests.submitReview` (FR-015): the confirmation for 'approve'/'request-changes' happened
+ * in ReviewDialog.tsx. `expectedHeadSha` is the `headSha` on screen when the dialog opened; main
+ * refuses with `stale` unless it matches a fresh re-fetch taken right before the mutation, not the
+ * poll-seeded cache. */
 export interface SubmitReviewInput {
   verdict: Exclude<ReviewVerdict, 'dismissed'>; // dismissed: real post-submit verdict, never submittable (#568 decision 10)
   body?: string;
@@ -432,6 +430,9 @@ export const IPC_REQUESTS = {
   PULL_REQUESTS_CLOSE: 'pullRequests.close',
   PULL_REQUESTS_FETCH_IMAGE: 'pullRequests.fetchImage',
   PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST: 'pullRequests.newSessionFromPullRequest',
+  ISSUES_LABELS: 'issues.labels',
+  ISSUES_SEARCH: 'issues.search',
+  ISSUES_CREATE: 'issues.create',
   THEME_PREVIEW: 'theme.preview',
   THEME_SET: 'theme.set',
   TOKEN_GUARD_GET: 'tokenGuard.get',
@@ -660,6 +661,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   fileExplorer: FileExplorerApi;
 
   gitChanges: GitChangesApi;
+  issues: IssuesApi;
 
   settings: {
     get(): Promise<Result<Settings>>;

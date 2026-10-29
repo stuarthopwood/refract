@@ -22,8 +22,9 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { ProjectColor, Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
-import { remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
+import { githubRemoteSlug, remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
 import { ProjectColorPopover } from './ProjectColorPopover'
+import { ReportIssueDialog } from './ReportIssueDialog'
 import { useSidebarRgb } from './useSidebarRgb'
 import { projectColorCss } from '@/lib/projectColor'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
@@ -110,6 +111,9 @@ export function RepositoryGroup({
   const restoreFocusRef = useRef(false)
   const renameRequestedRef = useRef(false)
   const colourRequestedRef = useRef(false)
+  // Issue #503: Report an issue, opened from the menu item once the menu has closed (the Colour pattern).
+  const reportRequestedRef = useRef(false)
+  const [reportOpen, setReportOpen] = useState(false)
   const renameErrorId = `repository-rename-error-${repository.id}`
   const groupRootRef = useRef<HTMLDivElement>(null)
   // Issue #559 gate round 3 (the #900 pattern, finding 1): a rename that makes this whole group
@@ -345,13 +349,16 @@ export function RepositoryGroup({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               onCloseAutoFocus={(event) => {
-                if (!renameRequestedRef.current && !colourRequestedRef.current) return
+                if (!renameRequestedRef.current && !colourRequestedRef.current && !reportRequestedRef.current) return
                 const openColour = colourRequestedRef.current
+                const openReport = reportRequestedRef.current
                 renameRequestedRef.current = false
                 colourRequestedRef.current = false
+                reportRequestedRef.current = false
                 event.preventDefault()
                 // Open only once the menu has fully closed, so it cannot take focus back from the popover.
                 if (openColour) setColorOpen(true)
+                if (openReport) setReportOpen(true)
               }}
             >
               <DropdownMenuItem
@@ -369,6 +376,15 @@ export function RepositoryGroup({
               >
                 Colour…
               </DropdownMenuItem>
+              {githubRemoteSlug(repository.remote) && (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    reportRequestedRef.current = true
+                  }}
+                >
+                  Report an issue…
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
                 Remove repository…
@@ -398,6 +414,12 @@ export function RepositoryGroup({
           )}
         </CollapsibleContent>
       </Collapsible>
+      <ReportIssueDialog
+        repository={repository}
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        onCloseFocus={() => menuTriggerRef.current?.focus()}
+      />
       <RemoveRepositoryDialog
         repository={repository}
         open={removeOpen}

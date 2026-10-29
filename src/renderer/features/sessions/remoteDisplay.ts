@@ -20,6 +20,12 @@ export function remoteHeaderIcon(remote: RepositoryRemote | undefined): HeaderIc
   return FolderGit2Icon
 }
 
+// Issue #503: "owner/repo" when the remote is on github.com (the only host `gh` filing supports), else undefined.
+export function githubRemoteSlug(remote: RepositoryRemote | undefined): string | undefined {
+  if (remote?.kind !== 'has' || remote.host !== 'github.com') return undefined
+  return remote.owner && remote.repo ? `${remote.owner}/${remote.repo}` : undefined
+}
+
 // A host without a dot is a literal `url.<base>.insteadOf` alias (git config's raw URL is never
 // rewritten), so naming it as a host would be a false claim; only a dotted host is shown.
 export function remoteHeaderTooltip(remote: RepositoryRemote | undefined): string {
