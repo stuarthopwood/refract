@@ -9,10 +9,9 @@
 // search field plus the State control: Open, Closed incl. merged, All) that keeps applying while
 // closed, with a small dot on the Filters button when either is non-default. A "last updated"
 // label and the no-github-remote/gh-unavailable/rate-limited error states round out the column.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FunnelIcon, SearchXIcon } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
+import { FilterTabs } from '@/components/FilterTabs'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -40,26 +39,8 @@ const STATE_OPTIONS: Array<{ value: PullRequestStateFilter; label: string }> = [
   { value: 'all', label: 'All' }
 ]
 
-// Uses the shared selected-tab treatment (`TAB_ACTIVE_UNDERLINE_CLASS`, `ui/tab-classes.ts`) and
-// its `hover:bg-muted/50` resting state.
-// Gate-fix (M2, caught live 2026-10-18): `focus-visible:outline-offset-[-2px] focus-visible:ring-
-// inset` -- this strip's wrap is `overflow-x-auto`, which clips a tab's own focus ring/outline at
-// the wrap's edge for the first or last visible tab; drawing both inward (`DiffView.tsx`'s own
-// established pattern for the identical overflow-clipping problem) keeps them visible.
-const PR_FILTER_TAB_TRIGGER_CLASS = cn(
-  'flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset',
-  TAB_ACTIVE_UNDERLINE_CLASS
-)
-
-// Gate-fix (M1, caught live 2026-10-18): a STATIC mask used to fade both edges unconditionally,
-// even the start edge while already fully scrolled to the start (nothing clipped there to fade).
-// `TABS_FADE_PX` is shared between the CSS (`globals.css`'s own `.pr-tabs-fade[data-fade-*]`
-// rules, which must use the identical literal pixel value) and the scroll-into-view margin below,
-// so the active tab never lands flush behind its own fade. The wrap's own `data-fade-left`/
-// `data-fade-right` attributes (toggled by the effect below, from real `scrollLeft`/`scrollWidth`/
-// `clientWidth` measurements, on every scroll and `ResizeObserver` tick) drive which, if either,
-// of those CSS rules actually applies -- never a fade on an edge that has nothing clipped.
-const TABS_FADE_PX = 24
+// The Filter tabs strip itself (fade, scroll-into-view, wheel mapping) is the shared
+// `components/FilterTabs.tsx`.
 
 // FR-002, FR-026: actionable text, never an empty or broken list in place of these.
 const ERROR_MESSAGES: Record<string, string> = {
@@ -87,72 +68,8 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   // reveals keep applying to `refresh()` while this section is closed (no reset on toggle).
   const [filtersOpen, setFiltersOpen] = useState(false)
 
-  const tabsWrapRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
-
-  // Issue #499 decision 2: the active tab scrolls into view on every tab/repository change,
-  // scrolling only this row's own wrapper (`PanelTabBar.tsx`'s established pattern for the same
-  // problem -- a bare `scrollIntoView` would scroll every ancestor, not just this strip).
-  // `relative` on the wrap (`PanelTabBar.tsx`'s own wrap has it too) is load-bearing, not
-  // decorative: without a positioned wrap, `tab.offsetLeft` is measured against whichever
-  // ancestor further up the tree happens to be `offsetParent`, so the computed scroll target
-  // overshoots the wrap's real scrollable range and the browser silently clamps the assignment
-  // short (caught live 2026-10-17: Enter-activating the last tab left it still partly clipped).
-  // Gate-fix (M1, caught live 2026-10-18): the scroll-into-view margin now leaves `TABS_FADE_PX`
-  // of slack on whichever side the active tab approaches, so it never lands flush behind its own
-  // fade; `updateFade` (scroll + `ResizeObserver`, not just the tab/repository change this effect
-  // already re-runs on) keeps `data-fade-left`/`data-fade-right` honest the rest of the time too
-  // -- a manual trackpad/wheel scroll, or the column being resized, with no tab switch at all.
-  useLayoutEffect(() => {
-    const wrap = tabsWrapRef.current
-    if (!wrap) return
-    const updateFade = () => {
-      wrap.toggleAttribute('data-fade-left', wrap.scrollLeft > 0)
-      wrap.toggleAttribute('data-fade-right', wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1)
-    }
-    // Gate-fix (round 3, UI Medium): factored out of this effect's own one-time run so the
-    // ResizeObserver below can re-reveal the active tab too -- resizing the list column used to
-    // only refresh the fade flags, leaving the active tab stranded under the fade if the column
-    // narrowed enough to clip it with no tab/repository change to re-trigger this effect.
-    const revealActiveTab = () => {
-      const tab = wrap.querySelector<HTMLElement>('[data-state="active"]')
-      if (!tab) return
-      const tabLeft = tab.offsetLeft
-      const tabRight = tab.offsetLeft + tab.offsetWidth
-      if (tabLeft < wrap.scrollLeft + TABS_FADE_PX) wrap.scrollLeft = Math.max(0, tabLeft - TABS_FADE_PX)
-      else if (tabRight > wrap.scrollLeft + wrap.clientWidth - TABS_FADE_PX) wrap.scrollLeft = tabRight - wrap.clientWidth + TABS_FADE_PX
-    }
-    revealActiveTab()
-    updateFade()
-    wrap.addEventListener('scroll', updateFade, { passive: true })
-    const observer = new ResizeObserver(() => {
-      revealActiveTab()
-      updateFade()
-    })
-    observer.observe(wrap)
-    // Gate-fix (M4, caught live round 2 2026-10-18, test-reviewer Medium): a mouse with no
-    // horizontal wheel/tilt-scroll could not reach the tabs past the fade at all -- maps a
-    // vertical wheel delta onto `scrollLeft` while the row can still scroll further in that
-    // direction, `passive: false` only because this conditionally calls `preventDefault` (never
-    // unconditionally, so an already-at-the-end wheel still scrolls the page normally).
-    const handleWheel = (e: WheelEvent) => {
-      if (e.deltaY === 0) return
-      // Gate-fix (round 3, Low): the same 1px tolerance as the fade check above (subpixel
-      // scroll rounding could otherwise leave this perpetually "true" right at the true end,
-      // trapping every further wheel tick instead of letting it scroll the page).
-      const canScrollMore = e.deltaY > 0 ? wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1 : wrap.scrollLeft > 0
-      if (!canScrollMore) return
-      e.preventDefault()
-      wrap.scrollLeft += e.deltaY
-    }
-    wrap.addEventListener('wheel', handleWheel, { passive: false })
-    return () => {
-      wrap.removeEventListener('scroll', updateFade)
-      wrap.removeEventListener('wheel', handleWheel)
-      observer.disconnect()
-    }
-  }, [state.tab, repositoryId])
 
   // Fetches on open and whenever the scoped repository changes (FR-001); never polled
   // automatically afterward (FR-028) -- only the explicit refresh button and tab switch re-fetch.
@@ -170,31 +87,9 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
-      <Tabs value={state.tab} onValueChange={(value) => setTab(repositoryId, value as FilterTab)} activationMode="manual">
-        <div className="flex items-center gap-1">
-          {/* Gate-fix (M1, caught live 2026-10-18): the mask is now driven entirely by
-              `data-fade-left`/`data-fade-right` (`globals.css`'s own `.pr-tabs-fade` rules), never
-              a static gradient on both edges regardless of whether either is actually clipped.
-              `[scrollbar-width:none]`/`[&::-webkit-scrollbar]:hidden` hide the native scrollbar
-              this row never needed visible -- its own fade already signals more content, and the
-              bare scrollbar track pushed the tab row's own vertical centring off by its height.
-              Gate-fix (M5, caught live round 2 2026-10-18): `scroll-px-6` (24px, matching
-              `TABS_FADE_PX`) sets `scroll-padding-inline` so the BROWSER's own native scroll-
-              into-view-on-focus (roving tabindex arrow-key moves, Radix Tabs) keeps a newly-
-              focused tab clear of the fade too, not just the active-tab effect above. */}
-          <div
-            ref={tabsWrapRef}
-            className="relative min-w-0 flex-1 scroll-px-6 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            <TabsList className="h-8 w-max shrink-0 justify-start gap-1 rounded-none bg-transparent p-0">
-              {TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className={PR_FILTER_TAB_TRIGGER_CLASS}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
+      <div className="flex items-center gap-1">
+        <FilterTabs value={state.tab} onValueChange={(value) => setTab(repositoryId, value)} tabs={TABS} revealKey={repositoryId} />
+        <div className="flex shrink-0 items-center gap-1">
             <Tooltip>
               {/* Matches `RefreshButton.tsx`'s own fix: the tooltip text duplicates `aria-label`,
                   so `aria-describedby={undefined}` stops Radix doubling the announcement. */}
@@ -241,8 +136,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
               label="Refresh pull requests"
             />
           </div>
-        </div>
-      </Tabs>
+      </div>
       {filtersOpen && (
         <div
           id="pull-request-filters-panel"

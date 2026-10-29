@@ -24,6 +24,59 @@ export interface CreatedIssue {
   url: string;
 }
 
+export type IssueTab = 'all' | 'assigned' | 'authored' | 'mentions';
+export type IssueStateFilter = 'open' | 'closed' | 'all';
+
+/** One row of the Issues view (issue #504, spec 051). Every text field comes from GitHub and is
+ * untrusted: render it as text, never as markup. */
+export interface IssueListItem {
+  repositoryId: string;
+  repositoryName: string;
+  /** `owner/repo`, from the Project's own remote. */
+  ownerRepo: string;
+  number: number;
+  title: string;
+  /** GitHub's own upper-case value. */
+  state: 'OPEN' | 'CLOSED';
+  url: string;
+  labels: IssueLabel[];
+  assignees: string[];
+  author: string;
+  commentCount: number;
+  updatedAt: string;
+}
+
+/** A Project whose issues could not be listed; `code` is a `gh` error code (`no-github-remote`,
+ * `gh-unavailable`, `rate-limited`, ...). */
+export interface IssueSkippedProject {
+  repositoryId: string;
+  repositoryName: string;
+  code: string;
+  message: string;
+}
+
+export interface IssueListResult {
+  issues: IssueListItem[];
+  skipped: IssueSkippedProject[];
+  fetchedAt: string;
+}
+
+/** `issues.view`: the same fields plus the markdown body (untrusted; render through the
+ * sanitised markdown path only). */
+export interface IssueDetail {
+  ownerRepo: string;
+  number: number;
+  title: string;
+  state: 'OPEN' | 'CLOSED';
+  url: string;
+  labels: IssueLabel[];
+  assignees: string[];
+  author: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface IssuesApi {
   /** The repository's own labels (`gh label list`), at most 200. */
   labels(repositoryId: string): Promise<Result<IssueLabel[]>>;
@@ -32,4 +85,15 @@ export interface IssuesApi {
   /** `gh issue create` with the body on stdin. Validated in Rust: title one line up to 256
    * characters, body up to 60,000, up to 20 labels without commas. */
   create(repositoryId: string, title: string, body: string, labels: string[]): Promise<Result<CreatedIssue>>;
+  /** Up to 50 issues per Project, newest updated first, across `repositoryIds` (at most 40; two
+   * Projects on one remote list once). `label` is one label name or null; `query` is free text. */
+  list(
+    tab: IssueTab,
+    state: IssueStateFilter,
+    repositoryIds: string[],
+    label: string | null,
+    query: string,
+  ): Promise<Result<IssueListResult>>;
+  /** One issue with its body. */
+  view(repositoryId: string, number: number): Promise<Result<IssueDetail>>;
 }

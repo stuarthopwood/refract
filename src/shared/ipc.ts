@@ -49,13 +49,11 @@ import type { UpdatesApi } from './updates';
 import type { ImagesApi } from './ipc-images';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
- * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
- * dev-only item (Reload, Force Reload, Toggle Developer Tools) is included or not by the one menu
- * main already builds, never a second renderer-side copy of that decision. The one shared list of
- * ids: `src/main/menu.ts` tags each template item with a matching `id` (looked up via
- * `Menu.getMenuItemById`, never by display label), `AppMenuBar.tsx` derives its own button list
- * from it, and `src/main/ipc/window.ts` validates incoming ids against it -- a single source
- * instead of three hand-maintained copies. */
+ * asks the host to pop open the one real `Menu` built from this same set, so a dev-only item
+ * (Reload, Force Reload, Toggle Developer Tools) is included or not by that one menu, never a
+ * second renderer-side copy of the decision. The one shared list of ids: the menu tags each item
+ * with a matching `id`, `AppMenuBar.tsx` derives its button list from it, and the host
+ * validates incoming ids against it -- a single source instead of three copies. */
 export const APP_MENU_IDS = ['file', 'edit', 'view', 'window'] as const;
 export type AppMenuId = (typeof APP_MENU_IDS)[number];
 
@@ -433,6 +431,8 @@ export const IPC_REQUESTS = {
   ISSUES_LABELS: 'issues.labels',
   ISSUES_SEARCH: 'issues.search',
   ISSUES_CREATE: 'issues.create',
+  ISSUES_LIST: 'issues.list',
+  ISSUES_VIEW: 'issues.view',
   THEME_PREVIEW: 'theme.preview',
   THEME_SET: 'theme.set',
   TOKEN_GUARD_GET: 'tokenGuard.get',

@@ -9,18 +9,8 @@ import { CHECKBOX_BOX_CLASS, CHECKBOX_LIST_ITEM_CLASS, CheckboxIndicator, Checkb
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SearchField } from '@/components/SearchField'
+import { ColourDot } from '@/components/ColourDot'
 import type { IssueLabel } from '../../../shared/ipc-issues'
-
-function ColourDot({ color }: { color: string }) {
-  const safe = /^[0-9a-fA-F]{6}$/.test(color) ? `#${color}` : 'transparent'
-  return (
-    <span
-      aria-hidden
-      className="size-2.5 shrink-0 rounded-full border border-border [forced-color-adjust:none]"
-      style={{ backgroundColor: safe }}
-    />
-  )
-}
 
 interface IssueLabelPickerProps {
   labels: IssueLabel[]
