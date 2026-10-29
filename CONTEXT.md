@@ -438,3 +438,7 @@ A canvas strip in the scrollbar gutter with one mark per navigable message (user
 > **Expert:** No. "login-fix" is still one **Session** with the same **Worktree**. You now have a second **Conversation** in it, and the first one is still there as history.
 > **Dev:** And if I want a separate copy of the repo to try something else?
 > **Expert:** That is a new **Session**, and Refract creates a new **Worktree** for it.
+
+**Composer Markdown styling**
+Live syntax styling of the chat composer while typing (#1170, spec 050): headings, lists, quotes, bold, italic and code are coloured on a mirror layer behind the transparent textarea, so the text, caret, selection and IME stay the plain textarea's. Width-neutral only (text stroke for bold and headings, colour for the rest), off while a slash command is typed, plain text in forced colours and Dark (high contrast). Not the **Markdown editor** of the Pull requests view.
+_Avoid_: WYSIWYG, preview

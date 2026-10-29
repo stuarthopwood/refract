@@ -23,6 +23,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
+import { COMPOSER_MARKDOWN_TEXTAREA_CLASS, ComposerMarkdownMirror, useComposerMarkdownSegments } from '@/features/chat/composerMarkdownMirror'
 import { SIDE_CHAT_LOADING_HINT, useRightPaneStore, useSessionsStore, useSideChatStore } from '@/state'
 import type { SideChatRecord } from '../../../../shared/frames'
 
@@ -72,6 +73,8 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const [draft, setDraft] = useState('')
   const [announcement, setAnnouncement] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mdSegments = useComposerMarkdownSegments(draft, true) // #1170
+  const mdMirrorRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const prevStatusesRef = useRef<Record<string, SideChatRecord['status']>>({})
   const announceTimersRef = useRef<{ clear?: number; pending?: number }>({})
@@ -404,10 +407,13 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
         <div className="no-drag-region shrink-0 border-t border-border p-2">
           <ComposerBox>
             <ComposerField>
+              {mdSegments && <ComposerMarkdownMirror segments={mdSegments} text={draft} mirrorRef={mdMirrorRef} className="pr-10" />}
               <ComposerTextarea
                 ref={textareaRef}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                onScroll={(event) => { if (mdMirrorRef.current) mdMirrorRef.current.scrollTop = event.currentTarget.scrollTop }}
+                className={mdSegments ? COMPOSER_MARKDOWN_TEXTAREA_CLASS : undefined}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask a side question…"
                 aria-label="Side chat question"

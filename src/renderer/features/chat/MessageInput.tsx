@@ -33,7 +33,7 @@ import { AttachButton, ReasoningPicker } from './ComposerPickers'
 import { ModelPicker } from './ModelPicker'
 import { openRoleSwitcher } from './useRoleCycleShortcut'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
-import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
+import { CommandPillOverlay, COMPOSER_MIRROR_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
@@ -198,7 +198,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // overlay: an inert sibling matching the textarea's box model so each chip's clickable overlay
   // lands exactly over its label's rendered position (research.md Decision 10).
   const chipOverlayRef = useRef<HTMLDivElement>(null)
-  const { commandToken, commandPillOverlayRef } = useCommandPillOverlay(text, commands, textareaRef) // FR-092, #1050
+  const { commandToken, commandPillOverlayRef, markdownSegments, textareaClass } = useCommandPillOverlay(text, commands, textareaRef) // FR-092, #1050
   // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
   // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
   // predictWord response against a newer edit superseding it before it resolves (same guard as
@@ -1045,7 +1045,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               onActiveIndexChange={setSlashActiveIndex}
             />
           )}
-          <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} />
+          <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} markdownSegments={markdownSegments} />
           <ComposerTextarea
             role="combobox"
             aria-label="Message"
@@ -1087,7 +1087,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             placeholder={placeholder}
             // The disabled placeholder carries the stop reason, so it brightens to
             // `text-foreground` (in `ComposerTextarea`) to stay readable under the 0.6 dim.
-            className={commandToken ? COMMAND_PILL_TEXTAREA_CLASS : undefined}
+            className={textareaClass}
           />
           {/* Issue #533: empty-state hint overlay. A native `placeholder` cannot carry icons, so
               this inert sibling shows "Message the agent" plus two hints (slash commands,
