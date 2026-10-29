@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
+import { SettingRow } from '@/components/settings/SettingRow'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { TYPOGRAPHY_ROLES, useTypographyStore } from '@/state/typography-store'
 import type { TypographyRole } from '@/state/typography-store'
@@ -70,10 +71,9 @@ export function TextSizeGroup() {
       title="Text size"
       headingId="text-size-heading"
       descriptionId="text-size-hint"
-      description="Scales text only, not spacing or icons. Changes apply as you go. Windows’ own Text size setting is not read, so set it here."
+      description="Applies immediately. Scales text only, not spacing or icons. Windows’ own Text size setting is not read, so set it here."
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 py-4">
-        <span id="text-size-presets-label" className="text-sm">Presets</span>
+      <SettingRow id="text-size-presets" label="Presets" labelAsText>
         <div className="flex items-center gap-2">
           <ToggleGroup
             type="single"
@@ -91,7 +91,7 @@ export function TextSizeGroup() {
           >
             {PRESETS.map((preset) => (
               <ToggleGroupItem key={preset.value} value={preset.value} className={SELECTED_SEGMENT_CLASS}>
-                {preset.label} {preset.value}
+                {preset.label} · {preset.value}%
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
@@ -107,7 +107,7 @@ export function TextSizeGroup() {
             Reset all
           </Button>
         </div>
-      </div>
+      </SettingRow>
       {TYPOGRAPHY_ROLES.map((role) => (
         <ScaleControl
           key={role}

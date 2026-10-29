@@ -180,28 +180,30 @@ export function AppearanceSection() {
         {/* Issue #554 gate round 2 (L1): each group has its own heading and hint, wired via
             aria-labelledby/aria-describedby on the picker -- the intro above is the shared lead-in
             for the whole section, not Theme's own. */}
-        <SettingsGroup title="Theme" headingId="theme-heading" description="The colour palette used across the app." descriptionId="theme-hint">
-          <div className="pt-2">
-            <ThemePicker labelledBy="theme-heading" describedBy="theme-hint" />
+        <div className="mb-6">
+          <SettingsGroup title="Theme" headingId="theme-heading" description="The colour palette used across the app." descriptionId="theme-hint">
+            <div className="pt-2">
+              <ThemePicker labelledBy="theme-heading" describedBy="theme-hint" />
+            </div>
+          </SettingsGroup>
+          <SettingsGroup title="Chat width" headingId="chat-width-heading" description="How wide the chat transcript reads." descriptionId="chat-width-hint">
+            <div className="pt-2">
+              <ChatWidthPicker labelledBy="chat-width-heading" describedBy="chat-width-hint" />
+            </div>
+          </SettingsGroup>
+          <div className="flex gap-2">
+            <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
+              Save
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleCancel} disabled={!isDirty}>
+              Cancel
+            </Button>
           </div>
-        </SettingsGroup>
-        <SettingsGroup title="Chat width" headingId="chat-width-heading" description="How wide the chat transcript reads." descriptionId="chat-width-hint">
-          <div className="pt-2">
-            <ChatWidthPicker labelledBy="chat-width-heading" describedBy="chat-width-hint" />
-          </div>
-        </SettingsGroup>
-        <div className="mb-6 flex gap-2">
-          <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
-            Save
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleCancel} disabled={!isDirty}>
-            Cancel
-          </Button>
         </div>
         {/* Spec 035 (#842): applies live, no Save/Cancel. */}
         <TextSizeGroup />
         {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live, no Save/Cancel --
-            the Save/Cancel row above governs only the two pickers. */}
+            the Save/Cancel row above governs only the Theme and Chat width pickers. */}
         <SettingsGroup title="Decoration">
           <div>
             {/* Quality-gate remediation (accessibility-auditor, Low): only the title is the label;

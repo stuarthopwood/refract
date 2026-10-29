@@ -1,6 +1,7 @@
 // One role row in Settings > Models: name, icon and (for four roles) colour swatch, a description,
 // the current model as text, and the "Change" dropdown. Used for every role, including Advisor,
 // whose value lives in Refract's token guard store rather than OMP's config (`AdvisorModelRow`).
+import { useState } from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { ROLE_ICONS } from '@/components/icons/role-icons'
@@ -63,6 +64,9 @@ export function RoleRow({
     .filter(Boolean)
     .join(' ')
   const current = describeRoleCurrent(role, value, roles, catalog)
+  // The thinking radios stay hidden at rest (the summary text already names the level); the
+  // first "Change" press reveals them.
+  const [changing, setChanging] = useState(false)
 
   const note = (
     <>
@@ -105,10 +109,11 @@ export function RoleRow({
             unsetLabel={unsetLabel}
             onCommit={onCommit}
             onBusy={onBusy}
+            onOpenChange={(open) => open && setChanging(true)}
           />
         </div>
       </SettingRow>
-      {isChat && (
+      {isChat && changing && (
         <RoleReasoningRadios
           role={role}
           roleLabel={label}

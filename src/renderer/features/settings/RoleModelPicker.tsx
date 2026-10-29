@@ -30,6 +30,8 @@ interface RoleModelPickerProps {
   unsetLabel: string
   onCommit(value: string | null, announcement?: string): void
   onBusy(): void
+  /** Fires when the dropdown opens or closes (the row reveals its thinking radios on first open). */
+  onOpenChange?(open: boolean): void
 }
 
 export function RoleModelPicker({
@@ -45,7 +47,8 @@ export function RoleModelPicker({
   hasError,
   unsetLabel,
   onCommit,
-  onBusy
+  onBusy,
+  onOpenChange
 }: RoleModelPickerProps) {
   // A comma list, an `@alias`, a suffixed value or a model of another provider is not listed
   // verbatim: it is pinned as its own item so the picker never shows the wrong thing selected.
@@ -78,7 +81,7 @@ export function RoleModelPicker({
   }
 
   return (
-    <Select value={selectValue} onValueChange={handleValueChange}>
+    <Select value={selectValue} onValueChange={handleValueChange} onOpenChange={onOpenChange}>
       <SelectTrigger
         id={selectId}
         aria-label={`Change ${label} model`}

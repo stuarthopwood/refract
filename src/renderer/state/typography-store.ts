@@ -57,13 +57,11 @@ export const useTypographyStore = create<TypographyState>((set, get) => {
     if (persistTimer !== null) clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
       persistTimer = null
-      const save = window.refract.settings.setTypography
-      if (typeof save !== 'function') return
-      save(get().typography).then(
+      window.refract.settings.setTypography(get().typography).then(
         (result) => {
           if (!result.ok) notify(result.error)
         },
-        (err: unknown) => console.error('settings.setTypography threw', err)
+        (err: unknown) => console.error('settings.setTypography threw', err instanceof Error ? err.message : String(err))
       )
     }, PERSIST_DEBOUNCE_MS)
   }

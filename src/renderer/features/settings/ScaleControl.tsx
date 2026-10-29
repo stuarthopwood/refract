@@ -1,20 +1,18 @@
 // Spec 035 (#842): one Text size row (App, Chat or Code): a slider and a number field kept in step
 // (the number field is the non-drag alternative, WCAG 2.5.7), a per-role Reset, and a preview
 // sentence in the role's own font at the chosen size.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { cn } from '@/lib/utils'
-import { TYPOGRAPHY_MAX_SCALE, TYPOGRAPHY_MIN_SCALE } from '../../../shared/typography'
+import { TYPOGRAPHY_MAX_SCALE, TYPOGRAPHY_MIN_SCALE, scaledBodyPx } from '../../../shared/typography'
 
 export const MIN_PERCENT = Math.round(TYPOGRAPHY_MIN_SCALE * 100)
 export const MAX_PERCENT = Math.round(TYPOGRAPHY_MAX_SCALE * 100)
 const STEP_PERCENT = 5
-const BODY_PX = 14
-const MIN_PX = 11
 
 export function scaleToPercent(scale: number): number {
   return Math.round(scale * 100)
@@ -22,7 +20,7 @@ export function scaleToPercent(scale: number): number {
 
 /** The rounded body size the percentage gives (the 14px body step, never under the 11px floor). */
 export function percentToPx(percent: number): number {
-  return Math.max(MIN_PX, Math.round((BODY_PX * percent) / 100))
+  return Math.round(scaledBodyPx(percent / 100))
 }
 
 function snapPercent(value: number): number {
@@ -45,7 +43,11 @@ interface ScaleControlProps {
 export function ScaleControl({ role, id, description, scale, onScaleChange, fontClass, preview }: ScaleControlProps) {
   const percent = scaleToPercent(scale)
   const [draft, setDraft] = useState(String(percent))
-  useEffect(() => setDraft(String(percent)), [percent])
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Re-sync from the store (slider, presets, Reset) but never overwrite what the user is typing.
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) setDraft(String(percent))
+  }, [percent])
 
   function commitDraft() {
     const parsed = Number(draft)
@@ -72,7 +74,7 @@ export function ScaleControl({ role, id, description, scale, onScaleChange, font
       note={
         <p
           className={cn('mt-1 text-foreground', fontClass)}
-          style={{ fontSize: `max(${MIN_PX}px, calc(${BODY_PX}px * ${scale}))` }}
+          style={{ fontSize: `${scaledBodyPx(scale)}px` }}
           aria-hidden
         >
           {preview}
@@ -93,7 +95,7 @@ export function ScaleControl({ role, id, description, scale, onScaleChange, font
         />
         <div className="flex items-center gap-1">
           <Input
-            type="number"
+            ref={inputRef}
             inputMode="numeric"
             min={MIN_PERCENT}
             max={MAX_PERCENT}

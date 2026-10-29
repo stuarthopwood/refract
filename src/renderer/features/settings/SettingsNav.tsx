@@ -38,7 +38,7 @@ interface SettingsNavProps {
 
 export function SettingsNav({ active, onSelect }: SettingsNavProps) {
   return (
-    <nav aria-label="Settings sections" className="w-48 shrink-0 overflow-y-auto border-r border-divider p-2">
+    <nav aria-label="Settings sections" className="w-48 shrink-0 overflow-y-auto bg-card p-2">
       <ul className="flex flex-col gap-1">
         {SETTINGS_SECTIONS.map((section) => {
           const Icon = section.icon

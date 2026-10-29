@@ -32,16 +32,18 @@ export function RoleCurrentModel({ id, current, catalogLoaded }: RoleCurrentMode
     )
   }
   const thinking = current.thinking ? (LEVEL_LABEL[current.thinking] ?? current.thinking) : null
+  const inheritedFromDefault = current.via === 'Default'
   return (
     <div id={id} className="flex min-w-0 flex-col gap-1">
       <span className="text-sm break-words">
+        {inheritedFromDefault && <span className="text-muted-foreground">Inherited from Default: </span>}
         {current.name}
         {current.provider && <span className="text-muted-foreground"> · {friendlyProviderLabel(current.provider)}</span>}
       </span>
       {current.status === 'unknown' && catalogLoaded && (
         <span className="text-xs text-muted-foreground">Not in the model list; shown as OMP stores it.</span>
       )}
-      {current.via && <span className="text-xs text-muted-foreground">{current.via === 'Default' ? 'Inherits Default' : `Via ${current.via}`}</span>}
+      {current.via && !inheritedFromDefault && <span className="text-xs text-muted-foreground">Via {current.via}</span>}
       {thinking && <span className="text-xs text-muted-foreground">Thinking: {thinking}</span>}
       {current.fullValue && (
         <span title={current.fullValue} className="text-xs text-muted-foreground">

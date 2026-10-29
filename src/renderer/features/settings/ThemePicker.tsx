@@ -55,7 +55,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   }
 
   return (
-    <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
+    <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex max-w-sm flex-col gap-1">
       {THEME_LIST.map((theme, index) => {
         const isActive = theme.id === activeId
         return (

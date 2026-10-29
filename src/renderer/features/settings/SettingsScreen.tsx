@@ -4,7 +4,6 @@
 // section change always lands on the new content (the nav button is never left holding focus).
 // Reached via the profile menu's Settings item (spec 008) and the gear control in SessionList.tsx.
 import { Button } from '@/components/ui/button'
-import { SettingsPage } from '@/components/settings/SettingsPage'
 import { ArrowLeftIcon } from 'lucide-react'
 import { focusSettingsEntry } from '@/lib/focus'
 import { useViewStore } from '@/state'
@@ -56,9 +55,7 @@ export function SettingsScreen() {
           ) : settingsSection === 'chat' ? (
             <ChatDisplaySection />
           ) : settingsSection === 'models' ? (
-            <SettingsPage width="wide">
-              <ModelRolesSection />
-            </SettingsPage>
+            <ModelRolesSection />
           ) : settingsSection === 'advanced' ? (
             <AdvancedSection />
           ) : settingsSection === 'sessions' ? (

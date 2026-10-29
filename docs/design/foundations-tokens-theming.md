@@ -60,7 +60,7 @@ drawn on a chat line), so the two cannot be confused in context.
 
 ### Role colour tokens (spec 035)
 
-`--role-default`, `--role-smol`, `--role-slow` and `--role-plan` (blue, cyan, violet, magenta) identify the four chat roles in Settings > Models as a swatch beside the role name. Every theme preset defines them at 3:1 or better against background, card, popover and accent (`scripts/theme-contrast-pairs.mjs`). They avoid the reserved green, amber and red hues, and the swatch is decorative (`aria-hidden`); other roles stay neutral.
+`--role-default`, `--role-smol`, `--role-slow` and `--role-plan` (teal, pink, olive, orange-brown) identify the four chat roles in Settings > Models as a swatch beside the role name. Every theme preset defines them at 3:1 or better against background, card, popover and accent (`scripts/theme-contrast-pairs.mjs`). They avoid the reserved green, amber and red hues, and the swatch is decorative (`aria-hidden`); other roles stay neutral.
 
 ### Reserved hues
 
@@ -74,6 +74,10 @@ Each categorical colour that carries meaning, so a new one is checked against th
 | Blue | Info, unread response | `--severity-info`, `--state-unread-response` |
 | Grey | Idle, neutral, done tool calls | `--state-idle`, `--muted-foreground` |
 | Violet | Agent-to-agent message identity (#838); the brand spinner (a brand mark) | `--agent-message`, `--agent-spinner-core` |
+| Teal (~185) | Chat role: default (Settings > Models swatch) | `--role-default` |
+| Pink (~350) | Chat role: smol | `--role-smol` |
+| Olive (~115) | Chat role: slow | `--role-slow` |
+| Orange-brown (~55) | Chat role: plan | `--role-plan` |
 | Per-theme accent | Links and primary fills, never a state | `--accent-text`, `--primary` |
 
 ## Theme files
