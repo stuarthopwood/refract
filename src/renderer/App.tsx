@@ -457,10 +457,13 @@ export function App() {
   useLayoutEffect(() => {
     const handle = rightPaneRef.current
     if (!handle) return
-    if (paneShown && handle.isCollapsed()) {
-      handle.expand()
-      handle.resize(useRightPaneStore.getState().widthPx) // expand() alone returns to the library's remembered size, not the restored width
-    } else if (!paneShown && !handle.isCollapsed()) handle.collapse()
+    if (paneShown) {
+      // defaultSize is the 320px reset target, not the saved width, so a pane that mounts already
+      // open starts at 320: apply the persisted width here (expand() alone returns to the library's
+      // remembered size, not the restored width). A no-op when the size already matches.
+      if (handle.isCollapsed()) handle.expand()
+      handle.resize(useRightPaneStore.getState().widthPx)
+    } else if (!handle.isCollapsed()) handle.collapse()
   }, [paneShown, showReadiness, view])
 
   useRightPaneShortcut(!showReadiness && view === 'chat')

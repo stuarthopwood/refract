@@ -436,7 +436,9 @@ each offered preset and that the drag handle still works unchanged alongside it.
   `PaneWidthMenu` (Narrow 240 / Default 320 / Wide 520 / Close pane, current width marked) offered
   from the handle's context menu (right-click, Shift+F10 or the menu key) and from the app menu
   bar's "Right pane width" dropdown. The handle itself takes Arrow keys, Home/End (min/max) and
-  double-click (reset to 320), and its accessible name includes the current width.
+  double-click (reset to 320), and its accessible name includes the current width. The bar entry is
+  a renderer dropdown labelled "Right pane width" (not a View submenu) because the native View
+  menu is built in Rust; a native View > "Right pane width" submenu is a follow-up.
 - **FR-026**: Every icon-only control the shell adds (rail buttons, tab close buttons, the
   launcher's row buttons where icon-only) MUST carry the full icon-only bundle from
   `docs/design/components.md`/`foundations-icons.md`: a `Tooltip` matching its `aria-label`, a

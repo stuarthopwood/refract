@@ -17,7 +17,8 @@ import {
   RIGHT_PANE_DEFAULT_WIDTH_PX,
   RIGHT_PANE_MAX_WIDTH_PX,
   RIGHT_PANE_MIN_WIDTH_PX,
-  useRightPaneStore
+  useRightPaneStore,
+  useViewStore
 } from '@/state'
 import { rightPaneRef } from './right-pane-handle'
 import { toggleRightPane } from './toggle-right-pane'
@@ -57,34 +58,42 @@ function choiceText(label: string, widthPx: number): string {
 
 export function PaneWidthContextMenuItems() {
   const current = useCurrentChoice()
+  const open = useRightPaneStore((s) => s.open)
+  const canAct = useViewStore((s) => s.view) === 'chat'
   return (
     <>
       <ContextMenuRadioGroup value={current} onValueChange={(value) => setPaneWidth(Number(value))}>
         {PANE_WIDTH_CHOICES.map((choice) => (
-          <ContextMenuRadioItem key={choice.widthPx} value={String(choice.widthPx)}>
+          <ContextMenuRadioItem key={choice.widthPx} value={String(choice.widthPx)} disabled={!canAct}>
             {choiceText(choice.label, choice.widthPx)}
           </ContextMenuRadioItem>
         ))}
       </ContextMenuRadioGroup>
       <ContextMenuSeparator />
-      <ContextMenuItem onSelect={closePane}>Close pane</ContextMenuItem>
+      <ContextMenuItem onSelect={closePane} disabled={!canAct || !open}>
+        Close pane
+      </ContextMenuItem>
     </>
   )
 }
 
 export function PaneWidthDropdownItems() {
   const current = useCurrentChoice()
+  const open = useRightPaneStore((s) => s.open)
+  const canAct = useViewStore((s) => s.view) === 'chat'
   return (
     <>
       <DropdownMenuRadioGroup value={current} onValueChange={(value) => setPaneWidth(Number(value))}>
         {PANE_WIDTH_CHOICES.map((choice) => (
-          <DropdownMenuRadioItem key={choice.widthPx} value={String(choice.widthPx)}>
+          <DropdownMenuRadioItem key={choice.widthPx} value={String(choice.widthPx)} disabled={!canAct}>
             {choiceText(choice.label, choice.widthPx)}
           </DropdownMenuRadioItem>
         ))}
       </DropdownMenuRadioGroup>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={closePane}>Close pane</DropdownMenuItem>
+      <DropdownMenuItem onSelect={closePane} disabled={!canAct || !open}>
+        Close pane
+      </DropdownMenuItem>
     </>
   )
 }

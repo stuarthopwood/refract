@@ -18,7 +18,7 @@
 ### Session 2026-10-29 (pickup, assumptions recorded without a question)
 
 - Q: Rollup precedence? -> A: conflicted, deleted, modified, staged, renamed, added, untracked; ignored never rolls up.
-- Q: Does a folder rollup show a dot? -> A: A tint on the name and icon plus an `sr-only` "contains changes"; no extra dot.
+- Q: Does a folder rollup show a dot? -> A: Yes (gate fix, WCAG 1.4.1): a small trailing dot (`aria-hidden`) beside the tint on the name and icon, plus an `sr-only` "contains changes"; shown whether the folder is collapsed or expanded.
 - Q: Container breakpoints for inline buttons? -> A: below 300 px none, 300 to 380 px Open in VS Code and Copy path, above 380 px all three; checked by eye at 240, 320 and 520 px.
 - Q: Does the pane need the 40 px row between window controls and tabs? -> A: No; with two or more panels the tab row sits directly under the window-controls row.
 - Clarify pass: no further ambiguity that changes the implementation.
@@ -61,7 +61,7 @@
 - **FR-003**: `--sidebar-right` is defined for every theme as the midpoint of `--background` and `--sidebar`.
 - **FR-004**: `RAIL_WIDTH_PX` is the only definition of the rail width.
 - **FR-005**: `--git-*` tokens (modified, added, untracked, deleted, ignored, renamed, conflicted, staged) exist for every theme and clear 4.5:1 on sidebar, hover and selected rows; pairs are in `theme-contrast-pairs.mjs`.
-- **FR-006**: Colour is never the only git signal: trailing icon and `sr-only` word stay; folder rollups add "contains changes".
+- **FR-006**: Colour is never the only git signal: trailing icon and `sr-only` word stay; folder rollups add the trailing dot and "contains changes".
 - **FR-007**: `FileExplorerPanel.tsx` does not grow past its baseline; new code lives in extracted files. `App.tsx` does not grow past its baseline.
 - **FR-008**: Shared components are extended, not copied (AGENTS.md reusable UI rule); any shared-component change is additive.
 - **FR-009**: No new tests (prototyping phase); existing tests keep passing.

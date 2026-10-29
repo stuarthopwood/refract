@@ -33,6 +33,7 @@ import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 
 export const PAIRS = [
+  { fg: 'active-indicator', bg: 'sidebar-right', min: 3 }, // #1126: the pressed IconRail's ActiveIndicatorBar (non-colour cue; its muted fill alone is only ~1.3:1 against the rail)
   { fg: 'foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'muted-foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'accent-text', bg: 'sidebar-right', min: 4.5 }, // #674: the right pane and rail surface
   { fg: 'foreground', bg: 'background', min: 4.5 },
   { fg: 'card-foreground', bg: 'card', min: 4.5 },
@@ -325,7 +326,7 @@ export const PAIRS = [
   { fg: 'severity-info', bg: 'sidebar-accent', min: 3 },
   // #768 Git decoration: file-explorer names and icons are body text on the pane surface, the hover row and the selected row (`--accent`).
   ...['modified', 'added', 'untracked', 'deleted', 'ignored', 'renamed', 'conflicted', 'staged'].flatMap((mark) =>
-    ['background', 'sidebar', 'sidebar-accent', 'accent'].map((bg) => ({ fg: `git-${mark}`, bg, min: 4.5 }))
+    ['background', 'sidebar', 'sidebar-right', 'sidebar-accent', 'accent'].map((bg) => ({ fg: `git-${mark}`, bg, min: 4.5 }))
   ),
   // Issue #568/#529: the pull request StatePill (solid fill, icon + word) -- its own text
   // colour against its own fill, in every theme. `pr-open`/`pr-closed` alias existing already-

@@ -26,6 +26,9 @@ const MENU_LABEL: Record<AppMenuId, string> = {
 // own.
 const MENUS: Array<{ id: AppMenuId; label: string }> = APP_MENU_IDS.map((id) => ({ id, label: MENU_LABEL[id] }))
 
+const MENU_BUTTON_CLASS =
+  'px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
 export function AppMenuBar() {
   const [visible, setVisible] = useState(false)
   const barRef = useRef<HTMLDivElement>(null)
@@ -78,8 +81,8 @@ export function AppMenuBar() {
     if (!visible) return
     function onMouseDown(event: MouseEvent): void {
       if (barRef.current?.contains(event.target as Node)) return
-      // The Right pane dropdown's items are portalled outside the bar.
-      if ((event.target as Element).closest('[role="menu"]')) return
+      // The Right pane dropdown's items are portalled outside the bar (scoped by data attribute).
+      if ((event.target as Element).closest('[data-app-menu-dropdown]')) return
       // A click away is itself the user choosing a new focus target (e.g. clicking straight into
       // the message textarea): clear the captured ref so the restore effect below does not then
       // fight that click by yanking focus back to the pre-bar element on the next render.
@@ -103,6 +106,8 @@ export function AppMenuBar() {
       // that file's own comment). Guarding here was harmless but pointless, so it is removed
       // along with the comment that claimed it worked.
       if (event.key === 'Escape') {
+        // Escape inside the open dropdown only closes that dropdown (Radix), not the whole bar.
+        if ((event.target as Element).closest('[data-app-menu-dropdown]')) return
         event.preventDefault()
         setVisible(false)
       }
@@ -166,7 +171,7 @@ export function AppMenuBar() {
           autoFocus={index === 0}
           onKeyDown={(event) => onButtonKeyDown(event, index)}
           onClick={(event) => void openMenu(menu.id, event.currentTarget)}
-          className="px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className={MENU_BUTTON_CLASS}
         >
           {menu.label}
         </button>
@@ -181,12 +186,12 @@ export function AppMenuBar() {
             role="menuitem"
             aria-haspopup="menu"
             onKeyDown={(event) => onButtonKeyDown(event, MENUS.length)}
-            className="px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className={MENU_BUTTON_CLASS}
           >
             Right pane width
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent align="start" data-app-menu-dropdown>
           <PaneWidthDropdownItems />
         </DropdownMenuContent>
       </DropdownMenu>

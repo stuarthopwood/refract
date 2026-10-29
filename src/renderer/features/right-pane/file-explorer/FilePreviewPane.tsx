@@ -7,20 +7,20 @@
 // `FileExplorerPanel.tsx` still owns the Session/store wiring and the three handler functions
 // themselves -- this stays a presentational component, just no longer prop-free for them.
 import { useEffect, useState } from 'react'
-import { Code2Icon, CopyIcon, FileIcon, FileWarningIcon, FolderOpenIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
+import { FileIcon, FileWarningIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { CodeBlock, Markdown } from '@/features/chat/Markdown'
 import { formatByteSize } from '@/features/chat/attachments'
 import type { FilePreview } from '../../../../shared/model'
+import { PathActionButtons, type PathActionHandlers } from './path-actions'
 
 interface FilePreviewPaneProps {
   preview: FilePreview | null
   previewLoading: boolean
   onOpenInVSCode: (path: string) => Promise<boolean>
   onReveal: (path: string) => Promise<void>
-  onCopyPath: (path: string) => Promise<boolean>
+  onCopyPath: (path: string, confirm?: boolean) => Promise<boolean>
 }
 
 /** Last path segment, `FileTreeNode.path`'s own POSIX-`/`-separated convention -- never a raw
@@ -129,60 +129,63 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
   // still loading, so these three actions never fire against a stale `preview.path` left over
   // from the PREVIOUS selection mid-fetch.
 
-  const showToolbar = !previewLoading && !!preview && preview.kind !== 'deleted'
+  // The header stays mounted while a new selection loads (actions disabled), so the row never
+  // flickers and the actions never fire against a stale `preview.path`. Hidden for no selection
+  // and for a deleted file, which has nothing to open/reveal/copy.
+  const showHeader = previewLoading || (!!preview && preview.kind !== 'deleted')
+  const actionsDisabled = previewLoading || !preview
+  const path = preview?.path ?? ''
 
-  async function runOpenInVSCode(path: string): Promise<void> {
+  async function runOpenInVSCode(): Promise<void> {
     const opened = await onOpenInVSCode(path)
     setVscodeNotFound(!opened)
   }
 
-  // FR-023: always the one labelled, keyboard-scrollable region, reachable by Tab from the
-  // tree, regardless of what is currently showing inside it -- `tabIndex={0}` rather than
+  const handlers: PathActionHandlers = {
+    openInVSCode: () => void runOpenInVSCode(),
+    reveal: () => void onReveal(path),
+    copyPath: (confirm) => onCopyPath(path, confirm)
+  }
+
+  // FR-023: the content is always the one labelled, keyboard-scrollable region, reachable by Tab
+  // from the tree, regardless of what is currently showing inside it -- `tabIndex={0}` rather than
   // relying on a scrollable-region-with-no-focusable-descendant implicitly becoming tabbable,
   // since several of the states below (the image, the empty states) have no focusable
-  // descendant of their own to fall back on.
+  // descendant of their own to fall back on. The header sits OUTSIDE that scroll region, one
+  // fixed single row (ghost buttons, no divider; #756 amendment 2026-10-21).
   return (
-    <div
-      role="region"
-      aria-label={regionLabel}
-      tabIndex={0}
-      className="flex h-full flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-    >
-      {showToolbar && preview && (
-        <div className="no-drag-region mb-2 flex shrink-0 flex-wrap items-center justify-end gap-1">
+    <div className="flex h-full flex-col">
+      {showHeader && (
+        <div className="no-drag-region flex shrink-0 flex-nowrap items-center gap-1 px-2 pt-2">
+          <span title={path} className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {fileName(path)}
+          </span>
           {vscodeNotFound && (
-            <span role="status" className="mr-auto text-xs text-muted-foreground">
+            <span role="status" className="shrink-0 text-xs text-muted-foreground">
               VS Code not found
             </span>
           )}
-          {[
-            { label: 'Open in VS Code', Icon: Code2Icon, run: () => void runOpenInVSCode(preview.path) },
-            { label: 'Reveal in File Explorer', Icon: FolderOpenIcon, run: () => void onReveal(preview.path) },
-            { label: 'Copy path', Icon: CopyIcon, run: () => void onCopyPath(preview.path) }
-          ].map(({ label, Icon, run }) => (
-            <Tooltip key={label}>
-              <TooltipTrigger asChild aria-describedby={undefined}>
-                <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={run}>
-                  <Icon aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{label}</TooltipContent>
-            </Tooltip>
-          ))}
-          {preview.kind === 'markdown' && (
+          <PathActionButtons handlers={handlers} disabled={actionsDisabled} />
+          {preview?.kind === 'markdown' && (
             // `aria-pressed` alone carries the toggle state: the accessible name stays constant ("Source"), never flipping with its own pressed state (gate remediation, Medium).
-            <Button type="button" variant="ghost" size="sm" aria-pressed={showSource} onClick={() => setShowSource((v) => !v)}>
+            <Button type="button" variant="ghost" size="sm" className="shrink-0" disabled={previewLoading} aria-pressed={showSource} onClick={() => setShowSource((v) => !v)}>
               Source
             </Button>
           )}
-          {preview.kind === 'text' && (
-            <Button type="button" variant="ghost" size="sm" aria-pressed={wrap} aria-label="Wrap long lines" onClick={() => setWrap((v) => !v)}>
+          {preview?.kind === 'text' && (
+            <Button type="button" variant="ghost" size="sm" className="shrink-0" disabled={previewLoading} aria-pressed={wrap} aria-label="Wrap long lines" onClick={() => setWrap((v) => !v)}>
               <WrapTextIcon aria-hidden className="size-4" />
               Wrap
             </Button>
           )}
         </div>
       )}
+      <div
+        role="region"
+        aria-label={regionLabel}
+        tabIndex={0}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      >
       {previewLoading ? (
         <p role="status" className="p-2 text-sm text-muted-foreground">
           Loading…
@@ -255,6 +258,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
           <CodeBlock code={preview.content ?? ''} lang={guessLangFromPath(preview.path)} wrap={wrap} lineNumbers />
         </div>
       )}
+      </div>
     </div>
   )
 }

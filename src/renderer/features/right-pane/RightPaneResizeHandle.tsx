@@ -13,7 +13,7 @@ export function RightPaneResizeHandle({ disabled }: { disabled: boolean }) {
   const name = open ? `Resize right pane, ${Math.round(widthPx)} pixels wide` : 'Resize right pane, collapsed'
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
+      <ContextMenuTrigger asChild disabled={disabled}>
         <ResizableHandle withHandle aria-label={name} disabled={disabled} />
       </ContextMenuTrigger>
       <ContextMenuContent>

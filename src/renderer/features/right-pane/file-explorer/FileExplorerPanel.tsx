@@ -603,20 +603,20 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
 
   // Mirrors `useWorktreeActions.ts`'s own clipboard-first-then-IPC-fallback pattern, scoped to
   // one file's own absolute path instead of the whole worktree root.
-  async function handleCopyPath(path: string): Promise<boolean> {
+  async function handleCopyPath(path: string, confirm = false): Promise<boolean> {
     if (!sessionId) return false
     if (worktreePath) {
       try {
         await navigator.clipboard.writeText(joinWorktreePath(worktreePath, path))
-        toast.success('Path copied')
+        if (confirm) toast.success('Path copied')
         return true
       } catch {
         // fall through to the main-process clipboard channel
       }
     }
     const result = await window.refract.fileExplorer.copyPath(sessionId, path)
-    if (result.ok) toast.success('Path copied')
-    else notify(result.error)
+    if (result.ok && confirm) toast.success('Path copied')
+    else if (!result.ok) notify(result.error)
     return result.ok
   }
 
@@ -793,7 +793,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
       role="group"
       tabIndex={-1}
       aria-label="File explorer"
-      className="flex h-full flex-col overflow-hidden p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="@container flex h-full flex-col overflow-hidden p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {!sessionId ? (
         <Empty className="h-full">
@@ -852,7 +852,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                   Every entry here is ignored. Turn on "Show ignored files" above to see them.
                 </p>
               ) : (
-                <div ref={treeContainerRef} role="tree" aria-label="Files" className="@container h-full">
+                <div ref={treeContainerRef} role="tree" aria-label="Files" className="h-full">
                   <Virtuoso
                     ref={virtuosoRef}
                     style={{ height: '100%' }}

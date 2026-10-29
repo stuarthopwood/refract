@@ -6,21 +6,21 @@ import type { KeyboardEvent } from 'react'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
-  Code2Icon,
-  CopyIcon,
   EllipsisVerticalIcon,
   FileIcon,
   FileWarningIcon,
   FolderIcon,
-  FolderOpenIcon,
-  type LucideIcon
+  FolderOpenIcon
 } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { GitStatusMark } from '../../../../shared/model'
 import type { ExpandableNode } from '../../../state/file-explorer-store'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { STATUS_MARKS } from './git-decoration'
+import { PATH_ACTIONS, type PathActionHandlers } from './path-actions'
 import { TreeRowActions } from './TreeRowActions'
 
 export interface NodeRow {
@@ -65,7 +65,7 @@ export function TreeNodeRow({
   onRowKeyDown: (event: KeyboardEvent<HTMLDivElement>, row: NodeRow, absIndex: number) => void
   onOpenInVSCode: (path: string) => Promise<boolean>
   onReveal: (path: string) => Promise<void>
-  onCopyPath: (path: string) => Promise<boolean>
+  onCopyPath: (path: string, confirm?: boolean) => Promise<boolean>
 }) {
   const node = row.node
   const isFolder = node.kind === 'folder'
@@ -125,11 +125,14 @@ export function TreeNodeRow({
     rowRef.current?.focus()
   }
 
-  const menuActions: Array<{ key: string; label: string; icon: LucideIcon; onSelect: () => void }> = [
-    { key: 'open-vscode', label: 'Open in VS Code', icon: Code2Icon, onSelect: () => void runOpenInVSCode() },
-    { key: 'reveal', label: 'Reveal in File Explorer', icon: FolderOpenIcon, onSelect: () => void onReveal(node.path) },
-    { key: 'copy-path', label: 'Copy path', icon: CopyIcon, onSelect: () => void onCopyPath(node.path) }
-  ]
+  // The one handler set behind the inline buttons and both menus (`path-actions.tsx`).
+  const handlers: PathActionHandlers = {
+    openInVSCode: () => void runOpenInVSCode(),
+    reveal: () => void onReveal(node.path),
+    copyPath: (confirm) => onCopyPath(node.path, confirm)
+  }
+  // Action menus are text only (components.md, Menus).
+  const menuActions = PATH_ACTIONS.map(({ key, label }) => ({ key, label, onSelect: () => void (key === 'copyPath' ? handlers.copyPath(true) : handlers[key]()) }))
 
   const rowContent = (
     <div
@@ -148,7 +151,8 @@ export function TreeNodeRow({
       style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
       className="group no-drag-region relative flex w-full cursor-default items-center gap-1 rounded px-1 py-1 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
       onClick={() => onRowClick(node)}
-      onFocus={() => onRowFocus(node)}
+      // Only the row itself selects on focus: clicking an inline button or the kebab focuses that child, which must not select the row.
+      onFocus={(event) => event.target === event.currentTarget && onRowFocus(node)}
       onKeyDown={(event) => onRowKeyDown(event, row, absIndex)}
     >
       {selected && <ActiveIndicatorBar />}
@@ -177,43 +181,45 @@ export function TreeNodeRow({
           <span className="sr-only">{mark.label}</span>
         </span>
       )}
+      {containsChanges && (
+        // WCAG 1.4.1: a non-colour cue beside the tint, for collapsed and expanded folders alike. The
+        // accessible text is the name span's sr-only "contains changes".
+        <span aria-hidden className={'size-1.5 shrink-0 rounded-full bg-current ' + decorationClass} />
+      )}
       {vscodeNotFound && (
         <span role="status" className="shrink-0 text-xs text-muted-foreground">
           VS Code not found
         </span>
       )}
       {canAct && (
-        <TreeRowActions
-          selected={selected}
-          onOpenInVSCode={() => void runOpenInVSCode()}
-          onReveal={() => void onReveal(node.path)}
-          onCopyPath={() => onCopyPath(node.path)}
-        />
+        <TreeRowActions selected={selected} handlers={handlers} />
       )}
       {canAct && (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label={`More actions for ${node.name}`}
-              // PR #671 gate round 4 fix (Medium, A11y4): visible whenever this row is SELECTED
-              // (not hover/focus-within only, which read as hover-only on a touch device with no
-              // hover concept at all), and raised to a `size-6` (24px) target -- the previous
-              // ~18px (icon `size-4` plus `p-1`) sat under the 24px minimum.
-              className={`flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 ${selected ? 'opacity-100' : 'opacity-0'}`}
-              // The whole row (not a separate open button, unlike `SessionList.tsx`) carries
-              // `onClick`/`onRowClick` above -- without this, clicking the trigger would bubble
-              // up and also select/activate the row underneath it.
-              onClick={(event) => event.stopPropagation()}
-            >
-              <EllipsisVerticalIcon aria-hidden className="size-4" />
-            </button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild aria-describedby={undefined}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  tabIndex={-1}
+                  aria-label={`More actions for ${node.name}`}
+                  // Visible whenever this row is SELECTED (not hover/focus-within only, which read as
+                  // hover-only on touch), a 24px target (PR #671 gate round 4, A11y4).
+                  className={`shrink-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 ${selected ? 'opacity-100' : 'opacity-0'}`}
+                  // The whole row carries `onClick`/`onRowClick` above; without this the trigger click would also select/activate it.
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <EllipsisVerticalIcon aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{`More actions for ${node.name}`}</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
             {menuActions.map((action) => (
               <DropdownMenuItem key={action.key} onSelect={action.onSelect}>
-                <action.icon aria-hidden className="size-4" />
                 {action.label}
               </DropdownMenuItem>
             ))}
@@ -231,7 +237,6 @@ export function TreeNodeRow({
       <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
         {menuActions.map((action) => (
           <ContextMenuItem key={action.key} onSelect={action.onSelect}>
-            <action.icon aria-hidden className="size-4" />
             {action.label}
           </ContextMenuItem>
         ))}

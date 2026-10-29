@@ -4,7 +4,7 @@
 - [x] T001 Probe why the right handle feels undraggable on a scratch instance (CDP mouse events); record cause on #674.
 - [x] T002 Remove `WidthPresetControl` and `resize` props; fix `defaultSize` (FR-001, FR-002).
 - [x] T003 Tab row directly under window-controls row; pane/rail `--sidebar-right` (FR-003).
-- [x] T004 `PaneWidthMenu` for handle context menu, View menu and handle keyboard (Home/End/arrows, accessible name with width).
+- [x] T004 `PaneWidthMenu` for handle context menu, View menu and handle keyboard (Home/End/arrows, accessible name with width). The menu entry is a renderer dropdown labelled "Right pane width" because the native View menu is Rust; a native View submenu is a follow-up.
 - [x] T005 `RAIL_WIDTH_PX` 48; rail buttons 40, icons 24; spacer uses the constant (FR-004).
 - [x] T006 Active rail glyph `text-accent-text`, no border; contrast pairs.
 - [x] T007 Docs: DESIGN.md, spec 013 FR-025, components.md, foundations-icons.md, tokens doc.

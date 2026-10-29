@@ -279,7 +279,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
       <WindowControlsSpacerRow />
       {/* Row 2: the tab strip, directly under the corner row, with the whole pane width (less
           this row's own padding) to itself. */}
-      <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 border-t border-divider px-2">
+      <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 px-2">
         <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
           <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
             {openPanelIds.map((id) => (

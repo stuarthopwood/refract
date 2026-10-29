@@ -15,6 +15,8 @@ import type { KeyboardEvent } from 'react'
 import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { CountBadge } from '@/components/ui/count-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useRightPaneStore } from '@/state'
@@ -86,10 +88,12 @@ export function IconRail({ sessionId }: IconRailProps) {
             className="mt-2"
             onClick={() => toggleRightPane()}
           >
-            {rightPaneOpen ? <PanelRightCloseIcon aria-hidden className="size-6" /> : <PanelRightOpenIcon aria-hidden className="size-6" />}
+            {rightPaneOpen ? <PanelRightCloseIcon aria-hidden /> : <PanelRightOpenIcon aria-hidden />}
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="left">{rightPaneOpen ? 'Collapse' : 'Expand'} right pane (Ctrl+Shift+B)</TooltipContent>
+        <TooltipContent side="left">
+          Right pane <Kbd>Ctrl+Shift+B</Kbd>
+        </TooltipContent>
       </Tooltip>
       <div
         ref={(el) => {
@@ -154,7 +158,7 @@ function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonR
           aria-label={label}
           tabIndex={tabIndex}
           className={cn(
-            'relative aria-pressed:bg-muted aria-pressed:text-accent-text forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
+            'relative aria-pressed:bg-muted aria-pressed:text-accent-text forced-colors:aria-pressed:border-2 forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
             REORDER_MARKER_CLASS
           )}
           onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
@@ -165,7 +169,8 @@ function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonR
             if (!event.defaultPrevented) onKeyDown(event)
           }}
         >
-          <Icon aria-hidden className="size-6" />
+          <Icon aria-hidden />
+          {pressed && <ActiveIndicatorBar />}
           {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'working' : 'neutral'} />}
         </Button>
       </TooltipTrigger>
