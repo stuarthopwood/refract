@@ -19,18 +19,10 @@ export function IssueCreatedPanel({ issue, onClose, onReportAnother }: IssueCrea
   useEffect(() => headingRef.current?.focus(), [])
   const href = safeUrl(issue.url)
   return (
-    <div role="status" className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium outline-none">
-          Issue{' '}
-          {href ? (
-            <a href={href} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
-              #{issue.number}
-            </a>
-          ) : (
-            `#${issue.number}`
-          )}{' '}
-          created
+          Issue #{issue.number} created
         </h3>
         <CopyButton getText={() => issue.url} label="Copy link" announcement="Issue link copied" />
       </div>

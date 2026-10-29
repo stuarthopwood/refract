@@ -2,7 +2,7 @@
 // Repository group's "…" menu. Title, collapsed duplicate check, Description (shared Markdown
 // editor with Preview), Labels. Everything the user types stays on screen after a failure. All
 // GitHub access goes through `window.refract.issues` (Rust, argv-array `gh`, Principle V).
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { MarkdownEditor } from '@/components/markdown-editor'
@@ -46,6 +46,8 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
   const [error, setError] = useState<string | null>(null)
   const [created, setCreated] = useState<CreatedIssue | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const titleRef = useRef<HTMLInputElement>(null)
+  const submitRef = useRef<HTMLButtonElement>(null)
   const showForm = open && created === null
   const { labels, failed: labelsFailed } = useIssueLabels(repository.id, open && Boolean(login))
   const matches = useDuplicateIssues(repository.id, form.title, showForm && Boolean(login))
@@ -75,13 +77,20 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
     event?.preventDefault()
     if (busy) return
     setSubmitted(true)
-    if (form.title.trim() === '') return
+    if (form.title.trim() === '') {
+      titleRef.current?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     const outcome = await submitIssue(repository.id, form)
     setBusy(false)
     if (outcome.ok) setCreated(outcome.issue)
-    else setError(outcome.message)
+    else {
+      setError(outcome.message)
+      // The submit button was disabled while busy, so focus fell to the body; put it back.
+      requestAnimationFrame(() => submitRef.current?.focus())
+    }
   }
 
   function reportAnother(): void {
@@ -124,6 +133,7 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
                 </label>
                 <Input
                   id="report-issue-title"
+                  ref={titleRef}
                   value={form.title}
                   maxLength={ISSUE_TITLE_MAX}
                   autoFocus
@@ -171,7 +181,7 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
                 <Button type="button" variant="outline" onClick={() => requestClose(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={busy}>
+                <Button ref={submitRef} type="submit" disabled={busy}>
                   {busy ? 'Creating…' : error ? 'Retry' : 'Create issue'}
                 </Button>
               </DialogFooter>
@@ -192,7 +202,7 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
           setConfirmDiscard(false)
           onOpenChange(false)
         }}
-        onCloseAutoFocus={() => undefined}
+        onCloseAutoFocus={() => titleRef.current?.focus()}
       />
     </>
   )

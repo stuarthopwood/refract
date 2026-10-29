@@ -20,11 +20,16 @@ export function useIssueLabels(repositoryId: string, active: boolean): { labels:
   useEffect(() => {
     if (!active) return
     let cancelled = false
-    void window.refract.issues.labels(repositoryId).then((result) => {
-      if (cancelled) return
-      setFailed(!result.ok)
-      setLabels(result.ok ? result.value : [])
-    })
+    void window.refract.issues
+      .labels(repositoryId)
+      .then((result) => {
+        if (cancelled) return
+        setFailed(!result.ok)
+        setLabels(result.ok ? result.value : [])
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
     return () => {
       cancelled = true
     }
@@ -44,9 +49,14 @@ export function useDuplicateIssues(repositoryId: string, title: string, active: 
     }
     let cancelled = false
     const timer = window.setTimeout(() => {
-      void window.refract.issues.search(repositoryId, query).then((result) => {
-        if (!cancelled) setMatches(result.ok ? result.value : [])
-      })
+      void window.refract.issues
+        .search(repositoryId, query)
+        .then((result) => {
+          if (!cancelled) setMatches(result.ok ? result.value : [])
+        })
+        .catch(() => {
+          if (!cancelled) setMatches([])
+        })
     }, DUPLICATE_DEBOUNCE_MS)
     return () => {
       cancelled = true

@@ -126,8 +126,17 @@ pub fn parse_created_issue(stdout: &str, owner: &str, repo: &str) -> Option<GhCr
         .map(str::trim)
         .rev()
         .find(|line| line.starts_with("https://"))?;
-    let prefix = format!("https://github.com/{owner}/{repo}/issues/");
-    let number: u64 = url.strip_prefix(&prefix)?.parse().ok()?;
+    let rest = url.strip_prefix("https://github.com/")?;
+    let mut parts = rest.split('/');
+    let (url_owner, url_repo, kind, number) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some()
+        || kind != "issues"
+        || !url_owner.eq_ignore_ascii_case(owner)
+        || !url_repo.eq_ignore_ascii_case(repo)
+    {
+        return None;
+    }
+    let number: u64 = number.parse().ok()?;
     Some(GhCreatedIssue {
         number,
         url: url.to_string(),

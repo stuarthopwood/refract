@@ -6,8 +6,9 @@ import { TagIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CHECKBOX_BOX_CLASS, CHECKBOX_LIST_ITEM_CLASS, CheckboxIndicator, CheckboxItem } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SearchField } from '@/components/SearchField'
 import type { IssueLabel } from '../../../shared/ipc-issues'
 
 function ColourDot({ color }: { color: string }) {
@@ -15,7 +16,7 @@ function ColourDot({ color }: { color: string }) {
   return (
     <span
       aria-hidden
-      className="size-2.5 shrink-0 rounded-full border border-foreground/40 [forced-color-adjust:none]"
+      className="size-2.5 shrink-0 rounded-full border border-border [forced-color-adjust:none]"
       style={{ backgroundColor: safe }}
     />
   )
@@ -39,20 +40,28 @@ export function IssueLabelPicker({ labels, selected, onChange, disabled, unavail
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
         {selected.map((name) => (
-          <Badge key={name} variant="outline" className="gap-1.5">
+          <Badge key={name} variant="outline" className="gap-2">
             <ColourDot color={colorOf(name)} />
             {name}
-            <button
-              type="button"
-              aria-label={`Remove label ${name}`}
-              disabled={disabled}
-              className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => toggle(name)}
-            >
-              <XIcon aria-hidden className="size-3" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Remove label ${name}`}
+                  aria-describedby={undefined}
+                  disabled={disabled}
+                  className="-mr-1 size-5"
+                  onClick={() => toggle(name)}
+                >
+                  <XIcon aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove label</TooltipContent>
+            </Tooltip>
           </Badge>
         ))}
         <Popover onOpenChange={(open) => open && setFilter('')}>
@@ -63,12 +72,7 @@ export function IssueLabelPicker({ labels, selected, onChange, disabled, unavail
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="flex w-72 flex-col gap-2 p-2">
-            <Input
-              aria-label="Filter labels"
-              placeholder="Filter labels"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            />
+            <SearchField label="Filter labels" placeholder="Filter labels…" value={filter} onValueChange={setFilter} />
             <div role="group" aria-label="Labels" className="flex max-h-56 flex-col gap-1 overflow-y-auto">
               {visible.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">No matching labels</p>}
               {visible.map((label) => (

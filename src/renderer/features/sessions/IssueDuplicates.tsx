@@ -1,7 +1,7 @@
 // The Report an issue dialog's duplicate check (issue #503, spec 049 decision 5): a collapsed
 // "N possible duplicates" disclosure under Title. Hits are untrusted repository text, shown as
 // plain text only. Advice, never a gate: filing is always possible.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CircleCheckIcon, CircleDotIcon, CircleSlashIcon, ExternalLinkIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
@@ -18,13 +18,16 @@ export function IssueDuplicates({ matches }: { matches: IssueMatch[] }) {
   const [open, setOpen] = useState(false)
   const [dismissed, setDismissed] = useState<ReadonlySet<number>>(new Set())
   const shown = matches.filter((match) => !dismissed.has(match.number))
-  if (shown.length === 0) return null
+  useEffect(() => {
+    if (shown.length === 0) setOpen(false)
+  }, [shown.length])
   const label = `${shown.length} possible ${shown.length === 1 ? 'duplicate' : 'duplicates'}`
   return (
     <div>
       <span role="status" className="sr-only">
-        {label}
+        {shown.length > 0 ? label : ''}
       </span>
+      {shown.length > 0 && (
       <InlineDisclosure open={open} onOpenChange={setOpen} contentId="report-issue-duplicates" label={label}>
         <ul aria-label="Possible duplicate issues" className="flex flex-col gap-1">
           {shown.map((match) => {
@@ -70,6 +73,7 @@ export function IssueDuplicates({ matches }: { matches: IssueMatch[] }) {
           })}
         </ul>
       </InlineDisclosure>
+      )}
     </div>
   )
 }
