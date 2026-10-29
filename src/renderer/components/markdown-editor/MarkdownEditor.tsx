@@ -1,8 +1,7 @@
 import * as React from 'react'
 import { Markdown } from '@/features/chat/Markdown'
-import { COMPOSER_SELECTION_CLASS } from '@/features/chat/CommandPillOverlay'
+import { ComposerBox, ComposerField, ComposerFooter, ComposerTextarea } from '@/components/ComposerBox'
 import { ToggleGroup, ToggleGroupItem, SELECTED_SEGMENT_CLASS } from '@/components/ui/toggle-group'
-import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { MARKDOWN_ACTIONS, MarkdownToolbar, type MarkdownAction } from './MarkdownToolbar'
 import type { EditState } from './markdownFormat'
@@ -113,13 +112,7 @@ export function MarkdownEditor({
   const minHeight = compact ? 'min-h-16' : 'min-h-32'
 
   return (
-    <div
-      onKeyDown={handleKeyDown}
-      className={cn(
-        'flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring',
-        className
-      )}
-    >
+    <ComposerBox onKeyDown={handleKeyDown} className={className}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-2">
         <ToggleGroup
           type="single"
@@ -140,21 +133,20 @@ export function MarkdownEditor({
         {mode === 'write' && <MarkdownToolbar onAction={runAction} disabled={disabled} />}
       </div>
       {mode === 'write' ? (
-        <Textarea
-          ref={setRefs}
-          aria-label={ariaLabel}
-          placeholder={placeholder}
-          value={value}
-          readOnly={disabled}
-          aria-busy={disabled || undefined}
-          autoFocus={autoFocus}
-          onChange={(event) => onChange(event.target.value)}
-          className={cn(
-            COMPOSER_SELECTION_CLASS,
-            minHeight,
-            'max-h-96 resize-y overflow-y-auto border-none bg-transparent font-code shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent [scrollbar-gutter:stable]'
-          )}
-        />
+        <ComposerField>
+          <ComposerTextarea
+            ref={setRefs}
+            actionCount={0}
+            aria-label={ariaLabel}
+            placeholder={placeholder}
+            value={value}
+            readOnly={disabled}
+            aria-busy={disabled || undefined}
+            autoFocus={autoFocus}
+            onChange={(event) => onChange(event.target.value)}
+            className={cn(minHeight, 'max-h-96 resize-y font-code')}
+          />
+        </ComposerField>
       ) : (
         <div className={cn('max-h-96 overflow-y-auto px-2 py-2', minHeight)} aria-label={`${ariaLabel} preview`} role="region" tabIndex={0}>
           {value.trim() ? (
@@ -164,7 +156,7 @@ export function MarkdownEditor({
           )}
         </div>
       )}
-      {footer && <div className="flex flex-wrap items-center justify-end gap-2 px-2 pb-2">{footer}</div>}
-    </div>
+      {footer && <ComposerFooter className="justify-end">{footer}</ComposerFooter>}
+    </ComposerBox>
   )
 }

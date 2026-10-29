@@ -10,7 +10,7 @@ Shared components decided in #934: **ScreenHeader** (**built**, `src/renderer/co
 
 Added by spec 038 (Pull requests wave 2):
 
-- **MarkdownEditor** (`src/renderer/components/markdown-editor/`): Write/Preview editor with a formatting toolbar, `full` and `compact` sizes, Ctrl+Enter to submit and Esc to cancel. The Pull requests comment box and thread replies use it.
+- **MarkdownEditor** (`src/renderer/components/markdown-editor/`): Write/Preview editor built on `ComposerBox` (box, `ComposerField`, `ComposerTextarea` with `actionCount={0}`, `ComposerFooter`) with a formatting toolbar, `full` and `compact` sizes, Ctrl+Enter to submit and Esc to cancel. The Pull requests comment box and thread replies use it.
 - **RelativeTime** (`src/renderer/components/relative-time.tsx`): a relative time as a focusable `<time>` with the full local date and time in a Tooltip. Use it for every relative time in the Pull requests view.
 - **Pull requests pieces** (`src/renderer/features/pull-requests/`): `TimelineCards.tsx` (history-line entries: unboxed commit rows, soft `border-divider` cards, Avatar, "Bot" and "You" Badges), `ThreadReply.tsx` (ghost Reply toggle opening the compact editor), `CommentBox.tsx` (full editor with Comment and a confirmed Close pull request), `ChecksSection.tsx` (checks grouped by outcome in Collapsibles, row kebab DropdownMenu), and `prImages.ts` (the image-proxy cache behind avatars and Markdown images, ADR 0004).
 
