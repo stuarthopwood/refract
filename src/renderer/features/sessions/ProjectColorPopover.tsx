@@ -115,6 +115,11 @@ export function ProjectColorPopover({
           const checked = contentRef.current?.querySelector<HTMLElement>('[role="radio"][data-state="checked"]')
           ;(checked ?? radios?.[0])?.focus()
         }}
+        onInteractOutside={(event) => {
+          // The closing "..." menu briefly takes focus back, then hands it to its trigger; neither is a dismissal.
+          const target = event.target as Element | null
+          if (target && (returnFocusRef.current?.contains(target) || target.closest('[role="menu"]'))) event.preventDefault()
+        }}
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus()

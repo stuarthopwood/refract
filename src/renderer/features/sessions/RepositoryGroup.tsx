@@ -346,9 +346,12 @@ export function RepositoryGroup({
             <DropdownMenuContent
               onCloseAutoFocus={(event) => {
                 if (!renameRequestedRef.current && !colourRequestedRef.current) return
+                const openColour = colourRequestedRef.current
                 renameRequestedRef.current = false
                 colourRequestedRef.current = false
                 event.preventDefault()
+                // Open only once the menu has fully closed, so it cannot take focus back from the popover.
+                if (openColour) setColorOpen(true)
               }}
             >
               <DropdownMenuItem
@@ -362,7 +365,6 @@ export function RepositoryGroup({
               <DropdownMenuItem
                 onSelect={() => {
                   colourRequestedRef.current = true
-                  setColorOpen(true)
                 }}
               >
                 Colour…
