@@ -33,7 +33,7 @@ export function SessionAgentsButton({ sessionId, sessionName, running, onSelect,
           size="xs"
           aria-label={label}
           data-session-agents={sessionId}
-          className={cn('h-6 w-9 gap-1 px-1 tabular-nums', className, COMPOSER_BUTTON_FOCUS_CLASS)}
+          className={cn('h-6 w-9 gap-1 px-0 tabular-nums', className, COMPOSER_BUTTON_FOCUS_CLASS)}
           onClick={(event) => {
             onSelect()
             openHostedPanel('subagents', sessionId, { opener: event.currentTarget })

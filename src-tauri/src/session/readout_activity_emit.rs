@@ -26,13 +26,19 @@ pub(in super::super) struct EmitState {
     trailing: bool,
 }
 
-/// `SessionActivity` or `null` (not working: no turn running on this agent). `todo` mirrors the
+/// `SessionActivity` or `null` (not working: no turn running on this agent and no subagent still
+/// running). #507: a background subagent outliving its turn keeps `runningSubagents` flowing so
+/// the Session row's agents button stays; the Activity line itself still needs a live status.
+/// `todo` mirrors the
 /// renderer's `deriveTodoTotals`/`deriveCurrentTask` (`todoDerive.ts`): `total` excludes
 /// abandoned tasks, `done` counts completed ones, the current task is the first `in_progress`
 /// one (else the first still-open one); `null` when there is no plan or every open task is done.
 fn activity_value(s: &State, running_subagents: u64) -> Value {
     if s.turn_started_at.is_none() {
-        return Value::Null;
+        if running_subagents == 0 {
+            return Value::Null;
+        }
+        return json!({ "runningSubagents": running_subagents, "todo": Value::Null });
     }
     let mut activity = json!({
         "runningSubagents": running_subagents,
