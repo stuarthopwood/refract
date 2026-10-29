@@ -326,7 +326,7 @@ pub async fn repo_info(repo_path: &Path) -> Result<RepoInfo, GitError> {
     if head.code != 0 {
         return Err(GitError::new(
             GitErrorCode::NoCommits,
-            format!("Project has no commits: {}", repo_path.display()),
+            format!("This folder has no commits yet: {}", repo_path.display()),
         ));
     }
 

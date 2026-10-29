@@ -116,7 +116,7 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
           </DialogHeader>
           {!login ? (
             <>
-              <p className="text-sm">Sign in to GitHub from the profile menu to file an issue in this project.</p>
+              <p className="text-sm">Sign in to GitHub from the profile menu to file an issue in this project's GitHub repository.</p>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   Close

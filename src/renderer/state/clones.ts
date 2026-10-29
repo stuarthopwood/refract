@@ -51,7 +51,7 @@ function handle(event: CloneProgressEvent): void {
     case 'done-not-added':
       active.delete(event.cloneId)
       clone.toast.fail(
-        `Cloned to ${event.destination}, but couldn't add it as a Project. Use Add project > Local folder.`
+        `Cloned to ${event.destination}, but couldn't add it as a project. Use Add project > Local folder.`
       )
       return
     case 'failed':
