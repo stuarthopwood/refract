@@ -57,23 +57,23 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
   const windowFull = FULL_NUMBER_FORMAT.format(contextUsage.windowTokens)
   return (
     <ContextShakeMenu sessionId={sessionId} figure={`${used}/${windowSize} (${percent}%)`}>
-    <ReadoutItem
-      icon={high ? TriangleAlertIcon : GaugeIcon}
-      accessibleName={`${used}/${windowSize} (${percent}%)${high ? ' high' : ''}, context usage, shake options. ${usedFull} of ${windowFull} tokens used`}
-    >
-      <span aria-hidden data-context-usage-figures style={colour} className="relative inline-flex items-center self-stretch">
-        {used}/{windowSize} ({percent}%)
-        {high && <span> high</span>}
-        {showBar && (
-          <span aria-hidden data-context-usage-bar className="absolute inset-x-0 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-muted forced-colors:hidden">
-            <span
-              className="block h-full rounded-full motion-safe:transition-[width] motion-safe:duration-300"
-              style={{ width: `${Math.min(100, Math.max(0, percent))}%`, backgroundColor: contextUsageColor(percent) }}
-            />
-          </span>
-        )}
-      </span>
-    </ReadoutItem>
+      <ReadoutItem
+        icon={high ? TriangleAlertIcon : GaugeIcon}
+        accessibleName={`${used}/${windowSize} (${percent}%)${high ? ' high' : ''}, context usage, shake options. ${usedFull} of ${windowFull} tokens used`}
+      >
+        <span aria-hidden data-context-usage-figures style={colour} className="relative inline-flex items-center self-stretch">
+          {used}/{windowSize} ({percent}%)
+          {high && <span> high</span>}
+          {showBar && (
+            <span aria-hidden data-context-usage-bar className="absolute inset-x-0 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-muted forced-colors:hidden">
+              <span
+                className="block h-full rounded-full motion-safe:transition-[width] motion-safe:duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, percent))}%`, backgroundColor: contextUsageColor(percent) }}
+              />
+            </span>
+          )}
+        </span>
+      </ReadoutItem>
     </ContextShakeMenu>
   )
 }

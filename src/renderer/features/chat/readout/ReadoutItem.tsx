@@ -74,7 +74,7 @@ export interface ReadoutItemProps extends Omit<HTMLAttributes<HTMLButtonElement>
 }
 
 export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HTMLSpanElement, ReadoutItemProps>(function ReadoutItem(
-  { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter,   onPointerLeave, onFocus, onBlur, ...rest },
+  { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter, onPointerLeave, onFocus, onBlur, ...rest },
   ref
 ) {
   const baseClasses = cn(READOUT_ITEM_BASE_CLASS, className)
