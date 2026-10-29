@@ -54,7 +54,7 @@ export function MarkdownBlockquote({ className, children, node: _node, ...props 
   const alert = parseAlert(children)
   if (!alert) {
     return (
-      <blockquote className={cn('border-l-2 border-border pl-4 text-muted-foreground', className)} {...props}>
+      <blockquote className={cn('border-l-2 border-md-quote-bar pl-4 text-muted-foreground', className)} {...props}>
         {children}
       </blockquote>
     )
@@ -92,7 +92,7 @@ export function MarkdownTh({ className, node: _node, ...props }: React.Component
   return (
     <th
       className={cn(
-        githubStyle ? 'border border-divider px-4 py-2 font-semibold' : 'border border-border bg-muted/50 px-2 py-1 font-medium',
+        githubStyle ? 'border border-divider px-4 py-2 font-semibold' : 'border border-border bg-muted/50 px-2 py-1 font-medium text-md-table-header-fg',
         className
       )}
       {...props}
