@@ -12,6 +12,7 @@ import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
+import { IssuesView } from '@/features/issues/IssuesView'
 import { toast } from 'sonner'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import {
@@ -542,10 +543,9 @@ export function App() {
             <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
               <ErrorBoundary>
                 {view === 'pull-requests' ? (
-                  // specs/003-pull-request-management: swaps only this panel's content (never
-                  // the session-list panel or the subagent panel, both of which stay mounted --
-                  // "Pull requests" is a left-nav entry, not a separate shell).
                   <PullRequestsView reservesWindowControls={!paneShown} />
+                ) : view === 'issues' ? (
+                  <IssuesView reservesWindowControls={!paneShown} />
                 ) : paneSessionIds.length === 0 ? (
                   // Spec 012 (research.md decision 3, extracted to EmptyChatState.tsx, gate
                   // round 2 item 11): no pane open at all.
