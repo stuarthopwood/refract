@@ -61,10 +61,10 @@ export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: s
   function run(action: ShakeAction): void {
     // Re-read the live status: the Session can turn busy while the confirmation is open.
     if (useSessionsStore.getState().sessions.find((x) => x.id === sessionId)?.status !== 'idle') {
-      useDraftStore.getState().announceAttachment(sessionId, `\${action.label} did not run: the session is busy.`)
+      useDraftStore.getState().announceAttachment(sessionId, `${action.label} did not run: the session is busy.`)
       return
     }
-    useDraftStore.getState().announceAttachment(sessionId, `\${action.label}...`)
+    useDraftStore.getState().announceAttachment(sessionId, `${action.label}...`)
     void window.refract.chat
       .send(sessionId, action.command)
       .then((result) => {
