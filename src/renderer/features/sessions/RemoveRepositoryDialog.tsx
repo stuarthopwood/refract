@@ -121,7 +121,7 @@ export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemov
               ? `${repository.name} still owns ${describeOwnedSessions(activeCount, archivedCount)}. Delete ${
                   activeCount + archivedCount === 1 ? 'it' : 'them'
                 } first, then remove this project.`
-                              : "This removes only Refract's entry for this project. The folder on disk is untouched."}
+              : "This removes only Refract's entry for this project. The folder on disk is untouched."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
