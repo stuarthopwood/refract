@@ -538,7 +538,7 @@ export function hexToLinearSrgb(hex) {
   return [srgbGammaDecode(r), srgbGammaDecode(g), srgbGammaDecode(b)]
 }
 
-export { MARKDOWN_PAIRS } from './markdown-token-contrast.mjs'
+export { MARKDOWN_PAIRS, mermaidAccentRows } from './markdown-token-contrast.mjs'
 export async function shikiTokenContrastRows(themes, themeMetadata) {
   const distinctSyntaxThemes = [...new Set(Object.values(themeMetadata).map((m) => m.syntaxTheme).filter((s) => s && s !== 'css-variables'))]
   const rows = []

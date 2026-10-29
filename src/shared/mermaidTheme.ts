@@ -557,7 +557,7 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
   .flowchart-link, .edgePath .path {
     stroke: ${accent} !important;
   }
-  .marker, marker path {
+  .arrowMarkerPath, marker.arrowMarker path {
     fill: ${accent} !important;
     stroke: ${accent} !important;
   }

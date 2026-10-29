@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PAIRS, MARKDOWN_PAIRS, searchFieldContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows } from './theme-contrast-pairs.mjs'
+import { PAIRS, MARKDOWN_PAIRS, mermaidAccentRows, searchFieldContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows } from './theme-contrast-pairs.mjs'
 import { swatchMetadataDriftCheck } from './theme-swatch-drift.mjs'
 import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { addDerivedTokens } from './derived-tokens.mjs'
@@ -299,7 +299,7 @@ for (const id of missingThemeBlocks) {
 const swatchDrift = swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds)
 checkedCount += swatchDrift.checkedCount
 failCount += swatchDrift.failCount
-rows.push(...swatchDrift.rows)
+rows.push(...swatchDrift.rows); { const d = mermaidAccentRows(themes); checkedCount += d.checkedCount; failCount += d.failCount; rows.push(...d.rows) }
 
 // Gate round 2 (#700/#701 slice (b), Main CRITICAL item 1 follow-up): the Agents/Todo cards'
 // own `PopoverContent` is a new surface for two tokens -- lives here, not in

@@ -156,8 +156,7 @@ export function CodeBlock({
           await highlighter.loadLanguage(lang as Parameters<Highlighter['loadLanguage']>[0])
         }
         if (cancelled) return
-        // #975: body now shares `bg-card` with the header/gutter; Shiki's own fixed root
-        // background is neutralised via `colorReplacements` (keyed on the theme's own `.bg`, probed against shiki@4.4.3 -- the one per-call override for background alone).
+        // #975/#456: the body shares `bg-code-block` with the header/gutter; `highlightToHtml` neutralises Shiki's own root background.
         const syntaxTheme = THEMES[activeThemeId].syntaxTheme
         setHtml(highlightToHtml(highlighter, code, lang, syntaxTheme))
       } catch {
