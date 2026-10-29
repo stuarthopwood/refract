@@ -17,9 +17,9 @@ interface LinkActionsProps {
   copiedMessage: string
   /** Items after the Copy item. */
   actions: LinkAction[]
-  /** Layout-only, for a caller whose link sits in a flex row (e.g. `DiffView`'s truncating header). */
   /** Wraps just the link (not the Copy slot), e.g. in an inline-code chip, so the slot sits outside the chip. */
   wrapLink?: (link: React.ReactNode) => React.ReactNode
+  /** Layout-only, for a caller whose link sits in a flex row (e.g. `DiffView`'s truncating header). */
   wrapperClassName?: string
   children: React.ReactNode
 }
