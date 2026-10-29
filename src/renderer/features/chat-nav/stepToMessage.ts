@@ -18,7 +18,10 @@ export function stepToMessage(sessionId: string, direction: StepDirection): bool
         direction,
         orderedIds: entry.index.map((message) => message.id),
         currentId,
-        currentTopOffset: currentId === null ? 0 : (entry.bridge.getMessageTopOffset(currentId) ?? 0),
+        currentTopOffset:
+          currentId === null || (direction === 'previous' && !entry.view.scrollable.start)
+            ? 0
+            : (entry.bridge.getMessageTopOffset(currentId) ?? 0),
         tolerancePx: 2
       })
     : null
