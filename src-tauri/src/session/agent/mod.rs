@@ -500,6 +500,11 @@ impl SessionAgent {
         &self.session_id
     }
 
+    /// Issue #561: the live process handle, for `session::health`'s pid and latency reads.
+    pub(super) async fn process_handle(&self) -> Option<Arc<OmpProcess>> {
+        self.state.lock().await.process.clone()
+    }
+
     /// Generic transcript upsert a lane can call from its own `on_frame`, the same sequence
     /// `upsert_request_row` above factors through for its own `kind: 'request'` rows.
     pub(super) async fn upsert_transcript_item(&self, item: TranscriptItem) {

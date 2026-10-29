@@ -27,6 +27,7 @@ pub const TOKEN_GUARD_LAUNCH_WARNING: &str = "token-guard:launch-warning";
 pub const TOKEN_GUARD_CALLS: &str = "token-guard:calls";
 pub const READOUT_UPDATE: &str = "readout:update";
 pub const ADVISOR_UPDATE: &str = "advisor:update";
+pub const SESSION_HEALTH: &str = "session:health";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
 pub const SUBAGENT_PATCH: &str = "subagent:patch";
 pub const SIDE_CHAT_PATCH: &str = "side-chat:patch";
@@ -234,6 +235,24 @@ impl EventSink {
         self.send(
             ADVISOR_UPDATE,
             serde_json::json!({ "sessionId": session_id, "advisorOn": advisor_on }),
+        );
+    }
+
+    /// `session:health` (issue #561): the Session's degraded-only health readouts. A field is
+    /// `null` while that measure is healthy; both `null` means nothing to show.
+    pub fn emit_session_health(
+        &self,
+        session_id: &str,
+        rpc_slow_ms: Option<u64>,
+        agent_memory_bytes: Option<u64>,
+    ) {
+        self.send(
+            SESSION_HEALTH,
+            serde_json::json!({
+                "sessionId": session_id,
+                "rpcSlowMs": rpc_slow_ms,
+                "agentMemoryBytes": agent_memory_bytes,
+            }),
         );
     }
 

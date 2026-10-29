@@ -17,22 +17,16 @@
 //   - the pid-record fallback (`process/pidRecords.ts`) -- Job Object kill-on-close (FR-005) is
 //     the mechanism FR-001 to FR-005 actually require; the pid-record file is Electron's own
 //     secondary belt-and-braces path, not named here.
-// See this file's final report for the one Cargo.toml-less workaround this slice needed (a
-// hand-rolled base64 decoder in place of a `base64` crate -- `base64` is a declared dependency
-// by now, just not pulled into this module's own small decode path). The conservative
-// whole-line redaction heuristic this file used to fall back to (no `regex`-capable crate was
-// declared yet) is gone: `build_start_failure` now calls `crate::omp::redact::redact_secrets`,
-// the exact `redact.ts` port `fancy-regex` makes possible (lane R9, issue #792).
+// `build_start_failure` redacts through `crate::omp::redact::redact_secrets` (lane R9, #792).
+
+mod latency;
+pub use latency::RpcSample;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-// `parking_lot::Mutex` is the project's preferred sync-mutex (no poisoning to unwrap) but is not
-// a declared dependency of this crate and Cargo.toml must not be edited in this slice; `pending`/
-// `chunks`/`stderr_tail` below use `std::sync::Mutex` instead, with the usual `.lock().unwrap()`
-// (poisoning only follows a panic while holding the lock, which none of these critical sections
-// can do). See the final report for the stated need to add `parking_lot`.
+// `std::sync::Mutex` for `pending`/`chunks`/`stderr_tail`: no critical section can panic.
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 
@@ -195,6 +189,7 @@ struct Inner {
     requested_stop: AtomicBool,
     exited: AtomicBool,
     request_counter: AtomicU64,
+    latency: latency::RpcLatency,
     pending: StdMutex<HashMap<String, oneshot::Sender<Result<Value, ProcessError>>>>,
     chunks: StdMutex<HashMap<String, ChunkAssembly>>,
     stderr_tail: StdMutex<StderrTail>,
@@ -314,6 +309,7 @@ impl OmpProcess {
             requested_stop: AtomicBool::new(false),
             exited: AtomicBool::new(false),
             request_counter: AtomicU64::new(0),
+            latency: latency::RpcLatency::default(),
             pending: StdMutex::new(HashMap::new()),
             chunks: StdMutex::new(HashMap::new()),
             stderr_tail: StdMutex::new(StderrTail::default()),
@@ -406,13 +402,17 @@ impl OmpProcess {
 
         let (tx, rx) = oneshot::channel();
         self.inner.pending.lock().unwrap().insert(id.clone(), tx);
+        let sent_at = Instant::now();
         if let Err(err) = self.write_line(&cmd).await {
             self.inner.pending.lock().unwrap().remove(&id);
             return Err(err);
         }
 
         match tokio::time::timeout(Duration::from_millis(timeout_ms), rx).await {
-            Ok(Ok(result)) => result,
+            Ok(Ok(result)) => {
+                self.inner.latency.record(&cmd_type, sent_at.elapsed());
+                result
+            }
             Ok(Err(_)) => Err(ProcessError::new(format!(
                 "OmpProcess: request cancelled ({cmd_type})"
             ))),

@@ -78,6 +78,7 @@ pub(crate) fn free_memory_bytes() -> Option<u64> {
 /// `send` silently no-ops until `setup` fills it in), so this can start as soon as the
 /// `SessionManager`/`EventSink` pair exists.
 pub fn start_monitor(session_manager: Arc<SessionManager>, events: EventSink) {
+    crate::session::health::start_monitor(session_manager.clone(), events.clone());
     tauri::async_runtime::spawn(async move {
         let mut last_low: Option<bool> = None;
         let mut last_emit_at: Option<Instant> = None;
