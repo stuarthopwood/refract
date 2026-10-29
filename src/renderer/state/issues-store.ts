@@ -52,6 +52,8 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null }),
   setLabel: (label) => set({ label, selected: null }),
   setQuery: (query) => set({ query }),
+  // A fresh `repositoryIds` array on every reset is what re-runs the list's fetch effect, so Clear
+  // filters refetches even when only the search was active.
   clearFilters: () =>
     set({ state: 'open', repositoryIds: [], label: null, query: '', appliedQuery: '', selected: null }),
   select: (selected) => set({ selected }),

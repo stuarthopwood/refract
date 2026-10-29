@@ -19,6 +19,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
   const [detail, setDetail] = useState<IssueDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const sequenceRef = useRef(0)
 
@@ -32,8 +33,10 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
     setLoading(false)
     if (!result.ok) {
       setError(result.error.message)
+      setFailed(true)
       return
     }
+    setFailed(false)
     setDetail(result.value)
   }
 
@@ -55,11 +58,14 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
   if (!detail) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
-        {error ? (
+        {failed ? (
           <>
-            <div role="alert" className="text-destructive">
-              {error}
-            </div>
+            {error && (
+              <div role="alert" className="text-destructive">
+                {error}
+              </div>
+            )}
+            {/* Stays mounted while retrying so keyboard focus is not lost. */}
             <RefreshButton loading={loading} onClick={() => void load()} label="Retry loading this issue" />
           </>
         ) : (
