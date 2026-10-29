@@ -195,7 +195,7 @@ export function IssueList() {
             {plural(store.skipped.length, 'project')} skipped
           </button>
           {skippedOpen && (
-            <ul className="mt-1 flex flex-col gap-1 pl-5">
+            <ul className="mt-1 flex flex-col gap-1 pl-4">
               {store.skipped.map((project) => (
                 <li key={project.repositoryId}>
                   {project.repositoryName}: {ERROR_MESSAGES[project.code] ?? project.message}

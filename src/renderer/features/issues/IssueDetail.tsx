@@ -116,7 +116,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
           </p>
         )}
         {detail.labels.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             {detail.labels.map((label) => (
               <span key={label.name} className="flex items-center gap-1">
                 <ColourDot color={label.color} />

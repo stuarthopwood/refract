@@ -74,7 +74,7 @@ export function GitHubNavGroup() {
   }
 
   return (
-    <div role="group" aria-label="GitHub" className="flex shrink-0 flex-col gap-0.5 pt-2">
+    <div role="group" aria-label="GitHub" className="flex shrink-0 flex-col gap-1 pt-2">
       <NavItem
         active={view === 'pull-requests'}
         icon={GitPullRequestIcon}
