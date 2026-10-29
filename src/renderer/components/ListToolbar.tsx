@@ -25,7 +25,7 @@ export interface ListToolbarProps {
 
 export function ListToolbar({ children, search, countLine, className }: ListToolbarProps) {
   return (
-    <div className={cn('flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2', className)}>
+    <div className={cn('flex shrink-0 flex-wrap items-center gap-2 px-4 py-2', className)}>
       {children}
       {search && (
         <div role="search" className="w-64 max-w-full">

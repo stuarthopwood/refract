@@ -24,7 +24,7 @@ export function ScreenHeader({ title, headingRef, backLabel, onBack, count, chil
     <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="no-drag-region size-6" aria-label={backLabel} onClick={onBack}>
+          <Button variant="ghost" size="icon-sm" className="no-drag-region" aria-label={backLabel} onClick={onBack}>
             <ArrowLeftIcon aria-hidden className="size-4" />
           </Button>
         </TooltipTrigger>

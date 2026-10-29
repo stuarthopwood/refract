@@ -4,10 +4,13 @@
 import type { RefObject } from 'react'
 import { ListToolbar } from '@/components/ListToolbar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Repository } from '../../../shared/model'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
+import { DEFAULT_FILTERS } from '@/state/view-store'
 import type { ArchiveFilter, SessionFilters, SortKey } from '@/state/view-store'
+
+const ARCHIVE_FILTER_VALUES: readonly ArchiveFilter[] = ['all', 'active', 'archived']
 
 export interface ManageSessionsToolbarProps {
   filters: SessionFilters
@@ -17,9 +20,7 @@ export interface ManageSessionsToolbarProps {
   /** Post-build review fix (D4): the filtered-result count was previously announced only
    *  through the screen's sr-only live region (ManageSessionsScreen.tsx), invisible to a
    *  sighted user -- the header badge never updates past the unfiltered total. Shown here,
-   *  beside the controls that caused the filtering, only while `shownCount` differs from
-   *  `totalCount` (which is never true with nothing filtered, since filtering alone changes
-   *  which sessions are included). */
+   *  beside the controls that caused the filtering, while any filter is non-default. */
   shownCount: number
   totalCount: number
 }
@@ -39,6 +40,10 @@ export function ManageSessionsToolbar({
   shownCount,
   totalCount
 }: ManageSessionsToolbarProps) {
+  const filtering =
+    filters.search.trim() !== '' ||
+    filters.repositoryId !== DEFAULT_FILTERS.repositoryId ||
+    filters.archiveFilter !== DEFAULT_FILTERS.archiveFilter
   return (
     // drag-regions-allow: renders inside ManageSessionsScreen, below its own drag-region header (SettingsScreen.tsx's pattern), so it never touches App.tsx's strip despite the same shape.
     <ListToolbar
@@ -49,7 +54,7 @@ export function ManageSessionsToolbar({
         placeholder: 'Filter sessions…',
         inputRef: searchInputRef
       }}
-      countLine={shownCount !== totalCount ? showingCountLabel(shownCount, totalCount) : undefined}
+      countLine={filtering ? showingCountLabel(shownCount, totalCount) : undefined}
     >
       <Tabs
         value={filters.archiveFilter}
@@ -61,6 +66,10 @@ export function ManageSessionsToolbar({
           <TabsTrigger value="active">Active</TabsTrigger>
           <TabsTrigger value="archived">Archived</TabsTrigger>
         </TabsList>
+        {/* Empty, hidden panels so each trigger's aria-controls resolves; the list itself lives in the screen body. */}
+        {ARCHIVE_FILTER_VALUES.map((value) => (
+          <TabsContent key={value} value={value} forceMount className="hidden" />
+        ))}
       </Tabs>
 
       <Select value={filters.repositoryId} onValueChange={(value) => onFiltersChange({ ...filters, repositoryId: value })}>
