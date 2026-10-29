@@ -183,6 +183,14 @@ _Avoid_: PR view, merge requests (GitLab's term)
 The left-nav entry and the list-plus-detail view it opens, listing GitHub issues from every **Project** that has a **GitHub repository**, on the same list shell as the **Pull requests view**.
 _Avoid_: Issues page, issue log, issue tracker
 
+**Usage view**:
+The left-nav entry and the dashboard it opens (#1331), showing every OMP model call, tool call, token and **AI credit** recorded on this machine, by **Project**, model, reasoning level and agent type, read from Refract's own local `usage.db` (ADR 0006), never committed to any repository.
+_Avoid_: Stats page, billing page
+
+**AI credit**:
+The Copilot premium-request unit a model call costs: the model's multiplier (for example Opus 15, Sonnet 1), counted against the Copilot plan's monthly entitlement. Calls to other providers are shown in list-price USD instead.
+_Avoid_: premium request (GitHub's billing term), token
+
 **Item reference**:
 A mention of a pull request or issue by number in chat prose: `#123` means that number in the **GitHub repository** of the chat's **Session**'s **Project**, and `owner/repo#123` means that number in the named repository. Shown as a link with an **Item card**; a pull request opens in the **Pull requests view**, anything else on GitHub (issue #1155).
 _Avoid_: Hashtag, issue link, PR link
