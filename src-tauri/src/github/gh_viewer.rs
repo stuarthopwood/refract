@@ -37,6 +37,9 @@ pub async fn viewer_login(repo_path: &Path) -> Option<String> {
     VIEWER_CACHE
         .lock()
         .expect("VIEWER_CACHE mutex poisoned")
-        .insert(repo_path.to_path_buf(), (Instant::now(), wire.login.clone()));
+        .insert(
+            repo_path.to_path_buf(),
+            (Instant::now(), wire.login.clone()),
+        );
     Some(wire.login)
 }

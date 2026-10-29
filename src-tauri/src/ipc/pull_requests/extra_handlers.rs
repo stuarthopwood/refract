@@ -22,8 +22,7 @@ pub(super) fn pull_requests_close(state: AppState, args: Vec<Value>) -> HandlerF
             .first()
             .and_then(Value::as_str)
             .ok_or_else(|| invalid_argument(USAGE))?;
-        let number =
-            valid_pull_request_number(&args, 1).ok_or_else(|| invalid_argument(USAGE))?;
+        let number = valid_pull_request_number(&args, 1).ok_or_else(|| invalid_argument(USAGE))?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
         let (stale, fresh) = check_not_stale(repository_id, &repo_path, number, false)
             .await
@@ -41,9 +40,10 @@ pub(super) fn pull_requests_close(state: AppState, args: Vec<Value>) -> HandlerF
 
 pub(super) fn pull_requests_fetch_image(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let url = args.first().and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.fetchImage expects (url)")
-        })?;
+        let url = args
+            .first()
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid_argument("pullRequests.fetchImage expects (url)"))?;
         let data_url = fetch_pr_image(url)
             .await
             .map_err(|err| IpcError::new("image-failed", err.message))?;

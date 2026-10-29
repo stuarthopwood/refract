@@ -11,7 +11,11 @@ pub async fn close_pull_request_mutation(
     pull_request_id: &str,
 ) -> Result<(), GhError> {
     let query = "mutation($id: ID!) { closePullRequest(input: { pullRequestId: $id }) { pullRequest { id state } } }";
-    let _: serde_json::Value =
-        gh_graphql(repo_path, query, &[("id", GraphqlValue::Str(pull_request_id))]).await?;
+    let _: serde_json::Value = gh_graphql(
+        repo_path,
+        query,
+        &[("id", GraphqlValue::Str(pull_request_id))],
+    )
+    .await?;
     Ok(())
 }

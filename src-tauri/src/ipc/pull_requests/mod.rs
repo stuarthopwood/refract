@@ -41,7 +41,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register("pullRequests.detail", handlers::pull_requests_detail);
     d.register("pullRequests.comment", handlers::pull_requests_comment);
     d.register("pullRequests.close", extra_handlers::pull_requests_close);
-    d.register("pullRequests.fetchImage", extra_handlers::pull_requests_fetch_image);
+    d.register(
+        "pullRequests.fetchImage",
+        extra_handlers::pull_requests_fetch_image,
+    );
     d.register(
         "pullRequests.replyToThread",
         handlers::pull_requests_reply_to_thread,
