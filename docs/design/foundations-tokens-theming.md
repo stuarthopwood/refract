@@ -60,7 +60,7 @@ drawn on a chat line), so the two cannot be confused in context.
 
 ### Role colour tokens (spec 035)
 
-`--role-default`, `--role-smol`, `--role-slow` and `--role-plan` (teal, pink, olive, sky) identify the four chat roles in Settings > Models as a swatch beside the role name. Every theme preset defines them at 3:1 or better against background, card, popover and accent (`scripts/theme-contrast-pairs.mjs`). They avoid the reserved green, amber, red, blue and violet hues and each theme's own accent hue (Nordic Frost moves default and plan off its cyan accent; Cyber Amber's plan is off its orange accent), and the swatch is decorative (`aria-hidden`); other roles stay neutral.
+`--role-default`, `--role-smol`, `--role-slow` and `--role-plan` identify the four chat roles in Settings > Models as a swatch beside the role name. Every theme preset defines them at 3:1 or better against background, card, popover and accent (`scripts/theme-contrast-pairs.mjs`). Within each theme, every role hue (OKLCH) sits at least 30 degrees (circular) clear of that theme's own info, agent-message violet, green, amber, red and accent hues, and the four role hues are at least 30 degrees apart from each other. Two themes cannot fit that: Dark (high contrast) and Nordic Frost leave only two free gaps (about 101-131 and 325-352), so they relax to 25 degrees (Dark (high contrast) default at 191 is 29 from green 162 and info 220; Nordic Frost default/smol at 327/355 are 28 apart and smol is 27 from red 22). Per-theme role hues (default / smol / slow / plan): Dark and Obsidian 197 / 340 / 101 / 131; Dark (high contrast) 191 / 327 / 101 / 131; Nordic Frost 327 / 355 / 101 / 131; Cyber Amber 125 / 340 / 233 / 262. The swatch is decorative (`aria-hidden`); other roles stay neutral.
 
 ### Reserved hues
 
@@ -74,10 +74,10 @@ Each categorical colour that carries meaning, so a new one is checked against th
 | Blue | Info, unread response | `--severity-info`, `--state-unread-response` |
 | Grey | Idle, neutral, done tool calls | `--state-idle`, `--muted-foreground` |
 | Violet | Agent-to-agent message identity (#838); the brand spinner (a brand mark) | `--agent-message`, `--agent-spinner-core` |
-| Teal (~185); magenta (~330) in Nordic Frost | Chat role: default (Settings > Models swatch) | `--role-default` |
-| Pink (~350); ~355 in Nordic Frost | Chat role: smol | `--role-smol` |
-| Olive (~115) | Chat role: slow | `--role-slow` |
-| Sky (~215); ~275 in Nordic Frost | Chat role: plan | `--role-plan` |
+| Per theme: Dark/Obsidian 197, Dark (high contrast) 191, Nordic Frost 327, Cyber Amber 125 | Chat role: default (Settings > Models swatch) | `--role-default` |
+| Per theme: Dark/Obsidian 340, Dark (high contrast) 327, Nordic Frost 355, Cyber Amber 340 | Chat role: smol | `--role-smol` |
+| Per theme: 101 (Cyber Amber 233) | Chat role: slow | `--role-slow` |
+| Per theme: 131 (Cyber Amber 262) | Chat role: plan | `--role-plan` |
 | Per-theme accent | Links and primary fills, never a state | `--accent-text`, `--primary` |
 
 ## Theme files
