@@ -360,12 +360,8 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   // (labels/order/archived-or-not/stopped-or-not) is shared with SessionList.tsx via
   // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
   // this row's own rename/delete-dialog state) stay local, since they differ per screen.
-  const hideSession = useHideSession(session, {
-    captureFocusFallback,
-    focusRow: () => openButtonRef.current?.focus(),
-    onAnnounce,
-    focusAfterUnhide: () => (openButtonRef.current ?? searchInputRef.current)?.focus()
-  })
+  const focusOwnRow = () => (openButtonRef.current ?? searchInputRef.current)?.focus()
+  const hideSession = useHideSession(session, { captureFocusFallback, focusRow: focusOwnRow, onAnnounce, focusAfterUnhide: focusOwnRow })
   const actions = buildSessionRowActions(
     session,
     {
