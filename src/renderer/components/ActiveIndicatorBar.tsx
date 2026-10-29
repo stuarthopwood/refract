@@ -3,7 +3,7 @@
 // the Settings nav (SettingsScreen.tsx), PR list rows (PullRequestRow.tsx), Explorer tree rows
 // and the Subagent panel (FileExplorerPanel.tsx/SubagentPanel.tsx), and Manage sessions rows
 // (ManageSessionRow.tsx), plus the collapsed group header's containment cue (GroupHeader.tsx,
-// bar only) and the focused split pane (ChatPane.tsx). Flush full height (`inset-y-0`, no
+// bar only). (The focused split pane moved to a body tint in #684.) Flush full height (`inset-y-0`, no
 // rounded caps), 2px wide, the shared
 // `--active-indicator` accent, with its own forced-colours fallback baked in so selection
 // survives Windows High Contrast at every call site, not just the ones that already carried one.

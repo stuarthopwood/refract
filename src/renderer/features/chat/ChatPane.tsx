@@ -5,7 +5,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
 import { MessageSquareIcon, PaperclipIcon } from 'lucide-react'
-import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { FocusedPaneTint } from './FocusedPaneTint'
 import { StopBanner } from './StopBanner'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -115,6 +115,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // real user action skips the snapshot-fetch effect below entirely.
   const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
   const isSplit = useSplitStore((s) => s.paneSessionIds.length === 2)
+  // `otherSession` is only passed while a narrow window collapses the split to one pane (App.tsx).
+  const showSplit = isSplit && !otherSession
   const isFocused = useSplitStore((s) => s.paneSessionIds.length < 2 || s.focusedIndex === paneIndex)
   const focusMoveSignal = useSplitStore((s) => s.focusMoveSignal)
   const focusPane = useSplitStore((s) => s.focusPane)
@@ -1105,7 +1107,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       onDragOver={handlePaneDragOver}
       onDragLeave={handlePaneDragLeave}
       onDrop={(event) => void handlePaneDrop(event)}
-      className="relative flex h-full flex-col overflow-hidden"
+      className="relative isolate flex h-full flex-col overflow-hidden"
     >
       {/* #432: visible drop-target overlay while a file drag is over this pane -- text, not
           colour alone (WCAG 1.4.1); `aria-hidden`, since nothing here needs an accessible name
@@ -1120,13 +1122,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           {composerDisabled ? 'This session is not accepting input right now' : 'Drop files to attach'}
         </div>
       )}
-      {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
-          SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
-          "Focused" text badge so the marker is never colour alone. */}
-      {isSplit && isFocused && <ActiveIndicatorBar />}
+      {/* #684: focused-pane body tint (not the old accent bar); the header badge is the non-colour cue. */}
+      <FocusedPaneTint active={showSplit && isFocused} />
       <ChatHeader
         sessionId={sessionId}
-        focused={isSplit ? isFocused : undefined}
+        focused={showSplit ? isFocused : undefined}
         // Issue #621 (close chat pane): always rendered now, not gated on `isSplit` -- a single,
         // non-split pane is independently closeable down to the existing zero-session empty
         // state. `closeChatPane` (shared with App.tsx's Ctrl+W chord) owns the announcement and

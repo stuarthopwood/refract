@@ -75,6 +75,8 @@
    * aesthetic lives on the new `--divider` token, used by the panel-separator call sites
    * (resize handle line, PR list/detail divider, status-bar and composer top borders; #606). */
   --color-surface-1: var(--surface-1);
+  --color-pane-focused: var(--pane-focused);
+  --color-focused-badge-bg: var(--focused-badge-bg);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
   --color-surface-hover: var(--surface-hover);
@@ -478,6 +480,11 @@ samp {
    * exact same value `border-border` already renders today. */
   --divider: oklch(1 0 0 / 16%);
   --titlebar: var(--card);
+  /* Focused pane tint (#684): between `--background` (0.145) and `--sidebar`/`--surface-1`
+   * (0.205); 0.175 is the ceiling that keeps the user bubble at 4.5:1. */
+  --pane-focused: oklch(0.175 0 0);
+  --pane-focused-edge: transparent;
+  --focused-badge-bg: color-mix(in oklab, var(--active-indicator) 20%, transparent);
   --border-strong: var(--border);
   /* Accent (#550 item 6): NOT delivered for Dark in this remediated cut -- `--primary` stays
    * its existing near-white fill above (the indigo "#550 item 4" fill is Obsidian-only; folding
@@ -685,6 +692,10 @@ samp {
   --border-strong: var(--border);
   --divider: #2E3342;
   --titlebar: var(--card);
+  /* Focused pane tint (#684): below `--surface-1` (#1C1F28), above `--background` (#0F1014). */
+  --pane-focused: #161821;
+  --pane-focused-edge: transparent;
+  --focused-badge-bg: color-mix(in oklab, var(--active-indicator) 20%, transparent);
   /* Accent (#550 item 6): `--primary` keeps the mock's indigo fill for the one filled
    * ("commit") button variant -- `#6366F1` itself measures 4.467:1 for white text, just under
    * the 4.5:1 AA floor, so the fill is nudged to `#5A5EEE` (4.92:1 for white text, verified by
@@ -1050,6 +1061,10 @@ samp {
   --surface-hover: var(--surface-3);
   --divider: var(--border);
   --titlebar: var(--card);
+  /* Focused pane tint (#684): high contrast has no tint, a 2px edge around the pane body. */
+  --pane-focused: var(--background);
+  --pane-focused-edge: var(--active-indicator);
+  --focused-badge-bg: color-mix(in oklab, var(--active-indicator) 20%, transparent);
   --border-strong: var(--border);
   /* `--accent-text`: a new token, reusing this preset's own existing `--active-indicator`/
    * `--chart-1` hue (264, the brand indigo family) at the same lightness -- already 8.92:1
@@ -1201,6 +1216,10 @@ samp {
    * `scripts/check-theme-contrast.mjs`), used by #606's panel separators. */
   --divider: oklch(1 0 0 / 14%);
   --titlebar: var(--card);
+  /* Focused pane tint (#684): between `--background` (#060f1e) and `--surface-1` (#101b2b). */
+  --pane-focused: #0a1322;
+  --pane-focused-edge: transparent;
+  --focused-badge-bg: color-mix(in oklab, var(--active-indicator) 20%, transparent);
   /* Accent: the mock's "cyan accent" (hue 195), corrected off the mock's own merged
    * accent/info hue -- `--primary` (the one filled/"commit" button) is a deeper, saturated step
    * so white text clears 4.5:1 (5.18:1, verified); `--accent-text`, the lighter text/link step,
@@ -1464,6 +1483,10 @@ samp {
   --border-strong: var(--border);
   --divider: oklch(1 0 0 / 16%);
   --titlebar: var(--card);
+  /* Focused pane tint (#684): same ladder as Dark. */
+  --pane-focused: oklch(0.175 0 0);
+  --pane-focused-edge: transparent;
+  --focused-badge-bg: color-mix(in oklab, var(--active-indicator) 20%, transparent);
   --primary: #c2410c;
   --primary-foreground: #ffffff;
   --send: #c2410c;

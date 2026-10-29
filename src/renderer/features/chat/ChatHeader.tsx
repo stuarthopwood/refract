@@ -68,8 +68,10 @@ export function ChatHeader({
           // non-neutral surface -- FR-023's "stays solid" exception, same category as
           // `--send-foreground`/`--composer-selection-fg`, not the softened alias cascade. A
           // re-verified ratio on the translucent value isn't the fix: moved to the dedicated
-          // `--active-indicator-foreground` token (plain solid white in every theme).
-          <span className="shrink-0 rounded-md border border-active-indicator/40 bg-active-indicator/20 px-2 py-1 text-xs font-medium text-active-indicator-foreground">
+          // `--active-indicator-foreground` token (plain solid white in every theme). #684: the
+          // fill is the `--focused-badge-bg` token (no opacity modifier on a token class); the
+          // caller gates `focused` on `showSplit`.
+          <span className="shrink-0 rounded-md border border-active-indicator bg-focused-badge-bg px-2 py-1 text-xs font-medium text-active-indicator-foreground">
             Focused
           </span>
         )}

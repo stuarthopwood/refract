@@ -973,7 +973,7 @@ export function Transcript({
           inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
-            "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-background text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
+            "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-surface-1 text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
             isAtEnd
               ? "pointer-events-none translate-y-full scale-95 opacity-0 duration-400 ease-[cubic-bezier(0.7,0,0.84,0)]"
               : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"

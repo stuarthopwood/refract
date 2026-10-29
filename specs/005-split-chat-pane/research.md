@@ -207,9 +207,8 @@ is not what FR-007 asks for.
 ## Decision 9: pane accessibility construction (FR-005, FR-022, FR-023)
 
 **Decision**: each pane is `<div role="region" aria-label="<Session name> chat">`, with
-`aria-current="true"`-equivalent treatment reused from `SessionRow`'s existing pattern: a visible
-left-edge accent bar plus a small text "Focused" badge (never colour alone) on the focused pane,
-and one shared `aria-live="polite"` text node (outside both panes, in the chat region's own
+`aria-current="true"`-equivalent treatment: a small text "Focused" badge (never colour alone) in the header plus a subtle body tint (`--pane-focused`) on the focused pane, and
+one shared `aria-live="polite"` text node (outside both panes, in the chat region's own
 wrapper) announcing "Focused: <Session name>" whenever `focusedIndex` changes, so a screen reader
 hears exactly one short announcement per focus change instead of the whole region re-reading.
 
@@ -217,6 +216,14 @@ hears exactly one short announcement per focus change instead of the whole regio
 (`docs/DESIGN.md` "Confirmed in implementation": "each Session state... pairs a distinct icon and
 colour with an `sr-only` text label") rather than inventing a new accessibility idiom for this one
 feature.
+
+**Amended (#684, wave 3):** the left-edge accent bar is gone. The focused pane's body carries a
+tint layer (`--pane-focused`, one opaque token per theme, always mounted, fading by opacity over
+150 ms; instant under reduced motion), starting below the 40 px header so the title bar stays one
+colour. The "Focused" badge stays in the header with its fill in `--focused-badge-bg`. Both show
+only while `showSplit` (two panes on screen), not in the narrow one-pane collapse. High contrast
+has no tint: `--pane-focused-edge` draws a 2 px inset edge around the body. The unfocused pane is
+never dimmed.
 
 **Alternatives considered**: relying on `aria-selected` inside a `tablist` pattern — rejected, the
 two panes are not tabs (both are visible and interactive simultaneously, per FR-004); `region`

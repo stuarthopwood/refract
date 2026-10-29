@@ -23,7 +23,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T12 Rendered or Source toggle, default rules, large-value guard. (#719)
 
 ## WP-E Split focus
-- [ ] T13 Pane tint tokens, layer, badge token, contrast pairs, docs. (#684)
+- [x] T13 Pane tint tokens, layer, badge token, contrast pairs, docs. (#684)
 
 ## WP-F Parked agents
 - [ ] T14 Probe `subagent_lifecycle` wire values against a real OMP; record on #1098. (#1098)
