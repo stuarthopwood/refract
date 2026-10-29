@@ -29,7 +29,24 @@ const FAILURE_CACHE_TTL: Duration = Duration::from_secs(30);
 struct CacheEntry {
     login: String,
     fetched_at: Instant,
-    percent_used: Option<f64>,
+    outcome: Outcome,
+}
+
+/// Only `Failed` is retried on the short TTL; an unmetered account is a stable answer.
+#[derive(Clone, Copy)]
+enum Outcome {
+    Figure(f64),
+    Unmetered,
+    Failed,
+}
+
+impl Outcome {
+    fn percent(self) -> Option<f64> {
+        match self {
+            Outcome::Figure(p) => Some(p),
+            Outcome::Unmetered | Outcome::Failed => None,
+        }
+    }
 }
 
 static CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
@@ -71,9 +88,9 @@ pub async fn plan_percent_used() -> Option<f64> {
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some(CacheEntry {
         login,
         fetched_at: Instant::now(),
-        percent_used: fetched,
+        outcome: fetched,
     });
-    fetched
+    fetched.percent()
 }
 
 fn cached(login: &str) -> Option<Option<f64>> {
@@ -81,13 +98,23 @@ fn cached(login: &str) -> Option<Option<f64>> {
     guard
         .as_ref()
         .filter(|e| {
-            let ttl = if e.percent_used.is_some() { CACHE_TTL } else { FAILURE_CACHE_TTL };
+            let ttl = match e.outcome {
+                Outcome::Failed => FAILURE_CACHE_TTL,
+                Outcome::Figure(_) | Outcome::Unmetered => CACHE_TTL,
+            };
             e.login == login && e.fetched_at.elapsed() < ttl
         })
-        .map(|e| e.percent_used)
+        .map(|e| e.outcome.percent())
 }
 
-async fn fetch(login: &str) -> Option<f64> {
+async fn fetch(login: &str) -> Outcome {
+    match fetch_body(login).await {
+        None => Outcome::Failed,
+        Some(body) => parse_percent_used(&body).map_or(Outcome::Unmetered, Outcome::Figure),
+    }
+}
+
+async fn fetch_body(login: &str) -> Option<Value> {
     let token = auth_token(SUPPORTED_AUTH_HOST, login).await.ok()?;
     let mut auth_header =
         reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")).ok()?;
@@ -109,7 +136,7 @@ async fn fetch(login: &str) -> Option<f64> {
         return None;
     }
     let body = collect_bounded(response, MAX_RESPONSE_BYTES).await.ok()?;
-    parse_percent_used(&serde_json::from_slice::<Value>(&body).ok()?)
+    serde_json::from_slice::<Value>(&body).ok()
 }
 
 #[cfg(test)]

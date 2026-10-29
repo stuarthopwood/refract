@@ -412,6 +412,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                 placeholder="Ask a side question…"
                 aria-label="Side chat question"
                 aria-describedby={loaded ? undefined : unavailableHintId}
+                actionCount={running ? 2 : 1}
               />
               <ComposerActions>
                 {running && (
@@ -424,6 +425,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                   onSend={() => void send()}
                   tooltip={<Kbd>Enter</Kbd>}
                   keyShortcuts="Enter"
+                  describedBy={loaded ? undefined : unavailableHintId}
                 />
               </ComposerActions>
             </ComposerField>

@@ -150,7 +150,7 @@ function DropdownMenuRadioItem({
   )
 }
 
-/** #496: a toggle row (for example the approval card's "Remember across sessions"), exposed as
+/** #496: a toggle row, exposed as
  * `role="menuitemcheckbox"` with `aria-checked` by Radix; the leading check mark is decorative. */
 function DropdownMenuCheckboxItem({
   className,

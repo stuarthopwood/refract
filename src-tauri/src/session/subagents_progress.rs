@@ -198,12 +198,19 @@ pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
 /// without the command just answers `success:false`, leaving `apply_jobs`/`on_exit` as the
 /// settle paths.
 pub(super) async fn subscribe_to_subagent_frames(agent: &SessionAgent) {
-    let _ = agent
-        .request_rpc(
-            json!({ "type": "set_subagent_subscription", "level": "progress" }),
-            10_000,
-        )
-        .await;
+    // Fire-and-forget: the RPC can take up to its 10 s timeout and must not block attach/reset.
+    let agent = agent.arc();
+    tokio::spawn(async move {
+        if let Err(err) = agent
+            .request_rpc(
+                json!({ "type": "set_subagent_subscription", "level": "progress" }),
+                10_000,
+            )
+            .await
+        {
+            log::debug!("subagent subscription not established: {}", err.code);
+        }
+    });
 }
 
 /// Issue #712: applies one standalone `subagent_lifecycle`/`subagent_progress` payload, matched to
@@ -221,61 +228,55 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
     let is_lifecycle = frame_type == "subagent_lifecycle";
     let (summaries_value, visible_ops) = agent
         .with_subagents_state(|s| {
-            let Some(target) = s
-                .summaries
-                .iter()
-                .position(|e| e.tool_call_id == parent && u64::from(e.spec_index) == index)
-            else {
-                return (None, Vec::new());
-            };
-            let mut changed = false;
-            let entry = &mut s.summaries[target];
-            if detached && !entry.background {
-                entry.background = true;
-                changed = true;
-            }
-            if entry.status != SummaryStatus::Running {
-                return (
-                    changed.then(|| summaries_to_value(&s.summaries)),
-                    Vec::new(),
-                );
-            }
-            if is_lifecycle {
-                let status = payload.get("status").and_then(Value::as_str).unwrap_or("");
-                let new_status = map_progress_status(status);
-                if new_status != SummaryStatus::Running {
-                    let observed = super::now_ms() - entry.started_at;
-                    entry.status = new_status;
-                    entry.duration_ms = Some(entry.duration_ms.unwrap_or(0).max(observed));
+            let (changed, ops) = (|| {
+                let Some(target) = s
+                    .summaries
+                    .iter()
+                    .position(|e| e.tool_call_id == parent && u64::from(e.spec_index) == index)
+                else {
+                    return (false, Vec::new());
+                };
+                let mut changed = false;
+                let entry = &mut s.summaries[target];
+                if detached && !entry.background {
+                    entry.background = true;
                     changed = true;
                 }
-                return (
-                    changed.then(|| summaries_to_value(&s.summaries)),
-                    Vec::new(),
-                );
-            }
-            let Some(progress) = payload.get("progress") else {
-                return (
-                    changed.then(|| summaries_to_value(&s.summaries)),
-                    Vec::new(),
-                );
-            };
-            if let Some(d) = progress.get("durationMs").and_then(Value::as_i64) {
-                if d > 0 {
-                    entry.duration_ms = Some(d);
+                if entry.status != SummaryStatus::Running {
+                    return (changed, Vec::new());
                 }
-            }
-            let stream_id = entry.id.clone();
-            let is_visible = s.visible_id.as_deref() == Some(stream_id.as_str());
-            let new_rows = apply_subagent_progress_in_place(s, &stream_id, progress);
-            let ops = if is_visible {
-                new_rows
-                    .into_iter()
-                    .map(|item| json!({ "op": "upsert", "item": item }))
-                    .collect()
-            } else {
-                Vec::new()
-            };
+                if is_lifecycle {
+                    let status = payload.get("status").and_then(Value::as_str).unwrap_or("");
+                    let new_status = map_progress_status(status);
+                    if new_status != SummaryStatus::Running {
+                        let observed = super::now_ms() - entry.started_at;
+                        entry.status = new_status;
+                        entry.duration_ms = Some(entry.duration_ms.unwrap_or(0).max(observed));
+                        changed = true;
+                    }
+                    return (changed, Vec::new());
+                }
+                let Some(progress) = payload.get("progress") else {
+                    return (changed, Vec::new());
+                };
+                if let Some(d) = progress.get("durationMs").and_then(Value::as_i64) {
+                    if d > 0 {
+                        entry.duration_ms = Some(d);
+                    }
+                }
+                let stream_id = entry.id.clone();
+                let is_visible = s.visible_id.as_deref() == Some(stream_id.as_str());
+                let new_rows = apply_subagent_progress_in_place(s, &stream_id, progress);
+                let ops = if is_visible {
+                    new_rows
+                        .into_iter()
+                        .map(|item| json!({ "op": "upsert", "item": item }))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                (changed, ops)
+            })();
             (changed.then(|| summaries_to_value(&s.summaries)), ops)
         })
         .await;

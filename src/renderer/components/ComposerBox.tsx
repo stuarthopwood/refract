@@ -22,12 +22,14 @@ export const COMPOSER_SELECTION_CLASS =
   'selection:bg-composer-selection-bg selection:text-composer-selection-fg selection:[-webkit-text-fill-color:currentColor] forced-colors:selection:bg-[Highlight] forced-colors:selection:text-[HighlightText] forced-colors:selection:[-webkit-text-fill-color:HighlightText]'
 
 const COMPOSER_TEXTAREA_CLASS =
-  'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none transition-[border-color,box-shadow] placeholder:text-composer-placeholder focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent forced-colors:placeholder:text-[GrayText] [scrollbar-gutter:stable]'
+  'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent shadow-none transition-[border-color,box-shadow] placeholder:text-composer-placeholder focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent forced-colors:placeholder:text-[GrayText] [scrollbar-gutter:stable]'
 
 /** The composer's text field. `transition-[border-color,box-shadow]` narrows the primitive's
- * `transition-colors` so a fill swap (a command pill mounting) never fades against its mirror. */
-export function ComposerTextarea({ className, ...props }: ComponentProps<'textarea'>) {
-  return <Textarea className={cn(COMPOSER_SELECTION_CLASS, COMPOSER_TEXT_CLASS, COMPOSER_TEXTAREA_CLASS, className)} {...props} />
+ * `transition-colors` so a fill swap (a command pill mounting) never fades against its mirror.
+ * `actionCount` sizes the right padding to the round buttons in `ComposerActions` (an
+ * `icon-sm` button plus its gap is 2.5rem), so text never runs under them. */
+export function ComposerTextarea({ className, actionCount = 2, ...props }: ComponentProps<'textarea'> & { actionCount?: 1 | 2 }) {
+  return <Textarea className={cn(COMPOSER_SELECTION_CLASS, COMPOSER_TEXT_CLASS, COMPOSER_TEXTAREA_CLASS, actionCount === 1 ? 'pr-10' : 'pr-20', className)} {...props} />
 }
 
 /** The box: border, radius and fill from the per-theme composer tokens. The ring shows only on the
@@ -76,11 +78,13 @@ interface ComposerSendButtonProps {
   onSend: () => void
   tooltip: ReactNode
   keyShortcuts?: string
+  /** Id of visible text naming why Send is blocked. */
+  describedBy?: string
 }
 
 /** Round icon Send. Its `--send` fill overrides the default variant's `--primary`, which is
  * near-white in Dark and would read the same as Stop's inverted fill. */
-export function ComposerSendButton({ blocked, dimWhenBlocked = true, onSend, tooltip, keyShortcuts }: ComposerSendButtonProps) {
+export function ComposerSendButton({ blocked, dimWhenBlocked = true, onSend, tooltip, keyShortcuts, describedBy }: ComposerSendButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -96,6 +100,8 @@ export function ComposerSendButton({ blocked, dimWhenBlocked = true, onSend, too
           aria-label="Send message"
           aria-keyshortcuts={keyShortcuts}
           aria-disabled={blocked}
+          // Only when set: Radix wires the open tooltip into aria-describedby otherwise.
+          {...(describedBy ? { 'aria-describedby': describedBy } : {})}
           onClick={() => {
             if (blocked) return
             onSend()

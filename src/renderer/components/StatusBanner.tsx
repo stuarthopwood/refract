@@ -5,7 +5,9 @@
 // themselves, once, so a screen reader is never interrupted by every tick.
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import { COMPOSER_PANEL_MAX_HEIGHT_CLASS } from '@/components/ComposerPanel'
 import { FadeCollapse } from '@/components/FadeCollapse'
+import { cn } from '@/lib/utils'
 
 export interface StatusBannerItem {
   id: string
@@ -19,7 +21,13 @@ export interface StatusBannerItem {
 export function StatusBanner({ label, items, testId }: { label: string; items: StatusBannerItem[]; testId?: string }) {
   return (
     <FadeCollapse show={items.length > 0}>
-      <ul data-slot="status-banner" data-testid={testId} aria-label={label} aria-live="off" className="flex shrink-0 flex-col px-4 text-sm">
+      <ul
+        data-slot="status-banner"
+        data-testid={testId}
+        aria-label={label}
+        aria-live="off"
+        className={cn('flex shrink-0 flex-col overflow-y-auto px-4 text-sm', COMPOSER_PANEL_MAX_HEIGHT_CLASS)}
+      >
         {items.map((item) => (
           <li key={item.id} className="flex min-h-6 min-w-0 items-center gap-2">
             <span className="flex shrink-0 items-center gap-2 text-muted-foreground">{item.status}</span>

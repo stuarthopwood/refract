@@ -34,6 +34,7 @@ export function FadeCollapse({ show, children, className }: { show: boolean; chi
   return (
     <div
       aria-hidden={leaving || undefined}
+      inert={leaving || undefined}
       data-state={leaving ? 'leaving' : 'open'}
       className={cn(
         'grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none',

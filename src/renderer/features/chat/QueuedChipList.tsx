@@ -66,6 +66,7 @@ export function QueuedChipList({ chips, inFlightChips, imageOnlyNames, listRef, 
                   size="icon-xs"
                   data-chip-action="remove"
                   aria-label={removeLabel}
+                  aria-describedby={undefined}
                   aria-busy={removeBusy}
                   aria-disabled={anyBusy}
                   className="text-muted-foreground hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"

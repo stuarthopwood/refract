@@ -38,7 +38,7 @@ export async function pressShiftEnter(cdp) {
  * quiet "Sending at the next step" label instead, never both). */
 export function readChips(cdp) {
   return cdp.evaluate(`(() => {
-    const items = Array.from(document.querySelectorAll('ul[aria-label="Queued messages"] > li'));
+    const items = Array.from(document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li'));
     return items.map((li) => {
       const text = li.querySelector('span.truncate')?.textContent ?? null;
       const sendBtn = li.querySelector('[data-chip-action="send"]');

@@ -7,21 +7,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FocusEvent as ReactFocusEvent, RefObject } from 'react'
 import { toast } from 'sonner'
-import { create } from 'zustand'
+import { createSessionCollapseStore } from '@/components/ComposerPanel'
 import { EMPTY_QUEUE, notify, useDraftStore, useQueueStore } from '@/state'
 import { queuedChipRpcText } from './imageOnlySend'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
 
-interface QueuedPanelCollapseState {
-  collapsedBySession: Record<string, boolean>
-  setCollapsed(sessionId: string, collapsed: boolean): void
-}
-
 /** Per-Session collapse state for the Queued panel; in memory only, like the Todo panel's. */
-export const useQueuedPanelCollapseStore = create<QueuedPanelCollapseState>((set, get) => ({
-  collapsedBySession: {},
-  setCollapsed: (sessionId, collapsed) => set({ collapsedBySession: { ...get().collapsedBySession, [sessionId]: collapsed } })
-}))
+export const useQueuedPanelCollapseStore = createSessionCollapseStore()
 
 export interface QueuedMessages {
   sessionId: string

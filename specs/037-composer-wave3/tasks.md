@@ -14,7 +14,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 
 ## WP-C Approvals
 - [ ] T7 Carry request `options` Rust to renderer; answer with exact label; split Approve button with "More approve options" menu. (#1140)
-- [ ] T8 Ask and remember mode (TS + Rust + store), menu order, grants and "Remember across sessions", `/forget-approvals`. (#496)
+- [ ] T8 Ask and remember mode (TS + Rust + store), menu order, grants with their "Always" pairs, `/forget-approvals`. (#496)
 - [ ] T9 Todo chip before Changes chip. (#496)
 
 ## WP-D Background agents

@@ -27,7 +27,7 @@
 - **FR-004** (#1129) The model picker filter box radius is `max(0px, calc(var(--radius-lg) - 0.25rem))`; shared `input.tsx` is unchanged.
 - **FR-005** (#675) `ComposerBox` renders the box, border, radius, padding, field styling, action slot and optional status row for both composers; at 240 px nothing clips.
 - **FR-006** (#1140) The approval card's Approve is a split button; Rust carries the request's `options` and answers with the chosen option's exact label.
-- **FR-007** (#496) The Approval menu gains Ask and remember (second); grants menu entries and the "Remember across sessions" toggle appear on the split button when a request carries grants; `/forget-approvals` is supported; the Todo chip precedes the Changes chip.
+- **FR-007** (#496) The Approval menu gains Ask and remember (second); grants menu entries (each grant's own option, then a separator, then each grant's "Always" option) appear on the split button when a request carries grants; `/forget-approvals` is supported; the Todo chip precedes the Changes chip.
 - **FR-008** (#712) Background (async) `task` agents appear as Running from spawn, persist across turns, and settle with real status and duration.
 - **FR-009** (#865) A status banner above the composer lists running background agents with elapsed time and opens the Agents panel; icon plus word, never colour alone; `patterns.md` gains the `status` channel.
 - **FR-010** (#1268) `AiCreditsChip` is independent of `ContextUsageChip`; readout chip targets are at least 24 px; failed plan lookups are cached for about 30 s.

@@ -383,6 +383,7 @@ fn validate_ask_answers(questions: &[AskQuestion], answers: &[Value]) -> Result<
 fn plain_approve_label(options: &[String]) -> Option<&str> {
     let n = options.len();
     if n < 2 {
+        log::warn!("approval request offered {n} option(s); no plain approve option found");
         return None;
     }
     let has_session = n >= 3 && options[n - 2].ends_with(" for this session");
