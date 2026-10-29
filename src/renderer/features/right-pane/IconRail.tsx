@@ -15,10 +15,12 @@ import type { KeyboardEvent } from 'react'
 import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { CountBadge } from '@/components/ui/count-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useRightPaneStore } from '@/state'
-import { TITLE_BAR_OVERLAY_HEIGHT } from '../../../shared/layout'
+import { RAIL_WIDTH_PX, TITLE_BAR_OVERLAY_HEIGHT } from '../../../shared/layout'
 import { REORDER_MARKER_CLASS, useReorderable, type ReorderItemProps } from '@/components/reorder/use-reorderable'
 import { ReorderAnnouncer } from '@/components/reorder/ReorderAnnouncer'
 import { railCountLabel, usePanelCount, type HostedPanelDescriptor, type PanelId } from './panel-registry'
@@ -66,7 +68,10 @@ export function IconRail({ sessionId }: IconRailProps) {
   }
 
   return (
-    <div className="flex w-10 shrink-0 flex-col items-center border-l border-divider bg-background">
+    <div
+      className="flex shrink-0 flex-col items-center border-l border-divider bg-sidebar-right"
+      style={{ width: RAIL_WIDTH_PX }}
+    >
       {/* Stuart, 2026-10-10: the rail starts below a spacer matching the window's own
           `titleBarOverlay` height, so its top button never sits under the caption buttons. */}
       <div aria-hidden className="titlebar-surface w-full shrink-0" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />
@@ -75,7 +80,7 @@ export function IconRail({ sessionId }: IconRailProps) {
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon-xl"
             data-rail-toggle
             aria-label="Right pane"
             aria-expanded={rightPaneOpen}
@@ -83,10 +88,12 @@ export function IconRail({ sessionId }: IconRailProps) {
             className="mt-2"
             onClick={() => toggleRightPane()}
           >
-            {rightPaneOpen ? <PanelRightCloseIcon aria-hidden className="size-4" /> : <PanelRightOpenIcon aria-hidden className="size-4" />}
+            {rightPaneOpen ? <PanelRightCloseIcon aria-hidden /> : <PanelRightOpenIcon aria-hidden />}
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="left">{rightPaneOpen ? 'Collapse' : 'Expand'} right pane (Ctrl+Shift+B)</TooltipContent>
+        <TooltipContent side="left">
+          Right pane <Kbd>Ctrl+Shift+B</Kbd>
+        </TooltipContent>
       </Tooltip>
       <div
         ref={(el) => {
@@ -145,13 +152,13 @@ function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonR
           ref={buttonRef}
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon-xl"
           data-rail-button={panel.id}
           aria-pressed={pressed}
           aria-label={label}
           tabIndex={tabIndex}
           className={cn(
-            'relative aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
+            'relative aria-pressed:bg-muted aria-pressed:text-accent-text forced-colors:aria-pressed:border-2 forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
             REORDER_MARKER_CLASS
           )}
           onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
@@ -162,7 +169,8 @@ function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonR
             if (!event.defaultPrevented) onKeyDown(event)
           }}
         >
-          <Icon aria-hidden className="size-4" />
+          <Icon aria-hidden />
+          {pressed && <ActiveIndicatorBar />}
           {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'working' : 'neutral'} />}
         </Button>
       </TooltipTrigger>

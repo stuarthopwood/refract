@@ -9,3 +9,5 @@ The principles, layout, chat, keyboard, first-run, settings, feedback, look and 
 Vocabulary is in [CONTEXT.md](../CONTEXT.md); behaviour is in `specs/`; rules are in the [constitution](../.specify/memory/constitution.md). Ideas and features are tracked as GitHub issues (see [Backlog](design/index.md#backlog)).
 
 Start at [`docs/design/index.md`](design/index.md) for the full index.
+
+Right pane (spec 035, #674, #800, #1126): the icon rail is 48px wide with 40px buttons and 24px icons, and the rail and pane share the `--sidebar-right` surface. See [components.md](design/components.md) and [foundations-tokens-theming.md](design/foundations-tokens-theming.md).

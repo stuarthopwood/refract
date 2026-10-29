@@ -38,7 +38,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useGitChangesStore } from '@/state'
 import { DiffStatCounts } from '@/features/sessions/sessionDisplay'
-import { STATUS_MARKS } from '../file-explorer/FileExplorerPanel'
+import { STATUS_MARKS } from '../file-explorer/git-decoration'
 import { focusGitRow, focusNearestGroupTrigger } from './focus'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 

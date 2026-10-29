@@ -58,6 +58,24 @@ row's hover) in every theme by `scripts/theme-contrast-pairs.mjs`. It shares the
 with the brand spinner's `--agent-spinner-core` (a brand mark, not a meaning colour, and never
 drawn on a chat line), so the two cannot be confused in context.
 
+### Git decoration tokens (issue #768, spec 035)
+
+`--git-modified`, `--git-added`, `--git-untracked`, `--git-deleted`, `--git-ignored`,
+`--git-renamed`, `--git-conflicted` and `--git-staged` (`globals.css`, every built-in theme,
+mapped to `text-git-*` utilities) colour the name and file icon of a File explorer row
+(`git-decoration.ts`, `TreeNodeRow.tsx`) and the trailing status icon. They are separate from
+the `--state-*` and `--severity-*` colours: session state and git status never share a token.
+A folder takes the most significant status among its descendants (conflicted, deleted,
+modified, staged, renamed, added, untracked; ignored does not roll up). Colour is never the
+only signal: the trailing icon and its screen-reader word stay, and a folder rollup adds
+"contains changes" to the row's accessible name. Each token is checked at 4.5:1 against
+`--background`, `--sidebar`, `--sidebar-accent` and `--accent` (the hover and selected rows) in
+every theme by `scripts/theme-contrast-pairs.mjs`; Dark (high contrast) uses brighter values.
+
+### Right pane surface
+
+`--sidebar-right` (Tailwind `bg-sidebar-right`) is the right pane's and the icon rail's surface (spec 035, #674): in every theme block it is the oklab 50% midpoint of that theme's `--background` and `--sidebar`, `color-mix(in oklab, var(--background) 50%, var(--sidebar))`, so it sits between the chat canvas and the left sidebar. `scripts/theme-contrast-pairs.mjs` checks `foreground`, `muted-foreground` and `accent-text` on it in every theme, resolving the `color-mix` through `scripts/derived-tokens.mjs`.
+
 ### Reserved hues
 
 Each categorical colour that carries meaning, so a new one is checked against the others first.

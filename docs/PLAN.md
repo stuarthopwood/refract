@@ -96,7 +96,7 @@ p2 work keeps the phase order below. **2026-10-22 priority review (Stuart):**
 | 1 | App-wide tokens | #843, #1144, #1267 (rule amended 2026-10-28: non-white text one weight step heavier at every size), #1270, #1073, #1124, #1125, #682, #738, #1065 (product items only) | one PR; later bundles build on it. **Grilled 2026-10-28** (outcomes in a comment on each issue; #1112 and the verify-script bullets of #1065 and #1270 moved to #1137 at p3); **in review** (spec 032, branch `wave1-app-wide-tokens`: implemented, reviewer gate and build-slot live check next) |
 | 2 | Settings | #714, #717, #1070, #1141, #450, #842 | one PR, parallel with the other wave 2 bundles |
 | 2 | Session list | #1203, #1204, #731, #934, #646, #482, #887 | one PR |
-| 2 | Right pane and Explorer | #674, #800, #1126, #756, #768 | one PR |
+| 2 | Right pane and Explorer | #674, #800, #1126, #756, #768 | one PR. **Grilled 2026-10-29** (outcomes in a comment on each issue); **in review** (spec 035, branch `wave2-right-pane-explorer`: implemented, reviewer gate passed, build-slot live check next) |
 | 2 | Pull requests (#1273) | #915, #1196, #1198 | one PR |
 | 3 | Composer | #839 (amended 2026-10-28: Geist at 13 px; mono code spans come with #1170), #1149, #1145, #1129, #675, #1258, #1265, #1268, #496, #865, #1084 | one PR, before the transcript bundle (shared files) |
 | 3 | Chat transcript | #1284 (bug: model errors and retries are invisible; error row with hint and Retry, live retry line with Stop; its TLS hint relies on #1287, a separate Rust PR in `src-tauri/src/omp/process.rs` that makes every agent start trust the OS certificate store), #1283 (todo icon alignment), #907, #1130, #1210, #1220, #1262, #1041, #473, #719, #684, #746, #1098, #896 | one PR |
