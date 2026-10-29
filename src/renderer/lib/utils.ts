@@ -1,7 +1,7 @@
 // Issue #928 fix (Critical, Gate951Code): the default `cn` export (tailwind-merge-style) treats
 // a bare `text-<name>` utility as a TEXT COLOUR by default, so `cn('... text-readout
 // text-muted-foreground')` collapsed to just `text-muted-foreground` -- `text-readout`
-// (ReadoutChip.tsx's own font-size utility, globals.css's `--text-readout: 13px`) was silently
+// (ReadoutItem.tsx's own font-size utility, globals.css's `--text-readout: 13px`) was silently
 // stripped from every status-line chip's className, so every chip rendered at the browser's
 // un-sized default (~16px) regardless of this story's own CSS. Confirmed live by this story's
 // own CDP check measuring every chip at ~16px, not 13px.

@@ -486,7 +486,7 @@ async function main() {
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632e-done/g) ?? []).length >= 2; })()`, { timeoutMs: 240_000, label: 'Turn (e) finished (subagent done, main agent replied)' });
     // `SubagentChainRow`'s own "Show subagents panel" button only renders for TWO+ Stages
-    // (FR-065); this turn starts one subagent, so the readout bar's own `SubagentsChip` opens
+    // (FR-065); this turn starts one subagent, so the readout bar's own `SubagentsReadout` opens
     // it instead, with a dynamic accessible name -- "Open subagents panel (1 finished)".
     await cdp.clickByLabel('Open subagents panel', { prefix: true });
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel open' });

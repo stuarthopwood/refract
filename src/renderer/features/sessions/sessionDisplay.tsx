@@ -236,7 +236,7 @@ export function StateIcon({ status, style }: { status: SessionDisplayStatus; sty
 }
 
 /** Issue #925: the coloured "+A -D" portion of a diff stat -- shared by the status line's
- * `ChangesChip`, the Session details card's diff line, the Pull requests Changes tab's own
+ * `ChangesReadout`, the Session details card's diff line, the Pull requests Changes tab's own
  * aggregate line and per-file diff header (`DiffViewFromPatch`, issue #919), and the chat
  * transcript's own `DiffView` header, so none of them can colour (or leave uncoloured) the same
  * figure a different way. `added`/`removed` each take `text-diff-added`/`text-diff-removed`
@@ -296,7 +296,7 @@ export function DiffStatCounts({
  * Session details card and the status line never show the same figure two ways), with a
  * trailing " (partial)" when the diff stat's caps stopped counting before the real total. Issue
  * #925: replaces the old plain-string `formatDiffStat` (removed) -- the status line's
- * `ChangesChip` and the Session details card's identical diff line both render through this one
+ * `ChangesReadout` and the Session details card's identical diff line both render through this one
  * component now, pairing the aria-hidden coloured visual text with the existing
  * `formatDiffStatAccessible` sr-only span below. */
 export function DiffStatLine({ stat }: { stat: DiffStat }) {
@@ -313,7 +313,7 @@ export function DiffStatLine({ stat }: { stat: DiffStat }) {
 }
 
 // Full, un-abbreviated figures for assistive technology (gate round 4, #437 LOW), shared between
-// the status line's `ChangesChip` (`ReadoutChips.tsx`) and the Session details card below (gate
+// the status line's `ChangesReadout` (`Readouts.tsx`) and the Session details card below (gate
 // round 5, Flow LOW: the card's own diff line had no `sr-only` pairing at all, unlike the status
 // line's identical figure) -- one function so the two surfaces can never phrase the same stat
 // two different ways.

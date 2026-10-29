@@ -1,4 +1,4 @@
-// Issue #700/#701 slice (b): the subagent-count wording `ReadoutChips.tsx`'s `SubagentsChip` and
+// Issue #700/#701 slice (b): the subagent-count wording `Readouts.tsx`'s `SubagentsReadout` and
 // the new Agents hover-focus card (`AgentsCard.tsx`) both need -- extracted so the two never
 // phrase one batch's counts two different ways (the same lesson slice (a)'s `todoDerive.ts`
 // drew for the Todo pill/card/panel).

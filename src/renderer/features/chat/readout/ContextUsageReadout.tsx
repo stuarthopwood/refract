@@ -1,5 +1,5 @@
 // Spec 004 FR-003, FR-033, FR-034 (issue #1082): the Context usage readout, moved out of
-// ReadoutChips.tsx (at the 600-line cap) when the gradient and bar were added. The figures and
+// Readouts.tsx (at the 600-line cap) when the gradient and bar were added. The figures and
 // the 90%+ word "high" take one colour from an OKLCH blend of the per-theme
 // `--context-usage-0/-30/-70/-100` tokens (globals.css); `check:theme-contrast` holds every 10%
 // step at 4.5:1 (`scripts/context-usage-contrast.mjs`, the same blend). The gauge icon and
@@ -9,7 +9,7 @@ import type { CSSProperties } from 'react'
 import { GaugeIcon, TriangleAlertIcon } from 'lucide-react'
 import { compactNumber } from '@/lib/compactNumber'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
-import { ReadoutChip } from './ReadoutChip'
+import { ReadoutItem } from './ReadoutItem'
 
 // Full, un-abbreviated figures for the `sr-only` phrase below (gate round 4, #437 LOW): the
 // visible text abbreviates past 1,000 via `compactNumber`, but "7,500" is unambiguous read aloud.
@@ -32,16 +32,16 @@ export function contextUsageColor(percent: number): string {
  * `null`, "Context n/a" for the `'not-available'` literal, a visible warning (icon + the word
  * "high", never colour alone) once the rounded `percent >= 90`. The full wording reaches
  * assistive technology through a real `sr-only` span next to the `aria-hidden` visual text. */
-export function ContextUsageChip({ sessionId }: { sessionId: string }) {
+export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
   const contextUsage = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.contextUsage)
   const showBar = useSettingsStore((s) => s.settings.showContextUsageBar !== false)
   if (contextUsage === null) return null
   if (contextUsage === 'not-available') {
     return (
-      <ReadoutChip icon={GaugeIcon}>
+      <ReadoutItem icon={GaugeIcon}>
         <span aria-hidden>Context n/a</span>
         <span className="sr-only">Context usage not available</span>
-      </ReadoutChip>
+      </ReadoutItem>
     )
   }
   // Gate round 5 fix (Flow LOW): the rounded, DISPLAYED percent is what the warning (and the
@@ -54,7 +54,7 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
   const usedFull = FULL_NUMBER_FORMAT.format(contextUsage.usedTokens)
   const windowFull = FULL_NUMBER_FORMAT.format(contextUsage.windowTokens)
   return (
-    <ReadoutChip icon={high ? TriangleAlertIcon : GaugeIcon}>
+    <ReadoutItem icon={high ? TriangleAlertIcon : GaugeIcon}>
       <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${usedFull} of ${windowFull} tokens used, ${percent} percent`}</span>
       <span aria-hidden data-context-usage-figures style={colour} className="relative inline-flex items-center self-stretch">
         {used}/{windowSize} ({percent}%)
@@ -68,6 +68,6 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
           </span>
         )}
       </span>
-    </ReadoutChip>
+    </ReadoutItem>
   )
 }

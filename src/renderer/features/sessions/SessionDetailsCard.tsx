@@ -148,7 +148,7 @@ export function SessionDetailsCard({
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FileDiffIcon aria-hidden className="size-4 shrink-0" />
               {/* Gate round 5 fix (Flow LOW): this line had no `sr-only` full-figure pairing at
-                  all, unlike the status line's identical `ChangesChip`, which carries one
+                  all, unlike the status line's identical `ChangesReadout`, which carries one
                   (`formatDiffStatAccessible`, shared from `sessionDisplay.tsx` precisely so
                   this card and the status line can never phrase the same stat two ways). Issue
                   #925: both now render through the shared `DiffStatLine`, so the figure is

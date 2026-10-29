@@ -21,23 +21,23 @@ import { cn } from '@/lib/utils'
 // component now forwards a ref and spreads hover/focus handlers (`onPointerEnter`/
 // `onPointerLeave`/`onFocus`/`onBlur`), so a Radix `PopoverAnchor asChild`/`TooltipTrigger
 // asChild` composition works directly against it -- the Todo and Agents hover-focus cards below
-// anchor their own Popover straight onto this component. `AdvisorChip` still renders its own raw
-// `<button>` rather than retrofitting onto this change, which only ever reached ReadoutChip's
+// anchor their own Popover straight onto this component. `AdvisorReadout` still renders its own raw
+// `<button>` rather than retrofitting onto this change, which only ever reached ReadoutItem's
 // own three render branches. One source of truth for the classes either way -- this component
 // below still uses the SAME two constants, never a second copy of the literal strings.
-export const READOUT_CHIP_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-2 text-readout text-muted-foreground'
+export const READOUT_ITEM_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-2 text-readout text-muted-foreground'
 // Gate round 1 fix (MEDIUM): the plain-text restyle above dropped `badgeVariants`' own
 // `focus-visible:border-ring ring-[3px]` ring entirely -- an interactive Readout had no
 // explicit focus style at all, only the browser default outline. Opaque (no `/50` alpha),
 // the codebase's own `outline-ring` convention (`CollapsedLine.tsx`).
-export const READOUT_CHIP_INTERACTIVE_ADDITIONS =
+export const READOUT_ITEM_INTERACTIVE_ADDITIONS =
   'min-h-6 min-w-6 justify-center rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
-export interface ReadoutChipProps {
+export interface ReadoutItemProps {
   icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   children: ReactNode
   /** Issue #563 gate remediation (L2/L6 across reviewers): widened to accept the click event so
-   * callers that open a panel pre-selected on a specific agent (e.g. `ReadoutChips.tsx`'s own
+   * callers that open a panel pre-selected on a specific agent (e.g. `Readouts.tsx`'s own
    * Subagents Readout) can record `event.currentTarget` as the opener (FR-027) -- a plain
    * `() => {...}` callback still satisfies this (JS/TS callback arity is contravariant-
    * permissive), so no other existing caller breaks. */
@@ -73,12 +73,12 @@ export interface ReadoutChipProps {
   className?: string
 }
 
-export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HTMLSpanElement, ReadoutChipProps>(function ReadoutChip(
+export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HTMLSpanElement, ReadoutItemProps>(function ReadoutItem(
   { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter, onPointerLeave, onFocus, onBlur },
   ref
 ) {
-  const baseClasses = cn(READOUT_CHIP_BASE_CLASS, className)
-  const interactiveClasses = cn(baseClasses, READOUT_CHIP_INTERACTIVE_ADDITIONS)
+  const baseClasses = cn(READOUT_ITEM_BASE_CLASS, className)
+  const interactiveClasses = cn(baseClasses, READOUT_ITEM_INTERACTIVE_ADDITIONS)
 
   // H1 (gate951Test/Code): a stable structural hook for `scripts/verify-927-928-quiet-composer.mjs`
   // (and any future live check) to find every status-line chip by -- never by `.text-readout`,

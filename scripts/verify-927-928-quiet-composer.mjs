@@ -233,7 +233,7 @@ async function readFocusOutlineChain(cdp) {
  * 2: `getBoundingClientRect`, not `getComputedStyle` -- the actual on-screen box, not merely the
  * CSS declaration, in case a transform/intrinsic-SVG-size quirk ever diverges from it). H1
  * (gate951Test/Code): finds chips by the structural `data-slot="readout-chip"` attribute
- * (`ReadoutChip.tsx`), NEVER by `.text-readout` -- that literal class is itself the thing issue
+ * (`ReadoutItem.tsx`), NEVER by `.text-readout` -- that literal class is itself the thing issue
  * #928 changes, so a regression there (confirmed live: `cn`'s tailwind-merge stripped it,
  * rendering every chip at the browser default ~16px) would otherwise go undetected by a
  * selector built from the very class under test. */
@@ -256,7 +256,7 @@ async function readStatusLineChipSizes(cdp) {
 // `composer-border` (globals.css's new #927 token, consumed via Tailwind's `border-composer-
 // border` utility, itself literally present in MessageInput.tsx's `className` string) and
 // `text-readout` (globals.css's new #928 font-size utility, literally present in
-// `ReadoutChip.tsx`'s `className` string) exist only from this story's own commits onward --
+// `ReadoutItem.tsx`'s `className` string) exist only from this story's own commits onward --
 // grepping the just-built renderer bundle for both is a real, cheap proof that THIS build really
 // contains #927/#928's code, independent of git log reasoning about timing.
 function assertBundleContainsStory927928Markers() {
@@ -509,7 +509,7 @@ async function main() {
       // ---- (e), issue #928: status line chip text/icon sizes ----
       // Issue #928: `on_launch`'s own unconditional first `schedule_readout_update` call (Rust
       // `session/readout.rs`) runs `READOUT_COALESCE_MS` (100ms) after launch, computing a real
-      // `diff_stat` (git status) even with zero changes -- `ChangesChip` renders once that
+      // `diff_stat` (git status) even with zero changes -- `ChangesReadout` renders once that
       // `readout:update` event lands, with no turn needed. Confirmed live (this script's own
       // screenshots): the chip DOES render, just not always inside a short post-launch window
       // (readout-computation latency, the same pre-existing gap `verify-563-subagent-stage.mjs`

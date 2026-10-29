@@ -2,7 +2,7 @@
 // additions/deletions, each file's diff via the existing `DiffView.tsx`'s `DiffViewFromPatch`,
 // and -- when a file's `patch` is `null` -- a truncation banner plus an "Open in browser" action
 // (a plain external link; Electron's existing `setWindowOpenHandler` routes it to
-// `shell.openExternal`, no new IPC, matching `ReadoutChip.tsx`'s own external-link pattern).
+// `shell.openExternal`, no new IPC, matching `ReadoutItem.tsx`'s own external-link pattern).
 import { ExternalLinkIcon } from 'lucide-react'
 import type { ChangedFile } from '../../../shared/github'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'

@@ -1,13 +1,13 @@
 // Issue #1268 (spec 004 FR-050 to FR-053, split from the Context usage readout): the session's AI
 // credits, its own status line chip driven only by the "Show AI credits" setting and the credits
-// the Session reports (never by the context usage readout). A real `<button>` like `AdvisorChip`
+// the Session reports (never by the context usage readout). A real `<button>` like `AdvisorReadout`
 // so it is keyboard-reachable without a made-up `role`; it does nothing on activation, the
 // tooltip carries the plan figure. The accessible name states the credits and the plan figure, so
 // a screen reader reads it as one phrase on focus.
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
-import { FULL_NUMBER_FORMAT } from './ContextUsageChip'
-import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS } from './ReadoutChip'
+import { FULL_NUMBER_FORMAT } from './ContextUsageReadout'
+import { READOUT_ITEM_BASE_CLASS, READOUT_ITEM_INTERACTIVE_ADDITIONS } from './ReadoutItem'
 import { useCopilotPlanUsage } from './useCopilotPlanUsage'
 import { cn } from '@/lib/utils'
 
@@ -25,7 +25,7 @@ function planText(percentUsed: number | null | undefined): string {
   return percentUsed > 0 && percentUsed < 1 ? 'Plan: <1% used' : `Plan: ${Math.round(percentUsed)}% used`
 }
 
-export function AiCreditsChip({ sessionId }: { sessionId: string }) {
+export function AiCreditsReadout({ sessionId }: { sessionId: string }) {
   const aiCredits = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.aiCredits ?? null)
   const creditsOn = useSettingsStore((s) => s.settings.showAiCredits !== false)
   const visible = creditsOn && aiCredits !== null
@@ -42,7 +42,7 @@ export function AiCreditsChip({ sessionId }: { sessionId: string }) {
           data-slot="readout-chip"
           data-ai-credits
           aria-label={`${credits} used this session. ${plan}`}
-          className={cn(READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS)}
+          className={cn(READOUT_ITEM_BASE_CLASS, READOUT_ITEM_INTERACTIVE_ADDITIONS)}
         >
           <span aria-hidden>{credits}</span>
         </button>

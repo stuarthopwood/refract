@@ -1,12 +1,12 @@
 // Issue #700/#701 slice (b), decision record item 1: "Non-modal Popover that opens on hover
 // after about 400ms and on keyboard focus, Esc closes, hoverable, opens upward, hidden when
 // empty." One shared controller for both the Todo and Agents hover-focus cards
-// (`ReadoutChips.tsx`'s `TodoProgressChip`/`SubagentsChip`), so the two never drift onto
+// (`Readouts.tsx`'s `TodoProgressReadout`/`SubagentsReadout`), so the two never drift onto
 // slightly different timings or Escape/hover-through behaviour.
 //
 // Deliberately NOT a Radix `HoverCard`/`Tooltip` (the decision record's own "not PopoverTrigger,
 // Tooltip or HoverCard" line): both cards sit on a `<button>` that ALREADY has its own click
-// behaviour (pin-toggle / open-panel) wired through `ReadoutChip`'s `onActivate`, so a
+// behaviour (pin-toggle / open-panel) wired through `ReadoutItem`'s `onActivate`, so a
 // `HoverCard`/`Tooltip`'s own `Trigger` (which also handles the open/close state machine AND
 // wants exclusive ownership of the anchor's events) would fight that -- `PopoverAnchor` is purely
 // a positioning reference with no opinions of its own, so this hook is free to drive `open`
@@ -53,7 +53,7 @@ export interface ReadoutCardContentHandlers {
 
 export interface ReadoutCard {
   open: boolean
-  /** Attach to the anchor chip's own `ref` (`ReadoutChip` forwards one) -- `scheduleClose`
+  /** Attach to the anchor chip's own `ref` (`ReadoutItem` forwards one) -- `scheduleClose`
    * below reads this to tell a genuinely keyboard-focused anchor apart from one the pointer
    * merely grazed on its way elsewhere (gate round 1 fix 11). */
   anchorRef: RefObject<HTMLButtonElement | null>

@@ -81,10 +81,10 @@ Decided 2026-10-16 (issue #928, v0.3.0 feedback item 5): the composer status lin
 
 | Element | Classes |
 | --- | --- |
-| Status line chip text (`ReadoutChip.tsx`) | `text-readout text-muted-foreground` (13px) |
-| Status line chip icon (`ReadoutChip.tsx`) | `size-4` (16px; was 14px before #1252) |
+| Status line chip text (`ReadoutItem.tsx`) | `text-readout text-muted-foreground` (13px) |
+| Status line chip icon (`ReadoutItem.tsx`) | `size-4` (16px; was 14px before #1252) |
 
-Scoped to `ReadoutChip.tsx` alone, the status line's own shared baseline component -- nothing else reads `text-readout` today.
+Scoped to `ReadoutItem.tsx` alone, the status line's own shared baseline component -- nothing else reads `text-readout` today.
 
 
 ## Spacing grid

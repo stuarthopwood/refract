@@ -91,8 +91,8 @@ export async function sendSlashCommand(cdp, command, expectedPattern, { timeoutM
   throw new Error(`sendSlashCommand: no notice matching ${expectedPattern} appeared within ${timeoutMs}ms for "${command}".`);
 }
 
-/** The Advisor chip's own `ReadoutChip` button, found by its `aria-hidden` visible-text span
- * (set by `AdvisorChip`) rather than by any text on the icon itself (the icon is also
+/** The Advisor chip's own `ReadoutItem` button, found by its `aria-hidden` visible-text span
+ * (set by `AdvisorReadout`) rather than by any text on the icon itself (the icon is also
  * `aria-hidden` but carries no text, so this never double-matches). `null` once the chip is
  * hidden (advisor off) -- the caller's own absence checks treat that as the expected, not an
  * error. */

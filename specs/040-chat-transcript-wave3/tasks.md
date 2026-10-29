@@ -3,7 +3,7 @@
 Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and push after every task. Every worker reports changed files. Safe deletion: literal absolute paths only, nothing deleted inside the repo except named scratch files. No cargo or tauri command until the director grants the build slot.
 
 ## WP-A Rename and quick fixes
-- [ ] T1 Rename Readout Chip files and components to Readout; update imports, docs and CONTEXT.md avoid-notes. (#896)
+- [x] T1 Rename Readout Chip files and components to Readout; update imports, docs and CONTEXT.md avoid-notes. (#896)
 - [ ] T2 Todo icon alignment in `TodoTree.tsx`. (#1283)
 - [ ] T3 Chat header title and branch truncation with tooltip. (#907)
 - [ ] T4 Pinned todo scrollbar flush with the pane edge. (#1130)

@@ -82,7 +82,7 @@ export const PICKER_TRIGGER_CLASS = cn(
   // `text-muted-foreground`/`hover:text-foreground`/`aria-expanded:text-foreground` below win
   // over `ghost`'s own (opposite-direction) hover text colour via `cn`'s tailwind-merge, so a
   // trigger reads quiet at rest and brightens on hover/open -- the same resting-muted,
-  // hover-foreground convention `ReadoutChip.tsx`'s own interactive style already uses.
+  // hover-foreground convention `ReadoutItem.tsx`'s own interactive style already uses.
   badgeVariants({ variant: 'ghost' }),
   // U1 (gate951UI/A11y High): `ghost`'s own border-less resting state applied in EVERY theme,
   // including Dark high contrast -- but #927 decision 3 keeps that theme's edges unchanged, so

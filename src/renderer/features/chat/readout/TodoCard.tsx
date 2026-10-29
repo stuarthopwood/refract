@@ -1,6 +1,6 @@
 // Issue #700/#701 slice (b), decision record item 1: the Todo hover-focus card -- "the tree
 // (phases, tasks with glyph plus word for pending, in progress, completed, blocked with
-// blocker, abandoned)", shown inside `ReadoutChips.tsx`'s `TodoProgressChip`'s own Popover. The
+// blocker, abandoned)", shown inside `Readouts.tsx`'s `TodoProgressReadout`'s own Popover. The
 // row rendering (`TodoPhaseGroup`/`TodoTaskRow`) is the SAME shared component slice (a)'s
 // `PinnedTodoPanel.tsx` already uses (`TodoTree.tsx`) -- this card never re-implements a task
 // row a second way. Unlike the pinned panel, this is a momentary glance (no collapse, no

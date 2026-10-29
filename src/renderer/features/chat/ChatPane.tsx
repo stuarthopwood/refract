@@ -301,7 +301,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
 
   // Issue #512: a polite, one-time announcement for each of the two moments that matter (not
   // re-announced on every per-second tick, which the elapsed-time text alone already shows
-  // visibly -- same "no aria-live region for the routine tick" rule ReadoutChips.tsx's clock
+  // visibly -- same "no aria-live region for the routine tick" rule Readouts.tsx's clock
   // follows for the same reason): the start beginning, and the wait reaching its 'prompt'
   // stage (gate-fixes a11y finding: Keep waiting/Cancel appearing was previously silent).
   // Gate-fixes code/a11y Medium finding (round 2, Issue #618): `useLayoutEffect`, not
