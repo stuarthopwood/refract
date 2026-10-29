@@ -102,13 +102,50 @@ export function ChatNavBridge(props: ChatNavBridgeProps) {
   }, [sessionId])
 
   const index = useChatNavStore((state) => state.bySession[sessionId]?.index)
-  const currentMessageId = React.useMemo(() => {
+  const visibleKey = visibleMessageIds.join('\n')
+
+  // The current message is the first one with any part below the jump top inset: a jump lands its
+  // target at that inset, so the previous message's tail above it must not count as current.
+  const readCurrent = React.useCallback((): string | null => {
     if (!index || visibleMessageIds.length === 0) return null
     const visible = new Set(visibleMessageIds)
-    return index.find((message) => visible.has(message.id))?.id ?? null
-  }, [index, visibleMessageIds])
+    const { viewportRef, scrollerRootRef } = latest.current.props
+    const viewport = viewportRef.current
+    const root = scrollerRootRef.current ?? viewport
+    const candidates = index.filter((message) => visible.has(message.id))
+    if (!viewport || !root) return candidates[0]?.id ?? null
+    const edge = viewport.getBoundingClientRect().top + jumpTopInset(viewport) + 1
+    const below = candidates.find((message) => {
+      const row = findRow(root, message.id)
+      return row === null || row.getBoundingClientRect().bottom > edge
+    })
+    return (below ?? candidates[0])?.id ?? null
+    // `visibleKey` stands in for the array identity, which the library may change every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, visibleKey])
 
-  const visibleKey = visibleMessageIds.join('\n')
+  const [currentMessageId, setCurrentMessageId] = React.useState<string | null>(null)
+  React.useLayoutEffect(() => {
+    setCurrentMessageId(readCurrent())
+  }, [readCurrent])
+  React.useEffect(() => {
+    const viewport = latest.current.props.viewportRef.current
+    if (!viewport) return
+    let frame = 0
+    const onScroll = () => {
+      if (frame !== 0) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        setCurrentMessageId(readCurrent())
+      })
+    }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      viewport.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(frame)
+    }
+  }, [readCurrent])
+
   React.useEffect(() => {
     useChatNavStore.getState().setView(sessionId, {
       scrollable: { start: scrollable.start, end: scrollable.end },
