@@ -7,6 +7,10 @@ import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
 import {
   MENU_ITEM_CLASS,
   MENU_ITEM_DESTRUCTIVE_CLASS,
+  MENU_CONTENT_CLASS,
+  MENU_LABEL_CLASS,
+  MENU_SEPARATOR_CLASS,
+  MENU_SUB_CONTENT_CLASS,
   MENU_SUB_TRIGGER_CLASS,
 } from "@/components/ui/menu-item-classes"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
@@ -46,7 +50,8 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         align={align}
         className={cn(
-          "z-50 min-w-40 origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "origin-(--radix-dropdown-menu-content-transform-origin)",
+          MENU_CONTENT_CLASS,
           className
         )}
         {...props}
@@ -100,7 +105,8 @@ function DropdownMenuRadioItem({
       data-slot="dropdown-menu-radio-item"
       // Issue #1043 (grilled 2026-10-19, ADR 0003): the TRAILING `CheckIcon` (see the Gate round 1
       // note on `DropdownMenuRadioGroup`) read as unselected: the round swatches in the Theme
-      // submenu, its first caller, looked identical whether checked or not. Moves to the SAME leading ring-and-dot mark the Ask card's radios use
+      // submenu, its first caller, looked identical whether checked or not. Moves to the SAME
+      // leading ring-and-dot mark the Ask card's radios use
       // (`RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, `radio-group.tsx`'s own shared source, ADR 0003 --
       // never a second hand-rolled copy), so the checked row is visibly filled, not merely
       // inferred from a trailing glyph. `group/radio-item` plus Radix's own `data-state`
@@ -179,7 +185,8 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       className={cn(
-        "z-50 min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "origin-(--radix-dropdown-menu-content-transform-origin)",
+        MENU_SUB_CONTENT_CLASS,
         className
       )}
       {...props}
@@ -198,10 +205,7 @@ function DropdownMenuLabel({
     <DropdownMenuPrimitive.Label
       data-slot="dropdown-menu-label"
       data-inset={inset}
-      className={cn(
-        "px-2 py-1 text-sm data-[inset=true]:pl-8",
-        className
-      )}
+      className={cn(MENU_LABEL_CLASS, className)}
       {...props}
     />
   )
@@ -214,7 +218,7 @@ function DropdownMenuSeparator({
   return (
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("pointer-events-none -mx-1 my-1 h-px bg-border", className)}
+      className={cn(MENU_SEPARATOR_CLASS, className)}
       {...props}
     />
   )

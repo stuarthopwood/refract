@@ -5,8 +5,7 @@ import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 // Issue #1043 (ADR 0003): the ring-and-dot mark every radio-style control in the app draws.
 // `RADIO_RING_CLASS` is shared by `dropdown-menu.tsx`'s and `context-menu.tsx`'s radio items,
 // `AskCard.tsx` and `MergeDialog.tsx` (#1065); `RadioGroupIndicator` below draws the dot for the
-// latter two.
-// Exported as
+// latter two. Exported as
 // plain class-string constants (this codebase's established pattern for a cross-file shared
 // look, e.g. `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS`) rather than a JSX component: the two
 // Radix primitives involved (`RadioGroupPrimitive.Indicator` here, `DropdownMenuPrimitive.

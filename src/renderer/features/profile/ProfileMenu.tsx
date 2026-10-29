@@ -173,7 +173,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
                     edge so the chip still reads as a bordered control there. */}
                 <span
                   aria-hidden
-                  className="h-3 w-5 shrink-0 rounded-[3px] border border-border forced-color-adjust-none forced-colors:border-[CanvasText]"
+                  className="h-3 w-5 shrink-0 rounded-sm border border-border forced-color-adjust-none forced-colors:border-[CanvasText]"
                   style={{ background: `linear-gradient(90deg, ${theme.swatch} 50%, ${theme.swatchPrimary} 50%)` }}
                 />
               </DropdownMenuRadioItem>
@@ -330,8 +330,7 @@ export function ProfileMenuContent({
   const signedIn = githubStatus === 'ready' && account !== undefined
   // A11y M1 (quality-gate remediation, gate-3): reactive, not a `getState()` read -- while a
   // window-focus-triggered refresh (init-stores.ts) is already in flight when this menu opens,
-  // the 'error' row below shows "Checking…" instead of re-offering "Check again" for a read
-  // that is already running.
+  // the 'error' row below shows "Checking…" instead of re-offering "Check again".
   const githubRefreshing = useAccountsStore((state) => state.githubRefreshing)
   // UI N4 (quality-gate remediation, gate-3): an unreachable host (the `problem` field, or the
   // legacy `timeout` state before it existed) reads "Can't reach GitHub"/"Check GitHub

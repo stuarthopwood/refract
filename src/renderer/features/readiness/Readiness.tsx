@@ -58,32 +58,32 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
 
   return (
     <div className="relative isolate h-full">
-    <TitlebarBand reservesWindowControls />
-    <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
-      <div className="flex items-center gap-4">
-        <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0" />
-        <div className="flex flex-col">
-          <span className="font-brand text-5xl font-bold leading-none text-foreground">Refract</span>
-          <span className="font-brand mt-1 text-sm font-medium leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>
+      <TitlebarBand reservesWindowControls />
+      <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
+        <div className="flex items-center gap-4">
+          <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0" />
+          <div className="flex flex-col">
+            <span className="font-brand text-5xl font-bold leading-none text-foreground">Refract</span>
+            <span className="font-brand mt-1 text-sm font-medium leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>
+          </div>
+        </div>
+        <div className="w-full max-w-sm p-6 text-foreground">
+          <h1 tabIndex={-1} data-readiness-root className="text-base font-medium outline-none">Get Refract ready</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
+          <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-2">
+            {CHECK_ORDER.map((key) => (
+              <CheckRow key={key} label={CHECK_LABELS[key]} check={checks?.[key]} checking={checking && checks === null} />
+            ))}
+          </ul>
+          <div className="mt-4 flex items-center gap-2">
+            <AddRepositoryDialog trigger={<Button data-readiness-primary disabled={!allPass} className="flex-1" aria-disabled={!allPass}>Add repository</Button>} />
+            <Button variant="outline" onClick={() => void runCheck()} disabled={checking}>
+              {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
+              Re-check
+            </Button>
+          </div>
         </div>
       </div>
-      <div className="w-full max-w-sm p-6 text-foreground">
-        <h1 tabIndex={-1} data-readiness-root className="text-base font-medium outline-none">Get Refract ready</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
-        <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-2">
-          {CHECK_ORDER.map((key) => (
-            <CheckRow key={key} label={CHECK_LABELS[key]} check={checks?.[key]} checking={checking && checks === null} />
-          ))}
-        </ul>
-        <div className="mt-4 flex items-center gap-2">
-          <AddRepositoryDialog trigger={<Button data-readiness-primary disabled={!allPass} className="flex-1" aria-disabled={!allPass}>Add repository</Button>} />
-          <Button variant="outline" onClick={() => void runCheck()} disabled={checking}>
-            {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
-            Re-check
-          </Button>
-        </div>
-      </div>
-    </div>
     </div>
   )
 }

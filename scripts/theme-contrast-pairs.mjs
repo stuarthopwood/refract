@@ -131,7 +131,8 @@ export const PAIRS = [
   { fg: 'border-strong', bg: 'muted', min: 3 },
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
-  { fg: 'accent-text', bg: 'popover', min: 4.5 }, { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125
+  { fg: 'accent-text', bg: 'popover', min: 4.5 },
+  { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125
   // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
   // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
   // entry (it would fail both themes today). Issue #610 reads `--accent-text` now
@@ -358,6 +359,8 @@ export const PAIRS = [
   { fg: 'diff-added', bg: 'muted', min: 4.5 },
   { fg: 'diff-removed', bg: 'muted', min: 4.5 },
   { fg: 'border', bg: 'sidebar', min: 3 }, // #738 resize grip (bg-border) beside the session list
+  { fg: 'border', bg: 'titlebar', min: 3 }, // resize grip rests on the titlebar-adjacent chrome
+  { fg: 'accent-text', bg: 'sidebar', min: 3 }, // grip focus/drag beside the session list
 ]
 
 // Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its

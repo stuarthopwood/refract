@@ -1416,9 +1416,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               `shrink-[100]` weight on each hint group (CSS flexbox shrinks proportionally to
               basis * shrink-factor, so at 100x the groups absorb nearly all of any shrink deficit
               before the main prompt gives up any width) means a narrow pane truncates the hint
-              labels first; only once both groups hit their own `min-w-4` floor (the
-              14px icon plus its 4px `gap-1` to the label, the narrowest the group can go without
-              the icon itself getting clipped by `overflow-hidden`) does the main prompt start
+              labels first; only once both groups hit their own `min-w-4` floor (16px, enough
+              to keep the icon from being clipped by `overflow-hidden`) does the main prompt start
               truncating too, with an ellipsis instead of the earlier hard clip. Gate-fixes
               (quality gate, PR #644 round 2): `100` was not nearly large enough -- flexbox shares
               a shortfall by `basis * shrink-factor`, so even at 100x the main prompt's own small

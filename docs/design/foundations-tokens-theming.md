@@ -112,10 +112,12 @@ Decided 2026-10-28 (wave 1 grill, #843): the base `--radius` in `globals.css` is
 
 | Token | Multiplier | Value |
 | --- | --- | --- |
-| `rounded-sm` | 0.6 | 2.4px |
-| `rounded-md` | 0.8 | 3.2px |
+| `rounded-sm` | 0.5 | 2px |
+| `rounded-md` | 1 | 4px |
 | `rounded-lg` | 1 | 4px |
-| `rounded-xl` | 1.4 | 5.6px |
+| `rounded-xl` | 2 | 8px |
+
+Every step is a whole pixel (no fractional radii), and `rounded-md` equals `rounded-lg`.
 
 Components take a token and never an arbitrary `rounded-[...]` or `min(var(--radius-md), Npx)` cap. Text pills, chips and badges use `rounded-md` (or the shared `Badge`). The square-choice rule (`border-radius: 0`) still applies to choice items.
 

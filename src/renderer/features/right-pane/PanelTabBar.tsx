@@ -96,6 +96,7 @@ import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
+import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useRightPaneStore } from '@/state'
@@ -288,7 +289,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
       <WidthPresetControl resize={resize} />
       {/* Row 2: the tab strip, now with the whole pane width (less this row's own padding) to
           itself. */}
-      <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 border-t border-border px-2">
+      <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 border-t border-divider px-2">
         <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
           <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
             {openPanelIds.map((id) => (
@@ -362,6 +363,12 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   const Icon = descriptor.icon
   const countText = count ? formatPanelCount(count) : undefined
   const fullLabel = `${descriptor.name}${countText ? ` ${countText}` : ''}`
+  // The compact state shows only the changed-files figure for Git, so the accessible name leads
+  // with it (WCAG 2.5.3) and spells the +a -d figure out in words.
+  const accessibleLabel =
+    count?.kind === 'additions-deletions'
+      ? `${descriptor.name}, ${count.files} ${count.files === 1 ? 'file' : 'files'}, ${count.additions} ${count.additions === 1 ? 'addition' : 'additions'}, ${count.deletions} ${count.deletions === 1 ? 'deletion' : 'deletions'}`
+      : fullLabel
   // Round 4 gate remediation (High, Verif3/Code3, Stuart's "every tab has its own count" rule):
   // round 3 made the whole count span `min-w-0 shrink truncate`, so at the 240px floor with three
   // panels a running count could shrink all the way to an ellipsis, leaving colour as the only
@@ -408,13 +415,16 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       aria-controls={selected ? `panel-content-${id}` : undefined}
       tabIndex={selected ? 0 : -1}
       className={cn(
-        'relative inline-flex h-6 min-w-15 shrink items-center gap-1 rounded-md px-2 pr-8 text-sm font-medium',
+        'inline-flex h-6 min-w-15 shrink items-center gap-1 rounded-md px-2 pr-8 text-sm',
         FOCUS_VISIBLE,
+        // Same explicit weight in both states: white text steps down one on the weight scale and
+        // muted text steps up one, so `font-semibold` selected equals `font-medium` unselected
+        // and the label width never shifts when the selection moves.
         selected
-          ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent-text forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
-          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+          ? cn('font-semibold', TAB_ACTIVE_UNDERLINE_CLASS)
+          : 'font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground'
       )}
-      aria-label={countText ? fullLabel : undefined}
+      aria-label={countText ? accessibleLabel : undefined}
       onClick={onSelect}
       onKeyDown={onKeyDown}
     >

@@ -2,7 +2,7 @@ import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from '.
 import { hexToLinearSrgb } from './theme-contrast-pairs.mjs'
 
 // #1043 (swatchPrimary vs --primary drift check), moved out of check-theme-contrast.mjs for the
-// same #806 file-size reason the composited checks above already were. Confirms
+// same #806 file-size reason as the composited checks that stayed in check-theme-contrast.mjs. Confirms
 // `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color`/
 // `titleBarOverlay.symbolColor` literals never silently drift from the preset's REAL resolved
 // `--background`/`--primary`/`--foreground` CSS tokens. #1074: `symbolColor` is now a

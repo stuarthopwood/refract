@@ -12,6 +12,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { FunnelIcon, SearchXIcon } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -39,17 +40,16 @@ const STATE_OPTIONS: Array<{ value: PullRequestStateFilter; label: string }> = [
   { value: 'all', label: 'All' }
 ]
 
-// Mirrors `PanelTabBar.tsx`'s own selected-tab treatment (`bg-muted text-foreground` plus an
-// `after:` underline bar as the real, non-colour shape cue) and its `hover:bg-muted/50` resting
-// state -- same contrast problem, same established fix, applied to this view's own Filter tabs
-// now that #499 redesigns them (the old `TabsTrigger` default, `data-[state=active]:bg-background`
-// against the list's `bg-muted` container, measured ~1.3:1 per the issue's own gate-round note).
+// Uses the shared selected-tab treatment (`TAB_ACTIVE_UNDERLINE_CLASS`, `ui/tab-classes.ts`) and
+// its `hover:bg-muted/50` resting state.
 // Gate-fix (M2, caught live 2026-10-18): `focus-visible:outline-offset-[-2px] focus-visible:ring-
 // inset` -- this strip's wrap is `overflow-x-auto`, which clips a tab's own focus ring/outline at
 // the wrap's edge for the first or last visible tab; drawing both inward (`DiffView.tsx`'s own
 // established pattern for the identical overflow-clipping problem) keeps them visible.
-const PR_FILTER_TAB_TRIGGER_CLASS =
-  'relative flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-2 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:rounded-full data-[state=active]:after:bg-accent-text forced-colors:data-[state=active]:border forced-colors:data-[state=active]:border-[Highlight]'
+const PR_FILTER_TAB_TRIGGER_CLASS = cn(
+  'flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset',
+  TAB_ACTIVE_UNDERLINE_CLASS
+)
 
 // Gate-fix (M1, caught live 2026-10-18): a STATIC mask used to fade both edges unconditionally,
 // even the start edge while already fully scrolled to the start (nothing clipped there to fade).
