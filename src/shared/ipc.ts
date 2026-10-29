@@ -412,7 +412,8 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_RIGHT_PANE: 'settings.setRightPane',
   SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
   SETTINGS_SET_HOLIDAY_TOUCHES: 'settings.setHolidayTouches',
-  SETTINGS_SET_ACTIVITY_TEXT: 'settings.setActivityText', SETTINGS_SET_STATUS_STYLE: 'settings.setStatusStyle',
+  SETTINGS_SET_ACTIVITY_TEXT: 'settings.setActivityText',
+  SETTINGS_SET_STATUS_STYLE: 'settings.setStatusStyle',
   DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
@@ -513,8 +514,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     /** Issue #480: display-name only -- never touches the folder, worktrees, or branches. An
      * empty (after trimming) `name` resets to the folder's own basename. */
     rename(id: string, name: string): Promise<Result<Repository>>;
-    /** Issue #887: sets (or, with `null`, clears) the Project colour; the result has no `remote`. */
-    setColor(id: string, color: ProjectColor | null): Promise<Result<Repository>>;
+    setColor(id: string, color: ProjectColor | null): Promise<Result<Repository>>; // Issue #887: null clears; the result has no `remote`.
     /** Issue #528: the bounded remote-detection step split out of `list()` so it never gates the
      * Session list's first paint. Keyed by repository id; an id the pool's deadline cut off is
      * simply absent -- callers keep their existing value for it. Bounded per call (3s) and in
