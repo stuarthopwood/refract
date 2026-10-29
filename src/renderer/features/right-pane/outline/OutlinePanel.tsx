@@ -7,10 +7,10 @@ import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } 
 import type { ComponentProps } from 'react'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, ListTreeIcon } from 'lucide-react'
 import { Virtuoso, type ItemProps, type VirtuosoHandle } from 'react-virtuoso'
+import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useSessionsStore } from '@/state'
 import { useChatNavStore } from '@/state/chat-nav-store'
 import { focusChatMessage } from '../../chat-nav/focusChatMessage'
@@ -30,17 +30,24 @@ const FOLLOW_PAUSE_MS = 3000
 
 const EMPTY_INDEX: never[] = []
 
-const OutlineList = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function OutlineList(props, ref) {
-  return <div ref={ref} role="list" {...props} />
+interface OutlineListContext {
+  label: string
+  size: number
+}
+
+const OutlineList = forwardRef<HTMLDivElement, ComponentProps<'div'> & { context?: OutlineListContext }>(function OutlineList(
+  { context, ...props },
+  ref
+) {
+  return <div ref={ref} role="list" aria-label={context?.label} {...props} />
 })
 
-function OutlineItemWrapper({ item: _item, ...rest }: ItemProps<OutlineRow>) {
-  return <div role="listitem" {...rest} />
+function OutlineItemWrapper({ item: _item, context, ...rest }: ItemProps<OutlineRow> & { context?: OutlineListContext }) {
+  const position = rest['data-index']
+  return <div role="listitem" aria-posinset={position + 1} aria-setsize={context?.size} {...rest} />
 }
 
 const LIST_COMPONENTS = { List: OutlineList, Item: OutlineItemWrapper }
-
-const TOOLBAR_BUTTON_CLASS = `text-muted-foreground hover:bg-sidebar-border hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:[&_svg]:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground dark:hover:bg-sidebar-border dark:aria-disabled:hover:bg-transparent ${COMPOSER_BUTTON_FOCUS_CLASS}`
 
 export function OutlinePanel({ sessionId }: { sessionId: string | null }) {
   const sessionName = useSessionsStore((s) => (sessionId ? s.sessions.find((session) => session.id === sessionId)?.name : undefined))
@@ -81,7 +88,11 @@ function OutlineBody({ sessionId, sessionName }: { sessionId: string; sessionNam
   const collapseReasonId = useId()
   const expandReasonId = useId()
 
-  const tabbableKey = rows.some((row) => row.key === focusedKey) ? focusedKey : (currentKey ?? rows[0]?.key ?? null)
+  const wantedKey = rows.some((row) => row.key === focusedKey) ? focusedKey : (currentKey ?? rows[0]?.key ?? null)
+  const wantedIndex = rows.findIndex((row) => row.key === wantedKey)
+  // The wanted row may be virtualised out; the first rendered row then takes the tab stop so the list stays reachable.
+  const wantedRendered = wantedIndex >= renderedRange.startIndex && wantedIndex <= renderedRange.endIndex
+  const tabbableKey = wantedRendered ? wantedKey : (rows[Math.min(renderedRange.startIndex, rows.length - 1)]?.key ?? null)
   const currentIndex = currentKey === null ? -1 : rows.findIndex((row) => row.key === currentKey)
 
   // Keeps the current item in view as the chat scrolls, unless the user scrolled the list lately.
@@ -152,7 +163,7 @@ function OutlineBody({ sessionId, sessionName }: { sessionId: string; sessionNam
   }
 
   return (
-    <div role="region" aria-label={`Outline of ${sessionName}`} className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="no-drag-region flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1">
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={sessionName}>
           {sessionName}
@@ -223,6 +234,7 @@ function OutlineBody({ sessionId, sessionName }: { sessionId: string; sessionNam
             data={rows}
             computeItemKey={(_at, row) => row.key}
             components={LIST_COMPONENTS}
+            context={{ label: `Outline of ${sessionName}`, size: rows.length }}
             rangeChanged={setRenderedRange}
             itemContent={(_at, row) => (
               <OutlineRowItem

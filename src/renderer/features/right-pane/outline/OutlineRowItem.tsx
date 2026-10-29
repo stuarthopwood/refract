@@ -1,7 +1,9 @@
 import type { KeyboardEvent } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 import { formatOutlineTime, outlineItemLabel, type OutlineRow } from '../../chat-nav/outlineModel'
 
@@ -36,30 +38,44 @@ export function OutlineRowItem({ row, current, tabbable, onActivate, onToggle, o
   }
 
   return (
-    <div className={cn('relative flex items-stretch', row.depth === 1 && 'pl-4')}>
+    <div
+      className={cn(
+        'relative flex items-stretch hover:bg-accent/50',
+        current && 'bg-accent text-accent-foreground',
+        row.depth === 1 && 'pl-4'
+      )}
+    >
       {current && <ActiveIndicatorBar />}
       {row.childCount > 0 ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           tabIndex={-1}
           aria-expanded={!row.collapsed}
           aria-label={`${row.collapsed ? 'Expand' : 'Collapse'} replies to: ${label}`}
-          className="no-drag-region flex w-6 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className="no-drag-region my-auto text-muted-foreground hover:bg-transparent hover:text-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground dark:hover:bg-transparent"
           onClick={() => onToggle(row)}
         >
-          {row.collapsed ? <ChevronRightIcon aria-hidden className="size-4" /> : <ChevronDownIcon aria-hidden className="size-4" />}
-        </button>
+          {row.collapsed ? <ChevronRightIcon aria-hidden /> : <ChevronDownIcon aria-hidden />}
+        </Button>
       ) : (
         <span aria-hidden className="w-6 shrink-0" />
       )}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             data-outline-key={row.key}
             tabIndex={tabbable ? 0 : -1}
             aria-current={current ? 'location' : undefined}
-            className="no-drag-region flex min-w-0 flex-1 items-center gap-2 py-1 pr-2 text-left text-sm hover:bg-sidebar-border focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+            aria-expanded={row.childCount > 0 ? !row.collapsed : undefined}
+            className={cn(
+              'no-drag-region h-auto min-w-0 flex-1 justify-start rounded-none py-1 pr-2 pl-0 text-left hover:bg-transparent aria-expanded:bg-transparent aria-expanded:text-inherit dark:hover:bg-transparent',
+              COMPOSER_BUTTON_FOCUS_CLASS,
+              'focus-visible:-outline-offset-2'
+            )}
             onClick={() => onActivate(row, false)}
             onFocus={() => onFocusRow(row)}
             onKeyDown={handleKeyDown}
@@ -71,7 +87,7 @@ export function OutlineRowItem({ row, current, tabbable, onActivate, onToggle, o
                 {formatOutlineTime(message.at)}
               </time>
             )}
-          </button>
+          </Button>
         </TooltipTrigger>
         <TooltipContent side="left" className="max-w-xs break-words">
           {message.firstLine === '' ? label : message.firstLine}
