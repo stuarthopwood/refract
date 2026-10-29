@@ -39,7 +39,7 @@ export const MARKDOWN_ACTIONS: readonly MarkdownAction[] = [
 
 export function MarkdownToolbar({ onAction, disabled }: { onAction: (action: MarkdownAction) => void; disabled?: boolean }) {
   return (
-    <ToolbarPrimitive.Root aria-label="Markdown formatting" className="flex items-center gap-0.5">
+    <ToolbarPrimitive.Root aria-label="Markdown formatting" className="flex items-center gap-1">
       {MARKDOWN_ACTIONS.map((action) => (
         <Tooltip key={action.id}>
           <TooltipTrigger asChild>

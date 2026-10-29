@@ -83,7 +83,7 @@ function CardHeader({
   return (
     <div
       className={cn(
-        'flex flex-wrap items-center gap-2 rounded-t-md border-b border-divider px-3 py-2 text-xs text-muted-foreground',
+        'flex flex-wrap items-center gap-2 rounded-t-md border-b border-divider px-4 py-2 text-xs text-muted-foreground',
         isViewer && 'bg-viewer-tint'
       )}
     >
@@ -143,7 +143,7 @@ export function CommentCard({
   return (
     <Card>
       <CardHeader actor={entry.author} viewerLogin={viewerLogin} time={entry.createdAt} edited={entry.edited} />
-      <div className="px-3 py-2">
+      <div className="px-4 py-2">
         <PrMarkdown id={entry.id} text={entry.body} />
       </div>
     </Card>
@@ -168,7 +168,7 @@ export function ReviewCard({
         edited={review.edited}
       />
       {(review.body || review.findings.length > 0) && (
-        <div className="px-3 py-2">
+              <div className="px-4 py-2">
           {review.body && <PrMarkdown id={review.id} text={review.body} />}
           {review.findings.length > 0 && (
             <ul className="mt-2 space-y-2">
@@ -206,7 +206,7 @@ export function ThreadCard({
   const { thread } = entry
   return (
     <Card>
-      <div className="flex items-center justify-between rounded-t-md border-b border-divider px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between rounded-t-md border-b border-divider px-4 py-2 text-xs text-muted-foreground">
         <span className="font-code">
           {thread.path}
           {thread.line !== null ? `:${thread.line}` : ''}
@@ -225,13 +225,13 @@ export function ThreadCard({
               edited={comment.edited}
               timeFocusable={index === 0}
             />
-            <div className="px-3 py-2">
+            <div className="px-4 py-2">
               <PrMarkdown id={comment.id} text={comment.body} />
             </div>
           </div>
         ))}
       </div>
-      <div className="px-3 pb-2">
+      <div className="px-4 pb-2">
         <ThreadActions repositoryId={repositoryId} number={number} thread={thread} draft={draft} onDraftChange={onDraftChange} onChanged={onChanged} />
       </div>
     </Card>
