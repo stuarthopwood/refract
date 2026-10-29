@@ -135,7 +135,7 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
         onInputKeyDown={handleKeyDown}
       />
       {rows.length === 0 && (
-        <div className="rounded-md border border-border px-2 py-3 text-sm text-muted-foreground">{empty}</div>
+        <div className="rounded-md border border-border px-2 py-4 text-sm text-muted-foreground">{empty}</div>
       )}
       <div
         ref={listRef}
