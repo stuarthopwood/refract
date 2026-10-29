@@ -11,7 +11,7 @@ export function SessionsSection() {
 
   return (
     <SettingsPage title="Sessions" intro="Opening a stopped Session shows its saved history without starting the agent.">
-      <SettingsGroup title="Stopped Sessions">
+      <SettingsGroup title="Agent stopped bar">
         <SettingSwitchRow
           id="show-agent-stopped-bar-toggle"
           label="Show the Agent stopped bar"

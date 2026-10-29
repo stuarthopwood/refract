@@ -14,6 +14,8 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
   const enabled = useSettingsStore((s) => s.settings.showAgentStoppedBar !== false)
   const setShowAgentStoppedBar = useSettingsStore((s) => s.setShowAgentStoppedBar)
 
+  const sessionName = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.name ?? 'Session')
+
   if (!allowed || !stopped || !enabled) return null
 
   async function handleDontShowAgain() {
@@ -35,16 +37,30 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
   return (
     <Alert
       role="region"
-      aria-label="Agent stopped"
+      aria-label={`Agent stopped: ${sessionName}`}
       box="inline"
       data-slot="agent-stopped-bar"
-      className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-1 text-xs text-muted-foreground"
+      className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-2 text-xs text-muted-foreground"
     >
       <span>Agent stopped</span>
-      <Button type="button" variant="outline" size="xs" onClick={handleStart}>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        className="min-h-6 min-w-6"
+        aria-label={`Start agent for ${sessionName}`}
+        onClick={handleStart}
+      >
         Start agent
       </Button>
-      <Button type="button" variant="link" size="xs" className="text-muted-foreground" onClick={() => void handleDontShowAgain()}>
+      <Button
+        type="button"
+        variant="link"
+        size="xs"
+        className="min-h-6 min-w-6 text-muted-foreground underline"
+        aria-label={`Don't show again, ${sessionName}`}
+        onClick={() => void handleDontShowAgain()}
+      >
         Don't show again
       </Button>
     </Alert>

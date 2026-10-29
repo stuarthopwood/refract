@@ -318,7 +318,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // was 'queued'/'memory-deferred' never got its own "Waiting to start"/"Waiting for memory"
   // announcement (the synthetic 'waiting' stage had already consumed the
   // `previousKind === undefined` branch). `effectiveStartProgress` is still used below, but only
-  // for the starting-message PICK (a start that is genuinely `isOpening` deserves its joke
+  // for the starting-message PICK (a start that is genuinely opening deserves its joke
   // immediately, even before the first real event lands) -- never for whether/what to announce.
   useLayoutEffect(() => {
     const prev = prevStartProgressKindRef.current
@@ -332,7 +332,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // every OTHER tracked Session -- the CURRENT `sessionId`'s own entry is left for the pick
     // logic below to manage via `effectiveStartProgress`, which already accounts for the
     // synthetic stage this raw per-Session check does not know about. Gate-fixes code/a11y Low
-    // finding (round 4): a Session still inside its OWN synthetic-only `isOpening` gap (no real
+    // finding (round 4): a Session still inside its OWN synthetic-only opening gap (no real
     // `startProgress` yet) is also left alone -- without this, a pane showing that Session during
     // its placeholder gap, switching away, and switching back (A -> B -> A, all before A's first
     // real event) would have its pick swept and re-rolled, picking a different joke mid-start.
@@ -394,9 +394,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       // Gate-fixes a11y Low finding (cycle 5): the existing `role="status"` region already said
       // "Retrying…"/"Starting new conversation…"/"Resuming…" for those three cases (below, keyed
       // on `recovering`/`startingNew`/`resuming`); this polite region used to duplicate it for
-      // the exact same moment. Issue #618: the `isOpening` case no longer has its OWN visible
+      // the exact same moment. Issue #618: the opening case no longer has its OWN visible
       // text in that region (it duplicated the new starting-message notice), so this is now the
-      // SOLE announcement for that case -- the old `!isOpening &&` exclusion is dropped.
+      // SOLE announcement for that case.
       if (recoveringId !== sessionId && startingNewId !== sessionId && resumingId !== sessionId) {
         // Gate-fixes a11y Low finding (cycle 6, generalised cycle 8): a start that begins
         // already 'queued'/'memory-deferred' (a slot was not free, or memory was low) used to
@@ -1136,12 +1136,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         onSwapToOther={otherSession ? () => openInSplit(otherSession.id) : undefined}
         reservesWindowControls={reservesWindowControls}
       />
-      {/* Issue #618: no bordered strip (Stuart does not like the box) -- the `isOpening` case
+      {/* Issue #618: no bordered strip (Stuart does not like the box) -- the opening case
           below used to show its OWN visible "Starting the agent…" dot+text here, which this
           issue deletes (it duplicated the new starting-message notice, SessionStartNotice.tsx,
           below); the static sr-only announcement for that case now comes from the
-          `announceStart` effect above instead (its own `!isOpening` exclusion is dropped to
-          match). The other three cases (`resuming`/`recovering`/`startingNew`) are a different,
+          `announceStart` effect above instead (it now covers the opening case, matching
+          the removed box). The other three cases (`resuming`/`recovering`/`startingNew`) are a different,
           out-of-scope flow (explicit Recover/Retry/Start-new-conversation actions on the failure
           banner below, not the "agent starting" message this issue is about) and keep their own
           visible text unchanged, just unboxed -- so the sr-only toggle below now depends on
