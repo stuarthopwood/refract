@@ -11,7 +11,8 @@
 // user-visible behaviour change outside #498/#500's scope. Left as a follow-up.
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
-import { CheckIcon } from 'lucide-react'
+import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
+import { ThemeSwatchChip } from '@/components/ui/theme-swatch-chip'
 import { cn } from '@/lib/utils'
 import { useActiveThemeId, useThemeStore } from '@/state'
 import { THEMES } from '../../../shared/themes'
@@ -54,7 +55,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   }
 
   return (
-    <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
+    <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex max-w-sm flex-col gap-1">
       {THEME_LIST.map((theme, index) => {
         const isActive = theme.id === activeId
         return (
@@ -66,31 +67,22 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             type="button"
             role="radio"
             aria-checked={isActive}
+            data-state={isActive ? 'checked' : 'unchecked'}
             aria-labelledby={`theme-option-${theme.id}-name`}
             tabIndex={isActive ? 0 : -1}
             onClick={() => choose(theme.id)}
             onKeyDown={(event) => handleKeyDown(event, index)}
             className={cn(
-              'flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none',
+              'group/radio-item flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none',
               'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
               isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
             )}
           >
-            <span
-              aria-hidden
-              className={cn(
-                'size-4 shrink-0 rounded-full border border-border',
-                isActive && 'ring-2 ring-ring ring-offset-1 ring-offset-background'
-              )}
-              style={{ backgroundColor: theme.swatch }}
-            />
-            <span id={`theme-option-${theme.id}-name`} className="flex-1">{theme.name}</span>
-            {isActive && (
-              <span aria-hidden className="flex items-center gap-1 text-xs">
-                <CheckIcon aria-hidden className="size-4" />
-                <span>Current</span>
-              </span>
-            )}
+            <span aria-hidden className={RADIO_RING_CLASS}>
+              {isActive && <span className={RADIO_DOT_CLASS} />}
+            </span>
+            <span id={`theme-option-${theme.id}-name`} className="min-w-0 flex-1 truncate">{theme.name}</span>
+            <ThemeSwatchChip swatch={theme.swatch} swatchPrimary={theme.swatchPrimary} />
           </button>
         )
       })}

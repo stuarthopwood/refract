@@ -504,7 +504,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const bareCommand = attachments.images.length === 0 && attachments.files.length === 0 && modelsInvocation?.rest === ''
     if (bareCommand && (modelsInvocation?.name === 'models' || modelsInvocation?.name === 'role')) {
       useDraftStore.getState().clear(sessionId)
-      if (modelsInvocation.name === 'models') useViewStore.getState().openSettings('model-roles')
+      if (modelsInvocation.name === 'models') useViewStore.getState().openSettings('models')
       else openRoleSwitcher(sessionId)
       return
     }

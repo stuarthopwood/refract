@@ -59,18 +59,18 @@ function SliderRow({
   const id = useId()
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor={id} className="w-16 shrink-0 text-xs text-muted-foreground">
+      <span id={id} className="w-16 shrink-0 text-xs text-muted-foreground">
         {label}
-      </label>
+      </span>
       <Slider
-        id={id}
         min={0}
         max={max}
         step={1}
         value={value}
+        aria-labelledby={id}
         aria-valuetext={`${value}${unit}`}
         trackBackground={trackBackground}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onValueChange={onChange}
         className="flex-1"
       />
     </div>

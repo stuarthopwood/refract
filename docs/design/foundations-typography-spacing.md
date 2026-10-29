@@ -127,3 +127,8 @@ The agenda item 8 decision proposed 40px, pending a measurement against today's 
 ## Reading width
 
 Reading width is a Setting, defaulting to full width (#554, decided and shipped 2026-10-18). Full keeps the transcript unconstrained, filling the pane; the alternative, Reading column, caps the transcript at 64rem (`Transcript.tsx`'s `MessageScrollerContent`), centred, with a padding ladder (`px-6`/`@min-[40rem]:px-10`/`@min-[48rem]:px-14`/`@min-[64rem]:px-16`) keyed off the chat pane's own width via a container query, not the window -- see `docs/design/product-chat.md`'s own **Chat width** bullet for the full picture (Settings location, keyboard operation, live preview, persistence).
+
+## Text size
+
+Settings > Appearance > Text size sets three scales (80 to 150 percent): App (--scale-app, on :root), Chat (--scale-chat, inside `[data-text-role='chat']`, the transcript) and Code (--scale-code, inside `pre`, `code`, `kbd`, `samp` and `.font-code`, which covers the composer, diffs and file headers). Each container redeclares the `--text-*` size tokens as `max(min(base, 11px), base * scale)`, so no size renders below 11px unless its base is already smaller and sizes are unchanged at 100 percent. Fixed-height controls use `min-h-*` so they grow rather than clip. Use the size tokens (`text-compact`, `text-micro`, `text-badge`); never an arbitrary `text-[...]`. OS text scaling is not read.
+

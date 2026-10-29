@@ -326,6 +326,26 @@ _Avoid_: pill (for these), round button
 The window title bar (logo, Session title, window controls) and the menu bar under it, drawn as one surface with one soft divider below and none between them, so the drag area is visible (wave 1 grill, 2026-10-28, #682).
 _Avoid_: header, top bar (when the whole band is meant)
 
+**Settings page**:
+One section of the Settings screen, drawn by the shared `SettingsPage` (title, intro, a content column capped near one reading column and left-aligned next to the nav) and split into **Settings groups**. The nav is one flat list of task-based sections: Appearance, Chat, Status line, Models, Advanced, Sessions, Panels (wave 2 grill, 2026-10-29, #714). The brand mark (icon and wordmark) shows in the Settings header (#450).
+_Avoid_: tab, panel (a **Panel** is a right-pane surface), Composer and status (the nav says Status line)
+
+**Settings group**:
+A headed run of related rows inside a **Settings page** (`SettingsGroup`, `role="group"` labelled by its heading), made of `SettingRow`s (label, plain-English description, control slot, optional leading icon).
+_Avoid_: card, fieldset (unless it is a radio group)
+
+**Advanced**:
+The Settings section that replaces "OMP" (wave 2 grill, #714): every row is a Refract-written launch-overlay value (the token guard, spec 021) that applies to new Sessions only and resets to Refract's default. Rows sit in groups (Context compaction, Idle compaction, Image compression, Subagents, Advisor, Tool output, Learning), each with a hand-written description. The Advisor model is not here; it is Models > Advisor.
+_Avoid_: OMP (as the section name), expert settings
+
+**Role colour**:
+A categorical identity colour for a model role (`--role-*` tokens, 3:1 on every preset), given only to the four roles a switcher cycles (default, smol, slow, plan); other roles stay neutral. Always paired with the role name and a role icon, never the only cue, and distinct from severity and status colours (#714 part 4, #717; `foundations-icons.md` amended to allow "role identity").
+_Avoid_: role badge colour, status colour
+
+**Text size**:
+Three independent text scales, App, Chat and Code, each 80 to 150 percent in steps of 5 (default 100), applied by redeclaring the theme `--text-*` size variables per role container so layout, spacing and icons never scale; the smallest resulting size is clamped at 11 px. Presets Small 90, Default 100, Large 115, Larger 130. Persisted as `Settings.typography` and carried by the theme bootstrap so the first paint has no flash (wave 2 grill, 2026-10-29, #842).
+_Avoid_: zoom (window zoom scales everything and stays separate), font size (families are #4)
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.

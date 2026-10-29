@@ -113,7 +113,7 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: the two show toggles default true; #469's toolNames defaults false
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on
-  wordPredictionEnabled?: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; showFinishedTurnTimes?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation. showAgentStoppedBar (#1205, FR-107): the "Agent stopped" bar, absent = on. animatedStatusText (#1242, FR-042): the status-text shimmer switch, absent = on; showFinishedTurnTimes (#1250, FR-119): the settled turn total, absent = off. showAiCredits (#1238): credits in the Context usage chip, absent = on. codeLigatures (#1246): ligatures in the Code font, absent = on
+  wordPredictionEnabled?: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation. showAgentStoppedBar (#1205, FR-107): the "Agent stopped" bar, absent = on. animatedStatusText (#1242, FR-042): the status-text shimmer switch, absent = on; showFinishedTurnTimes (#1250, FR-119): the settled turn total, absent = off. showAiCredits (#1238): credits in the Context usage chip, absent = on. codeLigatures (#1246): ligatures in the Code font, absent = on
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings; // spec 024 right pane; #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
@@ -138,16 +138,15 @@ export type ModelRoleId =
   | 'tiny'
   | 'memory'
   | 'task'
-  | 'advisor'
+  | 'advisor' | 'widget'
   | 'image'
   | 'web'
   | 'speech'
   | 'dictation'
   | 'judge';
 
-/** Chat roles (`omp://models.md`): accept ordinary chat models (`tiny`/`memory` also accept
- * `tiny`-catalog models, grouped under the same `chat` catalog kind here for a first picker cut). */
-export const CHAT_MODEL_ROLES: readonly ModelRoleId[] = ['default', 'smol', 'slow', 'vision', 'plan', 'commit', 'tiny', 'memory', 'task', 'advisor'];
+/** Chat roles (`omp://models.md`): accept ordinary chat models (`tiny`/`memory` also accept `tiny`-catalog ones). */
+export const CHAT_MODEL_ROLES: readonly ModelRoleId[] = ['default', 'smol', 'slow', 'vision', 'plan', 'commit', 'tiny', 'widget', 'memory', 'task', 'advisor'];
 
 /** Model-kind roles (`omp://models.md`): each selects a different catalog kind's runner. */
 export const MODEL_KIND_ROLES: readonly ModelRoleId[] = ['image', 'web', 'speech', 'dictation', 'judge'];
@@ -186,6 +185,7 @@ export const ROLE_CATALOG_KIND: Record<ModelRoleId, CatalogKind> = {
   memory: 'chat',
   task: 'chat',
   advisor: 'chat',
+  widget: 'chat',
   image: 'image',
   web: 'search',
   speech: 'tts',

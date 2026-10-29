@@ -30,32 +30,202 @@ export const LONG_CONVERSATION_BANNER_CALLS = 500;
 /** A dismissed banner returns after this many more calls. */
 export const LONG_CONVERSATION_BANNER_REPEAT = 100;
 
-export type TokenGuardKind = 'count' | 'toggle' | 'text' | 'list' | 'record';
+/** `count`: whole number with a unit; `enum`: one of `options`; `order`: the compaction methods in
+ * trial order; `record`: per-model token thresholds. */
+export type TokenGuardKind = 'count' | 'toggle' | 'enum' | 'order' | 'record';
+
+export type TokenGuardGroup =
+  | 'Context compaction'
+  | 'Idle compaction'
+  | 'Image compression'
+  | 'Subagents'
+  | 'Advisor'
+  | 'Tool output'
+  | 'Learning';
+
+export interface TokenGuardOption {
+  value: string;
+  label: string;
+}
 
 export interface TokenGuardKeyInfo {
   key: string;
   label: string;
   kind: TokenGuardKind;
+  group: TokenGuardGroup;
+  /** Hand-written plain English; never OMP's own description text. */
+  description: string;
+  /** Count unit: shown after the field and in its accessible name. */
+  unit?: string;
+  options?: readonly TokenGuardOption[];
+  /** Key of the toggle that must be on for this row to apply. */
+  dependsOn?: string;
 }
 
-/** Display order and plain-language labels for the Settings > OMP rows. */
-export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
-  { key: 'compaction.modelThresholds', label: 'Compaction threshold per model (tokens)', kind: 'record' },
-  { key: 'compaction.thresholdTokens', label: 'Compaction threshold (tokens)', kind: 'count' },
-  { key: 'compaction.idleEnabled', label: 'Compact when idle', kind: 'toggle' },
-  { key: 'compaction.idleThresholdTokens', label: 'Idle compaction threshold (tokens)', kind: 'count' },
-  { key: 'compaction.idleTimeoutSeconds', label: 'Idle compaction delay (seconds)', kind: 'count' },
-  { key: 'compaction.methodOrder', label: 'Compaction method order', kind: 'list' },
-  { key: 'snapcompact.toolResults', label: 'Compress tool results to images', kind: 'toggle' },
-  { key: 'snapcompact.systemPrompt', label: 'Compress the system prompt', kind: 'text' },
-  { key: 'task.softRequestBudget', label: 'Subagent request budget', kind: 'count' },
-  { key: 'task.maxConcurrency', label: 'Maximum parallel subagents', kind: 'count' },
-  { key: 'autolearn.autoContinue', label: 'Auto-continue after learning', kind: 'toggle' },
-  { key: 'advisor.reviewMode', label: 'Advisor review mode', kind: 'text' },
-  { key: 'modelRoles.advisor', label: 'Advisor model', kind: 'text' },
-  { key: 'grep.contextBefore', label: 'Search context lines before', kind: 'count' },
-  { key: 'grep.contextAfter', label: 'Search context lines after', kind: 'count' },
-  { key: 'read.defaultLimit', label: 'File read line limit', kind: 'count' },
-  { key: 'tools.artifactSpillThreshold', label: 'Tool output spill threshold', kind: 'count' },
-  { key: 'tools.xdev', label: 'Cross-device tools', kind: 'toggle' },
+export const TOKEN_GUARD_GROUPS: readonly TokenGuardGroup[] = [
+  'Context compaction',
+  'Idle compaction',
+  'Image compression',
+  'Subagents',
+  'Advisor',
+  'Tool output',
+  'Learning'
 ];
+
+/** The compaction methods OMP knows, in display order for methods not yet in the saved order. */
+export const COMPACTION_METHODS: readonly TokenGuardOption[] = [
+  { value: 'remote', label: 'Remote' },
+  { value: 'snapcompact', label: 'Snapcompact' },
+  { value: 'handoff', label: 'Handoff' },
+  { value: 'soft', label: 'Soft' },
+  { value: 'shake', label: 'Shake' }
+];
+
+/** Display order, group and plain-language text for the Settings > Advanced rows. The advisor model
+ * (`modelRoles.advisor`) is edited under Models > Advisor, not here. */
+export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
+  {
+    key: 'compaction.thresholdTokens',
+    label: 'Compaction threshold',
+    kind: 'count',
+    unit: 'tokens',
+    group: 'Context compaction',
+    description: 'Summarise the conversation when it reaches this many tokens, for models with no entry below.'
+  },
+  {
+    key: 'compaction.modelThresholds',
+    label: 'Compaction threshold per model',
+    kind: 'record',
+    group: 'Context compaction',
+    description: 'Per-model override of the threshold above.'
+  },
+  {
+    key: 'compaction.methodOrder',
+    label: 'Compaction method order',
+    kind: 'order',
+    group: 'Context compaction',
+    description:
+      'The ways OMP tries to shrink a long conversation, in order. If one is unavailable or fails, the next is used.'
+  },
+  {
+    key: 'compaction.idleEnabled',
+    label: 'Compact when idle',
+    kind: 'toggle',
+    group: 'Idle compaction',
+    description: 'Shrink the conversation while the Session is waiting for you, so the next turn starts smaller.'
+  },
+  {
+    key: 'compaction.idleThresholdTokens',
+    label: 'Idle compaction threshold',
+    kind: 'count',
+    unit: 'tokens',
+    group: 'Idle compaction',
+    dependsOn: 'compaction.idleEnabled',
+    description: 'Only compact when idle if the conversation is at least this big.'
+  },
+  {
+    key: 'compaction.idleTimeoutSeconds',
+    label: 'Idle compaction delay',
+    kind: 'count',
+    unit: 'seconds',
+    group: 'Idle compaction',
+    dependsOn: 'compaction.idleEnabled',
+    description: 'How long the Session must be idle before it compacts.'
+  },
+  {
+    key: 'snapcompact.toolResults',
+    label: 'Compress tool results to images',
+    kind: 'toggle',
+    group: 'Image compression',
+    description: 'Store long tool output as a dense image instead of text (vision models only). Saves tokens.'
+  },
+  {
+    key: 'snapcompact.systemPrompt',
+    label: 'Compress the system prompt to images',
+    kind: 'enum',
+    group: 'Image compression',
+    options: [
+      { value: 'none', label: 'None' },
+      { value: 'agents-md', label: 'AGENTS.md only' },
+      { value: 'all', label: 'All' }
+    ],
+    description:
+      'Send instructions as dense images instead of text (vision models only). Saves tokens but loses prompt caching for that text.'
+  },
+  {
+    key: 'task.softRequestBudget',
+    label: 'Subagent request budget',
+    kind: 'count',
+    unit: 'requests',
+    group: 'Subagents',
+    description:
+      'Model calls a subagent may make before it is told to wrap up; at 1.5 times this it is stopped. 0 means no limit.'
+  },
+  {
+    key: 'task.maxConcurrency',
+    label: 'Maximum parallel subagents',
+    kind: 'count',
+    unit: 'subagents',
+    group: 'Subagents',
+    description: 'How many subagents may run at the same time.'
+  },
+  {
+    key: 'advisor.reviewMode',
+    label: 'Advisor review mode',
+    kind: 'enum',
+    group: 'Advisor',
+    options: [
+      { value: 'turn', label: 'Every turn' },
+      { value: 'agent-end', label: 'Agent end' }
+    ],
+    description: "When the Advisor reviews the agent's work: after every turn, or only when the agent finishes."
+  },
+  {
+    key: 'grep.contextBefore',
+    label: 'Search context lines before',
+    kind: 'count',
+    unit: 'lines',
+    group: 'Tool output',
+    description: 'Lines shown before each search match.'
+  },
+  {
+    key: 'grep.contextAfter',
+    label: 'Search context lines after',
+    kind: 'count',
+    unit: 'lines',
+    group: 'Tool output',
+    description: 'Lines shown after each search match.'
+  },
+  {
+    key: 'read.defaultLimit',
+    label: 'File read line limit',
+    kind: 'count',
+    unit: 'lines',
+    group: 'Tool output',
+    description: 'Lines returned when the agent reads a file without asking for a range.'
+  },
+  {
+    key: 'tools.artifactSpillThreshold',
+    label: 'Tool output spill threshold',
+    kind: 'count',
+    unit: 'KB',
+    group: 'Tool output',
+    description: 'Tool output larger than this is saved to a file and only its end is kept in the conversation.'
+  },
+  {
+    key: 'tools.xdev',
+    label: 'Cross-device tools',
+    kind: 'toggle',
+    group: 'Tool output',
+    description:
+      'Load rarely used tools on demand instead of sending their definitions with every request. Saves tokens.'
+  },
+  {
+    key: 'autolearn.autoContinue',
+    label: 'Auto-continue after learning',
+    kind: 'toggle',
+    group: 'Learning',
+    description: 'After a turn ends, run one extra private turn to record what was learned. Uses extra tokens.'
+  }
+];
+

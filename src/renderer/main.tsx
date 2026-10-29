@@ -5,6 +5,7 @@ import { App } from './App'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from './components/ui/sonner'
 import { initStores, initThemeStore } from './state'
+import { initTypographyStore } from './state/typography-store'
 
 // Spec 007 (FR-012/SC-003, research.md decision 4): synchronous bootstrap read before React
 // mounts and before any class is set on <html>, so a window never shows an unthemed or wrongly
@@ -20,7 +21,10 @@ import { initStores, initThemeStore } from './state'
 // component's `dark:` utility classes off that literal class name, not off the per-theme one --
 // dropping it would silently revert every one of those components (Button, Badge, Switch,
 // Textarea, ...) to their light-mode styling.
-initThemeStore(window.refract.themeBootstrap().theme)
+const bootstrap = window.refract.themeBootstrap()
+initThemeStore(bootstrap.theme)
+// Spec 036 (#842): the text scales apply on the same first paint as the theme class.
+initTypographyStore(bootstrap.typography)
 
 initStores()
 

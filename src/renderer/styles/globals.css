@@ -99,6 +99,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-role-default: var(--role-default);
+  --color-role-smol: var(--role-smol);
+  --color-role-slow: var(--role-slow);
+  --color-role-plan: var(--role-plan);
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: var(--radius);
   --radius-lg: var(--radius);
@@ -173,9 +177,61 @@
   --font-weight-semibold: 500;
   --font-weight-bold: 600;
   --text-readout: 13px;
+  /* Spec 036 (#842): named steps replacing former arbitrary `text-[...]` sizes. */
+  --text-compact: 0.8rem;
+  --text-micro: 0.7rem;
+  --text-badge: 10px;
+  --text-emoji: 2.5rem;
+  --text-code-inline: 0.85em;
+}
+
+/* Spec 036 (#842, docs/design/foundations-typography-spacing.md "Text size"): text-only scaling.
+ * Each role's `--scale-*` multiplies the Tailwind size variables; line heights stay the unitless
+ * ratios Tailwind declares. A size never drops below 11px when scaled down (a step already
+ * smaller than 11px keeps its own size as the floor). The variables are redeclared on the role
+ * containers so a custom property resolves against that role's scale: the transcript is Chat;
+ * code blocks, inline code, tool output, diffs, file headers and the composer are Code. */
+:root,
+[data-text-role],
+.font-code,
+pre,
+code,
+kbd,
+samp {
+  --text-xs: max(min(0.75rem, 11px), calc(0.75rem * var(--text-scale)));
+  --text-sm: max(min(0.875rem, 11px), calc(0.875rem * var(--text-scale)));
+  --text-base: max(min(1rem, 11px), calc(1rem * var(--text-scale)));
+  --text-lg: max(min(1.125rem, 11px), calc(1.125rem * var(--text-scale)));
+  --text-xl: max(min(1.25rem, 11px), calc(1.25rem * var(--text-scale)));
+  --text-2xl: max(min(1.5rem, 11px), calc(1.5rem * var(--text-scale)));
+  --text-3xl: max(min(1.875rem, 11px), calc(1.875rem * var(--text-scale)));
+  --text-4xl: max(min(2.25rem, 11px), calc(2.25rem * var(--text-scale)));
+  --text-5xl: max(min(3rem, 11px), calc(3rem * var(--text-scale)));
+  --text-readout: max(min(13px, 11px), calc(13px * var(--text-scale)));
+  --text-compact: max(min(0.8rem, 11px), calc(0.8rem * var(--text-scale)));
+  --text-micro: max(min(0.7rem, 11px), calc(0.7rem * var(--text-scale)));
+  --text-badge: max(min(10px, 11px), calc(10px * var(--text-scale)));
+  --text-emoji: calc(2.5rem * var(--text-scale));
+}
+
+[data-text-role='chat'] {
+  --text-scale: var(--scale-chat);
+}
+
+[data-text-role='code'],
+.font-code,
+pre,
+code,
+kbd,
+samp {
+  --text-scale: var(--scale-code);
 }
 
 :root {
+  --scale-app: 1;
+  --scale-chat: 1;
+  --scale-code: 1;
+  --text-scale: var(--scale-app);
   /* Theme-independent values only (spec 007 T008): everything else that used to live here as an
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
@@ -190,6 +246,10 @@
 }
 
 .theme-dark {
+  --role-default: oklch(0.78 0.11 197);
+  --role-smol: oklch(0.78 0.12 340);
+  --role-slow: oklch(0.78 0.12 101);
+  --role-plan: oklch(0.78 0.11 131);
   color-scheme: dark;
   /* #768 Git decoration: file-explorer name/icon colours, hues kept apart from the --state-* and
    * --severity-* tokens; each is gated at 4.5:1 against the sidebar, hover and selected rows. */
@@ -542,6 +602,10 @@
  * divider, status-bar and composer top borders). Registered in src/shared/themes.ts; #551
  * covers Nordic Frost/Cyber Amber, not this issue. */
 .theme-obsidian {
+  --role-default: oklch(0.78 0.11 197);
+  --role-smol: oklch(0.78 0.12 340);
+  --role-slow: oklch(0.78 0.12 101);
+  --role-plan: oklch(0.78 0.11 131);
   color-scheme: dark;
   --git-modified: oklch(0.83 0.12 95);
   --git-added: oklch(0.8 0.15 135);
@@ -780,6 +844,10 @@
  * `dark-high-contrast` swatch comment, so every other token's margin is measured against the
  * starkest possible background this design system can express. */
 .theme-dark-high-contrast {
+  --role-default: oklch(0.86 0.11 191);
+  --role-smol: oklch(0.86 0.12 327);
+  --role-slow: oklch(0.86 0.12 101);
+  --role-plan: oklch(0.86 0.11 131);
   color-scheme: dark;
   --git-modified: oklch(0.9 0.14 95);
   --git-added: oklch(0.88 0.17 135);
@@ -1030,6 +1098,10 @@
  * case at 4.91:1, just over the 4.5:1 floor `--destructive`/`--muted` enforces).
  */
 .theme-nordic-frost {
+  --role-default: oklch(0.78 0.11 327);
+  --role-smol: oklch(0.78 0.12 355);
+  --role-slow: oklch(0.78 0.12 101);
+  --role-plan: oklch(0.78 0.11 131);
   color-scheme: dark;
   --git-modified: oklch(0.83 0.12 95);
   --git-added: oklch(0.8 0.15 135);
@@ -1298,6 +1370,10 @@
  * own (the retune above), the two themes' composited text colours stay identical too. Every
  * pair re-verified by `scripts/check-theme-contrast.mjs`. */
 .theme-cyber-amber {
+  --role-default: oklch(0.78 0.11 125);
+  --role-smol: oklch(0.78 0.12 340);
+  --role-slow: oklch(0.78 0.12 233);
+  --role-plan: oklch(0.78 0.11 262);
   color-scheme: dark;
   --git-modified: oklch(0.83 0.12 95);
   --git-added: oklch(0.8 0.15 135);

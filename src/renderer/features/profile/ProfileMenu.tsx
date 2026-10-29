@@ -37,6 +37,7 @@ import {
   UsersIcon
 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ThemeSwatchChip } from '@/components/ui/theme-swatch-chip'
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -163,19 +164,8 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
                 ref={isActive ? activeItemRef : undefined}
               >
                 <span className="min-w-0 flex-1 truncate">{theme.name}</span>
-                {/* #1043 (ui-architect-v3 swatch ruling, 2026-10-20): a two-colour landscape
-                    preview -- the theme's own real `--background` (left half) and `--primary`
-                    (right half), never round, so it is never mistaken for the row's own leading
-                    radio mark. Decorative; the name plus the leading radio mark are the real
-                    identifiers. `forced-color-adjust-none` keeps the two real theme colours
-                    showing under Windows High Contrast (which otherwise flattens every author
-                    background to a system colour), with its own `forced-colors:border-[CanvasText]`
-                    edge so the chip still reads as a bordered control there. */}
-                <span
-                  aria-hidden
-                  className="h-3 w-5 shrink-0 rounded-sm border border-border forced-color-adjust-none forced-colors:border-[CanvasText]"
-                  style={{ background: `linear-gradient(90deg, ${theme.swatch} 50%, ${theme.swatchPrimary} 50%)` }}
-                />
+                {/* #1043/#1070: the shared two-colour chip (`ThemeSwatchChip`), the same one Settings > Appearance draws. */}
+                <ThemeSwatchChip swatch={theme.swatch} swatchPrimary={theme.swatchPrimary} />
               </DropdownMenuRadioItem>
             )
           })}

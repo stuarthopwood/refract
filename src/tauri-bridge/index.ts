@@ -62,6 +62,7 @@ import type {
 } from '../shared/model'
 import type { PullRequestDetail } from '../shared/github'
 import type { ThemeId } from '../shared/themes'
+import type { Typography } from '../shared/typography'
 
 // Every request channel answers with a Result<T>; the Rust backend's `refract_request` command
 // is trusted to shape it correctly, so the cast below is the one place that trust is spent --
@@ -260,6 +261,7 @@ const refract: RefractApi = {
     setShowAgentStoppedBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AGENT_STOPPED_BAR, enabled),
     setAnimatedStatusText: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ANIMATED_STATUS_TEXT, enabled),
     setCodeLigatures: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CODE_LIGATURES, enabled),
+    setTypography: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TYPOGRAPHY, value),
     setShowFinishedTurnTimes: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_FINISHED_TURN_TIMES, enabled),
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
@@ -421,7 +423,7 @@ const refract: RefractApi = {
 // cast) now that its shape is declared here.
 declare global {
   interface Window {
-    __REFRACT_THEME_BOOTSTRAP__?: { theme: ThemeId }
+    __REFRACT_THEME_BOOTSTRAP__?: { theme: ThemeId; typography?: Typography }
   }
 }
 

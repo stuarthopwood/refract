@@ -1,4 +1,4 @@
-// One row of the File explorer treeview (spec 015 T012/T025, spec 035 T012/T013): extracted from
+// One row of the File explorer treeview (spec 015 T012/T025, spec 036 T012/T013): extracted from
 // `FileExplorerPanel.tsx` unchanged apart from the Git decoration (#768) and the inline row
 // actions (#756), so the panel stays under its file-size baseline.
 import { useEffect, useId, useRef, useState } from 'react'

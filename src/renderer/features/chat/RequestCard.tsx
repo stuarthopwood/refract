@@ -325,7 +325,7 @@ export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQues
               <div className="flex items-start gap-2 pl-4">
                 <span
                   aria-hidden
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px]"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-badge"
                 >
                   {initials(name)}
                 </span>

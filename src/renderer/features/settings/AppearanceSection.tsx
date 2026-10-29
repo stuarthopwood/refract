@@ -10,6 +10,9 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { SettingRow } from '@/components/settings/SettingRow'
+import { SettingsGroup } from '@/components/settings/SettingsGroup'
+import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
@@ -17,6 +20,7 @@ import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
+import { TextSizeGroup } from './TextSizeGroup'
 import { StatusStylePicker } from './StatusStylePicker'
 
 export function AppearanceSection() {
@@ -57,13 +61,8 @@ export function AppearanceSection() {
   // effect can tell whether focus was already inside this section before moving it.
   const rootRef = useRef<HTMLDivElement>(null)
 
-  // Matches SettingsScreen.tsx's own "Session readout" heading-focus pattern: this component
-  // mounts fresh every time the developer switches to this section (SettingsScreen renders it
-  // conditionally, never keeping it mounted-but-hidden), so focusing its own heading here covers
-  // exactly the same case that pattern already covers for the other section.
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [])
+  // SettingsPage focuses this heading (shared via headingRef) on mount, which covers every
+  // section switch because SettingsScreen never keeps a section mounted-but-hidden.
 
   // Quality-gate remediation (a11y, HIGH, corroborated -- this repo already treats this exact
   // failure mode as a High fix elsewhere, SettingsScreen.tsx/lib/focus.ts): Save/Cancel use
@@ -178,111 +177,125 @@ export function AppearanceSection() {
 
   return (
     <div ref={rootRef}>
-      <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">Appearance</h2>
-      <p className="mb-4 text-sm text-muted-foreground">Choose how the app looks and reads.</p>
-      {/* Issue #554 gate round 2 (L1): each group now gets its own heading and hint, wired via
-          aria-labelledby/aria-describedby instead of a bare aria-label on the radiogroup -- this
-          intro paragraph above is the shared lead-in for the whole section, not Theme's own. */}
-      <h3 id="theme-heading" className="mb-1 text-sm font-medium">Theme</h3>
-      <p id="theme-hint" className="mb-2 text-xs text-muted-foreground">The colour palette used across the app.</p>
-      <ThemePicker labelledBy="theme-heading" describedBy="theme-hint" />
-      <h3 id="chat-width-heading" className="mt-4 mb-1 text-sm font-medium">Chat width</h3>
-      <p id="chat-width-hint" className="mb-2 text-xs text-muted-foreground">How wide the chat transcript reads.</p>
-      <ChatWidthPicker labelledBy="chat-width-heading" describedBy="chat-width-hint" />
-      <div className="mt-4 flex gap-2">
-        <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
-          Save
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleCancel} disabled={!isDirty}>
-          Cancel
-        </Button>
-      </div>
-      {/* Spec 012 (research.md decisions 9, 14): applies live, no Save/Cancel -- the divider
-          plus this control's own clear labelling keeps that from reading as governed by the
-          row above it. */}
-      <hr className="my-6 border-divider" />
-      <div className="flex items-center justify-between gap-4">
-        {/* Quality-gate remediation (accessibility-auditor, Low): the whole two-line block (title
-            plus description) used to sit inside the <label>, so a screen reader announced both
-            every time this control got focus -- putting only the title in the label and wiring
-            the description in via `aria-describedby` (the same pattern as a native form hint)
-            announces the title as the name and the description separately, once, as a hint. */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="watermark-toggle" className="text-sm">Background watermark</label>
-          <span id="watermark-toggle-description" className="text-xs text-muted-foreground">
-            {holidayEntry ? 'A faint mark shown in the corner of the chat area — a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
-          </span>
+      <SettingsPage title="Appearance" intro="Choose how the app looks and reads." headingRef={headingRef}>
+        {/* Issue #554 gate round 2 (L1): each group has its own heading and hint, wired via
+            aria-labelledby/aria-describedby on the picker -- the intro above is the shared lead-in
+            for the whole section, not Theme's own. */}
+        <div className="mb-6">
+          <SettingsGroup title="Theme" headingId="theme-heading" description="The colour palette used across the app." descriptionId="theme-hint">
+            <div className="pt-2">
+              <ThemePicker labelledBy="theme-heading" describedBy="theme-hint" />
+            </div>
+          </SettingsGroup>
+          <SettingsGroup title="Chat width" headingId="chat-width-heading" description="How wide the chat transcript reads." descriptionId="chat-width-hint">
+            <div className="pt-2">
+              <ChatWidthPicker labelledBy="chat-width-heading" describedBy="chat-width-hint" />
+            </div>
+          </SettingsGroup>
+          <div className="flex gap-2">
+            <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
+              Save
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleCancel} disabled={!isDirty}>
+              Cancel
+            </Button>
+          </div>
         </div>
-        <Switch
-          id="watermark-toggle"
-          aria-describedby="watermark-toggle-description"
-          checked={watermarkEnabled}
-          onCheckedChange={(checked) => void setWatermarkEnabled(checked)}
-        />
-      </div>
-      <div className="mt-2 flex size-28 items-center justify-center rounded-md border border-border">
-        <BrandWatermark variant="preview" />
-      </div>
-      {/* Issue #1048 (Holiday touches): applies live, next to the watermark switch, the same
-          "no Save/Cancel" posture spec 012's own control above uses. */}
-      <div className="mt-6 flex items-center justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="holiday-touches-select" className="text-sm">Holiday touches</label>
-          <span id="holiday-touches-description" className="text-xs text-muted-foreground">Seasonal artwork and ambient motion near a holiday.</span>
-        </div>
-        <Select value={holidayTouches} onValueChange={(value) => void setHolidayTouches(value as typeof holidayTouches)}>
-          <SelectTrigger id="holiday-touches-select" aria-describedby="holiday-touches-description" size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="full">Full</SelectItem>
-            <SelectItem value="artwork">Artwork only</SelectItem>
-            <SelectItem value="off">Off</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {/* #526 (FR-111): applies live, same posture as Holiday touches. The shared segmented
-          `ToggleGroup` (ProviderSwitch, ManageSessionsToolbar) -- no one-off control. */}
-      <div className="mt-6 flex items-center justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <span id="activity-text-label" className="text-sm">Activity text</span>
-          <span id="activity-text-description" className="text-xs text-muted-foreground">
-            Shown for each Session in the Session list and in the banner above the composer when it has
-            nothing more specific to say. Plain shows &ldquo;Working…&rdquo;; Playful shows a friendly
-            phrase such as &ldquo;On it…&rdquo;.
-          </span>
-        </div>
-        <ToggleGroup
-          type="single"
-          value={activityText}
-          onValueChange={(value) => {
-            // Radix emits '' when the selected segment is clicked again; keep one selected.
-            if (value === 'plain' || value === 'playful') void setActivityText(value)
-          }}
-          variant="outline"
-          size="sm"
-          spacing={0}
-          aria-labelledby="activity-text-label"
-          aria-describedby="activity-text-description"
+        {/* Spec 036 (#842): applies live, no Save/Cancel. */}
+        <TextSizeGroup />
+        {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live, no Save/Cancel --
+            the Save/Cancel row above governs only the Theme and Chat width pickers. */}
+        <SettingsGroup title="Decoration">
+          <div>
+            {/* Quality-gate remediation (accessibility-auditor, Low): only the title is the label;
+                the description is wired in via `aria-describedby` so it is announced once, as a hint. */}
+            <SettingRow
+              id="watermark-toggle"
+              label="Background watermark"
+              description={holidayEntry ? 'A faint mark shown in the corner of the chat area — a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
+            >
+              <Switch
+                id="watermark-toggle"
+                aria-describedby="watermark-toggle-description"
+                checked={watermarkEnabled}
+                onCheckedChange={(checked) => void setWatermarkEnabled(checked)}
+              />
+            </SettingRow>
+            <div className="mb-4 flex size-28 items-center justify-center rounded-md border border-border">
+              <BrandWatermark variant="preview" />
+            </div>
+          </div>
+          <SettingRow
+            id="holiday-touches"
+            controlId="holiday-touches-select"
+            label="Holiday touches"
+            description="Seasonal artwork and ambient motion near a holiday."
+          >
+            <Select value={holidayTouches} onValueChange={(value) => void setHolidayTouches(value as typeof holidayTouches)}>
+              <SelectTrigger id="holiday-touches-select" aria-describedby="holiday-touches-description" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full">Full</SelectItem>
+                <SelectItem value="artwork">Artwork only</SelectItem>
+                <SelectItem value="off">Off</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        </SettingsGroup>
+        {/* Issue #482: applies live, like Activity; the picker carries its own preview. */}
+        <SettingsGroup
+          title="Status style"
+          headingId="status-style-heading"
+          description="How each Session's state is drawn in the Session list, chat header and details card."
+          descriptionId="status-style-hint"
         >
-          <ToggleGroupItem value="plain" className={SELECTED_SEGMENT_CLASS}>Plain</ToggleGroupItem>
-          <ToggleGroupItem value="playful" className={SELECTED_SEGMENT_CLASS}>Playful</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-      {/* Issue #482: applies live, same posture as Activity text; the picker carries its own preview. */}
-      <h3 id="status-style-heading" className="mt-6 mb-1 text-sm font-medium">Status style</h3>
-      <p id="status-style-hint" className="mb-2 text-xs text-muted-foreground">How each Session&rsquo;s state is drawn in the Session list, chat header and details card.</p>
-      <StatusStylePicker labelledBy="status-style-heading" describedBy="status-style-hint" />
-      {/* Issue #1242 (FR-042): applies live; also lets the user stop the looping shimmer (WCAG 2.2.2). */}
-      <div className="mt-6">
-        <SettingSwitchRow
-          id="animated-status-text"
-          label="Animated status text"
-          description="A moving highlight on the status line above the message box while the agent is working. Always still when you have reduced motion on."
-          checked={animatedStatusText}
-          onCheckedChange={(checked) => void setAnimatedStatusText(checked)}
-        />
-      </div>
+          <div className="pt-2">
+            <StatusStylePicker labelledBy="status-style-heading" describedBy="status-style-hint" />
+          </div>
+        </SettingsGroup>
+        <SettingsGroup title="Activity">
+          {/* #526 (FR-111): the shared segmented `ToggleGroup` (ProviderSwitch,
+              ManageSessionsToolbar) -- no one-off control. */}
+          <SettingRow
+            id="activity-text"
+            label="Activity text"
+            labelAsText
+            description={
+              <>
+                Shown for each Session in the Session list and in the banner above the composer when it has
+                nothing more specific to say. Plain shows &ldquo;Working…&rdquo;; Playful shows a friendly
+                phrase such as &ldquo;On it…&rdquo;.
+              </>
+            }
+          >
+            <ToggleGroup
+              type="single"
+              value={activityText}
+              onValueChange={(value) => {
+                // Radix emits '' when the selected segment is clicked again; keep one selected.
+                if (value === 'plain' || value === 'playful') void setActivityText(value)
+              }}
+              variant="outline"
+              size="sm"
+              spacing={0}
+              aria-labelledby="activity-text-label"
+              aria-describedby="activity-text-description"
+            >
+              <ToggleGroupItem value="plain" className={SELECTED_SEGMENT_CLASS}>Plain</ToggleGroupItem>
+              <ToggleGroupItem value="playful" className={SELECTED_SEGMENT_CLASS}>Playful</ToggleGroupItem>
+            </ToggleGroup>
+          </SettingRow>
+          {/* Issue #1242 (FR-042): also lets the user stop the looping shimmer (WCAG 2.2.2). */}
+          <SettingSwitchRow
+            id="animated-status-text"
+            label="Animated status text"
+            description="A moving highlight on the status line above the message box while the agent is working. Always still when you have reduced motion on."
+            checked={animatedStatusText}
+            onCheckedChange={(checked) => void setAnimatedStatusText(checked)}
+          />
+        </SettingsGroup>
+      </SettingsPage>
     </div>
   )
 }

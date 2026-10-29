@@ -1,4 +1,4 @@
-// Git decoration (spec 035, #768): the status -> `--git-*` token map the File explorer paints on a
+// Git decoration (spec 036, #768): the status -> `--git-*` token map the File explorer paints on a
 // row's name and icon, plus the folder rollup. The trailing status icon and its screen-reader word
 // stay (colour is never the only signal); `GitChangesFileRow.tsx` reuses `STATUS_MARKS` unchanged.
 import {

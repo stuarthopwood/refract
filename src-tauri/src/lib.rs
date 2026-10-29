@@ -267,6 +267,7 @@ pub fn run() {
 
     // FR-010/FR-011: the theme as `SettingsStore::open`'s own FR-013 lazy-correction already
     // resolved it (missing/invalid key falls back to `dark`), not a second, separate read.
+    let bootstrap_typography = settings.get().typography;
     let bootstrap_theme =
         serde_json::to_value(settings.get().theme).expect("ThemeId is always JSON-serialisable");
 
@@ -364,7 +365,7 @@ pub fn run() {
             // synchronous `ipcRenderer.sendSync` contract.
             let init_script = format!(
                 "window.__REFRACT_THEME_BOOTSTRAP__ = {};",
-                serde_json::json!({ "theme": bootstrap_theme })
+                serde_json::json!({ "theme": bootstrap_theme, "typography": bootstrap_typography })
             );
 
             // One main window, native decorations (spec.md Assumptions: no custom caption

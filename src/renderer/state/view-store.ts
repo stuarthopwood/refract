@@ -8,7 +8,8 @@ import { create } from 'zustand'
 // remounted when `view` changes (App.tsx swaps the whole main area on it).
 
 export type MainView = 'chat' | 'pull-requests' | 'settings' | 'manage-sessions'
-export type SettingsSectionId = 'session-readout' | 'sessions' | 'appearance' | 'model-roles' | 'chat' | 'right-pane' | 'omp'
+export const SETTINGS_SECTION_IDS = ['appearance', 'chat', 'status-line', 'models', 'advanced', 'sessions', 'panels'] as const
+export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number]
 
 export type ArchiveFilter = 'all' | 'active' | 'archived'
 export type SortKey = 'recent' | 'name' | 'repo' | 'status'
@@ -47,7 +48,7 @@ interface ViewState {
   setManageSessionsFilters(filters: SessionFilters): void
 }
 
-const DEFAULT_SETTINGS_SECTION: SettingsSectionId = 'session-readout'
+const DEFAULT_SETTINGS_SECTION: SettingsSectionId = 'appearance'
 
 export const useViewStore = create<ViewState>((set) => ({
   view: 'chat',
@@ -59,11 +60,7 @@ export const useViewStore = create<ViewState>((set) => ({
   openSettings: (section) =>
     set({
       view: 'settings',
-      settingsSection:
-        section === 'session-readout' || section === 'sessions' || section === 'appearance' ||
-        section === 'model-roles' || section === 'chat' || section === 'right-pane' || section === 'omp'
-          ? section
-          : DEFAULT_SETTINGS_SECTION
+      settingsSection: section !== undefined && SETTINGS_SECTION_IDS.includes(section) ? section : DEFAULT_SETTINGS_SECTION
     }),
   openManageSessions: () => set({ view: 'manage-sessions' }),
   setManageSessionsFilters: (filters) => set({ manageSessionsFilters: filters })

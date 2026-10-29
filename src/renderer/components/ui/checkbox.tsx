@@ -51,4 +51,11 @@ function CheckboxIndicator({
   )
 }
 
+// List variant: a borderless, transparent row with a separate square box (mirrors the radio
+// rows in Settings). Pass `CHECKBOX_LIST_ITEM_CLASS` to `CheckboxItem` and put a span with
+// `CHECKBOX_BOX_CLASS` around `CheckboxIndicator`.
+export const CHECKBOX_LIST_ITEM_CLASS =
+  "min-h-6 flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 hover:bg-transparent data-[state=checked]:border-none data-[state=checked]:bg-transparent"
+export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center rounded-sm border border-muted-foreground"
+
 export { CheckboxItem, CheckboxIndicator }
