@@ -7,14 +7,15 @@
 import { cn } from '@/lib/utils'
 import { STATUS_GLYPH, type StatusGlyphKey } from '../chat/statusGlyph'
 
-export type SubagentRowStatus = 'running' | 'finished' | 'failed' | 'cancelled' | 'exited'
+export type SubagentRowStatus = 'running' | 'finished' | 'failed' | 'cancelled' | 'exited' | 'parked'
 
 export const SUBAGENT_STATUS_LABEL: Record<SubagentRowStatus, string> = {
   running: 'Running',
   finished: 'Finished',
   failed: 'Failed',
   cancelled: 'Cancelled',
-  exited: 'Agent exited'
+  exited: 'Agent exited',
+  parked: 'Parked'
 }
 
 // Gate round 1 (#570, G909Code Medium, decision 3 "one status map"): the icon/colour pairs
@@ -31,7 +32,8 @@ const GLYPH_KEY_BY_STATUS: Record<SubagentRowStatus, StatusGlyphKey> = {
   finished: 'success-done',
   failed: 'error',
   cancelled: 'cancelled',
-  exited: 'neutral-muted'
+  exited: 'neutral-muted',
+  parked: 'parked'
 }
 
 /** Issue #941: true for the one status whose icon AND owning name/label text both switch to
@@ -65,7 +67,7 @@ export const SUBAGENT_ERROR_TEXT_CLASS = 'text-severity-error'
  * colours can never drift apart. */
 export function subagentStatusTextClass(counts: Record<SubagentRowStatus, number>): string | undefined {
   if (counts.failed > 0) return SUBAGENT_ERROR_TEXT_CLASS
-  if (counts.running === 0 && counts.cancelled === 0 && counts.exited === 0) return SUBAGENT_SUCCESS_TEXT_CLASS
+  if (counts.running === 0 && counts.cancelled === 0 && counts.exited === 0 && counts.parked === 0) return SUBAGENT_SUCCESS_TEXT_CLASS
   return undefined
 }
 
@@ -112,7 +114,7 @@ export function SubagentStatusGlyph({ status }: { status: SubagentRowStatus }) {
  * already uses the shared words directly and needs no mapping. Three call sites need this in
  * lockstep (`SubagentRow`, the stage group roll-up, the chain roll-up): if any one drifted, the
  * same call could read "Finished" on one surface and "Failed" on another. */
-export function chatRowStatus(status: 'running' | 'done' | 'error' | 'cancelled' | 'exited'): SubagentRowStatus {
+export function chatRowStatus(status: 'running' | 'done' | 'error' | 'cancelled' | 'exited' | 'parked'): SubagentRowStatus {
   if (status === 'done') return 'finished'
   if (status === 'error') return 'failed'
   return status
@@ -121,7 +123,7 @@ export function chatRowStatus(status: 'running' | 'done' | 'error' | 'cancelled'
 /** The roll-up counts decision 15 asks for: cancelled counted on its own, never folded into
  * failed. Shared by the stage group header and the chain summary line (groupSubagentStages.ts). */
 export function summarizeSubagentStatuses(statuses: SubagentRowStatus[]): Record<SubagentRowStatus, number> {
-  const counts: Record<SubagentRowStatus, number> = { running: 0, finished: 0, failed: 0, cancelled: 0, exited: 0 }
+  const counts: Record<SubagentRowStatus, number> = { running: 0, finished: 0, failed: 0, cancelled: 0, exited: 0, parked: 0 }
   for (const status of statuses) counts[status] += 1
   return counts
 }

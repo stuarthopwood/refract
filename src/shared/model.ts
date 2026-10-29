@@ -378,7 +378,7 @@ export interface SubagentSummary {
    * fallback for the rarer case Refract itself was killed too abruptly -- run from
    * `src/main/index.ts` at startup, awaited before any Session attaches, so by the time
    * `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for real. */
-  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
+  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited' | 'parked';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
   taskSummary?: string; // Issue #700/#701 slice (b): first sentence of `task`, ~100 chars, inert text (Agents card) -- absent when the task had no text at all (subagents.rs's `subagent_task_summary`)
@@ -463,7 +463,7 @@ export type TranscriptItem =
       /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
        * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
        * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
-      status: 'running' | 'done' | 'error' | 'cancelled' | 'exited';
+      status: 'running' | 'done' | 'error' | 'cancelled' | 'exited' | 'parked';
       startedAt?: number; // absent when built from history (no reliable wall clock to derive it from), matching the `thinking` item's `startedAt`
       durationMs?: number;
       /** The authoritative per-subagent result (FINDINGS item 22(e) `details.jobs[].schema.data`,

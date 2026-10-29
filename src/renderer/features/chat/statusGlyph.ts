@@ -13,9 +13,9 @@
 // "failure loud, success quiet", `docs/PLAN.md` #768) but keep three DISTINCT icon shapes (a
 // filled check-circle, an unplug, and a stop-circle respectively) so colour is never the only
 // cue (T080, WCAG 2.1 AA) even among several neutral states.
-import { CheckCircle2Icon, CircleStopIcon, LoaderCircleIcon, UnplugIcon, XCircleIcon, type LucideIcon } from 'lucide-react'
+import { CheckCircle2Icon, CirclePauseIcon, CircleStopIcon, LoaderCircleIcon, UnplugIcon, XCircleIcon, type LucideIcon } from 'lucide-react'
 
-export type StatusGlyphKey = 'running' | 'neutral-done' | 'success-done' | 'error' | 'neutral-muted' | 'cancelled'
+export type StatusGlyphKey = 'running' | 'neutral-done' | 'success-done' | 'error' | 'neutral-muted' | 'cancelled' | 'parked'
 
 export const STATUS_GLYPH: Record<StatusGlyphKey, { Icon: LucideIcon; className: string }> = {
   running: { Icon: LoaderCircleIcon, className: 'animate-spin text-state-working' },
@@ -26,5 +26,7 @@ export const STATUS_GLYPH: Record<StatusGlyphKey, { Icon: LucideIcon; className:
   'success-done': { Icon: CheckCircle2Icon, className: 'text-severity-success' },
   error: { Icon: XCircleIcon, className: 'text-severity-error' },
   'neutral-muted': { Icon: UnplugIcon, className: 'text-muted-foreground' },
-  cancelled: { Icon: CircleStopIcon, className: 'text-muted-foreground' }
+  cancelled: { Icon: CircleStopIcon, className: 'text-muted-foreground' },
+  // Issue #1098: a parked agent finished its turn but stays alive; a pause, not a stop or a check.
+  parked: { Icon: CirclePauseIcon, className: 'text-muted-foreground' }
 }

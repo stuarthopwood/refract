@@ -250,5 +250,6 @@ export function stageRollupText(counts: Record<SubagentRowStatus, number>, total
   if (counts.failed > 0) parts.push(`${counts.failed} failed`)
   if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
   if (counts.exited > 0) parts.push(`${counts.exited} exited`)
+  if (counts.parked > 0) parts.push(`${counts.parked} parked`)
   return parts.join(', ')
 }

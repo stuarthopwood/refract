@@ -26,8 +26,8 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T13 Pane tint tokens, layer, badge token, contrast pairs, docs. (#684)
 
 ## WP-F Parked agents
-- [ ] T14 Probe `subagent_lifecycle` wire values against a real OMP; record on #1098. (#1098)
-- [ ] T15 Rust subscription and mapping; `parked` status through the renderer vocabulary and surfaces. (#1098)
+- [X] T14 Probe `subagent_lifecycle` wire values against a real OMP; record on #1098. (#1098) Result: no parked string on the wire, see probe-notes.md.
+- [X] T15 Rust subscription and mapping; `parked` status through the renderer vocabulary and surfaces. (#1098) Vocabulary only; no Rust subscription (no reliable wire string), #1098 stays open.
 
 ## Wrap-up
 - [ ] T16 PLAN.md row, reviewer gate, build slot, ci:local, live check, PR.
