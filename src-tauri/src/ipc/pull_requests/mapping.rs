@@ -12,10 +12,22 @@ use crate::github::gh_mutations::{
 };
 use crate::github::gh_pull_requests::{GhPrViewDetail, GhRestFile};
 
+use super::checks::PullRequestCheck;
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ActorKind {
+    User,
+    Bot,
+}
+
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PullRequestActor {
     pub login: String,
     pub name: Option<String>,
+    pub kind: ActorKind,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -111,6 +123,7 @@ pub struct Review {
     pub body: String,
     pub submitted_at: String,
     pub findings: Vec<AutomatedFinding>,
+    pub edited: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -120,6 +133,7 @@ pub struct ReviewComment {
     pub author: PullRequestActor,
     pub body: String,
     pub created_at: String,
+    pub edited: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -160,6 +174,7 @@ pub enum TimelineEntry {
         author: PullRequestActor,
         body: String,
         created_at: String,
+        edited: bool,
     },
     Review {
         review: Review,
@@ -186,6 +201,8 @@ pub struct PullRequestDetail {
     pub description: String,
     pub timeline: Vec<TimelineEntry>,
     pub check_state: CheckStateOrNone,
+    pub checks: Vec<PullRequestCheck>,
+    pub viewer_login: Option<String>,
     pub mergeable_state: MergeableState,
     pub review_disabled_reason: Option<String>,
     pub merge_disabled_reason: Option<String>,
@@ -229,6 +246,12 @@ pub fn map_actor(actor: Option<&GhActor>) -> PullRequestActor {
             .and_then(|a| a.login.clone())
             .unwrap_or_else(|| "unknown".to_string()),
         name: actor.and_then(|a| a.name.clone()),
+        kind: if actor.is_some_and(|a| a.is_bot || a.typename.as_deref() == Some("Bot")) {
+            ActorKind::Bot
+        } else {
+            ActorKind::User
+        },
+        avatar_url: actor.and_then(|a| a.avatar_url.clone()),
     }
 }
 
@@ -239,6 +262,8 @@ pub fn map_commit_author(name: Option<&str>) -> PullRequestActor {
     PullRequestActor {
         login: name.unwrap_or("unknown").to_string(),
         name: name.map(str::to_string),
+        kind: ActorKind::User,
+        avatar_url: None,
     }
 }
 
@@ -421,6 +446,7 @@ pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
                             author: map_actor(node.author.as_ref()),
                             body: node.body.clone().unwrap_or_default(),
                             created_at: created_at.clone(),
+                            edited: node.last_edited_at.is_some(),
                         },
                         created_at,
                     ));
@@ -438,6 +464,7 @@ pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
                         body: node.body.clone().unwrap_or_default(),
                         submitted_at: submitted_at.clone(),
                         findings: Vec::new(),
+                        edited: node.last_edited_at.is_some(),
                     };
                     with_timestamps.push((TimelineEntry::Review { review }, submitted_at));
                 }
@@ -456,6 +483,7 @@ pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
                 author: map_actor(c.author.as_ref()),
                 body: c.body.clone(),
                 created_at: c.created_at.clone(),
+                edited: c.last_edited_at.is_some(),
             })
             .collect();
         let ts = comments

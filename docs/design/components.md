@@ -8,6 +8,12 @@ This page covers the shared UI primitives: button, menus, tooltip, tabs and the 
 
 Shared components decided in #934: **ScreenHeader** (**built**, `src/renderer/components/ScreenHeader.tsx`: back button, heading, plain-text count, trailing actions), **ListToolbar** (**built**, `src/renderer/components/ListToolbar.tsx`: Filter tabs, selects, SearchField, "Showing X of Y" while any filter is non-default), **SearchField** (leading magnifier, "Filter <things>…", Esc clears, a clear button once there is text -- **built** by issue #559 as `src/renderer/components/SearchField.tsx`, first used by the session list's own search; #934 adopts or extends it for Manage sessions rather than forking it), and one **Session row** shared by the Session list and Manage sessions (not yet built, follow-up). Toolbar controls are 32 px, including the Filter tabs strip.
 
+Added by spec 038 (Pull requests wave 2):
+
+- **MarkdownEditor** (`src/renderer/components/markdown-editor/`): Write/Preview editor built on `ComposerBox` (box, `ComposerField`, `ComposerTextarea` with `actionCount={0}`, `ComposerFooter`) with a formatting toolbar, `full` and `compact` sizes, Ctrl+Enter to submit and Esc to cancel. The Pull requests comment box and thread replies use it.
+- **RelativeTime** (`src/renderer/components/relative-time.tsx`): a relative time as a focusable `<time>` with the full local date and time in a Tooltip. Use it for every relative time in the Pull requests view.
+- **Pull requests pieces** (`src/renderer/features/pull-requests/`): `TimelineCards.tsx` (history-line entries: unboxed commit rows, soft `border-divider` cards, Avatar, "Bot" and "You" Badges), `ThreadReply.tsx` (ghost Reply toggle opening the compact editor), `CommentBox.tsx` (full editor with Comment and a confirmed Close pull request), `ChecksSection.tsx` (checks grouped by outcome in Collapsibles, row kebab DropdownMenu), and `prImages.ts` (the image-proxy cache behind avatars and Markdown images, ADR 0004).
+
 Built with the Project colour work (#887) and the Status style setting (#482):
 
 - **Slider** (`components/ui/slider.tsx`): a native range input with a visible 16 px thumb (foreground fill, background border) and a bordered track, so both hold 3:1 against the surface. Optional `trackBackground` for a gradient. Arrow, Home/End and PageUp/PageDown keys come from the native input.
@@ -25,6 +31,7 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | `default` (filled) | The single commit action in a dialog or form, and in first run (Add repository, Create, Save). One filled button per surface. |
 | `ghost` | Icon-only toolbar and row actions. |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
+| `destructive-outline` | A destructive action at rest that must stay visually below the surface's filled primary (spec 038: "Close pull request" in the comment box footer, left edge, away from Comment). Destructive-coloured edge and label, no fill; always confirms through `ConfirmAlertDialog tone="destructive"`. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `secondary`, `link` | Not part of the design system, except the one decided `link` use below. |
 

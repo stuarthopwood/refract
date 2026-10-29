@@ -199,6 +199,26 @@ _Avoid_: Comment thread, discussion
 Any of comment, reply, react, resolve, unresolve, submit a review (comment/approve/request changes), close, or merge (spec 003; react and close added 2026-10-23, #1199 and #1196) -- every one runs only as the direct result of an explicit user action, and approving, requesting changes, closing, and merging each require a confirmation naming the pull request and the exact action first; reacting never asks, since it is undone by clicking again.
 _Avoid_: PR action, operation
 
+**History line**:
+The **Spine** down the left of the Pull requests Overview **Timeline** (#915, grilled 2026-10-29): commits are unboxed single rows on it (commit icon, headline only, short SHA, relative time; consecutive commits group under "N commits"), while comments, reviews and **Review threads** keep a soft `--divider` card hung off it. Decorative (`aria-hidden`).
+_Avoid_: rail, timeline line
+
+**Author kind**:
+What a Timeline card header says about its author (#915): every card shows the avatar and login; a bot (`__typename` `Bot`) gets a muted "Bot" badge; the signed-in developer's own cards get an accent-tinted header and a "You" badge (never colour alone). The pull request's own author is not special-cased (no "Author" badge, Stuart 2026-10-29).
+_Avoid_: role badge, owner badge
+
+**PR image**:
+An image in a pull request's Markdown, fetched by the backend (allow-listed GitHub image hosts, type and size checked, returned as a `data:` URL) and shown only in the **Pull requests view**, never in agent chat (#915, ADR 0004). Any other image keeps the alt-text link.
+_Avoid_: embedded image, remote image
+
+**Markdown editor**:
+The shared composer-styled field for writing GitHub Markdown in the Pull requests view (#1196): a Write/Preview toggle (Preview renders through the shared `Markdown`), a toolbar (Heading, Bold, Italic, Quote, Code, Link, Bulleted, Numbered and Task list) and Ctrl+B, Ctrl+I and Ctrl+K. It has a full size (top-level comment, with "Close pull request" and "Comment") and a compact size (thread reply, no Close). It reuses the composer's tokens and does not edit `MessageInput.tsx`; the composer can adopt it later (Stuart 2026-10-29).
+_Avoid_: composer (that is the chat input), rich text editor
+
+**Checks section**:
+The Overview section after the **Timeline** and before the comment box (#1198): the overall state in its header, checks grouped by outcome (Action required and Failing expanded; Pending; Successful, Neutral and Skipped collapsed with counts), each row a status icon plus word, the check name and its duration, with an "Open details" row menu that opens the run in the browser. No re-run in v1; it refreshes with the pending-check poll.
+_Avoid_: CI panel, build status
+
 **Rendered view**:
 The formatted display of a Markdown file or value, with its syntax hidden; for a Markdown file in a file tab it is editable in place. One of the two views behind the Rendered/Source toggle.
 _Avoid_: Preview (implies read-only), WYSIWYG, edit mode

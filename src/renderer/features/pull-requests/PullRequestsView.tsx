@@ -286,7 +286,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           <ResizablePanel id="pull-requests-detail">
             <div className="h-full min-w-0 overflow-hidden">
               {selectedNumber !== null ? (
-                <PullRequestDetail repositoryId={repositoryId} number={selectedNumber} />
+                <PullRequestDetail key={`${repositoryId}#${selectedNumber}`} repositoryId={repositoryId} number={selectedNumber} />
               ) : (
                 <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
                   Select a pull request to view its details.

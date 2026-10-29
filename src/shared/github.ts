@@ -9,6 +9,19 @@
 export interface PullRequestActor {
   login: string;
   name: string | null;
+  kind: 'user' | 'bot';
+  avatarUrl: string | null; // shown only after the main-process image proxy (ADR 0004)
+}
+
+export type CheckOutcome = 'action-required' | 'failing' | 'pending' | 'successful' | 'neutral' | 'skipped';
+
+/** One entry of the status check rollup (spec 038). */
+export interface PullRequestCheck {
+  name: string;
+  outcome: CheckOutcome;
+  startedAt: string | null;
+  completedAt: string | null;
+  detailsUrl: string | null;
 }
 
 export type PullRequestState = 'open' | 'draft' | 'closed' | 'merged';
@@ -67,6 +80,8 @@ export interface PullRequestDetail {
   description: string; // markdown; rendered through Markdown.tsx, never raw HTML (FR-023)
   timeline: TimelineEntry[];
   checkState: CheckState | 'none';
+  checks: PullRequestCheck[];
+  viewerLogin: string | null; // the signed-in gh user
   mergeableState: MergeableState;
   reviewDisabledReason: string | null; // e.g. "This pull request is a draft."; null when Review/
   // Approve/Request changes are available (FR-019)
@@ -110,6 +125,7 @@ export interface Review {
   verdict: ReviewVerdict;
   body: string; // markdown
   submittedAt: string;
+  edited: boolean;
   findings: AutomatedFinding[];
 }
 
@@ -121,6 +137,7 @@ export interface ReviewComment {
   author: PullRequestActor;
   body: string; // markdown
   createdAt: string;
+  edited: boolean;
 }
 
 /** A review thread anchored to a diff location, with a resolved/unresolved state (FR-013,
@@ -139,7 +156,7 @@ export interface ReviewThread {
  * switch on `kind` exhaustively (`Timeline.tsx` renders one row component per kind). */
 export type TimelineEntry =
   | { kind: 'commit'; sha: string; message: string; author: PullRequestActor; committedAt: string }
-  | { kind: 'comment'; id: string; author: PullRequestActor; body: string; createdAt: string }
+  | { kind: 'comment'; id: string; author: PullRequestActor; body: string; createdAt: string; edited: boolean }
   | { kind: 'review'; review: Review }
   | { kind: 'review-thread'; thread: ReviewThread };
 

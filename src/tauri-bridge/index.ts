@@ -322,6 +322,8 @@ const refract: RefractApi = {
       request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW, repositoryId, number, input),
     merge: (repositoryId, number, input: MergeInput) =>
       request<void>(IPC_REQUESTS.PULL_REQUESTS_MERGE, repositoryId, number, input),
+    close: (repositoryId, number) => request<Record<string, never>>(IPC_REQUESTS.PULL_REQUESTS_CLOSE, repositoryId, number),
+    fetchImage: (url) => request<{ dataUrl: string }>(IPC_REQUESTS.PULL_REQUESTS_FETCH_IMAGE, url),
     newSessionFromPullRequest: (repositoryId, number) =>
       request<Session>(IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST, repositoryId, number)
   },

@@ -20,6 +20,15 @@ import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { linkClassName, mutedLinkClassName } from './linkStyles'
+import {
+  MarkdownBlockquote,
+  MarkdownOptionsContext,
+  MarkdownTable,
+  MarkdownTd,
+  MarkdownTh,
+  ResolvedImage
+} from './markdownExtras'
+import { OrderedList, Paragraph, TaskCheckbox, UnorderedList, renderTaskListItemChildren } from './markdownLists'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -666,79 +675,6 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
   )
 }
 
-// Named (rather than inline arrows) so the `li` task-list-item renderer below can recognize a
-// direct child as "a nested paragraph wrapper (loose lists)" / "a nested sub-list" / "the
-// checkbox itself" by function identity -- the only reliable signal available once react-markdown
-// has already turned those nodes into opaque React elements typed by these very components.
-function Paragraph({ className, ...props }: React.ComponentProps<'p'> & ExtraProps) {
-  return <p className={className} {...props} />
-}
-// `contains-task-list` (added by remark-gfm's tasklist handling) drops the bullet marker and
-// tightens spacing so the checkbox sits where the bullet would; an ordinary list keeps the
-// existing disc/decimal marker.
-function UnorderedList({ className, ...props }: React.ComponentProps<'ul'> & ExtraProps) {
-  return (
-    <ul
-      className={cn(
-        typeof className === 'string' && className.includes('contains-task-list')
-          ? 'list-none space-y-1 pl-0'
-          : 'list-disc pl-4',
-        className
-      )}
-      {...props}
-    />
-  )
-}
-function OrderedList({ className, ...props }: React.ComponentProps<'ol'> & ExtraProps) {
-  return <ol className={cn('list-decimal pl-4', className)} {...props} />
-}
-// Task-list checkboxes (GFM): rehype-sanitize's default (GitHub-style) schema already allows
-// `input[type=checkbox][disabled]` and `li.task-list-item` (hast-util-sanitize
-// lib/schema.js), so no schema extension was needed for T065; this only themes the checkbox.
-function TaskCheckbox({ className, ...props }: React.ComponentProps<'input'> & ExtraProps) {
-  return <input className={cn('mr-1 align-middle accent-primary', className)} {...props} />
-}
-
-// Clones the task-list-item's checkbox (always its first real child, per remark-gfm) with
-// `aria-labelledby`, and wraps everything after it in an id'd <span> so that id has something to
-// point at -- giving the checkbox an accessible name without a <label> wrapper (see `li` below).
-function labelTaskCheckbox(children: React.ReactNode, labelId: string): React.ReactNode[] {
-  const nodes = React.Children.toArray(children)
-  const checkboxIndex = nodes.findIndex((node) => React.isValidElement(node) && node.type === TaskCheckbox)
-  if (checkboxIndex === -1) return nodes
-  const checkbox = nodes[checkboxIndex] as React.ReactElement<{ 'aria-labelledby'?: string }>
-  return [
-    ...nodes.slice(0, checkboxIndex),
-    React.cloneElement(checkbox, { 'aria-labelledby': labelId }),
-    <span key="task-list-item-label" id={labelId}>
-      {nodes.slice(checkboxIndex + 1)}
-    </span>
-  ]
-}
-
-// Labels only a `task-list-item` <li>'s OWN leading content (its checkbox + its own text), never
-// its subtree: a loose list wraps that own content in a <p> (handled by recursing into just that
-// paragraph's children), and either loose or tight, a sub-task-list nested under this item is its
-// own sequence of `task-list-item` <li>s that will each run through this same renderer again, with
-// their own id. Excluding both is required for valid HTML -- <label>'s content model is phrasing
-// content only, so a wrapping <label> around a nested <p> or <ul> was already invalid before
-// nesting is even considered -- and for a correct accessible name -- a parent checkbox's name must
-// not swallow every descendant item's text too.
-function renderTaskListItemChildren(children: React.ReactNode, labelId: string): React.ReactNode {
-  const nodes = React.Children.toArray(children)
-  const looseIndex = nodes.findIndex((node) => React.isValidElement(node) && node.type === Paragraph)
-  if (looseIndex !== -1) {
-    const paragraph = nodes[looseIndex] as React.ReactElement<{ children?: React.ReactNode }>
-    const relabelled = <Paragraph key={paragraph.key ?? 'p'}>{labelTaskCheckbox(paragraph.props.children, labelId)}</Paragraph>
-    return [...nodes.slice(0, looseIndex), relabelled, ...nodes.slice(looseIndex + 1)]
-  }
-  const blockIndex = nodes.findIndex(
-    (node) => React.isValidElement(node) && (node.type === UnorderedList || node.type === OrderedList)
-  )
-  if (blockIndex === -1) return labelTaskCheckbox(nodes, labelId)
-  return [...labelTaskCheckbox(nodes.slice(0, blockIndex), labelId), ...nodes.slice(blockIndex)]
-}
-
 const components: Components = {
   // Security review: a relative or protocol-relative href (e.g. `/C:/Windows/System32/x.exe`,
   // `//host/share/x.exe`) resolves against the production renderer's `file://` origin, and
@@ -790,11 +726,15 @@ const components: Components = {
     // control, and a click on the inner `<a>` bubbling up to activate the outer one too.
     const insideLink = React.useContext(InsideLinkContext)
     const streaming = React.useContext(StreamingContext)
+    const { resolveImage } = React.useContext(MarkdownOptionsContext)
     const safe = safeUrl(typeof src === 'string' ? src : undefined)
     if (!safe) return <>{alt || 'image'}</>
     if (insideLink) return <>{alt || safe}</>
     if (streaming) return <span className={inertLinkClassName}>{alt || safe}</span>
-    return <ExternalLink href={safe} className={linkClassName}>{alt || safe}</ExternalLink>
+    const link = <ExternalLink href={safe} className={linkClassName}>{alt || safe}</ExternalLink>
+    // Only a caller that passes `resolveImage` (the Pull requests view) ever fetches an image; the link above is also its loading/failure fallback.
+    if (resolveImage) return <ResolvedImage src={safe} alt={alt ?? ''} resolveImage={resolveImage} fallback={link} />
+    return link
   },
   p: Paragraph,
   ul: UnorderedList,
@@ -822,15 +762,9 @@ const components: Components = {
   // GFM table: rehype-sanitize's default schema already allows `table`/`thead`/`tbody`/`tr`/
   // `th`/`td`, so the only new work is layout -- a horizontally-scrollable wrapper (tables can
   // be wider than the column) and bordered header/data cells.
-  table: ({ className, ...props }) => (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className={cn('w-full border-collapse text-left text-sm', className)} {...props} />
-    </div>
-  ),
-  th: ({ className, ...props }) => (
-    <th className={cn('border border-border bg-muted/50 px-2 py-1 font-medium', className)} {...props} />
-  ),
-  td: ({ className, ...props }) => <td className={cn('border border-border px-2 py-1 align-top', className)} {...props} />,
+  table: MarkdownTable,
+  th: MarkdownTh,
+  td: MarkdownTd,
   // GFM footnotes: the default schema already allows the footnotes `<section>`, its `sr-only`
   // `<h2>`, and the backref `<a>` (same schema source as above); this only adds the divider.
   section: ({ className, ...props }) => (
@@ -844,9 +778,7 @@ const components: Components = {
       {...props}
     />
   ),
-  blockquote: ({ className, ...props }) => (
-    <blockquote className={cn('border-l-2 border-border pl-4 text-muted-foreground', className)} {...props} />
-  ),
+  blockquote: MarkdownBlockquote,
   hr: ({ className, ...props }) => <hr className={cn('border-border', className)} {...props} />,
   h1: heading('h1'),
   h2: heading('h2'),
@@ -953,6 +885,11 @@ interface MarkdownProps {
   // which reads brighter than chat prose and inverted the secondary/bookkeeping hierarchy); every
   // other caller keeps the ambient `--foreground` it already inherited.
   className?: string
+  // Pull requests view only: GitHub-style tables (content width, `--divider` cell borders).
+  githubStyle?: boolean
+  // Pull requests view only: resolves an image URL to a `data:` URL (or null). When omitted,
+  // images stay alt-text links and nothing is ever fetched (chat).
+  resolveImage?: (url: string) => Promise<string | null>
 }
 
 // Agent/tool text is untrusted (constitution V): react-markdown produces a hast tree, never raw
@@ -962,7 +899,7 @@ interface MarkdownProps {
 // comments above), so it is still called with no custom schema. `streaming` is threaded through
 // `StreamingContext` (read only by the `code`/`MermaidBlock` renderer) rather than via a per-flip
 // `components` map, so the rest of the component identities stay stable across the transition.
-function MarkdownImpl({ text, id, streaming = false, className }: MarkdownProps) {
+function MarkdownImpl({ text, id, streaming = false, className, githubStyle = false, resolveImage }: MarkdownProps) {
   // Per-message footnote-id namespace (see `MarkdownProps.id` above). `id` is a UUID (`shared/
   // model.ts`'s `TranscriptItem.id`) but is sanitized defensively rather than assumed safe, since
   // it ends up inside an `id`/href-fragment pair. This REPLACES mdast-util-to-hast's own
@@ -972,19 +909,22 @@ function MarkdownImpl({ text, id, streaming = false, className }: MarkdownProps)
   // again. Final ids/hrefs land as `user-content-<msg>-fn-1`.
   const footnotePrefix = React.useMemo(() => `${id.replace(/[^a-zA-Z0-9_-]/g, '-')}-`, [id])
   const remarkRehypeOptions = React.useMemo(() => ({ clobberPrefix: footnotePrefix }), [footnotePrefix])
+  const options = React.useMemo(() => ({ githubStyle, resolveImage }), [githubStyle, resolveImage])
   return (
     <StreamingContext.Provider value={streaming}>
-      <div className={cn('space-y-2 text-sm leading-relaxed break-words', className)}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          remarkRehypeOptions={remarkRehypeOptions}
-          rehypePlugins={[rehypeSanitize]}
-          components={components}
-          urlTransform={markdownUrlTransform}
-        >
-          {text}
-        </ReactMarkdown>
-      </div>
+      <MarkdownOptionsContext.Provider value={options}>
+        <div className={cn('space-y-2 text-sm leading-relaxed break-words', className)}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            remarkRehypeOptions={remarkRehypeOptions}
+            rehypePlugins={[rehypeSanitize]}
+            components={components}
+            urlTransform={markdownUrlTransform}
+          >
+            {text}
+          </ReactMarkdown>
+        </div>
+      </MarkdownOptionsContext.Provider>
     </StreamingContext.Provider>
   )
 }

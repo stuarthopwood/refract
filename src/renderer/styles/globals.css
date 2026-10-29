@@ -53,6 +53,7 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
+  --color-viewer-tint: var(--viewer-tint);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -93,6 +94,11 @@
   --color-severity-warning-bg: var(--severity-warning-bg);
   --color-severity-error-bg: var(--severity-error-bg);
   --color-severity-info-bg: var(--severity-info-bg);
+  --color-alert-note: var(--alert-note);
+  --color-alert-tip: var(--alert-tip);
+  --color-alert-important: var(--alert-important);
+  --color-alert-warning: var(--alert-warning);
+  --color-alert-caution: var(--alert-caution);
   --color-diff-added: var(--diff-added);
   --color-diff-removed: var(--diff-removed);
   --color-chart-1: var(--chart-1);
@@ -350,6 +356,8 @@ samp {
   --holiday-artwork-opacity: 0.58;
   --accent: oklch(0.269 0 0);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: oklch(0.21 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
   /* Quality-gate remediation (HIGH, 3 independent reviewers + corrected check-theme-contrast.mjs):
@@ -571,6 +579,12 @@ samp {
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* GitHub alert blockquotes (spec 038, FR-004): layer 3 tokens defaulting to semantic roles. */
+  --alert-note: var(--severity-info);
+  --alert-tip: var(--severity-success);
+  --alert-important: var(--accent-text);
+  --alert-warning: var(--severity-warning);
+  --alert-caution: var(--severity-error);
   /* Agent-working spinner component token (issue #612, #616 review round 4: Stuart chose to
    * make `brand`'s default follow the theme -- "same brand violet in every theme for now" --
    * rather than `brand` being one more fixed palette choice). Layer 3 component token, same
@@ -737,6 +751,11 @@ samp {
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  --alert-note: var(--severity-info);
+  --alert-tip: var(--severity-success);
+  --alert-important: var(--accent-text);
+  --alert-warning: var(--severity-warning);
+  --alert-caution: var(--severity-error);
 
   /* ---- Layer 3: component tokens ---------------------------------------------------------- */
   --scrollbar-thumb: var(--muted-foreground);
@@ -783,6 +802,8 @@ samp {
   --muted: var(--surface-hover);
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: #171922;
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --input: oklch(1 0 0 / 36%);
@@ -923,6 +944,8 @@ samp {
   --holiday-artwork-opacity: 0.45; /* #1233: about 3:1 over pure black (opaque muted grey) */
   --accent: oklch(0.26 0 0);
   --accent-foreground: oklch(1 0 0);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: oklch(0.18 0 0);
   /* #552 fix (Skippy, delegated by Stuart 2026-10-18, gate round): the mock's own 0.78
    * lightness measured only 6.65:1 against this theme's `--muted` hover fill (#570 decision 20,
    * recorded on #552 2026-10-16) -- under this theme's OWN declared 7:1 high-contrast text
@@ -1063,6 +1086,11 @@ samp {
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: oklch(0.82 0.13 220);
+  --alert-note: var(--severity-info);
+  --alert-tip: var(--severity-success);
+  --alert-important: var(--accent-text);
+  --alert-warning: var(--severity-warning);
+  --alert-caution: var(--severity-error);
   /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
   --agent-message: oklch(0.85 0.1 295);
   /* #925: diff-stat colouring -- same alias as `.theme-dark`'s own comment above. */
@@ -1187,6 +1215,8 @@ samp {
   --muted: var(--surface-hover);
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: #0c1a2e;
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --input: oklch(1 0 0 / 38%);
@@ -1265,6 +1295,11 @@ samp {
   --severity-warning: oklch(0.76 0.188 70.08);
   --severity-error: oklch(0.76 0.191 22.216);
   --severity-info: oklch(0.70 0.15 255);
+  --alert-note: var(--severity-info);
+  --alert-tip: var(--severity-success);
+  --alert-important: var(--accent-text);
+  --alert-warning: var(--severity-warning);
+  --alert-caution: var(--severity-error);
   /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
   --agent-message: oklch(0.78 0.12 295);
   --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
@@ -1438,6 +1473,8 @@ samp {
   --muted: var(--surface-hover);
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
+  /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
+  --viewer-tint: oklch(0.2 0.01 70);
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --input: oklch(1 0 0 / 36%);
@@ -1531,6 +1568,11 @@ samp {
   --severity-warning: oklch(0.78 0.17 88);
   --severity-error: oklch(0.665 0.12 22);
   --severity-info: oklch(0.70 0.12 200);
+  --alert-note: var(--severity-info);
+  --alert-tip: var(--severity-success);
+  --alert-important: var(--accent-text);
+  --alert-warning: var(--severity-warning);
+  --alert-caution: var(--severity-error);
   /* #838: agent-to-agent message identity (glyph + label only); violet, a hue no other meaning uses. */
   --agent-message: oklch(0.78 0.12 295);
   --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);

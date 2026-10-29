@@ -24,7 +24,8 @@ export function ConfirmAlertDialog({
   busyLabel,
   onCancel,
   onConfirm,
-  onCloseAutoFocus
+  onCloseAutoFocus,
+  tone = 'default'
 }: {
   open: boolean
   busy: boolean
@@ -35,6 +36,8 @@ export function ConfirmAlertDialog({
   onCancel(): void
   onConfirm(): void
   onCloseAutoFocus(): void
+  /** destructive fills the confirm button with the destructive colour (a close, a delete). */
+  tone?: 'default' | 'destructive'
 }) {
   return (
     <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onCancel() }}>
@@ -66,7 +69,7 @@ export function ConfirmAlertDialog({
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
-            variant="invert"
+            variant={tone === 'destructive' ? 'destructive' : 'invert'}
             aria-disabled={busy}
             className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={(event) => {
