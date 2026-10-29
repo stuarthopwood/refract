@@ -75,6 +75,8 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
       const result = await window.refract.chat.send(sessionId, text)
       if (!result.ok) {
         notify(result.error, sessionId)
+        sendingRef.current = false
+        setSending(false)
         return
       }
       focusSessionPane(sessionId)

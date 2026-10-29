@@ -200,10 +200,7 @@ pub enum TranscriptItem {
     },
     /// #1284: the end-of-turn model error (`transcript/turn_error.rs`); `text` is OMP's own
     /// `errorMessage`, untrusted.
-    TurnError {
-        id: String,
-        text: String,
-    },
+    TurnError { id: String, text: String },
 }
 
 impl TranscriptItem {
