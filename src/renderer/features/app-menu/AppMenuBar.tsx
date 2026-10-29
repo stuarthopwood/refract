@@ -140,7 +140,10 @@ export function AppMenuBar() {
 
   function findInChat(): void {
     const returnFocus = previousFocusRef.current
-    const pane = returnFocus?.closest('[data-session-pane]') ?? document.querySelector('[data-session-pane]')
+    const pane =
+      returnFocus?.closest('[data-session-pane]') ??
+      document.activeElement?.closest('[data-session-pane]') ??
+      document.querySelector('[data-session-pane]')
     const sessionId = pane?.getAttribute('data-session-pane')
     if (!sessionId) return
     // The find bar takes focus itself; clearing the ref stops the bar's own close from stealing it.

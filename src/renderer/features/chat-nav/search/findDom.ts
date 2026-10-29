@@ -1,5 +1,6 @@
 // DOM side of chat Find (spec 041, #753): reads rendered row text and turns match spans into Ranges.
 import { findSpans, type TextSpan } from './findMatcher'
+import { MESSAGE_ROW_SELECTOR } from '../messageRow'
 
 const SKIPPED_TEXT_PARENTS =
   'button, svg, script, style, [aria-hidden="true"], .sr-only, [data-slot="message-header"], [data-slot="message-footer"], [role="group"][aria-label="Attached files"], [data-search-skip]'
@@ -11,7 +12,7 @@ export function getPane(sessionId: string): HTMLElement | null {
 /** Every mounted message row in the pane, by message id. */
 export function mountedRows(pane: HTMLElement): Map<string, HTMLElement> {
   const rows = new Map<string, HTMLElement>()
-  for (const row of pane.querySelectorAll<HTMLElement>('[data-message-id]')) {
+  for (const row of pane.querySelectorAll<HTMLElement>(MESSAGE_ROW_SELECTOR)) {
     const id = row.dataset.messageId
     if (id) rows.set(id, row)
   }

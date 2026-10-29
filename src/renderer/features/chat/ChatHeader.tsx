@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionsStore } from '@/state'
-import { openChatFind } from '@/state/chat-find-store'
+import { closeChatFind, EMPTY_CHAT_FIND, openChatFind, useChatFindStore } from '@/state/chat-find-store'
 import { STATUS_LABEL, StateIcon } from '@/features/sessions/sessionDisplay'
 import { ConversationSwitcher } from './ConversationSwitcher'
 
@@ -50,6 +50,7 @@ export function ChatHeader({
   reservesWindowControls
 }: ChatHeaderProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
+  const findOpen = useChatFindStore((s) => (s.bySession[sessionId] ?? EMPTY_CHAT_FIND).open)
   if (!session) return null
 
   return (
@@ -99,8 +100,9 @@ export function ChatHeader({
               type="button"
               variant="ghost"
               size="icon-sm"
-              onClick={() => openChatFind(sessionId)}
+              onClick={(event) => (findOpen ? closeChatFind(sessionId) : openChatFind(sessionId, event.currentTarget))}
               aria-label="Find in chat"
+              aria-expanded={findOpen}
               aria-keyshortcuts="Control+F"
             >
               <SearchIcon aria-hidden className="size-4" />

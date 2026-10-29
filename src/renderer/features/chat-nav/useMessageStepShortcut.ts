@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
-import { useChatNavStore } from '@/state/chat-nav-store'
-import { stepToMessage, type StepDirection } from './stepToMessage'
+import { stepToMessage } from './stepToMessage'
+import type { StepDirection } from './messageIndex'
 
 /** Alt+ArrowUp / Alt+ArrowDown step to the previous / next message while keyboard focus is in
  * this Session's pane (transcript or composer). One listener per mounted pane. */
@@ -15,7 +15,6 @@ export function useMessageStepShortcut(sessionId: string): void {
       if (active.closest('[data-session-pane]')?.getAttribute('data-session-pane') !== sessionId) return
       event.preventDefault()
       const direction: StepDirection = event.key === 'ArrowUp' ? 'previous' : 'next'
-      if (useChatNavStore.getState().bySession[sessionId]?.view.scrollable[direction === 'previous' ? 'start' : 'end'] === false) return
       stepToMessage(sessionId, direction)
     }
     window.addEventListener('keydown', onKeyDown)

@@ -1,10 +1,10 @@
 import { useChatNavStore } from '@/state/chat-nav-store'
+import { useChatAreaAnnouncer } from '../chat/chatAreaAnnouncer'
 import { jumpToMessage } from './jumpToMessage'
-import { resolveStepTarget } from './messageIndex'
+import { resolveStepTarget, type StepDirection } from './messageIndex'
 
-export type StepDirection = 'previous' | 'next'
-
-/** Moves the chat to the previous or next message relative to the topmost visible one. */
+/** Moves the chat to the previous or next message relative to the topmost visible one. At either
+ * end there is nowhere to go, so it announces "First message" / "Last message" instead. */
 export function stepToMessage(sessionId: string, direction: StepDirection): boolean {
   const entry = useChatNavStore.getState().bySession[sessionId]
   if (!entry?.bridge) return false
@@ -16,5 +16,9 @@ export function stepToMessage(sessionId: string, direction: StepDirection): bool
     currentTopOffset: currentId === null ? 0 : (entry.bridge.getMessageTopOffset(currentId) ?? 0),
     tolerancePx: 2
   })
-  return target ? jumpToMessage(sessionId, target.id) : false
+  if (!target) {
+    useChatAreaAnnouncer.getState().announce(direction === 'previous' ? 'First message' : 'Last message')
+    return false
+  }
+  return jumpToMessage(sessionId, target.id)
 }
