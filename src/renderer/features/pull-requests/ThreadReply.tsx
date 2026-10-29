@@ -111,11 +111,10 @@ export function ThreadActions({ repositoryId, number, thread, draft, onDraftChan
               </Button>
               <Button
                 size="sm"
-                aria-label={`Send reply on ${location}`}
                 onClick={() => void handleReply()}
                 disabled={busy || !draft.trim()}
               >
-                {busy ? 'Replying…' : 'Reply'}
+                {busy ? 'Sending…' : 'Send reply'}
               </Button>
             </>
           }

@@ -36,7 +36,7 @@ export function RelativeTime({
 }) {
   if (!focusable) {
     return (
-      <time dateTime={value} className={className}>
+      <time dateTime={value} title={formatFullDateTime(value)} className={className}>
         {formatRelativeTime(value)}
       </time>
     )

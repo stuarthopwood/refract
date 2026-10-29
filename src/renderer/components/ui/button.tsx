@@ -23,7 +23,7 @@ const buttonVariants = cva(
         // at all was identical to the resting fill, no hover feedback whatsoever).
         invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
@@ -34,7 +34,7 @@ const buttonVariants = cva(
         // colour on the edge and label only, never a fill, so the surface's one filled button
         // stays the primary action. The confirm dialog then uses the filled `destructive`.
         "destructive-outline":
-          "border-destructive bg-background text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:bg-input/30 dark:hover:bg-input/50",
+          "border-destructive bg-background text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:bg-input/30",
         link: "text-primary underline underline-offset-4 font-normal",
       },
       size: {

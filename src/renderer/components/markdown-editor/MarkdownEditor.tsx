@@ -94,6 +94,7 @@ export function MarkdownEditor({
       return
     }
     if (event.key === 'Escape' && onCancel) {
+      if (event.defaultPrevented || disabled) return
       event.preventDefault()
       event.stopPropagation()
       onCancel()

@@ -97,12 +97,13 @@ export function CommentBox({ repositoryId, number, state, title, prTitle, text, 
             </Button>
           </div>
         }
-      />      <ConfirmAlertDialog
+      />
+      <ConfirmAlertDialog
         open={closeOpen}
         busy={closeBusy}
         tone="destructive"
         title="Close this pull request?"
-        description={`This closes ${prTitle} (${title}) on GitHub without merging it. You can reopen it later on GitHub.${text.trim() ? ' Your unsent comment will not be posted.' : ''}`}
+        description={`This closes "${prTitle}" (${title}) on GitHub without merging it. You can reopen it later on GitHub.${text.trim() ? ' Your unsent comment will not be posted.' : ''}`}
         confirmLabel="Close pull request"
         busyLabel="Closing…"
         onCancel={() => setCloseOpen(false)}
