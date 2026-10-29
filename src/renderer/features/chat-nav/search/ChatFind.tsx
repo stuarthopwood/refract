@@ -6,5 +6,5 @@ import { useChatFindShortcut } from './useChatFindShortcut'
 export function ChatFind({ sessionId }: { sessionId: string }) {
   useChatFindShortcut(sessionId)
   const open = useChatFindStore((state) => (state.bySession[sessionId] ?? EMPTY_CHAT_FIND).open)
-  return open ? <FindBar sessionId={sessionId} /> : null
+  return open ? <FindBar key={sessionId} sessionId={sessionId} /> : null
 }

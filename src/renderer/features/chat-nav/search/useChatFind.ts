@@ -123,6 +123,7 @@ export function useChatFind(sessionId: string, query: string, matchCase: boolean
   const lastSearchKey = useRef<string | null>(query === '' ? null : searchKeyOf(query, matchCase))
   const activated = useRef(false)
   const matchesRef = useRef<readonly FlatMatch[]>([])
+  const recounting = useRef(false)
   const inflight = useRef<Promise<RunResult> | null>(null)
   const pendingRun = useRef<{ timer: number; run(): Promise<RunResult> } | null>(null)
   const latest = useRef({ query, matchCase })
@@ -184,6 +185,7 @@ export function useChatFind(sessionId: string, query: string, matchCase: boolean
       if (!outcome) return 'aborted'
       const flat = flatten(outcome.groups, sessionId)
       matchesRef.current = flat
+      recounting.current = false
       setSettled({ ...outcome, query, matchCase })
       lastSearchKey.current = searchKey
       if (!keyChanged) {
@@ -211,6 +213,7 @@ export function useChatFind(sessionId: string, query: string, matchCase: boolean
       lastSearchKey.current = null
       activated.current = false
       matchesRef.current = []
+      recounting.current = false
       setSettled(null)
       setCursor(-1)
       cursorRef.current = -1
@@ -236,7 +239,9 @@ export function useChatFind(sessionId: string, query: string, matchCase: boolean
       const pane = getPane(sessionId)
       if (!pane || !settled) return
       if (needsRecount(sessionId, settled.groups, query, matchCase, settled.capped)) {
-        setSettled(null)
+        // Keep the settled matches (and so the enabled step buttons and their focus) until the recount lands.
+        if (recounting.current) return
+        recounting.current = true
         setRecountTick((value) => value + 1)
         return
       }
@@ -322,8 +327,8 @@ export function useChatFind(sessionId: string, query: string, matchCase: boolean
     cursor,
     capped: settled?.capped ?? false,
     status,
-    next: () => step(1),
-    previous: () => step(-1),
+    next: () => void submit(false),
+    previous: () => void submit(true),
     select: (index) => goTo(matches, index),
     submit
   }
