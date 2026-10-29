@@ -25,8 +25,12 @@ A **Session** created by another Session's agent (#1304), linked to that parent 
 _Avoid_: Sub-session, nested session, spawned session
 
 **Session status**:
-The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Stopped, Unread response or Idle, in that order of precedence.
+The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Paused, Stopped, Unread response or Idle, in that order of precedence.
 _Avoid_: state dot, status badge
+
+**Paused**:
+The **Session status** of a **Session** the developer paused. Refract holds its queued messages, goal continuation and new sends until the developer resumes it; it shows Pausing… until the running turn ends. Pause persists across restarts and never resumes on its own.
+_Avoid_: suspended, frozen
 
 **Unread response**:
 The **Session status** of an idle **Session** whose latest reply the developer has not seen, because it finished while the **Session** was not shown in a **Chat pane**. It clears when the **Session** is shown, and it is drawn by the shared status icon in place of Idle.
