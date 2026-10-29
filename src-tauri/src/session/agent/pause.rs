@@ -11,9 +11,7 @@ use serde_json::{json, Value};
 
 use crate::store::registry::SessionPatch;
 
-use super::{
-    AgentError, AgentState, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS,
-};
+use super::{AgentError, AgentState, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 #[derive(Default)]
 pub(super) struct State {
@@ -188,7 +186,10 @@ impl SessionAgent {
                     .await
                     .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
                 if res.get("success").and_then(Value::as_bool) != Some(true) {
-                    return Err(AgentError::new("prompt-failed", "a held message failed to send"));
+                    return Err(AgentError::new(
+                        "prompt-failed",
+                        "a held message failed to send",
+                    ));
                 }
             }
         }

@@ -9,10 +9,6 @@
 // `visible_ids` set every agent's `EventSink`-backed patch coalescer reads to decide whether to
 // forward a patch.
 
-use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex};
-use serde_json::Value;
 use crate::events::EventSink;
 use crate::git::worktree_validity::{
     list_registered_worktrees, registered_validity, WorktreeValidity,
@@ -20,6 +16,10 @@ use crate::git::worktree_validity::{
 use crate::session::agent::{SharedRegistry, SharedSettings};
 use crate::session::SessionAgent;
 use crate::store::registry::Repository;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 
 /// Owns every live `SessionAgent` (one per Session opened this run) plus the shared registry/
 /// settings stores every agent and every registry-only IPC handler already uses.

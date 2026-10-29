@@ -88,7 +88,12 @@ pub fn chat_resume_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
         let mut resumed = 0;
         let mut failed = 0;
         for id in ids {
-            match state.session_manager.get_or_create_agent(&id).resume().await {
+            match state
+                .session_manager
+                .get_or_create_agent(&id)
+                .resume()
+                .await
+            {
                 Ok(_) => resumed += 1,
                 Err(_) => failed += 1,
             }
