@@ -24,6 +24,10 @@ _Avoid_: Task, thread, chat (for the whole unit)
 The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Stopped, Unread response or Idle, in that order of precedence.
 _Avoid_: state dot, status badge
 
+**Status style**:
+The Settings choice (Appearance, "Session status style") between **Icons** (default) and **Dots** for how the shared status icon draws a **Session status**. Every state is colour-coded in its state colour in both styles, including Working (Icons tints the spinner with `--state-working`); Dots keep a shape cue per state so colour is never the only signal. It applies live, applies to the shared status icon only (not the Subagent panel or Transcript icons), and shows a preview of all five states.
+_Avoid_: status mode, dot mode
+
 **Unread response**:
 The **Session status** of an idle **Session** whose latest reply the developer has not seen, because it finished while the **Session** was not shown in a **Chat pane**. It clears when the **Session** is shown, and it is drawn by the shared status icon in place of Idle.
 _Avoid_: response ready, unread dot, response indicator, new message
