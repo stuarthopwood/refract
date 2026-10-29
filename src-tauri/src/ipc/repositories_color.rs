@@ -5,11 +5,9 @@
 
 use serde_json::Value;
 
-use crate::store::registry::{ProjectColor, Repository};
+use crate::store::registry::ProjectColor;
 
-use super::{
-    arg_str, invalid_argument, map_registry_error, not_found, AppState, Dispatcher, HandlerFuture,
-};
+use super::{arg_str, invalid_argument, map_registry_error, AppState, Dispatcher, HandlerFuture};
 
 /// The ten preset ids, in the order of the renderer's `--project-1` to `--project-10` tokens.
 pub const PRESET_IDS: [&str; 10] = [
@@ -70,18 +68,11 @@ pub fn repositories_set_color(state: AppState, args: Vec<Value>) -> HandlerFutur
             }
         };
         let color = parse_color(args.get(1).unwrap_or(&Value::Null)).map_err(invalid_argument)?;
-        let existing: Repository = {
-            let registry = state.registry.lock().await;
-            registry
-                .get_repository(&id)
-                .ok_or_else(|| not_found(format!("Repository not found: {id}")))?
-                .clone()
-        };
         let updated = state
             .registry
             .lock()
             .await
-            .update_repository_color(&existing.id, color)
+            .update_repository_color(&id, color)
             .await
             .map_err(map_registry_error)?;
         state.session_manager.notify_list_changed();

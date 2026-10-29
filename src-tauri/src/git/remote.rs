@@ -91,15 +91,20 @@ fn scp_like_parts(trimmed: &str) -> Option<(String, &str)> {
 fn url_parts(trimmed: &str) -> Option<(String, &str)> {
     let scheme_end = trimmed.find("://")? + 3;
     let after_scheme = &trimmed[scheme_end..];
-    let authority_end = after_scheme
-        .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
-    let authority = &after_scheme[..authority_end];
-    let path = &after_scheme[authority_end..];
-    let host_and_port = match authority.rfind('@') {
-        Some(at) => &authority[at + 1..],
-        None => authority,
+    // Userinfo ends at the LAST `@` before any `?` or `#` in the whole URL, so a password that
+    // contains `/` cannot leak into the path (and from there into `owner`).
+    let before_query = after_scheme
+        .find(['?', '#'])
+        .map_or(after_scheme, |end| &after_scheme[..end]);
+    let without_userinfo = match before_query.rfind('@') {
+        Some(at) => &after_scheme[at + 1..],
+        None => after_scheme,
     };
+    let authority_end = without_userinfo
+        .find(['/', '?', '#'])
+        .unwrap_or(without_userinfo.len());
+    let host_and_port = &without_userinfo[..authority_end];
+    let path = &without_userinfo[authority_end..];
     let host = if let Some(stripped) = host_and_port.strip_prefix('[') {
         let closing = stripped.find(']')?;
         &host_and_port[..=closing + 1]
@@ -143,6 +148,15 @@ fn owner_repo_from_path(path: &str) -> Option<(String, String)> {
     let last = segments.pop()?;
     let repo = last.strip_suffix(".git").unwrap_or(last);
     if repo.is_empty() || segments.is_empty() {
+        return None;
+    }
+    // Only plain path characters reach the tooltip; anything else drops owner/repo, not the host.
+    let is_plain = |segment: &str| {
+        segment
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    };
+    if !is_plain(repo) || !segments.iter().all(|segment| is_plain(segment)) {
         return None;
     }
     Some((segments.join("/"), repo.to_string()))
