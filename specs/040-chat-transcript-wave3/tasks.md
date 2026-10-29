@@ -8,7 +8,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T3 Chat header title and branch truncation with tooltip. (#907)
 - [x] T4 Pinned todo scrollbar flush with the pane edge. (#1130)
 - [x] T5 Agent stopped bar and Sessions section polish, stale comments. (#1220)
-- [ ] T6 Tight run for ask, Answered lines and resolved approvals; `DESIGN.md` rhythm. (#473)
+- [x] T6 Tight run for ask, Answered lines and resolved approvals; `DESIGN.md` rhythm. (#473)
 
 ## WP-B Banners and errors
 - [ ] T7 Shared `PaneBanner`, Button `text` variant, migrate the ChatPane banners; `components.md` and `patterns.md`. (#746)

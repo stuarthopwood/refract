@@ -8,9 +8,10 @@ import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 
 // Bookkeeping rows (docs/DESIGN.md "Transcript rhythm", Stuart 2026-10-04): a run of these reads
 // as compact, secondary material and must not inherit the full rhythm the turns/real messages
-// around it use. Deliberately excludes an answered `ask` question (kind stays plain `tool`, never
-// `tool-group` -- `groupToolItems` never merges `ask` calls) and a `request` card: both are a
-// direct user<->assistant exchange, not bookkeeping, so DESIGN.md's own enumeration leaves them out.
+// around it use. Stuart 2026-10-29 (#473): a settled `ask` row (its Answered lines) and a
+// resolved `request` (approval or answered question summary) join the run too. A PENDING
+// question or approval (a running `ask`, an unresolved `request`) is the live card the user must
+// act on, so it keeps the full rhythm.
 const BOOKKEEPING_KINDS: Partial<Record<AdvisoryGroupedTranscriptItem['kind'], true>> = {
   'tool-group': true,
   'stage-group': true,
@@ -23,9 +24,10 @@ const BOOKKEEPING_KINDS: Partial<Record<AdvisoryGroupedTranscriptItem['kind'], t
 }
 
 export function isBookkeepingRow(row: AdvisoryGroupedTranscriptItem): boolean {
+  if (row.kind === 'request') return row.resolved !== undefined
+  if (row.kind === 'tool') return row.tool === 'ask' && row.status !== 'running'
   return BOOKKEEPING_KINDS[row.kind] === true
 }
-
 // Issue #457: two independent Settings-driven view filters. Neither toggle ever touches main's
 // `HIDDEN_TOOLS` path, which drops an item before it ever becomes a transcript row at all -- these
 // act as a pure *view* filter: turning one back on restores every hidden row immediately, including
