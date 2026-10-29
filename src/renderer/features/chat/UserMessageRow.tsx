@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
 import type { TranscriptItem } from '../../../shared/model'
-import { initials } from '@/lib/initials'
+import { UserAvatar } from '@/components/UserAvatar'
 import { Markdown } from './Markdown'
 import { FileAttachmentChip } from './FileAttachmentChip'
 import { MessageImageGrid } from '@/components/MessageImageGrid'
@@ -11,6 +11,8 @@ export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 interface UserMessageRowProps {
   item: UserItem
   userName: string | undefined
+  /** #505: shared photo data URL; initials when absent. */
+  userAvatarUrl?: string
   /** Issue #555 amendment (Stuart, 2026-10-16): true when a `TimeGapDivider` already renders
    * directly above this turn (it shows the same date and time already) -- the per-message row
    * would just repeat it. */
@@ -83,14 +85,14 @@ function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }
 // `w-fit max-w-[85%]` keeps the bubble sized to its own content and caps it well short of the
 // transcript's left edge, so it never touches it regardless of message length.
 // `UserMessageTime` renders as a sibling ABOVE this whole `Message`, never inside it.
-export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps) {
+export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: UserMessageRowProps) {
   const name = userName ?? 'You'
   return (
     <>
       <UserMessageTime at={item.at} hide={hideTime} />
       <Message align="end">
-        <MessageAvatar aria-hidden className="text-xs">
-          {initials(name)}
+        <MessageAvatar aria-hidden>
+          <UserAvatar name={name} src={userAvatarUrl} />
         </MessageAvatar>
         <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-4 py-2">
           <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>

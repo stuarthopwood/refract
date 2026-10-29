@@ -8,6 +8,10 @@ This page covers the shared UI primitives: button, menus, tooltip, tabs and the 
 
 Shared components decided in #934: **ScreenHeader** (**built**, `src/renderer/components/ScreenHeader.tsx`: back button, heading, plain-text count, trailing actions), **ListToolbar** (**built**, `src/renderer/components/ListToolbar.tsx`: Filter tabs, selects, SearchField, "Showing X of Y" while any filter is non-default), **SearchField** (leading magnifier, "Filter <things>…", Esc clears, a clear button once there is text -- **built** by issue #559 as `src/renderer/components/SearchField.tsx`, first used by the session list's own search; #934 adopts or extends it for Manage sessions rather than forking it), and one **Session row** shared by the Session list and Manage sessions (not yet built, follow-up). Toolbar controls are 32 px, including the Filter tabs strip.
 
+Added by spec 042 (Chat user avatar):
+
+- **UserAvatar** (`src/renderer/components/UserAvatar.tsx`, spec 042): the user's own avatar in chat over the shared `Avatar`: the active GitHub account's cached photo (data URL, `useRepositoryAvatarUrl`) with git-name initials as the fallback, decorative (`alt=""`, `aria-hidden`). `size` is `default` (32 px, user bubble) or `xs` (20 px, answered Ask line); the `xs` size lives on `Avatar` itself.
+
 Added by spec 038 (Pull requests wave 2):
 
 - **MarkdownEditor** (`src/renderer/components/markdown-editor/`): Write/Preview editor built on `ComposerBox` (box, `ComposerField`, `ComposerTextarea` with `actionCount={0}`, `ComposerFooter`) with a formatting toolbar, `full` and `compact` sizes, Ctrl+Enter to submit and Esc to cancel. The Pull requests comment box and thread replies use it.
