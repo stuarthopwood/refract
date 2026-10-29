@@ -30,6 +30,7 @@ import { toolStatusLabel } from './toolStatus'
 import { toolRunningAnnouncement, toolVerb } from './toolVerbs'
 import { resolveToolDisplay } from './toolDisplay'
 import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
+import { newestRunningRowId } from './newestRunningRow'
 import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
@@ -854,6 +855,7 @@ export function Transcript({
                 // `streaming` flag can cover both at once (its tool calls can already be `running`
                 // while it still reads `streaming: true`), and the promoted row is the more specific
                 // of the two signals, so one announcement is enough.
+                const shimmerRowId = isActiveTurn ? newestRunningRowId(rows.map(([row]) => row)) : undefined
                 const announceThinking =
                   !transcriptDisplay.thinking &&
                   turn.items.some((item) => item.kind === 'thinking' && item.streaming) &&
@@ -908,6 +910,7 @@ export function Transcript({
                             userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
                             resolvedAsk={row.kind === 'request' ? askLinks.askByRequestId.get(row.requestId) : undefined}
                             askRequestId={row.kind === 'tool' ? askLinks.requestIdByAskItemId.get(row.id) : undefined}
+                            shimmer={row.id === shimmerRowId}
                             onAdvisoryReveal={handleAdvisoryReveal} onQueuedAnnounce={setRevealedAnnouncement}
                           />
                         </MessageScrollerItem>

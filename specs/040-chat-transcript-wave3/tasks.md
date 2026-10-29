@@ -17,7 +17,7 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 ## WP-C Transcript rows
 - [x] T9 Mid-turn Note follow-ups, shared disclosure class and shared clamp, `product-chat.md` hierarchy. (#1262)
 - [x] T10 Shared `SourceTag` and advisory rows. (#1041)
-- [ ] T11 Newest running row shimmer; motion and accessibility docs. (#1210)
+- [x] T11 Newest running row shimmer; motion and accessibility docs. (#1210)
 
 ## WP-D Tool dialog
 - [ ] T12 Rendered or Source toggle, default rules, large-value guard. (#719)

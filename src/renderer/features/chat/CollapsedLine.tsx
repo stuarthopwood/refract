@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ClampedContent } from '@/components/ClampedContent'
+import { ShimmerText } from '@/components/ShimmerText'
 
 // #565 decision 10: the label column -- row `px-2` (8px) + the icon slot (`size-4`, 16px) +
 // `gap-2` (8px) = 32px -- is private to this file's own layout, so every consumer that wants a
@@ -13,6 +14,9 @@ import { ClampedContent } from '@/components/ClampedContent'
 export const LABEL_COLUMN_CONTENT_CLASS = 'pl-8'
 
 export interface CollapsedLineProps {
+  /** #1210: shimmers the label text through the shared `ShimmerText`; set only on the transcript's
+   * one newest running row (`newestRunningRow.ts`). */
+  labelShimmer?: boolean
   /** Optional decoration rendered before the icon slot (an advisory row's `SourceTag`, #1041). */
   leading?: React.ReactNode
   /** Icon slot: the consumer picks a shape that differs by state (running spinner, check,
@@ -117,6 +121,7 @@ export interface CollapsedLineProps {
 export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(function CollapsedLine(
   {
     leading,
+    labelShimmer,
     icon,
     iconTooltip,
     label,
@@ -244,7 +249,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // Stage row passes its own `min-w-16` via `labelClassName`
         // (`SubagentChainRow.tsx`'s `successLabelClass` call site).
         <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate', labelClassName)} title={typeof label === 'string' ? label : undefined}>
-          {label}
+          {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
         </span>
       )}
       {summary !== undefined ? (

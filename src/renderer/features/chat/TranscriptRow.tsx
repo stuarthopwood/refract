@@ -32,6 +32,8 @@ export interface TranscriptRowProps {
   resolvedAsk?: ToolItem
   /** An `ask` tool row's own request id. */
   askRequestId?: string
+  /** #1210: set on the turn's one newest running row only (newestRunningRow.ts). */
+  shimmer?: boolean
   /** Both reuse EXISTING Transcript mechanisms (gate round 2/3): reveal -> suppressLogAnnouncements; queued -> revealedAnnouncement. */
   onAdvisoryReveal: () => void
   onQueuedAnnounce: (text: string) => void
@@ -70,6 +72,7 @@ function areRowPropsEqual(prev: TranscriptRowProps, next: TranscriptRowProps): b
     prev.hideTime === next.hideTime &&
     prev.resolvedAsk === next.resolvedAsk &&
     prev.askRequestId === next.askRequestId &&
+    prev.shimmer === next.shimmer &&
     prev.onAdvisoryReveal === next.onAdvisoryReveal &&
     prev.onQueuedAnnounce === next.onQueuedAnnounce &&
     (prev.item === next.item || (isGroup(prev.item) && isGroup(next.item) && sameGroup(prev.item, next.item)))
@@ -80,11 +83,11 @@ function areRowPropsEqual(prev: TranscriptRowProps, next: TranscriptRowProps): b
 // docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, askRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
+function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, askRequestId, hideTime, shimmer, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
-  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
-  if (isToolGroup(item)) return isAgentSteerGroup(item) ? <AgentSteerRow item={item.items[0]!} /> : <ToolGroupRow group={item} />
-  if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
+  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} shimmer={shimmer} />
+  if (isToolGroup(item)) return isAgentSteerGroup(item) ? <AgentSteerRow item={item.items[0]!} /> : <ToolGroupRow group={item} shimmer={shimmer} />
+  if (isThoughtRun(item)) return <ThoughtRunRow group={item} shimmer={shimmer} />
   if (isMidTurnProse(item)) return <MidTurnProseRow group={item} />
 
   switch (item.kind) {

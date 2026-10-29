@@ -61,7 +61,7 @@ function rollupPhrase(counts: Record<SubagentRowStatus, number>): string {
  * details/"Uses:" header; the only remaining difference is the body (`SubagentBody` directly
  * for one agent, a member `SpineList` for more than one, #565 decision 13: a list mounts only
  * once a 2nd member arrives). */
-export function StageGroupRow({ group, sessionId }: { group: StageGroup; sessionId: string | null }) {
+export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup; sessionId: string | null; shimmer?: boolean }) {
   const statuses = group.items.map((item) => chatRowStatus(item.status))
   const counts = summarizeSubagentStatuses(statuses)
   const status = overallStatus(counts)
@@ -326,6 +326,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       id={stageRowDomId(sessionId, group.id)}
       icon={<SubagentStatusGlyph status={status} />}
       label={stageLabel}
+      labelShimmer={shimmer && isRunning}
       // Gate round 5 fix (issue #941, item 1, HIGH): `min-w-16` lives HERE now, not in
       // `CollapsedLine`'s own shared base class -- every other caller (tool rows, advisory
       // rows, notices) shares that same label span and was silently widened by a floor only
