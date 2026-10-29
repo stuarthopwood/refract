@@ -20,16 +20,16 @@
 import { useSettingsStore } from '@/state'
 import type { RefObject } from 'react'
 import {
-  AdvisorChip,
-  ChangesChip,
-  CurrentTimeChip,
-  PullRequestChip,
-  SubagentsChip,
-  TodoProgressChip,
-  TurnTimeChip
-} from './readout/ReadoutChips'
-import { ContextUsageChip } from './readout/ContextUsageChip'
-import { AiCreditsChip } from './readout/AiCreditsChip'
+  AdvisorReadout,
+  ChangesReadout,
+  CurrentTimeReadout,
+  PullRequestReadout,
+  SubagentsReadout,
+  TodoProgressReadout,
+  TurnTimeReadout
+} from './readout/Readouts'
+import { ContextUsageReadout } from './readout/ContextUsageReadout'
+import { AiCreditsReadout } from './readout/AiCreditsReadout'
 import { LongConversationChip } from './LongConversation'
 
 export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
@@ -37,23 +37,23 @@ export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: stri
   return (
     <div data-slot="composer-status-line" className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 empty:hidden tabular-nums">
       {/* #496 (spec 001 FR-056): Todo progress takes the Approval pill's old first slot. */}
-      {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
-      {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
-      {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
-      <AiCreditsChip sessionId={sessionId} />
-      {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
-      {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
-      {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
+      {sessionReadout['todo-progress'] && <TodoProgressReadout sessionId={sessionId} />}
+      {sessionReadout.changes && <ChangesReadout sessionId={sessionId} />}
+      {sessionReadout['context-usage'] && <ContextUsageReadout sessionId={sessionId} />}
+      <AiCreditsReadout sessionId={sessionId} />
+      {sessionReadout['turn-time'] && <TurnTimeReadout sessionId={sessionId} />}
+      {sessionReadout.subagents && <SubagentsReadout sessionId={sessionId} />}
+      {sessionReadout['pull-request'] && <PullRequestReadout sessionId={sessionId} />}
       {/* Gate round 1 decision (D, Skippy, delegated by Stuart 2026-10-18), corrected gate
           round 3 (D): last in this group, right before the `ml-auto` Current time chip -- a
           fixed ORDER relative to its siblings, not a fixed POSITION. This row already has no
-          fixed slots: `TurnTimeChip`/`SubagentsChip`/etc. above it already appear and
+          fixed slots: `TurnTimeReadout`/`SubagentsReadout`/etc. above it already appear and
           disappear live with real turn/subagent data, shifting every chip after them sideways
           regardless of where Advisor itself sits -- this placement only fixes where Advisor
           falls in that same already-shifting row, not a guarantee against the shift itself. */}
-      <AdvisorChip sessionId={sessionId} textareaRef={textareaRef} />
+      <AdvisorReadout sessionId={sessionId} textareaRef={textareaRef} />
       <LongConversationChip sessionId={sessionId} />
-      {sessionReadout['current-time'] && <CurrentTimeChip className="ml-auto" />}
+      {sessionReadout['current-time'] && <CurrentTimeReadout className="ml-auto" />}
     </div>
   )
 }

@@ -3,7 +3,8 @@ import { ChevronRightIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ClampedContent } from './ClampedContent'
+import { ClampedContent } from '@/components/ClampedContent'
+import { ShimmerText } from '@/components/ShimmerText'
 
 // #565 decision 10: the label column -- row `px-2` (8px) + the icon slot (`size-4`, 16px) +
 // `gap-2` (8px) = 32px -- is private to this file's own layout, so every consumer that wants a
@@ -13,6 +14,11 @@ import { ClampedContent } from './ClampedContent'
 export const LABEL_COLUMN_CONTENT_CLASS = 'pl-8'
 
 export interface CollapsedLineProps {
+  /** #1210: shimmers the label text through the shared `ShimmerText`; set only on the transcript's
+   * one newest running row (`newestRunningRow.ts`). */
+  labelShimmer?: boolean
+  /** Optional decoration rendered before the icon slot (an advisory row's `SourceTag`, #1041). */
+  leading?: React.ReactNode
   /** Icon slot: the consumer picks a shape that differs by state (running spinner, check,
    * cross, warning triangle, ...) so a warning or error is never signalled by colour alone
    * (T080, WCAG 2.1 AA). */
@@ -114,6 +120,8 @@ export interface CollapsedLineProps {
 // to once the Ask card's own resolution replaces it (`ask-focus-intent.ts`).
 export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(function CollapsedLine(
   {
+    leading,
+    labelShimmer,
     icon,
     iconTooltip,
     label,
@@ -184,6 +192,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
 
   const row = (
     <>
+      {leading !== undefined && <span className="flex h-5 shrink-0 items-center">{leading}</span>}
       {/* #565 decision 7: 16px slot (icon is `size-4` (16px), centred within it) so
        * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly.
        * Gate round 1 (Main, D1): the row is `items-start` (not `items-center`), so this slot's
@@ -240,7 +249,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // Stage row passes its own `min-w-16` via `labelClassName`
         // (`SubagentChainRow.tsx`'s `successLabelClass` call site).
         <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate', labelClassName)} title={typeof label === 'string' ? label : undefined}>
-          {label}
+          {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
         </span>
       )}
       {summary !== undefined ? (
@@ -385,7 +394,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         </p>
       )}
       <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>
-        {clampLines !== undefined ? <ClampedContent lines={clampLines}>{children}</ClampedContent> : children}
+        {clampLines !== undefined ? <ClampedContent maxHeight={`${clampLines}lh`} fade>{children}</ClampedContent> : children}
       </CollapsibleContent>
     </Collapsible>
   )

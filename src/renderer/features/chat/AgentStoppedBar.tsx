@@ -4,7 +4,7 @@
 // Plain text, never colour alone, and `role="region"` rather than a live region, so opening a
 // stopped Session announces nothing extra. **Start agent** is the explicit start (FR-104).
 import { toast } from 'sonner'
-import { Alert } from '@/components/ui/alert'
+import { PaneBanner } from '@/components/PaneBanner'
 import { Button } from '@/components/ui/button'
 import { focusSessionPane } from '@/lib/focus'
 import { useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
@@ -13,6 +13,8 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
   const stopped = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'stopped')
   const enabled = useSettingsStore((s) => s.settings.showAgentStoppedBar !== false)
   const setShowAgentStoppedBar = useSettingsStore((s) => s.setShowAgentStoppedBar)
+
+  const sessionName = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.name ?? 'Session')
 
   if (!allowed || !stopped || !enabled) return null
 
@@ -33,20 +35,33 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
   }
 
   return (
-    <Alert
+    <PaneBanner
       role="region"
-      aria-label="Agent stopped"
-      box="inline"
+      aria-label={`Agent stopped: ${sessionName}`}
+      severity="warning"
+      title="Agent stopped"
       data-slot="agent-stopped-bar"
-      className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-1 text-xs text-muted-foreground"
+      className="shrink-0 px-4 py-2"
     >
-      <span>Agent stopped</span>
-      <Button type="button" variant="outline" size="xs" onClick={handleStart}>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        aria-label={`Start agent for ${sessionName}`}
+        onClick={handleStart}
+      >
         Start agent
       </Button>
-      <Button type="button" variant="link" size="xs" className="text-muted-foreground" onClick={() => void handleDontShowAgain()}>
+      <Button
+        type="button"
+        variant="text"
+        size="xs"
+        className="text-muted-foreground underline underline-offset-2 hover:decoration-2"
+        aria-label={`Don't show again, ${sessionName}`}
+        onClick={() => void handleDontShowAgain()}
+      >
         Don't show again
       </Button>
-    </Alert>
+    </PaneBanner>
   )
 }

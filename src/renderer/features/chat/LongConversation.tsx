@@ -15,7 +15,7 @@ import {
   LONG_CONVERSATION_BANNER_REPEAT,
   LONG_CONVERSATION_CALLS
 } from '../../../shared/tokenGuard'
-import { ReadoutChip } from './readout/ReadoutChip'
+import { ReadoutItem } from './readout/ReadoutItem'
 
 const DISABLED_BUTTON_CLASS = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-50'
 
@@ -86,7 +86,7 @@ export function LongConversationChip({ sessionId }: { sessionId: string }) {
         {notice}
       </span>
       {calls >= LONG_CONVERSATION_CALLS && (
-        <ReadoutChip>
+        <ReadoutItem>
           <span>{`Long conversation, ${calls} calls`}</span>
           <Button
             type="button"
@@ -100,7 +100,7 @@ export function LongConversationChip({ sessionId }: { sessionId: string }) {
             Hand off
           </Button>
           {handOff.reason && <span id={reasonId}>{handOff.reason}</span>}
-        </ReadoutChip>
+        </ReadoutItem>
       )}
     </>
   )

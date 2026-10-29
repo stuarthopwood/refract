@@ -32,7 +32,7 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
     todo: totals && current ? { number: totals.done + 1, total: totals.total, content: current.task.content } : null,
     latestIntent: readout.latestIntent,
     latestTool: readout.latestTool,
-    retry: readout.retry,
+    retry: null, // RetryLine owns the retry text
     compacting: readout.compacting
   })
   const text = useHeldActivityText(sessionId, visible ? activity : null)

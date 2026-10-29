@@ -5,7 +5,7 @@
   "src-tauri/src/omp/process.rs": 1094,
   "src-tauri/src/omp/transcript.rs": 1813,
   "src/renderer/App.tsx": 727,
-  "src/renderer/features/chat/ChatPane.tsx": 1374,
+  "src/renderer/features/chat/ChatPane.tsx": 1264,
   "src/renderer/features/chat/Markdown.tsx": 997,
   "src/renderer/features/chat/MessageInput.tsx": 1209,
   "src/renderer/features/chat/Transcript.tsx": 1059,

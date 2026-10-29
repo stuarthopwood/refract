@@ -1,5 +1,5 @@
 // External-link policy (issue #793 security baseline): the renderer (shared, unchanged) renders
-// ordinary `<a target="_blank">` links (`Markdown.tsx`, `ReadoutChip.tsx`, the profile/PR panes)
+// ordinary `<a target="_blank">` links (`Markdown.tsx`, `ReadoutItem.tsx`, the profile/PR panes)
 // trusting Electron's own `setWindowOpenHandler`/`openExternalSafe` (`src/main/index.ts`) to open
 // them in the system browser and silently drop anything that is not `http:`/`https:`. The Tauri
 // build had something that worked here already, but not this lane's own: `tauri_plugin_opener`'s

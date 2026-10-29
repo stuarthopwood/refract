@@ -8,16 +8,18 @@ const MID_TURN_CLAMP_LINES = 8
 
 // First meaningful line as plain text: skips blank, code-fence and rule lines, drops leading
 // heading/quote/list markers, turns `[text](url)` into `text`, and strips only paired emphasis
-// markers (so `update_session_state` and `~/repo` survive).
+// markers (so `update_session_state`, `__init__` and `~/repo` survive; `__` pairs only strip
+// around spaced text) and skips spaced rules such as `* * *`.
 function firstLineSummary(text: string): string {
   const line = text.split(/\r?\n/).find((candidate) => {
     const trimmed = candidate.trim()
-    return trimmed !== '' && !/^(```|~~~|[-*_]{3,}$)/.test(trimmed)
+    return trimmed !== '' && !/^(```|~~~|([-*_])(\s*\2){2,}$)/.test(trimmed)
   })
   return (line ?? '')
     .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)+/, '')
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/(\*\*|__|\*|`|~~)(.+?)\1/g, '$2')
+    .replace(/(\*\*|\*|`|~~)(.+?)\1/g, '$2')
+    .replace(/__(.+?)__/g, (whole, inner: string) => (/\s/.test(inner) ? inner : whole))
     .trim()
 }
 
@@ -34,6 +36,7 @@ export function MidTurnProseRow({ group }: { group: MidTurnProse }) {
         icon={<StickyNoteIcon className="size-4 shrink-0 text-muted-foreground" />}
         label="Note"
         summary={firstLineSummary(item.text) || undefined}
+        summaryClassName="text-chat-foreground"
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}
         clampLines={MID_TURN_CLAMP_LINES}
       >

@@ -88,11 +88,11 @@ function getHighlighter(): Promise<Highlighter> {
 // silently clears the user's clipboard. The accessible name/tooltip includes the same language
 // label shown in the header ("Copy code, typescript"), per the issue's intended behaviour, so
 // multiple blocks in one transcript are distinguishable in a screen reader's button list.
-function CodeBlockHeader({ label, copyText }: { label: string; copyText: string }) {
+function CodeBlockHeader({ label, copyText, hideCopy = false }: { label: string; copyText: string; hideCopy?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2 py-1 font-code text-xs text-muted-foreground">
       <span className="truncate">{label}</span>
-      {copyText !== '' && (
+      {copyText !== '' && !hideCopy && (
         <CopyButton
           getText={() => copyText}
           label={`Copy code, ${label}`}
@@ -117,9 +117,12 @@ export function CodeBlock({
   wrap = false,
   lineNumbers = false,
   copyText,
+  hideCopy = false,
 }: {
   code: string
   lang: string | null
+  // True when the caller owns a single Copy control elsewhere (the tool dialog's section header).
+  hideCopy?: boolean
   // Opt-in wrapping for prose-shaped surfaces (an approval card's detail lines, a subagent's
   // Prompt/Result) that previously scrolled sideways like real code instead of wrapping like
   // every other paragraph in the transcript (T083, code-reviewer/test-reviewer/accessibility-auditor,
@@ -224,7 +227,7 @@ export function CodeBlock({
     // the plain-fallback `<pre>` below) paints the body now Shiki's own bg is neutralised above.
     return (
       <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
-        <CodeBlockHeader label={label} copyText={copyText ?? code} />
+        <CodeBlockHeader label={label} copyText={copyText ?? code} hideCopy={hideCopy} />
         <div className="flex">
           {gutter}
           <div
@@ -244,7 +247,7 @@ export function CodeBlock({
   }
   return (
     <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
-      <CodeBlockHeader label={label} copyText={copyText ?? code} />
+      <CodeBlockHeader label={label} copyText={copyText ?? code} hideCopy={hideCopy} />
       <div className="flex">
         {gutter}
         <pre

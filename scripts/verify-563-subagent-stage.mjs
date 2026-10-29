@@ -276,8 +276,8 @@ async function main() {
     // debounced `READOUT_COALESCE_MS` (100ms, readout.rs:66) -- the WHOLE chip row (every kind,
     // not just Subagents) waits on that one combined round trip, and this story's diff touches
     // zero lines of `readout.rs` (confirmed: `git diff d6ef2ca -- src-tauri/src/session/
-    // readout.rs` is empty) and only changes `ReadoutChips.tsx`'s wording, never its
-    // `if (subagentCount === null) return null` gate (`ReadoutChips.tsx:189`, unchanged by this
+    // readout.rs` is empty) and only changes `Readouts.tsx`'s wording, never its
+    // `if (subagentCount === null) return null` gate (`Readouts.tsx:189`, unchanged by this
     // story's diff). Polling live now for how long the chip actually takes to appear, as direct
     // evidence alongside that code citation.
     const chipAppearStart = Date.now();

@@ -8,7 +8,7 @@ import { useSettingsStore } from '@/state'
 import { useWindowVisible } from '@/hooks/useWindowVisible'
 import { cn } from '@/lib/utils'
 
-/** `tone` is any CSS colour for the base text (default: the accent text colour). */
+/** `tone` is any CSS colour for the base text (default: the surrounding text colour). */
 export function ShimmerText({ active, tone, className, children }: { active: boolean; tone?: string; className?: string; children: ReactNode }) {
   const enabled = useSettingsStore((s) => s.settings.animatedStatusText !== false)
   const visible = useWindowVisible()

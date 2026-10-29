@@ -3,16 +3,12 @@ import type { TranscriptItem } from '../../../shared/model'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CodeBlock, inferOutputBlock, mutedLinkClassName } from './Markdown'
+import { inferOutputBlock, mutedLinkClassName } from './Markdown'
 import { formatDuration, StatusIcon, toolStatusLabel } from './toolStatus'
+import { CappedCodeBlock, SectionBlock, type Section } from './ToolSectionBlock'
+import { defaultSectionView } from './toolViewRules'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
-
-// Same cap `ToolCallBody` applied to its own Arguments/Output blocks before #628 moved them here
-// (T083, WCAG 1.4.10): a 200-line value still needs its own "Show all" opt-in even inside the
-// dialog's own scrolling region, so one huge argument or output can never make the dialog itself
-// unusably long to scroll past.
-const OUTPUT_LINE_CAP = 200
 
 // WCAG 2.5.3/accessible-name sanity (quality-gate, Low round 2; Medium round 3): an agent-
 // authored `item.target` can be an arbitrarily long or multi-line bash command; a screen reader
@@ -21,12 +17,6 @@ const OUTPUT_LINE_CAP = 200
 // the target) -- the full target is still the row's own visible summary text right next to the
 // link.
 const ARIA_LABEL_MAX_CHARS = 80
-
-interface Section {
-  label: string
-  lang: string | null
-  code: string
-}
 
 // Each key of a tool call's own `args` becomes its own labelled section (#628 Formatted tab):
 // a string value is shown exactly as written, as plain text with real line breaks (a `bash`
@@ -42,50 +32,21 @@ function argumentSections(item: ToolItem): Section[] {
     if (entries.length > 0) {
       return entries.map(([key, value]) => {
         if (typeof value === 'string') {
-          if (item.tool === 'bash' && key === 'command') return { label: key, lang: 'bash', code: value }
+          if (item.tool === 'bash' && key === 'command') return { label: key, lang: 'bash', code: value, defaultView: 'source' }
           if (item.tool === 'write' && key === 'content') {
             try {
-              return { label: key, lang: 'json', code: JSON.stringify(JSON.parse(value), null, 2) }
+              return { label: key, lang: 'json', code: JSON.stringify(JSON.parse(value), null, 2), defaultView: 'source' }
             } catch {
               // `content` is plain file text, not JSON -- fall through to the plain-text case.
             }
           }
-          return { label: key, lang: null, code: value }
+          return { label: key, lang: null, code: value, defaultView: defaultSectionView(item.tool, key, item.target) }
         }
-        return { label: key, lang: 'json', code: JSON.stringify(value, null, 2) }
+        return { label: key, lang: 'json', code: JSON.stringify(value, null, 2), defaultView: 'source' }
       })
     }
   }
-  return [{ label: 'Arguments', lang: 'json', code: JSON.stringify(item.args ?? null, null, 2) }]
-}
-
-// A value capped at `OUTPUT_LINE_CAP` visible lines with its own "Show all" opt-in (T083, WCAG
-// 1.4.10, kept from `ToolCallBody`'s pre-#628 Output/write-content blocks); Copy always copies
-// the full, untruncated text regardless of how much is currently visible (#524).
-function CappedCodeBlock({ code, lang }: { code: string; lang: string | null }) {
-  const [showAll, setShowAll] = React.useState(false)
-  const lines = React.useMemo(() => code.split('\n'), [code])
-  const truncated = !showAll && lines.length > OUTPUT_LINE_CAP
-  const visible = truncated ? lines.slice(0, OUTPUT_LINE_CAP).join('\n') : code
-  return (
-    <div>
-      <CodeBlock code={visible} lang={lang} copyText={code} wrap={lang === null} />
-      {truncated && (
-        <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAll(true)}>
-          Show all ({lines.length} lines)
-        </Button>
-      )}
-    </div>
-  )
-}
-
-function SectionBlock({ section }: { section: Section }) {
-  return (
-    <div>
-      <div className="mb-1 text-xs text-muted-foreground">{section.label}</div>
-      <CappedCodeBlock code={section.code} lang={section.lang} />
-    </div>
-  )
+  return [{ label: 'Arguments', lang: 'json', code: JSON.stringify(item.args ?? null, null, 2), defaultView: 'source' }]
 }
 
 // Quality-gate remediation (Medium): split out of `ToolCallDialog` so its memos (`argumentSections`,
@@ -96,7 +57,7 @@ function SectionBlock({ section }: { section: Section }) {
 // each computation actually reads (not `[item]` as a whole), so a streaming item update that
 // changes only, say, `durationMs` does not re-run a megabyte output's JSON.parse/stringify.
 function ToolCallDialogBody({ item }: { item: ToolItem }) {
-  const sections = React.useMemo(() => argumentSections(item), [item.tool, item.args])
+  const sections = React.useMemo(() => argumentSections(item), [item.tool, item.args, item.target])
   const outputBlock = React.useMemo(() => (item.output != null ? inferOutputBlock(item.output) : null), [item.output])
   const jsonText = React.useMemo(
     () => JSON.stringify({ arguments: item.args, output: item.output ?? null }, null, 2),
@@ -127,7 +88,13 @@ function ToolCallDialogBody({ item }: { item: ToolItem }) {
           <SectionBlock key={`arg:${section.label}`} section={section} />
         ))}
         {outputBlock != null && (
-          <SectionBlock key="__output" section={{ label: 'Output', lang: outputBlock.lang, code: outputBlock.code }} />
+          <SectionBlock key="__output" section={{
+              label: 'Output',
+              lang: outputBlock.lang,
+              code: outputBlock.code,
+              defaultView: defaultSectionView(item.tool, 'Output', item.target)
+            }}
+          />
         )}
       </TabsContent>
       <TabsContent value="json" className={panelClassName}>
@@ -155,8 +122,8 @@ export interface ToolCallDialogProps {
 // an accent-coloured surface. Two tabs: Formatted (default, the readable view -- a small header,
 // each argument as its own section, then Output) and JSON (the exact arguments and output,
 // pretty-printed in one code block, the faithful record for a bug report). Never markdown
-// (constitution V): every value is inert text or `CodeBlock`-highlighted code, nothing here is
-// ever parsed as markup.
+// (constitution V): plain-text values are inert text, or the sanitising `Markdown` when the
+// Rendered view applies (#719, never images); nothing here is ever parsed as raw markup.
 export function ToolCallDialog({ item, open, onOpenChange }: ToolCallDialogProps) {
   const fullName = `${item.tool} ${item.target}`
   // Quality-gate remediation (Medium, round 3): truncates rather than drops the target once the

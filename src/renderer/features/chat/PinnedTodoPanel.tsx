@@ -2,7 +2,7 @@
 // tree for THIS Session, mounted in `ChatPane.tsx` directly above the composer (where the #687
 // current-work banner will eventually sit; #687 itself is still `todo`, per `docs/PLAN.md`) only
 // while `useTodoPinStore`'s per-Session `pinned` flag is set. The Todo pill
-// (`ReadoutChips.tsx`'s `TodoProgressChip`) toggles that flag; this panel's own header carries
+// (`Readouts.tsx`'s `TodoProgressReadout`) toggles that flag; this panel's own header carries
 // the reverse Unpin control too, since the pill itself can be hidden in Settings (`sessionReadout
 // ['todo-progress']`). Unmounts entirely once there is no plan at all (`hasTodoPlan` false), but
 // the pin flag itself survives into the next plan (decision item 5: "the pin stays") -- this
@@ -166,7 +166,7 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   // restoring focus to the pill -- or, if the pill itself is hidden in Settings, THIS pane's own
   // composer (MEDIUM 3: scoped by `data-session-pane`, never a different split pane's). LOW 10:
   // finds the pill via a stable `data-` hook, not `aria-controls` -- that attribute is now only
-  // rendered while pinned (`ReadoutChip.tsx`), so by the time this cleanup runs, `pinned` has
+  // rendered while pinned (`ReadoutItem.tsx`), so by the time this cleanup runs, `pinned` has
   // already flipped and `aria-controls` is already gone from the DOM.
   useLayoutEffect(() => {
     return () => {
@@ -241,29 +241,27 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
         </Tooltip>
       }
     >
-      <div className="px-4">
-        <ComposerPanelBody
-          ref={listRef}
-          id={listId}
-          role="group"
-          aria-label="Todo task list"
-          tabIndex={overflowing ? 0 : undefined}
-          onWheel={() => {
-            userScrolledRef.current = true
-          }}
-          onPointerDown={() => {
-            userScrolledRef.current = true
-          }}
-          onKeyDown={() => {
-            userScrolledRef.current = true
-          }}
-          className="focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-        >
-          {todoTree.map((phase, phaseIndex) => (
-            <TodoPhaseGroup key={phaseIndex} phase={phase} phaseIndex={phaseIndex} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
-          ))}
-        </ComposerPanelBody>
-      </div>
+      <ComposerPanelBody
+        ref={listRef}
+        id={listId}
+        role="group"
+        aria-label="Todo task list"
+        tabIndex={overflowing ? 0 : undefined}
+        onWheel={() => {
+          userScrolledRef.current = true
+        }}
+        onPointerDown={() => {
+          userScrolledRef.current = true
+        }}
+        onKeyDown={() => {
+          userScrolledRef.current = true
+        }}
+        className="px-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      >
+        {todoTree.map((phase, phaseIndex) => (
+          <TodoPhaseGroup key={phaseIndex} phase={phase} phaseIndex={phaseIndex} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
+        ))}
+      </ComposerPanelBody>
     </ComposerPanel>
   )
 }

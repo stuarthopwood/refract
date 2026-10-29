@@ -4,9 +4,9 @@
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
-import { AlertTriangleIcon, MessageSquareIcon, PaperclipIcon } from 'lucide-react'
-import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { MessageSquareIcon, PaperclipIcon } from 'lucide-react'
+import { FocusedPaneTint } from './FocusedPaneTint'
+import { StopBanner } from './StopBanner'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
@@ -115,6 +115,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // real user action skips the snapshot-fetch effect below entirely.
   const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
   const isSplit = useSplitStore((s) => s.paneSessionIds.length === 2)
+  // `otherSession` is only passed while a narrow window collapses the split to one pane (App.tsx).
+  const showSplit = isSplit && !otherSession
   const isFocused = useSplitStore((s) => s.paneSessionIds.length < 2 || s.focusedIndex === paneIndex)
   const focusMoveSignal = useSplitStore((s) => s.focusMoveSignal)
   const focusPane = useSplitStore((s) => s.focusPane)
@@ -301,7 +303,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
 
   // Issue #512: a polite, one-time announcement for each of the two moments that matter (not
   // re-announced on every per-second tick, which the elapsed-time text alone already shows
-  // visibly -- same "no aria-live region for the routine tick" rule ReadoutChips.tsx's clock
+  // visibly -- same "no aria-live region for the routine tick" rule Readouts.tsx's clock
   // follows for the same reason): the start beginning, and the wait reaching its 'prompt'
   // stage (gate-fixes a11y finding: Keep waiting/Cancel appearing was previously silent).
   // Gate-fixes code/a11y Medium finding (round 2, Issue #618): `useLayoutEffect`, not
@@ -318,7 +320,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // was 'queued'/'memory-deferred' never got its own "Waiting to start"/"Waiting for memory"
   // announcement (the synthetic 'waiting' stage had already consumed the
   // `previousKind === undefined` branch). `effectiveStartProgress` is still used below, but only
-  // for the starting-message PICK (a start that is genuinely `isOpening` deserves its joke
+  // for the starting-message PICK (a start that is genuinely opening deserves its joke
   // immediately, even before the first real event lands) -- never for whether/what to announce.
   useLayoutEffect(() => {
     const prev = prevStartProgressKindRef.current
@@ -332,7 +334,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // every OTHER tracked Session -- the CURRENT `sessionId`'s own entry is left for the pick
     // logic below to manage via `effectiveStartProgress`, which already accounts for the
     // synthetic stage this raw per-Session check does not know about. Gate-fixes code/a11y Low
-    // finding (round 4): a Session still inside its OWN synthetic-only `isOpening` gap (no real
+    // finding (round 4): a Session still inside its OWN synthetic-only opening gap (no real
     // `startProgress` yet) is also left alone -- without this, a pane showing that Session during
     // its placeholder gap, switching away, and switching back (A -> B -> A, all before A's first
     // real event) would have its pick swept and re-rolled, picking a different joke mid-start.
@@ -394,9 +396,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       // Gate-fixes a11y Low finding (cycle 5): the existing `role="status"` region already said
       // "Retrying…"/"Starting new conversation…"/"Resuming…" for those three cases (below, keyed
       // on `recovering`/`startingNew`/`resuming`); this polite region used to duplicate it for
-      // the exact same moment. Issue #618: the `isOpening` case no longer has its OWN visible
+      // the exact same moment. Issue #618: the opening case no longer has its OWN visible
       // text in that region (it duplicated the new starting-message notice), so this is now the
-      // SOLE announcement for that case -- the old `!isOpening &&` exclusion is dropped.
+      // SOLE announcement for that case.
       if (recoveringId !== sessionId && startingNewId !== sessionId && resumingId !== sessionId) {
         // Gate-fixes a11y Low finding (cycle 6, generalised cycle 8): a start that begins
         // already 'queued'/'memory-deferred' (a slot was not free, or memory was low) used to
@@ -1105,7 +1107,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       onDragOver={handlePaneDragOver}
       onDragLeave={handlePaneDragLeave}
       onDrop={(event) => void handlePaneDrop(event)}
-      className="relative flex h-full flex-col overflow-hidden"
+      className="relative isolate flex h-full flex-col overflow-hidden"
     >
       {/* #432: visible drop-target overlay while a file drag is over this pane -- text, not
           colour alone (WCAG 1.4.1); `aria-hidden`, since nothing here needs an accessible name
@@ -1120,13 +1122,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           {composerDisabled ? 'This session is not accepting input right now' : 'Drop files to attach'}
         </div>
       )}
-      {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
-          SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
-          "Focused" text badge so the marker is never colour alone. */}
-      {isSplit && isFocused && <ActiveIndicatorBar />}
+      {/* #684: focused-pane body tint (not the old accent bar); the header badge is the non-colour cue. */}
+      <FocusedPaneTint active={showSplit && isFocused} />
       <ChatHeader
         sessionId={sessionId}
-        focused={isSplit ? isFocused : undefined}
+        focused={showSplit ? isFocused : undefined}
         // Issue #621 (close chat pane): always rendered now, not gated on `isSplit` -- a single,
         // non-split pane is independently closeable down to the existing zero-session empty
         // state. `closeChatPane` (shared with App.tsx's Ctrl+W chord) owns the announcement and
@@ -1136,12 +1136,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         onSwapToOther={otherSession ? () => openInSplit(otherSession.id) : undefined}
         reservesWindowControls={reservesWindowControls}
       />
-      {/* Issue #618: no bordered strip (Stuart does not like the box) -- the `isOpening` case
+      {/* Issue #618: no bordered strip (Stuart does not like the box) -- the opening case
           below used to show its OWN visible "Starting the agent…" dot+text here, which this
           issue deletes (it duplicated the new starting-message notice, SessionStartNotice.tsx,
           below); the static sr-only announcement for that case now comes from the
-          `announceStart` effect above instead (its own `!isOpening` exclusion is dropped to
-          match). The other three cases (`resuming`/`recovering`/`startingNew`) are a different,
+          `announceStart` effect above instead (it now covers the opening case, matching
+          the removed box). The other three cases (`resuming`/`recovering`/`startingNew`) are a different,
           out-of-scope flow (explicit Recover/Retry/Start-new-conversation actions on the failure
           banner below, not the "agent starting" message this issue is about) and keep their own
           visible text unchanged, just unboxed -- so the sr-only toggle below now depends on
@@ -1181,136 +1181,26 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         {startAnnouncement}
       </div>
       {showBanner && (
-        <div data-pane-banner className="shrink-0 px-4 pt-4">
-          <Alert variant="destructive">
-            <AlertTriangleIcon />
-            <AlertTitle>
-              {showTerminatedTitle ? 'Terminated unexpectedly' : describeStopReason(effectiveStopReason, effectiveStopDetail)}
-            </AlertTitle>
-            {showTerminatedTitle && (
-              <AlertDescription>
-                Its Conversation ended mid-turn, not a clean stop.
-                {effectivePendingToolNames && effectivePendingToolNames.length > 0
-                  ? ` Still waiting on ${effectivePendingToolNames.join(', ')}.`
-                  : ''}
-              </AlertDescription>
-            )}
-            {canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly, !!session.archivedAt) && (
-              // Quality-gate fix (2026-10-08): normal flow (`col-start-2 mt-2`, matching the
-              // start-failed/worktree-missing banners below), not `AlertAction` -- `AlertAction`
-              // is `absolute top-2 right-2` (alert.tsx), which covered the terminated-unexpectedly
-              // description text instead of flowing after it. Recover (when shown) comes FIRST in
-              // DOM order: `focusPaneContent`'s generic banner-button query (lib/focus.ts) always
-              // focuses the first enabled `[data-pane-banner]` button, and Recover is the safe,
-              // non-money-spending one -- Resume sends a real turn and must never be where focus
-              // lands by accident.
-              <div className="col-start-2 mt-2 flex gap-2">
-                {effectiveStopReason === 'agent-exited' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={recovering || startingNew || resuming}
-                    onClick={() => void handleRecover()}
-                  >
-                    {recovering ? 'Retrying…' : 'Recover'}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-disabled={recovering || startingNew || resuming || undefined}
-                  className="aria-disabled:opacity-50"
-                  onClick={() => void handleResume()}
-                >
-                  {resuming ? 'Resuming…' : 'Resume'}
-                </Button>
-              </div>
-            )}
-            {effectiveStopReason === 'start-failed' && (
-              <div className="col-start-2 mt-2 flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={recovering || startingNew}
-                  onClick={() => void handleRecover()}
-                >
-                  {recovering ? 'Retrying…' : 'Retry'}
-                </Button>
-                <Button
-                  ref={startNewButtonRef}
-                  size="sm"
-                  variant="outline"
-                  disabled={recovering || startingNew}
-                  onClick={() => void handleStartNewConversation()}
-                >
-                  {startingNew ? 'Starting…' : 'Start new conversation'}
-                </Button>
-              </div>
-            )}
-            {effectiveStopReason === 'worktree-missing' && (
-              <div className="col-start-2 mt-2 flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => void handleRecreateWorktree()}>
-                  Recreate worktree
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => void handleArchive()}>
-                  Archive
-                </Button>
-                <Button
-                  ref={deleteBannerButtonRef}
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setDeleteForId(sessionId)}
-                >
-                  Delete
-                </Button>
-              </div>
-            )}
-          </Alert>
-          {/* Gate-fixes a11y Medium finding (cycle 6): moved OUT of `<Alert>` (which has
-              `role="alert"`, implying `aria-live="assertive"`/`aria-atomic`) -- toggling this
-              used to re-announce the ENTIRE alert assertively on every click (title, Retry/
-              Start new, and on expand the whole stderr/omp-log/memory text), interrupting the
-              user mid-read. A sibling here never mutates a live region. */}
-          {startFailureDetails && (
-            <div className="mt-2 pl-8 pb-4">
-              {/* Issue #512 requirement 2 (gate-fixes Medium finding, cycle 5): the stderr/
-                  omp-log warnings-and-errors tails and memory figures `buildStartFailure`
-                  appends, hidden behind a disclosure instead of always shown inline -- the
-                  title above already covers the one-line reason most users need. */}
-              <button
-                type="button"
-                aria-expanded={detailsOpen}
-                aria-controls={detailsId}
-                onClick={() => setDetailsOpen((open) => !open)}
-                className="inline-flex min-h-11 items-center px-1 text-xs underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                {/* Gate-fixes a11y Low finding (cycle 6): a constant label -- `aria-expanded`
-                    already carries the toggle state; flipping the label TOO had a screen reader
-                    announce the state twice ("Hide details, expanded"). Gate-fixes a11y Medium
-                    finding (cycle 7): `min-h-11`/padding so the tap target meets WCAG 2.5.5 --
-                    this was previously just the ~16px-tall inline text. */}
-                Details
-              </button>
-              {/* Gate-fixes a11y Low finding (cycle 7): always rendered (never conditionally
-                  mounted/unmounted) with `hidden` toggling visibility instead -- `aria-controls`
-                  pointing at an id only present in the DOM while expanded is a dangling
-                  reference some assistive technology and validators report. Gate-fixes a11y
-                  Medium finding (cycle 7): `aria-label` is prohibited on a bare `<pre>`, which
-                  maps to the ARIA `generic` role (ARIA 1.2 forbids naming `generic` elements) --
-                  `role="region"` makes the name valid. */}
-              <pre
-                id={detailsId}
-                hidden={!detailsOpen}
-                role="region"
-                tabIndex={0}
-                aria-label="Start failure details"
-                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words p-1 text-xs text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-              >
-                {startFailureDetails}
-              </pre>
-            </div>
-          )}
-        </div>
+        <StopBanner
+          stopReason={effectiveStopReason}
+          stopDetail={effectiveStopDetail}
+          showTerminatedTitle={showTerminatedTitle}
+          pendingToolNames={effectivePendingToolNames}
+          canResume={canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly, !!session.archivedAt)}
+          busy={{ recovering, startingNew, resuming }}
+          startFailureDetails={startFailureDetails}
+          detailsOpen={detailsOpen}
+          detailsId={detailsId}
+          onToggleDetails={() => setDetailsOpen((open) => !open)}
+          onRecover={() => void handleRecover()}
+          onResume={() => void handleResume()}
+          onStartNew={() => void handleStartNewConversation()}
+          onRecreateWorktree={() => void handleRecreateWorktree()}
+          onArchive={() => void handleArchive()}
+          onDelete={() => setDeleteForId(sessionId)}
+          startNewButtonRef={startNewButtonRef}
+          deleteButtonRef={deleteBannerButtonRef}
+        />
       )}
       <DeleteDialog
         session={session}

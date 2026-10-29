@@ -35,6 +35,16 @@ Agenda item 2 and its follow-up (reversible removals) define "destructive":
 
 Verified in code: `AttachmentStrip.tsx:41-49` ("Remove pasted image") and `MessageInput.tsx:714-722` ("Remove queued message") already have the `aria-label` but are missing the required `Tooltip` — an open audit finding, tracked by the #474 follow-up sweep issue, not fixed by this documentation change.
 
+## Banners
+
+The five rules for a Session- or pane-scoped problem row (#746; the component is in [components.md](components.md), "Banners"):
+
+1. A banner is unboxed: no border, no fill.
+2. Red is for the severity icon and for a destructive action's label only; the title stays foreground.
+3. Actions: one `outline` primary, every other action a `text` button.
+4. A destructive action is red text, last in the row, and always confirms in a dialog.
+5. Message and detail are two lines: a short title, then the path or reason in the Code font.
+
 ## Loading
 
 A loading state is a lucide spinner (`Loader2Icon`) plus words (for example, "Checking GitHub sign-in…"). The animating agent-working spinner (`AgentSpinner`, issue #612, supersedes the brand mark spinner `BrandSpinner`/spec 011) is reserved for exactly one meaning: an agent is working. Do not reuse it for any other kind of loading.
@@ -47,6 +57,7 @@ Five written-down channels (agenda item 7; `status` added by #865, 2026-10-29), 
 |---|---|---|
 | Banner | A problem scoped to one Session or pane | Stays until the problem is fixed. |
 | Status | Work still running for one Session, such as background agents (`StatusBanner`, `src/renderer/components/StatusBanner.tsx`, mounted above the composer) | Non-modal and never dismissed by hand: each line leaves when its work settles. Icon plus word, never colour alone; zero-box; `aria-live="off"`, with one polite announcement per settle. No counters of pool limits. |
+| Status (Retrying) | OMP is auto-retrying a failed model call (`RetryLine`, `src/renderer/features/chat/RetryLine.tsx`) | Same `StatusBanner`, with an amber "Retrying" status (warning triangle plus word, `text-severity-warning`), "Attempt N of M" text and a `text` Stop button (`aria-label` "Stop retrying"). Announces politely at retry start and once when it ends; focus inside the line moves to the composer when it ends. |
 | Toast | A transient, app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation. |
 | Transcript notice | Agent-originated news | Renders as a normal transcript row; never dropped. |

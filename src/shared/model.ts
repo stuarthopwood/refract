@@ -330,7 +330,7 @@ export interface SessionReadout extends ActivityReadoutFields {
   // Gate fixes 2 finding 7: `finished`/`exited`/`failed` are separate counts, not folded
   // together -- the chip's own wording must be able to distinguish "1 finished, 1 exited" from
   // a plain "2 finished", and a turn whose only subagents failed must never read a misleading
-  // "0 finished" (SubagentsChip, ReadoutChips.tsx); `cancelled` (issue #563) is its own count too.
+  // "0 finished" (SubagentsReadout, Readouts.tsx); `cancelled` (issue #563) is its own count too.
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden)
   todoTree: TodoPhase[] | null; branch?: { name: string; detached: boolean } | null; // todoTree: null = no task list; the shared pure derive (readout/todoDerive.ts) computes done/total/current task from it (decision record item 4, issue #700/#701); branch (#724/R5): live branch or (detached) sha
   todoPhases: Array<{ name: string; pendingCount: number }> | null; // Issue #941 "Up next": pending Todo phases (name, outstanding task count); null = no task list or every phase finished (Rust-only field)
@@ -378,7 +378,7 @@ export interface SubagentSummary {
    * fallback for the rarer case Refract itself was killed too abruptly -- run from
    * `src/main/index.ts` at startup, awaited before any Session attaches, so by the time
    * `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for real. */
-  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
+  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited' | 'parked';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
   taskSummary?: string; // Issue #700/#701 slice (b): first sentence of `task`, ~100 chars, inert text (Agents card) -- absent when the task had no text at all (subagents.rs's `subagent_task_summary`)
@@ -463,7 +463,7 @@ export type TranscriptItem =
       /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
        * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
        * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
-      status: 'running' | 'done' | 'error' | 'cancelled' | 'exited';
+      status: 'running' | 'done' | 'error' | 'cancelled' | 'exited' | 'parked';
       startedAt?: number; // absent when built from history (no reliable wall clock to derive it from), matching the `thinking` item's `startedAt`
       durationMs?: number;
       /** The authoritative per-subagent result (FINDINGS item 22(e) `details.jobs[].schema.data`,
@@ -504,6 +504,7 @@ export type TranscriptItem =
     }
   | { kind: 'request'; id: string; requestId: string; resolved?: 'approved' | 'denied' | 'answered' | 'cancelled' }
   | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string }
+  | { kind: 'turn-error'; id: string; text: string }
   | {
       /** A user-invoked `/skill:<name>` custom message (issue #547): OMP's `role: 'custom'`
        * `customType: 'skill-prompt'` message, `attribution: 'user'`, `display: true`. Rendered as

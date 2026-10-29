@@ -1,7 +1,8 @@
 import * as React from 'react'
-import { InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
+import { EyeIcon, InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { SourceTag } from '@/components/SourceTag'
 import { CopyButton } from '@/components/ui/copy-button'
 import { extractAdvisoryLocations, type AdvisoryLocation } from '@/lib/advisory-locations'
 import { notify, useSessionsStore } from '@/state'
@@ -69,6 +70,19 @@ interface AdvisoryRowProps {
    * queued (not yet sent) Ask-agent -- reuses Transcript's own `revealedAnnouncement` span
    * rather than adding a new one. */
   onQueuedAnnounce: (text: string) => void
+}
+
+function turnsAgoPhrase(turnsAgo: number): string {
+  return turnsAgo === 0 ? 'this turn' : `${turnsAgo} ${turnsAgo === 1 ? 'turn' : 'turns'} ago`
+}
+
+// The advisor name lives in the SourceTag tooltip (hover only), so the trigger's accessible name
+// carries it for assistive technology; the name is omitted when unset.
+function buildTriggerLabel(item: AdvisoryItem): string {
+  const preview = item.text.replace(/\s+/g, ' ').trim().slice(0, 120)
+  const parts = [item.advisor ? `Advisor (${item.advisor})` : 'Advisor', item.severity, preview]
+  if (item.turnsAgo !== undefined) parts.push(`T-${item.turnsAgo}`, turnsAgoPhrase(item.turnsAgo))
+  return parts.join(', ')
 }
 
 function buildCopyText(item: AdvisoryItem, locations: AdvisoryLocation[]): string {
@@ -160,7 +174,9 @@ function buildAskAgentMessage(item: AdvisoryItem, locations: AdvisoryLocation[])
 export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(function AdvisoryRow({ item, sessionId, onQueuedAnnounce }, forwardedRef) {
   const Icon = ADVISORY_ICON[item.severity]
   const className = ADVISORY_CLASS[item.severity]
-  const meta = [item.advisor, item.turnsAgo !== undefined ? `T-${item.turnsAgo}` : undefined].filter(Boolean).join(' \u00b7 ')
+  const meta = item.turnsAgo !== undefined ? `T-${item.turnsAgo}` : undefined
+  const leading = <SourceTag icon={EyeIcon} label="Advisor" tooltip={item.advisor} />
+  const triggerAriaLabel = buildTriggerLabel(item)
   // #558 decision 9: a blocker opens by default, live or reopened from history alike -- no
   // live-vs-history branch, same rendering derived purely from the stored `severity` (matches
   // #570 decision 17's own "the same rendering, derived from stored state" precedent).
@@ -238,10 +254,12 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   if (item.severity === 'nit') {
     return (
       <CollapsedLine
+        leading={leading}
+        triggerAriaLabel={triggerAriaLabel}
         icon={<Icon className={cn('size-4 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
-        meta={meta || undefined}
+        meta={meta}
       >
         <div className="space-y-2">
           <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
@@ -266,10 +284,12 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
     <div data-advisory-severity={item.severity} className={cn(item.severity === 'blocker' || open ? STRIPE_CLASS[item.severity] : undefined)}>
       <CollapsedLine
         ref={innerRef}
+        leading={leading}
+        triggerAriaLabel={triggerAriaLabel}
         icon={<Icon className={cn('size-4 shrink-0', className)} />}
         label={<span className={className}>{ADVISORY_WORD[item.severity]}</span>}
         summary={item.text}
-        meta={meta || undefined}
+        meta={meta}
         open={open}
         onOpenChange={setOpen}
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}

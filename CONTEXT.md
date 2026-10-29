@@ -374,6 +374,26 @@ _Avoid_: role badge colour, status colour
 Three independent text scales, App, Chat and Code, each 80 to 150 percent in steps of 5 (default 100), applied by redeclaring the theme `--text-*` size variables per role container so layout, spacing and icons never scale; the smallest resulting size is clamped at 11 px. Presets Small 90, Default 100, Large 115, Larger 130. Persisted as `Settings.typography` and carried by the theme bootstrap so the first paint has no flash (wave 2 grill, 2026-10-29, #842).
 _Avoid_: zoom (window zoom scales everything and stays separate), font size (families are #4)
 
+**Turn error row**:
+The row at the end of a turn that ended in a model error: OMP's own error text, a one-line plain-language hint when the error is a known kind (TLS verification, auth, rate limit) and a **Retry** button that resends the unanswered prompt once and goes away when the new turn starts. Built from the shared **PaneBanner**-family styling (wave 3 grill, 2026-10-29, #1284).
+_Avoid_: error toast, error bubble
+
+**Retry line**:
+The live row shown while OMP retries a failing model call ("Retrying, attempt 3 of 6") with a **Stop** button that aborts the turn. It gives way to the **Turn error row** if the retries run out (#1284).
+_Avoid_: retry banner
+
+**Pane banner**:
+The unboxed row at the top of a Session pane for a Session-level problem (Worktree missing, Terminated unexpectedly, The agent stopped, start failed): a severity icon in the error colour, a foreground title, a muted monospace detail line, one outlined primary action and text buttons for the rest, with Delete as red text that confirms in a dialog. Drawn by the shared `PaneBanner` (wave 3 grill, 2026-10-29, #746). Red is for the severity icon and destructive actions only.
+_Avoid_: alert box, error box
+
+**Parked**:
+A subagent state, shown with its own icon and the word "Parked": the agent finished its turn but stays alive and wakes when messaged. Not "Finished", and never counted by the composer Subagents readout (which shows only running, failed and exited; #1085). Its data source is OMP's `subagent_lifecycle` channel, probed live before it is trusted (wave 3 grill, 2026-10-29, #1098).
+_Avoid_: Idle, Completed (for a resumable agent)
+
+**Focused pane tint**:
+The subtle background tint on the focused chat pane body in a split view (`--pane-focused`), replacing the left accent bar; the header stays untinted and keeps the "Focused" badge, which carries the non-colour cue. Gated on `showSplit`, not `isSplit`. High contrast uses a 2 px edge instead of a tint (#684).
+_Avoid_: dimming the unfocused pane
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.

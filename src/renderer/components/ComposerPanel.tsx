@@ -75,5 +75,5 @@ export function ComposerPanel({ id, slot, label, toggleLabel, title, titleHint, 
 
 /** The capped, scrolling body of a `ComposerPanel`. */
 export function ComposerPanelBody({ className, ...props }: ComponentProps<'div'>) {
-  return <div {...props} className={cn('mt-1 overflow-y-auto [overflow-anchor:none]', COMPOSER_PANEL_MAX_HEIGHT_CLASS, className)} />
+  return <div {...props} className={cn('mt-1 scrollbar-thin scrollbar-gutter-stable overflow-y-auto [overflow-anchor:none]', COMPOSER_PANEL_MAX_HEIGHT_CLASS, className)} />
 }

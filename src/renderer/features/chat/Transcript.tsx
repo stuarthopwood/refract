@@ -30,6 +30,7 @@ import { toolStatusLabel } from './toolStatus'
 import { toolRunningAnnouncement, toolVerb } from './toolVerbs'
 import { resolveToolDisplay } from './toolDisplay'
 import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
+import { newestRunningRowId } from './newestRunningRow'
 import { type UserItem } from './UserMessageRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
@@ -854,6 +855,7 @@ export function Transcript({
                 // `streaming` flag can cover both at once (its tool calls can already be `running`
                 // while it still reads `streaming: true`), and the promoted row is the more specific
                 // of the two signals, so one announcement is enough.
+                const shimmerRowId = isActiveTurn ? newestRunningRowId(rows.filter(([, visibility]) => visibility === 'visible').map(([row]) => row)) : undefined
                 const announceThinking =
                   !transcriptDisplay.thinking &&
                   turn.items.some((item) => item.kind === 'thinking' && item.streaming) &&
@@ -908,6 +910,7 @@ export function Transcript({
                             userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
                             resolvedAsk={row.kind === 'request' ? askLinks.askByRequestId.get(row.requestId) : undefined}
                             askRequestId={row.kind === 'tool' ? askLinks.requestIdByAskItemId.get(row.id) : undefined}
+                            shimmer={row.id === shimmerRowId}
                             onAdvisoryReveal={handleAdvisoryReveal} onQueuedAnnounce={setRevealedAnnouncement}
                           />
                         </MessageScrollerItem>
@@ -970,7 +973,7 @@ export function Transcript({
           inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
-            "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-background text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
+            "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-surface-1 text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
             isAtEnd
               ? "pointer-events-none translate-y-full scale-95 opacity-0 duration-400 ease-[cubic-bezier(0.7,0,0.84,0)]"
               : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"

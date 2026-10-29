@@ -81,10 +81,10 @@ Decided 2026-10-16 (issue #928, v0.3.0 feedback item 5): the composer status lin
 
 | Element | Classes |
 | --- | --- |
-| Status line chip text (`ReadoutChip.tsx`) | `text-readout text-muted-foreground` (13px) |
-| Status line chip icon (`ReadoutChip.tsx`) | `size-4` (16px; was 14px before #1252) |
+| Status line chip text (`ReadoutItem.tsx`) | `text-readout text-muted-foreground` (13px) |
+| Status line chip icon (`ReadoutItem.tsx`) | `size-4` (16px; was 14px before #1252) |
 
-Scoped to `ReadoutChip.tsx` alone, the status line's own shared baseline component -- nothing else reads `text-readout` today.
+Scoped to `ReadoutItem.tsx` alone, the status line's own shared baseline component -- nothing else reads `text-readout` today.
 
 
 ## Spacing grid
@@ -116,7 +116,7 @@ Control heights are 24 and 32px (`xs`/`sm` and `icon-xs`/`icon-sm` at 24px, `def
 
 ## Transcript rhythm
 
-Keep the rhythm as built (`Transcript.tsx`): `mt-6` (24px) between turns and real user/assistant messages, and `mt-1` (4px) inside a run of consecutive bookkeeping rows (tool calls, thinking, notices). This settles #360.
+Keep the rhythm as built (`Transcript.tsx`): `mt-6` (24px) between turns and real user/assistant messages, and `mt-1` (4px) inside a run of consecutive bookkeeping rows (tool calls, thinking, notices, and, since 2026-10-29 (#473), a settled ask row with its Answered lines and resolved approvals). A pending question or approval card keeps `mt-6`, as does the row before and after a run. This settles #360.
 
 ## Panel header height
 

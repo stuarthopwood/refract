@@ -195,9 +195,9 @@ async function main() {
     if (!advisorGeometry) {
       failures.push('Could not measure the Advisor chip\'s own geometry (not present when expected).');
     } else if (advisorGeometry.rowHeight !== 24 || !advisorGeometry.iconSize || advisorGeometry.iconSize.width !== 14 || advisorGeometry.iconSize.height !== 14) {
-      failures.push(`Advisor chip geometry does not match the shared ReadoutChip baseline (24px row, 14px icon): ${JSON.stringify(advisorGeometry)}`);
+      failures.push(`Advisor chip geometry does not match the shared ReadoutItem baseline (24px row, 14px icon): ${JSON.stringify(advisorGeometry)}`);
     } else {
-      findings.push(`Advisor chip geometry matches the shared ReadoutChip baseline: ${JSON.stringify(advisorGeometry)}`);
+      findings.push(`Advisor chip geometry matches the shared ReadoutItem baseline: ${JSON.stringify(advisorGeometry)}`);
     }
     if (!otherGeometry) {
       notExercised.push('No OTHER status-line Readout chip was visible to compare the Advisor chip\'s geometry against (depends on this scratch Session\'s own live readout data, e.g. Context usage, Changes); the Advisor chip\'s own geometry was still measured directly against the fixed baseline above.');

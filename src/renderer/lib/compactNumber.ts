@@ -2,7 +2,7 @@
 // grill): one lower-case k/m/b formatter used by the Changes Readout, the Context usage Readout,
 // and the Session details card's own diff line (`sessionDisplay.tsx`'s `formatDiffStat`), so the
 // hover card and the status line never show the same figure two different ways. Replaces the old
-// `Intl.NumberFormat(..., { notation: 'compact' })` helper `ReadoutChips.tsx` used only for the
+// `Intl.NumberFormat(..., { notation: 'compact' })` helper `Readouts.tsx` used only for the
 // Changes chip, which was upper-case (`K`/`M`/`B`) and rounded without a fixed decimal count.
 //
 // Rule: plain below 1,000. From 1,000 up, abbreviate with a lower-case suffix (English

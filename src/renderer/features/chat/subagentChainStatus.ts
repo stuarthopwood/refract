@@ -40,6 +40,7 @@ export function overallStatus(counts: Record<SubagentRowStatus, number>): Subage
   if (counts.failed > 0) return 'failed'
   if (counts.cancelled > 0) return 'cancelled'
   if (counts.exited > 0) return 'exited'
+  if (counts.parked > 0) return 'parked'
   return 'finished'
 }
 

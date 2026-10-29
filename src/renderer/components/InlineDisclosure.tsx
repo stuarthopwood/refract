@@ -1,6 +1,5 @@
 import * as React from 'react'
-import { cn } from '@/lib/utils'
-import { mutedLinkClassName } from '@/features/chat/linkStyles'
+import { disclosureToggleClassName } from '@/features/chat/linkStyles'
 
 export interface InlineDisclosureProps {
   open: boolean
@@ -58,7 +57,7 @@ export function InlineDisclosure({ open, onOpenChange, contentId, label, childre
         aria-expanded={open}
         aria-controls={contentId}
         onClick={() => onOpenChange(!open)}
-        className={cn(mutedLinkClassName, 'min-h-6 inline-flex items-center text-xs text-muted-foreground')}
+        className={disclosureToggleClassName}
       >
         {label}
       </button>

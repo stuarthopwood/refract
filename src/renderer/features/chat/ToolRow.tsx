@@ -223,6 +223,8 @@ interface ToolGroupRowProps {
   /** Opt-in (#492, spec 004 FR-022): the Subagents panel's narrower column wraps a long target
    * instead of truncating it, where the main transcript's own wider rows stay one-line. */
   summaryWrap?: boolean
+  /** #1210: this is the transcript's one newest running row, so its label shimmers while it runs. */
+  shimmer?: boolean
 }
 
 // A collapsed run of consecutive calls to the same tool (T074, docs/DESIGN.md "Chat"). Always
@@ -261,7 +263,7 @@ interface ToolGroupRowProps {
 // expanded that row. With BOTH the lifted state and `ToolCallRow`'s `defaultOpen={dialogOpen}`,
 // the freshly mounted nested row starts expanded, so `ToolCallDialog` mounts with `open` already
 // `true` and Radix's own focus-return targets the newly mounted trigger on close.
-export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
+export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps) {
   const [openDialogItemIdState, setOpenDialogItemId] = React.useState<string | null>(null)
   // Defensive (round 3): `groupToolItems` only ever appends to a run, never removes from it, so
   // this should never actually trigger today -- but a stale id naming a call that is no longer
@@ -407,6 +409,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={display.rawId}
       label={visibleLabel}
+      labelShimmer={shimmer && isRunning}
       labelClassName={failed ? 'text-severity-error' : undefined}
       summary={summary}
       summaryWrap={summaryWrap}

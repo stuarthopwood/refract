@@ -96,7 +96,7 @@ export function TodoTaskRow({ task, isCurrent }: { task: TodoTask; isCurrent: bo
   const { Icon, className, word, srOnly, muteText } = statusGlyph(task.status)
   return (
     <li data-current-task={isCurrent || undefined} className="flex items-start gap-2 px-1 py-1 text-xs">
-      <Icon aria-hidden className={cn('mt-1 size-4 shrink-0', className)} />
+      <Icon aria-hidden className={cn('size-4 shrink-0', className)} />
       <div className="min-w-0 flex-1">
         <span
           className={cn(

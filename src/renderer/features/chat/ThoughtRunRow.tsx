@@ -93,6 +93,8 @@ function unionDurationMs(items: readonly ThinkingItem[]): number | undefined {
 
 export interface ThoughtRunRowProps {
   group: ThoughtRun
+  /** #1210: this is the transcript's one newest running row, so its label shimmers while it runs. */
+  shimmer?: boolean
 }
 
 // A run of consecutive, non-empty thinking items (issue #557; mirrors `ToolGroupRow`'s own
@@ -110,7 +112,7 @@ export interface ThoughtRunRowProps {
 // another member inside; the header itself never becomes a SEPARATE spinning row of its own.
 // Settles to "Thought process" with a step count and (once every member's own bounds are known)
 // total duration once every member has finished (decision 8).
-export function ThoughtRunRow({ group }: ThoughtRunRowProps) {
+export function ThoughtRunRow({ group, shimmer }: ThoughtRunRowProps) {
   const solo = group.items.length === 1
   const isRunning = group.items.some((item) => item.streaming)
   const allFinished = !isRunning
@@ -215,6 +217,7 @@ export function ThoughtRunRow({ group }: ThoughtRunRowProps) {
     <CollapsedLine
       icon={solo ? thoughtIcon(soloItem.streaming) : thoughtIcon(!allFinished)}
       label={solo ? soloLabel : toolVerb('thinking', allFinished ? 'done' : 'running')}
+      labelShimmer={shimmer && isRunning}
       summary={
         solo
           ? soloItem.streaming
