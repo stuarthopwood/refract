@@ -10,12 +10,12 @@
 // `key={`todo-${sessionId}`}`, so every ref below starts fresh on a Session switch (gate round
 // 1, Main P1).
 import { useLayoutEffect, useRef, useState } from 'react'
-import { ChevronDownIcon, PinOffIcon } from 'lucide-react'
+import { PinOffIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useTodoPinStore } from '@/state'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ComposerPanel, ComposerPanelBody } from '@/components/ComposerPanel'
 import { isFocusStranded } from '@/lib/focus'
-import { cn } from '@/lib/utils'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from './pickerShared'
 import { currentTaskKeyOf, TodoPhaseGroup } from './readout/TodoTree'
 import { deriveCurrentTask, deriveTodoTotals, hasTodoPlan, isTodoAllDone } from './readout/todoDerive'
@@ -211,36 +211,18 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   const listId = `${panelId}-list`
 
   return (
-    <section
-      ref={rootRef}
+    <ComposerPanel
+      rootRef={rootRef}
       id={panelId}
-      data-slot="pinned-todo-panel"
-      aria-label="Todo list"
-      aria-live="off"
-      className="shrink-0 border-t border-divider px-4 py-2"
-    >
-      <div className="flex h-6 items-center gap-1">
-        <span className="min-w-0 flex-1 truncate text-xs text-foreground" title={currentTask ? currentTask.content : undefined}>
-          {allDone ? `All ${totals.total} done` : currentTask ? `Todo ${totals.done}/${totals.total} \u00b7 ${currentTask.content}` : `Todo ${totals.done}/${totals.total}`}
-        </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-expanded={!collapsed}
-              aria-controls={listId}
-              aria-label="Todo list details"
-              aria-describedby={undefined}
-              className={cn('aria-expanded:bg-transparent aria-expanded:text-muted-foreground', COMPOSER_BUTTON_FOCUS_CLASS)}
-              onClick={() => setCollapsed(sessionId, !collapsed)}
-            >
-              <ChevronDownIcon aria-hidden className={cn('size-4 transition-transform', collapsed && '-rotate-90')} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Todo list details</TooltipContent>
-        </Tooltip>
+      slot="pinned-todo-panel"
+      label="Todo list"
+      toggleLabel="Todo list details"
+      title={allDone ? `All ${totals.total} done` : currentTask ? `Todo ${totals.done}/${totals.total} \u00b7 ${currentTask.content}` : `Todo ${totals.done}/${totals.total}`}
+      titleHint={currentTask ? currentTask.content : undefined}
+      collapsed={collapsed}
+      onToggle={() => setCollapsed(sessionId, !collapsed)}
+      bodyId={listId}
+      actions={
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -257,9 +239,10 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
           </TooltipTrigger>
           <TooltipContent>Unpin todo list</TooltipContent>
         </Tooltip>
-      </div>
-      {!collapsed && (
-        <div
+      }
+    >
+      <div className="px-4">
+        <ComposerPanelBody
           ref={listRef}
           id={listId}
           role="group"
@@ -274,13 +257,13 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
           onKeyDown={() => {
             userScrolledRef.current = true
           }}
-          className="mt-1 max-h-[min(12rem,30vh)] overflow-y-auto [overflow-anchor:none] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+          className="focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         >
           {todoTree.map((phase, phaseIndex) => (
             <TodoPhaseGroup key={phaseIndex} phase={phase} phaseIndex={phaseIndex} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
           ))}
-        </div>
-      )}
-    </section>
+        </ComposerPanelBody>
+      </div>
+    </ComposerPanel>
   )
 }

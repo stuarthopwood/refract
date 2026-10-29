@@ -122,8 +122,8 @@ export function ChatDisplaySection() {
         {/* Issue #1238 (spec 004 FR-053): on by default; Copilot models only. */}
         <SettingSwitchRow
           id="show-ai-credits"
-          label="Show AI credits and plan usage"
-          description="The session's AI credits next to the context usage figures, with your Copilot plan usage in its tooltip. Copilot models only, and only while the context usage readout is on."
+          label="Show AI credits"
+          description="The session's AI credits in the status line, with your Copilot plan usage in its tooltip. Copilot models only."
           checked={showAiCredits}
           onCheckedChange={(checked) => void setShowAiCredits(checked)}
         />

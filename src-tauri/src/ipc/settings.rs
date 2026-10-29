@@ -89,7 +89,7 @@ pub fn settings_set_approval_mode(state: AppState, args: Vec<Value>) -> HandlerF
             Some(mode) => mode,
             None => {
                 return Err(invalid_argument(
-                    "settings.setApprovalMode expects one of 'ask' | 'edit-freely' | 'auto'",
+                    "settings.setApprovalMode expects one of 'ask' | 'ask-and-remember' | 'edit-freely' | 'auto'",
                 ))
             }
         };

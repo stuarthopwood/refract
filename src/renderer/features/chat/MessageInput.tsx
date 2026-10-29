@@ -3,18 +3,24 @@
 // only from `useQueueStore` (queue:update events), never from optimistic local state. The
 // slash-command menu (T044, FR-032, FR-033) lives in SlashMenu.tsx; this file only decides when
 // to show it and handles the keys that drive it.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
   ClipboardEvent as ReactClipboardEvent,
-  FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon } from 'lucide-react'
+import { SlashIcon, TypeIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import {
+  COMPOSER_TEXT_CLASS,
+  ComposerActions,
+  ComposerBox,
+  ComposerField,
+  ComposerFooter,
+  ComposerSendButton,
+  ComposerStopButton,
+  ComposerTextarea
+} from '@/components/ComposerBox'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
-import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
@@ -26,9 +32,8 @@ import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ReasoningPicker } from './ComposerPickers'
 import { ModelPicker } from './ModelPicker'
 import { openRoleSwitcher } from './useRoleCycleShortcut'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
-import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, COMPOSER_SELECTION_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
+import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
@@ -47,15 +52,14 @@ import {
 } from './attachments'
 import { useComposerClearanceCallbackRef } from './composerHeightVar'
 import { appendFileAttachmentText, FILE_ATTACHMENTS_MARKER } from './anyFileAttachments'
-import { hasSendableContent, imageDisplayNames, isImageOnlyDraft, isImageOnlyQueued, queuedChipRpcText, SECOND_IMAGE_ONLY_REFUSAL } from './imageOnlySend'
-import { QueuedChipList } from './QueuedChipList'
+import { hasSendableContent, imageDisplayNames, isImageOnlyDraft, isImageOnlyQueued, SECOND_IMAGE_ONLY_REFUSAL } from './imageOnlySend'
 import { ComposerBranchLabel } from './ComposerBranchLabel'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import { stopAndRestore } from './restoreQueue'
 import { isFocusStranded } from '@/lib/focus'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
-import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
+import type { QueuedMessages } from './useQueuedMessages'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
 import { parseSlashCommand } from '../../../shared/slash-commands'
 
@@ -100,9 +104,11 @@ interface MessageInputProps {
    * instance is a fresh remount (`key={sessionId}`) replacing one that had focus (e.g. a
    * notification reopening the Session the user was typing in); never on first load. */
   autoFocusOnMount?: boolean
+  /** The shared queued-message state (useQueuedMessages), owned by ChatPane beside the Queued panel. */
+  queued: QueuedMessages
 }
 
-export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
+export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount, queued }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
   // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
   // clipboard image itself is never affected by this).
@@ -113,28 +119,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // `aria-disabled` reflects an in-flight path/drop read, same guard as `handleSend` (draft-store.ts).
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
-  const imageOnlyNames = useQueueStore((s) => s.imageOnlyBySession[sessionId])
-  // Issue #540 (#591 cycle 3, full architectural replacement): chip identity/text/queue come
-  // ONLY from the real `followUp`/`steering` arrays above via `deriveQueuedChips`
-  // (queuedChips.ts) -- there is no more client-tracked "reserved"/"confirmed"/"pending" chip
-  // state to keep in sync with the server. `inFlightChips` single-flights Send now/Remove per
-  // chip (keyed by the chip's own stable identity, not its text, so a Remove in flight on one
-  // chip never shows a busy state on an unrelated chip that merely shares the same text),
-  // recording WHICH action is in flight so each button only ever announces its own operation.
-  const [inFlightChips, setInFlightChips] = useState<ReadonlyMap<string, 'send' | 'remove'>>(new Map())
-  // Last-committed per-occurrence chip id pool (queuedChips.ts): read during render by the
-  // `chips` memo below, and written only in the layout effect after commit -- never during
-  // render itself -- so a discarded or interrupted render (including React StrictMode's
-  // dev-only double-invoked renders) can never advance it.
-  const chipPoolRef = useRef<ChipPoolState>(EMPTY_CHIP_POOL)
-  // Issue #540 (#591 cycle 3): tracks which chip (by stable key) and which action button
-  // (`send`/`remove`) currently holds focus, read off each button's own `data-chip-key`/
-  // `data-chip-action` attributes by the `<ul>`'s delegated focus handlers below -- lets the
-  // layout effect below restore focus to the SAME occurrence's originally-focused action button
-  // (falling back to Remove if that control no longer exists on the chip) after OMP's real
-  // `queue_update` reorders the list (React moves, rather than remounts, a same-keyed `<li>`
-  // via `insertBefore`, which Chromium blurs to `<body>`).
-  const focusedChipRef = useRef<{ key: string; action: 'send' | 'remove' } | null>(null)
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
   // Spec 010: draft text lives in draft-store.ts, keyed by sessionId, instead of local useState,
   // so it survives this component unmounting (a ChatPane.tsx `key={sessionId}` Session switch,
@@ -205,10 +189,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // a `document`-wide query always found whichever pane's strip happened to render first.
   const attachmentStripRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
-  // Issue #540 (Medium gate fix, #591): container for the queued-message chip row, queried by
-  // stable chip key so focus can be moved explicitly after Send now/Remove settles, rather than
-  // relying on the DOM happening to preserve the right node through a state transition.
-  const chipListRef = useRef<HTMLUListElement>(null)
   // Spec 009: pending images and oversized-text chips for the draft currently being composed
   // (data-model.md "AttachmentsState"). Spec 010: held in draft-store.ts alongside `text`
   // above, keyed by sessionId -- renderer-memory-only, cleared on send success (FR-007) but no
@@ -309,156 +289,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // point at a row that no longer exists.
   const clampedSlashActiveIndex = slashMatches.length > 0 ? Math.min(slashActiveIndex, slashMatches.length - 1) : 0
 
-  // Issue #540 (#591 cycle 3, full architectural replacement): chip identity/text/queue/
-  // position come ONLY from the real `followUp`/`steering` arrays -- `deriveQueuedChips`
-  // (queuedChips.ts) is a pure function the component merely feeds its own persisted id pool
-  // through via `chipPoolRef`.
-  //
-  // Medium (code-reviewer, #598): the pool commit used to happen as a `chipPoolRef.current =`
-  // write inside this `useMemo`, i.e. during render. React 19 can discard a render before it
-  // commits (an interrupted concurrent render), and a discarded render had already mutated the
-  // ref with ids derived from inputs that never actually committed -- the next REAL commit then
-  // derived from that phantom state. `chips` below is now read-only during render (it always
-  // reads the last-COMMITTED pool off the ref, never writes it); the actual commit is deferred
-  // to the `useLayoutEffect` right after it, which only ever runs for a render that committed.
-  // `deriveQueuedChips` is pure and cheap (small arrays), so recomputing it there is fine.
-  const chips = useMemo<DerivedChip[]>(
-    () => deriveQueuedChips(followUp, steering, chipPoolRef.current).chips,
-    [followUp, steering]
-  )
-  useLayoutEffect(() => {
-    chipPoolRef.current = deriveQueuedChips(followUp, steering, chipPoolRef.current).nextPool
-  }, [followUp, steering])
   // Issue #1067: steer the oldest queued follow-up on a plain Enter against a blank composer.
-  const enterQueuedFollowUp = computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost, disabled)
-
-  // Tracks the previous commit's `chips` (Issue #540/#598 High): when the tracked chip's key
-  // disappears from the real arrays entirely (the server delivered it, e.g. a steering chip was
-  // sent at the next turn), this is the only way to know which chip used to sit next to it, so
-  // focus can move to the nearest SURVIVING chip instead of being left stranded on `<body>`.
-  const previousChipsRef = useRef<DerivedChip[]>([])
-
-  // Issue #540 (#591 cycle 3, High finding): a real `queue_update` moving which array
-  // (`followUp` vs `steering`) a duplicate-text chip renders from reorders its `<li>` via
-  // React's keyed reconciliation (`insertBefore`, not a remount, since the key is stable) --
-  // Chromium blurs a focused element when its node is moved like that, even though the user
-  // didn't click anywhere. Runs synchronously (layout phase, not an ordinary effect) so focus
-  // never visibly rests on `<body>` for a frame: only acts when focus is actually stranded
-  // (null/`<body>`/disconnected).
-  //
-  // Gate fix (Medium, #598): this is now the SOLE focus-restoration mechanism for the chip
-  // list -- it handles a user-initiated Remove and a server-driven delivery/removal uniformly,
-  // since `handleRemoveQueued` below no longer does any focus management of its own. Two
-  // competing mechanisms here used to race (whichever of the RPC result or the server's own
-  // `queue_update` frame arrived first would decide where focus landed); there is now exactly
-  // one path, regardless of which event fired the update.
-  //
-  // If the tracked chip's own key still exists, this restores focus to it, preferring the SAME
-  // action button the user originally focused (falling back to Remove if that control no
-  // longer exists on the chip, e.g. a promoted follow-up losing its Send now button). If the
-  // key is gone (the server delivered/removed it, or a user Remove just succeeded) focus moves
-  // to the nearest surviving chip's Remove button -- always Remove here, since this is a
-  // DIFFERENT chip than the one originally focused, which may not even have a Send now button
-  // -- (the one that now occupies the removed chip's old position, falling back to the one
-  // before it), or to the textarea if no chips remain at all. `focusedChipRef` is cleared in
-  // every one of these "key is gone" outcomes, since none of them leave a chip tracked as
-  // focused anymore.
-  useLayoutEffect(() => {
-    const previousChips = previousChipsRef.current
-    previousChipsRef.current = chips
-    const tracked = focusedChipRef.current
-    if (!tracked) return
-    const active = document.activeElement
-    const stranded = active == null || active === document.body || !active.isConnected
-    if (!stranded) return
-    if (chips.some((chip) => chip.key === tracked.key)) {
-      const row = chipListRef.current?.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(tracked.key)}"]`)
-      const target =
-        tracked.action === 'send'
-          ? (row?.querySelector<HTMLButtonElement>('button[data-chip-action="send"]') ??
-            row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]'))
-          : row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]')
-      target?.focus()
-      return
-    }
-    focusedChipRef.current = null
-    if (chips.length === 0) {
-      textareaRef.current?.focus()
-      return
-    }
-    const previousIndex = previousChips.findIndex((chip) => chip.key === tracked.key)
-    const nearest =
-      previousIndex === -1 ? chips[0]! : (chips[previousIndex] ?? chips[previousIndex - 1] ?? chips[0]!)
-    const row = chipListRef.current?.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(nearest.key)}"]`)
-    row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]')?.focus()
-  }, [chips])
-
-  // Delegated focus tracking for the chip list (Issue #540, #591 cycle 3): records which chip
-  // key/action currently holds focus, for the layout effect above to restore after a DOM move.
-  // `onBlur` only clears the tracked chip when focus is KNOWINGLY moving elsewhere (a real
-  // `relatedTarget`) -- when a focused node is yanked out from under the user by a reorder, the
-  // browser blurs with `relatedTarget: null`, and clearing in that case would defeat the whole
-  // mechanism.
-  //
-  // Gate fix (High, #598): a null `relatedTarget` does NOT only mean "a chip's DOM node moved"
-  // -- it also happens whenever the user clicks something that can't take focus (empty sidebar
-  // space, the header, non-interactive transcript text), which sends focus to `<body>` too. Two
-  // layers now handle the two different null-`relatedTarget` causes:
-  //
-  // 1. A capture-phase `pointerdown` listener on `document` (below) clears the tracked chip the
-  //    moment a genuine click-away is detected, synchronously, before this blur handler even
-  //    runs -- a real DOM-move-caused blur never fires a pointerdown at all, so this can't
-  //    misfire on that case.
-  // 2. For a blur-without-a-prior-pointerdown (e.g. Tab-ing away, or a non-pointer-triggered
-  //    blur) this handler defers the decision to a `requestAnimationFrame`: a genuine DOM move
-  //    has already been repaired SYNCHRONOUSLY by the layout effect above (which runs before
-  //    paint and before any rAF callback), so by the time this rAF runs, a real move will
-  //    already have refocused something else -- only a still-unresolved, genuine click-away
-  //    still has `activeElement === body` at that point.
-  // Low fix (#598): holds the latest scheduled blur-decision rAF id so it can be cancelled on
-  // unmount (e.g. a fast Session switch) -- an in-flight callback firing after unmount would
-  // still touch `focusedChipRef`, a harmless but pointless stale write.
-  const pendingBlurRafRef = useRef<number | null>(null)
-  function handleChipListFocus(event: ReactFocusEvent<HTMLUListElement>) {
-    const target = event.target as HTMLElement
-    const row = target.closest<HTMLElement>('[data-chip-key]')
-    const key = row?.getAttribute('data-chip-key')
-    const action = target.getAttribute('data-chip-action')
-    if (key && (action === 'send' || action === 'remove')) focusedChipRef.current = { key, action }
-  }
-  function handleChipListBlur(event: ReactFocusEvent<HTMLUListElement>) {
-    if (event.relatedTarget) {
-      focusedChipRef.current = null
-      return
-    }
-    const el = event.target as HTMLElement
-    pendingBlurRafRef.current = requestAnimationFrame(() => {
-      pendingBlurRafRef.current = null
-      if (document.activeElement === document.body && el.isConnected) focusedChipRef.current = null
-    })
-  }
-
-  // Gate fix (High, #598), layer 1 of 2 above: clears the tracked chip the instant a genuine
-  // click-away is detected, before React's own blur event (and this component's `onBlur`
-  // handler) even fires -- `capture: true` so this sees the pointerdown before anything inside
-  // the chip list can stop its propagation.
-  useEffect(() => {
-    function onDocumentPointerDown(event: PointerEvent) {
-      if (chipListRef.current?.contains(event.target as Node)) return
-      focusedChipRef.current = null
-    }
-    document.addEventListener('pointerdown', onDocumentPointerDown, true)
-    return () => document.removeEventListener('pointerdown', onDocumentPointerDown, true)
-  }, [])
-
-  // Low fix (#598): cancels an in-flight blur-decision rAF on unmount, so it can never fire its
-  // callback (touching `focusedChipRef`) after the component is gone.
-  useEffect(() => {
-    return () => {
-      if (pendingBlurRafRef.current !== null) cancelAnimationFrame(pendingBlurRafRef.current)
-    }
-  }, [])
-
+  const enterQueuedFollowUp = computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, queued.chips, showSlashMenu, ghost, disabled)
   // The active row resets whenever the typed query changes, so a stale index from a longer list
   // never survives into a shorter, filtered one. Gate round 1 fix (Low): `useLayoutEffect`, not
   // `useEffect` -- the plain-`useEffect` version could still commit one paint with the OLD
@@ -882,7 +714,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      void (enterQueuedFollowUp.applies ? handleSendNow(enterQueuedFollowUp.chip) : handleSend())
+      void (enterQueuedFollowUp.applies ? queued.sendNow(enterQueuedFollowUp.chip) : handleSend())
       return
     }
     if (event.key === 'Escape') {
@@ -903,102 +735,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   async function handleStop() {
     await stopAndRestore(sessionId, () => textareaRef.current?.focus())
-  }
-
-  // Issue #540 (#591 cycle 3): single-flight per chip (keyed by the chip's own stable identity,
-  // not its text, so two chips sharing the same text never share a busy state) -- the button
-  // already disables while `inFlightChips` has this key (see the chip render below), but this
-  // guard also stops a second call that somehow still lands (e.g. a fast double Enter on a
-  // focused button) from firing a duplicate request.
-  async function handleRemoveQueued(chip: DerivedChip) {
-    if (inFlightChips.has(chip.key)) return
-    setInFlightChips((prev) => new Map(prev).set(chip.key, 'remove'))
-    const result = await window.refract.chat.removeQueued(sessionId, queuedChipRpcText(chip), chip.queue)
-    setInFlightChips((prev) => {
-      const next = new Map(prev)
-      next.delete(chip.key)
-      return next
-    })
-    if (!result.ok) {
-      notify(result.error)
-      return
-    }
-    if (!result.value.removed) {
-      // Gate fix (Medium, #591): a steering chip is already being delivered -- Remove silently
-      // doing nothing left the user with no idea why nothing happened. `toast.warning` carries
-      // the design system's severity icon (docs/design/components.md "Toasts and notices" on
-      // `origin/docs/design-system-474`); the sr-only announcement is dropped here since the
-      // toast is itself a live region, so a screen reader no longer hears the same sentence
-      // twice.
-      toast.warning('This message is already being delivered and can no longer be removed.')
-      return
-    }
-    // Optional a11y remediation (#591): a successful Remove previously had no announcement at all.
-    announceAttachment('Queued message removed.')
-    // Gate fix (Medium, #598): a successful Remove no longer does any focus management of its
-    // own -- the chip's key is now gone from the real `followUp`/`steering` arrays, and the
-    // shared layout effect above is the SOLE mechanism that restores focus for every "key is
-    // gone" outcome, uniformly, whether the key disappeared via this user-initiated Remove or a
-    // server-driven delivery/removal: it moves focus to the nearest surviving chip's Remove
-    // button, or to the composer textarea once no chips remain. Two competing focus mechanisms
-    // used to race here (whichever of this RPC's result or the server's own `queue_update`
-    // frame arrived first would "win"), landing focus unpredictably; there is now exactly one
-    // path.
-  }
-
-  async function handleSendNow(chip: DerivedChip) {
-    if (inFlightChips.has(chip.key)) return
-    setInFlightChips((prev) => new Map(prev).set(chip.key, 'send'))
-    // Issue #540 (#591 cycle 3): no reservation, no optimistic state -- this busy mark is purely
-    // visual (aria-busy/aria-disabled plus the "Sending now…" button text) and never changes
-    // which array the chip renders from, so its DOM node never moves or remounts just because
-    // it went busy. No pre-await focus call is needed either, for the same reason.
-    announceAttachment('Sending now…')
-    // `chat.sendNow` takes no `images` argument: OMP's `promote_queued_message` moves the queued
-    // message (attachments included) rather than reprocessing it, so this call site must never
-    // touch, forward, or clear the composer's own current pending images.
-    const result = await window.refract.chat.sendNow(sessionId, queuedChipRpcText(chip))
-    setInFlightChips((prev) => {
-      const next = new Map(prev)
-      next.delete(chip.key)
-      return next
-    })
-    if (!result.ok) {
-      // Gate fix (High, #591): an RPC-level failure (as opposed to the legitimate "already
-      // delivered" case below) now throws in `SessionAgent.sendNow`, so it surfaces here and
-      // `notify` already shows a visible toast -- no separate copy needed at this call site.
-      notify(result.error)
-      // Clears the sr-only live region's stale "Sending now…" text -- without this, a screen
-      // reader user who checks the live region later still hears the in-flight announcement
-      // even though the action has already finished (unsuccessfully).
-      announceAttachment('')
-      return
-    }
-    if (!result.value.promoted) {
-      // Issue #540: `promoted: false` means it was no longer pending at dispatch time (e.g.
-      // already delivered) -- not an RPC-level error, but silence (sr-only announcement alone)
-      // is exactly the no-visible-feedback bug this gate fix corrects (High, #591). The message
-      // was NOT lost -- it may already have been sent -- so "could not be sent" would be wrong.
-      // `toast.info` carries the severity icon; the stale "Sending now…" live-region text is
-      // cleared here too (#591 cycle 3), matching the RPC-failure path above.
-      announceAttachment('')
-      toast.info('This message is no longer queued; it may already have been sent.')
-      return
-    }
-    // Issue #540 (#591 cycle 3): aside from the announcement below, do nothing else -- the
-    // real `queue_update` frame moves this text from `followUp` to `steering` whenever OMP
-    // sends it, which may arrive before or after this promise resolves; both orderings are fine
-    // and need no special-casing, since the UI never tries to predict or pre-empt that move.
-    // OMP's `promote_queued_message` promotes by TEXT, FIFO (FINDINGS item 46), not by which
-    // visual occurrence was clicked, so if two occurrences shared this text, which stable
-    // chip-key ends up labeled `steering` is a harmless, natural consequence of
-    // `queuedChips.ts`'s own front-to-back id allocation -- never something this handler tries
-    // to track or correct.
-    // Medium (a11y, #598): the live region otherwise keeps showing "Sending now…" forever --
-    // the only two paths that cleared/replaced it were the two failure branches above. This
-    // phrasing describes the MESSAGE TEXT's outcome, not a specific chip, so it stays accurate
-    // regardless of which exact duplicate-text occurrence OMP's FIFO semantics actually promoted.
-    announceAttachment('Message will be sent at the next step.')
   }
 
   /** Accessibility remediation (High): announces a chip's own silent removal (`pruneDanglingChips`
@@ -1240,9 +976,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   return (
     <div ref={composerClearanceRef} className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-4">
-      {chips.length > 0 && (
-        <QueuedChipList chips={chips} inFlightChips={inFlightChips} imageOnlyNames={imageOnlyNames} listRef={chipListRef} onFocus={handleChipListFocus} onBlur={handleChipListBlur} onSendNow={(chip) => void handleSendNow(chip)} onRemove={(chip) => void handleRemoveQueued(chip)} />
-      )}
       {disabled && (
         <span id={stopReasonId} className="sr-only">
           {placeholder}
@@ -1293,39 +1026,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           announcement itself (`useEffect` below) fires once per 0-to-positive transition, not on
           every re-render while the count stays above 0. */}
       {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching…</p>}
-      {/* T063/quality-gate fix, Composer tone remediation (2026-10-04), SUPERSEDED 2026-10-16
-          (#927 grill, "Composer tone" in product-chat.md): the composer's fill, border and
-          focus outline are per-theme custom properties (globals.css) -- in Dark and Obsidian
-          the fill is now `transparent` (the chat background shows straight through, like the
-          GitHub Copilot composer Stuart's screenshot referenced) with a faint
-          `--composer-border` (around the `--divider` tone) instead of the original solid,
-          strictly-darker-than-`--background` fill; Dark (high contrast) is explicitly excluded
-          from this change and keeps its old solid fill and opaque 3:1 border, now token-ized as
-          `--composer-border` for exact parity (see each token's own comment in globals.css for
-          the full history, including why an alpha composite over `--card`/`--muted` never
-          worked here). Send/Stop stay round icon-only buttons centered on the field's right
-          edge, with the provider/model/effort readout along the bottom. The box's own focus
-          outline is scoped to the textarea alone (gate round 5; see the composer-dimming
-          comment below). */}
-      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4):
-          the box no longer grows a grey fill on its own text area while disabled (`Textarea`'s
-          vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the
-          unusable parts (text field, Send/Stop, Model/Reasoning pickers, Attach) dim as one
-          `opacity-60` layer instead, never a colour-opacity modifier. The outer box's own
-          border/background never dims: the Approval pill DOES still work while stopped, so it
-          sits on the undimmed `bg-composer-background` with its own full-strength border either
-          way in Dark (high contrast) (measured, WCAG 1.4.11) -- in Dark/Obsidian the border is
-          deliberately faint instead (#927's own accepted departure, not a floor this comment's
-          "3:1" claims there anymore). `disabled` is the same boolean already driving the native
-          `disabled` attribute below; the 3:1 control-edge rule still applies to the enabled
-          border in Dark (high contrast). Gate round 5 fix (Visual Medium #4): the ring shows
-          only on the TEXTAREA's own `:focus-visible` (`has-[textarea:focus-visible]`, was
-          `focus-within`, which lit the whole box for a pill/picker/Attach/Send focus too -- each
-          now draws its OWN outline, `pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS` (Send/Stop,
-          still opaque) or `GHOST_FOCUS_CLASS`/`GHOST_BUTTON_FOCUS_CLASS` (the Approval pill,
-          Model, Reasoning, Attach, muted since #927), gate4 `11-pill-keyboard-focused.png`). */}
-      <div className="flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring">
-        <div className={cn('relative flex items-end', disabled && 'opacity-60')}>
+      {/* Composer tone (#927): fill, border and focus ring are per-theme tokens (globals.css).
+          Composer dimming (Stuart, 2026-10-15, PR #877): while disabled the unusable parts dim
+          as one `opacity-60` layer in `ComposerField`; the box edge and the Approval pill (still
+          usable while stopped) never dim. */}
+      <ComposerBox>
+        <ComposerField disabled={disabled}>
           {showSlashMenu && (
             <SlashMenu
               id={slashMenuId}
@@ -1340,8 +1046,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             />
           )}
           <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} />
-          <Textarea
-            ref={textareaRef}
+          <ComposerTextarea
             role="combobox"
             aria-label="Message"
             aria-autocomplete="list"
@@ -1380,58 +1085,32 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
-            // Gate round 5 fix (Visual LOW): the field block's own 0.6 dim left the base
-            // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
-            // read the stop reason it carries -- `disabled:placeholder:text-foreground`
-            // brightens the placeholder itself so the dim lands it back near readable.
-            // Gate round 3 fix (#1050, Medium, flicker): the shared `Textarea` primitive's own `transition-colors` fades a 150ms colour change on ANY toggle, including this textarea's own fill-colour swap the instant a pill mounts/unmounts -- while the mirror underneath mounts instantly, visibly desyncing the two for ~150ms. `transition-[border-color,box-shadow]` (merged over `transition-colors` by `cn`'s tailwind-merge, same class group) narrows this textarea to border/ring-only transitions, without touching the shared primitive.
-            className={cn(
-              COMPOSER_SELECTION_CLASS,
-              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 font-code shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
-              commandToken && COMMAND_PILL_TEXTAREA_CLASS
-            )}
+            // The disabled placeholder carries the stop reason, so it brightens to
+            // `text-foreground` (in `ComposerTextarea`) to stay readable under the 0.6 dim.
+            className={commandToken ? COMMAND_PILL_TEXTAREA_CLASS : undefined}
           />
-          {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
-              icons, so this inert sibling (same technique as the ghost-text overlay below) shows
-              "Message the agent" plus two short hints (slash commands, Markdown), each with a
-              leading icon, spaced apart rather than bracketed (docs/design/product-look-and-
-              feel.md:27 "No bracket/parenthetical UI copy"). Hidden as soon as there is any text,
-              so it never draws over the draft or the ghost-text suggestion, and whenever disabled
-              (the native `placeholder` carries the stop-reason text for that state instead,
-              unchanged). The accessible name stays "Message"; `composerHintId` above carries the
-              same wording through `aria-describedby` since an overlay is never read as a
-              `placeholder`. Gate-fixes (quality gate, PR #644 round 1): `TypeIcon` (lucide), not
-              Tabler's `IconMarkdown` -- at the time, Stuart's 2026-10-08 rule (PLAN.md "Icon set
-              and style") limited `@tabler/icons-react` to GitHub/GitLab/Bitbucket brand marks
-              only, and a Markdown glyph is not a brand mark (resolved, `docs/design/
-              foundations-icons.md` "Status, action, tool, and brand icons"); that brand-marks-only
-              limit was itself superseded 2026-10-10 (Tabler is now allowed whenever lucide lacks
-              the icon), but this choice is unaffected either way since lucide already has
-              `TypeIcon`; `@tabler/icons-react` is back out of
-              `package.json`. Responsive: the issue's own three-stage design (truncate the hint
-              labels, then icons-only with a tooltip, then truncate the main prompt) is narrowed to
-              two stages here -- a tooltip cannot attach to a `pointer-events-none` overlay, so
-              that middle tier is dropped (flagged on the issue and in the PR as a deviation,
-              Stuart's call). `min-w-0 truncate` on the leading text (no `shrink-0`) plus a
-              `shrink-[100]` weight on each hint group (CSS flexbox shrinks proportionally to
-              basis * shrink-factor, so at 100x the groups absorb nearly all of any shrink deficit
-              before the main prompt gives up any width) means a narrow pane truncates the hint
-              labels first; only once both groups hit their own `min-w-4` floor (16px, enough
-              to keep the icon from being clipped by `overflow-hidden`) does the main prompt start
-              truncating too, with an ellipsis instead of the earlier hard clip. Gate-fixes
-              (quality gate, PR #644 round 2): `100` was not nearly large enough -- flexbox shares
-              a shortfall by `basis * shrink-factor`, so even at 100x the main prompt's own small
-              basis (about 113px in the old UI font; the Code font is wider) still worked out to roughly 0.46% of any shortfall (113 /
-              (113 + 100 * 243)), enough to show an ellipsis from a wide pane down (confirmed in
-              headless Chromium against this exact CSS). `100000` instead keeps the main prompt's
-              share under one sub-pixel layout step (1/64px) until the groups are fully at their
-              floor, so it stays visually whole the entire time the labels are still truncating.
-              Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
-              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High Contrast, where `text-muted-foreground` would otherwise resolve to the same `CanvasText` as the real draft. */}
+          {/* Issue #533: empty-state hint overlay. A native `placeholder` cannot carry icons, so
+              this inert sibling shows "Message the agent" plus two hints (slash commands,
+              Markdown) with leading icons, spaced apart, not bracketed (product-look-and-feel.md
+              "No bracket/parenthetical UI copy"). Hidden once there is any text and while
+              disabled (the native `placeholder` carries the stop reason then). The accessible
+              name stays "Message"; `composerHintId` carries the same wording through
+              `aria-describedby`. Responsive: `shrink-[100000]` on each hint group makes the
+              groups absorb a narrow pane's shortfall first (flexbox shares it by basis * shrink,
+              and 100x still left the main prompt about 0.46% of it, enough for an ellipsis); the
+              main prompt truncates only once both groups sit at their `min-w-4` floor. Each label
+              span needs `min-w-0` so `truncate` can fire inside the group. A tooltip cannot attach
+              to a `pointer-events-none` overlay, so there is no icons-only stage (Stuart's call).
+              `text-composer-placeholder` is the quiet placeholder token (#1149), and
+              `forced-colors:text-[GrayText]` matches the native placeholder so the hint is never
+              mistaken for typed text in Windows High Contrast. */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-start gap-2 overflow-hidden px-2 py-2 pr-20 font-code text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
+              className={cn(
+                'pointer-events-none absolute inset-0 flex items-start gap-2 overflow-hidden px-2 py-2 pr-20 text-composer-placeholder forced-colors:text-[GrayText]',
+                COMPOSER_TEXT_CLASS
+              )}
             >
               <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-4 shrink-[100000] items-center gap-1 overflow-hidden">
@@ -1479,101 +1158,52 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           <div id={ghostHintId} role="status" aria-live="polite" className="sr-only">
             {announcedSuggestion ? `Suggestion: "${announcedSuggestion}". Tab to accept, Escape to dismiss.` : ''}
           </div>
-          {/* Vertically centered on the field's right edge via `top-1/2 -translate-y-1/2`
-              rather than `bottom-1.5`, so the button stays centered as the textarea grows to
-              multiple lines instead of drifting toward the bottom (morning UI feedback,
-              2026-10-04). Send and Stop share the same `size="icon-sm"` round treatment, but
-              each carries a different fill (2026-10-15 grill, issue #564, decision 5): Send is
-              `variant="default"`, the one accent-filled commit action on this surface
-              (docs/design/components.md "Button": "the single commit action... one filled
-              button per surface"); Stop is `variant="invert"`, a solid NEUTRAL fill (inverted
-              foreground-on-background), deliberately never red -- "stopping keeps the work, so
-              it is not destructive, and red is reserved for destructive and error states". The
-              two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
-              FR-011), a documented exception to "one filled button per surface": the two fills
-          are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). Gate round 3 CRITICAL fix (#1050): `z-[3]`, above the `relative z-[1]` the composer textarea gains ONLY while a pill shows (`CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`, full stacking order there) and the mirrors' `z-[2]` -- this container had NO z-index before, so the textarea painted over it (`elementFromPoint` at Send's centre resolved to the textarea), making Send/Stop unclickable. */}
-          <div className="absolute right-2 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">
+          {/* Send and Stop (2026-10-15 grill, #564 decision 5): Send is the one accent-filled commit
+              action (`--send`); Stop is a solid NEUTRAL fill, never red, since stopping keeps the
+              work. Both show while a turn runs because Send still queues a follow-up (FR-011),
+              a documented exception to "one filled button per surface". */}
+          <ComposerActions>
             {isWorking && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="invert"
-                    size="icon-sm"
-                    className={cn('rounded-full', COMPOSER_BUTTON_FOCUS_CLASS)}
-                    aria-label="Stop"
-                    aria-keyshortcuts="Control+Shift+X"
-                    onClick={() => void handleStop()}
-                    onFocus={() => { stopHadFocusRef.current = true }}
-                    onBlur={() => { stopHadFocusRef.current = false }}
-                  >
-                    {/* Gate round 1 fix: `SquareIcon` is an outline-only glyph at this size, read
-                        by a reviewer as "an outlined square" on a solid fill -- `fill-current`
-                        makes it a solid stop glyph instead. */}
-                    <SquareIcon className="fill-current" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
+              <ComposerStopButton
+                label="Stop"
+                keyShortcuts="Control+Shift+X"
+                tooltip={
                   <KbdGroup>
                     <Kbd>Ctrl</Kbd>
                     <Kbd>Shift</Kbd>
                     <Kbd>X</Kbd>
                   </KbdGroup>
-                </TooltipContent>
-              </Tooltip>
+                }
+                onClick={() => void handleStop()}
+                onFocus={() => { stopHadFocusRef.current = true }}
+                onBlur={() => { stopHadFocusRef.current = false }}
+              />
             )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="default"
-                  size="icon-sm"
-                  // 2026-10-15 grill decision 5, gate round 1 fix: Send's own `--send` token
-                  // overrides `variant="default"`'s `--primary` fill, which resolves to a
-                  // near-white neutral in Dark and Dark (high contrast) -- almost identical to
-                  // Stop's `invert` fill there, failing "visibly distinct in weight". `--send`
-                  // is chromatic (indigo) in every built-in theme instead. Hover mixes 15% of
-                  // the page background into the fill (gate round 2 fix: a bare
-                  // `hover:bg-send/80` opacity modifier violated the design rules' own "never a
-                  // Tailwind opacity modifier on a token class" -- `button.tsx`'s `secondary`
-                  // variant's own `color-mix` pattern instead).
-                  className={cn(
-                    'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
-                    // Composer-dimming fix (gate round 4: scoped to the field block, not the
-                    // whole box): the shared disabled OPACITY for the OTHER refusal reasons
-                    // (starting, a pending read, empty text); `disabled` can't be true with
-                    // `starting` (round 7: opacity only, no hover reset -- Send's opaque resting
-                    // fill made the shared reset drop it transparent on hover, Arch877 Medium 1).
-                    !disabled && COMPOSER_DISABLED_OPACITY_CLASS,
-                    COMPOSER_BUTTON_FOCUS_CLASS
-                  )}
-                  aria-label="Send message"
-                  aria-keyshortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
-                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
-                  onClick={() => {
-                    if (disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)) return
-                    void handleSend()
-                  }}
-                >
-                  <ArrowUpIcon />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {enterQueuedFollowUp.applies ? 'Send' /* gate round 2: aria-disabled while the rule applies (blank text) -- wired into aria-describedby by Radix, must not describe an action the button can't perform */ : <Kbd>Enter</Kbd>}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+            {/* The shared dim applies for the refusal reasons other than `disabled`, which
+                already dims the whole field block. */}
+            <ComposerSendButton
+              blocked={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
+              dimWhenBlocked={!disabled}
+              keyShortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
+              onSend={() => void handleSend()}
+              tooltip={
+                // aria-disabled while the rule applies (blank text) and Radix wires this into
+                // aria-describedby, so it must not describe an action the button cannot perform.
+                enterQueuedFollowUp.applies ? 'Send' : <Kbd>Enter</Kbd>
+              }
+            />
+          </ComposerActions>
+        </ComposerField>
         {/* Composer bottom row (#564): Approval pill, combined Role.Model pill (#766), Reasoning
-            picker, then Attach. `@container` lets the pill hide its model text when narrow. */}
-        <div data-composer-row className="@container flex flex-wrap items-center gap-2 px-2 pb-2">
+            picker, branch label, then Attach. */}
+        <ComposerFooter>
           <ApprovalModePill sessionId={sessionId} />
           <ModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />
           <ComposerBranchLabel sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
-        </div>
-      </div>
+        </ComposerFooter>
+      </ComposerBox>
     </div>
   )
 }

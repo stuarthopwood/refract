@@ -22,20 +22,14 @@
 // all. `on_exit` now settles every `Running` entry to `Exited` immediately (not only on the next
 // `launch()`), so a crash or a deliberate stop clears the pill without waiting for a reattach.
 //
-// Not implemented this round (disclosed, see the PR body and FINDINGS.md item 58, a live probe
-// against the real signed-in `omp 18.10.1`, 2026-10-14): `get_subagents` is confirmed real but
-// cannot help a reattach (a fresh process's own registry is always empty, even onto the SAME
-// Conversation a prior process's genuinely-running subagent used), so this file correctly never
-// calls it. `set_subagent_subscription({level:"progress"})` is confirmed real and, once active,
-// OMP pushes STANDALONE top-level `subagent_lifecycle`/`subagent_progress` frames -- a stronger,
-// proactive background-completion channel than the `wait`-tool `jobs[]` path `apply_jobs` already
-// uses, needing no explicit `wait()` call at all -- but this build does not subscribe, so it never
-// receives them; adopting that channel is a concrete next step for a follow-up round, not done
-// here. `on_attach_reconcile` adds the "No live output" notice for an empty stream (Electron gate
-// finding 6) but still does not re-derive historical finished/failed candidates from the
-// reattached transcript's own `subagent` rows the way TS's fuller version does (Electron gate
-// finding 4, a persisted `currentTurnSubagents` durable-turn-marker concept this build has no
-// equivalent of).
+// Issue #712 (spec 037): every attach and Conversation reset sets `set_subagent_subscription`
+// to `progress` (OMP's default is `off`), so OMP pushes standalone `subagent_lifecycle`/
+// `subagent_progress` frames for every subagent, background (detached) ones included; those
+// settle a background agent with its real status long after its `task` call ended, with no
+// `wait()` call needed (`subagents_progress::apply_subagent_frame`). `get_subagents` is never
+// called: a fresh process's registry is always empty (FINDINGS.md item 58). `on_attach_reconcile`
+// still does not re-derive historical candidates from the reattached transcript (Electron gate
+// finding 4).
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
 // decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
@@ -49,12 +43,9 @@
 // `reconcileSubagentsOnAttach()` runs); `conversations.rs`'s `start_new_conversation`/
 // `open_conversation` each call `on_conversation_reset` before their own `sync_from_state` call.
 //
-// Split round 2 (issue #806, 600-line cap): the progress/jobs application and synthetic-stream
-// helpers live in the sibling `subagents_progress.rs` (`map_progress_status`,
-// `apply_progress_to_batch`, `apply_jobs`, `apply_subagent_progress_in_place`, and the small
-// `tool_item_id`/`tool_args_preview`/`output_text`/`summaries_to_value`/`emit_subagents_update`/
-// `queue_patch_ops` helpers they share) -- this file keeps the data model, the lane hooks, the
-// public IPC-facing entry points, and `handle_task_start`.
+// Split round 2 (issue #806, 600-line cap): progress/jobs/lifecycle application and the
+// synthetic-stream helpers live in the sibling `subagents_progress.rs`; this file keeps the data
+// model, the lane hooks, the IPC-facing entry points, and `handle_task_start`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -67,7 +58,8 @@ use super::agent::SessionAgent;
 #[path = "subagents_progress.rs"]
 mod subagents_progress;
 use subagents_progress::{
-    apply_jobs, apply_progress_to_batch, emit_subagents_update, queue_patch_ops, summaries_to_value,
+    apply_jobs, apply_progress_to_batch, apply_subagent_frame, emit_subagents_update,
+    queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value,
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
@@ -110,6 +102,8 @@ pub(super) struct SummaryEntry {
     status: SummaryStatus,
     started_at: i64,
     duration_ms: Option<i64>,
+    /// #712: OMP reported `detached: true` (an async background job).
+    background: bool,
 }
 
 /// Lane R5's own runtime state, held inside `AgentState` by `agent/mod.rs` without that file
@@ -206,6 +200,11 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
                 .and_then(Value::as_array)
             {
                 apply_jobs(agent, jobs).await;
+            }
+        }
+        "subagent_lifecycle" | "subagent_progress" => {
+            if let Some(payload) = frame.get("payload") {
+                apply_subagent_frame(agent, frame_type, payload).await;
             }
         }
         _ => {}
@@ -342,6 +341,7 @@ pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
         "No live output: this subagent had already exited when Refract reattached.",
     )
     .await;
+    subscribe_to_subagent_frames(agent).await;
 }
 
 /// `conversations.rs`'s own hook (issue #577): the previous Conversation's subagents (and their
@@ -364,6 +364,7 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
         emit_subagents_update(agent, Value::Array(Vec::new())).await;
     }
     super::readout::schedule_readout_update(agent).await;
+    subscribe_to_subagent_frames(agent).await;
 }
 
 /// Performance gate round 1 (memory growth): at every `agent_start`, drops the (potentially
@@ -580,6 +581,7 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
             status: SummaryStatus::Running,
             started_at,
             duration_ms: None,
+            background: false,
         });
     }
 

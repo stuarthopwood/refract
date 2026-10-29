@@ -34,6 +34,7 @@
   --color-composer-focus: var(--composer-focus);
   --color-composer-ring: var(--composer-ring);
   --color-composer-control-border: var(--composer-control-border);
+  --color-composer-placeholder: var(--composer-placeholder);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -238,6 +239,7 @@ samp {
   --scale-chat: 1;
   --scale-code: 1;
   --text-scale: var(--scale-app);
+  --motion-shimmer-duration: 1.6s;
   /* Theme-independent values only (spec 007 T008): everything else that used to live here as an
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
@@ -324,6 +326,10 @@ samp {
    * (decision 3) -- this token lets `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS` add an explicit
    * `border` unconditionally while only Dark high contrast's own value ever paints it. */
   --composer-control-border: transparent;
+  /* #1149: the composer placeholder and empty-state hint, about 40% white (quieter than
+   * `--muted-foreground`, which stays the body-text token). Accepted departure, its own floor in
+   * `scripts/theme-contrast-pairs.mjs`; Dark high contrast keeps `--muted-foreground`. */
+  --composer-placeholder: oklch(1 0 0 / 40%);
   --card: oklch(0.205 0 0);
   --card-foreground: var(--foreground);
   --popover: oklch(0.205 0 0);
@@ -500,24 +506,24 @@ samp {
    * alias `--muted`/`--accent` to the same resolved colour there), so selecting the pilled token
    * itself painted a completely invisible highlight -- found in this round's test review, not
    * caught before because Dark/Obsidian/Dark (high contrast) never had that exact coincidence.
-   * `color-mix(in oklab, var(--accent-text) 34%, transparent)`: translucent so the highlight
+   * `color-mix(in oklab, var(--accent-text) N%, transparent)`: translucent so the highlight
    * always lets whatever is underneath (the pill's own fill, or the plain composer surface) show
    * through, visibly distinct from it by construction in every theme, rather than needing a
    * second, independently-tuned opaque colour per theme that could drift the same way again. Now
-   * applied UNCONDITIONALLY (`CommandPillOverlay.tsx`'s `COMPOSER_SELECTION_CLASS`, full
-   * reasoning there), not only while a pill shows, so the selection never changes look the
-   * instant a recognised command's own leading token appears or disappears. 34% clears every
-   * theme's own `--composer-selection-fg`-on-highlight text floor (4.5:1, 7:1 in Dark high
-   * contrast) AND a new >=1.5:1 "visibly distinct from the pill" floor at once -- the narrowest
-   * of the two windows this measurement found was roughly 33%-35.5% alpha (`scripts/composer-
-   * selection-contrast.mjs`'s own `composerSelectionContrastRows` has the full measured numbers,
-   * worst case here 1.52:1 against the pill). Against the near-black `--background` itself, no
-   * alpha anywhere near this window reaches a full 3:1 without exceeding the text-legibility
-   * floor above (even 50% alpha tops out at 3.41:1 in Cyber Amber, the best case) -- that
-   * comparison stays informational only (measured, never enforced), a clearly accent-hued tint
-   * rather than a WCAG-enforced one, the same accepted-gap shape this file already uses
-   * elsewhere. */
-  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+   * applied UNCONDITIONALLY (`COMPOSER_SELECTION_CLASS` in `components/ComposerBox.tsx`, full
+   * reasoning in `CommandPillOverlay.tsx`), not only while a pill shows, so the selection never
+   * changes look the instant a recognised command's own leading token appears or disappears.
+   * The alpha is bound by each theme's `--composer-selection-fg`-on-highlight text floor (4.5:1,
+   * 7:1 in Dark high contrast) and a >=1.5:1 "visibly distinct from the pill" floor
+   * (`scripts/composer-selection-contrast.mjs` has the measured numbers). Against the near-black
+   * `--background` itself no theme reaches 3:1 (best case Nordic Frost, 2.66:1, measured), so
+   * that comparison is informational only (measured, never enforced), a clearly
+   * accent-hued tint rather than a WCAG-enforced one, logged in `docs/design/accessibility.md`
+   * "Accepted departures". Per-theme alpha (#1084): Dark and Obsidian use 50%, Nordic Frost 42%
+   * and Cyber Amber 46% (the most each allows over its own 4.5:1 text floor with margin); Dark
+   * (high contrast) stays at 34% because its own 7:1 text floor (7.22:1 over the pill at 34%) is
+   * the binding constraint. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 50%, transparent);
   /* #1074 DECIDED (gate round 1): this is text on a coloured tint, not ambient UI chrome, so
    * FR-023's "stays solid on a coloured fill" rule applies -- a literal solid near-white, not
    * `var(--accent-foreground)` (which now resolves through the translucent `--foreground`).
@@ -705,8 +711,8 @@ samp {
   --command-pill-bg: oklch(0.32 0.02 255);
   --command-pill-fg: oklch(0.715 0.14 280);
   /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
-   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
-  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+   * translucent accent-text tint, applied unconditionally, 50% alpha like Dark (#1084). */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 50%, transparent);
   /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
    * -- text on a coloured tint stays solid per FR-023. This preset's own old solid `--foreground`
    * value, before #1074 softened it. */
@@ -766,6 +772,7 @@ samp {
    * above for the full `--composer-border`/`--composer-focus`/`--composer-ring` rationale,
    * identical here except for the actual muted values (tuned to this preset's own `--border`,
    * `#6F7C9D`, rather than an achromatic literal). */
+  --composer-placeholder: oklch(1 0 0 / 40%);
   --composer-background: transparent;
   --composer-border: var(--divider);
   /* A1 (Low, gate951A11y; Decided, Skippy, delegated by Stuart 2026-10-17): the 55% mix
@@ -918,6 +925,7 @@ samp {
    * `composer-control-border`/`composer-background` pair, `onlyThemes: ['dark-high-contrast']`).
    */
   --composer-control-border: var(--border);
+  --composer-placeholder: var(--muted-foreground);
   --card: oklch(0.14 0 0);
   --card-foreground: oklch(1 0 0);
   --popover: oklch(0.14 0 0);
@@ -1058,7 +1066,9 @@ samp {
   --command-pill-bg: oklch(0.30 0 0);
   --command-pill-fg: oklch(0.80 0.10 264);
   /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
-   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+   * translucent accent-text tint, applied unconditionally. Dark (high contrast) keeps 34%: its
+   * 7:1 text floor leaves no headroom (7.22:1 over the pill), so any higher alpha fails it
+   * (#1084). */
   --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
   --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: aliases of the EXISTING `--state-*`/`--destructive` values above (#550's
@@ -1260,8 +1270,9 @@ samp {
   --command-pill-bg: var(--muted);
   --command-pill-fg: var(--accent-text);
   /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
-   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
-  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+   * translucent accent-text tint, applied unconditionally. 42% (#1084): the cyan accent-text is
+   * light, so 50% drops the 4.5:1 text floor over the pill to 4.19:1. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 42%, transparent);
   /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
    * -- text on a coloured tint stays solid per FR-023. This preset's own old solid `--foreground`
    * value, before #1074 softened it. */
@@ -1310,6 +1321,7 @@ samp {
    * `--composer-border` alone (faint, the `--divider` tone) -- the WCAG 1.4.11 departure Stuart
    * accepted for Dark/Obsidian (`docs/design/accessibility.md` "Accepted departures") applies
    * here too, so this pair is informational-only in `check-theme-contrast.mjs`. */
+  --composer-placeholder: oklch(1 0 0 / 40%);
   --composer-background: transparent;
   --composer-border: var(--divider);
   --composer-focus: color-mix(in oklab, var(--border) 75%, transparent);
@@ -1523,8 +1535,9 @@ samp {
   --command-pill-bg: oklch(0.31 0 0);
   --command-pill-fg: var(--accent-text);
   /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
-   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
-  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
+   * translucent accent-text tint, applied unconditionally. 46% (#1084): leaves margin on the
+   * 4.5:1 text floor over the pill (4.96:1 at 50%). */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 46%, transparent);
   /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
    * -- text on a coloured tint stays solid per FR-023. Same literal as Dark's own (#1039:
    * Cyber Amber's surfaces/text are byte-identical to Default Dark's). */
@@ -1574,6 +1587,7 @@ samp {
 
   /* #1074: see `.theme-dark`'s own `--chat-foreground` comment for the full rationale. */
   --chat-foreground: oklch(1 0 0 / 78%);
+  --composer-placeholder: oklch(1 0 0 / 40%);
   --composer-background: transparent;
   --composer-border: var(--divider);
   --composer-focus: oklch(1 0 0 / 35%);
@@ -2045,7 +2059,7 @@ samp {
 
 /* Issue #1242 (spec 004 FR-042): the one shared status-text shimmer (#1210 reuses it). A band
  * brighter than the text sweeps across a gradient clipped to the glyphs; the base stops are the
- * plain accent text colour, so the text never drops below `--accent-text`'s own contrast, and the
+ * plain base colour (`--shimmer-base`, default `--accent-text`; `ShimmerText`'s `tone` sets it), so the text never drops below that colour's own contrast, and the
  * band is lighter/darker toward `--foreground`, never lower contrast. `background-position` is
  * paint-only on one short line (no layout), the one exception to "opacity and transform only"
  * (foundations-motion.md). `ShimmerText` drops the class while the window is hidden or the
@@ -2058,18 +2072,23 @@ samp {
   color: transparent;
   background-image: linear-gradient(
     100deg,
-    var(--accent-text) 0 40%,
-    color-mix(in oklab, var(--accent-text) 45%, var(--foreground)) 50%,
-    var(--accent-text) 60% 100%
+    var(--shimmer-base, var(--accent-text)) 0 40%,
+    color-mix(in oklab, var(--shimmer-base, var(--accent-text)) 45%, var(--foreground)) 50%,
+    var(--shimmer-base, var(--accent-text)) 60% 100%
   );
   background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
-  animation: text-shimmer-sweep 1.6s linear infinite;
+  animation: text-shimmer-sweep var(--motion-shimmer-duration) linear infinite;
+}
+/* Selected glyphs keep a solid fill: the transparent fill above would otherwise sit on the
+ * selection colour with only the sweep band behind it. */
+.text-shimmer::selection {
+  -webkit-text-fill-color: var(--foreground);
 }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   .text-shimmer {
-    color: var(--accent-text);
+    color: inherit;
     background-image: none;
     animation: none;
   }

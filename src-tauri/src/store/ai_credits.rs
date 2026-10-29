@@ -1,7 +1,7 @@
-// Issue #1238 (spec 004 FR-053): Settings > Chat display "Show AI credits and plan usage". A
+// Issue #1238 (spec 004 FR-053): Settings > Chat display "Show AI credits". A
 // child module of `settings.rs` (not inline there) to keep that file under this build's 600-line
-// cap (issue #806). The setting only hides the credits part of the Context usage chip and stops
-// the plan-usage lookup; it never changes the context percentage.
+// cap (issue #806). The setting shows or hides the AI credits chip and stops the plan-usage
+// lookup; it is independent of the Context usage chip (issue #1268).
 use serde_json::{json, Map, Value};
 
 use super::{Settings, SettingsStore};

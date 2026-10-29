@@ -110,7 +110,7 @@ export type IpcErrorCode =
   | 'disabled'
   | 'session-archived'
   | 'worktree-held' | 'worktree-busy'
-  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch'; // lane R11b (#794)
+  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed'; // lane R11b (#794); #1265 settings.json write failed
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -244,7 +244,7 @@ export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset
 
 export type SlashCommand = SlashCommandDescriptor;
 
-export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
+export type ChatAnswer = { approve: boolean; option?: string } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
 
 export type { LowMemoryWarning } from './lowMemoryWarning';
 export type { TokenGuardCalls, TokenGuardHandoffResult, TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';

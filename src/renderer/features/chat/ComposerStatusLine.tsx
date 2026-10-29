@@ -29,15 +29,18 @@ import {
   TurnTimeChip
 } from './readout/ReadoutChips'
 import { ContextUsageChip } from './readout/ContextUsageChip'
+import { AiCreditsChip } from './readout/AiCreditsChip'
 import { LongConversationChip } from './LongConversation'
 
 export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   return (
     <div data-slot="composer-status-line" className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 empty:hidden tabular-nums">
-      {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
+      {/* #496 (spec 001 FR-056): Todo progress takes the Approval pill's old first slot. */}
       {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
+      {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
       {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
+      <AiCreditsChip sessionId={sessionId} />
       {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
       {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
       {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}

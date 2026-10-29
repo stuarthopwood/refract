@@ -6,8 +6,10 @@
 // redirects are never followed (`profile::HTTP_CLIENT`), the body is size-capped and the request
 // times out at 10 s. Any failure reads as "unavailable" (`None`), never an error the UI shows.
 //
-// The result is cached for `CACHE_TTL` (per login) so a chip re-mounting or a busy Session never
-// re-calls GitHub more than once per window.
+// The result is cached (per login) so a chip re-mounting or a busy Session never re-calls GitHub
+// more than once per window: `CACHE_TTL` after a figure, the shorter `FAILURE_CACHE_TTL` after an
+// unavailable result so a flaky network recovers soon without hammering GitHub. Concurrent callers
+// share one request (`FETCH_LOCK`).
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -22,14 +24,33 @@ const API_URL: &str = "https://api.github.com/copilot_internal/user";
 const SUPPORTED_AUTH_HOST: &str = "github.com";
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const CACHE_TTL: Duration = Duration::from_secs(5 * 60);
+const FAILURE_CACHE_TTL: Duration = Duration::from_secs(30);
 
 struct CacheEntry {
     login: String,
     fetched_at: Instant,
-    percent_used: Option<f64>,
+    outcome: Outcome,
+}
+
+/// Only `Failed` is retried on the short TTL; an unmetered account is a stable answer.
+#[derive(Clone, Copy)]
+enum Outcome {
+    Figure(f64),
+    Unmetered,
+    Failed,
+}
+
+impl Outcome {
+    fn percent(self) -> Option<f64> {
+        match self {
+            Outcome::Figure(p) => Some(p),
+            Outcome::Unmetered | Outcome::Failed => None,
+        }
+    }
 }
 
 static CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
+static FETCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Percent of the individual premium allowance used (0-100), or `None` when the account has no
 /// metered allowance (unlimited, missing snapshot, or unreadable figures). Prefers the precise
@@ -59,24 +80,41 @@ pub async fn plan_percent_used() -> Option<f64> {
     if let Some(cached) = cached(&login) {
         return cached;
     }
+    let _single_flight = FETCH_LOCK.lock().await;
+    if let Some(cached) = cached(&login) {
+        return cached;
+    }
     let fetched = fetch(&login).await;
-    *CACHE.lock().expect("copilot plan cache poisoned") = Some(CacheEntry {
+    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some(CacheEntry {
         login,
         fetched_at: Instant::now(),
-        percent_used: fetched,
+        outcome: fetched,
     });
-    fetched
+    fetched.percent()
 }
 
 fn cached(login: &str) -> Option<Option<f64>> {
-    let guard = CACHE.lock().expect("copilot plan cache poisoned");
+    let guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     guard
         .as_ref()
-        .filter(|e| e.login == login && e.fetched_at.elapsed() < CACHE_TTL)
-        .map(|e| e.percent_used)
+        .filter(|e| {
+            let ttl = match e.outcome {
+                Outcome::Failed => FAILURE_CACHE_TTL,
+                Outcome::Figure(_) | Outcome::Unmetered => CACHE_TTL,
+            };
+            e.login == login && e.fetched_at.elapsed() < ttl
+        })
+        .map(|e| e.outcome.percent())
 }
 
-async fn fetch(login: &str) -> Option<f64> {
+async fn fetch(login: &str) -> Outcome {
+    match fetch_body(login).await {
+        None => Outcome::Failed,
+        Some(body) => parse_percent_used(&body).map_or(Outcome::Unmetered, Outcome::Figure),
+    }
+}
+
+async fn fetch_body(login: &str) -> Option<Value> {
     let token = auth_token(SUPPORTED_AUTH_HOST, login).await.ok()?;
     let mut auth_header =
         reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")).ok()?;
@@ -98,7 +136,7 @@ async fn fetch(login: &str) -> Option<f64> {
         return None;
     }
     let body = collect_bounded(response, MAX_RESPONSE_BYTES).await.ok()?;
-    parse_percent_used(&serde_json::from_slice::<Value>(&body).ok()?)
+    serde_json::from_slice::<Value>(&body).ok()
 }
 
 #[cfg(test)]

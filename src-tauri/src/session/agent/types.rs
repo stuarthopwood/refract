@@ -134,6 +134,8 @@ pub enum PendingRequest {
         tool: String,
         target: String,
         details: Vec<String>,
+        /// #1140: the `select` frame's own option labels, in OMP's order, answered verbatim.
+        options: Vec<String>,
     },
     #[serde(rename = "question")]
     Question {

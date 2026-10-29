@@ -90,7 +90,7 @@ export interface Session {
   stoppedOnRequestAtSize?: number | null;
 }
 /** The app-wide setting for how much the agent may do without asking. Reads are never prompted. */
-export type ApprovalMode = 'ask' | 'edit-freely' | 'auto';
+export type ApprovalMode = 'ask' | 'ask-and-remember' | 'edit-freely' | 'auto';
 
 /** One readout chip kind (spec 004 FR-001 to FR-010, FR-021); the chip row's own order. */
 export type ReadoutKind =
@@ -236,6 +236,7 @@ export const DEFAULT_SESSION_READOUT: Record<ReadoutKind, boolean> = {
 /** Maps Settings.approvalMode to the value OMP's `--approval-mode` flag expects. */
 export const OMP_APPROVAL_MODE: Record<ApprovalMode, string> = {
   ask: 'always-ask',
+  'ask-and-remember': 'always-ask-cached',
   'edit-freely': 'write',
   auto: 'yolo',
 };
@@ -382,6 +383,7 @@ export interface SubagentSummary {
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
   taskSummary?: string; // Issue #700/#701 slice (b): first sentence of `task`, ~100 chars, inert text (Agents card) -- absent when the task had no text at all (subagents.rs's `subagent_task_summary`)
   name?: string; // Gate round 1 fix 6 (#700/#701 slice b): the subagent's own given name (never falls back to `task`, unlike `nameOrTask`); absent when none was given (Agents card row header)
+  background?: boolean; // Issue #712: OMP reported it as a detached background job (async `task`); absent otherwise
 }
 
 /** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
@@ -549,7 +551,7 @@ export interface AskQuestion { id: string; question: string; header?: string; op
  * enabled for this process; `deadlineAt` is epoch ms from the frame's own `timeout` milliseconds
  * (OMP's wire value is already ms, not seconds -- `rpc.md`'s own example shows `"timeout": 30000`). */
 export type PendingRequest =
-  | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
+  | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[]; options?: string[] } // #1140: OMP's own option labels, answered verbatim
   | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }
   | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number };
 

@@ -14,6 +14,7 @@ import { isFocusStranded } from '@/lib/focus'
 import { initials } from '@/lib/initials'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 import { AskCard } from './AskCard'
+import { ApprovalActions } from './ApprovalActions'
 
 type AskToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -422,12 +423,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </CardContent>
         )}
         <CardFooter className="gap-2">
-          <Button size="sm" disabled={busy} onClick={() => void answer({ approve: true }, 'approved')}>
-            Approve
-          </Button>
-          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void answer({ approve: false }, 'denied')}>
-            Deny
-          </Button>
+          <ApprovalActions options={request.options} busy={busy} onAnswer={(value, kind, detail) => void answer(value, kind, detail)} />
         </CardFooter>
       </Card>
     )

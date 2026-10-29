@@ -130,18 +130,25 @@ export function buildAndCopyExeFresh(destDir, buildOutputDir, repoRoot, { maxAtt
   const src = path.join(buildOutputDir, 'refract-tauri.exe');
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`${label}: rebuilding the debug exe fresh (attempt ${attempt}/${maxAttempts})...`);
+    const buildStartedMs = Date.now();
     const buildResult = spawnSync('pnpm', ['tauri', 'build', '--debug', '--no-bundle'], { cwd: repoRoot, stdio: 'inherit', shell: true, windowsHide: true });
     if (buildResult.status !== 0) throw new Error(`buildAndCopyExeFresh: pnpm tauri build failed (exit ${buildResult.status}${buildResult.error ? `, error: ${buildResult.error.message}` : ''})`);
     if (!existsSync(src)) throw new Error(`buildAndCopyExeFresh: built exe not found at ${src} after a successful build`);
     const preCopyStat = statSync(src);
+    // A cargo no-op leaves an older exe in place; an mtime before this build started means the
+    // exe was not produced by it, so it is not evidence for the current source.
+    if (preCopyStat.mtimeMs < buildStartedMs - 2_000) {
+      console.warn(`${label}: exe mtime ${preCopyStat.mtime.toISOString()} predates this build's start (cargo reported nothing to rebuild) -- provenance recorded below.`);
+    }
     const preCopyHash = sha256OfFile(src);
     copyFileSync(src, dest);
     const postCopyStat = statSync(src);
     const postCopyHash = existsSync(src) ? sha256OfFile(src) : null;
     const unchanged = postCopyHash === preCopyHash && postCopyStat.mtimeMs === preCopyStat.mtimeMs && postCopyStat.size === preCopyStat.size;
     if (unchanged) {
-      console.log(`${label}: built exe copied to ${dest} (private copy; sha256 ${preCopyHash.slice(0, 12)}…, confirmed unchanged through the copy).`);
-      return { dest, hash: preCopyHash };
+      const mtime = preCopyStat.mtime.toISOString();
+      console.log(`${label}: built exe copied to ${dest} (private copy; sha256 ${preCopyHash}, mtime ${mtime}, confirmed unchanged through the copy).`);
+      return { dest, hash: preCopyHash, mtime, builtDuringThisRun: preCopyStat.mtimeMs >= buildStartedMs - 2_000 };
     }
     console.warn(`${label}: source exe changed between build and copy (attempt ${attempt}) -- a concurrent lane is rebuilding; retrying.`);
   }

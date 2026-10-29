@@ -28,6 +28,7 @@ pub(super) fn registry_store_error_message(
 pub(super) fn to_process_mode(mode: ApprovalMode) -> ProcApprovalMode {
     match mode {
         ApprovalMode::Ask => ProcApprovalMode::Ask,
+        ApprovalMode::AskAndRemember => ProcApprovalMode::AskAndRemember,
         ApprovalMode::EditFreely => ProcApprovalMode::EditFreely,
         ApprovalMode::Auto => ProcApprovalMode::Auto,
     }

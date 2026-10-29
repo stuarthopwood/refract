@@ -289,6 +289,12 @@ export async function assertSelectedGlyphsInkVisible(cdp, pressKey, report) {
     return bright;
   }
 
+  // The preceding highlight check leaves the whole draft selected; collapse it first so the
+  // "resting" ink is genuinely unselected.
+  await cdp.evaluate(`${TEXTAREA}.focus(); ${TEXTAREA}.setSelectionRange(0, 0)`);
+  const collapsed = await cdp.evaluate(`${TEXTAREA}.selectionStart === ${TEXTAREA}.selectionEnd`);
+  if (!collapsed) throw new Error('FAIL: selected-glyph ink visibility (selection did not collapse before sampling resting ink)');
+
   // "/btw hi": offset 1 is 'b' (inside the pilled token), offset 5 is 'h' (plain argument text).
   const restingPillInk = await glyphBrightPixelCount(1);
   const restingPlainInk = await glyphBrightPixelCount(5);

@@ -38,7 +38,7 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
         "usage" => Some(&["show"]),
         "changelog" => Some(&["full", "last"]),
         "tools" | "context" | "fresh" | "retry" | "rename" | "add-dir" | "dirs" | "force"
-        | "autoresearch" | "annotate" => Some(&[]),
+        | "autoresearch" | "annotate" | "forget-approvals" => Some(&[]),
         "shake" => Some(&["elide", "images", "thinking"]),
         // Issue #762 (lane RM): the explicit decision `omp-usage.md` line 163 was waiting for.
         // No fixed subcommand table (an empty allow-list here, same shape `add-dir`/`dirs` use)
