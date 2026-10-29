@@ -7,6 +7,9 @@
 // process needs: the picker's name/swatch, which Shiki theme a code block uses, and the
 // title-bar overlay colour main applies.
 
+/** The one Shiki theme whose colours are CSS custom properties (#456). */
+export const CSS_VARIABLES_SYNTAX_THEME = 'css-variables'
+
 /** Additive: a further dark preset adds a key here, never removes `dark` or
  * `dark-high-contrast` (research.md decision 1). No `mode` field anywhere in this module --
  * every built-in theme is dark-toned, so there is nothing left to distinguish by mode. */
@@ -26,7 +29,7 @@ export interface ThemeDefinition {
    * Theme submenu row's name (`ProfileMenu.tsx`'s `ThemeSubmenu`) -- never a round shape, so it
    * is never mistaken for the row's own leading radio mark. */
   swatchPrimary: string
-  /** A Shiki bundled theme id (research.md decision 9, confirmed live: FINDINGS.md item 42). */
+  /** A Shiki bundled theme id, or `css-variables` (#456): colours then come from the preset's own `--syntax-*` tokens in globals.css (Dark (high contrast) keeps its bundled Shiki theme). */
   syntaxTheme: string
   /** `BrowserWindow.setTitleBarOverlay` colours (spec 001 T100); `height` is theme-independent
    * window-chrome geometry, so it stays a constant in `titleBarOverlay.ts`, not here. */
@@ -48,7 +51,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatchPrimary: '#e5e5e5',
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
-    syntaxTheme: 'github-dark-default',
+    syntaxTheme: 'css-variables',
     // #1074 (app-wide text-opacity softening): `--foreground` is now translucent
     // (`oklch(1 0 0 / 90%)`, globals.css), but `setTitleBarOverlay` takes an opaque hex with no
     // alpha channel, so this is hand-recomputed to the real composited colour -- white at 90%
@@ -79,7 +82,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatchPrimary: '#5A5EEE',
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
-    syntaxTheme: 'github-dark-default',
+    syntaxTheme: 'css-variables',
     // #1074: see `dark`'s own `titleBarOverlay` comment above -- same rationale, this preset's
     // own composited colour (white at 90% alpha over `#0F1014`).
     titleBarOverlay: { color: '#1c1f28', symbolColor: '#e8e9e9' }
@@ -125,7 +128,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // Matches `.theme-nordic-frost`'s own `--background` (globals.css): a deep navy canvas.
     swatch: '#060f1e',
     swatchPrimary: '#007a7c',
-    syntaxTheme: 'github-dark-default',
+    syntaxTheme: 'css-variables',
     // #1074: see `dark`'s own `titleBarOverlay` comment above -- this preset's own composited
     // colour (white at 90% alpha over `#060f1e`).
     titleBarOverlay: { color: '#101b2b', symbolColor: '#e7e8ea' }
@@ -143,7 +146,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // again, just at #1074's new alpha/composited values rather than #1039's original ones).
     swatch: '#0a0a0a',
     swatchPrimary: '#c2410c',
-    syntaxTheme: 'github-dark-default',
+    syntaxTheme: 'css-variables',
     titleBarOverlay: { color: '#171717', symbolColor: '#e8e8e8' }
   }
 }

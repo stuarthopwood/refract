@@ -538,8 +538,9 @@ export function hexToLinearSrgb(hex) {
   return [srgbGammaDecode(r), srgbGammaDecode(g), srgbGammaDecode(b)]
 }
 
+export { MARKDOWN_PAIRS, mermaidAccentRows } from './markdown-token-contrast.mjs'
 export async function shikiTokenContrastRows(themes, themeMetadata) {
-  const distinctSyntaxThemes = [...new Set(Object.values(themeMetadata).map((m) => m.syntaxTheme).filter(Boolean))]
+  const distinctSyntaxThemes = [...new Set(Object.values(themeMetadata).map((m) => m.syntaxTheme).filter((s) => s && s !== 'css-variables'))]
   const rows = []
   if (distinctSyntaxThemes.length === 0) return rows
   const highlighter = await createHighlighter({ themes: distinctSyntaxThemes, langs: [], engine: createJavaScriptRegexEngine() })
@@ -562,6 +563,7 @@ export async function shikiTokenContrastRows(themes, themeMetadata) {
   for (const [themeId, props] of Object.entries(themes)) {
     const syntaxTheme = themeMetadata[themeId]?.syntaxTheme
     const card = props['card']
+    if (syntaxTheme === 'css-variables') continue // #456: tokens checked in markdown-token-contrast.mjs
     if (!syntaxTheme || !card) {
       rows.push({ themeId, fg: 'shiki token colour', bg: 'card', min: 4.5, ratio: null, pass: false, note: `'${themeId}' has no syntaxTheme (themes.ts) or --card token (globals.css)` })
       continue
