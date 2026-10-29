@@ -3,7 +3,7 @@
 // (FINDINGS item 12). OMP's own `command_output` notice in the transcript is the visible result;
 // this menu only announces that the shake started. Thinking and images are not recoverable, so
 // they confirm first; elide keeps `artifact://` references and does not.
-import { Fragment, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import { BrainIcon, ImageIcon, ScissorsIcon } from 'lucide-react'
 import {
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import { notify, useDraftStore, useSessionsStore } from '@/state'
 
 interface ShakeAction {
@@ -55,11 +56,15 @@ const IDLE_REASON_ID = 'context-shake-idle-reason'
 export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: string; figure: string | null; children: ReactNode }) {
   const idle = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'idle')
   const [confirming, setConfirming] = useState<ShakeAction | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   function run(action: ShakeAction): void {
     // Re-read the live status: the Session can turn busy while the confirmation is open.
-    if (useSessionsStore.getState().sessions.find((x) => x.id === sessionId)?.status !== 'idle') return
-    useDraftStore.getState().announceAttachment(sessionId, `Shaking ${action.id}`)
+    if (useSessionsStore.getState().sessions.find((x) => x.id === sessionId)?.status !== 'idle') {
+      useDraftStore.getState().announceAttachment(sessionId, `\${action.label} did not run: the session is busy.`)
+      return
+    }
+    useDraftStore.getState().announceAttachment(sessionId, `\${action.label}...`)
     void window.refract.chat
       .send(sessionId, action.command)
       .then((result) => {
@@ -68,16 +73,19 @@ export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: s
       .catch((err: unknown) => notify({ code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) }))
   }
 
-  function handleSelect(action: ShakeAction): void {
-    if (!idle) return
+  function handleSelect(action: ShakeAction, event: Event): void {
+    if (!idle) {
+      event.preventDefault()
+      return
+    }
     if (action.loss) setConfirming(action)
     else run(action)
   }
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild ref={triggerRef}>{children}</DropdownMenuTrigger>
         <DropdownMenuContent align="start" side="top">
           {figure && <DropdownMenuLabel className="text-foreground">{figure}</DropdownMenuLabel>}
           {!idle && (
@@ -90,10 +98,10 @@ export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: s
             return (
               <Fragment key={action.id}>
                 {action.id === 'thinking' && <DropdownMenuSeparator />}
-                <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={() => handleSelect(action)} className={idle ? undefined : 'opacity-50'}>
-                  <Icon aria-hidden className="size-4" />
+                <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={(event) => handleSelect(action, event)} className="aria-disabled:cursor-default aria-disabled:forced-colors:text-[GrayText]">
+                  <Icon aria-hidden className={cn('size-4', !idle && 'opacity-50')} />
                   <div className="flex flex-col gap-1 py-1">
-                    <span>{action.label}</span>
+                    <span className={idle ? undefined : 'opacity-50'}>{action.label}</span>
                     <span className="text-xs text-muted-foreground">{action.hint}</span>
                   </div>
                 </DropdownMenuItem>
@@ -103,7 +111,12 @@ export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: s
         </DropdownMenuContent>
       </DropdownMenu>
       <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            triggerRef.current?.focus()
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{confirming?.label}?</AlertDialogTitle>
             <AlertDialogDescription>{confirming?.loss}</AlertDialogDescription>

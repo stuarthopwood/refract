@@ -256,7 +256,7 @@ async function checkContextUsage(cdp, theme, failures, findings) {
   if (!figures.style?.includes('color-mix(in oklch')) failures.push(`${theme.name}: #1082 figures have no OKLCH color-mix style (${figures.style}).`);
   if (!(ratio >= 4.5)) failures.push(`${theme.name}: #1082 figures ${figures.color} on ${bg} = ${ratio?.toFixed(2)}:1 < 4.5.`);
   findings.push(`${theme.name}: #1082 figures "${figures.text}" colour ${figures.color} on ${bg}, ${ratio?.toFixed(2)}:1.`);
-  const sr = await axText(cdp, `document.querySelector('[data-context-usage-figures]').parentElement.querySelector('.sr-only')`);
+  const sr = await axText(cdp, `document.querySelector('[data-context-usage-figures]').closest('[data-slot=\"readout-chip\"]')`);
   if (!sr?.startsWith('Context usage')) failures.push(`${theme.name}: #1082 sr-only phrase missing (${sr}).`);
   const bar = await cdp.evaluate(`(() => { const b = ${BAR}; if (!b) return null; const fill = b.firstElementChild; return { hidden: b.getAttribute('aria-hidden'), h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width, fw: fill.getBoundingClientRect().width, fill: getComputedStyle(fill).backgroundColor, track: getComputedStyle(b).backgroundColor }; })()`);
   if (!bar) failures.push(`${theme.name}: #1082 bar missing with the setting on.`);

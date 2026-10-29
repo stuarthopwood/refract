@@ -59,7 +59,7 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
     <ContextShakeMenu sessionId={sessionId} figure={`${used}/${windowSize} (${percent}%)`}>
       <ReadoutItem
         icon={high ? TriangleAlertIcon : GaugeIcon}
-        accessibleName={`${used}/${windowSize} (${percent}%)${high ? ' high' : ''}, context usage, shake options. ${usedFull} of ${windowFull} tokens used`}
+        accessibleName={`${used}/${windowSize} (${percent}%)${high ? ' high' : ''}, ${usedFull} of ${windowFull} tokens used, context usage, shake options`}
       >
         <span aria-hidden data-context-usage-figures style={colour} className="relative inline-flex items-center self-stretch">
           {used}/{windowSize} ({percent}%)
