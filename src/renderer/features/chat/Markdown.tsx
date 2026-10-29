@@ -19,6 +19,7 @@ import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { linkClassName, mutedLinkClassName } from './linkStyles'
+import { LinkActions } from './LinkActions'
 import {
   MarkdownBlockquote,
   MarkdownOptionsContext,
@@ -536,11 +537,20 @@ function ExternalLink({ href, className, children, title: _title, ...rest }: Ext
   // RTL-override character that survived percent-encoding (there is none, `encodeURI`-shaped
   // percent-encoding covers every bidi control point) still cannot visually reverse the string.
   const shown = new URL(href).href
+  const anchorRef = React.useRef<HTMLAnchorElement>(null)
   return (
+    <LinkActions
+      copyText={shown}
+      copyLabel="Copy link"
+      copiedMessage="Link copied"
+      // Activating the anchor itself reuses the one external-link policy (tauri-bridge/externalLinks.ts).
+      actions={[{ label: 'Open in browser', onSelect: () => anchorRef.current?.click() }]}
+    >
     <Tooltip>
       <TooltipTrigger asChild>
         <a
           {...rest}
+          ref={anchorRef}
           href={href}
           target="_blank"
           rel="noreferrer noopener"
@@ -563,6 +573,7 @@ function ExternalLink({ href, className, children, title: _title, ...rest }: Ext
         Open in browser: <bdi dir="ltr">{shown}</bdi>
       </span>
     </Tooltip>
+    </LinkActions>
   )
 }
 
@@ -621,7 +632,19 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
   }
 
   const activeClassName = muted ? mutedLinkClassName : linkClassName
+  const reveal = (): void => {
+    void window.refract.sessions.revealFile(sessionId, path).then((result) => {
+      // Dismiss-until-cleared: a stale/wrong file reference needs a moment to read (round 3).
+      if (!result.ok) toast.error(result.error.message, { duration: Infinity, closeButton: true })
+    })
+  }
   return (
+    <LinkActions
+      copyText={path}
+      copyLabel="Copy path"
+      copiedMessage="Path copied"
+      actions={[{ label: 'Show in File Explorer', onSelect: reveal }]}
+    >
     <Tooltip>
       <TooltipTrigger asChild>
         <button
@@ -639,17 +662,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
           // blocks Radix from setting its own `aria-describedby` at all -- nothing points at the
           // tooltip, and the button's `aria-label` alone is read, once.
           aria-describedby={undefined}
-          onClick={() => {
-            void window.refract.sessions.revealFile(sessionId, path).then((result) => {
-              // Quality-gate fix (Verif2 Medium, round 3): the decision comment asks for a
-              // dismiss-until-cleared toast for THIS error specifically (file-not-found/outside-
-              // worktree can be a stale/wrong file reference the user needs a moment to read and
-              // act on, not a transient blip) -- `notify()`'s own default (auto-dismissing,
-              // shared by every other IPC error app-wide) stays untouched; this is a local
-              // `toast.error` call, not a change to `notify()` itself.
-              if (!result.ok) toast.error(result.error.message, { duration: Infinity, closeButton: true })
-            })
-          }}
+          onClick={reveal}
         >
           {label}
         </button>
@@ -658,6 +671,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
         Show in File Explorer: {label}
       </TooltipContent>
     </Tooltip>
+    </LinkActions>
   )
 }
 
