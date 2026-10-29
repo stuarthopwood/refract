@@ -1511,14 +1511,14 @@
   }
 
   /* Destructive menu rows take the same weight step as other coloured text. */
-  [data-variant='destructive'] {
+  [role^='menuitem'][data-variant='destructive'] {
     --font-weight-normal: 400;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
     font-weight: var(--font-weight-normal);
   }
 
-  /* White text inside a coloured parent resets to the white scale so it never inherits the step. */
+  /* An explicit weight utility on white text inside a coloured parent resolves on the white scale. */
   .text-foreground {
     --font-weight-normal: 300;
     --font-weight-medium: 400;
