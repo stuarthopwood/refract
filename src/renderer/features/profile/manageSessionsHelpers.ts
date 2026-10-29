@@ -34,6 +34,7 @@ export function filterAndSortSessions(
     if (filters.repositoryId !== 'all' && session.repositoryId !== filters.repositoryId) return false
     if (filters.archiveFilter === 'active' && session.archivedAt) return false
     if (filters.archiveFilter === 'archived' && !session.archivedAt) return false
+    if (filters.archiveFilter === 'hidden' && !session.hiddenAt) return false
     if (!matchesNameOrBranch(session, query)) return false
     return true
   })

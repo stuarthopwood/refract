@@ -10,7 +10,7 @@ import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import { DEFAULT_FILTERS } from '@/state/view-store'
 import type { ArchiveFilter, SessionFilters, SortKey } from '@/state/view-store'
 
-const ARCHIVE_FILTER_VALUES: readonly ArchiveFilter[] = ['all', 'active', 'archived']
+const ARCHIVE_FILTER_VALUES: readonly ArchiveFilter[] = ['all', 'active', 'archived', 'hidden']
 
 export interface ManageSessionsToolbarProps {
   filters: SessionFilters
@@ -61,10 +61,11 @@ export function ManageSessionsToolbar({
         onValueChange={(value) => onFiltersChange({ ...filters, archiveFilter: value as ArchiveFilter })}
         className="gap-0"
       >
-        <TabsList aria-label="Filter by archive status">
+        <TabsList aria-label="Filter sessions">
           <TabsTrigger value="all">All</TabsTrigger>
           <TabsTrigger value="active">Active</TabsTrigger>
           <TabsTrigger value="archived">Archived</TabsTrigger>
+          <TabsTrigger value="hidden">Hidden</TabsTrigger>
         </TabsList>
         {/* Empty, hidden panels so each trigger's aria-controls resolves; the list itself lives in the screen body. */}
         {ARCHIVE_FILTER_VALUES.map((value) => (

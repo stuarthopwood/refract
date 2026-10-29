@@ -16,6 +16,8 @@ import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useAccountsStore, useHolidayStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
+import { ShowHiddenToggle } from './ShowHiddenToggle'
+import type { SessionSummary } from '../../../shared/ipc'
 import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { searchSessions, showingCountLabel } from './sessionDisplay'
 import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
@@ -45,6 +47,8 @@ export function SessionList() {
   const setQuery = useSessionListStore((state) => state.setQuery)
   const trimmedQuery = query.trim().toLowerCase()
   const hasQuery = trimmedQuery !== ''
+  // Issue #748: Show hidden; a hidden Session is listed only while it is on (or a search matches it).
+  const showHidden = useSessionListStore((state) => state.showHidden)
   const collapseAllReasonId = useId()
   const expandAllReasonId = useId()
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
@@ -52,7 +56,9 @@ export function SessionList() {
   // nothing anywhere is archived" rule shows it; while hidden, its saved flag is ignored. Stays
   // computed from the UNFILTERED archived list regardless of any active search, since a group a
   // search hides still counts toward "all" (#735 decision 11).
-  const archivedSessions = sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId))
+  const archivedSessions = sessions.filter(
+    (session) => session.archivedAt && repositoriesById.has(session.repositoryId) && (!session.hiddenAt || showHidden)
+  )
   const archivedVisible = archivedSessions.length > 0
   // Issue #559 decisions 13-16: `searchSessions` (sessionDisplay.tsx, gate round 1 fix,
   // code-reviewer Medium) is the ONE place that computes what the query matches, shared with
@@ -63,10 +69,14 @@ export function SessionList() {
   // (decision 14). The derived header state each group computes (the Waiting marker, the
   // visible-Session bar, Archived's own count) follows automatically from whichever `sessions`
   // is passed in (decision 16).
-  const { matchingByRepository, matchingArchived, shownCount, totalCount } = searchSessions(sessions, repositories, query)
+  const { matchingByRepository, matchingArchived, shownCount, totalCount } = searchSessions(sessions, repositories, query, showHidden)
+  // Issue #748: a Project whose every non-archived Session is hidden disappears while Show hidden is off.
+  const hasListedSessions = (repositoryId: string, listed: SessionSummary[]): boolean =>
+    showHidden || hasQuery || listed.length > 0 || !sessions.some((s) => s.repositoryId === repositoryId && s.hiddenAt && !s.archivedAt)
   const visibleRepositoryEntries = repositories
     .map((repository) => ({ repository, sessions: matchingByRepository.get(repository.id) ?? [] }))
     .filter((entry) => !hasQuery || entry.sessions.length > 0)
+    .filter((entry) => hasListedSessions(entry.repository.id, entry.sessions))
   const visibleArchivedSessions = matchingArchived
   const noMatches = hasQuery && shownCount === 0
   const groupCount = repositories.length + (archivedVisible ? 1 : 0)
@@ -120,7 +130,12 @@ export function SessionList() {
       // announcement) so a Session that finished mid-debounce is reflected, not a stale snapshot
       // from the moment the keystroke landed. Shares `searchSessions` with the render path
       // above, so the two can never report a different count for the same state.
-      const live = searchSessions(useSessionsStore.getState().sessions, useRepositoriesStore.getState().repositories, trimmedQuery)
+      const live = searchSessions(
+        useSessionsStore.getState().sessions,
+        useRepositoriesStore.getState().repositories,
+        trimmedQuery,
+        useSessionListStore.getState().showHidden
+      )
       announceSearch(live.shownCount === 0 ? 'No sessions match' : showingCountLabel(live.shownCount, live.totalCount))
     }, 500)
     return () => clearTimeout(timer)
@@ -280,6 +295,7 @@ export function SessionList() {
               the 16px gap from Pull requests to the search field above instead, so this row's
               own gap shrinks to the 8px step under the field. */}
           <div className="mt-2 flex shrink-0 items-center justify-end gap-1 px-4">
+            <ShowHiddenToggle />
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

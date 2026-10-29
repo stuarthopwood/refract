@@ -40,8 +40,12 @@ The **Session status** of an idle **Session** whose latest reply the developer h
 _Avoid_: response ready, unread dot, response indicator, new message
 
 **Archive**:
-Hide a **Session** from the main list while keeping its **Worktree** and **Conversations** intact; reversible. The default way to finish with a **Session**.
+Move a **Session** out of the main list into the Archived group while keeping its **Worktree** and **Conversations** intact; reversible. Stops the agent. The default way to finish with a **Session**.
 _Avoid_: Close, remove (ambiguous with delete)
+
+**Hide** / **Hidden Session** (issue #748):
+Remove a **Session** from the session list only (`hiddenAt`, independent of **Archive**). Nothing stops: the agent keeps running, the **Session** stays searchable (tagged Hidden) and in Manage sessions, and it never resurfaces on its own, even when it needs you; the Show hidden toggle carries a badge counting hidden **Sessions** that need attention. Reversible with Unhide or the Hide toast's Undo.
+_Avoid_: Mute (Hide does not silence notifications), archive (separate flag)
 
 **Delete**:
 Permanently remove a **Session**, its **Worktree**, and its **Conversations**. A manual Delete asks first, naming what will be lost (uncommitted changes, unpushed commits); **Session cleanup** deletes without asking, but only Sessions it archived itself and that pass the same safety checks (issue #476).
