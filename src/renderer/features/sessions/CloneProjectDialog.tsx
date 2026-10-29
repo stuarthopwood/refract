@@ -108,8 +108,8 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
     setRetrying(new Set(retryingRef.current))
     const result = await window.refract.repositories.listGitHub(owner)
     retryingRef.current.delete(owner)
-    if (token !== requestRef.current) return
     setRetrying(new Set(retryingRef.current))
+    if (token !== requestRef.current) return
     if (!result.ok) {
       notify(result.error)
       return
