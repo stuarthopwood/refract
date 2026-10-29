@@ -56,10 +56,11 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
   const blocked = autoRetrying || working
 
   React.useEffect(() => {
-    if (!working || !retryHadFocus.current) return
+    if (!blocked || !retryHadFocus.current) return
     retryHadFocus.current = false
-    if (sessionId) focusSessionPane(sessionId)
-  }, [working, sessionId])
+    const active = document.activeElement
+    if (sessionId && (!active || active === document.body)) focusSessionPane(sessionId)
+  }, [blocked, sessionId])
 
   if (prompt === SUPERSEDED) return null
   const kind = classifyTurnError(item.text)
@@ -77,13 +78,15 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
         return
       }
       focusSessionPane(sessionId)
+      // The latch stays set on success: the session only reads as working once `agent_start`
+      // arrives, and the row disappears when the new turn's items do.
+      return
     } catch (error) {
       console.error('[refract] turn error retry failed', error)
       notify({ code: 'prompt-failed', message: 'Could not resend this prompt.' }, sessionId)
-    } finally {
-      sendingRef.current = false
-      setSending(false)
     }
+    sendingRef.current = false
+    setSending(false)
   }
 
   const showHint = needsReattach && !blocked
