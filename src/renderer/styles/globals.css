@@ -247,13 +247,13 @@ samp {
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
   --radius: 0.25rem;
-  /* Spec 012 (brand watermark, research.md decision 5): the mark's own starting opacity, kept
-     theme-independent since it is a flat alpha over whatever `--muted-foreground`/`--background`
-     resolve to per theme. Documented ceiling for a future aesthetic tuning pass: 0.12. */
-  --watermark-opacity: 0.06;
-  /* #1233: safe default for the Halloween artwork (bats and glyph); every `.theme-*` block
-     overrides it with the value that gives about 3:1 against its own background. */
-  --holiday-artwork-opacity: 0.58;
+  /* Spec 012 (brand watermark, research.md decision 5, amended by #1298): the `:root` fallback
+     for the mark's opacity; every `.theme-*` block sets its own value so the mark reads at about
+     1.6:1 against that theme's `--background`. */
+  --watermark-opacity: 0.30;
+  /* #1233, #1298: safe default for the Halloween artwork (bats and glyph); every `.theme-*` block
+     overrides it with the value that gives about 1.6:1 against its own background. */
+  --holiday-artwork-opacity: 0.30;
 }
 
 .theme-dark {
@@ -353,10 +353,12 @@ samp {
   /* #1074: white at 60% alpha over this theme's own `--background` -- 7.30:1, the dimmest of
    * the three text tiers, reserved for low-emphasis/meta text. */
   --muted-foreground: oklch(1 0 0 / 60%);
-  /* #1233: Halloween bats and watermark glyph opacity, tuned per theme so the artwork reads at
-   * about 3:1 against `--background` (this value times the 60% muted alpha; measured 3.0:1 at
-   * 0.565, rounded up for margin). */
-  --holiday-artwork-opacity: 0.58;
+  /* #1233, #1298: plain watermark, Halloween bats and glyph opacity, tuned per theme so the artwork
+   * reads at about 1.6:1 against `--background` (this value times the 60% muted alpha; measured
+   * 1.64:1 at 0.30). Was about 3:1 (0.58) for the Halloween artwork and 1.06:1 (0.06) for the plain
+   * mark. */
+  --watermark-opacity: 0.30;
+  --holiday-artwork-opacity: 0.30;
   --accent: oklch(0.269 0 0);
   --accent-foreground: var(--foreground);
   /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
@@ -663,7 +665,8 @@ samp {
    * `.theme-dark`'s own comment explains in full. */
   --foreground: oklch(1 0 0 / 90%);
   --muted-foreground: oklch(1 0 0 / 60%);
-  --holiday-artwork-opacity: 0.57; /* #1233: about 3:1 over #0F1014 */
+  --watermark-opacity: 0.28;
+  --holiday-artwork-opacity: 0.28; /* #1298: about 1.6:1 over #0F1014 (1.63:1) */
   --sidebar: #14161E;
   /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
   --project-1: oklch(0.76 0.11 125);
@@ -953,7 +956,8 @@ samp {
   --secondary-foreground: oklch(1 0 0);
   --muted: oklch(0.26 0 0);
   --muted-foreground: oklch(0.85 0 0);
-  --holiday-artwork-opacity: 0.45; /* #1233: about 3:1 over pure black (opaque muted grey) */
+  --watermark-opacity: 0.24;
+  --holiday-artwork-opacity: 0.24; /* #1298: about 1.6:1 over pure black (opaque muted grey) */
   --accent: oklch(0.26 0 0);
   --accent-foreground: oklch(1 0 0);
   /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
@@ -1188,7 +1192,8 @@ samp {
    * `.theme-dark`'s own comment explains in full. */
   --foreground: oklch(1 0 0 / 90%);
   --muted-foreground: oklch(1 0 0 / 60%);
-  --holiday-artwork-opacity: 0.58; /* #1233: about 3:1 over #060f1e */
+  --watermark-opacity: 0.28;
+  --holiday-artwork-opacity: 0.28; /* #1298: about 1.6:1 over #060f1e (1.61:1) */
   --sidebar: #0c1626;
   /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
   --project-1: oklch(0.78 0.11 125);
@@ -1460,7 +1465,8 @@ samp {
    * popover are themselves byte-identical to Dark's own. */
   --foreground: oklch(1 0 0 / 90%);
   --muted-foreground: oklch(1 0 0 / 60%);
-  --holiday-artwork-opacity: 0.58; /* #1233: same as Dark (identical background) */
+  --watermark-opacity: 0.30;
+  --holiday-artwork-opacity: 0.30; /* #1298: same as Dark (identical background) */
   --sidebar: oklch(0.205 0 0);
   /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
   --project-1: oklch(0.78 0.11 125);
@@ -1689,7 +1695,7 @@ samp {
  * `Element.animate()` call in `HolidayAmbientLoop.tsx` itself -- genuinely NO animation,
  * CSS or JS, running between flights, so `document.getAnimations()` is empty almost all the
  * time. Single colour (`--muted-foreground`, the same token the watermark itself uses) at the
- * per-theme `--holiday-artwork-opacity` (#1233: about 3:1 against the theme background). */
+ * per-theme `--holiday-artwork-opacity` (#1233, #1298: about 1.6:1 against the theme background). */
 .holiday-ambient-loop-bat {
   color: var(--muted-foreground);
   opacity: var(--holiday-artwork-opacity);

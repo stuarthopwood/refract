@@ -68,6 +68,8 @@ impl ActivityState {
                 | "auto_retry_end"
                 | "auto_compaction_start"
                 | "auto_compaction_end"
+                | "manual_compaction_start"
+                | "manual_compaction_end"
                 | "agent_start"
                 | "session_settled"
                 | "prompt_result"
@@ -105,8 +107,12 @@ impl ActivityState {
                 }
             }
             "auto_retry_end" => std::mem::take(&mut self.retry).is_some(),
-            "auto_compaction_start" => !std::mem::replace(&mut self.compacting, true),
-            "auto_compaction_end" => std::mem::replace(&mut self.compacting, false),
+            "auto_compaction_start" | "manual_compaction_start" => {
+                !std::mem::replace(&mut self.compacting, true)
+            }
+            "auto_compaction_end" | "manual_compaction_end" => {
+                std::mem::replace(&mut self.compacting, false)
+            }
             "agent_start" | "session_settled" => self.reset(),
             "prompt_result"
                 if frame.get("sessionSettled").and_then(Value::as_bool) == Some(true) =>
