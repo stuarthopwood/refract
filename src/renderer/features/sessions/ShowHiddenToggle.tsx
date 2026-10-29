@@ -41,7 +41,13 @@ export function ShowHiddenToggle() {
             variant="subtle"
             size="icon-xs"
             pressed={showHidden}
-            onPressedChange={(next) => useSessionListStore.getState().setShowHidden(next)}
+            onPressedChange={(next) => {
+              useSessionListStore.getState().setShowHidden(next)
+              // Turning it off with nothing hidden removes this control; keep focus in the toolbar.
+              if (!next && hidden === 0) {
+                requestAnimationFrame(() => document.querySelector<HTMLElement>('button[aria-label="Collapse all groups"]')?.focus())
+              }
+            }}
             aria-label={name}
             data-show-hidden-toggle=""
             className={cn('relative', TOOLBAR_BUTTON_CLASS)}

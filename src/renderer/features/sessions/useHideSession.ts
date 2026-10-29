@@ -12,6 +12,8 @@ interface HideSessionOptions {
   /** Focuses this row's own control; used when the row stays (Show hidden on) and after Undo. */
   focusRow(): void
   onAnnounce?(message: string): void
+  /** Where focus goes after Unhide/Undo; defaults to the Session list row. */
+  focusAfterUnhide?(): void
 }
 
 export function useHideSession(session: SessionSummary, options: HideSessionOptions) {
@@ -21,7 +23,7 @@ export function useHideSession(session: SessionSummary, options: HideSessionOpti
     void setHidden(session.id, false).then((ok) => {
       if (!ok) return
       options.onAnnounce?.(`Unhid ${session.name}`)
-      requestAnimationFrame(() => focusSessionRow(session.id))
+      requestAnimationFrame(() => (options.focusAfterUnhide ?? (() => focusSessionRow(session.id)))())
     })
   }
 
