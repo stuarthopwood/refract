@@ -1,244 +1,104 @@
-// The Overview tab's ordered timeline (specs/003-pull-request-management FR-008, T016): commits,
-// comments, reviews, and review threads in chronological order, each review's automated-reviewer
-// findings shown with their severity, all text through the shared `Markdown.tsx` (FR-023). Also
-// carries the reply/resolve/unresolve controls for each review thread (FR-013, FR-014, T019):
-// calls `pullRequests.replyToThread`/`resolveThread`/`unresolveThread` and shows the exact
-// failure inline (including `stale`) rather than silently doing nothing (FR-018).
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { Markdown } from '@/features/chat/Markdown'
-import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
-import { cn } from '@/lib/utils'
-import type { AutomatedFinding, PullRequestActor, Review, TimelineEntry } from '../../../shared/github'
+// The Overview tab's ordered timeline (specs/003-pull-request-management FR-008, T016; restyled
+// by spec 038 FR-001 to FR-003): a 1px history line down the left, consecutive commits grouped
+// under an "N commits" heading, and comments, reviews and review threads as cards. Entries are
+// rendered by `TimelineCards.tsx`; reply/resolve controls live in `ThreadReply.tsx`.
+import type { ReactNode } from 'react'
+import type { TimelineEntry } from '../../../shared/github'
+import { CommentCard, CommitRow, ReviewCard, ThreadCard } from './TimelineCards'
 
 interface TimelineProps {
   repositoryId: string
   number: number
   entries: TimelineEntry[]
+  viewerLogin: string | null
   /** Re-fetches `pullRequests.detail` after a reply/resolve/unresolve succeeds, so the timeline
    * and staleness cache both reflect the new state without a manual refresh (FR-018). */
   onChanged(): void
 }
 
-function actorLabel(actor: PullRequestActor): string {
-  return actor.name ?? actor.login
-}
+type CommitEntry = Extract<TimelineEntry, { kind: 'commit' }>
+type Block = { kind: 'commits'; commits: CommitEntry[] } | { kind: 'entry'; entry: Exclude<TimelineEntry, CommitEntry> }
 
-// Gate round 2 fix (#568 decision 10 amendment): DISMISSED is now a real timeline entry (it no
-// longer shares PENDING's silent drop in `map_review_verdict`). Gate round 3 fix: a plain
-// `{actor} {label}` template read as "{author} dismissed their review", which gets the actor
-// wrong -- the REVIEWER doesn't dismiss their own review (a maintainer, or GitHub's own
-// stale-review automation, does). `reviewSentence` below builds the dismissed case as its own
-// possessive sentence instead of reusing the shared template. The original verdict (approve vs
-// request-changes) a dismissed review HAD before dismissal isn't in this query's data --
-// `state` is simply overwritten to `DISMISSED` by GitHub itself -- so this stays the generic
-// "review was dismissed" wording rather than claiming a specific one.
-const VERDICT_LABEL: Record<Exclude<Review['verdict'], 'dismissed'>, string> = {
-  comment: 'commented',
-  approve: 'approved',
-  'request-changes': 'requested changes'
-}
-
-function reviewSentence(review: Review): string {
-  if (review.verdict === 'dismissed') return `${actorLabel(review.author)}\u2019s review was dismissed`
-  return `${actorLabel(review.author)} ${VERDICT_LABEL[review.verdict]}`
-}
-
-const SEVERITY_LABEL: Record<AutomatedFinding['severity'], string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  critical: 'Critical',
-  unknown: 'Severity unknown'
-}
-
-function CommitRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'commit' }> }) {
-  return (
-    <div className="flex items-start gap-2 rounded-md border border-border px-4 py-2 text-sm">
-      <span className="shrink-0 font-code text-xs text-muted-foreground">{entry.sha.slice(0, 7)}</span>
-      <span className="min-w-0 flex-1 break-words">{entry.message}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {actorLabel(entry.author)} &middot; {formatRelativeTime(entry.committedAt)}
-      </span>
-    </div>
-  )
-}
-
-function CommentRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'comment' }> }) {
-  return (
-    <div className="rounded-md border border-border px-4 py-2">
-      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="text-foreground">{actorLabel(entry.author)}</span>
-        <span>{formatRelativeTime(entry.createdAt)}</span>
-      </div>
-      <Markdown id={entry.id} text={entry.body} />
-    </div>
-  )
-}
-
-function ReviewRow({ entry }: { entry: Extract<TimelineEntry, { kind: 'review' }> }) {
-  const { review } = entry
-  return (
-    <div className="rounded-md border border-border px-4 py-2">
-      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="text-foreground">
-          {reviewSentence(review)}
-        </span>
-        <span>{formatRelativeTime(review.submittedAt)}</span>
-      </div>
-      {review.body && <Markdown id={review.id} text={review.body} />}
-      {review.findings.length > 0 && (
-        <ul className="mt-2 space-y-2">
-          {review.findings.map((finding, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs">
-              <span className="shrink-0 rounded border border-border px-1 py-1">
-                {SEVERITY_LABEL[finding.severity]}
-              </span>
-              <Markdown id={`${review.id}-finding-${i}`} text={finding.body} className="text-xs" />
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-function ThreadRow({
-  repositoryId,
-  number,
-  entry,
-  onChanged
-}: {
-  repositoryId: string
-  number: number
-  entry: Extract<TimelineEntry, { kind: 'review-thread' }>
-  onChanged(): void
-}) {
-  const { thread } = entry
-  const [replyText, setReplyText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleReply(): Promise<void> {
-    const body = replyText.trim()
-    if (!body) return
-    setBusy(true)
-    setError(null)
-    const result = await window.refract.pullRequests.replyToThread(repositoryId, number, thread.id, body)
-    setBusy(false)
-    if (!result.ok) {
-      setError(result.error.message)
-      return
+function toBlocks(entries: TimelineEntry[]): Block[] {
+  const blocks: Block[] = []
+  for (const entry of entries) {
+    if (entry.kind !== 'commit') {
+      blocks.push({ kind: 'entry', entry })
+      continue
     }
-    setReplyText('')
-    onChanged()
+    const last = blocks[blocks.length - 1]
+    if (last?.kind === 'commits') last.commits.push(entry)
+    else blocks.push({ kind: 'commits', commits: [entry] })
   }
-
-  async function handleToggleResolve(): Promise<void> {
-    setBusy(true)
-    setError(null)
-    const result = thread.resolved
-      ? await window.refract.pullRequests.unresolveThread(repositoryId, number, thread.id)
-      : await window.refract.pullRequests.resolveThread(repositoryId, number, thread.id)
-    setBusy(false)
-    if (!result.ok) {
-      setError(result.error.message)
-      return
-    }
-    onChanged()
-  }
-
-  return (
-    <div className="rounded-md border border-border px-4 py-2">
-      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="font-code">
-          {thread.path}
-          {thread.line !== null ? `:${thread.line}` : ''}
-        </span>
-        <span className={cn(thread.resolved ? 'text-muted-foreground' : 'text-foreground')}>
-          {thread.resolved ? 'Resolved' : 'Unresolved'}
-        </span>
-      </div>
-      <div className="space-y-2">
-        {thread.comments.map((comment) => (
-          <div key={comment.id}>
-            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-              <span className="text-foreground">{actorLabel(comment.author)}</span>
-              <span>{formatRelativeTime(comment.createdAt)}</span>
-            </div>
-            <Markdown id={comment.id} text={comment.body} />
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 flex items-start gap-2">
-        <Textarea
-          value={replyText}
-          onChange={(e) => setReplyText(e.target.value)}
-          placeholder="Reply to this thread"
-          aria-label={`Reply to the review thread on ${thread.path}`}
-          className="min-h-16 flex-1 text-sm"
-          disabled={busy}
-        />
-        <div className="flex shrink-0 flex-col gap-1">
-          {/* "Also fix" remediation (a11y AND code-reviewer, corroborated): a screen-reader user
-              with several threads open hears identical "Reply"/"Resolve" names with no way to
-              tell them apart -- the file path (and line, when known) disambiguates each one. */}
-          <Button
-            size="sm"
-            variant="outline"
-            aria-label={`Reply to ${thread.path}${thread.line !== null ? `:${thread.line}` : ''}`}
-            onClick={() => void handleReply()}
-            disabled={busy || !replyText.trim()}
-          >
-            Reply
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            aria-label={`${thread.resolved ? 'Unresolve' : 'Resolve'} thread on ${thread.path}${thread.line !== null ? `:${thread.line}` : ''}`}
-            onClick={() => void handleToggleResolve()}
-            disabled={busy}
-          >
-            {thread.resolved ? 'Unresolve' : 'Resolve'}
-          </Button>
-        </div>
-      </div>
-      {error && (
-        <p role="alert" className="mt-1 text-xs text-destructive">
-          {error}
-        </p>
-      )}
-    </div>
-  )
+  return blocks
 }
 
-export function Timeline({ repositoryId, number, entries, onChanged }: TimelineProps) {
+function Item({ children }: { children: ReactNode }) {
+  return <li className="relative">{children}</li>
+}
+
+export function Timeline({ repositoryId, number, entries, viewerLogin, onChanged }: TimelineProps) {
   if (entries.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">No activity yet.</p>
   }
   return (
-    <div className="flex flex-col gap-2 p-4">
-      {entries.map((entry) => {
-        switch (entry.kind) {
-          case 'commit':
-            return <CommitRow key={`commit-${entry.sha}`} entry={entry} />
-          case 'comment':
-            return <CommentRow key={`comment-${entry.id}`} entry={entry} />
-          case 'review':
-            return <ReviewRow key={`review-${entry.review.id}`} entry={entry} />
-          case 'review-thread':
+    <div className="relative p-4">
+      <div aria-hidden className="absolute bottom-4 left-6 top-4 w-px bg-divider" />
+      <ul className="relative flex flex-col gap-2 pl-6">
+        {toBlocks(entries).map((block) => {
+          if (block.kind === 'commits') {
+            const { commits } = block
+            const [first] = commits
+            if (!first) return null
+            if (commits.length === 1) {
+              return (
+                <Item key={`commit-${first.sha}`}>
+                  <CommitRow entry={first} />
+                </Item>
+              )
+            }
             return (
-              <ThreadRow
-                key={`thread-${entry.thread.id}`}
-                repositoryId={repositoryId}
-                number={number}
-                entry={entry}
-                onChanged={onChanged}
-              />
+              <Item key={`commits-${first.sha}`}>
+                <p className="py-1 text-xs font-medium text-muted-foreground">{commits.length} commits</p>
+                <ul>
+                  {commits.map((commit) => (
+                    <li key={commit.sha}>
+                      <CommitRow entry={commit} />
+                    </li>
+                  ))}
+                </ul>
+              </Item>
             )
-        }
-      })}
+          }
+          const { entry } = block
+          switch (entry.kind) {
+            case 'comment':
+              return (
+                <Item key={`comment-${entry.id}`}>
+                  <CommentCard entry={entry} viewerLogin={viewerLogin} />
+                </Item>
+              )
+            case 'review':
+              return (
+                <Item key={`review-${entry.review.id}`}>
+                  <ReviewCard entry={entry} viewerLogin={viewerLogin} />
+                </Item>
+              )
+            case 'review-thread':
+              return (
+                <Item key={`thread-${entry.thread.id}`}>
+                  <ThreadCard
+                    repositoryId={repositoryId}
+                    number={number}
+                    entry={entry}
+                    viewerLogin={viewerLogin}
+                    onChanged={onChanged}
+                  />
+                </Item>
+              )
+          }
+        })}
+      </ul>
     </div>
   )
 }

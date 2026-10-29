@@ -14,7 +14,7 @@ import {
 import type { ComponentType } from 'react'
 import type { PullRequestState, PullRequestSummary } from '../../../shared/github'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
+import { RelativeTime } from '@/components/relative-time'
 import { cn } from '@/lib/utils'
 
 interface PullRequestRowProps {
@@ -101,7 +101,7 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
         <span aria-hidden="true">{'\u00b7'}</span>
         <span className="truncate">{pullRequest.repository}</span>
         <span aria-hidden="true">{'\u00b7'}</span>
-        <span className="tabular-nums">{formatRelativeTime(pullRequest.updatedAt)}</span>
+        <span className="tabular-nums"><RelativeTime value={pullRequest.updatedAt} /></span>
       </span>
       <span className="truncate text-xs text-muted-foreground">{authorLabel}</span>
     </button>
