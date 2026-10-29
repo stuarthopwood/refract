@@ -10,6 +10,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
+import type { CreatedIssue, IssueLabel, IssueMatch } from '../shared/ipc-issues'
 import type { SessionActivity } from '../shared/activity'
 import type {
   BranchEntry,
@@ -308,6 +309,13 @@ const refract: RefractApi = {
 
   window: {
     popupMenu: (menuId, x, y) => request<void>(IPC_REQUESTS.WINDOW_POPUP_MENU, menuId, x, y)
+  },
+
+  issues: {
+    labels: (repositoryId) => request<IssueLabel[]>(IPC_REQUESTS.ISSUES_LABELS, repositoryId),
+    search: (repositoryId, query) => request<IssueMatch[]>(IPC_REQUESTS.ISSUES_SEARCH, repositoryId, query),
+    create: (repositoryId, title, body, labels) =>
+      request<CreatedIssue>(IPC_REQUESTS.ISSUES_CREATE, repositoryId, title, body, labels)
   },
 
   pullRequests: {
