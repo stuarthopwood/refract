@@ -28,6 +28,8 @@ export interface TranscriptRowProps {
   sessionId: string | null
   pending: PendingRequest[]
   userName: string | undefined; hideTime?: boolean // #555 amendment: hides a user row's own time under a directly-above TimeGapDivider (see UserMessageRowProps)
+  /** #505: the user's GitHub photo (data URL), shared by every row; absent shows initials. */
+  userAvatarUrl?: string
   /** A `request` row's own matching `ask` tool item (resolved questions only). */
   resolvedAsk?: ToolItem
   /** An `ask` tool row's own request id. */
@@ -69,6 +71,7 @@ function areRowPropsEqual(prev: TranscriptRowProps, next: TranscriptRowProps): b
     prev.sessionId === next.sessionId &&
     prev.pending === next.pending &&
     prev.userName === next.userName &&
+    prev.userAvatarUrl === next.userAvatarUrl &&
     prev.hideTime === next.hideTime &&
     prev.resolvedAsk === next.resolvedAsk &&
     prev.askRequestId === next.askRequestId &&
@@ -83,7 +86,7 @@ function areRowPropsEqual(prev: TranscriptRowProps, next: TranscriptRowProps): b
 // docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, askRequestId, hideTime, shimmer, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
+function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, resolvedAsk, askRequestId, hideTime, shimmer, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
   if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} shimmer={shimmer} />
   if (isToolGroup(item)) return isAgentSteerGroup(item) ? <AgentSteerRow item={item.items[0]!} /> : <ToolGroupRow group={item} shimmer={shimmer} />
@@ -93,7 +96,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, as
   switch (item.kind) {
     case 'user':
       // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow` (split out to keep Transcript.tsx within its `check:file-size` baseline).
-      return <UserMessageRow item={item} userName={userName} hideTime={hideTime} />
+      return <UserMessageRow item={item} userName={userName} userAvatarUrl={userAvatarUrl} hideTime={hideTime} />
 
     case 'assistant-text':
       return (
@@ -120,7 +123,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, resolvedAsk, as
     case 'tool':
       if (item.tool === 'ask') {
         if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
-        return <AskQuestionRow item={item} userName={userName} requestId={askRequestId} sessionId={sessionId ?? undefined} />
+        return <AskQuestionRow item={item} userName={userName} userAvatarUrl={userAvatarUrl} requestId={askRequestId} sessionId={sessionId ?? undefined} />
       }
       // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
       // normally occur: `groupToolItems` wraps every run, including a run of one, in a

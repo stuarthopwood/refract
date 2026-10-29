@@ -33,6 +33,7 @@ import { resolveToolDisplay } from './toolDisplay'
 import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
 import { newestRunningRowId } from './newestRunningRow'
 import { type UserItem } from './UserMessageRow'
+import { useRepositoryAvatarUrl } from './useRepositoryAvatarUrl'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 import { JumpToStageContext, stageRowDomId } from './stageJump'
@@ -248,6 +249,7 @@ export function Transcript({
   const pending = pendingBySession[sessionId] ?? NO_PENDING
 
   const userName = useRepositoryUserName(session?.repositoryId ?? null)
+  const userAvatarUrl = useRepositoryAvatarUrl(session?.repositoryId ?? null)
   const isTurnRunning = session?.status === 'working' || session?.status === 'needs-you'
 
   // Re-renders the running turn's total-time line every second (T076); the running turn is the
@@ -882,7 +884,7 @@ export function Transcript({
                             item={row}
                             sessionId={sessionId}
                             pending={pending}
-                            userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
+                            userName={userName} userAvatarUrl={userAvatarUrl} hideTime={showTimeGapDivider && row.kind === 'user'}
                             resolvedAsk={row.kind === 'request' ? askLinks.askByRequestId.get(row.requestId) : undefined}
                             askRequestId={row.kind === 'tool' ? askLinks.requestIdByAskItemId.get(row.id) : undefined}
                             shimmer={row.id === shimmerRowId}

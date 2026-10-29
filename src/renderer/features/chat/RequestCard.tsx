@@ -11,7 +11,7 @@ import { resolveToolDisplay } from './toolDisplay'
 import { CollapsedLine } from './CollapsedLine'
 import { consumeAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { isFocusStranded } from '@/lib/focus'
-import { initials } from '@/lib/initials'
+import { UserAvatar } from '@/components/UserAvatar'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 import { AskCard } from './AskCard'
 import { ApprovalActions } from './ApprovalActions'
@@ -261,6 +261,7 @@ const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/
 interface AskQuestionRowProps {
   item: AskToolItem
   userName?: string
+  userAvatarUrl?: string
   requestId?: string // gate round 2/3: the focus intent key, see ResolvedRequestSummary's doc comment
   sessionId?: string
 }
@@ -273,7 +274,7 @@ interface AskQuestionRowProps {
 // agent's own `ask` tool item (T072): its `args` hold the question and options, its
 // `output`/`details` the chosen answer, both of which survive a restart via `get_messages`,
 // unlike the `request` item this supersedes once it resolves.
-export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQuestionRowProps) {
+export function AskQuestionRow({ item, userName, userAvatarUrl, requestId, sessionId }: AskQuestionRowProps) {
   const questions = readAskQuestions(item.args)
   const answers = readAskAnswers(item, questions.map((question, index) => question.id ?? String(index)))
   const name = userName ?? 'You'
@@ -324,12 +325,7 @@ export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQues
                 </ul>
               )}
               <div className="flex items-start gap-2 pl-4">
-                <span
-                  aria-hidden
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-badge"
-                >
-                  {initials(name)}
-                </span>
+                <UserAvatar name={name} src={userAvatarUrl} size="xs" />
                 <div className="text-sm">
                   <span className="text-muted-foreground">Answer: </span>
                   <span>{name}</span>
