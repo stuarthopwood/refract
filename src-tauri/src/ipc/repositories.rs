@@ -179,32 +179,41 @@ pub fn repositories_add(state: AppState, args: Vec<Value>) -> HandlerFuture {
             Some(path) => path.to_string(),
             None => return Err(invalid_argument("repositories.add expects a string path")),
         };
-        let info = repo_info(std::path::Path::new(&repo_path))
-            .await
-            .map_err(map_git_error)?;
-        let branch = default_branch(std::path::Path::new(&info.path))
-            .await
-            .map_err(map_git_error)?;
-        let repository = Repository {
-            id: uuid::Uuid::new_v4().to_string(),
-            path: info.path.clone(),
-            name: std::path::Path::new(&info.path)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| info.path.clone()),
-            default_branch: branch,
-            added_at: now_iso8601(),
-            color: None,
-        };
-        state
-            .registry
-            .lock()
-            .await
-            .add_repository(repository.clone())
-            .await
-            .map_err(map_registry_error)?;
-        Ok(with_unknown_remote(&repository))
+        add_repository_at(&state, &repo_path).await
     })
+}
+
+/// The `repositories.add` body, shared with Clone from GitHub (spec 054) so a cloned folder
+/// registers exactly like an added one.
+pub(super) async fn add_repository_at(
+    state: &AppState,
+    repo_path: &str,
+) -> Result<Value, IpcError> {
+    let info = repo_info(std::path::Path::new(repo_path))
+        .await
+        .map_err(map_git_error)?;
+    let branch = default_branch(std::path::Path::new(&info.path))
+        .await
+        .map_err(map_git_error)?;
+    let repository = Repository {
+        id: uuid::Uuid::new_v4().to_string(),
+        path: info.path.clone(),
+        name: std::path::Path::new(&info.path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| info.path.clone()),
+        default_branch: branch,
+        added_at: now_iso8601(),
+        color: None,
+    };
+    state
+        .registry
+        .lock()
+        .await
+        .add_repository(repository.clone())
+        .await
+        .map_err(map_registry_error)?;
+    Ok(with_unknown_remote(&repository))
 }
 
 pub fn repositories_remove(state: AppState, args: Vec<Value>) -> HandlerFuture {

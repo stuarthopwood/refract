@@ -1,0 +1,10 @@
+# Research 054
+
+- **Stream pattern**: `GhLoginFlow` (`github/cli.rs` 280-600) already solves spawn, stdout/stderr readers, once-only exit, 2 KB private stderr tail, fixed failure sentences, and cancel (stdin close, 750 ms, `taskkill /T /F`). `CloneJob` copies that shape rather than sharing the type; the login flow's line parser is device-code specific.
+- **gh resolution**: `resolve_gh()` (`github/gh.rs:98`) prefers `%LOCALAPPDATA%\refract\tools\gh\gh.exe`, then `which_global("gh")` (cached). #1343 notes a stale tools copy wins over PATH; the clone uses the same function, so a fake `gh` for the live check must be installed where `resolve_gh` finds it (see quickstart).
+- **Progress**: git writes progress to stderr only when it is a TTY unless `--progress` is passed; `gh repo clone <repo> <dir> -- --progress` forwards it. Lines use `\r` between updates, so the reader splits on both `\r` and `\n`.
+- **Listing**: `gh repo list <owner> --json nameWithOwner,description,isPrivate,updatedAt --limit 100`. gh's default order is by last push, not `updatedAt`, so Refract re-sorts by `updatedAt` descending. Organisations come from `gh api user/orgs`.
+- **Multiple accounts**: `gh repo list` and `gh api` use the active account. Refract never runs `gh auth switch`. A non-active account's private repositories are therefore not listed unless the active account can see them (open question in `analysis.md`).
+- **Existing-Project match**: reuse `git::remote::repository_remote` per Project and compare normalised `github.com` `owner/name` (case-insensitive). `repositories.remotes` already bounds this with a pool; `listGitHub` calls the same bounded helper.
+- **Why a new module**: `repositories.rs` is 565 of 600 lines; `ipc.ts` sits at its 902-line baseline; `settings.rs` is 544.
+- **Cleanup safety**: `git clone` itself removes a directory it created when it fails, but a hard kill (`taskkill /F`) leaves partial contents, so Refract removes the folder it created. A pre-existing empty destination is never removed.

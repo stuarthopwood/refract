@@ -32,21 +32,15 @@ import type {
 } from './model';
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
 import type { ModelApi, RoleChangeSummary } from './ipc-model';
-import type { AttachmentsApi } from './ipc-attachments';
-import type { DebugApi } from './ipc-debug';
-import type { LeftoverSummary } from './ipc-sessions';
-import type { GitChangesApi } from './ipc-git-changes'; import type { IssuesApi } from './ipc-issues';
-import type { FileExplorerApi } from './ipc-file-explorer';
+import type { AttachmentsApi } from './ipc-attachments'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions';
+import type { GitChangesApi } from './ipc-git-changes'; import type { IssuesApi } from './ipc-issues'; import type { FileExplorerApi } from './ipc-file-explorer';
 import type {
   ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
   PullRequestStateFilter, PullRequestSummary, ReviewVerdict
 } from './github';
-import type { ThemeId } from './themes';
-import type { ChatWidth } from './chatWidth';
+import type { ThemeId } from './themes'; import type { ChatWidth } from './chatWidth';
 import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
-import type { ActivityText, SessionActivity } from './activity';
-import type { UpdatesApi } from './updates';
-import type { ImagesApi } from './ipc-images';
+import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks the host to pop open the one real `Menu` built from this same set, so a dev-only item
@@ -101,7 +95,7 @@ export type IpcErrorCode =
   | 'checkout-failed'
   | 'disabled'
   | 'session-archived'
-  | 'worktree-held' | 'worktree-busy'
+  | 'worktree-held' | 'worktree-busy' | 'destination-not-empty' | 'too-many-clones' | 'destination-in-use'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed'; // lane R11b (#794); #1265 settings.json write failed
 
 export interface IpcError {
@@ -314,6 +308,9 @@ export const IPC_REQUESTS = {
   REPOSITORIES_REMOTES: 'repositories.remotes',
   REPOSITORIES_PICK_FOLDER: 'repositories.pickFolder',
   REPOSITORIES_USER_NAME: 'repositories.userName',
+  REPOSITORIES_LIST_GITHUB: 'repositories.listGitHub',
+  REPOSITORIES_CLONE: 'repositories.clone',
+  REPOSITORIES_CLONE_CANCEL: 'repositories.cloneCancel',
   SESSIONS_LIST: 'sessions.list',
   SESSIONS_CREATE: 'sessions.create',
   SESSIONS_RENAME: 'sessions.rename',
@@ -407,6 +404,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_ACTIVITY_TEXT: 'settings.setActivityText',
   SETTINGS_SET_STATUS_STYLE: 'settings.setStatusStyle',
   SETTINGS_SET_CHAT_ROW_DENSITY: 'settings.setChatRowDensity',
+  SETTINGS_SET_DEFAULT_CLONE_FOLDER: 'settings.setDefaultCloneFolder',
   DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
@@ -488,6 +486,7 @@ export const IPC_EVENTS = {
   READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
   READINESS_CHANGED: 'readiness:changed',
   UPDATES_STATE_CHANGED: 'updates:state-changed',
+  REPOSITORIES_CLONE_PROGRESS: 'repositories:clone-progress',
 } as const;
 
 /** Spec 007 contracts/ipc.md "Bootstrap": the one channel that is not `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync`/`ipcMain.on`
@@ -503,7 +502,7 @@ export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 export type Unsubscribe = () => void;
 
 export interface RefractApi extends UpdatesApi, ImagesApi {
-  repositories: {
+  repositories: RepositoriesCloneApi & {
     /** Issue #528, gate round 3 fix (Medium): returns immediately with `remote: { kind:
      * 'unknown' }` on every entry -- the per-repository remote check used to run inline here
      * and could delay this call noticeably, which `App.tsx`'s own `showReadiness` gate means
@@ -663,7 +662,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   gitChanges: GitChangesApi;
   issues: IssuesApi;
 
-  settings: {
+  settings: SettingsCloneApi & {
     get(): Promise<Result<Settings>>;
     setApprovalMode(mode: ApprovalMode): Promise<Result<Settings>>;
     /** Spec 004 FR-012 to FR-014: persists the whole `Settings` row and returns this call's own

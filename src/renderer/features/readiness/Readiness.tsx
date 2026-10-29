@@ -3,7 +3,7 @@ import { LoaderCircleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TitlebarBand } from '@/components/TitlebarBand'
 import refractHero from '@/assets/brand/refract-hero.svg'
-import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
+import { AddProjectMenu } from '@/features/sessions/AddProjectMenu'
 import type { Check, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
 import { useHealthStore } from '@/state'
 import { CHECK_LABELS, CHECK_ORDER, CheckRow } from './CheckRow'
@@ -76,7 +76,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
             ))}
           </ul>
           <div className="mt-4 flex items-center gap-2">
-            <AddRepositoryDialog trigger={<Button data-readiness-primary disabled={!allPass} className="flex-1" aria-disabled={!allPass}>Add repository</Button>} />
+            <AddProjectMenu variant="first-run" disabled={!allPass} />
             <Button variant="outline" onClick={() => void runCheck()} disabled={checking}>
               {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
               Re-check

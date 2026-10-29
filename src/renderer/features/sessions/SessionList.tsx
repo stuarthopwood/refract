@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from 'react'
-import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, SearchXIcon } from 'lucide-react'
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { SearchField } from '@/components/SearchField'
-import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
+import { AddProjectMenu } from '@/features/sessions/AddProjectMenu'
 import { GitHubNavGroup } from './GitHubNavGroup'
 import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -324,17 +324,10 @@ export function SessionList() {
           `App.tsx` -- `ProfileItem.tsx`'s own `border-t` is removed so the two surfaces don't
           draw a double line), replacing the previous `border-sidebar-border`. Order (Add
           project, profile item, then #560's future alert rows) already falls out of render
-          order: this footer's own Add repository button, then `App.tsx`'s sibling
+          order: this footer's own Add project menu, then `App.tsx`'s sibling
           `<ProfileItem />` right below it. */}
       <div className="shrink-0 border-t border-divider p-2">
-        <AddRepositoryDialog
-          trigger={
-            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm text-muted-foreground hover:text-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent">
-              <FolderPlusIcon aria-hidden className="size-4" />
-              Add repository
-            </Button>
-          }
-        />
+        <AddProjectMenu variant="footer" />
       </div>
     </nav>
   )
