@@ -14,7 +14,7 @@
 // every icon is `size-4` (16px) on the 8px grid, Stuart's
 // own choice over a 14px TEXT step, which would read "as loud as the chat".
 import { forwardRef } from 'react'
-import type { ComponentType, FocusEvent, MouseEvent, ReactNode, Ref } from 'react'
+import type { ComponentType, FocusEvent, HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react'
 import { cn } from '@/lib/utils'
 
 // Issue #937 gate round 1 fix note (superseded 2026-10-21, issue #700/#701 slice (b)): this
@@ -33,7 +33,7 @@ export const READOUT_ITEM_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center ga
 export const READOUT_ITEM_INTERACTIVE_ADDITIONS =
   'min-h-6 min-w-6 justify-center rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
-export interface ReadoutItemProps {
+export interface ReadoutItemProps extends Omit<HTMLAttributes<HTMLButtonElement>, 'children' | 'onClick' | 'onFocus' | 'onBlur' | 'onPointerEnter' | 'onPointerLeave' | 'className'> {
   icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   children: ReactNode
   /** Issue #563 gate remediation (L2/L6 across reviewers): widened to accept the click event so
@@ -74,7 +74,7 @@ export interface ReadoutItemProps {
 }
 
 export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HTMLSpanElement, ReadoutItemProps>(function ReadoutItem(
-  { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter, onPointerLeave, onFocus, onBlur },
+  { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter,   onPointerLeave, onFocus, onBlur, ...rest },
   ref
 ) {
   const baseClasses = cn(READOUT_ITEM_BASE_CLASS, className)
@@ -105,9 +105,10 @@ export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
     )
   }
 
-  if (onActivate) {
+  if (onActivate || rest['aria-haspopup']) {
     return (
       <button
+        {...rest}
         ref={ref as Ref<HTMLButtonElement>}
         data-slot="readout-chip"
         type="button"

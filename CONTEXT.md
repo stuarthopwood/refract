@@ -319,7 +319,7 @@ One of a set of mutually exclusive selectable labels that switches which content
 _Avoid_: Filter (see **Filter tab**), section
 
 **Readout**:
-A compact, glanceable display of one live fact about something elsewhere in the app -- the **Status line**'s own entries (for example, Changes, Pull request, Subagents). Most readouts are plain text; some are also the entry point to an action, in which case they behave like a quiet text button rather than a chip (for example, one that opens an external link or a panel).
+A compact, glanceable display of one live fact about something elsewhere in the app -- the **Status line**'s own entries (for example, Changes, Pull request, Subagents). Most readouts are plain text; some are also the entry point to an action, in which case they behave like a quiet text button rather than a chip (for example, one that opens an external link or a panel). The Context usage readout opens a menu (spec 052, issue #506) with Shake context, Shake thinking and Shake images, which send OMP's `/shake`, `/shake thinking` and `/shake images`; OMP's own reply in the transcript is the result, and thinking and images confirm first because they are not recoverable.
 _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
 **Role·Model pill**:

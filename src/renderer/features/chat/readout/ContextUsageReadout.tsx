@@ -9,6 +9,7 @@ import type { CSSProperties } from 'react'
 import { GaugeIcon, TriangleAlertIcon } from 'lucide-react'
 import { compactNumber } from '@/lib/compactNumber'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
+import { ContextShakeMenu } from './ContextShakeMenu'
 import { ReadoutItem } from './ReadoutItem'
 
 // Full, un-abbreviated figures for the `sr-only` phrase below (gate round 4, #437 LOW): the
@@ -38,10 +39,11 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
   if (contextUsage === null) return null
   if (contextUsage === 'not-available') {
     return (
-      <ReadoutItem icon={GaugeIcon}>
-        <span aria-hidden>Context n/a</span>
-        <span className="sr-only">Context usage not available</span>
-      </ReadoutItem>
+      <ContextShakeMenu sessionId={sessionId} figure={null}>
+        <ReadoutItem icon={GaugeIcon} accessibleName="Context n/a, context usage, shake options">
+          <span aria-hidden>Context n/a</span>
+        </ReadoutItem>
+      </ContextShakeMenu>
     )
   }
   // Gate round 5 fix (Flow LOW): the rounded, DISPLAYED percent is what the warning (and the
@@ -54,8 +56,11 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
   const usedFull = FULL_NUMBER_FORMAT.format(contextUsage.usedTokens)
   const windowFull = FULL_NUMBER_FORMAT.format(contextUsage.windowTokens)
   return (
-    <ReadoutItem icon={high ? TriangleAlertIcon : GaugeIcon}>
-      <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${usedFull} of ${windowFull} tokens used, ${percent} percent`}</span>
+    <ContextShakeMenu sessionId={sessionId} figure={`${used}/${windowSize} (${percent}%)`}>
+    <ReadoutItem
+      icon={high ? TriangleAlertIcon : GaugeIcon}
+      accessibleName={`${used}/${windowSize} (${percent}%)${high ? ' high' : ''}, context usage, shake options. ${usedFull} of ${windowFull} tokens used`}
+    >
       <span aria-hidden data-context-usage-figures style={colour} className="relative inline-flex items-center self-stretch">
         {used}/{windowSize} ({percent}%)
         {high && <span> high</span>}
@@ -69,5 +74,6 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
         )}
       </span>
     </ReadoutItem>
+    </ContextShakeMenu>
   )
 }
