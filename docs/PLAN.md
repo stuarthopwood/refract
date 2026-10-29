@@ -818,7 +818,7 @@ Decided 2026-10-21 (Stuart): **#1085 wins over #1098** on the composer Subagents
 
 Also filed/amended 2026-10-21 (OMP 18.12.5 review, Stuart grilled, none deferred): **#1140** split Approve button with "Approve <tool> for this session", **#1141** `widget` role in Model roles; amended **#496** (Ask and remember), **#712** and **#1098** (probe leads), **#691** (`async.widgets`), **#689** and **#520** (review record); commented **#772**. Placed in the "OMP 18.12.5 review and re-verify" row.
 
-Also filed/amended 2026-10-28 (OMP 18.13.3 review, Stuart chose priorities): **#1294** (p1), **#1295** (p2), **#1296** (p2 spike); amended **#691**, **#689** and **#520**; commented **#1287**. Placed in the "OMP 18.13.3 review and re-verify" row.
+Also filed/amended 2026-10-28 (OMP 18.13.3 review, Stuart chose priorities): **#1294** (p1), **#1295** (p2), **#1296** (p2 spike); amended **#691**, **#689** and **#520**; commented **#1287**. Placed in the "OMP 18.13.3 review and re-verify" row. **#1294 in progress 2026-10-29 in the same PR as #1298 (spec 004 FR-037 converge, T245): `readout_activity.rs` maps `manual_compaction_start/_end` onto the `compacting` flag.**
 
 Closed 2026-10-21 (Stuart: Rust has been the only build for days): the Rust promotion epic **#797** and its last open lanes **#786** (R3), **#790** (R7), **#792** (R9), **#793** (R10), **#794** (R11); all of #784 to #797 are now closed. The Electron `spec-006-impl` branch is abandoned. Rust follow-ups stay open as standalone issues (#814, #835, #825, #876, #970, #1106, #881 to #883, #515).
 
@@ -860,7 +860,7 @@ Also filed 2026-10-27: **#1233** (`p1`), Halloween bats and watermark glyph near
 
 Also filed 2026-10-27: **#1235** (`p1`), a large CRLF paste losing its text on send, and **#1236** (`p1`), mid-turn assistant prose collapsed to a row; placed as rows after #1233.
 
-Also filed 2026-10-28: **#1298** (`p1`), follow-up to #1233: the Halloween ghost and bats sit at about 3:1 and are now too strong, and the plain watermark at 0.06 is too faint; all go to about 1.6:1 (opacity 0.30 on Dark) through per-theme values of the existing `--holiday-artwork-opacity` and `--watermark-opacity`, with no new token; placed as an index line after #1233's row.
+Also filed 2026-10-28: **#1298** (`p1`), follow-up to #1233: the Halloween ghost and bats sit at about 3:1 and are now too strong, and the plain watermark at 0.06 is too faint; all go to about 1.6:1 (opacity 0.30 on Dark) through per-theme values of the existing `--holiday-artwork-opacity` and `--watermark-opacity`, with no new token; placed as an index line after #1233's row. **In progress 2026-10-29 (PR `fix(chat)`, branch `chat-polish-1298-1294`, spec 012 converge): per-theme values 0.30 Dark and Cyber Amber, 0.28 Obsidian and Nordic Frost, 0.24 high contrast for both tokens; no light theme exists, so `:root` keeps a 0.30 fallback.**
 
 Also filed 2026-10-28: **#1300** (`p1`), chat row density and non-agent row verb emphasis: Tight / Compact / Comfy row gaps (4 / 8 / 16px, Compact default) set in Settings > Appearance, superseding the "Density: medium" line in `docs/design/product-look-and-feel.md` for chat rows; placed as an index line after #1298's line.
 

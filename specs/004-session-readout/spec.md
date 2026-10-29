@@ -774,7 +774,8 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-037** (new, 2026-10-23, issue #687): The Rust readout MUST retain the main agent's latest
   tool-call `intent` (set when the call starts), the latest call's name and target path, the
   auto-retry attempt (`auto_retry_start/_end`) and whether an auto-compaction runs
-  (`auto_compaction_start/_end`), and expose them as `latestIntent`, `latestTool`, `retry` and
+  (`auto_compaction_start/_end`, and, from OMP 18.13.3, a manual `/compact`'s
+  `manual_compaction_start/_end`, issue #1294, driving the same flag), and expose them as `latestIntent`, `latestTool`, `retry` and
   `compacting` on the existing coalesced `readout:update` (no new event). All clear at the turn
   boundary. The elapsed time reuses `turnTime.startedAt`. Known limit: intent is captured at
   `tool_execution_start` only, because OMP's `tool_execution_update` carries no intent.
