@@ -546,8 +546,8 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
   .eventWrapper {
     filter: none !important;
   }
-  /* #456 accent source, flowcharts only (nodes matched by their flowchart- id prefix; stylis nests a leading & as a descendant, so an svg-attribute scope never matches): borders, edge lines and arrowheads in the preset accent, node fill a faint accent tint, labels stay in the prose colour. Fill carries no !important so author classDef/style colours win. */
-  .node[id^="flowchart-"] rect, .node[id^="flowchart-"] polygon, .node[id^="flowchart-"] circle, .node[id^="flowchart-"] ellipse, .node[id^="flowchart-"] path {
+  /* #456 accent: flowchart nodes (id contains -flowchart-), cluster borders, edge lines, arrowheads. Fill has no !important so author colours win. */
+  .node[id*="-flowchart-"] rect, .node[id*="-flowchart-"] polygon, .node[id*="-flowchart-"] circle, .node[id*="-flowchart-"] ellipse, .node[id*="-flowchart-"] path {
     stroke: ${accent};
     fill: ${fill};
   }
