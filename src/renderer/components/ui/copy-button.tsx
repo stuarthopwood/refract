@@ -23,7 +23,11 @@ export interface CopyButtonProps {
   /** Computed lazily on click so a caller never has to keep a second "full" copy of large or
    * truncated content around just for this button to read (e.g. a tool Output capped at 200
    * visible lines still copies its full value). Must return plain text, never markup. */
-  getText: () => string
+  getText?: () => string
+  /** Alternative to `getText` for a caller that owns its own clipboard write (e.g. a path joined
+   * main-side): resolves `true` when the text reached the clipboard. The caller reports its own
+   * failure (toast); this control still clears the check and announces "Could not copy". */
+  onCopy?: () => Promise<boolean>
   /** Accessible name and tooltip text while idle, verb first, sentence case (e.g. "Copy code,
    * typescript", "Copy diff", "Copy pasted text"). Swapped for "Copied" for `COPIED_RESET_MS`
    * after a successful copy, so the tooltip text and `aria-label` always match (WCAG 2.5.3). */
@@ -31,9 +35,12 @@ export interface CopyButtonProps {
   /** Polite live-region text announced on success (e.g. "Code copied", "Diff copied"). */
   announcement: string
   className?: string
+  /** Pass `-1` for a mouse-only shortcut whose keyboard route lives elsewhere (a row menu). */
+  tabIndex?: number
+  disabled?: boolean
 }
 
-export function CopyButton({ getText, label, announcement, className }: CopyButtonProps) {
+export function CopyButton({ getText, onCopy, label, announcement, className, tabIndex, disabled }: CopyButtonProps) {
   const [copied, setCopied] = React.useState(false)
   const [polite, announcePolite] = useClearedAnnouncement()
   const [assertive, announceAssertive] = useClearedAnnouncement()
@@ -63,7 +70,23 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
     // The button always sits beside, never inside, the scrollable/selectable region it copies
     // from, but stopPropagation keeps a click here purely this control's own action regardless.
     event.stopPropagation()
-    const decision = copyDecision(sanitiseForClipboard(getText()))
+    if (onCopy) {
+      const ok = await onCopy()
+      if (!mountedRef.current) return
+      window.clearTimeout(resetRef.current)
+      if (!ok) {
+        setCopied(false)
+        announcePolite("")
+        announceAssertive("Could not copy")
+        return
+      }
+      announceAssertive("")
+      setCopied(true)
+      announcePolite(announcement)
+      resetRef.current = window.setTimeout(() => setCopied(false), COPIED_RESET_MS)
+      return
+    }
+    const decision = copyDecision(sanitiseForClipboard(getText?.() ?? ""))
     if (decision.kind === "nothing") {
       // Quality-gate remediation (cycle 4): clear any stale "Copied" visual state and polite
       // announcement a previous click left behind before this one -- otherwise a rapid second
@@ -129,6 +152,8 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
             variant="ghost"
             size="icon-xs"
             aria-label={name}
+            tabIndex={tabIndex}
+            disabled={disabled}
             onClick={(event) => void handleCopy(event)}
             className={cn("shrink-0", className)}
           >

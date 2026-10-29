@@ -111,6 +111,7 @@
   --radius-3xl: calc(var(--radius) * 4);
   --radius-4xl: calc(var(--radius) * 5);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-right: var(--sidebar-right);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
@@ -118,6 +119,14 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-git-modified: var(--git-modified);
+  --color-git-added: var(--git-added);
+  --color-git-untracked: var(--git-untracked);
+  --color-git-deleted: var(--git-deleted);
+  --color-git-ignored: var(--git-ignored);
+  --color-git-renamed: var(--git-renamed);
+  --color-git-conflicted: var(--git-conflicted);
+  --color-git-staged: var(--git-staged);
   --color-state-working: var(--state-working);
   --color-state-working-foreground: var(--state-working-foreground);
   --color-state-idle: var(--state-idle);
@@ -168,7 +177,7 @@
   --font-weight-semibold: 500;
   --font-weight-bold: 600;
   --text-readout: 13px;
-  /* Spec 035 (#842): named steps replacing former arbitrary `text-[...]` sizes. */
+  /* Spec 036 (#842): named steps replacing former arbitrary `text-[...]` sizes. */
   --text-compact: 0.8rem;
   --text-micro: 0.7rem;
   --text-badge: 10px;
@@ -176,7 +185,7 @@
   --text-code-inline: 0.85em;
 }
 
-/* Spec 035 (#842, docs/design/foundations-typography-spacing.md "Text size"): text-only scaling.
+/* Spec 036 (#842, docs/design/foundations-typography-spacing.md "Text size"): text-only scaling.
  * Each role's `--scale-*` multiplies the Tailwind size variables; line heights stay the unitless
  * ratios Tailwind declares. A size never drops below 11px when scaled down (a step already
  * smaller than 11px keeps its own size as the floor). The variables are redeclared on the role
@@ -242,6 +251,16 @@ samp {
   --role-slow: oklch(0.78 0.12 101);
   --role-plan: oklch(0.78 0.11 131);
   color-scheme: dark;
+  /* #768 Git decoration: file-explorer name/icon colours, hues kept apart from the --state-* and
+   * --severity-* tokens; each is gated at 4.5:1 against the sidebar, hover and selected rows. */
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
@@ -355,6 +374,7 @@ samp {
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -576,6 +596,14 @@ samp {
   --role-slow: oklch(0.78 0.12 101);
   --role-plan: oklch(0.78 0.11 131);
   color-scheme: dark;
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
 
   /* ---- Layer 2: semantic roles. Canonical here (the opposite of Dark/HC above): --card/
    * --popover/--muted etc below alias INTO these, not the other way round. ------------------ */
@@ -598,6 +626,7 @@ samp {
   --muted-foreground: oklch(1 0 0 / 60%);
   --holiday-artwork-opacity: 0.57; /* #1233: about 3:1 over #0F1014 */
   --sidebar: #14161E;
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: #1C1F28;
   --surface-2: #242834;
   --surface-3: #2A3040;
@@ -798,6 +827,14 @@ samp {
   --role-slow: oklch(0.86 0.12 101);
   --role-plan: oklch(0.86 0.11 131);
   color-scheme: dark;
+  --git-modified: oklch(0.9 0.14 95);
+  --git-added: oklch(0.88 0.17 135);
+  --git-untracked: oklch(0.88 0.12 180);
+  --git-deleted: oklch(0.86 0.15 12);
+  --git-ignored: oklch(0.82 0.01 260);
+  --git-renamed: oklch(0.88 0.11 250);
+  --git-conflicted: oklch(0.88 0.18 330);
+  --git-staged: oklch(0.88 0.12 295);
   --scrollbar-thumb: #d4d4d4;
   --scrollbar-thumb-hover: #ffffff;
   --scrollbar-track: transparent;
@@ -884,6 +921,7 @@ samp {
   --chart-4: oklch(0.78 0.2 304);
   --chart-5: oklch(0.78 0.17 16);
   --sidebar: oklch(0.1 0 0);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --sidebar-foreground: oklch(1 0 0);
   --sidebar-primary: oklch(0.75 0.17 264);
   --sidebar-primary-foreground: oklch(0 0 0);
@@ -1032,6 +1070,14 @@ samp {
   --role-slow: oklch(0.78 0.12 101);
   --role-plan: oklch(0.78 0.11 131);
   color-scheme: dark;
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
   --scrollbar-thumb: var(--muted-foreground);
   --scrollbar-thumb-hover: var(--foreground);
   --scrollbar-track: transparent;
@@ -1057,6 +1103,7 @@ samp {
   --muted-foreground: oklch(1 0 0 / 60%);
   --holiday-artwork-opacity: 0.58; /* #1233: about 3:1 over #060f1e */
   --sidebar: #0c1626;
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: #101b2b;
   --surface-2: #1c2738;
   --surface-3: #293342;
@@ -1284,6 +1331,14 @@ samp {
   --role-slow: oklch(0.78 0.12 233);
   --role-plan: oklch(0.78 0.11 262);
   color-scheme: dark;
+  --git-modified: oklch(0.83 0.12 95);
+  --git-added: oklch(0.8 0.15 135);
+  --git-untracked: oklch(0.8 0.11 180);
+  --git-deleted: oklch(0.78 0.15 12);
+  --git-ignored: oklch(0.74 0.01 260);
+  --git-renamed: oklch(0.8 0.11 250);
+  --git-conflicted: oklch(0.8 0.18 330);
+  --git-staged: oklch(0.8 0.12 295);
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
@@ -1296,6 +1351,7 @@ samp {
   --muted-foreground: oklch(1 0 0 / 60%);
   --holiday-artwork-opacity: 0.58; /* #1233: same as Dark (identical background) */
   --sidebar: oklch(0.205 0 0);
+  --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: oklch(0.205 0 0);
   --surface-2: oklch(0.205 0 0);
   --surface-3: oklch(0.269 0 0);

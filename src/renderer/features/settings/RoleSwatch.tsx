@@ -1,4 +1,4 @@
-// Spec 035 T8: the role colour swatch beside a role name. Decorative (`aria-hidden`): the role's
+// Spec 036 T8: the role colour swatch beside a role name. Decorative (`aria-hidden`): the role's
 // name already says which role it is. Only default, smol, slow and plan have a colour; every
 // other role renders nothing. Class names are listed in full so Tailwind can see them.
 import type { ModelRoleId } from '../../../shared/model'

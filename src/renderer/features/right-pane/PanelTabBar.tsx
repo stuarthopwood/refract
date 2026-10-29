@@ -103,7 +103,6 @@ import { useRightPaneStore } from '@/state'
 import { DiffStatCounts } from '../sessions/sessionDisplay'
 import { compactPanelCount, formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
-import { WidthPresetControl } from './WidthPresetControl'
 import { WINDOW_CONTROLS_SPACER_STYLE, WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 
 // Inset (negative offset), matching `RightPaneShell.tsx`'s own content-focus ring: an outset ring
@@ -119,14 +118,9 @@ interface PanelTabBarProps {
   /** The focused chat pane's Session -- feeds a per-Session panel's live count (data-model.md
    * `getPanelCount`), independent of which Session that panel's own content is bound to. */
   sessionId: string | null
-  /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7, tasks.md T029):
-   * `App.tsx`'s own `ResizablePanel` ref, already wired to `right-pane-store.ts`'s `setWidth`
-   * through the same `onResize` guard the drag handle uses, so a preset click and a drag can
-   * never desync (User Story 6 scenario 2). */
-  resize(widthPx: number): void
 }
 
-export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
+export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const openPanel = useRightPaneStore((s) => s.openPanel)
@@ -226,8 +220,6 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
             <div aria-hidden className="shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
           </div>
         </div>
-        {/* Own row, below the title row (`WidthPresetControl.tsx` owns its row wrapper). */}
-        <WidthPresetControl resize={resize} />
       </div>
     )
   }
@@ -285,11 +277,9 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
     <div className="flex shrink-0 flex-col">
       {/* Row 1: reserves the window-controls corner only (FR-011); stays `aria-hidden`. */}
       <WindowControlsSpacerRow />
-      {/* Row W: the width-preset control (FR-025), its own row above the tab strip. */}
-      <WidthPresetControl resize={resize} />
-      {/* Row 2: the tab strip, now with the whole pane width (less this row's own padding) to
-          itself. */}
-      <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 border-t border-divider px-2">
+      {/* Row 2: the tab strip, directly under the corner row, with the whole pane width (less
+          this row's own padding) to itself. */}
+      <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 px-2">
         <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
           <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
             {openPanelIds.map((id) => (

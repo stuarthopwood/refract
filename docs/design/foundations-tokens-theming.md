@@ -58,9 +58,27 @@ row's hover) in every theme by `scripts/theme-contrast-pairs.mjs`. It shares the
 with the brand spinner's `--agent-spinner-core` (a brand mark, not a meaning colour, and never
 drawn on a chat line), so the two cannot be confused in context.
 
-### Role colour tokens (spec 035)
+### Role colour tokens (spec 036)
 
 `--role-default`, `--role-smol`, `--role-slow` and `--role-plan` identify the four chat roles in Settings > Models as a swatch beside the role name. Every theme preset defines them at 3:1 or better against background, card, popover and accent (`scripts/theme-contrast-pairs.mjs`). Within each theme, every role hue (OKLCH) sits at least 30 degrees (circular) clear of that theme's own info, agent-message violet, green, amber, red and accent hues, and the four role hues are at least 30 degrees apart from each other. Two themes cannot fit that: Dark (high contrast) and Nordic Frost leave only two free gaps (about 101-131 and 325-352), so they relax to 25 degrees (Dark (high contrast) default at 191 is 29 from green 162 and info 220; Nordic Frost default/smol at 327/355 are 28 apart and smol is 27 from red 22). Per-theme role hues (default / smol / slow / plan): Dark and Obsidian 197 / 340 / 101 / 131; Dark (high contrast) 191 / 327 / 101 / 131; Nordic Frost 327 / 355 / 101 / 131; Cyber Amber 125 / 340 / 233 / 262. The swatch is decorative (`aria-hidden`); other roles stay neutral.
+
+### Git decoration tokens (issue #768, spec 035)
+
+`--git-modified`, `--git-added`, `--git-untracked`, `--git-deleted`, `--git-ignored`,
+`--git-renamed`, `--git-conflicted` and `--git-staged` (`globals.css`, every built-in theme,
+mapped to `text-git-*` utilities) colour the name and file icon of a File explorer row
+(`git-decoration.ts`, `TreeNodeRow.tsx`) and the trailing status icon. They are separate from
+the `--state-*` and `--severity-*` colours: session state and git status never share a token.
+A folder takes the most significant status among its descendants (conflicted, deleted,
+modified, staged, renamed, added, untracked; ignored does not roll up). Colour is never the
+only signal: the trailing icon and its screen-reader word stay, and a folder rollup adds
+"contains changes" to the row's accessible name. Each token is checked at 4.5:1 against
+`--background`, `--sidebar`, `--sidebar-accent` and `--accent` (the hover and selected rows) in
+every theme by `scripts/theme-contrast-pairs.mjs`; Dark (high contrast) uses brighter values.
+
+### Right pane surface
+
+`--sidebar-right` (Tailwind `bg-sidebar-right`) is the right pane's and the icon rail's surface (spec 035, #674): in every theme block it is the oklab 50% midpoint of that theme's `--background` and `--sidebar`, `color-mix(in oklab, var(--background) 50%, var(--sidebar))`, so it sits between the chat canvas and the left sidebar. `scripts/theme-contrast-pairs.mjs` checks `foreground`, `muted-foreground` and `accent-text` on it in every theme, resolving the `color-mix` through `scripts/derived-tokens.mjs`.
 
 ### Reserved hues
 

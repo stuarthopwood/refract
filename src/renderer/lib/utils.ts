@@ -16,7 +16,7 @@
 import { createCn } from 'cn/config'
 import type { CnFunction } from 'cn'
 
-// Spec 035 (#842): the other named size steps (globals.css) are registered the same way.
+// Spec 036 (#842): the other named size steps (globals.css) are registered the same way.
 // TS2883: createCn's inferred return type (CnFunction) is not re-exported by 'cn/config',
 // so an explicit annotation (imported from the package root, which does export it) is
 // required for a portable declaration.

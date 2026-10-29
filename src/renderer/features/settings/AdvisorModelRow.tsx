@@ -1,4 +1,4 @@
-// Spec 035 T9: the Advisor model row in Settings > Models. Unlike the other roles it reads and
+// Spec 036 T9: the Advisor model row in Settings > Models. Unlike the other roles it reads and
 // writes the value Refract itself launches `omp` with (`modelRoles.advisor` in the token guard
 // store), never OMP's global config, so a change applies to Sessions started afterwards.
 import { useEffect, useState } from 'react'

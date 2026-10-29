@@ -1,7 +1,7 @@
 // Spec 013 FR-020 to FR-022 (research.md decision 7): Settings > Panels (formerly "Right pane"),
 // a dedicated section for the one "Show sample data" switch, not folded into Appearance -- this is
 // about right-pane content, not visual theme. Immediate apply, no Save step, the same pattern
-// `ChatDisplaySection.tsx` already uses for its own switches. Spec 035: built from the shared
+// `ChatDisplaySection.tsx` already uses for its own switches. Spec 036: built from the shared
 // `SettingsPage` / `SettingsGroup` / `SettingRow`.
 //
 // Scope note: this section persists the setting and exposes it to the renderer

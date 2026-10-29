@@ -1,4 +1,4 @@
-// Spec 035 (#842): Settings > Appearance > Text size. Three independent scales (App, Chat, Code),
+// Spec 036 (#842): Settings > Appearance > Text size. Three independent scales (App, Chat, Code),
 // four presets that set all three at once, per-role Reset and Reset all. Changes apply live (the
 // typography store writes the CSS variables) and are saved after a short pause; no Save step.
 import { useEffect, useRef } from 'react'

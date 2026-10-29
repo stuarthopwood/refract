@@ -14,7 +14,7 @@ interface SliderProps
   "aria-valuetext"?: string
 }
 
-// Spec 035 (#842): a single-thumb slider on Radix (arrow, Page, Home and End keys come with it). The
+// Spec 036 (#842): a single-thumb slider on Radix (arrow, Page, Home and End keys come with it). The
 // accessible name, description and value text go on the thumb, because that is the `role="slider"`
 // node. No transition: the control must not animate for users who reduce motion.
 function Slider({

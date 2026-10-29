@@ -1,8 +1,8 @@
-// Spec 035 T7: turns a role's stored selector into the text Settings > Models shows at rest.
+// Spec 036 T7: turns a role's stored selector into the text Settings > Models shows at rest.
 // Pure (no React), mirroring Refract's own role map in `model_support.rs`
 // (`resolve_role_selector`): `@<role>` and `*` (= `@default`) expand one hop through `modelRoles`,
 // and an unset `smol` or `slow` inherits `default`. Those two are the only inheritance links
-// confirmed by the probe (specs/035-settings-wave2/omp-probe.md); every other unset role is
+// confirmed by the probe (specs/036-settings-wave2/omp-probe.md); every other unset role is
 // reported as `unset` so the UI says OMP picks one automatically.
 import type { ModelCatalogEntry, ModelRoleId } from '../../../shared/model'
 import { splitThinkingSuffix } from './modelRoleSuffix'

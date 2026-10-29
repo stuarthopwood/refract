@@ -1,4 +1,4 @@
-// Spec 035 (WP-E): the three persisted text-size scales. Mirrors `src-tauri/src/store/typography.rs`.
+// Spec 036 (WP-E): the three persisted text-size scales. Mirrors `src-tauri/src/store/typography.rs`.
 export interface Typography {
   appScale: number;
   chatScale: number;

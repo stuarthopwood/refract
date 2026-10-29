@@ -1,4 +1,4 @@
-// The "Change" dropdown of one model role (extracted from `ModelRolesSection.tsx`, spec 035 T7).
+// The "Change" dropdown of one model role (extracted from `ModelRolesSection.tsx`, spec 036 T7).
 // The current model is shown as text by `RoleCurrentModel`; this control only picks a new one.
 // Reasoning-suffix handling is unchanged: picking a fresh catalog selector carries over the role's
 // existing `:level` suffix, or writes the bare selector and says so when the new model cannot

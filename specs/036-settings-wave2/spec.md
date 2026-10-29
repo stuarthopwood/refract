@@ -2,7 +2,7 @@
 
 **Feature Branch**: `wave2-settings`
 **Status**: Draft
-**Input**: One PR for the wave 2 "Settings" bundle in `docs/PLAN.md`: #714 (with its 2026-10-26 Advanced amendment), #717, #1070, #1141, #450 and #842. Decisions: the 2026-10-29 wave 2 Settings grill (a comment on each issue; glossary terms Settings page, Settings group, Advanced, Role colour and Text size in `CONTEXT.md`). Numbered 035 because 032 is the last spec taken. Sibling wave 2 lanes (Session list; Right pane and Explorer) run in parallel, so this spec stays inside Settings files and touches shared components additively only.
+**Input**: One PR for the wave 2 "Settings" bundle in `docs/PLAN.md`: #714 (with its 2026-10-26 Advanced amendment), #717, #1070, #1141, #450 and #842. Decisions: the 2026-10-29 wave 2 Settings grill (a comment on each issue; glossary terms Settings page, Settings group, Advanced, Role colour and Text size in `CONTEXT.md`). Numbered 036: 035 went to the right pane lane (merged first). Sibling wave 2 lanes (Session list; Right pane and Explorer) run in parallel, so this spec stays inside Settings files and touches shared components additively only.
 
 ## Clarifications
 

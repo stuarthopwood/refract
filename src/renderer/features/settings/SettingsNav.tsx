@@ -1,4 +1,4 @@
-// The Settings section list (wave 2, spec 035 FR-003): one flat, task-based list with a leading icon
+// The Settings section list (wave 2, spec 036 FR-003): one flat, task-based list with a leading icon
 // per item from the nav map below, `aria-current` on the active item, and the shared selected-row
 // treatment (`ActiveIndicatorBar`, #1122).
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'

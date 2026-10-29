@@ -1,4 +1,4 @@
-// Spec 035 (#842): one Text size row (App, Chat or Code): a slider and a number field kept in step
+// Spec 036 (#842): one Text size row (App, Chat or Code): a slider and a number field kept in step
 // (the number field is the non-drag alternative, WCAG 2.5.7), a per-role Reset, and a preview
 // sentence in the role's own font at the chosen size.
 import { useEffect, useRef, useState } from 'react'

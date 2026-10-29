@@ -23,7 +23,7 @@ import { initTypographyStore } from './state/typography-store'
 // Textarea, ...) to their light-mode styling.
 const bootstrap = window.refract.themeBootstrap()
 initThemeStore(bootstrap.theme)
-// Spec 035 (#842): the text scales apply on the same first paint as the theme class.
+// Spec 036 (#842): the text scales apply on the same first paint as the theme class.
 initTypographyStore(bootstrap.typography)
 
 initStores()

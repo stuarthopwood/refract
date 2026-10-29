@@ -122,7 +122,7 @@ export const ROLE_FALLBACK_LABEL: Partial<Record<ModelRoleId, string>> = {
   advisor: 'Slow'
 }
 
-// Spec 035 T7 groups, in display order. Advisor's row reads Refract's launch value (T9).
+// Spec 036 T7 groups, in display order. Advisor's row reads Refract's launch value (T9).
 const ROLE_GROUPS: ReadonlyArray<{ title: string; roles: readonly ModelRoleId[] }> = [
   { title: 'Conversation', roles: ['default', 'plan', 'slow'] },
   { title: 'Background', roles: ['smol', 'tiny', 'widget', 'memory', 'commit'] },

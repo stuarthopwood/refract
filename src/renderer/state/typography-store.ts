@@ -1,4 +1,4 @@
-// Spec 035 (#842): the three text-size scales (App, Chat, Code). The CSS variables
+// Spec 036 (#842): the three text-size scales (App, Chat, Code). The CSS variables
 // `--scale-app|chat|code` (globals.css) are applied to <html> synchronously from the theme
 // bootstrap on first paint, live while a control moves, and again when `settings:changed` brings a
 // value from elsewhere. Persisting is debounced so a slider drag sends one write, not one per step.

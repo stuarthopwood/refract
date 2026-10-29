@@ -200,7 +200,7 @@ export function AppearanceSection() {
             </Button>
           </div>
         </div>
-        {/* Spec 035 (#842): applies live, no Save/Cancel. */}
+        {/* Spec 036 (#842): applies live, no Save/Cancel. */}
         <TextSizeGroup />
         {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live, no Save/Cancel --
             the Save/Cancel row above governs only the Theme and Chat width pickers. */}

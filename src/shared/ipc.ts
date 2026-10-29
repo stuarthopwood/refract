@@ -694,7 +694,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
     setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; // Issue #1246
-    setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 035: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
+    setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
     setActivityText(value: ActivityText): Promise<Result<Settings>>; // #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
@@ -808,7 +808,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
    * first lines, before React mounts and before any class is set on `<html>`. Blocks the
    * renderer's one JS thread for one cheap call (~0.6ms, FINDINGS.md item 42) so nothing paints
    * before the right theme class is set (FR-012/SC-003). Not `Result<T>`-shaped. `typography`
-   * (spec 035) carries the saved text scales for the same first-paint reason. */
+   * (spec 036) carries the saved text scales for the same first-paint reason. */
   themeBootstrap(): { theme: ThemeId; typography?: Settings['typography'] };
 
   // Spec 008 contracts/ipc.md: GitHub accounts and OMP provider sign-in both go through the

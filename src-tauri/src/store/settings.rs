@@ -93,7 +93,7 @@ pub struct Settings {
     pub code_ligatures: bool,
     /// Issue #1250 (FR-119): the settled turn total under each turn; default off.
     pub show_finished_turn_times: bool,
-    /// Spec 035: text size scales (`typography.rs`).
+    /// Spec 036: text size scales (`typography.rs`).
     pub typography: Typography,
     /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`

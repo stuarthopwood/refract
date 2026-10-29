@@ -1,4 +1,4 @@
-// The Settings screen (spec 004 FR-011 to FR-016; wave 2 spec 035): a flat left section list
+// The Settings screen (spec 004 FR-011 to FR-016; wave 2 spec 036): a flat left section list
 // (`SettingsNav`) beside the chosen section's page. Every section builds from the shared
 // `SettingsPage` / `SettingsGroup` / `SettingRow`, and focuses its own heading on mount, so a
 // section change always lands on the new content (the nav button is never left holding focus).

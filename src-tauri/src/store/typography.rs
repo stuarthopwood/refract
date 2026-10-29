@@ -1,4 +1,4 @@
-// Spec 035 (WP-E): Settings > Appearance "Text size", three persisted scale multipliers. A child
+// Spec 036 (WP-E): Settings > Appearance "Text size", three persisted scale multipliers. A child
 // module of `settings.rs` to keep that file under the 600-line cap (issue #806).
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};

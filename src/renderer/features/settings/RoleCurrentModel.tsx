@@ -1,4 +1,4 @@
-// Spec 035 T7: the current model of one role, shown as text at rest (the dropdown beside it is only
+// Spec 036 T7: the current model of one role, shown as text at rest (the dropdown beside it is only
 // the "Change" control). Wraps long names rather than clipping them; a comma list shows its first
 // entry plus "then N more" with the full value in the tooltip.
 import { friendlyProviderLabel } from '@/lib/providerLabels'
