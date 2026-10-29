@@ -134,7 +134,9 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     id: 'cyber-amber',
     name: 'Cyber Amber',
     // Matches `.theme-cyber-amber`'s own `--background` (globals.css): byte-identical to
-    // `.theme-dark`'s own near-black canvas (#1039, 2026-10-20: every surface is pure neutral,
+    // `.theme-dark`'s own near-black canvas -- a dependency `scripts/check-theme-contrast.mjs`
+    // now enforces (#1256): change Dark's background and that check fails until Cyber Amber's
+    // (and this swatch) follow. (#1039, 2026-10-20: every surface is pure neutral,
     // chroma 0, no warm tint anywhere; text was retuned softer then fully reverted the same
     // day -- Stuart moved text softening to a separate, app-wide issue, #1074, which landed it
     // here instead -- so `--foreground`/`symbolColor` below are byte-identical with Dark's own

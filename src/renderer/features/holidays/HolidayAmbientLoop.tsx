@@ -34,9 +34,24 @@
 // `pointermove`) -- a reader scrolling with no clicks or keystrokes must not be treated as idle.
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { useHolidayStore, useSettingsStore } from '@/state'
+import { useActiveChatWidth, useHolidayStore, useSettingsStore } from '@/state'
 import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
 import { HOLIDAY_CONTENT } from './holidayContent'
+
+const FLIGHT_FADE_OUT_MS = 400
+
+/** #1256: a pause mid-flight freezes the bat where it is and fades it out, then returns it to
+ * its resting spot (it used to snap there). The reduced-motion/forced-colors path cancels
+ * outright instead (the whole layer is `display: none` there). */
+function fadeOutFlight(bat: HTMLElement, flight: Animation) {
+  flight.pause()
+  const fade = bat.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FLIGHT_FADE_OUT_MS, easing: 'ease-out', fill: 'forwards' })
+  fade.onfinish = () => {
+    flight.cancel()
+    fade.cancel()
+    bat.style.willChange = ''
+  }
+}
 
 /** Gate round 3 fix (High, item 1): the real flight gap is randomised 90-180s, so a 60s
  * CPU-budget sample almost never contains one -- `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS` (debug
@@ -46,7 +61,8 @@ import { HOLIDAY_CONTENT } from './holidayContent'
  * uses -- `ChatPane.tsx`'s own `showAmbientLoop` prop (true only for `paneIndex === 0`, gate
  * round 3 fix, High, item 2) and `EmptyChatState.tsx`'s unconditional mount (no composer in
  * that branch, so no pane-scoping question applies there). */
-export function HolidayAmbientLoop() {
+export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColumn?: boolean } = {}) {
+  const chatWidth = useActiveChatWidth()
   const holidayTouches = useSettingsStore((s) => s.settings.holidayTouches)
   const holiday = useHolidayStore((s) => s.activeHoliday)
   const idleTimeoutMs = useHolidayStore((s) => s.idleTimeoutMs)
@@ -209,6 +225,7 @@ export function HolidayAmbientLoop() {
     let cancelled = false
     let flightTimer: number | undefined
     let currentAnimation: Animation | undefined
+    let currentBat: HTMLElement | undefined
     let timerPending = false
     let timerDelayMs = 0
     let timerStartedAt = 0
@@ -249,9 +266,11 @@ export function HolidayAmbientLoop() {
         { duration: 4_000, easing: 'ease-in-out', fill: 'none' }
       )
       currentAnimation = animation
+      currentBat = bat
       animation.onfinish = () => {
         bat.style.willChange = ''
         currentAnimation = undefined
+        currentBat = undefined
         if (!cancelled) scheduleNextFlight()
       }
       animation.oncancel = () => {
@@ -275,7 +294,11 @@ export function HolidayAmbientLoop() {
       if (timerPending) {
         remainingFlightDelayMsRef.current = Math.max(0, timerDelayMs - (Date.now() - timerStartedAt))
       }
-      currentAnimation?.cancel()
+      if (currentAnimation && currentBat) {
+        const reducedNow = window.matchMedia('(prefers-reduced-motion: reduce), (forced-colors: active)').matches
+        if (reducedNow || !currentBat.isConnected) currentAnimation.cancel()
+        else fadeOutFlight(currentBat, currentAnimation)
+      }
     }
   }, [active, paused, motionReducedOrForcedColors, flightIntervalMsOverride])
 
@@ -285,7 +308,8 @@ export function HolidayAmbientLoop() {
     <div
       aria-hidden
       ref={containerRef}
-      className={cn('holiday-ambient-loop -z-10', `holiday-ambient-loop--${holiday}`)}
+      className={cn('holiday-ambient-loop -z-10', `holiday-ambient-loop--${holiday}`, avoidTextColumn && 'holiday-ambient-loop--gutters')}
+      data-chat-width={chatWidth}
       data-paused={paused || undefined}
       data-flight-count={flightCount}
     >
