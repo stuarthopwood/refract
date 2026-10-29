@@ -1,0 +1,14 @@
+// Fixture for issue #477 (Pause mode, spec 056), launch 2: the reattach after an app restart,
+// same shape as user-message-time-reopen.jsonl. Used only by scripts/verify-056-pause-mode.mjs.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["switch_session"]}
+{"id":"$lastId","type":"response","command":"switch_session","success":true,"data":{"cancelled":false}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"$conversationFile","sessionId":"sess-056","messageCount":2,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[{"role":"user","content":[{"type":"text","text":"hold the line"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"Working on it. Done: PAUSE-056."}],"timestamp":0}],"totalMessages":2}}
+{"__wait__":["never_sent"]}
