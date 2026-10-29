@@ -56,7 +56,7 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
         type="button"
         variant="text"
         size="xs"
-        className="text-muted-foreground"
+        className="text-muted-foreground underline underline-offset-2 hover:decoration-2"
         aria-label={`Don't show again, ${sessionName}`}
         onClick={() => void handleDontShowAgain()}
       >

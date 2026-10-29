@@ -1,27 +1,53 @@
 // #1284 (spec 040 FR-001): the Retry line shown while OMP retries a failing model call
 // ("Retrying, attempt N of M") with a Stop button that aborts the turn. OMP emits
 // `auto_retry_start`/`auto_retry_end` for retryable errors, which Rust folds into `readout.retry`
-// (`readout_activity.rs`); the current-work banner and the Session row read the same field.
+// (`readout_activity.rs`); the Session row reads the same field. The current-work banner leaves
+// the retry text to this line so only one retry line shows. Built on the shared `StatusBanner`
+// (patterns.md, Status channel), which is `aria-live="off"`: the end of the retry is announced once.
+import * as React from 'react'
+import { TriangleAlertIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
-import { Button } from '@/components/ui/button'
-import { PaneBanner } from '../../components/PaneBanner'
+import { StatusBanner } from '@/components/StatusBanner'
+import { focusSessionPane } from '@/lib/focus'
+import { useChatAreaAnnouncer } from './chatAreaAnnouncer'
 import { stopAndRestore } from './restoreQueue'
 
 export function RetryLine({ sessionId }: { sessionId: string }) {
   const retry = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.retry)
-  if (!retry) return null
+  const announce = useChatAreaAnnouncer((s) => s.announce)
+  const wasRetrying = React.useRef(false)
+
+  React.useEffect(() => {
+    if (wasRetrying.current && !retry) announce('Retry finished')
+    wasRetrying.current = !!retry
+  }, [retry, announce])
+
+  async function handleStop() {
+    await stopAndRestore(sessionId, () => focusSessionPane(sessionId))
+    focusSessionPane(sessionId)
+  }
 
   return (
-    <PaneBanner
-      severity="warning"
-      role="status"
-      title={`Retrying, attempt ${retry.attempt} of ${retry.maxAttempts}`}
-      data-testid="retry-line"
-      className="shrink-0 px-4 py-2"
-    >
-      <Button type="button" size="xs" variant="outline" onClick={() => void stopAndRestore(sessionId, () => undefined)}>
-        Stop
-      </Button>
-    </PaneBanner>
+    <StatusBanner
+      label="Retrying"
+      testId="retry-line"
+      items={
+        retry
+          ? [
+              {
+                id: 'retry',
+                status: (
+                  <span className="flex items-center gap-2 text-severity-warning">
+                    <TriangleAlertIcon aria-hidden className="size-4" />
+                    Retrying
+                  </span>
+                ),
+                text: `Attempt ${retry.attempt} of ${retry.maxAttempts}`,
+                action: { label: 'Stop', variant: 'text', onClick: () => void handleStop() }
+              }
+            ]
+          : []
+      }
+    />
   )
 }

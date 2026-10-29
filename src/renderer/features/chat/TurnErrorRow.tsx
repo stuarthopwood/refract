@@ -1,50 +1,65 @@
 // #1284 (spec 040 FR-001): the Turn error row at the end of a turn that ended in a model error.
 // OMP's error text is untrusted, so it renders as plain text, never markdown. Retry resends the
-// unanswered prompt once; the row disappears as soon as any later user message exists (the new
-// turn), so a second click is impossible.
+// unanswered prompt once. The row shows only while it is the last item of the transcript: any
+// later item (a new user message, or OMP's own auto-retry output) means the turn moved on, so a
+// stale Retry is never offered. No `data-pane-banner`: the composer always takes pane focus first.
+// The hint's primary action is Retry for every kind: the renderer has no restart-agent or
+// sign-in action to offer for TLS or auth errors yet.
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { notify, EMPTY_TRANSCRIPT, useTranscriptStore } from '@/state'
 import { classifyTurnError, TURN_ERROR_HINTS } from '../../../shared/turnError'
 import type { TranscriptItem } from '../../../shared/model'
+import { ClampedContent } from '../../components/ClampedContent'
 import { PaneBanner } from '../../components/PaneBanner'
+import { focusSessionPane } from '../../lib/focus'
+import { FILE_ATTACHMENTS_MARKER } from './anyFileAttachments'
 
 type TurnErrorItem = Extract<TranscriptItem, { kind: 'turn-error' }>
+type UserItem = Extract<TranscriptItem, { kind: 'user' }>
+
+const SUPERSEDED = Symbol('superseded')
+
+/** The prompt text Retry can resend whole, or null when it cannot (images are blob refs with no
+ * bytes here; file attachments are only resendable when their content sits in the text). */
+function resendableText(user: UserItem): string | null {
+  if (user.images && user.images.length > 0) return null
+  if (user.fileAttachments && user.fileAttachments.length > 0 && !user.text.includes(FILE_ATTACHMENTS_MARKER)) return null
+  return user.text.trim() === '' ? null : user.text
+}
 
 export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; sessionId: string | null }) {
   const [sending, setSending] = React.useState(false)
-  const superseded = useTranscriptStore((s) => {
+  // One selector: SUPERSEDED when any later item exists, else the nearest earlier user item (or null).
+  const prompt = useTranscriptStore((s): UserItem | null | typeof SUPERSEDED => {
     const items = (sessionId ? s.bySession[sessionId] : undefined)?.items ?? EMPTY_TRANSCRIPT.items
     const index = items.findIndex((candidate) => candidate.id === item.id)
-    return index >= 0 && items.slice(index + 1).some((candidate) => candidate.kind === 'user')
-  })
-  const prompt = useTranscriptStore((s) => {
-    const items = (sessionId ? s.bySession[sessionId] : undefined)?.items ?? EMPTY_TRANSCRIPT.items
-    const index = items.findIndex((candidate) => candidate.id === item.id)
+    if (index < 0) return null
+    if (index < items.length - 1) return SUPERSEDED
     for (let i = index - 1; i >= 0; i--) {
       const candidate = items[i]
-      if (candidate?.kind === 'user') return candidate.text
+      if (candidate?.kind === 'user') return candidate
     }
     return null
   })
 
-  if (superseded) return null
+  if (prompt === SUPERSEDED) return null
   const kind = classifyTurnError(item.text)
+  const text = prompt ? resendableText(prompt) : null
 
   async function handleRetry() {
-    if (!sessionId || !prompt || sending) return
+    if (!sessionId || !text || sending) return
     setSending(true)
     try {
-      const result = await window.refract.chat.send(sessionId, prompt)
+      const result = await window.refract.chat.send(sessionId, text)
       if (!result.ok) {
-        notify(
-          result.error.code === 'agent-not-running'
-            ? { code: result.error.code, message: 'The agent is not running for this Session.' }
-            : result.error
-        )
+        notify(result.error, sessionId)
+        return
       }
-    } catch {
-      notify({ code: 'prompt-failed', message: 'Could not resend this prompt.' })
+      focusSessionPane(sessionId)
+    } catch (error) {
+      console.error('[refract] turn error retry failed', error)
+      notify({ code: 'prompt-failed', message: 'Could not resend this prompt.' }, sessionId)
     } finally {
       setSending(false)
     }
@@ -53,12 +68,20 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
   return (
     <PaneBanner
       data-testid="turn-error-row"
+      role="none"
       title={kind ? TURN_ERROR_HINTS[kind] : 'The model returned an error.'}
-      detail={item.text}
-      className="py-2"
+      detail={<ClampedContent maxHeight="5lh">{item.text}</ClampedContent>}
+      className="px-2"
     >
-      {sessionId && prompt && (
-        <Button type="button" size="xs" variant="outline" aria-disabled={sending || undefined} onClick={() => void handleRetry()}>
+      {sessionId && text && (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          aria-disabled={sending || undefined}
+          className="aria-disabled:opacity-50"
+          onClick={() => void handleRetry()}
+        >
           {sending ? 'Retrying…' : 'Retry'}
         </Button>
       )}

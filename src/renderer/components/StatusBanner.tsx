@@ -15,7 +15,7 @@ export interface StatusBannerItem {
   status: ReactNode
   text: string
   meta?: ReactNode
-  action?: { label: string; ariaLabel?: string; onClick: (opener: HTMLElement) => void }
+  action?: { label: string; ariaLabel?: string; variant?: 'ghost' | 'text'; onClick: (opener: HTMLElement) => void }
 }
 
 export function StatusBanner({ label, items, testId }: { label: string; items: StatusBannerItem[]; testId?: string }) {
@@ -37,7 +37,7 @@ export function StatusBanner({ label, items, testId }: { label: string; items: S
             {item.meta != null && <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{item.meta}</span>}
             {item.action && (
               <Button
-                variant="ghost"
+                variant={item.action.variant ?? 'ghost'}
                 size="xs"
                 aria-label={item.action.ariaLabel}
                 onClick={(e) => item.action?.onClick(e.currentTarget)}

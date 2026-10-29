@@ -4,6 +4,7 @@
 import type { Ref } from 'react'
 import { PaneBanner } from '@/components/PaneBanner'
 import { Button } from '@/components/ui/button'
+import { disclosureToggleClassName } from './linkStyles'
 
 type StopReason = string | undefined
 
@@ -51,8 +52,15 @@ function bannerText(
   }
 }
 
+const BUSY_CLASS = 'aria-disabled:opacity-50'
+const guard = (busy: boolean, fn: () => void) => () => {
+  if (!busy) fn()
+}
+
 export function StopBanner(p: StopBannerProps) {
   const { recovering, startingNew, resuming } = p.busy
+  const busyAny = recovering || startingNew || resuming
+  const busyStart = recovering || startingNew
   const text = bannerText(p.stopReason, p.stopDetail, p.showTerminatedTitle, p.pendingToolNames)
   return (
     <div data-pane-banner className="shrink-0 px-4 pt-4">
@@ -60,16 +68,16 @@ export function StopBanner(p: StopBannerProps) {
         {p.canResume && (
           <>
             {p.stopReason === 'agent-exited' && (
-              <Button size="sm" variant="outline" disabled={recovering || startingNew || resuming} onClick={p.onRecover}>
+              <Button size="xs" variant="outline" aria-disabled={busyAny || undefined} className={BUSY_CLASS} onClick={guard(busyAny, p.onRecover)}>
                 {recovering ? 'Retrying…' : 'Recover'}
               </Button>
             )}
             <Button
-              size="sm"
+              size="xs"
               variant={p.stopReason === 'agent-exited' ? 'text' : 'outline'}
-              aria-disabled={recovering || startingNew || resuming || undefined}
-              className="aria-disabled:opacity-50"
-              onClick={p.onResume}
+              aria-disabled={busyAny || undefined}
+              className={BUSY_CLASS}
+              onClick={guard(busyAny, p.onResume)}
             >
               {resuming ? 'Resuming…' : 'Resume'}
             </Button>
@@ -77,23 +85,23 @@ export function StopBanner(p: StopBannerProps) {
         )}
         {p.stopReason === 'start-failed' && (
           <>
-            <Button size="sm" variant="outline" disabled={recovering || startingNew} onClick={p.onRecover}>
+            <Button size="xs" variant="outline" aria-disabled={busyStart || undefined} className={BUSY_CLASS} onClick={guard(busyStart, p.onRecover)}>
               {recovering ? 'Retrying…' : 'Retry'}
             </Button>
-            <Button ref={p.startNewButtonRef} size="sm" variant="text" disabled={recovering || startingNew} onClick={p.onStartNew}>
+            <Button ref={p.startNewButtonRef} size="xs" variant="text" aria-disabled={busyStart || undefined} className={BUSY_CLASS} onClick={guard(busyStart, p.onStartNew)}>
               {startingNew ? 'Starting…' : 'Start new conversation'}
             </Button>
           </>
         )}
         {p.stopReason === 'worktree-missing' && (
           <>
-            <Button size="sm" variant="outline" onClick={p.onRecreateWorktree}>
+            <Button size="xs" variant="outline" onClick={p.onRecreateWorktree}>
               Recreate worktree
             </Button>
-            <Button size="sm" variant="text" onClick={p.onArchive}>
+            <Button size="xs" variant="text" onClick={p.onArchive}>
               Archive
             </Button>
-            <Button ref={p.deleteButtonRef} size="sm" variant="text-destructive" onClick={p.onDelete}>
+            <Button ref={p.deleteButtonRef} size="xs" variant="text-destructive" onClick={p.onDelete}>
               Delete
             </Button>
           </>
@@ -107,7 +115,7 @@ export function StopBanner(p: StopBannerProps) {
             aria-expanded={p.detailsOpen}
             aria-controls={p.detailsId}
             onClick={p.onToggleDetails}
-            className="inline-flex min-h-11 items-center px-1 text-xs underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className={disclosureToggleClassName}
           >
             Details
           </button>

@@ -3,7 +3,7 @@ import { OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // #746: the shared unboxed row for a Session- or pane-scoped problem (docs/design/components.md,
-// "Banners"). Severity icon in the error colour, title in normal foreground, an optional muted
+// "Banners"). Severity icon in the severity colour (error = destructive, warning = warning token), title in normal foreground, an optional muted
 // detail line, then actions as `children`: one `outline` primary first, the rest `text` buttons,
 // a destructive one last as `text-destructive`. `role="alert"` fires at appearance only; keep any
 // expanding disclosure OUTSIDE this element so toggling it never re-announces the banner.
@@ -35,7 +35,9 @@ function PaneBanner({
       className={cn('grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-left text-sm', className)}
       {...props}
     >
-      <Icon aria-hidden className="mt-1 size-4 text-destructive" />
+      <span className="flex h-5 items-center">
+        <Icon aria-hidden className={cn('size-4', severity === 'warning' ? 'text-severity-warning' : 'text-destructive')} />
+      </span>
       <div className="font-medium text-foreground">{title}</div>
       {detail != null && detail !== '' && (
         <div
