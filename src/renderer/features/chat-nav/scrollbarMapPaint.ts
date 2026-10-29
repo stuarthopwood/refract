@@ -53,12 +53,21 @@ export function paintMap({ canvas, cssWidth, cssHeight, dpr, colors, marks, wind
   ctx.clearRect(0, 0, cssWidth, cssHeight)
   ctx.fillStyle = colors.track
   ctx.fillRect(0, 0, cssWidth, cssHeight)
-  ctx.fillStyle = colors.window
-  ctx.fillRect(0, win.y, cssWidth, win.h)
+  // High Contrast: a filled window would hide the marks (one system colour per role), so outline it.
+  const outlineWindow = window.matchMedia('(forced-colors: active)').matches
+  if (!outlineWindow) {
+    ctx.fillStyle = colors.window
+    ctx.fillRect(0, win.y, cssWidth, win.h)
+  }
   const half = cssWidth / 2
   for (const mark of marks) {
     ctx.fillStyle = mark.kind === 'user' ? colors.user : colors.agent
     ctx.fillRect(mark.kind === 'user' ? 1 : half, mark.y, half - 1, mark.h)
+  }
+  if (outlineWindow) {
+    ctx.strokeStyle = colors.window
+    ctx.lineWidth = 1
+    ctx.strokeRect(0.5, win.y + 0.5, cssWidth - 1, Math.max(1, win.h - 1))
   }
   if (stub) {
     ctx.fillStyle = colors.agent

@@ -15,7 +15,7 @@ import {
   type ScrollMetrics
 } from './scrollbarMapMath'
 
-export const MAP_WIDTH_PX = 10
+export const MAP_WIDTH_PX = 8
 const THROTTLE_MS = 100
 const TWEEN_MS = 160
 
@@ -165,9 +165,16 @@ export function useScrollbarMap(sessionId: string, viewport: HTMLElement | null,
     const content = viewport.querySelector('[data-slot="message-scroller-content"]')
     if (content) observer.observe(content)
     viewport.addEventListener('scroll', requestDraw, { passive: true })
+    // Theme and High Contrast changes arrive as a root class or data-theme change; recolour even when idle.
+    const themeObserver = new MutationObserver(() => {
+      colors = null
+      requestDraw()
+    })
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
     scheduleMeasure()
     return () => {
       observer.disconnect()
+      themeObserver.disconnect()
       viewport.removeEventListener('scroll', requestDraw)
       window.clearTimeout(throttleTimer)
       cancelAnimationFrame(measureFrame)

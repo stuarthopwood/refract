@@ -2169,7 +2169,7 @@ samp {
     --scrollbar-map-user: CanvasText;
     --scrollbar-map-agent: GrayText;
     --scrollbar-map-track: Canvas;
-    --scrollbar-map-window: GrayText;
+    --scrollbar-map-window: Highlight;
   }
 }
 ::highlight(chat-find) {

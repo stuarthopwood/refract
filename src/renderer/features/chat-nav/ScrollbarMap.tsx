@@ -1,13 +1,14 @@
 import * as React from 'react'
-import { FloatingLayer } from '@/components/floating-layer'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSettingsStore } from '@/state'
 import { EMPTY_CHAT_NAV, useChatNavStore } from '@/state/chat-nav-store'
 import { jumpToMessage } from './jumpToMessage'
-import { hitTestMark, pointerToScrollTop, STUB_PX, clamp } from './scrollbarMapMath'
+import { hitTestMark, pointerToScrollTop, STUB_PX } from './scrollbarMapMath'
 import { MAP_WIDTH_PX, useScrollbarMap } from './useScrollbarMap'
 
 const HOVER_DELAY_MS = 300
 const DRAG_THRESHOLD_PX = 3
+const GUTTER_GAP_PX = 2
 
 interface TooltipState {
   y: number
@@ -52,6 +53,16 @@ function MapStrip({ sessionId, viewport }: { sessionId: string; viewport: HTMLEl
   const gesture = React.useRef<{ startY: number; dragging: boolean } | null>(null)
   const hoverTimer = React.useRef(0)
   const hoverKey = React.useRef('')
+  const [gutter, setGutter] = React.useState(0)
+
+  // The native scrollbar's width (0 for an overlay scrollbar): the strip sits just inside it.
+  React.useEffect(() => {
+    const update = () => setGutter(viewport.offsetWidth - viewport.clientWidth)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [viewport])
 
   React.useEffect(() => () => window.clearTimeout(hoverTimer.current), [])
 
@@ -138,8 +149,8 @@ function MapStrip({ sessionId, viewport }: { sessionId: string; viewport: HTMLEl
       aria-hidden="true"
       data-slot="scrollbar-map"
       hidden={!visible}
-      className="absolute inset-y-0 right-2 z-[5] touch-none select-none"
-      style={{ width: MAP_WIDTH_PX }}
+      className="absolute inset-y-0 z-[5] touch-none select-none"
+      style={{ width: MAP_WIDTH_PX, insetInlineEnd: gutter + GUTTER_GAP_PX }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -150,15 +161,15 @@ function MapStrip({ sessionId, viewport }: { sessionId: string; viewport: HTMLEl
     >
       <span ref={probeRef} hidden />
       <canvas ref={canvasRef} className="block size-full" />
-      {tooltip && (
-        <FloatingLayer
-          className="pointer-events-none right-full mr-1 w-max max-w-64 gap-0 px-2 py-1 text-xs"
-          style={{ top: clamp(tooltip.y - 18, 0, viewport.clientHeight - 40) }}
-        >
-          <span className="font-medium">{tooltip.lines[0]}</span>
-          {tooltip.lines[1] && <span className="truncate text-muted-foreground">{tooltip.lines[1]}</span>}
-        </FloatingLayer>
-      )}
+      <Tooltip open={tooltip !== null}>
+        <TooltipTrigger asChild>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-s-0 size-px" style={{ top: tooltip?.y ?? 0 }} />
+        </TooltipTrigger>
+        <TooltipContent side="left" className="max-w-64 flex-col items-start gap-0">
+          <span className="font-medium">{tooltip?.lines[0]}</span>
+          {tooltip?.lines[1] && <span className="max-w-full truncate text-muted-foreground">{tooltip.lines[1]}</span>}
+        </TooltipContent>
+      </Tooltip>
     </div>
   )
 }
