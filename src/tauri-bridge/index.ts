@@ -274,7 +274,8 @@ const refract: RefractApi = {
     setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width),
     setHolidayTouches: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_HOLIDAY_TOUCHES, value),
     setActivityText: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ACTIVITY_TEXT, value),
-    setStatusStyle: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_STATUS_STYLE, value)
+    setStatusStyle: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_STATUS_STYLE, value),
+    setChatRowDensity: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_ROW_DENSITY, value)
   },
 
   debug: {

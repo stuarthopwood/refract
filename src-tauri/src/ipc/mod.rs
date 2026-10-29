@@ -48,6 +48,7 @@ pub mod sessions_lifecycle;
 pub mod sessions_visibility;
 pub mod settings;
 pub mod settings_animated_status_text;
+pub mod settings_chat_row_density;
 pub mod settings_code_ligatures;
 pub mod settings_finished_turn_times;
 pub mod settings_scrollbar_map;
@@ -183,6 +184,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings_typography::register(dispatcher);
     settings_finished_turn_times::register(dispatcher);
     settings_status_style::register(dispatcher);
+    settings_chat_row_density::register(dispatcher);
     debug::register(dispatcher);
     readiness::register(dispatcher);
     repositories::register(dispatcher);

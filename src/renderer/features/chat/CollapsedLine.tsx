@@ -248,7 +248,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // needed. Back to `min-w-0` here (still required so `truncate` can ever engage); the
         // Stage row passes its own `min-w-16` via `labelClassName`
         // (`SubagentChainRow.tsx`'s `successLabelClass` call site).
-        <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate', labelClassName)} title={typeof label === 'string' ? label : undefined}>
+        <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate text-foreground', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
         </span>
       )}

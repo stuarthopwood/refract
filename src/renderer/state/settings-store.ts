@@ -3,6 +3,7 @@ import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCR
 import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
 import type { ActivityText } from '../../shared/activity'
 import type { StatusStyle } from '../../shared/statusStyle'
+import type { ChatRowDensity } from '../../shared/chatRowDensity'
 import { DEFAULT_RIGHT_PANE } from '../../shared/rightPane'
 import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX } from './pull-requests-layout-store'
 import { notify } from './notify'
@@ -17,6 +18,7 @@ interface SettingsState {
   setHolidayTouches(value: Settings['holidayTouches']): Promise<void>
   setActivityText(value: ActivityText): Promise<void>
   setStatusStyle(value: StatusStyle): Promise<void>
+  setChatRowDensity(value: ChatRowDensity): Promise<void>
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
@@ -100,6 +102,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setStatusStyle: async (value) => {
     const result = await window.refract.settings.setStatusStyle(value)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setChatRowDensity: async (value) => {
+    const result = await window.refract.settings.setChatRowDensity(value)
     if (result.ok) {
       set({ settings: result.value })
     } else {

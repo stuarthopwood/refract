@@ -20,7 +20,9 @@ const BOOKKEEPING_KINDS: Partial<Record<AdvisoryGroupedTranscriptItem['kind'], t
   advisory: true,
   notice: true,
   'agent-message': true,
-  'skill-prompt': true
+  'skill-prompt': true,
+  // #1300: a Note row matches the other rows at the chosen density instead of taking `mt-6`.
+  'mid-turn-prose': true
 }
 
 export function isBookkeepingRow(row: AdvisoryGroupedTranscriptItem): boolean {
