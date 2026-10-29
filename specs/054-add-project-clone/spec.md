@@ -22,7 +22,7 @@ A developer opens **Add project > Clone from GitHub...**, filters the list of th
 1. **Given** the user is signed in to gh, **When** the Clone dialog opens, **Then** the list shows own repositories first, then organisations A to Z, up to 100 most recently updated per owner, under sticky owner headers.
 2. **Given** the list is shown, **When** the user types in the filter, **Then** rows narrow across all owners and "Showing X of Y" updates.
 3. **Given** a row is selected and a destination is set, **When** the user presses **Clone**, **Then** the dialog closes at once and one loading toast per clone shows the current stage with a Cancel action.
-4. **Given** a clone finishes, **When** the Project is added, **Then** the toast becomes "Cloned X" with **Open**, auto-dismissing after about 5 seconds.
+4. **Given** a clone finishes, **When** the Project is added, **Then** the toast becomes "Cloned X" with **Open**, which stays until dismissed so keyboard and screen-reader users can reach Open.
 
 ### US2 - Pick a source by pasting (P1, PR 1)
 
@@ -85,7 +85,7 @@ Every user-visible string says Project where it means a local checkout; "GitHub 
 - **FR-016**: Signed out (`signedIn: false`): the list is replaced by "Sign in to GitHub to see your repositories" and a **Sign in** button reusing the R9 `accounts.github.addStart` flow; on completion the list reloads. Paste and destination stay usable.
 - **FR-017**: A repository whose GitHub remote matches a Project (case-insensitive `owner/name`, host `github.com`, any remote) shows an outline **Already added** badge, stays enabled, and turns the primary button into **Open project**, which closes the dialog and selects that Project. The same applies to a pasted source (the backend answers `existing`, FR-021).
 - **FR-018**: Pressing **Clone** closes the dialog immediately. Each clone has one non-dismissible loading toast (via a new progress-toast helper in `notify.ts`) showing the fixed stage text (no percentages) and a **Cancel** action.
-- **FR-019**: On success the toast becomes "Cloned {name}" with **Open** and auto-dismisses after about 5 seconds. On cancel it shows "Clone cancelled". Errors persist until dismissed. Toast text changes announce politely; errors announce assertively.
+- **FR-019**: On success the toast becomes "Cloned {name}" with **Open** and stays until dismissed (decided in the gate: an auto-dismissing Open action is unreachable by keyboard). On cancel it shows "Clone cancelled". Errors persist until dismissed. Toast text changes announce politely; errors announce assertively.
 - **FR-020**: Settings gains a **Projects** section with a **Cloning** group and one `SettingRow` "Default clone folder": truncated monospace path or muted "Not set", **Browse**, and **Clear** (always shown, disabled when empty). Changes save immediately.
 
 ### PR 1: backend

@@ -146,7 +146,6 @@ fn classify_failure(tail: &str) -> CloneFailure {
         CloneFailure::SignedOut
     } else if has(&[
         "could not resolve host",
-        "could not resolve",
         "unable to access",
         "timed out",
         "connection",
@@ -157,6 +156,7 @@ fn classify_failure(tail: &str) -> CloneFailure {
         CloneFailure::Network
     } else if has(&[
         "not found",
+        "could not resolve to a repository",
         "could not read from remote",
         "permission denied",
         "access denied",

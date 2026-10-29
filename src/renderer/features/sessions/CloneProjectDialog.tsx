@@ -78,6 +78,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
   const [destination, setDestination] = useState('')
   const [destinationEdited, setDestinationEdited] = useState(false)
   const [destinationError, setDestinationError] = useState<string | null>(null)
+  const [starting, setStarting] = useState(false)
   const [saveChoice, setSaveChoice] = useState<boolean | null>(null)
   const [retrying, setRetrying] = useState<ReadonlySet<string>>(new Set())
   const [selectionAnnouncement, announceSelection] = useClearedAnnouncement()
@@ -188,7 +189,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
     setDestination(repoName ? joinPath(result.value, repoName) : result.value)
   }
 
-  function handleSubmit(): void {
+  async function handleSubmit(): Promise<void> {
     if (alreadyAdded) {
       openProject(alreadyAdded)
       onOpenChange(false)
@@ -204,8 +205,18 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
       destinationRef.current?.focus()
       return
     }
-    void startClone({ source, destination: destination.trim(), saveAsDefault: checkbox.visible && saveAsDefault })
-    onOpenChange(false)
+    if (starting) return
+    setStarting(true)
+    const result = await startClone({ source, destination: destination.trim(), saveAsDefault: checkbox.visible && saveAsDefault })
+    setStarting(false)
+    if (result.started) {
+      onOpenChange(false)
+      return
+    }
+    if (result.inlineError) {
+      setDestinationError(result.inlineError)
+      destinationRef.current?.focus()
+    } else onOpenChange(false)
   }
 
   return (
@@ -225,7 +236,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
           className="flex min-w-0 flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault()
-            handleSubmit()
+            void handleSubmit()
           }}
         >
           {signedOut ? (
@@ -392,7 +403,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={source === '' && !alreadyAdded}>
+            <Button type="submit" disabled={(source === '' && !alreadyAdded) || (!alreadyAdded && destination.trim() === '') || starting}>
               {alreadyAdded ? 'Open project' : 'Clone'}
             </Button>
           </DialogFooter>

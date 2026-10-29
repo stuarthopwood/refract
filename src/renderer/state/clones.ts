@@ -77,17 +77,23 @@ export interface StartCloneInput {
   saveAsDefault: boolean
 }
 
+/** Destination refusals the dialog shows inline (FR-027) instead of as a toast. */
+const INLINE_DESTINATION_CODES = new Set<string>(['destination-not-empty', 'destination-in-use'])
+
+export type StartCloneResult = { started: true } | { started: false; inlineError: string | null }
+
 /** Starts a clone in the background. Resolves once it has started (or failed to), not when it ends. */
-export async function startClone({ source, destination, saveAsDefault }: StartCloneInput): Promise<void> {
+export async function startClone({ source, destination, saveAsDefault }: StartCloneInput): Promise<StartCloneResult> {
   ensureSubscribed()
   const result = await window.refract.repositories.clone({ source, destination })
   if (!result.ok) {
+    if (INLINE_DESTINATION_CODES.has(result.error.code)) return { started: false, inlineError: result.error.message }
     notifyPersistentError(result.error.message)
-    return
+    return { started: false, inlineError: null }
   }
   if (result.value.kind === 'existing') {
     openProject(result.value.projectId)
-    return
+    return { started: true }
   }
   const { cloneId, nameWithOwner } = result.value
   const name = nameWithOwner.split('/').pop() ?? nameWithOwner
@@ -104,4 +110,5 @@ export async function startClone({ source, destination, saveAsDefault }: StartCl
     if (saved.ok) useSettingsStore.getState().setSettings(saved.value)
     else notifyPersistentError(saved.error.message)
   }
+  return { started: true }
 }

@@ -22,7 +22,7 @@ The fake answers by argv:
 4. Filter narrows across owners; the count is announced (screen reader or live-region inspection).
 5. Pick a row: destination empty and Clone disabled with no default; Browse to a scratch folder; checkbox ticked; Clone enabled (FR-014, FR-015).
 6. Press Clone: dialog closes at once, a loading toast shows stages, no spinner on the trigger (FR-018, FR-004); the argv log shows `repo clone owner/name <dir> -- --progress` as separate arguments.
-7. On finish: toast "Cloned name" with **Open**, gone in about 5 s; the Project is in the list; Settings > Projects shows the parent as the default (FR-015, FR-019, FR-020).
+7. On finish: toast "Cloned name" with **Open**, stays until dismissed; the Project is in the list; Settings > Projects shows the parent as the default (FR-015, FR-019, FR-020).
 8. Reopen the dialog: destination prefilled `<default>\<name>`; checkbox hidden; change the parent: checkbox unticked but shown.
 9. Pick the repository equal to the existing Project: **Already added** badge; the button reads **Open project** and selects that Project; no new `repo clone` in the log (FR-017).
 10. Paste `https://evil.example/owner/name`, `http://github.com/o/n`, `git@github.com:o/n.git`, `owner/name/extra`, `-owner/name`: each is refused inline with `aria-invalid`; no `gh` call (FR-013, FR-025).
