@@ -45,6 +45,7 @@ pub mod repositories;
 pub mod repositories_color;
 pub mod sessions_agent;
 pub mod sessions_lifecycle;
+pub mod sessions_visibility;
 pub mod settings;
 pub mod settings_animated_status_text;
 pub mod settings_code_ligatures;
@@ -187,6 +188,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     repositories::register(dispatcher);
     repositories_color::register(dispatcher);
     sessions_lifecycle::register(dispatcher);
+    sessions_visibility::register(dispatcher);
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
     chat::register(dispatcher);

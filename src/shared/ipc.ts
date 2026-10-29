@@ -330,6 +330,7 @@ export const IPC_REQUESTS = {
   SESSIONS_OPEN: 'sessions.open',
   SESSIONS_ARCHIVE: 'sessions.archive',
   SESSIONS_RESTORE: 'sessions.restore',
+  SESSIONS_SET_HIDDEN: 'sessions.setHidden',
   SESSIONS_DELETE_CHECK: 'sessions.deleteCheck',
   SESSIONS_DELETE_LEFTOVER_SUMMARY: 'sessions.deleteLeftoverSummary',
   SESSIONS_DELETE: 'sessions.delete',
@@ -541,6 +542,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     open(id: string, userAction?: boolean): Promise<Result<SessionSnapshot>>;
     archive(id: string): Promise<Result<void>>;
     restore(id: string): Promise<Result<void>>;
+    setHidden(id: string, hidden: boolean): Promise<Result<void>>; // #748: view flag only, never stops the agent
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;
     /** Issue #891: a background filesystem walk, separate from `deleteCheck`, listing generated
      * folders and other files the delete would remove. Can take real time against a large
@@ -882,13 +884,11 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onFileExplorerPatch(
     handler: (payload: { sessionId: string; relativePath: string; entries: FileTreeNode[]; truncated: number }) => void
   ): Unsubscribe;
-  /** Gate-fix (round 5, Code5 HIGH1): fired when a Session's file watcher hits a fatal error
-   * (watched root deleted/moved out from under it, `watchDirectory.ts`'s `onFatal`) or when
-   * `sessions.ts` drops/replaces the watcher after `recreateWorktree` succeeds, an archive, or a
-   * restore. The renderer's file-explorer store must drop its entire `bySession[sessionId]`
-   * entry so the panel's "load root once per Session" effect naturally re-fires and a fresh
-   * watcher is re-established on the next `listDirectory('')` -- without this the panel keeps
-   * showing a stale tree forever with no watcher running underneath it. */
+  /** Gate-fix (round 5, Code5 HIGH1): fired when a Session's file watcher hits a fatal error or
+   * is dropped/replaced (`recreateWorktree`, an archive, a restore). The renderer's file-explorer
+   * store must drop its entire `bySession[sessionId]` entry so the panel's "load root once per
+   * Session" effect re-fires and a fresh watcher is re-established on the next
+   * `listDirectory('')` -- otherwise the panel shows a stale tree forever with no watcher. */
   onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onGitChangesRefresh(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;

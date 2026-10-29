@@ -415,6 +415,7 @@ fn make_session(
         created_at: "2026-10-14T00:00:00.000Z".to_string(),
         last_activity_at: "2026-10-14T00:00:00.000Z".to_string(),
         archived_at: None,
+        hidden_at: None,
         current_turn_subagents: None,
         stopped_on_request_conversation: marker_conversation.map(str::to_string),
         stopped_on_request_at_size: marker_size,

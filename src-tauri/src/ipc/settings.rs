@@ -433,9 +433,14 @@ fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse,
         .get("archivedOpen")
         .and_then(Value::as_bool)
         .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let show_hidden = object
+        .get("showHidden")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     Ok(SessionListCollapse {
         collapsed_repository_ids,
         archived_open,
+        show_hidden,
     })
 }
 
