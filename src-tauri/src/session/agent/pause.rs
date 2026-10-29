@@ -90,7 +90,7 @@ impl SessionAgent {
             )
             .await;
         if let Err(err) = result {
-            tracing::warn!("pause: could not persist for {}: {err}", self.session_id);
+            log::warn!("pause: could not persist for {}: {err:?}", self.session_id);
         }
     }
 
