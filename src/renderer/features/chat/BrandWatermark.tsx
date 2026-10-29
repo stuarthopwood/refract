@@ -14,8 +14,8 @@
 // more SVG assets to mask, and every lucide icon is already a flat single-colour glyph). Colour
 // comes from `--muted-foreground` (the SAME token the plain mark's own `background-color`
 // already uses), never a new hex -- decision 5's "theme tokens only" rule. Opacity comes from
-// the per-theme `--holiday-artwork-opacity` (#1233, about 3:1 against the theme background), not
-// the plain mark's 0.06 `--watermark-opacity`.
+// the per-theme `--holiday-artwork-opacity` (#1233, #1298: about 1.6:1 against the theme background),
+// the same value the plain mark's per-theme `--watermark-opacity` takes.
 import { cn } from '@/lib/utils'
 import { useHolidayStore, useSettingsStore } from '@/state'
 import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
@@ -25,7 +25,7 @@ interface BrandWatermarkProps {
    *  rendering meant to sit inline inside a bordered preview container in Settings. */
   variant: 'live' | 'preview'
   /** #1256: false where conversation text sits over the corner (a transcript pane), so the plain
-   *  low-opacity mark renders instead of the holiday glyph. */
+   *  plain mark (about 1.6:1, #1298) renders instead of the holiday glyph. */
   allowHoliday?: boolean
 }
 

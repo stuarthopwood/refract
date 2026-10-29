@@ -141,6 +141,16 @@ rejected as unneeded complexity: decision 13's table shows the high-contrast pre
 strictly larger than Dark's at every opacity tested, so the single shared constant is already safe
 for both without a per-theme override.
 
+**Amended 2026-10-29 (issue #1298, supersedes the constant and the "no per-theme override" ruling
+above)**: Stuart judged 0.06 still too faint and the Halloween artwork (#1233, about 3:1) too
+strong. The plain mark and the Halloween artwork both target about 1.6:1 against the theme
+background (measured sRGB-gamma composite, WCAG luminance, muted foreground over `--background`).
+`--watermark-opacity` is now set in each `.theme-*` block beside `--holiday-artwork-opacity`, with
+the same value: Dark and Cyber Amber 0.30 (1.64:1), Obsidian and Nordic Frost 0.28 (1.63:1 and
+1.61:1), Dark high contrast 0.24 (opaque grey muted foreground, about 1.6:1). The `:root` fallback
+is 0.30. The 0.12 ceiling above no longer applies; the mark is decorative and exempt from WCAG
+1.4.11, and stays hidden in forced colors. No new token.
+
 ## 6. Size: a CSS container-query clamp, not a JS resize listener
 
 **Decision**: `ChatPane.tsx`'s transcript container (decision 1) gets `container-type: size` added

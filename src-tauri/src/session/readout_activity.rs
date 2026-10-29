@@ -2,7 +2,7 @@
 // FR-040), split out of the parent `readout` module (#806 file-size discipline) the same way
 // `readout_todo.rs` is. Retains the latest tool call's own `intent` argument (and, when a call
 // carries none, its tool name plus target path so the renderer can phrase a plain verb), the
-// auto-retry attempt, and whether an auto-compaction is running. Everything rides the existing
+// auto-retry attempt, and whether a compaction (automatic or manual `/compact`) is running. Everything rides the existing
 // coalesced `readout:update`; no new event.
 use serde_json::{json, Value};
 
@@ -68,6 +68,8 @@ impl ActivityState {
                 | "auto_retry_end"
                 | "auto_compaction_start"
                 | "auto_compaction_end"
+                | "manual_compaction_start"
+                | "manual_compaction_end"
                 | "agent_start"
                 | "session_settled"
                 | "prompt_result"
@@ -105,8 +107,12 @@ impl ActivityState {
                 }
             }
             "auto_retry_end" => std::mem::take(&mut self.retry).is_some(),
-            "auto_compaction_start" => !std::mem::replace(&mut self.compacting, true),
-            "auto_compaction_end" => std::mem::replace(&mut self.compacting, false),
+            "auto_compaction_start" | "manual_compaction_start" => {
+                !std::mem::replace(&mut self.compacting, true)
+            }
+            "auto_compaction_end" | "manual_compaction_end" => {
+                std::mem::replace(&mut self.compacting, false)
+            }
             "agent_start" | "session_settled" => self.reset(),
             "prompt_result"
                 if frame.get("sessionSettled").and_then(Value::as_bool) == Some(true) =>
