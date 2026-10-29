@@ -240,7 +240,7 @@ samp {
   --role-default: oklch(0.78 0.11 185);
   --role-smol: oklch(0.78 0.12 350);
   --role-slow: oklch(0.78 0.12 115);
-  --role-plan: oklch(0.78 0.11 55);
+  --role-plan: oklch(0.78 0.11 215);
   color-scheme: dark;
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
@@ -574,7 +574,7 @@ samp {
   --role-default: oklch(0.78 0.11 185);
   --role-smol: oklch(0.78 0.12 350);
   --role-slow: oklch(0.78 0.12 115);
-  --role-plan: oklch(0.78 0.11 55);
+  --role-plan: oklch(0.78 0.11 215);
   color-scheme: dark;
 
   /* ---- Layer 2: semantic roles. Canonical here (the opposite of Dark/HC above): --card/
@@ -796,7 +796,7 @@ samp {
   --role-default: oklch(0.86 0.11 185);
   --role-smol: oklch(0.86 0.12 350);
   --role-slow: oklch(0.86 0.12 115);
-  --role-plan: oklch(0.86 0.11 55);
+  --role-plan: oklch(0.86 0.11 215);
   color-scheme: dark;
   --scrollbar-thumb: #d4d4d4;
   --scrollbar-thumb-hover: #ffffff;
@@ -1027,10 +1027,10 @@ samp {
  * case at 4.91:1, just over the 4.5:1 floor `--destructive`/`--muted` enforces).
  */
 .theme-nordic-frost {
-  --role-default: oklch(0.78 0.11 185);
-  --role-smol: oklch(0.78 0.12 350);
+  --role-default: oklch(0.78 0.11 330);
+  --role-smol: oklch(0.78 0.12 355);
   --role-slow: oklch(0.78 0.12 115);
-  --role-plan: oklch(0.78 0.11 55);
+  --role-plan: oklch(0.78 0.11 275);
   color-scheme: dark;
   --scrollbar-thumb: var(--muted-foreground);
   --scrollbar-thumb-hover: var(--foreground);
@@ -1282,7 +1282,7 @@ samp {
   --role-default: oklch(0.78 0.11 185);
   --role-smol: oklch(0.78 0.12 350);
   --role-slow: oklch(0.78 0.12 115);
-  --role-plan: oklch(0.78 0.11 55);
+  --role-plan: oklch(0.78 0.11 215);
   color-scheme: dark;
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
