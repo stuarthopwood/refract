@@ -21,6 +21,7 @@ import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } f
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
 import { TextSizeGroup } from './TextSizeGroup'
+import { StatusStylePicker } from './StatusStylePicker'
 
 export function AppearanceSection() {
   // Issue #554: the Save/Cancel row below now governs both pickers -- dirty if EITHER has an
@@ -241,6 +242,17 @@ export function AppearanceSection() {
               </SelectContent>
             </Select>
           </SettingRow>
+        </SettingsGroup>
+        {/* Issue #482: applies live, like Activity; the picker carries its own preview. */}
+        <SettingsGroup
+          title="Status style"
+          headingId="status-style-heading"
+          description="How each Session's state is drawn in the Session list, chat header and details card."
+          descriptionId="status-style-hint"
+        >
+          <div className="pt-2">
+            <StatusStylePicker labelledBy="status-style-heading" describedBy="status-style-hint" />
+          </div>
         </SettingsGroup>
         <SettingsGroup title="Activity">
           {/* #526 (FR-111): the shared segmented `ToggleGroup` (ProviderSwitch,

@@ -1,7 +1,7 @@
 // Data stored or held by Refract, and the shapes Refract derives from OMP.
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
-import type { ThemeId } from './themes'; import type { ActivityReadoutFields, ActivityText } from './activity'; import type { RightPaneSettings } from './rightPane';
+import type { ThemeId } from './themes'; import type { StatusStyle } from './statusStyle'; import type { ActivityReadoutFields, ActivityText } from './activity'; import type { RightPaneSettings } from './rightPane';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
 import type { TodoPhase } from './todo'; import type { TranscriptImageRef } from './ipc-images';
@@ -17,29 +17,26 @@ export interface Repository {
   name: string;
   defaultBranch: string; // read from git when added; preselected as Base branch
   addedAt: string; // ISO 8601
-  // Issue #528: whether this repository has a configured git remote, for the session list's
-  // group-header icon and its tooltip. `repositories.list()` returns the `unknown` placeholder
-  // immediately for every entry (gate round 3 fix: computing it inline used to delay the whole
-  // workspace's first paint); the real value is computed fresh in main
-  // (`src/main/git/remote.ts`) by the separate `repositories.remotes()` call, and inline in
-  // `add()`/`rename()`'s own responses. NEVER read from or written to `registry.json` -- a
-  // repository's own remote can change on disk at any time (added, changed, removed) with no
-  // Refract action involved, so persisting a stale value would be actively misleading. Optional
-  // only because it is absent until that first computation (for example inside a unit test's
-  // hand-built `Repository`, which never goes through the IPC boundary this field is attached
-  // at).
+  color?: ProjectColor; // issue #887: the Project colour on its Session list header; absent = none
+  // Issue #528: whether this repository has a git remote, for the group-header icon and
+  // tooltip. `repositories.list()` returns the `unknown` placeholder at once; the real value
+  // comes from `repositories.remotes()` and from `add()`/`rename()`'s own responses. NEVER
+  // persisted in `registry.json` -- the remote can change on disk with no Refract action.
+  // Optional only because it is absent until that first computation.
   remote?: RepositoryRemote;
 }
 
-/** Issue #528: the two real states this icon/tooltip needs (`none`/`has`), plus an honest "could
- * not tell" case -- `unknown` means detection could not confirm either way (an unreadable
- * repository, a timed-out or aborted check, or a remote URL this reader could not parse a host
- * from), never conflated with a confirmed `none`. Deliberately binary beyond that (`has`/`none`),
- * not split further by host: the originally decided three-way host classification
- * (`known`/`other`) plus `@tabler/icons-react` brand marks was deferred, not reversed, by Main
- * (delegated by Stuart), who asked for the simpler remote-vs-local-only distinction with no new
- * dependency this round -- tracked as follow-up issue #646. */
-export type RepositoryRemote = { kind: 'none' } | { kind: 'has'; host: string } | { kind: 'unknown' };
+/** Issue #887: a preset id (see `projectColor.ts`) or a custom hex exactly as typed. */
+export type ProjectColor = { kind: 'preset'; id: string } | { kind: 'custom'; hex: string };
+
+/** Issue #528: `unknown` means detection could not confirm either way, never conflated with a
+ * confirmed `none`. Issue #646: the brand mark is chosen renderer-side from `host`. */
+export type RepositoryRemote =
+  | { kind: 'none' }
+  // Issue #646: `owner` and `repo` come from the remote URL path (credentials never included);
+  // absent when the path does not hold two segments.
+  | { kind: 'has'; host: string; owner?: string; repo?: string }
+  | { kind: 'unknown' };
 
 /** One unit of work: a Worktree together with the Conversations held in it. */
 export interface Session {
@@ -112,7 +109,7 @@ export interface Settings {
   split: SplitLayout | null; // spec 005: null = single pane, no split open
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
-  chatWidth: ChatWidth; holidayTouches: HolidayTouches; activityText?: ActivityText; // #526 FR-111: absent reads 'plain'. issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
+  chatWidth: ChatWidth; holidayTouches: HolidayTouches; activityText?: ActivityText; statusStyle?: StatusStyle; // #482: Status style, absent reads 'icons'. #526 FR-111: absent reads 'plain'. issue #554, FR-049/FR-073: default 'full'; issue #1048, Appearance "Holiday touches": default 'full'
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: the two show toggles default true; #469's toolNames defaults false
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration. showContextUsageBar (#1082): the context usage bar, absent = on

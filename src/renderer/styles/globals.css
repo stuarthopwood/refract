@@ -374,6 +374,17 @@ samp {
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
+  /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
+  --project-1: oklch(0.78 0.11 125);
+  --project-2: oklch(0.78 0.11 195);
+  --project-3: oklch(0.78 0.11 225);
+  --project-4: oklch(0.78 0.11 255);
+  --project-5: oklch(0.78 0.11 280);
+  --project-6: oklch(0.78 0.11 305);
+  --project-7: oklch(0.78 0.11 330);
+  --project-8: oklch(0.78 0.11 355);
+  --project-9: oklch(0.78 0.02 250);
+  --project-10: oklch(0.78 0.05 90);
   --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -626,6 +637,17 @@ samp {
   --muted-foreground: oklch(1 0 0 / 60%);
   --holiday-artwork-opacity: 0.57; /* #1233: about 3:1 over #0F1014 */
   --sidebar: #14161E;
+  /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
+  --project-1: oklch(0.76 0.11 125);
+  --project-2: oklch(0.76 0.11 195);
+  --project-3: oklch(0.76 0.11 225);
+  --project-4: oklch(0.76 0.11 255);
+  --project-5: oklch(0.76 0.11 280);
+  --project-6: oklch(0.76 0.11 305);
+  --project-7: oklch(0.76 0.11 330);
+  --project-8: oklch(0.76 0.11 355);
+  --project-9: oklch(0.76 0.02 250);
+  --project-10: oklch(0.76 0.05 90);
   --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: #1C1F28;
   --surface-2: #242834;
@@ -921,6 +943,17 @@ samp {
   --chart-4: oklch(0.78 0.2 304);
   --chart-5: oklch(0.78 0.17 16);
   --sidebar: oklch(0.1 0 0);
+  /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
+  --project-1: oklch(0.86 0.11 125);
+  --project-2: oklch(0.86 0.11 195);
+  --project-3: oklch(0.86 0.11 225);
+  --project-4: oklch(0.86 0.11 255);
+  --project-5: oklch(0.86 0.11 280);
+  --project-6: oklch(0.86 0.11 305);
+  --project-7: oklch(0.86 0.11 330);
+  --project-8: oklch(0.86 0.11 355);
+  --project-9: oklch(0.86 0.02 250);
+  --project-10: oklch(0.86 0.05 90);
   --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --sidebar-foreground: oklch(1 0 0);
   --sidebar-primary: oklch(0.75 0.17 264);
@@ -1103,6 +1136,17 @@ samp {
   --muted-foreground: oklch(1 0 0 / 60%);
   --holiday-artwork-opacity: 0.58; /* #1233: about 3:1 over #060f1e */
   --sidebar: #0c1626;
+  /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
+  --project-1: oklch(0.78 0.11 125);
+  --project-2: oklch(0.78 0.11 195);
+  --project-3: oklch(0.78 0.11 225);
+  --project-4: oklch(0.78 0.11 255);
+  --project-5: oklch(0.78 0.11 280);
+  --project-6: oklch(0.78 0.11 305);
+  --project-7: oklch(0.78 0.11 330);
+  --project-8: oklch(0.78 0.11 355);
+  --project-9: oklch(0.78 0.02 250);
+  --project-10: oklch(0.78 0.05 90);
   --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: #101b2b;
   --surface-2: #1c2738;
@@ -1351,6 +1395,17 @@ samp {
   --muted-foreground: oklch(1 0 0 / 60%);
   --holiday-artwork-opacity: 0.58; /* #1233: same as Dark (identical background) */
   --sidebar: oklch(0.205 0 0);
+  /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
+  --project-1: oklch(0.78 0.11 125);
+  --project-2: oklch(0.78 0.11 195);
+  --project-3: oklch(0.78 0.11 225);
+  --project-4: oklch(0.78 0.11 255);
+  --project-5: oklch(0.78 0.11 280);
+  --project-6: oklch(0.78 0.11 305);
+  --project-7: oklch(0.78 0.11 330);
+  --project-8: oklch(0.78 0.11 355);
+  --project-9: oklch(0.78 0.02 250);
+  --project-10: oklch(0.78 0.05 90);
   --sidebar-right: color-mix(in oklab, var(--background) 50%, var(--sidebar));
   --surface-1: oklch(0.205 0 0);
   --surface-2: oklch(0.205 0 0);
@@ -1975,5 +2030,12 @@ samp {
     color: var(--accent-text);
     background-image: none;
     animation: none;
+  }
+}
+
+/* Issue #887: forced-colors drops the Project colour; the header uses the system text colour. */
+@media (forced-colors: active) {
+  [data-project-colored] {
+    color: CanvasText !important;
   }
 }

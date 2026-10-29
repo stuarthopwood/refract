@@ -276,6 +276,7 @@ const REQUEST_LANES = {
   REPOSITORIES_ADD: 'R2',
   REPOSITORIES_REMOVE: 'R2',
   REPOSITORIES_RENAME: 'R2',
+  REPOSITORIES_SET_COLOR: 'R2', // #887, ipc/repositories_color.rs
   REPOSITORIES_BRANCHES: 'R2',
   REPOSITORIES_REMOTES: 'R2', // explicitly named in R2's work description
   REPOSITORIES_PICK_FOLDER: 'R2',

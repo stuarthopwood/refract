@@ -1,13 +1,16 @@
 // Small display helpers shared between `SessionRow.tsx` (the row) and `SessionDetailsCard.tsx`
 // (the hover card), split out so neither file has to import the other.
 
-import { BellRingIcon, CircleCheckIcon, MessageSquareTextIcon, SquareIcon } from 'lucide-react'
+import { BellRingIcon, CircleCheckIcon, CirclePauseIcon, MessageSquareTextIcon } from 'lucide-react'
 import type { Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
+import { useSettingsStore } from '@/state'
+import { StatusDot } from './StatusDot'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { SessionStatus } from '../../../shared/model'
+import type { StatusStyle } from '../../../shared/statusStyle'
 
 /** Issue #731: a display-only status, never stored -- `idle` plus an unseen reply (`unread`)
  * reads as **Unread response** instead of Idle. Derived in exactly one place (`displayStatus`
@@ -205,23 +208,28 @@ export function groupWaitingState(sessions: SessionSummary[]): GroupWaitingState
 // from needs-you's amber and from the three-dot glyph foundations-motion.md reserves for
 // "waiting". No surface draws its own plain filled dot for this state any more (the trailing
 // dot removed from `SessionRow.tsx`) -- this icon is the only signal.
-export function StateIcon({ status }: { status: SessionDisplayStatus }) {
+export function StateIcon({ status, style }: { status: SessionDisplayStatus; style?: StatusStyle }) {
+  // Issue #482: the Status style setting, applied live; the single change point for every surface.
+  // style overrides it for the Appearance preview only.
+  const settingDots = useSettingsStore((s) => s.settings.statusStyle === 'dots')
+  if (style ? style === 'dots' : settingDots) return <StatusDot status={status} />
   // Quality-gate remediation (A11y Medium, gate round on #731): an <svg> defaults to
   // `forced-color-adjust: preserve-parent-color`, and each glyph below sets its own `color`
   // (`text-state-*`), so under Windows forced colours every glyph kept the app's own hue
   // instead of following CanvasText -- the exact gap this rule exists to close (same
   // CanvasText precedent as `AgentSpinner`, globals.css, and `radio-group.tsx`). The shapes
-  // alone (disc, check-in-ring, speech bubble, bell, square) still carry the distinction.
+  // alone (disc, check-in-ring, speech bubble, bell, pause-in-ring) still carry the distinction.
   const className = 'size-4 shrink-0 forced-colors:text-[CanvasText]'
   switch (status) {
     case 'working':
-      return <AgentSpinner size={16} className={className} />
+      // Issue #482: tinted with the Working state colour so every state is colour-coded.
+      return <AgentSpinner size={16} className={cn(className, '[--agent-spinner-core:var(--state-working)]')} />
     case 'idle':
       return <CircleCheckIcon aria-hidden className={cn(className, 'text-state-idle')} />
     case 'needs-you':
       return <BellRingIcon aria-hidden className={cn(className, 'text-state-needs-you')} />
     case 'stopped':
-      return <SquareIcon aria-hidden className={cn(className, 'text-state-stopped')} />
+      return <CirclePauseIcon aria-hidden className={cn(className, 'text-state-stopped')} />
     case 'unread-response':
       return <MessageSquareTextIcon aria-hidden className={cn(className, 'text-state-unread-response')} />
   }

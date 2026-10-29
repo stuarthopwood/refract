@@ -33,6 +33,9 @@ import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 
 export const PAIRS = [
+  // #887: the ten Project colour presets on the Session list background.
+  ...Array.from({ length: 10 }, (_, i) => ({ fg: `project-${i + 1}`, bg: 'sidebar', min: 4.5 })),
+  ...Array.from({ length: 10 }, (_, i) => ({ fg: `project-${i + 1}`, bg: 'sidebar-accent', min: 4.5 })),
   { fg: 'active-indicator', bg: 'sidebar-right', min: 3 }, // #1126: the pressed IconRail's ActiveIndicatorBar (non-colour cue; its muted fill alone is only ~1.3:1 against the rail)
   { fg: 'foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'muted-foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'accent-text', bg: 'sidebar-right', min: 4.5 }, // #674: the right pane and rail surface
   { fg: 'foreground', bg: 'background', min: 4.5 },

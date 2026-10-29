@@ -12,6 +12,8 @@ interface SliderProps
   "aria-describedby"?: string
   /** Spoken value, e.g. "110 percent, about 15 px"; defaults to the number. */
   "aria-valuetext"?: string
+  /** Replaces the track fill (for example a hue gradient) and hides the range fill. */
+  trackBackground?: string
 }
 
 // Spec 036 (#842): a single-thumb slider on Radix (arrow, Page, Home and End keys come with it). The
@@ -21,6 +23,7 @@ function Slider({
   className,
   value,
   onValueChange,
+  trackBackground,
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledby,
   "aria-describedby": ariaDescribedby,
@@ -40,9 +43,12 @@ function Slider({
     >
       <SliderPrimitive.Track
         data-slot="slider-track"
+        style={trackBackground ? { background: trackBackground } : undefined}
         className="relative h-1 grow overflow-hidden rounded-full bg-muted forced-colors:bg-[GrayText]"
       >
-        <SliderPrimitive.Range data-slot="slider-range" className="absolute h-full bg-foreground forced-colors:bg-[Highlight]" />
+        {!trackBackground && (
+          <SliderPrimitive.Range data-slot="slider-range" className="absolute h-full bg-foreground forced-colors:bg-[Highlight]" />
+        )}
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
         data-slot="slider-thumb"

@@ -21,6 +21,19 @@ pub struct Repository {
     pub name: String,
     pub default_branch: String,
     pub added_at: String,
+    /// Issue #887: the Project colour shown on its Session list header. Absent until chosen; an
+    /// old registry without the field loads unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<ProjectColor>,
+}
+
+/// Issue #887: a Project colour, either one of the ten named presets (resolved to a per-theme
+/// token in the renderer) or a custom hex stored exactly as the user typed it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ProjectColor {
+    Preset { id: String },
+    Custom { hex: String },
 }
 
 /// Same shape as `src/shared/model.ts`'s `Session`. `stopped_on_request_conversation`/
@@ -255,6 +268,33 @@ impl RegistryStore {
         self.data.repositories[index].name = name;
         if let Err(err) = self.persist().await {
             self.data.repositories[index].name = previous_name;
+            let _ = self.persist().await;
+            return Err(err.into());
+        }
+        Ok(self.data.repositories[index].clone())
+    }
+
+    /// Issue #887: sets or clears (`None`) a Repository's Project colour, rolling back the
+    /// in-memory value when the write fails, the same as `update_repository_name`.
+    pub async fn update_repository_color(
+        &mut self,
+        id: &str,
+        color: Option<ProjectColor>,
+    ) -> Result<Repository, RegistryStoreError> {
+        let index = self
+            .data
+            .repositories
+            .iter()
+            .position(|r| r.id == id)
+            .ok_or_else(|| {
+                RegistryError::new(
+                    RegistryErrorCode::NotFound,
+                    format!("Repository not found: {id}"),
+                )
+            })?;
+        let previous = std::mem::replace(&mut self.data.repositories[index].color, color);
+        if let Err(err) = self.persist().await {
+            self.data.repositories[index].color = previous;
             let _ = self.persist().await;
             return Err(err.into());
         }

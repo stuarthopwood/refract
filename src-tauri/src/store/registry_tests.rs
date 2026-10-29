@@ -26,6 +26,7 @@ fn make_repository(id: &str, path: &str) -> Repository {
         name: "pinion".to_string(),
         default_branch: "main".to_string(),
         added_at: "2026-01-01T00:00:00.000Z".to_string(),
+        color: None,
     }
 }
 

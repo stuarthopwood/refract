@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { EllipsisVerticalIcon, FolderGit2Icon, FolderGitIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import {
@@ -19,9 +19,13 @@ import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, useRepositoriesStore, useSessionListStore, useSessionsStore, useSplitStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
-import type { Repository } from '../../../shared/model'
+import type { ProjectColor, Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
+import { remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
+import { ProjectColorPopover } from './ProjectColorPopover'
+import { useSidebarRgb } from './useSidebarRgb'
+import { projectColorCss } from '@/lib/projectColor'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
@@ -85,6 +89,14 @@ export function RepositoryGroup({
   const renameRepository = useRepositoriesStore((state) => state.rename)
   const [removeOpen, setRemoveOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
+  // Issue #887: the Project colour popover, opened from the actions menu's Colour item.
+  const setRepositoryColor = useRepositoriesStore((state) => state.setColor)
+  const [colorOpen, setColorOpen] = useState(false)
+  const sidebarRgb = useSidebarRgb()
+  // The popover's draft colour while it is open, so Cancel visibly reverts the header.
+  const [previewColor, setPreviewColor] = useState<ProjectColor | null | undefined>(undefined)
+  const projectColor = projectColorCss(previewColor === undefined ? repository.color : (previewColor ?? undefined), sidebarRgb)?.css
+  const headerRowRef = useRef<HTMLDivElement>(null)
   // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
   // row's own rename (`SessionRow.tsx`) -- the model the issue names to copy.
   const [renaming, setRenaming] = useState(false)
@@ -97,6 +109,7 @@ export function RepositoryGroup({
   const renameInputRef = useRef<HTMLInputElement>(null)
   const restoreFocusRef = useRef(false)
   const renameRequestedRef = useRef(false)
+  const colourRequestedRef = useRef(false)
   const renameErrorId = `repository-rename-error-${repository.id}`
   const groupRootRef = useRef<HTMLDivElement>(null)
   // Issue #559 gate round 3 (the #900 pattern, finding 1): a rename that makes this whole group
@@ -196,28 +209,15 @@ export function RepositoryGroup({
     triggerRef.current?.focus()
   }, [renaming])
 
-  // Issue #528: a confirmed `none` is the only case that earns the plain "local only" icon --
-  // `has` and the honest `unknown` "could not tell" case both get the same remote-capable icon,
-  // so an unreadable repository or a parse failure is never shown as local-only when it might
-  // not be (the issue's own accessibility rule: never a false claim either way).
-  const remoteIcon = repository.remote?.kind === 'none' ? FolderGitIcon : FolderGit2Icon
-  // Gate round 2 fix (Low, code-reviewer + security-auditor): `git config`'s raw configured URL
-  // (unlike round 1's `git remote get-url`) never applies a `url.<base>.insteadOf` rewrite, so a
-  // shorthand remote (for example `gh:owner/repo`) reports its literal, undotted alias as the
-  // "host" -- still correctly classed `has` (the icon is right), but naming a fake host in the
-  // tooltip would be worse than naming none. Only a host containing a dot is shown by name.
-  const remoteTooltip =
-    repository.remote?.kind === 'has'
-      ? repository.remote.host.includes('.')
-        ? `Git repository, remote: ${repository.remote.host}`
-        : 'Git repository, has a remote'
-      : repository.remote?.kind === 'none'
-        ? 'Git repository, local only (no remote)'
-        : 'Git repository'
+  // Issue #528: a confirmed `none` is the only case that earns the plain "local only" icon, so an
+  // unreadable repository or a parse failure is never shown as local-only when it might not be.
+  // Issue #646: a known host adds its brand mark and the tooltip names owner/repo.
+  const remoteIcon = remoteHeaderIcon(repository.remote)
+  const remoteTooltip = remoteHeaderTooltip(repository.remote)
   return (
     <div ref={groupRootRef} className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>
-        <div className="group flex items-center gap-1 px-1">
+        <div ref={headerRowRef} className="group flex items-center gap-1 px-1">
           {renaming ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <input
@@ -252,6 +252,7 @@ export function RepositoryGroup({
               onKeyDown={handleTriggerKeyDown}
               marker={marker}
               containsOpenSession={containsOpenSession}
+              color={projectColor}
             />
           )}
           {/* These three action buttons' total width feeds BOTH `GROUP_HEADER_ACTIONS_OFFSET_PX`
@@ -321,6 +322,15 @@ export function RepositoryGroup({
             />
             <TooltipContent>New session from a branch…</TooltipContent>
           </Tooltip>
+          <ProjectColorPopover
+            repository={repository}
+            open={colorOpen}
+            onOpenChange={setColorOpen}
+            onApply={(color) => setRepositoryColor(repository.id, color)}
+            returnFocusRef={menuTriggerRef}
+            anchorRef={headerRowRef}
+            onPreviewChange={setPreviewColor}
+          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -335,9 +345,13 @@ export function RepositoryGroup({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               onCloseAutoFocus={(event) => {
-                if (!renameRequestedRef.current) return
+                if (!renameRequestedRef.current && !colourRequestedRef.current) return
+                const openColour = colourRequestedRef.current
                 renameRequestedRef.current = false
+                colourRequestedRef.current = false
                 event.preventDefault()
+                // Open only once the menu has fully closed, so it cannot take focus back from the popover.
+                if (openColour) setColorOpen(true)
               }}
             >
               <DropdownMenuItem
@@ -347,6 +361,13 @@ export function RepositoryGroup({
                 }}
               >
                 Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  colourRequestedRef.current = true
+                }}
+              >
+                Colour…
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>

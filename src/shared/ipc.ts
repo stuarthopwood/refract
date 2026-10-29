@@ -23,6 +23,7 @@ import type {
   ModelRoleId,
   PendingRequest,
   ReadoutKind,
+  ProjectColor,
   Repository,
   RepositoryRemote,
   Session,
@@ -48,7 +49,7 @@ import type {
 } from './github';
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
-import type { HolidayTouches } from './holidayTouches';
+import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle';
 import type { ActivityText, SessionActivity } from './activity';
 import type { UpdatesApi } from './updates';
 import type { ImagesApi } from './ipc-images';
@@ -319,6 +320,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_ADD: 'repositories.add',
   REPOSITORIES_REMOVE: 'repositories.remove',
   REPOSITORIES_RENAME: 'repositories.rename',
+  REPOSITORIES_SET_COLOR: 'repositories.setColor',
   REPOSITORIES_BRANCHES: 'repositories.branches',
   REPOSITORIES_REMOTES: 'repositories.remotes',
   REPOSITORIES_PICK_FOLDER: 'repositories.pickFolder',
@@ -412,6 +414,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
   SETTINGS_SET_HOLIDAY_TOUCHES: 'settings.setHolidayTouches',
   SETTINGS_SET_ACTIVITY_TEXT: 'settings.setActivityText',
+  SETTINGS_SET_STATUS_STYLE: 'settings.setStatusStyle',
   DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
@@ -512,14 +515,11 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     /** Issue #480: display-name only -- never touches the folder, worktrees, or branches. An
      * empty (after trimming) `name` resets to the folder's own basename. */
     rename(id: string, name: string): Promise<Result<Repository>>;
-    /** Issue #528, gate round 3 fix (Medium): the bounded remote-detection step `list()` used
-     * to run inline, now split out so it never gates the Session list's first paint. Keyed by
-     * repository id; a repository the shared pool's own deadline cut off mid-flight (gate round
-     * 4 fix, High: no longer sent as a false `unknown` placeholder) is simply absent from the
-     * response -- callers should leave their own existing value for an id not present here,
-     * never treat the absence itself as meaningful. Bounded per call (3s) and in aggregate
-     * (`src/main/ipc/repositories.ts`'s own pool/deadline, now generous since this is off the
-     * first-paint path), concurrency-capped, no network call. */
+    setColor(id: string, color: ProjectColor | null): Promise<Result<Repository>>; // Issue #887: null clears; the result has no `remote`.
+    /** Issue #528: the bounded remote-detection step split out of `list()` so it never gates the
+     * Session list's first paint. Keyed by repository id; an id the pool's deadline cut off is
+     * simply absent -- callers keep their existing value for it. Bounded per call (3s) and in
+     * aggregate, concurrency-capped, no network call. */
     remotes(): Promise<Result<Record<string, RepositoryRemote>>>;
     branches(id: string): Promise<Result<BranchEntry[]>>;
     pickFolder(): Promise<Result<string | null>>;
@@ -696,7 +696,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; // Issue #1246
     setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
-    setActivityText(value: ActivityText): Promise<Result<Settings>>; // #526 (FR-111): same pattern as setHolidayTouches; applies live.
+    setStatusStyle(value: StatusStyle): Promise<Result<Settings>>; setActivityText(value: ActivityText): Promise<Result<Settings>>; // #482 setStatusStyle (Appearance Status style, applies live). #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setRightPane(value: Settings['rightPane']): Promise<Result<Settings>>; // Spec 024: sole writer is `right-pane-persistence.ts`; Rust clamps width and repairs the active tab. Pushes settings:changed.
     setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
