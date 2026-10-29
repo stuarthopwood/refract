@@ -12,8 +12,8 @@ Spec: `spec.md`. Plan: `plan.md`. No new tests (prototyping phase). Commit and p
 - [x] T5 Alt+Up/Alt+Down in transcript and composer; Scroll to end uses `ArrowDownToLineIcon`.
 
 ## WP-C Outline (#752)
-- [ ] T6 `outline` panel id, registry entry, active-pane Session follow.
-- [ ] T7 Outline list model, windowed list, roving tabindex, current marker, collapse and Collapse all / Expand all, empty state.
+- [x] T6 `outline` panel id, registry entry, active-pane Session follow.
+- [x] T7 Outline list model, windowed list, roving tabindex, current marker, collapse and Collapse all / Expand all, empty state.
 
 ## WP-D Search (#753)
 - [ ] T8 Probe the Custom Highlight API on WebView2; matcher (chunked, cancellable, 500 cap, case toggle).

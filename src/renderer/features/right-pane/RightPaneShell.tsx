@@ -14,6 +14,7 @@ import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
 import { SideChatPanel } from './side-chat/SideChatPanel'
 import { FileExplorerPanel } from './file-explorer/FileExplorerPanel'
 import { GitChangesPanel } from './git-changes/GitChangesPanel'
+import { OutlinePanel } from './outline/OutlinePanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
@@ -108,6 +109,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         )}
         {activePanelId === 'file-explorer' && <FileExplorerPanel sessionId={sessionId} />}
         {activePanelId === 'git-changes' && <GitChangesPanel sessionId={sessionId} />}
+        {activePanelId === 'outline' && <OutlinePanel sessionId={sessionId} />}
       </div>
       <HandleHitStrip />
     </div>
