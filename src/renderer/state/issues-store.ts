@@ -46,12 +46,14 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   loading: false,
   error: null,
   selected: null,
-  setTab: (tab) => set({ tab }),
-  setState: (state) => set({ state }),
-  setRepositoryIds: (repositoryIds) => set({ repositoryIds }),
-  setLabel: (label) => set({ label }),
+  // A filter change drops the selection so the detail pane never shows an issue the list no longer has.
+  setTab: (tab) => set({ tab, selected: null }),
+  setState: (state) => set({ state, selected: null }),
+  setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null }),
+  setLabel: (label) => set({ label, selected: null }),
   setQuery: (query) => set({ query }),
-  clearFilters: () => set({ state: 'open', repositoryIds: [], label: null, query: '', appliedQuery: '' }),
+  clearFilters: () =>
+    set({ state: 'open', repositoryIds: [], label: null, query: '', appliedQuery: '', selected: null }),
   select: (selected) => set({ selected }),
   async refresh(allRepositoryIds) {
     const { tab, state, repositoryIds, label, query } = get()

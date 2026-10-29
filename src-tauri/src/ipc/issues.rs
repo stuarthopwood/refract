@@ -17,7 +17,7 @@ use super::{arg_str, invalid_argument, now_iso8601, Dispatcher, HandlerFuture};
 
 /// Issues are listed for at most this many Projects at once, and at most this many `gh` calls run
 /// at the same time (each repository is one call).
-const MAX_PROJECTS: usize = 40;
+const MAX_PROJECTS: usize = 200;
 const LIST_CONCURRENCY: usize = 4;
 
 /// One Project's listing: its lower-cased `owner/repo` slug and rows, or why it was skipped.
@@ -84,16 +84,26 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
             .collect::<Option<_>>()
             .ok_or_else(|| invalid_argument(USAGE))?;
         if ids.len() > MAX_PROJECTS {
-            return Err(invalid_argument("Choose at most 40 projects."));
+            return Err(invalid_argument("Choose at most 200 projects."));
         }
         let label = args.get(3).and_then(Value::as_str);
         let search = arg_str(&args, 4);
         let query =
             Arc::new(IssueListQuery::new(tab, state_filter, label, search).map_err(map_gh_error)?);
 
+        let mut skipped: Vec<SkippedProject> = Vec::new();
         let mut resolved: Vec<Resolved> = Vec::new();
         for id in ids {
-            let (path, name) = repo_path_for(&state, &id).await?;
+            // A Project removed since the renderer last listed is skipped, not a failed request.
+            let Ok((path, name)) = repo_path_for(&state, &id).await else {
+                skipped.push(SkippedProject {
+                    repository_name: id.clone(),
+                    repository_id: id,
+                    code: "gh-failed",
+                    message: "This project is no longer available.".to_string(),
+                });
+                continue;
+            };
             resolved.push(Resolved {
                 repository_id: id,
                 repository_name: name,
@@ -104,7 +114,6 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(LIST_CONCURRENCY));
         let mut seen: HashSet<String> = HashSet::new();
         let mut tasks = tokio::task::JoinSet::new();
-        let mut skipped: Vec<SkippedProject> = Vec::new();
         for (index, project) in resolved.iter().enumerate() {
             let path = project.path.clone();
             let query = Arc::clone(&query);

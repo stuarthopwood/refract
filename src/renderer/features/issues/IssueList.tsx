@@ -31,7 +31,7 @@ const TABS: Array<{ value: IssueTab; label: string }> = [
 const STATE_OPTIONS: Array<{ value: IssueStateFilter; label: string }> = [
   { value: 'open', label: 'Open' },
   { value: 'closed', label: 'Closed' },
-  { value: 'all', label: 'All' }
+  { value: 'all', label: 'Any state' }
 ]
 
 // Radix Select forbids an empty-string item value, so "any label" gets a sentinel.
@@ -75,12 +75,14 @@ export function IssueList() {
     (store.label !== null ? 1 : 0)
   const filtersLabel = activeFilterCount > 0 ? `Filters, ${activeFilterCount} active` : 'Filters'
 
-  const everySkipped = store.items.length === 0 && store.skipped.length > 0 && store.skipped.length === scopeIds.length
-  const allErrorCode = everySkipped ? (store.skipped[0]?.code ?? null) : null
+  // The whole list is replaced by an error only when every skipped Project is down for gh-wide reasons.
+  const ghWideCode = ['gh-unavailable', 'rate-limited'].find((code) =>
+    store.skipped.every((project) => project.code === code)
+  )
   const friendlyError = store.error
     ? (ERROR_MESSAGES[store.error.code] ?? store.error.message)
-    : allErrorCode && (allErrorCode === 'gh-unavailable' || allErrorCode === 'rate-limited')
-      ? ERROR_MESSAGES[allErrorCode]
+    : store.items.length === 0 && store.skipped.length > 0 && ghWideCode
+      ? ERROR_MESSAGES[ghWideCode]
       : null
 
   const projectSummary =
@@ -123,7 +125,11 @@ export function IssueList() {
         <div id="issue-filters-panel" className="flex flex-col gap-2">
           <SearchField
             value={store.query}
-            onValueChange={store.setQuery}
+            onValueChange={(value) => {
+              store.setQuery(value)
+              // Emptying a search that was applied refetches at once, as in the Pull requests view.
+              if (value === '' && store.appliedQuery !== '') void refresh(allIds)
+            }}
             onSubmit={() => void refresh(allIds)}
             label="Search issues"
             placeholder="Search issues"
@@ -217,8 +223,8 @@ export function IssueList() {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    // The fetch effect refetches once the filters reset.
                     store.clearFilters()
-                    void refresh(allIds)
                     requestAnimationFrame(() => (filtersOpen ? searchInputRef : filtersButtonRef).current?.focus())
                   }}
                 >

@@ -80,7 +80,12 @@ export function IssueRow({ issue, selected, onSelect }: IssueRowProps) {
               <span className="truncate">{label.name}</span>
             </span>
           ))}
-          {hiddenLabels > 0 && <span>+{hiddenLabels}</span>}
+          {hiddenLabels > 0 && (
+            <span>
+              +{hiddenLabels}
+              <span className="sr-only"> more labels</span>
+            </span>
+          )}
         </span>
       )}
       <span id={updatedId} className="sr-only">

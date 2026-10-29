@@ -20,7 +20,6 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const headingRef = useRef<HTMLHeadingElement>(null)
   const sequenceRef = useRef(0)
 
   async function load(): Promise<void> {
@@ -50,15 +49,19 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
     if (!detail) return
     const result = await window.refract.clipboard.writeText(detail.url)
     setCopied(result.ok)
+    if (result.ok) window.setTimeout(() => setCopied(false), 2000)
   }
 
   if (!detail) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
         {error ? (
-          <div role="alert" className="text-destructive">
-            {error}
-          </div>
+          <>
+            <div role="alert" className="text-destructive">
+              {error}
+            </div>
+            <RefreshButton loading={loading} onClick={() => void load()} label="Retry loading this issue" />
+          </>
         ) : (
           loading && 'Loading…'
         )}
@@ -74,7 +77,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
       <div className="shrink-0 border-b border-border p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
+            <h2 className="line-clamp-2 text-lg font-semibold">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -94,7 +97,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
               </a>
             </Button>
             <Button type="button" variant="ghost" size="sm" onClick={() => void copyLink()}>
-              Copy link
+              {copied ? 'Copied' : 'Copy link'}
             </Button>
           </div>
         </div>
