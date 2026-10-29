@@ -6,6 +6,7 @@ import type { SettingIcon } from '@/components/settings/SettingRow'
 import { cn } from '@/lib/utils'
 import {
   BrainIcon,
+  FolderIcon,
   LayersIcon,
   MessageSquareIcon,
   PaletteIcon,
@@ -28,6 +29,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   { id: 'models', label: 'Models', icon: BrainIcon },
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontalIcon },
   { id: 'sessions', label: 'Sessions', icon: LayersIcon },
+  { id: 'projects', label: 'Projects', icon: FolderIcon },
   { id: 'panels', label: 'Panels', icon: PanelRightIcon }
 ]
 

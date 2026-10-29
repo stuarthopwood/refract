@@ -60,3 +60,40 @@ export function dismissSlashCommandRefusalToast(sessionId: string): void {
     openRefusal = null
   }
 }
+
+export interface ProgressToast {
+  /** Replaces the loading text in place (same toast, no new one). */
+  update(text: string): void
+  /** Success toast with an optional action; auto-dismisses after about 5 s. */
+  succeed(text: string, action?: { label: string; onClick(): void }): void
+  /** Persistent error toast with a close button. */
+  fail(text: string): void
+  /** Neutral result for a cancelled operation; auto-dismisses. */
+  info(text: string): void
+}
+
+/** One non-dismissible loading toast for a background operation (spec 054, clone progress): a
+ * single stable id per operation, so every later call updates the same toast. */
+export function notifyProgress(id: string, text: string, onCancel?: () => void): ProgressToast {
+  const toastId = `progress-${id}`
+  toast.loading(text, {
+    id: toastId,
+    duration: Infinity,
+    dismissible: false,
+    action: onCancel ? { label: 'Cancel', onClick: onCancel } : undefined
+  })
+  return {
+    update: (next) =>
+      toast.loading(next, {
+        id: toastId,
+        duration: Infinity,
+        dismissible: false,
+        action: onCancel ? { label: 'Cancel', onClick: onCancel } : undefined
+      }),
+    succeed: (next, action) =>
+      toast.success(next, { id: toastId, duration: 5000, dismissible: true, action: action ?? undefined }),
+    fail: (next) =>
+      toast.error(next, { id: toastId, duration: Infinity, dismissible: true, closeButton: true, action: undefined }),
+    info: (next) => toast.message(next, { id: toastId, duration: 5000, dismissible: true, action: undefined })
+  }
+}

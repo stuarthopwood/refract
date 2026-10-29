@@ -37,6 +37,10 @@ export interface SearchFieldProps {
    *  so a future toolbar can embed this field without nesting a second landmark). */
   className?: string
   inputRef?: RefObject<HTMLInputElement | null>
+  /** Makes the input the combobox half of a combobox + listbox pair (`FilterableGroupedListbox`): role=combobox with these attributes instead of searchbox. */
+  combobox?: { listboxId: string; activeDescendantId?: string }
+  /** Runs first for a keydown on the input; preventDefault() skips this field's own Enter/Esc handling. */
+  onInputKeyDown?(event: KeyboardEvent<HTMLInputElement>): void
   /** Gate round 1 fix (code-reviewer Medium): extra attributes spread onto the `<input>` itself
    *  (for example a stable `data-*` hook), so a caller never has to find this field by its
    *  wrapper's own descendant structure -- #934's own future `ListToolbar` embedding could
@@ -66,6 +70,8 @@ export function SearchField({
   onSubmit,
   className,
   inputRef,
+  combobox,
+  onInputKeyDown,
   inputProps
 }: SearchFieldProps) {
   const localRef = useRef<HTMLInputElement>(null)
@@ -86,6 +92,10 @@ export function SearchField({
   // element bubbles to this div, so Esc now clears from both.
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     if (event.nativeEvent.isComposing) return
+    if (onInputKeyDown && event.target instanceof HTMLInputElement) {
+      onInputKeyDown(event as unknown as KeyboardEvent<HTMLInputElement>)
+      if (event.defaultPrevented) return
+    }
     if (event.key === 'Enter' && onSubmit && event.target instanceof HTMLInputElement) {
       event.preventDefault()
       onSubmit(event.shiftKey)
@@ -110,7 +120,11 @@ export function SearchField({
       <Input
         ref={resolvedRef}
         type="text"
-        role="searchbox"
+        role={combobox ? 'combobox' : 'searchbox'}
+        aria-autocomplete={combobox ? 'list' : undefined}
+        aria-expanded={combobox ? true : undefined}
+        aria-controls={combobox?.listboxId}
+        aria-activedescendant={combobox?.activeDescendantId}
         autoComplete="off"
         spellCheck={false}
         value={value}

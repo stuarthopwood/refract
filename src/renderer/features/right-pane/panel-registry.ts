@@ -29,7 +29,7 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   { id: 'git-changes', name: 'Git changes', icon: GitBranchIcon, hasCount: true },
   // Spec 015 research.md decision 8: distinct from every icon already in use on a right-pane
   // rail button or an existing file-system action (`FolderOpenIcon` already means "open the OS
-  // file explorer" elsewhere in this codebase, e.g. `AddRepositoryDialog.tsx`'s Browse button
+  // file explorer" elsewhere in this codebase, e.g. `AddProjectDialog.tsx`'s Browse button
   // and this very panel's own Reveal in File Explorer action, Slice 3) -- the literal "a folder
   // containing a nested tree" shape avoids conflating "open this panel" with that action. No
   // live count is asked for by the issue.
