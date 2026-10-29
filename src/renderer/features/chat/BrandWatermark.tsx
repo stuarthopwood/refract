@@ -25,7 +25,7 @@ interface BrandWatermarkProps {
    *  rendering meant to sit inline inside a bordered preview container in Settings. */
   variant: 'live' | 'preview'
   /** #1256: false where conversation text sits over the corner (a transcript pane), so the plain
-   *  low-opacity mark renders instead of the holiday glyph. */
+   *  plain mark (about 1.6:1, #1298) renders instead of the holiday glyph. */
   allowHoliday?: boolean
 }
 

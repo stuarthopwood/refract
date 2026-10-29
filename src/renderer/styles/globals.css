@@ -1714,7 +1714,7 @@ samp {
 .holiday-ambient-loop-bat-wrap:nth-child(2) { top: 32%; left: 55%; }
 .holiday-ambient-loop-bat-wrap:nth-child(3) { top: 58%; left: 22%; }
 /* #1256: in a transcript pane (`avoidTextColumn`) the bats must never pass behind muted text
- * (the #1233 3:1 decision), so they live only in the gutters beside the 64rem reading column
+ * (the #1233 decision, then about 3:1, now about 1.6:1 per #1298), so they live only in the gutters beside the 64rem reading column
  * (`Transcript.tsx`) and are hidden when the pane is too narrow to have gutters wide enough for
  * a bat (48px) plus its 120px flight, or when the chat width is 'full' (no gutter at all). */
 .holiday-ambient-loop--gutters .holiday-ambient-loop-bat-wrap:nth-child(1) { left: 8px; }
