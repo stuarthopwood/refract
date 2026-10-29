@@ -196,7 +196,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     // the first `await` on the single renderer thread, is the one race-proof gate every caller
     // actually depends on.
     if (get().creatingRepositoryIds.has(repositoryId)) {
-      return { ok: false, error: { code: 'invalid-argument', message: 'A session is already being created for this repository.' } }
+      return { ok: false, error: { code: 'invalid-argument', message: 'A session is already being created for this project.' } }
     }
     set({ creatingRepositoryIds: new Set(get().creatingRepositoryIds).add(repositoryId) })
     try {

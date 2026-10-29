@@ -183,7 +183,7 @@ impl std::error::Error for RegistryError {}
 
 /// Single source of truth for the `has-sessions` refusal text.
 pub const REPOSITORY_HAS_SESSIONS_MESSAGE: &str =
-    "Delete this repository's Sessions before removing it.";
+    "Delete this project's Sessions before removing it.";
 
 /// Any error a `RegistryStore` method can produce: either a business-rule `RegistryError`
 /// (duplicate/not-found/has-sessions) or an unexpected I/O failure writing `registry.json`.
@@ -242,7 +242,7 @@ impl RegistryStore {
         {
             return Err(RegistryError::new(
                 RegistryErrorCode::Duplicate,
-                format!("Repository already added: {}", r.path),
+                format!("Project already added: {}", r.path),
             )
             .into());
         }
@@ -267,7 +267,7 @@ impl RegistryStore {
             .ok_or_else(|| {
                 RegistryError::new(
                     RegistryErrorCode::NotFound,
-                    format!("Repository not found: {id}"),
+                    format!("Project not found: {id}"),
                 )
             })?;
         let previous_name = self.data.repositories[index].name.clone();
@@ -295,7 +295,7 @@ impl RegistryStore {
             .ok_or_else(|| {
                 RegistryError::new(
                     RegistryErrorCode::NotFound,
-                    format!("Repository not found: {id}"),
+                    format!("Project not found: {id}"),
                 )
             })?;
         let previous = std::mem::replace(&mut self.data.repositories[index].color, color);
@@ -316,7 +316,7 @@ impl RegistryStore {
             .ok_or_else(|| {
                 RegistryError::new(
                     RegistryErrorCode::NotFound,
-                    format!("Repository not found: {id}"),
+                    format!("Project not found: {id}"),
                 )
             })?;
         if self.data.sessions.iter().any(|s| s.repository_id == id) {
@@ -359,7 +359,7 @@ impl RegistryStore {
         }) {
             return Err(RegistryError::new(
                 RegistryErrorCode::Duplicate,
-                format!("Branch already used in this repository: {}", s.branch),
+                format!("Branch already used in this project: {}", s.branch),
             )
             .into());
         }
@@ -374,7 +374,7 @@ impl RegistryStore {
         {
             return Err(RegistryError::new(
                 RegistryErrorCode::NotFound,
-                format!("Repository not found: {}", s.repository_id),
+                format!("Project not found: {}", s.repository_id),
             )
             .into());
         }

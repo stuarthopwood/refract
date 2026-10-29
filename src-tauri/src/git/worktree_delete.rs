@@ -53,14 +53,14 @@ fn outside_worktrees_root_message(
         return format!("Refract did not delete anything. {wt} is Refract's worktree folder itself, not a single worktree. Delete the individual Session worktrees inside it instead, then choose Retry for each.");
     }
     format!(
-        "Refract did not delete anything. {wt} is outside Refract's worktree folder ({}), so Refract will never remove it. To remove this Session, move or rename that folder yourself (only if you are sure it is not your own work), or run `git worktree remove` on that path yourself in the repository at {}, then choose Retry. If git says it has uncommitted changes or is locked, run `git worktree unlock` on that path if it is locked, then `git worktree remove --force` (this deletes any uncommitted work in that folder).",
+        "Refract did not delete anything. {wt} is outside Refract's worktree folder ({}), so Refract will never remove it. To remove this Session, move or rename that folder yourself (only if you are sure it is not your own work), or run `git worktree remove` on that path yourself in the project at {}, then choose Retry. If git says it has uncommitted changes or is locked, run `git worktree unlock` on that path if it is locked, then `git worktree remove --force` (this deletes any uncommitted work in that folder).",
         normalize_git_path(&root.to_string_lossy()),
         normalize_git_path(&repo.to_string_lossy())
     )
 }
 
 fn locked_worktree_message(worktree_path: &Path) -> String {
-    format!("Refract did not delete anything. Git has locked the worktree {}, so Refract will not remove it. If you no longer need it, unlock it first: run `git worktree unlock` in the repository, followed by that folder's path, then choose Retry.", worktree_path.display())
+    format!("Refract did not delete anything. Git has locked the worktree {}, so Refract will not remove it. If you no longer need it, unlock it first: run `git worktree unlock` in the project, followed by that folder's path, then choose Retry.", worktree_path.display())
 }
 
 fn admin_entry_refusal_message(worktree_path: &Path) -> String {
@@ -495,7 +495,7 @@ pub async fn remove_session_worktree(
         return Err(GitError::new(
             GitErrorCode::WorktreeFailed,
             format!(
-                "Refract did not delete anything. It could not read the repository at {} (moved, deleted, or no longer a git repository?), and the worktree folder {} still exists. Restore the repository, or move that folder somewhere safe yourself, then choose Retry.",
+                "Refract did not delete anything. It could not read the project at {} (moved, deleted, or no longer a git repository?), and the worktree folder {} still exists. Restore the project, or move that folder somewhere safe yourself, then choose Retry.",
                 repo.display(),
                 worktree_path.display()
             ),
@@ -514,7 +514,7 @@ pub async fn remove_session_worktree(
                 return Err(GitError::new(
                     GitErrorCode::WorktreeFailed,
                     format!(
-                        "Refract did not delete anything. Git still records a worktree for this Session at {}, outside Refract's worktree folder, and that folder cannot be found (a disconnected drive, or moved?). Refract never removes worktrees outside its own folder. If git says the worktree is locked, run `git worktree unlock` followed by that path first. If you no longer need it, run `git worktree remove --force` followed by that path in the repository at {}, then choose Retry. If the drive is connected when you run it, this also deletes that folder and any uncommitted work in it.",
+                        "Refract did not delete anything. Git still records a worktree for this Session at {}, outside Refract's worktree folder, and that folder cannot be found (a disconnected drive, or moved?). Refract never removes worktrees outside its own folder. If git says the worktree is locked, run `git worktree unlock` followed by that path first. If you no longer need it, run `git worktree remove --force` followed by that path in the project at {}, then choose Retry. If the drive is connected when you run it, this also deletes that folder and any uncommitted work in it.",
                         worktree_path.display(),
                         normalize_git_path(&repo.to_string_lossy())
                     ),

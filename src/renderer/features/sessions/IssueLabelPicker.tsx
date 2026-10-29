@@ -84,7 +84,7 @@ export function IssueLabelPicker({ labels, selected, onChange, disabled, unavail
         </Popover>
         {unavailable && <span className="text-xs text-muted-foreground">Labels could not be loaded</span>}
         {!unavailable && labels.length === 0 && selected.length === 0 && (
-          <span className="text-xs text-muted-foreground">This repository has no labels</span>
+          <span className="text-xs text-muted-foreground">This project has no labels</span>
         )}
       </div>
     </div>

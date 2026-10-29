@@ -383,7 +383,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           <AlertDialogHeader>
             <AlertDialogTitle>Start a Session on untrusted code?</AlertDialogTitle>
             <AlertDialogDescription>
-              {title} comes from a fork{detail.headRepositoryOwner ? ` owned by ${detail.headRepositoryOwner}` : ''}, not this repository.
+              {title} comes from a fork{detail.headRepositoryOwner ? ` owned by ${detail.headRepositoryOwner}` : ''}, not this project.
               Its branch may contain code, commit messages, or an AGENTS.md written by someone you don't control, which an agent session
               would then read and could act on. Only continue if you trust this pull request's author.
             </AlertDialogDescription>

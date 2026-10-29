@@ -44,7 +44,7 @@ const STATE_OPTIONS: Array<{ value: PullRequestStateFilter; label: string }> = [
 
 // FR-002, FR-026: actionable text, never an empty or broken list in place of these.
 const ERROR_MESSAGES: Record<string, string> = {
-  'no-github-remote': 'This repository has no GitHub remote.',
+  'no-github-remote': 'This project has no GitHub remote.',
   'gh-unavailable': 'GitHub is not available: sign in with the GitHub CLI (gh auth login), or check your connection.',
   'rate-limited': 'GitHub rate limit reached. Try again in a few minutes.'
 }

@@ -331,7 +331,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-foreground">{session.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {repository?.name ?? 'Unknown repository'} &middot; Idle {formatRelativeTime(session.lastActivityAt)}
+                        {repository?.name ?? 'Unknown project'} &middot; Idle {formatRelativeTime(session.lastActivityAt)}
                       </p>
                     </div>
                     <Button
