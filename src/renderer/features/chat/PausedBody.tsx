@@ -16,7 +16,7 @@ import { setSessionPaused } from './pauseActions'
 
 // Space must keep its meaning in text fields, buttons, menus, dialogs and anything focusable.
 const SPACE_OWNERS =
-  'input, textarea, select, button, a[href], summary, [tabindex], [contenteditable]:not([contenteditable="false"]), [role="menu"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="dialog"], [role="alertdialog"], [role="listbox"], [role="option"], [role="combobox"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="button"], [role="treeitem"], [role="row"], [role="gridcell"], [role="slider"], [role="spinbutton"]'
+  'input, textarea, select, button, a[href], summary, [tabindex]:not([tabindex="-1"]), [contenteditable]:not([contenteditable="false"]), [role="menu"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="dialog"], [role="alertdialog"], [role="listbox"], [role="option"], [role="combobox"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="button"], [role="treeitem"], [role="row"], [role="gridcell"], [role="slider"], [role="spinbutton"]'
 
 export function PausedBody({ sessionId, children }: { sessionId: string; children: ReactNode }) {
   const pause = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.pause)
@@ -99,12 +99,12 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-              <Button ref={resumeRef} type="button" onClick={() => void setSessionPaused(sessionId, false)}>
+              <Button ref={resumeRef} type="button" variant={stopped ? 'outline' : 'default'} onClick={() => void setSessionPaused(sessionId, false)}>
                 <PlayIcon aria-hidden />
                 Resume
               </Button>
               {stopped && (
-                <Button type="button" variant="outline" onClick={handleStart}>
+                <Button type="button" onClick={handleStart}>
                   Start agent
                 </Button>
               )}
