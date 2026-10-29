@@ -28,51 +28,51 @@ export function IssueDuplicates({ matches }: { matches: IssueMatch[] }) {
         {shown.length > 0 ? label : ''}
       </span>
       {shown.length > 0 && (
-      <InlineDisclosure open={open} onOpenChange={setOpen} contentId="report-issue-duplicates" label={label}>
-        <ul aria-label="Possible duplicate issues" className="flex flex-col gap-1">
-          {shown.map((match) => {
-            const { Icon, word } = STATE_DISPLAY[match.state] ?? { Icon: CircleSlashIcon, word: 'Closed' }
-            const href = safeUrl(match.url)
-            return (
-              <li key={match.number} className="flex items-center gap-2 text-sm">
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="shrink-0 text-muted-foreground">#{match.number}</span>
-                  <span className="min-w-0 truncate">{match.title}</span>
-                  <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                    <Icon aria-hidden className="size-3.5" />
-                    {word}
+        <InlineDisclosure open={open} onOpenChange={setOpen} contentId="report-issue-duplicates" label={label}>
+          <ul aria-label="Possible duplicate issues" className="flex flex-col gap-1">
+            {shown.map((match) => {
+              const { Icon, word } = STATE_DISPLAY[match.state] ?? { Icon: CircleSlashIcon, word: 'Closed' }
+              const href = safeUrl(match.url)
+              return (
+                <li key={match.number} className="flex items-center gap-2 text-sm">
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="shrink-0 text-muted-foreground">#{match.number}</span>
+                    <span className="min-w-0 truncate">{match.title}</span>
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                      <Icon aria-hidden className="size-3.5" />
+                      {word}
+                    </span>
                   </span>
-                </span>
-                {href && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button asChild variant="ghost" size="icon-xs">
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          aria-label={`Open issue #${match.number} on GitHub`}
-                        >
-                          <ExternalLinkIcon aria-hidden />
-                        </a>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{`Open issue #${match.number} on GitHub`}</TooltipContent>
-                  </Tooltip>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setDismissed((previous) => new Set(previous).add(match.number))}
-                >
-                  It&apos;s different
-                </Button>
-              </li>
-            )
-          })}
-        </ul>
-      </InlineDisclosure>
+                  {href && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button asChild variant="ghost" size="icon-xs">
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            aria-label={`Open issue #${match.number} on GitHub`}
+                          >
+                            <ExternalLinkIcon aria-hidden />
+                          </a>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{`Open issue #${match.number} on GitHub`}</TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setDismissed((previous) => new Set(previous).add(match.number))}
+                  >
+                    It&apos;s different
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        </InlineDisclosure>
       )}
     </div>
   )
