@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useSessionsStore } from '@/state'
 import { closeChatFind, EMPTY_CHAT_FIND, openChatFind, useChatFindStore } from '@/state/chat-find-store'
 import { STATUS_LABEL, StateIcon } from '@/features/sessions/sessionDisplay'
+import { HiddenMarker } from '@/features/sessions/HiddenMarker'
 import { ConversationSwitcher } from './ConversationSwitcher'
 
 interface ChatHeaderProps {
@@ -59,6 +60,7 @@ export function ChatHeader({
         <StateIcon status={session.status} />
         <span className="sr-only">{STATUS_LABEL[session.status]}</span>
         <span className="min-w-0 truncate text-sm font-medium" title={session.name}>{session.name}</span>
+        {session.hiddenAt && <HiddenMarker />}
         <span className="min-w-0 truncate text-xs text-muted-foreground" title={session.branch}>{session.branch}</span>
         {focused && (
           // Quality-gate remediation (accessibility-auditor, Critical): the previous

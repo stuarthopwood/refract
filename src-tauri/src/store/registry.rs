@@ -62,6 +62,10 @@ pub struct Session {
     pub created_at: String,
     pub last_activity_at: String,
     pub archived_at: Option<String>,
+    /// #748: hide-from-list view flag, independent of `archived_at`. Absent in a pre-#748
+    /// registry reads as `None` (visible); omitted when unset so old readers see no change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_turn_subagents: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -111,6 +115,8 @@ pub struct SessionPatch {
     pub stopped_on_request_conversation: Option<Option<String>>,
     pub stopped_on_request_at_size: Option<Option<i64>>,
     pub archived_at: Option<Option<String>>,
+    /// #748: tri-state like `archived_at` (`Some(None)` = unhide).
+    pub hidden_at: Option<Option<String>>,
     /// Lane RM (#741 decision 1): set on every `set_model`/`cycle_model`/`handle_switch_text`
     /// pin and every `apply_role_now` un-pin -- a plain `Option<bool>` (no tri-state) since a
     /// bool has no "unset" state to preserve across patches.
@@ -460,6 +466,9 @@ impl RegistryStore {
             }
             if let Some(value) = patch.archived_at {
                 session.archived_at = value;
+            }
+            if let Some(value) = patch.hidden_at {
+                session.hidden_at = value;
             }
             if let Some(value) = patch.pinned_model {
                 session.pinned_model = value;

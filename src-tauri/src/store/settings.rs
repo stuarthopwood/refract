@@ -55,6 +55,9 @@ pub struct SplitLayout {
 pub struct SessionListCollapse {
     pub collapsed_repository_ids: Vec<String>,
     pub archived_open: bool,
+    /// #748: the "Show hidden" toggle; absent in a pre-#748 file reads as `false`.
+    #[serde(default)]
+    pub show_hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

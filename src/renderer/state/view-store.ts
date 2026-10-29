@@ -11,7 +11,7 @@ export type MainView = 'chat' | 'pull-requests' | 'settings' | 'manage-sessions'
 export const SETTINGS_SECTION_IDS = ['appearance', 'chat', 'status-line', 'models', 'advanced', 'sessions', 'panels'] as const
 export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number]
 
-export type ArchiveFilter = 'all' | 'active' | 'archived'
+export type ArchiveFilter = 'all' | 'active' | 'archived' | 'hidden'
 export type SortKey = 'recent' | 'name' | 'repo' | 'status'
 
 /** Spec 008 FR-025 "Manage sessions" screen filters (search/repository/archive/sort). Defined

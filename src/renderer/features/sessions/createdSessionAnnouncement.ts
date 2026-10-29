@@ -26,7 +26,12 @@ const HIDDEN_SUFFIX = ', hidden by the session filter'
 export function createdSessionAnnouncement(session: Pick<Session, 'id' | 'name' | 'repositoryId'>): string {
   const query = useSessionListStore.getState().query.trim()
   if (!query) return `Created session ${session.name}`
-  const { matchingByRepository } = searchSessions(useSessionsStore.getState().sessions, useRepositoriesStore.getState().repositories, query)
+  const { matchingByRepository } = searchSessions(
+    useSessionsStore.getState().sessions,
+    useRepositoriesStore.getState().repositories,
+    query,
+    useSessionListStore.getState().showHidden
+  )
   const matches = matchingByRepository.get(session.repositoryId)?.some((candidate) => candidate.id === session.id) ?? false
   return matches ? `Created session ${session.name}` : `Created session ${session.name}${HIDDEN_SUFFIX}`
 }

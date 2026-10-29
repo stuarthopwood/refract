@@ -58,7 +58,7 @@ export interface Session {
   lastThinkingLevel?: string;
   createdAt: string;
   lastActivityAt: string;
-  archivedAt: string | null; // non-null = archived
+  archivedAt: string | null; hiddenAt?: string | null; // archivedAt non-null = archived; #748 hiddenAt non-null = hidden from the list (view flag, independent of archivedAt)
   /** Issue #489 (PLAN.md row A2c, durable turn marker, 2026-10-07): the current turn's subagent
    * instances, as `${toolCallId}:${specIndex}` keys -- the SAME correlation key
    * `SessionAgent.reconcileSubagentsOnAttach` and `transcript.ts`'s `settleStaleSubagentRows` use
@@ -116,8 +116,8 @@ export interface Settings {
   wordPredictionEnabled?: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; showScrollbarMap?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation. showAgentStoppedBar (#1205, FR-107): the "Agent stopped" bar, absent = on. animatedStatusText (#1242, FR-042): the status-text shimmer switch, absent = on; showFinishedTurnTimes (#1250, FR-119): the settled turn total, absent = off. showAiCredits (#1238): credits in the Context usage chip, absent = on. codeLigatures (#1246): ligatures in the Code font, absent = on. showScrollbarMap (#754): the chat scrollbar map, absent = on
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings; // spec 024 right pane; #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
-export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
-export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false });
+export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; showHidden: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse; #748: showHidden (default false) is the Show hidden toggle.
+export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false, showHidden: false });
 export { type TranscriptDisplaySettings, DEFAULT_TRANSCRIPT_DISPLAY } from './transcriptDisplay';
 
 /** OMP model-role ids (issue #455, `omp://models.md` "Role aliases and settings"): built-in chat

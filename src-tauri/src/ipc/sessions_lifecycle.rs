@@ -19,10 +19,9 @@
 // `notify_file_explorer_reset` directly -- see each handler's own comment. Gate round 1 item 1
 // (#464, Git changes panel): each of those same three handlers ALSO stops
 // `fs::git_changes_watch_state`'s own separate per-Session watcher alongside the explorer one
-// (that module has no tree/busy-session bookkeeping of its own, so it has nothing else to
-// call here); `git_changes_watch_state::ensure_watcher` itself refuses to (re)start while
-// `explorer_watch_state::is_session_busy` is true, reusing that same busy-claim rather than a
-// second one.
+// (that module has no tree/busy-session bookkeeping of its own), and
+// `git_changes_watch_state::ensure_watcher` itself refuses to (re)start while
+// `explorer_watch_state::is_session_busy` is true, reusing that same busy-claim.
 
 use std::path::Path;
 
@@ -130,6 +129,7 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             created_at: now.clone(),
             last_activity_at: now,
             archived_at: None,
+            hidden_at: None,
             current_turn_subagents: None,
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,

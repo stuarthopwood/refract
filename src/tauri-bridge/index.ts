@@ -144,6 +144,7 @@ const refract: RefractApi = {
     open: (id, userAction) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_OPEN, id, userAction),
     archive: (id) => request<void>(IPC_REQUESTS.SESSIONS_ARCHIVE, id),
     restore: (id) => request<void>(IPC_REQUESTS.SESSIONS_RESTORE, id),
+    setHidden: (id, hidden) => request<void>(IPC_REQUESTS.SESSIONS_SET_HIDDEN, id, hidden),
     deleteCheck: (id) =>
       request<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>(
         IPC_REQUESTS.SESSIONS_DELETE_CHECK,

@@ -19,6 +19,8 @@ export interface SessionRowActionHandlers {
   onReveal(): void
   onArchive(): void
   onRestore(): void
+  onHide(): void
+  onUnhide(): void
   onStopAgent(): void
   onDelete(): void
   // Issue #620: creates a Session from the row's own repository and its default branch. Absent
@@ -57,6 +59,9 @@ export function buildSessionRowActions(
     // cards are not keyboard-reachable.
     { kind: 'item', key: 'copy-path', label: 'Copy worktree path', onSelect: handlers.onCopyPath },
     { kind: 'item', key: 'reveal', label: 'Open worktree folder', onSelect: handlers.onReveal },
+    session.hiddenAt
+      ? { kind: 'item', key: 'unhide', label: 'Unhide', onSelect: handlers.onUnhide }
+      : { kind: 'item', key: 'hide', label: 'Hide', onSelect: handlers.onHide },
     isArchived
       ? { kind: 'item', key: 'restore', label: 'Restore', onSelect: handlers.onRestore }
       : { kind: 'item', key: 'archive', label: 'Archive', onSelect: handlers.onArchive },
