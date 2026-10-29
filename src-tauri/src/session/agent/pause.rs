@@ -204,6 +204,7 @@ impl SessionAgent {
     }
 
     async fn drain_held(&self) -> Result<(), AgentError> {
+        let mut sent = 0;
         loop {
             let next = {
                 let mut state = self.state.lock().await;
@@ -215,7 +216,8 @@ impl SessionAgent {
                     }
                 }
             };
-            self.send_unheld(next.clone(), None).await?;
+            self.send_unheld(next.clone(), None, sent > 0).await?;
+            sent += 1;
             let mut state = self.state.lock().await;
             if let Some(held) = state.pause.held.as_mut() {
                 if held.first() == Some(&next) {

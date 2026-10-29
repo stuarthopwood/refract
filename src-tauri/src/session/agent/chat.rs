@@ -20,14 +20,17 @@ impl SessionAgent {
         if let Some(held) = self.hold_if_paused(&text, &images).await? {
             return Ok(held);
         }
-        self.send_unheld(text, images).await
+        self.send_unheld(text, images, false).await
     }
 
     /// The send path proper, without the pause gate (`resume` drains held messages through it).
+    /// `force_follow_up` marks every message after the first of a drain, which can race the
+    /// status update from the turn the first one starts.
     pub(super) async fn send_unheld(
         &self,
         text: String,
         images: Option<Vec<Value>>,
+        force_follow_up: bool,
     ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
         let (proc, working) = {
@@ -66,7 +69,7 @@ impl SessionAgent {
                 cmd["images"] = Value::Array(images);
             }
         }
-        if working {
+        if working || force_follow_up {
             cmd["streamingBehavior"] = Value::String("followUp".to_string());
         }
         let res = proc
