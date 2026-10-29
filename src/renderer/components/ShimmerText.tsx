@@ -3,26 +3,22 @@
 // Settings > Appearance "Animated status text" switch is on, and the window is visible. Reduced
 // motion and forced colours are handled in CSS. The text itself is never changed, so a screen
 // reader reads it exactly as before.
-import { useEffect, useState, type ReactNode } from 'react'
+import { type CSSProperties, type ReactNode } from 'react'
 import { useSettingsStore } from '@/state'
+import { useWindowVisible } from '@/hooks/useWindowVisible'
 import { cn } from '@/lib/utils'
 
-function useWindowVisible(): boolean {
-  const [visible, setVisible] = useState(() => !document.hidden)
-  useEffect(() => {
-    const onChange = () => setVisible(!document.hidden)
-    document.addEventListener('visibilitychange', onChange)
-    return () => document.removeEventListener('visibilitychange', onChange)
-  }, [])
-  return visible
-}
-
-export function ShimmerText({ active, className, children }: { active: boolean; className?: string; children: ReactNode }) {
+/** `tone` is any CSS colour for the base text (default: the accent text colour). */
+export function ShimmerText({ active, tone, className, children }: { active: boolean; tone?: string; className?: string; children: ReactNode }) {
   const enabled = useSettingsStore((s) => s.settings.animatedStatusText !== false)
   const visible = useWindowVisible()
   const shimmer = active && enabled && visible
   return (
-    <span data-shimmer={shimmer ? 'on' : 'off'} className={cn(shimmer && 'text-shimmer', className)}>
+    <span
+      data-shimmer={shimmer ? 'on' : 'off'}
+      style={tone ? ({ '--shimmer-base': tone } as CSSProperties) : undefined}
+      className={cn(shimmer && 'text-shimmer', className)}
+    >
       {children}
     </span>
   )

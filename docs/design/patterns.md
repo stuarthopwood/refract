@@ -41,11 +41,12 @@ A loading state is a lucide spinner (`Loader2Icon`) plus words (for example, "Ch
 
 ## Feedback channels
 
-Four written-down channels (agenda item 7), each with one job:
+Five written-down channels (agenda item 7; `status` added by #865, 2026-10-29), each with one job:
 
 | Channel | Scope | Dismissal |
 |---|---|---|
 | Banner | A problem scoped to one Session or pane | Stays until the problem is fixed. |
+| Status | Work still running for one Session, such as background agents (`StatusBanner`, `src/renderer/components/StatusBanner.tsx`, mounted above the composer) | Non-modal and never dismissed by hand: each line leaves when its work settles. Icon plus word, never colour alone; zero-box; `aria-live="off"`, with one polite announcement per settle. No counters of pool limits. |
 | Toast | A transient, app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation. |
 | Transcript notice | Agent-originated news | Renders as a normal transcript row; never dropped. |

@@ -197,10 +197,10 @@ async function main() {
     // (1) Queue two follow-ups mid-turn; chips render oldest-first.
     await cdp.typeIntoByLabel('Message', 'First queued message');
     await cdp.pressEnter();
-    await cdp.waitFor(`document.querySelectorAll('ul[aria-label="Queued messages"] > li').length === 1`, { timeoutMs: 15_000, label: 'First follow-up queued' });
+    await cdp.waitFor(`document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li').length === 1`, { timeoutMs: 15_000, label: 'First follow-up queued' });
     await cdp.typeIntoByLabel('Message', 'Second queued message');
     await cdp.pressEnter();
-    await cdp.waitFor(`document.querySelectorAll('ul[aria-label="Queued messages"] > li').length === 2`, { timeoutMs: 15_000, label: 'Second follow-up queued' });
+    await cdp.waitFor(`document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li').length === 2`, { timeoutMs: 15_000, label: 'Second follow-up queued' });
     const afterQueueTwo = await readChips(cdp);
     assertEqual(
       afterQueueTwo.map((c) => [c.text, c.queue]),
@@ -443,7 +443,7 @@ async function main() {
     // caught it.)
     await cdp.pressEnter();
     await cdp.waitFor(
-      `(() => { const li = document.querySelectorAll('ul[aria-label="Queued messages"] > li'); return li.length === 2 && li[0].querySelector('span.truncate')?.textContent === 'Second queued message'; })()`,
+      `(() => { const li = document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li'); return li.length === 2 && li[0].querySelector('span.truncate')?.textContent === 'Second queued message'; })()`,
       { timeoutMs: 15_000, label: 'Oldest follow-up (First queued message) promoted to steering' }
     );
     assertEqual(
@@ -453,7 +453,7 @@ async function main() {
     );
     await cdp.pressEnter();
     await cdp.waitFor(
-      `(() => { const li = document.querySelectorAll('ul[aria-label="Queued messages"] > li'); return li.length === 2 && Array.from(li).every((el) => el.querySelector('[data-chip-action="send"]') === null); })()`,
+      `(() => { const li = document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li'); return li.length === 2 && Array.from(li).every((el) => el.querySelector('[data-chip-action="send"]') === null); })()`,
       { timeoutMs: 15_000, label: 'Repeat Enter promoted the next follow-up (Second queued message); no follow-up chip remains' }
     );
     assertEqual(
@@ -483,14 +483,14 @@ async function main() {
     await cdp.typeIntoByLabel('Message', 'Third queued message');
     await cdp.pressEnter();
     await cdp.waitFor(
-      `(() => { const li = document.querySelectorAll('ul[aria-label="Queued messages"] > li'); return li.length === 3 && li[0].querySelector('span.truncate')?.textContent === 'Third queued message'; })()`,
+      `(() => { const li = document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li'); return li.length === 3 && li[0].querySelector('span.truncate')?.textContent === 'Third queued message'; })()`,
       { timeoutMs: 15_000, label: 'Third follow-up queued' }
     );
     const beforeTypedText = debugLogContent(debugLogPath);
     await cdp.typeIntoByLabel('Message', 'Explicit typed text');
     await cdp.pressEnter();
     await cdp.waitFor(
-      `(() => { const li = document.querySelectorAll('ul[aria-label="Queued messages"] > li'); return li.length === 4; })()`,
+      `(() => { const li = document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li'); return li.length === 4; })()`,
       { timeoutMs: 15_000, label: 'Enter with typed text queued that text too (4 chips total)' }
     );
     const afterTypedTextLog = debugLogContent(debugLogPath);
@@ -543,7 +543,7 @@ async function main() {
     }
     assertTrue(sendingNowText === 'Sending now\u2026', 'Sending announces "Sending now…" while the promote is in flight', { observedText: sendingNowText });
     await cdp.waitFor(
-      `(() => { const li = Array.from(document.querySelectorAll('ul[aria-label="Queued messages"] > li')); const target = li.find((el) => el.querySelector('span.truncate')?.textContent === 'Third queued message'); return li.length === 4 && target && target.querySelector('[data-chip-action="send"]') === null; })()`,
+      `(() => { const li = Array.from(document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li')); const target = li.find((el) => el.querySelector('span.truncate')?.textContent === 'Third queued message'); return li.length === 4 && target && target.querySelector('[data-chip-action="send"]') === null; })()`,
       { timeoutMs: 15_000, label: 'Fast double Enter settled: Third queued message is now steering' }
     );
     const afterDouble = debugLogContent(debugLogPath);

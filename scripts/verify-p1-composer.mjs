@@ -220,10 +220,10 @@ async function checkImageOnly(cdp, png, failures, findings) {
   await cdp.waitFor(`(${SEND}?.getAttribute('aria-disabled')) === 'false'`, { timeoutMs: 10_000, label: 'image pending while working' });
   await cdp.click(`document.querySelector('[aria-label="Message"]')`);
   await cdp.pressEnter();
-  const chip = await cdp.waitFor(`Array.from(document.querySelectorAll('ul[aria-label="Queued messages"] li')).map((li) => li.textContent).find((t) => t.includes('Image (red-probe.png)')) ?? null`, { timeoutMs: 15_000, label: '#744 queue chip label' }).catch(() => null);
-  if (!chip) failures.push(`#744: no "Image (red-probe.png)" queue chip (chips: ${JSON.stringify(await cdp.evaluate(`Array.from(document.querySelectorAll('ul[aria-label="Queued messages"] li')).map((li) => li.textContent)`))}).`);
+  const chip = await cdp.waitFor(`Array.from(document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] li')).map((li) => li.textContent).find((t) => t.includes('Image (red-probe.png)')) ?? null`, { timeoutMs: 15_000, label: '#744 queue chip label' }).catch(() => null);
+  if (!chip) failures.push(`#744: no "Image (red-probe.png)" queue chip (chips: ${JSON.stringify(await cdp.evaluate(`Array.from(document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] li')).map((li) => li.textContent)`))}).`);
   else {
-    const removeAx = await getAccessibleNameAndRole(cdp, `document.querySelector('ul[aria-label="Queued messages"] [data-chip-action="remove"]')`);
+    const removeAx = await getAccessibleNameAndRole(cdp, `document.querySelector('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] [data-chip-action="remove"]')`);
     findings.push(`#744: working-session image-only follow-up queued, chip "${chip}", Remove AX name "${removeAx.name}".`);
     if (removeAx.name !== 'Remove queued message: Image (red-probe.png)') failures.push(`#744: Remove accessible name ${JSON.stringify(removeAx.name)}.`);
     await pasteImage(cdp, 'second.png', png);

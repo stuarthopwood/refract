@@ -11,7 +11,7 @@ Refract exposes three independent font roles, each with its own picker (#4).
 | Role | Covers |
 | --- | --- |
 | `App` | Chrome: session list, headers, menus, dialogs, Settings. |
-| `Chat` | Message prose in the transcript. The composer's text area uses the `Code` font (issue #1246). |
+| `Chat` | Message prose in the transcript. The composer's text area uses the `App` font (Geist) at `--text-readout` since #839 (2026-10-29); it keeps the `Code` text scale. |
 | `Code` | Code blocks, inline code, tool output, diffs, and diff/PR file headers. |
 
 Use a bundled OFL font or an installed system font for any role; bundling was decided 2026-10-07 (#4) and supersedes the old `docs/DESIGN.md` Fonts rule (now in [product-look-and-feel.md](product-look-and-feel.md)) that Refract "uses fonts installed on the system and does not bundle any". Each picker lists a **Bundled** group (always available, identical on every machine) above an **Installed** group (searchable system fonts); a missing installed font falls back to the default stack silently, with a note in Settings.
@@ -130,5 +130,5 @@ Reading width is a Setting, defaulting to full width (#554, decided and shipped 
 
 ## Text size
 
-Settings > Appearance > Text size sets three scales (80 to 150 percent): App (--scale-app, on :root), Chat (--scale-chat, inside `[data-text-role='chat']`, the transcript) and Code (--scale-code, inside `pre`, `code`, `kbd`, `samp` and `.font-code`, which covers the composer, diffs and file headers). Each container redeclares the `--text-*` size tokens as `max(min(base, 11px), base * scale)`, so no size renders below 11px unless its base is already smaller and sizes are unchanged at 100 percent. Fixed-height controls use `min-h-*` so they grow rather than clip. Use the size tokens (`text-compact`, `text-micro`, `text-badge`); never an arbitrary `text-[...]`. OS text scaling is not read.
+Settings > Appearance > Text size sets three scales (80 to 150 percent): App (--scale-app, on :root), Chat (--scale-chat, inside `[data-text-role='chat']`, the transcript) and Code (--scale-code, inside `pre`, `code`, `kbd`, `samp` and `.font-code`, which covers diffs and file headers; the composer field carries `data-text-role='code'` so it follows this scale too). Each container redeclares the `--text-*` size tokens as `max(min(base, 11px), base * scale)`, so no size renders below 11px unless its base is already smaller and sizes are unchanged at 100 percent. Fixed-height controls use `min-h-*` so they grow rather than clip. Use the size tokens (`text-compact`, `text-micro`, `text-badge`); never an arbitrary `text-[...]`. OS text scaling is not read.
 

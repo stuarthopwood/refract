@@ -31,7 +31,7 @@ export const READOUT_CHIP_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center ga
 // explicit focus style at all, only the browser default outline. Opaque (no `/50` alpha),
 // the codebase's own `outline-ring` convention (`CollapsedLine.tsx`).
 export const READOUT_CHIP_INTERACTIVE_ADDITIONS =
-  'rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'min-h-6 min-w-6 justify-center rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 export interface ReadoutChipProps {
   icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
