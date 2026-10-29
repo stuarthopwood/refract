@@ -141,6 +141,8 @@ export const PAIRS = [
   // message bubble checked below -- is covered by a real gate entry. Before #579 migrates a
   // link/text colour onto a hover row, either lighten `accent-text` further (it already has
   // margin to spare against background/card/popover) or add this pair here once it passes.
+  // Spec 035 (Settings wave 2): the four role colours, swatches beside the role names in Models.
+  ...['default', 'smol', 'slow', 'plan'].flatMap((role) => ['background', 'card', 'popover', 'accent'].map((bg) => ({ fg: `role-${role}`, bg, min: 3 }))),
   { fg: 'severity-success', bg: 'background', min: 3 },
   { fg: 'severity-success', bg: 'card', min: 3 },
   { fg: 'severity-success', bg: 'popover', min: 3 },

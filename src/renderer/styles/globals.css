@@ -99,6 +99,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-role-default: var(--role-default);
+  --color-role-smol: var(--role-smol);
+  --color-role-slow: var(--role-slow);
+  --color-role-plan: var(--role-plan);
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: var(--radius);
   --radius-lg: var(--radius);
@@ -181,6 +185,10 @@
 }
 
 .theme-dark {
+  --role-default: oklch(0.78 0.12 250);
+  --role-smol: oklch(0.78 0.12 200);
+  --role-slow: oklch(0.78 0.12 305);
+  --role-plan: oklch(0.78 0.12 340);
   color-scheme: dark;
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
@@ -511,6 +519,10 @@
  * divider, status-bar and composer top borders). Registered in src/shared/themes.ts; #551
  * covers Nordic Frost/Cyber Amber, not this issue. */
 .theme-obsidian {
+  --role-default: oklch(0.78 0.12 250);
+  --role-smol: oklch(0.78 0.12 200);
+  --role-slow: oklch(0.78 0.12 305);
+  --role-plan: oklch(0.78 0.12 340);
   color-scheme: dark;
 
   /* ---- Layer 2: semantic roles. Canonical here (the opposite of Dark/HC above): --card/
@@ -729,6 +741,10 @@
  * `dark-high-contrast` swatch comment, so every other token's margin is measured against the
  * starkest possible background this design system can express. */
 .theme-dark-high-contrast {
+  --role-default: oklch(0.86 0.12 250);
+  --role-smol: oklch(0.86 0.12 200);
+  --role-slow: oklch(0.86 0.12 305);
+  --role-plan: oklch(0.86 0.12 340);
   color-scheme: dark;
   --scrollbar-thumb: #d4d4d4;
   --scrollbar-thumb-hover: #ffffff;
@@ -959,6 +975,10 @@
  * case at 4.91:1, just over the 4.5:1 floor `--destructive`/`--muted` enforces).
  */
 .theme-nordic-frost {
+  --role-default: oklch(0.78 0.12 250);
+  --role-smol: oklch(0.78 0.12 200);
+  --role-slow: oklch(0.78 0.12 305);
+  --role-plan: oklch(0.78 0.12 340);
   color-scheme: dark;
   --scrollbar-thumb: var(--muted-foreground);
   --scrollbar-thumb-hover: var(--foreground);
@@ -1207,6 +1227,10 @@
  * own (the retune above), the two themes' composited text colours stay identical too. Every
  * pair re-verified by `scripts/check-theme-contrast.mjs`. */
 .theme-cyber-amber {
+  --role-default: oklch(0.78 0.12 250);
+  --role-smol: oklch(0.78 0.12 200);
+  --role-slow: oklch(0.78 0.12 305);
+  --role-plan: oklch(0.78 0.12 340);
   color-scheme: dark;
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
