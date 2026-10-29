@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { EllipsisVerticalIcon, FolderGit2Icon, FolderGitIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import {
@@ -22,6 +22,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
+import { remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
@@ -196,24 +197,11 @@ export function RepositoryGroup({
     triggerRef.current?.focus()
   }, [renaming])
 
-  // Issue #528: a confirmed `none` is the only case that earns the plain "local only" icon --
-  // `has` and the honest `unknown` "could not tell" case both get the same remote-capable icon,
-  // so an unreadable repository or a parse failure is never shown as local-only when it might
-  // not be (the issue's own accessibility rule: never a false claim either way).
-  const remoteIcon = repository.remote?.kind === 'none' ? FolderGitIcon : FolderGit2Icon
-  // Gate round 2 fix (Low, code-reviewer + security-auditor): `git config`'s raw configured URL
-  // (unlike round 1's `git remote get-url`) never applies a `url.<base>.insteadOf` rewrite, so a
-  // shorthand remote (for example `gh:owner/repo`) reports its literal, undotted alias as the
-  // "host" -- still correctly classed `has` (the icon is right), but naming a fake host in the
-  // tooltip would be worse than naming none. Only a host containing a dot is shown by name.
-  const remoteTooltip =
-    repository.remote?.kind === 'has'
-      ? repository.remote.host.includes('.')
-        ? `Git repository, remote: ${repository.remote.host}`
-        : 'Git repository, has a remote'
-      : repository.remote?.kind === 'none'
-        ? 'Git repository, local only (no remote)'
-        : 'Git repository'
+  // Issue #528: a confirmed `none` is the only case that earns the plain "local only" icon, so an
+  // unreadable repository or a parse failure is never shown as local-only when it might not be.
+  // Issue #646: a known host adds its brand mark and the tooltip names owner/repo.
+  const remoteIcon = remoteHeaderIcon(repository.remote)
+  const remoteTooltip = remoteHeaderTooltip(repository.remote)
   return (
     <div ref={groupRootRef} className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>

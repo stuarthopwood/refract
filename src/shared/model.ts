@@ -39,7 +39,12 @@ export interface Repository {
  * (`known`/`other`) plus `@tabler/icons-react` brand marks was deferred, not reversed, by Main
  * (delegated by Stuart), who asked for the simpler remote-vs-local-only distinction with no new
  * dependency this round -- tracked as follow-up issue #646. */
-export type RepositoryRemote = { kind: 'none' } | { kind: 'has'; host: string } | { kind: 'unknown' };
+export type RepositoryRemote =
+  | { kind: 'none' }
+  // Issue #646: `owner` and `repo` come from the remote URL path (credentials never included);
+  // absent when the path does not hold two segments.
+  | { kind: 'has'; host: string; owner?: string; repo?: string }
+  | { kind: 'unknown' };
 
 /** One unit of work: a Worktree together with the Conversations held in it. */
 export interface Session {

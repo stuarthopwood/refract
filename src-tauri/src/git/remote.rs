@@ -30,7 +30,15 @@ pub enum RepositoryRemoteKind {
     #[serde(rename = "none")]
     None,
     #[serde(rename = "has")]
-    Has { host: String },
+    Has {
+        host: String,
+        /// Issue #646: `owner` and `repo` parsed from the remote URL path, only for the tooltip.
+        /// Absent when the path does not hold at least two segments.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        repo: Option<String>,
+    },
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -53,7 +61,7 @@ fn is_windows_drive_path(s: &str) -> bool {
 /// is then the longest run of characters that are none of `:`, `/`, `@`, immediately followed by
 /// a literal `:`. An IPv6-literal false match (`git@[fe80::1]:repo`) is rejected by the shared
 /// `[`-guard below, same as `remote.ts`'s own gate round 2 fix.
-fn scp_like_host(trimmed: &str) -> Option<String> {
+fn scp_like_parts(trimmed: &str) -> Option<(String, &str)> {
     let search_region = match trimmed.find('/') {
         Some(slash) => &trimmed[..slash],
         None => trimmed,
@@ -71,7 +79,7 @@ fn scp_like_host(trimmed: &str) -> Option<String> {
     if host.contains('[') {
         return None;
     }
-    Some(host.to_lowercase())
+    Some((host.to_lowercase(), &rest[host_len + 1..]))
 }
 
 /// Any other remote URL (`https://`, `ssh://`, `git://`, ...): the bare authority host, userinfo
@@ -80,13 +88,14 @@ fn scp_like_host(trimmed: &str) -> Option<String> {
 /// `?`, or `#`, strip a userinfo segment before the last `@` in that authority. An IPv6 literal's
 /// `hostname` keeps its brackets (`[::1]`) in that Web API too, so it is produced here the same
 /// way and then rejected by the shared `[`-guard below, exactly like `remote.ts`.
-fn url_host(trimmed: &str) -> Option<String> {
+fn url_parts(trimmed: &str) -> Option<(String, &str)> {
     let scheme_end = trimmed.find("://")? + 3;
     let after_scheme = &trimmed[scheme_end..];
     let authority_end = after_scheme
         .find(['/', '?', '#'])
         .unwrap_or(after_scheme.len());
     let authority = &after_scheme[..authority_end];
+    let path = &after_scheme[authority_end..];
     let host_and_port = match authority.rfind('@') {
         Some(at) => &authority[at + 1..],
         None => authority,
@@ -101,7 +110,7 @@ fn url_host(trimmed: &str) -> Option<String> {
     if host.is_empty() || host.contains('[') {
         return None;
     }
-    Some(host.to_lowercase())
+    Some((host.to_lowercase(), path))
 }
 
 /// The bare authority host from a git remote URL, with any userinfo/credentials stripped before
@@ -110,14 +119,32 @@ fn url_host(trimmed: &str) -> Option<String> {
 /// display nicety. Handles the scp-like SSH form (`user@host:owner/repo.git`, no scheme) in
 /// addition to any `://`-schemed URL (`https://`, `ssh://`, `git://`, ...).
 fn host_from_remote_url(url: &str) -> Option<String> {
+    remote_parts(url).map(|(host, _)| host)
+}
+
+fn remote_parts(url: &str) -> Option<(String, &str)> {
     let trimmed = url.trim();
     if is_windows_drive_path(trimmed) {
         return None;
     }
     if !trimmed.contains("://") {
-        return scp_like_host(trimmed);
+        return scp_like_parts(trimmed);
     }
-    url_host(trimmed)
+    url_parts(trimmed)
+}
+
+/// Issue #646: `(owner, repo)` from a remote URL path, for the tooltip only. `repo` is the last
+/// segment without `.git`; `owner` is every segment before it (a GitLab subgroup path stays
+/// whole). `None` when fewer than two segments remain.
+fn owner_repo_from_path(path: &str) -> Option<(String, String)> {
+    let path = path.split(['?', '#']).next().unwrap_or("");
+    let mut segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let last = segments.pop()?;
+    let repo = last.strip_suffix(".git").unwrap_or(last);
+    if repo.is_empty() || segments.is_empty() {
+        return None;
+    }
+    Some((segments.join("/"), repo.to_string()))
 }
 
 /// `Repository.remote` (issue #528): read-only, no network call, and bounded so a hung or missing
@@ -178,8 +205,14 @@ pub async fn repository_remote(repo_path: &Path) -> Option<RepositoryRemoteKind>
         .find(|entry| entry.0 == "origin")
         .copied()
         .unwrap_or(entries[0]);
-    match host_from_remote_url(preferred.1) {
-        Some(host) => Some(RepositoryRemoteKind::Has { host }),
+    match remote_parts(preferred.1) {
+        Some((host, path)) => {
+            let (owner, repo) = match owner_repo_from_path(path) {
+                Some((owner, repo)) => (Some(owner), Some(repo)),
+                None => (None, None),
+            };
+            Some(RepositoryRemoteKind::Has { host, owner, repo })
+        }
         None => Some(RepositoryRemoteKind::Unknown),
     }
 }
@@ -275,7 +308,9 @@ mod tests {
         assert_eq!(
             repository_remote(&dir).await,
             Some(RepositoryRemoteKind::Has {
-                host: "github.com".to_string()
+                host: "github.com".to_string(),
+                owner: Some("owner".to_string()),
+                repo: Some("repo".to_string())
             })
         );
     }
