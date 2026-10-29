@@ -89,7 +89,7 @@ export function PerModelThresholdTable({ id, value, fallbackTokens, disabled, de
     <Collapsible open={open || drafts.length > 0} onOpenChange={setOpen} className="flex w-full flex-col gap-2">
       {showTable && (
         <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="sm" className="group/trigger self-start" aria-describedby={describedBy} disabled={disabled}>
+          <Button variant="ghost" size="sm" className="group/trigger self-start" aria-describedby={describedBy} disabled={disabled || drafts.length > 0}>
             <ChevronRightIcon aria-hidden className="transition-transform group-aria-expanded/trigger:rotate-90" />
             {summary}
           </Button>

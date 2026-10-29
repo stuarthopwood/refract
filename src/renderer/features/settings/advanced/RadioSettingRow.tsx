@@ -19,7 +19,7 @@ interface RadioSettingRowProps {
 
 export function RadioSettingRow({ id, label, description, options, value, actions, disabled, describedBy, note, onChange }: RadioSettingRowProps) {
   return (
-    <SettingRow id={id} label={label} description={description} note={note} labelAsText>
+    <SettingRow id={id} label={label} description={description} note={note} labelAsText disabled={disabled}>
       <fieldset
         className="flex flex-wrap items-center gap-x-4 gap-y-2"
         disabled={disabled}

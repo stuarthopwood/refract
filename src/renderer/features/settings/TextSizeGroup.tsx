@@ -74,7 +74,7 @@ export function TextSizeGroup() {
       description="Applies immediately. Scales text only, not spacing or icons. Windows’ own Text size setting is not read, so set it here."
     >
       <SettingRow id="text-size-presets" label="Presets" labelAsText>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ToggleGroup
             type="single"
             value={sharedPercent}

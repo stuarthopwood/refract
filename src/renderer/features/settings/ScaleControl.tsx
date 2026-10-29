@@ -97,6 +97,10 @@ export function ScaleControl({ role, id, description, scale, onScaleChange, font
           <Input
             ref={inputRef}
             inputMode="numeric"
+            role="spinbutton"
+            aria-valuemin={MIN_PERCENT}
+            aria-valuemax={MAX_PERCENT}
+            aria-valuenow={percent}
             min={MIN_PERCENT}
             max={MAX_PERCENT}
             step={STEP_PERCENT}

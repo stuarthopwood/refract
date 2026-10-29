@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import { SettingRow } from '@/components/settings/SettingRow'
+import { Button } from '@/components/ui/button'
 import { ROLE_ICONS } from '@/components/icons/role-icons'
 import { ROLE_CATALOG_KIND } from '../../../shared/model'
 import type { ModelCatalogEntry, ModelRoleId } from '../../../shared/model'
@@ -64,9 +65,11 @@ export function RoleRow({
     .filter(Boolean)
     .join(' ')
   const current = describeRoleCurrent(role, value, roles, catalog)
-  // The thinking radios stay hidden at rest (the summary text already names the level); the
-  // first "Change" press reveals them.
+  // The model dropdown and thinking radios stay hidden at rest (the summary text already names
+  // both); the "Change" button reveals them.
   const [changing, setChanging] = useState(false)
+  const changeId = `${selectId}-change`
+  const panelId = `${selectId}-panel`
 
   const note = (
     <>
@@ -87,14 +90,29 @@ export function RoleRow({
 
   return (
     <div>
-      <SettingRow id={selectId} label={label} description={description} note={note} icon={ROLE_ICONS[role]} labelAddon={<RoleSwatch role={role} />}>
+      <SettingRow id={selectId} label={label} description={description} note={note} icon={ROLE_ICONS[role]} labelAddon={<RoleSwatch role={role} />} controlId={changing ? selectId : changeId}>
         <div className="flex items-center gap-2">
+          <Button
+            id={changeId}
+            variant="outline"
+            size="sm"
+            aria-expanded={changing}
+            aria-controls={panelId}
+            aria-describedby={describedBy}
+            onClick={() => setChanging((open) => !open)}
+          >
+            {changing ? 'Done' : 'Change'}
+          </Button>
           {isPending && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
               Saving…
             </span>
           )}
+        </div>
+      </SettingRow>
+      {changing && (
+        <div id={panelId} className="flex flex-col gap-2 pl-6">
           <RoleModelPicker
             label={label}
             selectId={selectId}
@@ -109,22 +127,21 @@ export function RoleRow({
             unsetLabel={unsetLabel}
             onCommit={onCommit}
             onBusy={onBusy}
-            onOpenChange={(open) => open && setChanging(true)}
           />
+          {isChat && (
+            <RoleReasoningRadios
+              role={role}
+              roleLabel={label}
+              labelId={`${selectId}-label`}
+              currentValue={value}
+              catalogEntry={resolveCatalogEntry(value, catalog)}
+              catalogStatus={catalogStatus}
+              disabled={isPending}
+              onPick={(nextValue) => onCommit(nextValue)}
+              announcePolite={announcePolite}
+            />
+          )}
         </div>
-      </SettingRow>
-      {isChat && changing && (
-        <RoleReasoningRadios
-          role={role}
-          roleLabel={label}
-          labelId={`${selectId}-label`}
-          currentValue={value}
-          catalogEntry={resolveCatalogEntry(value, catalog)}
-          catalogStatus={catalogStatus}
-          disabled={isPending}
-          onPick={(nextValue) => onCommit(nextValue)}
-          announcePolite={announcePolite}
-        />
       )}
     </div>
   )

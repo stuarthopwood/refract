@@ -1,5 +1,6 @@
 // One Settings > Advanced row: picks the control for the key's kind, shows the description,
-// "Default: X" only when the value differs, and a Reset button that is always there but disabled at\r\n// the default (so the control never jumps). A dependent row
+// "Default: X" only when the value differs, and a Reset button that is always there but disabled at
+// the default (so the control never jumps). A dependent row
 // (`info.dependsOn` off) stays visible, indented, with every control disabled, and says why.
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
@@ -147,16 +148,12 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, fallbac
         note={note}
         labelAsText={stacked}
         layout={stacked ? 'stacked' : 'inline'}
-        labelAddon={stacked ? reset : undefined}
+        disabled={disabled}
       >
-        {stacked ? (
-          control
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            {control}
-            {reset}
-          </div>
-        )}
+        <div className={stacked ? 'flex flex-col gap-2' : 'flex flex-wrap items-center justify-end gap-2'}>
+          {control}
+          <div className={stacked ? 'flex justify-end' : undefined}>{reset}</div>
+        </div>
       </SettingRow>
     )
   }

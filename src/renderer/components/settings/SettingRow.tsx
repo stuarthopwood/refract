@@ -23,10 +23,12 @@ interface SettingRowProps {
   labelAddon?: ReactNode
   /** `stacked` puts the control below the label at every width (for wide controls such as lists and tables). */
   layout?: 'inline' | 'stacked'
+  /** Dims the label and description (the control is disabled by its own prop); the note stays at full strength. */
+  disabled?: boolean
   children?: ReactNode
 }
 
-export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, labelAddon, layout = 'inline', children }: SettingRowProps) {
+export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, labelAddon, layout = 'inline', disabled = false, children }: SettingRowProps) {
   const groupHasIconSlot = useSettingsGroupIconSlot()
   const layoutClass =
     layout === 'stacked'
@@ -42,7 +44,7 @@ export function SettingRow({ id, label, description, note, icon: Icon, controlId
             </span>
           )}
           <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-2 ${disabled ? 'opacity-50' : ''}`}>
               {labelAsText ? (
                 <span id={`${id}-label`} className="text-sm">
                   {label}
@@ -55,7 +57,7 @@ export function SettingRow({ id, label, description, note, icon: Icon, controlId
               {labelAddon}
             </div>
             {description && (
-              <span id={`${id}-description`} className="text-xs text-muted-foreground">
+              <span id={`${id}-description`} className={`text-xs text-muted-foreground ${disabled ? 'opacity-50' : ''}`}>
                 {description}
               </span>
             )}

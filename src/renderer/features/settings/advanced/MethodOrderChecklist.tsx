@@ -62,17 +62,19 @@ export function MethodOrderChecklist({ id, value, disabled, describedBy, onChang
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
-            id={`${id}-${method}-${direction}`}
-            variant="ghost"
-            size="icon-sm"
-            disabled={disabled || isDisabled}
-            aria-label={name}
-            aria-describedby={describedBy}
-            onClick={() => move(method, direction === 'up' ? -1 : 1)}
-          >
-            <Icon aria-hidden />
-          </Button>
+          <span className="inline-flex">
+            <Button
+              id={`${id}-${method}-${direction}`}
+              variant="ghost"
+              size="icon-sm"
+              disabled={disabled || isDisabled}
+              aria-label={name}
+              aria-describedby={describedBy}
+              onClick={() => move(method, direction === 'up' ? -1 : 1)}
+            >
+              <Icon aria-hidden />
+            </Button>
+          </span>
         </TooltipTrigger>
         <TooltipContent>{name}</TooltipContent>
       </Tooltip>
