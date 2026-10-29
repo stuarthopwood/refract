@@ -53,7 +53,7 @@ export function ComposerMarkdownMirror({
   return (
     <div ref={mirrorRef} aria-hidden="true" data-composer-markdown-mirror className={cn(COMPOSER_MIRROR_CLASS, MIRROR_HIDDEN_CLASS, className)}>
       {segments.map((seg, index) => (
-        <span key={index} data-md={seg.kind} className={KIND_CLASS[seg.kind]}>
+        <span key={index} data-md={seg.kind} className={cn('[font-weight:inherit]', KIND_CLASS[seg.kind])}>
           {seg.text}
         </span>
       ))}

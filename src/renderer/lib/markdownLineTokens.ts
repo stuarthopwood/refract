@@ -14,7 +14,7 @@ export interface MdSegment {
 export const MAX_STYLED_DRAFT_LENGTH = 20_000
 
 const FENCE = /^( {0,3})(`{3,}|~{3,})/
-const HEADING = /^( {0,3})(#{1,6})([ \t]+)(.*)$/
+const HEADING = /^( {0,3})(#{1,6})([ \t]+)([^\n]*)$/
 const LIST = /^(\s*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\](?=[ \t]))?/
 const QUOTE = /^( {0,3}(?:>[ \t]?)+)/
 
@@ -59,27 +59,30 @@ function pushInline(out: MdSegment[], text: string, base: MdKind): void {
   flush(text.length)
 }
 
-function pushLine(out: MdSegment[], line: string, inFence: boolean): boolean {
-  if (inFence) {
+/** Returns the open fence's opening run, or null when no fence is open after this line. */
+function pushLine(out: MdSegment[], line: string, fence: string | null): string | null {
+  if (fence) {
     out.push({ text: line, kind: 'code' })
-    return !FENCE.test(line)
+    const close = FENCE.exec(line)?.[2]
+    return close && close[0] === fence[0] && close.length >= fence.length && line.trim() === close ? null : fence
   }
-  if (FENCE.test(line)) {
+  const open = FENCE.exec(line)?.[2]
+  if (open) {
     out.push({ text: line, kind: 'code' })
-    return true
+    return open
   }
   const heading = HEADING.exec(line)
   if (heading) {
     const markerEnd = heading[1]!.length + heading[2]!.length + heading[3]!.length
     out.push({ text: line.slice(0, markerEnd), kind: 'marker' })
     if (line.length > markerEnd) out.push({ text: line.slice(markerEnd), kind: 'heading' })
-    return false
+    return null
   }
   const quote = QUOTE.exec(line)
   if (quote) {
     out.push({ text: quote[1]!, kind: 'marker' })
     pushInline(out, line.slice(quote[1]!.length), 'quote')
-    return false
+    return null
   }
   const list = LIST.exec(line)
   if (list) {
@@ -92,20 +95,20 @@ function pushLine(out: MdSegment[], line: string, inFence: boolean): boolean {
     out.push({ text: line.slice(lead + markerLen, lead + markerLen + gapLen), kind: 'plain' })
     if (boxLen > 0) out.push({ text: line.slice(lead + markerLen + gapLen, lead + markerLen + gapLen + boxLen), kind: 'listMarker' })
     pushInline(out, line.slice(lead + markerLen + gapLen + boxLen), 'plain')
-    return false
+    return null
   }
   pushInline(out, line, 'plain')
-  return false
+  return null
 }
 
 /** Segments whose concatenation equals `text`, or `null` when nothing in it needs styling. */
 export function tokenizeMarkdownDraft(text: string): MdSegment[] | null {
   if (!text || text.length > MAX_STYLED_DRAFT_LENGTH) return null
   const out: MdSegment[] = []
-  let inFence = false
+  let fence: string | null = null
   const lines = text.split('\n')
   lines.forEach((line, index) => {
-    inFence = pushLine(out, line, inFence)
+    fence = pushLine(out, line, fence)
     if (index < lines.length - 1) out.push({ text: '\n', kind: 'plain' })
   })
   const merged: MdSegment[] = []
