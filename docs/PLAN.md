@@ -883,6 +883,8 @@ Also filed 2026-10-30: **#1399** (`p1`), App-wide select-type pickers: the `Mult
 
 Also filed 2026-10-30: **#1400** (`p1`), Issues filters: Label becomes a multi-select (any of the ticked labels), ticked labels show as a dismissible pill row beneath the pickers, and a centred Loading text sits over the blurred list while it loads; pairs with #1399; placed as an index line after #1399's line.
 
+Also filed 2026-10-30: **#1402** (`p1`), Right pane Session usage panel: the Usage stats scoped to the focused Session (every conversation in its directory, whole lifetime, live refresh) in a compact vertical layout, with the Session's share of the monthly credit budget; needs a new `sessionDir` usage filter; placed as an index line after #1400's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
