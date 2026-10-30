@@ -92,7 +92,7 @@ export function GitChangesFileRow({
   }
 
   return (
-    <div className="group/row flex w-full items-center gap-2 rounded px-1 py-1 text-sm hover:bg-accent/50" aria-busy={actionPending}>
+    <div className="group/row flex w-full items-center gap-2 rounded px-1 py-1 text-sm hover:bg-row-hover-bg" aria-busy={actionPending}>
       <button
         type="button"
         data-git-row-path={entry.path}

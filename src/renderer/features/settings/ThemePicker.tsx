@@ -62,8 +62,8 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             onKeyDown={(event) => handleKeyDown(event, index)}
             className={cn(
               'group/radio-item flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none',
-              'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
-              isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+              'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow',
+              isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-row-hover-bg hover:text-foreground'
             )}
           >
             <span aria-hidden className={RADIO_RING_CLASS}>

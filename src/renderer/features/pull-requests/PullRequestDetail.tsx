@@ -29,7 +29,7 @@ import { ReviewConsensus } from './ReviewConsensus'
 
 // The Overview and Changes triggers share the one selected-tab treatment (ui/tab-classes.ts).
 const PR_DETAIL_TAB_TRIGGER_CLASS = cn(
-  'rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground',
+  'rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-row-hover-bg hover:text-foreground',
   TAB_ACTIVE_UNDERLINE_CLASS
 )
 

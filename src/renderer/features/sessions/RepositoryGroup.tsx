@@ -31,7 +31,7 @@ import { buildRepositoryActions } from './repositoryActions'
 import { IconButton } from '@/components/IconButton'
 
 // Hidden at rest via opacity (stays in the Tab order); revealed on group hover/focus, own aria-expanded, and under (hover: none) (#567).
-// `dark:hover:` / `aria-expanded:` fills beat the Button base's `dark:hover:bg-muted/50`, which equals the selected row; the focus class restores a forced-colours outline.
+// `dark:hover:` / `aria-expanded:` fills beat the Button base's `dark:hover:bg-row-hover-bg`, which equals the selected row; the focus class restores a forced-colours outline.
 const HEADER_ACTION_BUTTON_CLASS = cn(
   'text-muted-foreground opacity-0 transition-opacity duration-150',
   'hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border aria-expanded:bg-sidebar-border',

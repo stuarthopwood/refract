@@ -75,6 +75,9 @@ jobs:
       - name: Check spacing grid
         run: pnpm check:spacing
 
+      - name: Check opacity modifiers
+        run: pnpm check:alpha-modifiers
+
       - name: Check advisor roster
         run: pnpm check:advisor-roster
 

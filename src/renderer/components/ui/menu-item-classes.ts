@@ -13,7 +13,7 @@ export const MENU_SUB_TRIGGER_CLASS = `${MENU_ITEM_CLASS} data-[state=open]:bg-a
 
 // Shared boxes so a dropdown and a context menu render identically.
 const MENU_BOX_CLASS =
-  "duration-[var(--motion-fast)] ease-[var(--ease-out)] z-50 min-w-40 overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground ring-1 ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+  "duration-[var(--motion-fast)] ease-[var(--ease-out)] z-50 min-w-40 overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground ring-1 ring-elevated-edge data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
 
 export const MENU_CONTENT_CLASS = `${MENU_BOX_CLASS} shadow-md`
 

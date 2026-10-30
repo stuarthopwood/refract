@@ -249,7 +249,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     // below renders identically either way; a Stage header row with a real
                     // "Uses:" line gets a genuine second line underneath it.
                     'relative flex w-full flex-col gap-1 rounded-md py-1 pr-2 text-left text-sm',
-                    !row.node.isStage && 'hover:bg-muted/50',
+                    !row.node.isStage && 'hover:bg-row-hover-bg',
                     'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
                   )}
                 >

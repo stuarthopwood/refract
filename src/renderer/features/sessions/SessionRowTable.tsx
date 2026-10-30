@@ -33,7 +33,7 @@ export function SessionRowTable({
   return (
     <li
       ref={row.rowRef}
-      className={cn('relative w-full', row.isVisible ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50')}
+      className={cn('relative w-full', row.isVisible ? 'bg-accent text-accent-foreground' : 'hover:bg-row-hover-bg')}
     >
       {row.isVisible && <ActiveIndicatorBar />}
       <ContextMenu onOpenChange={(open) => onContextMenuOpenChange(row, open)}>
