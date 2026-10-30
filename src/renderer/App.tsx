@@ -3,7 +3,7 @@ import { ArrowLeftRightIcon } from 'lucide-react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
-import { EmptyChatState } from '@/features/chat/EmptyChatState'
+import { HomeView } from '@/features/home/HomeView'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
@@ -548,10 +548,9 @@ export function App() {
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : view === 'issues' ? (
                   <IssuesView reservesWindowControls={!paneShown} />
-                ) : paneSessionIds.length === 0 ? (
-                  // Spec 012 (research.md decision 3, extracted to EmptyChatState.tsx, gate
-                  // round 2 item 11): no pane open at all.
-                  <EmptyChatState />
+                ) : view === 'home' || paneSessionIds.length === 0 ? (
+                  // #869: Home is the no-pane screen and the nav's Home item.
+                  <HomeView reservesWindowControls={!paneShown} />
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
                   <ChatPane
                     sessionId={frontSessionId as string}

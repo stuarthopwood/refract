@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { SearchField } from '@/components/SearchField'
 import { AddProjectMenu } from '@/features/sessions/AddProjectMenu'
-import { GitHubNavGroup } from './GitHubNavGroup'
+import { ViewsNavGroup } from './ViewsNavGroup'
 import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useHolidayStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore } from '@/state'
@@ -188,7 +188,7 @@ export function SessionList() {
             `aria-hidden`, the "Refract" accessible name above is unchanged either way. */}
         {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-4 shrink-0 text-muted-foreground" />}
       </div>
-      <GitHubNavGroup />
+      <ViewsNavGroup />
       {restored && (
         <>
           {/* #735 decision 26 reserved this slot: between Pull requests and the toolbar. The

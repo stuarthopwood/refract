@@ -107,16 +107,16 @@ async function main() {
     };
 
     // 1. GitHub tools block
-    await cdp.waitFor(`!!document.querySelector('[role="group"][aria-label="GitHub"]')`, { timeoutMs: 20_000, label: 'GitHub nav group' });
-    const group = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="group"][aria-label="GitHub"] button')).map((el) => el.textContent.trim().replace(/\\s+/g, ' '))`);
+    await cdp.waitFor(`!!document.querySelector('[role="group"][aria-label="Views"]')`, { timeoutMs: 20_000, label: 'GitHub nav group' });
+    const group = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="group"][aria-label="Views"] button')).map((el) => el.textContent.trim().replace(/\\s+/g, ' '))`);
     await shot(cdp, '01-github-nav-block.png');
-    check(group.some((t) => t.startsWith('Pull requests')) && group.includes('Issues') && !!(await cdp.evaluate(`!!document.querySelector('[aria-label="Sessions"] [role="group"][aria-label="GitHub"]')`)), 'GitHub tools block shows Pull requests and Issues inside the Sessions nav', JSON.stringify(group));
+    check(group.some((t) => t.startsWith('Pull requests')) && group.includes('Issues') && !!(await cdp.evaluate(`!!document.querySelector('[aria-label="Sessions"] [role="group"][aria-label="Views"]')`)), 'GitHub tools block shows Pull requests and Issues inside the Sessions nav', JSON.stringify(group));
 
     // 2. Issues page lists issues from two repositories
-    await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="GitHub"] button')).find((el) => el.textContent.trim() === 'Issues')`);
+    await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="Views"] button')).find((el) => el.textContent.trim() === 'Issues')`);
     await cdp.waitFor(`!!document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Issues'`, { timeoutMs: 10_000, label: 'Issues heading' });
     check(await rowsAre(['hello-world#12', 'hello-world#20', 'spoon-knife#3', 'spoon-knife#5'], 'open issues from both repos'), 'Issues page lists open issues from two repositories', 'hello-world#12, #20; spoon-knife#3, #5');
-    check(await cdp.evaluate(`document.querySelector('[role="group"][aria-label="GitHub"] button[aria-current="page"]')?.textContent.trim() === 'Issues'`), 'Issues nav item is aria-current="page"');
+    check(await cdp.evaluate(`document.querySelector('[role="group"][aria-label="Views"] button[aria-current="page"]')?.textContent.trim() === 'Issues'`), 'Issues nav item is aria-current="page"');
     await shot(cdp, '02-issues-two-repos.png');
 
     // 3. Tabs

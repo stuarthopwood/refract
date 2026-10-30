@@ -11,11 +11,17 @@ import { AddProjectDialog } from './AddProjectDialog'
 import { CloneProjectDialog } from './CloneProjectDialog'
 
 export interface AddProjectMenuProps {
-  /** `footer`: ghost, full width, menu opens upward. `first-run`: the screen's primary button. */
-  variant: 'footer' | 'first-run'
+  /** `footer`: ghost, full width, menu opens upward. `first-run`: the screen's primary button. `toolbar`: an outline button in a section's action row (Home). */
+  variant: 'footer' | 'first-run' | 'toolbar'
   side?: 'top' | 'bottom'
   disabled?: boolean
   className?: string
+}
+
+const TRIGGER_STYLE: Record<AddProjectMenuProps['variant'], { variant: 'ghost' | 'outline' | 'default'; size?: 'sm'; className: string }> = {
+  footer: { variant: 'ghost', className: cn(SIDEBAR_NAV_BUTTON_CLASS, 'w-full text-muted-foreground hover:text-foreground') },
+  toolbar: { variant: 'outline', size: 'sm', className: '' },
+  'first-run': { variant: 'default', className: 'flex-1' }
 }
 
 export function AddProjectMenu({ variant, side, disabled = false, className }: AddProjectMenuProps) {
@@ -24,6 +30,7 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
   const triggerRef = useRef<HTMLButtonElement>(null)
   const openingDialogRef = useRef(false)
   const footer = variant === 'footer'
+  const style = TRIGGER_STYLE[variant]
   const menuSide = side ?? (footer ? 'top' : 'bottom')
   const Chevron = menuSide === 'top' ? ChevronUpIcon : ChevronDownIcon
 
@@ -39,16 +46,12 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
         <DropdownMenuTrigger asChild>
           <Button
             ref={triggerRef}
-            variant={footer ? 'ghost' : 'default'}
+            variant={style.variant}
+            size={style.size}
             disabled={disabled}
             aria-disabled={disabled}
-            data-readiness-primary={footer ? undefined : ''}
-            className={cn(
-              footer
-                ? cn(SIDEBAR_NAV_BUTTON_CLASS, 'w-full text-muted-foreground hover:text-foreground')
-                : 'flex-1',
-              className
-            )}
+            data-readiness-primary={variant === 'first-run' ? '' : undefined}
+            className={cn(style.className, className)}
           >
             {footer && <FolderPlusIcon aria-hidden className="size-4" />}
             <span className={cn(footer && 'min-w-0 flex-1 truncate text-left')}>Add project</span>

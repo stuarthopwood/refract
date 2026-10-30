@@ -58,6 +58,17 @@ interface RepositoriesState {
   setColor(id: string, color: ProjectColor | null): Promise<string | null>
 }
 
+/** A Project added while the app runs has no remote until the next startup or focus refresh, and
+ * Home scopes every GitHub call to Projects with a known GitHub remote (#869), so detect it now. */
+function refreshRemotesAfterAdd(): void {
+  void window.refract.repositories
+    .remotes()
+    .then((result) => {
+      if (result.ok) useRepositoriesStore.getState().setRemotes(result.value)
+    })
+    .catch(() => {})
+}
+
 // Repositories the developer has added to Refract (contracts/ipc.md "Repositories").
 export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
   repositories: [],
@@ -81,14 +92,14 @@ export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
       return null
     }
     set({ repositories: [...get().repositories, result.value] })
+    refreshRemotesAfterAdd()
     return result.value
   },
-  addLocal: (repository) =>
-    set((state) =>
-      state.repositories.some((existing) => existing.id === repository.id)
-        ? state
-        : { repositories: [...state.repositories, repository] }
-    ),
+  addLocal: (repository) => {
+    if (get().repositories.some((existing) => existing.id === repository.id)) return
+    set({ repositories: [...get().repositories, repository] })
+    refreshRemotesAfterAdd()
+  },
   remove: async (id) => {
     const result = await window.refract.repositories.remove(id)
     if (!result.ok) {

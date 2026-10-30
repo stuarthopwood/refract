@@ -29,16 +29,24 @@ import type { Repository } from '../../../shared/model'
 
 export interface NewSessionDialogProps {
   repository: Repository
-  /** The element (usually a Button) that opens the dialog. */
-  trigger: ReactNode
+  /** The element (usually a Button) that opens the dialog. Omit it when the caller controls open. */
+  trigger?: ReactNode
+  /** Controlled open state, for a caller that opens the dialog from elsewhere (Home's Project picker menu). */
+  open?: boolean
+  onOpenChange?(open: boolean): void
 }
 
 // New session creation from the Base branch picker (docs/DESIGN.md "Layout", CONTEXT.md "Base
 // branch"): preselects the repository's default branch, then hands off to the sessions store's
 // `create`, which also selects and opens the new Session. Refract generates the Session's name
 // and branch; this dialog never asks for them.
-export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps) {
-  const [open, setOpen] = useState(false)
+export function NewSessionDialog({ repository, trigger, open: controlledOpen, onOpenChange }: NewSessionDialogProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean): void => {
+    setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   const [entries, setEntries] = useState<BranchEntry[] | null>(null)
   const [baseBranch, setBaseBranch] = useState(repository.defaultBranch)
   const [loadingBranches, setLoadingBranches] = useState(false)
@@ -100,7 +108,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New session in {repository.name}</DialogTitle>

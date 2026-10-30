@@ -19,6 +19,7 @@ pub mod clone_destination;
 pub mod copilot_plan;
 pub mod gh;
 pub mod gh_close;
+pub mod gh_closed_branches;
 pub mod gh_issue_list;
 pub mod gh_issues;
 pub mod gh_mutations;

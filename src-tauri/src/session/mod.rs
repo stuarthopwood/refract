@@ -12,6 +12,7 @@ pub mod advisor;
 pub mod agent;
 mod ai_credits;
 pub mod health;
+pub mod last_user_message;
 pub mod manager;
 pub mod model;
 pub mod pending_selection;
