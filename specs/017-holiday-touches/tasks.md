@@ -77,9 +77,10 @@
       asserts a no-override baseline shows no holiday artwork, measures idle CPU
       Full-on-vs-Off, and writes `report.json`.
 
-## Phase 6: Follow-up (not required for this PR; tracked in PLAN.md)
+## Phase 6: Remaining holidays (slice 2, FR-013)
 
-- [ ] T017 Bonfire Night, Christmas, New Year, Star Wars Day, Pi Day: live-verify their already
-      authored `HOLIDAY_CONTENT` entries (T006) across all five placements.
-- [ ] T018 Bonfire Night, Christmas, New Year ambient loop effects (sparks/snow/sparks per the
-      issue's own "Ambient loops" section) in `HolidayAmbientLoop.tsx` + `globals.css`.
+- [ ] T017 Switch Bonfire Night, Christmas, New Year, Star Wars Day, Pi Day on
+      (`VERIFIED_HOLIDAYS`) and live-verify their `HOLIDAY_CONTENT` entries (T006) across the
+      placements on faked dates, incl. the 31 Dec / 1 Jan boundary, Artwork only/Off, reduced motion.
+- [ ] T018 Bonfire Night (sparks), Christmas (snow), New Year (confetti) ambient loops in
+      `HolidayAmbientLoop.tsx` + a new `holidayArtwork.tsx` (inline SVG, per-holiday flight keyframes).
