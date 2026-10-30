@@ -78,16 +78,18 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
   const capNoteRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   const askedForMore = useRef(false)
 
-  const showCapNote = Boolean(paging?.atCap)
-  // After "Show more" the button may vanish at the cap; keep keyboard focus on the footer note.
+  const showCapNote = Boolean(paging?.atCap) && !loading
+  // "Show more" keeps its focus while loading (aria-disabled). When the button then vanishes
+  // (cap reached or list exhausted), move focus to the footer note or the list so it is not lost.
   useEffect(() => {
-    if (showCapNote && askedForMore.current) {
-      askedForMore.current = false
-      capNoteRef.current?.focus()
-    }
-  }, [showCapNote])
+    if (loading || !askedForMore.current) return
+    if (paging?.hasMore) return
+    askedForMore.current = false
+    ;(capNoteRef.current ?? listRef.current)?.focus()
+  }, [loading, paging?.hasMore, showCapNote])
 
   const activeFilterCount =
     (props.appliedQuery.trim() !== '' ? 1 : 0) +
@@ -238,7 +240,9 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           )
         ) : (
           <>
-            <div className="flex flex-col divide-y divide-divider">{props.children}</div>
+            <div ref={listRef} tabIndex={-1} className="flex flex-col divide-y divide-divider outline-none">
+              {props.children}
+            </div>
             {paging?.hasMore && (
               <div className="flex justify-center p-2">
                 <Button
@@ -246,8 +250,9 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={loading}
+                  aria-disabled={loading}
                   onClick={() => {
+                    if (loading) return
                     askedForMore.current = true
                     paging.onLoadMore()
                   }}
@@ -257,7 +262,11 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
               </div>
             )}
             {showCapNote && (
-              <div ref={capNoteRef} tabIndex={-1} className="p-2 text-center text-xs text-muted-foreground outline-none">
+              <div
+                ref={capNoteRef}
+                tabIndex={-1}
+                className="p-2 text-center text-xs text-muted-foreground outline-none focus-visible:outline-2 focus-visible:outline-ring"
+              >
                 Showing the first {paging?.cap}, narrow with filters.
               </div>
             )}

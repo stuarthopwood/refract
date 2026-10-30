@@ -55,7 +55,7 @@ interface PullRequestsState {
   /** Home and chat readouts: show one pull request, with its Project the only one listed. */
   openPullRequest(repositoryId: string, number: number): void
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. */
-  refresh(allRepositoryIds: string[]): Promise<void>
+  refresh(allRepositoryIds: string[], more?: boolean): Promise<void>
   loadMore(allRepositoryIds: string[]): Promise<void>
   activeCountByRepository: Record<string, PullRequestsActiveCount>
   activeCountFor(repositoryId: string): PullRequestsActiveCount
@@ -115,14 +115,21 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       limit: PAGE_SIZE,
       selected: { repositoryId, number }
     }),
-  async refresh(allRepositoryIds) {
-    const { tab, state, repositoryIds, query, appliedQuery } = get()
+  async refresh(allRepositoryIds, more = false) {
+    const { tab, state, repositoryIds } = get()
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
-    // A changed search starts again from the first page.
-    const limit = query.trim() !== appliedQuery.trim() ? PAGE_SIZE : get().limit
+    // "Show more" keeps the applied search and takes the next page; it only commits the new limit
+    // once the rows arrive, so the button stays mounted (and focused) while loading.
+    const query = more ? get().appliedQuery : get().query
+    const changedSearch = !more && query.trim() !== get().appliedQuery.trim()
+    const limit = more
+      ? Math.min(get().limit + PAGE_SIZE, MAX_ROWS)
+      : changedSearch
+        ? PAGE_SIZE
+        : get().limit
     refreshSequence += 1
     const sequence = refreshSequence
-    set({ loading: true, error: null, appliedQuery: query, limit })
+    set(more ? { loading: true, error: null } : { loading: true, error: null, appliedQuery: query, limit })
     let result: Result<{ items: PullRequestAcrossItem[]; hasMore: boolean; skipped: IssueSkippedProject[]; fetchedAt: string }>
     try {
       result = await window.refract.pullRequests.listAcross(tab, state, ids, query.trim(), limit)
@@ -139,17 +146,14 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     }
     set({
       loading: false,
+      limit,
       items: result.value.items,
       skipped: result.value.skipped,
       hasMore: result.value.hasMore,
       fetchedAt: result.value.fetchedAt
     })
   },
-  async loadMore(allRepositoryIds) {
-    const next = Math.min(get().limit + PAGE_SIZE, MAX_ROWS)
-    set({ limit: next })
-    await get().refresh(allRepositoryIds)
-  },
+  loadMore: (allRepositoryIds) => get().refresh(allRepositoryIds, true),
   activeCountByRepository: {},
   activeCountFor: (repositoryId) => get().activeCountByRepository[repositoryId] ?? EMPTY_PULL_REQUESTS_ACTIVE_COUNT,
   refreshActiveCount: async (repositoryId) => {

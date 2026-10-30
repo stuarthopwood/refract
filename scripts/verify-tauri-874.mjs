@@ -184,8 +184,8 @@ async function main() {
     // 7. Detail pane with the Review actions
     await cdp.click(`document.querySelector('[data-pr-row][data-pr-repository="octocat/hello-world"][data-pr-number="1"]')`);
     await cdp.waitFor(`document.body.textContent.includes('Description for pull request #1.')`, { timeoutMs: 15_000, label: 'detail body' });
-    const actions = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).map((el) => el.textContent.trim()).filter((t) => /review|approve|merge|request changes/i.test(t))`);
-    check(actions.length > 0, 'Detail pane shows its Review actions', JSON.stringify(actions));
+    const actions = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).map((el) => el.textContent.trim()).filter((t) => /^(review|merge)$/i.test(t))`);
+    check(actions.some((t) => /^review$/i.test(t)) && actions.some((t) => /^merge$/i.test(t)), 'Detail pane shows its Review and Merge actions', JSON.stringify(actions));
     await shot(cdp, '09-detail-review-actions.png');
 
     // 8. What gh was actually asked
