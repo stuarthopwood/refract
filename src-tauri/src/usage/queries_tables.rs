@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::queries::{
-    Filters, QueryCtx, QueryError, QueryResult, MESSAGES, MESSAGE_ROLLUP, SESSION_ROLLUP,
+    Filters, QueryCtx, QueryError, QueryResult, Rollup, MESSAGES, MESSAGE_ROLLUP, SESSION_ROLLUP,
     TOOL_CALLS, TOOL_ROLLUP,
 };
 
@@ -63,7 +63,8 @@ pub fn breakdown(
 ) -> QueryResult<Vec<BreakdownRow>> {
     match by {
         BreakdownBy::Project | BreakdownBy::Model => {
-            let w = f.build(&MESSAGE_ROLLUP, ctx)?;
+            let mut w = f.build_dims(&MESSAGE_ROLLUP, ctx)?;
+            let src = f.rollup_source(&mut w, Rollup::Messages, ctx, false)?;
             let (select, group) = if by == BreakdownBy::Project {
                 ("project_label, ''", "project_label")
             } else {
@@ -71,7 +72,7 @@ pub fn breakdown(
             };
             let sql = format!(
                 "SELECT {select}, sum(calls), sum(total_tokens), sum(cost_total), sum(credits) \
-                 FROM message_rollup{} GROUP BY {group} \
+                 FROM {src}{} GROUP BY {group} \
                  ORDER BY sum(cost_total) DESC, sum(calls) DESC, 1 LIMIT {BREAKDOWN_LIMIT}",
                 w.sql()
             );
@@ -106,12 +107,17 @@ fn tool_breakdown(
         (
             f.build(&TOOL_CALLS, ctx)?,
             "SELECT tool, count(*), coalesce(sum(coalesce(is_error,0)),0), \
-             coalesce(sum(result_chars),0), coalesce(sum(cost_share),0) FROM tool_calls",
+             coalesce(sum(result_chars),0), coalesce(sum(cost_share),0) FROM tool_calls"
+                .to_string(),
         )
     } else {
+        let mut w = f.build_dims(&TOOL_ROLLUP, ctx)?;
+        let src = f.rollup_source(&mut w, Rollup::Tools, ctx, false)?;
         (
-            f.build(&TOOL_ROLLUP, ctx)?,
-            "SELECT tool, sum(calls), sum(errors), sum(result_chars), sum(cost_share) FROM tool_rollup",
+            w,
+            format!(
+                "SELECT tool, sum(calls), sum(errors), sum(result_chars), sum(cost_share) FROM {src}"
+            ),
         )
     };
     let sql = format!(
