@@ -9,6 +9,10 @@ import { cn } from '@/lib/utils'
 import { useSessionListStore, useSessionsStore } from '@/state'
 import { hiddenSummary } from './sessionDisplay'
 
+function focusCollapseAll(): void {
+  requestAnimationFrame(() => document.querySelector<HTMLElement>('button[aria-label="Collapse all groups"]')?.focus())
+}
+
 // Issue #748: the Show hidden toggle in the session list's toolbar row. Rendered only while a
 // Session is hidden or the toggle is on (so it never offers a control with nothing behind it,
 // and never vanishes from under a user who just turned it on). A hidden Session never
@@ -30,6 +34,16 @@ export function ShowHiddenToggle() {
     const timer = setTimeout(() => announce(`${attention} hidden ${attention === 1 ? 'Session needs' : 'Sessions need'} attention`), 1000)
     return () => clearTimeout(timer)
   }, [attention, announce])
+  const previousHiddenRef = useRef(hidden)
+  useEffect(() => {
+    const previous = previousHiddenRef.current
+    previousHiddenRef.current = hidden
+    if (hidden > 0 || previous === 0 || !showHidden) return
+    // The toggle unmounts as soon as this runs, so capture whether it held focus first.
+    const hadFocus = document.activeElement?.hasAttribute('data-show-hidden-toggle') ?? false
+    useSessionListStore.getState().setShowHidden(false)
+    if (hadFocus) focusCollapseAll()
+  }, [hidden, showHidden])
   if (hidden === 0 && !showHidden) return null
   const detail = needsYou > 0 ? `, ${needsYou} needs you` : attention > 0 ? `, ${attention} need attention` : ''
   const name = `Show hidden Sessions, ${hidden}${detail}`
@@ -44,9 +58,7 @@ export function ShowHiddenToggle() {
             onPressedChange={(next) => {
               useSessionListStore.getState().setShowHidden(next)
               // Turning it off with nothing hidden removes this control; keep focus in the toolbar.
-              if (!next && hidden === 0) {
-                requestAnimationFrame(() => document.querySelector<HTMLElement>('button[aria-label="Collapse all groups"]')?.focus())
-              }
+              if (!next && hidden === 0) focusCollapseAll()
             }}
             aria-label={name}
             data-show-hidden-toggle=""

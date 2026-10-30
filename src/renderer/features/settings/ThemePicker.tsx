@@ -1,4 +1,4 @@
-// Hand-rolled radiogroup (roving tabindex): arrows and Home/End both move focus and live-preview.
+// Hand-rolled radiogroup (roving tabindex): arrows and Home/End both move focus and save the choice.
 // Not migrated to ui/radio-group.tsx, whose Home/End only move focus (#498).
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
@@ -19,13 +19,13 @@ interface ThemePickerProps {
 
 export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   const activeId = useActiveThemeId()
-  const preview = useThemeStore((state) => state.preview)
+  const save = useThemeStore((state) => state.save)
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
 
-  // Choosing the active entry is a no-op so `preview` doesn't round-trip over IPC for nothing.
+  // Choosing the active entry is a no-op so `save` doesn't round-trip over IPC for nothing.
   function choose(id: ThemeId) {
     if (id === activeId) return
-    preview(id)
+    void save(id)
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {

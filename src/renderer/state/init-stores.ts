@@ -267,6 +267,8 @@ export function initStores(): void {
     useChatWidthStore.getState().setChatWidth(settingsLoad.value.chatWidth)
     // Restored here, not deferred, so groups don't draw open then snap shut; runs on the DEFAULT_SETTINGS fallback too. (#735)
     useSessionListStore.getState().restore(settingsLoad.value.sessionListCollapse)
+    // A persisted Show hidden with nothing hidden would draw a toggle with nothing behind it (#1416).
+    if (sessionsLoad.ok && !sessionsLoad.value.some((session) => session.hiddenAt)) useSessionListStore.getState().setShowHidden(false)
     usePullRequestsLayoutStore.getState().restoreFromSettings(settingsLoad.value.pullRequestsListWidthPx)
     restoreRightPane(settingsLoad.value.rightPane)
     startRightPanePersistence()

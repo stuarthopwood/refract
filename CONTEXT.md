@@ -250,11 +250,11 @@ The raw Markdown text of the same file or value, shown and edited as code. The o
 _Avoid_: Code view, raw view, code only
 
 **Theme** (spec 007):
-One of the built-in dark-toned colour presets (Dark, Dark (high contrast), Obsidian -- #550, theme foundation palette v2) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
+One of the built-in dark-toned colour presets (Dark, Dark (high contrast), Obsidian -- #550, theme foundation palette v2) applying app-wide, chosen from the Settings screen's Appearance section and autosaved on choose (no preview, Save or Cancel; spec 068, #1424). Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
 _Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system
 
 **Chat width** (issue #554):
-The app-wide Settings, Appearance choice between Full (default, the transcript column fills the pane) and Reading column (caps it at 64rem, centred); applies to the chat transcript only, never the message box or the status line. Save/Cancel live preview, the same interaction model as **Theme**.
+The app-wide Settings, Appearance choice between Full (default, the transcript column fills the pane) and Reading column (caps it at 64rem, centred); applies to the chat transcript only, never the message box or the status line. Autosaved on choose, the same interaction model as **Theme**.
 _Avoid_: reading width, line width (ambiguous with a font/measure setting, which does not exist)
 
 **UI font / Code font** (issue #1246, grilled 2026-10-27):
