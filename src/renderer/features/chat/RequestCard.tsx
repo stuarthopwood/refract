@@ -412,7 +412,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                   variant="outline"
                   disabled={busy}
                   data-choice-item
-                  className={cn("h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal py-1 text-left", OPTION_FILL_CLASS)
+                  className={cn("h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal py-1 text-left", OPTION_FILL_CLASS)}
                   onClick={() => void answer({ value: option }, 'answered', displayLabel)}
                 >
                   <span className="w-full min-w-0 break-words text-sm">
