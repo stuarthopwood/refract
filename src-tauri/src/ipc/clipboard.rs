@@ -10,6 +10,9 @@ pub fn register(d: &mut Dispatcher) {
     d.register("clipboard.readText", clipboard_read_text);
 }
 
+/// Larger clipboard text is refused, not truncated, so a paste never silently loses data (#471).
+const MAX_READ_BYTES: usize = 1024 * 1024;
+
 /// Composer menu Paste (#471): the sandboxed renderer may refuse `navigator.clipboard.readText`.
 pub fn clipboard_read_text(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
@@ -23,8 +26,14 @@ pub fn clipboard_read_text(state: AppState, _args: Vec<Value>) -> HandlerFuture 
         };
         let text = tokio::task::spawn_blocking(move || app_handle.clipboard().read_text())
             .await
-            .map_err(|err| IpcError::new("clipboard-failed", err.to_string()))?
+            .map_err(|_| IpcError::new("clipboard-failed", "The clipboard could not be read"))?
             .map_err(|_| IpcError::new("clipboard-failed", "The clipboard has no text"))?;
+        if text.len() > MAX_READ_BYTES {
+            return Err(IpcError::new(
+                "clipboard-too-large",
+                "The clipboard text is too large to paste (over 1 MB)",
+            ));
+        }
         Ok(Value::String(text))
     })
 }

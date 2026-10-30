@@ -5,6 +5,7 @@
 // Usage (after `pnpm exec tauri build --debug --no-bundle`, shared target dir set):
 // CARGO_TARGET_DIR=<shared target dir> REFRACT_471_SHOTS_DIR=<dir> node scripts/verify-471-composer-menu.mjs
 
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -109,9 +110,19 @@ async function main() {
     const select = (a, b) => cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(${a}, ${b}); return true; })()`);
     const value = () => cdp.evaluate(`${FIELD}.value`);
     const sel = () => cdp.evaluate(`[${FIELD}.selectionStart, ${FIELD}.selectionEnd]`);
-    const clipboard = async () => cdp.evaluate(`window.refract.clipboard.readText().then((r) => (r.ok ? r.value : 'ERR:' + r.error.message))`);
-    const setClipboard = (t) => cdp.evaluate(`window.refract.clipboard.writeText(${JSON.stringify(t)}).then((r) => r.ok)`);
-    const openMenu = async () => {
+    // OS-level clipboard access, so the real Tauri IPC is checked against what Windows holds.
+    const ps = (command) => {
+      for (let i = 0; i < 12; i++) {
+        const r = spawnSync('powershell', ['-NoProfile', '-Command', command], { encoding: 'utf8' });
+        if (r.status === 0) return r.stdout;
+        lastPsError = r.stderr.trim();
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250 * (i + 1));
+      }
+      throw new Error(`clipboard still unavailable after retries: ${lastPsError}`);
+    };
+    let lastPsError = '';
+    const clipboard = async () => ps('Get-Clipboard -Raw');
+    const setClipboard = async (t) => { ps(`Set-Clipboard -Value ${JSON.stringify(t)}`); return true; };    const openMenu = async () => {
       // A right-click outside a selection moves the caret, so collapsed carets open via the keyboard.
       const [a, b] = await sel();
       if (a === b) await key('F10', 'F10', 121, 8);
@@ -122,17 +133,6 @@ async function main() {
     };
 
     await cdp.click(FIELD);
-    // The OS clipboard can be held by another process on a shared machine; fall back to an in-page
-    // clipboard so the menu logic is still exercised, and say so in the report.
-    let realClipboard = false;
-    for (let i = 0; i < 10 && !realClipboard; i++) {
-      realClipboard = await cdp.evaluate(`window.refract.clipboard.writeText('probe-471').then(async (w) => w.ok && (await window.refract.clipboard.readText()).value === 'probe-471')`);
-      if (!realClipboard) await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!realClipboard) {
-      await cdp.evaluate(`(() => { let t = ''; window.refract.clipboard.writeText = async (v) => { t = v; return { ok: true, value: undefined }; }; window.refract.clipboard.readText = async () => (t ? { ok: true, value: t } : { ok: false, error: { code: 'clipboard-failed', message: 'The clipboard has no text' } }); return true; })()`);
-    }
-    check(true, realClipboard ? 'OS clipboard round-trip works (real Tauri IPC)' : 'OS clipboard held by another process: in-page clipboard stub used for the menu logic', { realClipboard });
     await cdp.send('Input.insertText', { text: 'hello world' });
     await sleep(200);
 
@@ -166,12 +166,13 @@ async function main() {
     await sleep(600);
     check((await value()) === 'world' && (await clipboard()) === 'hello ', 'Cut removes and clipboards the selection', { value: await value(), clip: await clipboard() });
 
-    // 5. Paste at the caret.
+    // 5. Paste at the caret, from a marker seeded straight into the OS clipboard.
+    await setClipboard('marker-471 ');
     await select(5, 5);
     await openMenu();
     await clickItem('Paste');
     await sleep(600);
-    check((await value()) === 'worldhello ', 'Paste inserts at the caret', await value());
+    check((await value()) === 'worldmarker-471 ', 'Paste inserts the OS clipboard text at the caret', await value());
 
     // 6. Paste collapses a large block into a chip; Paste as plain text inserts it verbatim.
     const big = 'x'.repeat(900);
@@ -190,6 +191,16 @@ async function main() {
     await clickItem('Paste as plain text');
     await sleep(800);
     check((await value()) === big, 'Paste as plain text inserts the literal block, bypassing the handler', (await value()).length);
+
+    // Over the 1 MB cap the IPC refuses; the draft stays as it was.
+    ps(`Set-Clipboard -Value ('y' * 1200000)`);
+    await cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(0, 0); return true; })()`);
+    await key('F10', 'F10', 121, 8);
+    await menuOpen();
+    await clickItem('Paste as plain text');
+    await sleep(800);
+    const tooLarge = await cdp.evaluate(`window.refract.clipboard.readText().then((r) => (r.ok ? 'ok' : r.error.code))`);
+    check(tooLarge === 'clipboard-too-large' && (await value()) === big, 'Over 1 MB: the IPC returns clipboard-too-large and the draft is unchanged', { tooLarge, len: (await value()).length });
 
     // 7. Select all.
     await openMenu();
