@@ -63,7 +63,7 @@ struct Resolved {
 /// One `gh issue list` per distinct owner/repo, newest first; failures go in `skipped`.
 fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        const USAGE: &str = "issues.list expects (tab, state, repositoryIds, label, query)";
+        const USAGE: &str = "issues.list expects (tab, state, repositoryIds, labels, query)";
         let tab = arg_str(&args, 0)
             .and_then(gh_issue_list::parse_tab)
             .ok_or_else(|| invalid_argument(USAGE))?;
@@ -81,10 +81,17 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
         if ids.len() > MAX_PROJECTS {
             return Err(invalid_argument("Choose at most 200 projects."));
         }
-        let label = args.get(3).and_then(Value::as_str);
+        let labels: Vec<String> = args
+            .get(3)
+            .and_then(Value::as_array)
+            .ok_or_else(|| invalid_argument(USAGE))?
+            .iter()
+            .map(|value| value.as_str().map(str::to_string))
+            .collect::<Option<_>>()
+            .ok_or_else(|| invalid_argument(USAGE))?;
         let search = arg_str(&args, 4);
         let query =
-            Arc::new(IssueListQuery::new(tab, state_filter, label, search).map_err(map_gh_error)?);
+            Arc::new(IssueListQuery::new(tab, state_filter, &labels, search).map_err(map_gh_error)?);
 
         let mut skipped: Vec<SkippedProject> = Vec::new();
         let mut resolved: Vec<Resolved> = Vec::new();

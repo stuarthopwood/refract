@@ -100,7 +100,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
       const noProjects = ids.length === 0
       const [prSettled, issueSettled, closedSettled] = await Promise.all([
         Promise.allSettled(PR_TABS.map((tab) => (noProjects ? null : api.pullRequests.listAcross(tab, 'open', ids, '', PR_FETCH_LIMIT)))),
-        Promise.allSettled(ISSUE_TABS.map((tab) => (noProjects ? null : api.issues.list(tab, 'open', ids, null, '')))),
+        Promise.allSettled(ISSUE_TABS.map((tab) => (noProjects ? null : api.issues.list(tab, 'open', ids, [], '')))),
         Promise.allSettled([noProjects ? null : api.home.closedBranches(ids)])
       ])
       const { prs: previousPrs, issues: previousIssues, closed: previousClosed } = get()
