@@ -179,7 +179,8 @@ fn parse_list_form(lines: &[Line]) -> Vec<RosterAdvisor> {
         }
     };
     for line in lines {
-        let continues = matches!(&current, Some((dash, _)) if line.indent > *dash);
+        // An item's indent already includes its "- ", so a sibling key sits at the same indent.
+        let continues = matches!(&current, Some((dash, _)) if line.indent > *dash || (!line.item && line.indent == *dash));
         if line.item && !continues {
             flush(&mut current);
             let mut advisor = RosterAdvisor {
