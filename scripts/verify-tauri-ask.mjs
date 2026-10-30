@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort } from './verify-tauri-cdp.mjs';
 import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { runComposerChecks } from './verify-tauri-ask-composer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -251,10 +252,12 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     );
     await cdp.click(`document.querySelector('[data-readiness-primary]')`);
 
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+    // Onboarding now opens an "Add project" menu first; "Local folder…" opens the path dialog.
+    await cdp.clickByText('Local folder…', { tag: '[role="menuitem"]' });
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
       { timeoutMs: 30_000, label: 'Repository added, session-list row rendered' },
@@ -292,17 +295,22 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '01-tab-row-database-active.png'));
 
     await clickRoleLabel(cdp, 'radio', 'Postgres');
-    await cdp.waitFor(
-      `(() => { const el = ${roleLabelFinder('radio', 'Postgres')}; return !!el && el.getAttribute('aria-checked') === 'true'; })()`,
-      { timeoutMs: 15_000, label: 'Postgres row becomes checked after clicking it' },
-    );
-    await cdp.screenshot(path.join(ASK_SHOT_DIR, '02-postgres-selected.png'));
-
-    await cdp.click(tabFinder('Features'));
+    // #1435: a single-choice pick moves on by itself, with no tab click.
     await cdp.waitFor(`(() => { const el = ${tabFinder('Features')}; return !!el && el.getAttribute('aria-selected') === 'true'; })()`, {
       timeoutMs: 15_000,
-      label: 'Features tab becomes active',
+      label: 'Features tab becomes active by itself after the single-choice pick',
     });
+    await cdp.screenshot(path.join(ASK_SHOT_DIR, '02-postgres-picked-auto-advanced.png'));
+    // #1434: option rows are filled (no border), and Cancel is a ghost button.
+    const styles = await cdp.evaluate(`(() => {
+      const row = Array.from(document.querySelectorAll('[role="checkbox"]'))[0];
+      const cancel = Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Cancel');
+      const r = row && getComputedStyle(row); const c = cancel && getComputedStyle(cancel);
+      return { rowBg: r?.backgroundColor, rowBorder: r?.borderTopWidth, cancelBg: c?.backgroundColor, cancelBorder: c?.borderTopWidth };
+    })()`);
+    console.log(`verify-tauri-ask: option row / Cancel styles ${JSON.stringify(styles)}`);
+    assert(styles.rowBg && styles.rowBg !== 'rgba(0, 0, 0, 0)' && styles.rowBorder === '0px', `option row should have a fill and no border: ${JSON.stringify(styles)}`);
+    assert(styles.cancelBg === 'rgba(0, 0, 0, 0)' && styles.cancelBorder === '0px', `Cancel should be a ghost button: ${JSON.stringify(styles)}`);
 
     await clickRoleLabel(cdp, 'checkbox', 'Auth');
     await cdp.waitFor(
@@ -404,6 +412,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
 
     // The reply still arriving proves the answer let the rest of the turn proceed.
     await waitForStreamedReply(cdp, { finalToken: REPLY_TOKEN, timeoutMs: 30_000 });
+    await runComposerChecks(cdp, ASK_SHOT_DIR, assert);
 
     console.log('PASS: Ask card tab row, radio rows, tick-box rows, Other input, footer, and the resolved/expanded answered summary all verified against real DOM input.');
   } catch (err) {
