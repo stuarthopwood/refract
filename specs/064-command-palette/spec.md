@@ -15,15 +15,15 @@ Ctrl+K (alias Ctrl+Shift+P) opens a modal palette over one fuzzy list grouped as
 
 ### Session 2026-10-30 (agent decisions, no questions could be asked)
 
-- Q: Ctrl+K already applies a link in the Markdown composer toolbar. [DECISION by agent, confirm] The palette ignores a Ctrl+K that the editor already handled (`defaultPrevented`); Ctrl+Shift+P opens the palette everywhere.
-- Q: Do the existing window-level handlers (Ctrl+N, Ctrl+W, Ctrl+, and so on) move onto the registry? [DECISION by agent, confirm] No. They keep their own guards; the registry holds the chord as display metadata and the palette's own chords are dispatched from the registry. Rewiring every handler risks regressions in the live-tested guards and is left to slice 2.
-- Q: Which Sessions appear? [DECISION by agent, confirm] Sessions that are not archived and not hidden; selecting one opens it in the focused pane (the same call as Home's session rows).
-- Q: Which Conversations appear? [DECISION by agent, confirm] The Conversations of the Session in the focused pane, loaded when the palette opens. Selecting the current one just closes the palette; another one opens it only while the Session is idle or stopped, matching the existing Conversation switcher.
-- Q: Which pull requests and issues appear? [DECISION by agent, confirm] Only those already loaded in the pull request and issue stores. The palette never starts a GitHub fetch. Selecting one opens the view with that item selected.
-- Q: New session from a pull request, with the fork warning? [DECISION by agent, confirm] Not registered. The list items do not know whether a pull request is from a fork, and the palette must not bypass the fork warning in `PullRequestDetail.tsx`. Selecting a pull request opens its detail, where New session lives.
-- Q: Pause and Resume wording? [DECISION by agent, confirm] Two actions, "Pause session" and "Resume session", for the focused Session, enabled by its pause state; "Pause all" and "Resume all" follow `PauseAllButton`'s rule.
-- Q: Is the existing Open Usage entry kept? [DECISION by agent, confirm] Yes. `usageViewAction.ts`, which waited for this palette, is replaced by a registry action `open-usage`.
-- Q: Ranking and the `>` prefix? [DECISION by agent, confirm] cmdk's built-in fuzzy scoring; `>` is stripped before scoring and hides every section but Actions. An empty query shows Actions, then Sessions, Conversations, Settings, Pull requests and Issues, with no more than 50 rows rendered per section.
+- Q: Ctrl+K already applies a link in the Markdown composer toolbar. [Confirmed by Stuart, 2026-10-30] The palette ignores a Ctrl+K that the editor already handled (`defaultPrevented`); Ctrl+Shift+P opens the palette everywhere.
+- Q: Do the existing window-level handlers (Ctrl+N, Ctrl+W, Ctrl+, and so on) move onto the registry? [Confirmed by Stuart, 2026-10-30] No. They keep their own guards; the registry holds the chord as display metadata and the palette's own chords are dispatched from the registry. Rewiring every handler risks regressions in the live-tested guards and is left to slice 2.
+- Q: Which Sessions appear? [Confirmed by Stuart, 2026-10-30] Sessions that are not archived and not hidden; selecting one opens it in the focused pane (the same call as Home's session rows).
+- Q: Which Conversations appear? [Confirmed by Stuart, 2026-10-30] The Conversations of the Session in the focused pane, loaded when the palette opens. Selecting the current one just closes the palette; another one opens it only while the Session is idle or stopped, matching the existing Conversation switcher.
+- Q: Which pull requests and issues appear? [Confirmed by Stuart, 2026-10-30] Only those already loaded in the pull request and issue stores. The palette never starts a GitHub fetch. Selecting one opens the view with that item selected.
+- Q: New session from a pull request, with the fork warning? [Confirmed by Stuart, 2026-10-30] Not registered. The list items do not know whether a pull request is from a fork, and the palette must not bypass the fork warning in `PullRequestDetail.tsx`. Selecting a pull request opens its detail, where New session lives.
+- Q: Pause and Resume wording? [Confirmed by Stuart, 2026-10-30] Two actions, "Pause session" and "Resume session", for the focused Session, enabled by its pause state; "Pause all" and "Resume all" follow `PauseAllButton`'s rule.
+- Q: Is the existing Open Usage entry kept? [Confirmed by Stuart, 2026-10-30] Yes. `usageViewAction.ts`, which waited for this palette, is replaced by a registry action `open-usage`.
+- Q: Ranking and the `>` prefix? [Confirmed by Stuart, 2026-10-30] cmdk's built-in fuzzy scoring; `>` is stripped before scoring and hides every section but Actions. An empty query shows Actions, then Sessions, Conversations, Settings, Pull requests and Issues, with no more than 50 rows rendered per section.
 
 ## Functional requirements
 
