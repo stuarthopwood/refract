@@ -3360,6 +3360,7 @@ dependencies = [
  "fancy-regex",
  "log",
  "notify",
+ "png 0.18.1",
  "reqwest",
  "rusqlite",
  "serde",

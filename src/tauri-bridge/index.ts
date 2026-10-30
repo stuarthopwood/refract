@@ -194,7 +194,9 @@ const refract: RefractApi = {
 
   clipboard: {
     writeText: (text) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_TEXT, text),
-    readText: () => request<string>(IPC_REQUESTS.CLIPBOARD_READ_TEXT)
+    readText: () => request<string>(IPC_REQUESTS.CLIPBOARD_READ_TEXT),
+    writeImage: (pngBase64) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_IMAGE, pngBase64),
+    saveImage: (pngBase64, suggestedName) => request<string | null>(IPC_REQUESTS.CLIPBOARD_SAVE_IMAGE, pngBase64, suggestedName)
   },
 
   conversations: {

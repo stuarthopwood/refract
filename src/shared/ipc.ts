@@ -247,6 +247,8 @@ export const IPC_REQUESTS = {
   IMAGES_GET: 'images.get',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CLIPBOARD_READ_TEXT: 'clipboard.readText',
+  CLIPBOARD_WRITE_IMAGE: 'clipboard.writeImage',
+  CLIPBOARD_SAVE_IMAGE: 'clipboard.saveImage',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
