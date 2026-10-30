@@ -260,7 +260,10 @@ pub(super) fn apply_batch_task_result(
             }
             if let Some(entry) = entry {
                 let entry_status = entry.get("status").and_then(Value::as_str);
-                *status = map_progress_status(entry_status);
+                *status = match map_progress_status(entry_status) {
+                    SubagentStatus::Running => fallback_status,
+                    settled => settled,
+                };
                 if let Some(jid) = entry_job_id {
                     *job_id = Some(jid);
                 }
@@ -303,8 +306,8 @@ pub(super) fn apply_async_result_jobs(
     let mut claimed = vec![false; items.len()];
     for job in jobs {
         let job_status = job.get("status").and_then(Value::as_str);
-        // A job with no status arrived already finished.
-        let outcome = if job_status.is_none() {
+        // A job with a missing or empty status arrived already finished.
+        let outcome = if matches!(job_status, None | Some("")) {
             ProgressOutcome::Finished
         } else {
             classify_progress_status(job_status)
