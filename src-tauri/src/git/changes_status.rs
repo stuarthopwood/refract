@@ -1,9 +1,6 @@
-// `--porcelain=v2` carries branch and ahead/behind in one call. v1 (`status.rs`) lacks those lines.
-// A partially staged path becomes two rows, one Staged and one Changes, like VS Code.
-// Only a rename with nothing pending in the worktree keeps the `Renamed` mark.
-// `--no-renames` reports a rename as delete plus add. Untracked files are counted from their content.
-//
-// `--no-optional-locks` avoids blocking on an agent-held lock. `-z` keeps quoted paths intact.
+// `--porcelain=v2` gives branch and ahead/behind in one call. A partially staged path becomes
+// a Staged and a Changes row; `--no-renames` reports a rename as delete plus add.
+// `--no-optional-locks` avoids blocking on an agent-held lock; `-z` keeps quoted paths intact.
 
 use std::collections::HashMap;
 use std::path::Path;

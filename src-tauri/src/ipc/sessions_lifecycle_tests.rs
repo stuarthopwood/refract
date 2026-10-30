@@ -1,9 +1,5 @@
-// Test module for `sessions_lifecycle.rs`, split into this sibling file to stay under the
-// 600-line soft cap (`pnpm check:file-size`) -- included via `#[path =
-// "sessions_lifecycle_tests.rs"] mod tests;` in `sessions_lifecycle.rs` itself, so this is still
-// logically `ipc::sessions_lifecycle::tests` (same convention `store/registry_tests.rs` already
-// uses). Scratch dirs are left in the OS temp folder (never removed), the same deliberate choice
-// this crate's other test modules already make.
+// Test module for `sessions_lifecycle.rs`, split out for the 600-line cap and included via
+// `#[path]`. Scratch dirs are left in the OS temp folder.
 
 use super::*;
 use crate::events::EventSink;
@@ -14,8 +10,7 @@ use crate::store::settings::SettingsStore;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as AsyncMutex;
 
-// `is_strict_descendant_of_omp_sessions`: pure string/path function, no git/tokio runtime
-// needed. `dirs::home_dir()` is the same mechanism the function itself already uses.
+// `is_strict_descendant_of_omp_sessions`: pure path function; no git/tokio runtime needed.
 
 #[test]
 fn the_sessions_root_itself_is_not_a_strict_descendant() {
@@ -39,9 +34,8 @@ fn a_true_child_of_the_sessions_root_is_a_strict_descendant() {
     ));
 }
 
-/// A sibling directory sharing a string prefix with the real root (e.g. `sessions-evil` next to
-/// `sessions`) must never pass a naive `starts_with` on the unseparated string -- exactly why the
-/// function itself appends `MAIN_SEPARATOR` before comparing.
+/// A sibling sharing a string prefix with the root (`sessions-evil` next to `sessions`) must not
+/// pass; the function appends `MAIN_SEPARATOR` before comparing.
 #[test]
 fn a_sibling_directory_sharing_a_string_prefix_is_not_a_descendant() {
     let home = dirs::home_dir().expect("home dir for test");
@@ -62,8 +56,7 @@ fn a_path_that_escapes_the_root_via_dotdot_is_not_a_descendant() {
     ));
 }
 
-// `delete_session_conversations`: real temp dir, same `refract-...-{uuid}` pattern this crate's
-// other test modules already use (never cleaned up).
+// `delete_session_conversations`: real temp dir (never cleaned up).
 
 fn temp_session_dir(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
@@ -131,8 +124,7 @@ async fn session_dir_itself_is_removed_once_cleanup_leaves_it_empty() {
     assert!(tokio::fs::metadata(&dir).await.is_err());
 }
 
-// Handler tests against a temp registry and a real repo, matching `ipc::repositories`'s own
-// `make_state` pattern exactly.
+// Handler tests against a temp registry and a real repo (`make_state` pattern).
 
 fn temp_registry_dir(label: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -329,13 +321,9 @@ async fn sessions_recreate_worktree_returns_branch_missing_for_a_deleted_branch(
     );
 }
 
-/// Closest testable seam for the CRITICAL ordering fix (gate round 1: `shutdown()` before
-/// `remove_session_worktree`): this crate has no fake-omp process to drive a genuinely RUNNING
-/// `SessionAgent` through `sessions.delete`, so this proves the no-op-shutdown path instead -- a
-/// never-started agent's status is `Stopped` both before and after, and `sessions_delete` still
-/// succeeds end to end (worktree removed, registry entry gone). A true "shuts down a RUNNING
-/// agent first" test needs fake-omp process infrastructure this crate does not have yet (known
-/// gap).
+/// Proves the no-op-shutdown path (`shutdown()` before `remove_session_worktree`): a never-started
+/// agent is `Stopped` before and after, and delete still succeeds. No fake omp process exists to
+/// test a RUNNING agent.
 #[tokio::test]
 async fn sessions_delete_on_a_never_started_session_succeeds_with_a_harmless_no_op_shutdown() {
     let dir = temp_registry_dir("delete-noop-shutdown");
@@ -386,24 +374,16 @@ async fn sessions_delete_on_a_never_started_session_succeeds_with_a_harmless_no_
         .is_none());
 }
 
-/// `sessions.ts`'s own `resumingIds` busy-lock has no equivalent in this crate yet: `session::
-/// start_queue`/`session::termination` (lane R3, issue #786) are both still no-op stubs with no
-/// in-flight start/resume marker `sessions_archive`/`sessions_delete` could check, and
-/// `SessionAgent`'s own internal `start_lock` (see `agent::conversations`'s own doc comment)
-/// only guards a single Session's own concurrent `start()` calls -- it is not exposed as
-/// something an IPC handler can query to refuse an archive/delete mid-resume. Add this test for
-/// real once `sessions.resume` (lane R3/#786) lands a queryable marker.
+/// Known gap: no queryable in-flight resume marker exists for archive/delete to refuse on; add a
+/// test once `sessions.resume` (#786) lands one.
 #[ignore = "no in-flight start/resume marker exists in this crate yet (lane R3/#786); add this test once sessions.resume lands"]
 #[tokio::test]
 async fn sessions_archive_refuses_a_session_that_is_mid_start_or_mid_resume() {
     unimplemented!("blocked on lane R3/#786's sessions.resume in-flight marker")
 }
 
-/// Gate round 2 (#657/#658): the reclaim hook fires exactly on the success path of both
-/// `sessions.archive` and `sessions.delete`, never on a refused/failed call -- a thread-local
-/// counter (see `on_worktree_released`'s own doc comment for why thread-local, not a global
-/// atomic, is the correct parallel-test-safe choice here) lets each test assert an EXACT call
-/// count (`before + 1` on success, `before` unchanged on refusal) with no cross-test flakiness.
+/// The reclaim hook fires exactly on the success path of `sessions.archive` and `sessions.delete`
+/// (#657/#658). A thread-local counter keeps exact counts parallel-test-safe.
 #[tokio::test]
 async fn sessions_archive_fires_the_worktree_released_hook_on_success() {
     let dir = temp_registry_dir("archive-fires-hook");

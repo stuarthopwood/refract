@@ -320,8 +320,6 @@ pub async fn fetch_avatar(avatar_url: &str) -> Result<String, AvatarFetchError> 
 mod tests {
     use super::*;
 
-    // --- parse_avatar_url ---
-
     #[test]
     fn accepts_https_on_avatar_host() {
         assert!(parse_avatar_url("https://avatars.githubusercontent.com/u/123").is_ok());
@@ -360,8 +358,6 @@ mod tests {
         assert!(parse_avatar_url("https://user:pass@avatars.githubusercontent.com/u/123").is_err());
     }
 
-    // --- resolve_avatar_mime_type ---
-
     #[test]
     fn resolves_plain_png() {
         assert_eq!(
@@ -395,8 +391,6 @@ mod tests {
     fn rejects_missing_content_type() {
         assert_eq!(resolve_avatar_mime_type(None), None);
     }
-
-    // --- matches_image_signature ---
 
     fn png_bytes() -> Vec<u8> {
         let mut bytes = vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];

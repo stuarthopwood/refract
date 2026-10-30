@@ -166,8 +166,7 @@ mod tests {
 
     #[test]
     fn parse_status_never_panics_on_a_non_ascii_byte_at_an_indexing_boundary() {
-        // A malformed/truncated entry (too short to even carry a code) must be skipped, never
-        // panic on a `get`-based slice landing off a UTF-8 char boundary.
+        // A malformed entry too short for a code is skipped, never a panic.
         let stdout = "\u{1f600}\0?? ok.txt\0";
         let map = parse_status(stdout);
         assert_eq!(map.get("ok.txt"), Some(&GitStatusMark::Untracked));

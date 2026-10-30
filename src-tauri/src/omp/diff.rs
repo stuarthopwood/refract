@@ -1,13 +1,4 @@
-// Port of `src/main/omp/transcriptDiff.ts` and `patchCoalescer.ts` (tasks.md T021).
-//
-// `diff_transcript` deliberately deviates from the TS source in two ways, both documented at the
-// call site below: change detection is by `Arc` POINTER IDENTITY (`Arc::ptr_eq`), the same
-// identity rule the TS source itself uses (`transcript.rs`'s own helpers only ever wrap a
-// genuinely new value in a fresh `Arc`, mirroring `replaceMessageItems` preserving the reference
-// of any item it did not touch) -- and the diff itself is a true O(n) pass via an id->item map
-// over `prev` (issue #776) rather than the TS version's repeated `Array.prototype.find` (O(n*m)).
-// See `transcript.rs`'s own header comment for why `Arc<TranscriptItem>` (not a plain value, and
-// not `PartialEq`) is the live transcript's storage type (performance finding, 2026-10-13).
+// Transcript diffing and patch coalescing; change detection is by `Arc` pointer identity, O(n) (#776).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -17,15 +8,8 @@ use serde::Serialize;
 
 use super::transcript::{SubagentStatus, ToolStatus, TranscriptItem};
 
-/// Wire-identical to `src/shared/ipc.ts`'s `TranscriptOp` (`{ op: 'upsert', item }` or
-/// `{ op: 'reset', items }`). `Upsert`'s payload is boxed (clippy `large_enum_variant`):
-/// `TranscriptItem` is a large enum (the `Tool`/`Subagent` variants carry a dozen-odd fields), so
-/// an un-boxed `Upsert { item }` would make every `TranscriptOp` -- including the much smaller
-/// `Reset`, whose `Vec` is a fixed-size pointer/len/cap triple regardless of content -- pay that
-/// size. `Reset`'s items are `Arc<TranscriptItem>` (not an owned `TranscriptItem`), so queuing a
-/// reset only bumps refcounts instead of deep-copying every item (performance finding,
-/// 2026-10-13); serde's `rc` feature (`Cargo.toml`) makes `Arc<TranscriptItem>` serialize
-/// exactly like `TranscriptItem` itself, so the wire payload is unchanged.
+/// Wire-identical to `src/shared/ipc.ts`'s `TranscriptOp`.
+// `Upsert` is boxed (clippy `large_enum_variant`); `Reset` holds `Arc`s so queuing it only bumps refcounts.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "op", rename_all = "lowercase")]
 pub enum TranscriptOp {
@@ -33,14 +17,9 @@ pub enum TranscriptOp {
     Upsert { item: Box<TranscriptItem> },
 }
 
-/// Builds the `TranscriptOp`s that bring a subscriber from `prev` to `next`. Port of
-/// `diffTranscript`; if any item present in `prev` is gone from `next` (no `TranscriptOp` models
-/// deletion), the whole snapshot is resent as a `reset`, exactly like the TS source. Compares by
-/// `Arc::ptr_eq`: every `apply_frame` helper upstream only ever rewraps an item in a fresh `Arc`
-/// (`Arc::make_mut`'s own clone-on-write, or a freshly built item) when it actually changed the
-/// value, so a pointer mismatch is a precise, O(1)-per-item "changed" signal -- cheap regardless
-/// of transcript size, unlike a full value compare, so diffing stays proportional to what changed
-/// instead of to the whole transcript (performance finding, 2026-10-13).
+/// Builds the `TranscriptOp`s that bring a subscriber from `prev` to `next`.
+// A removed item has no op, so it forces a `reset`. Upstream only rewraps an item in a fresh
+// `Arc` when it changed, so `Arc::ptr_eq` is an O(1) "changed" signal.
 pub fn diff_transcript(
     prev: &[Arc<TranscriptItem>],
     next: &[Arc<TranscriptItem>],
@@ -75,11 +54,8 @@ pub fn diff_transcript(
     ops
 }
 
-/// `start()`/`restart()` each fetch full history with `get_messages` and would otherwise
-/// flat-replace the live transcript with it, silently dropping anything a live frame appended
-/// while that round trip was in flight. Port of `mergeLiveTranscript`: keeps `history` as-is and
-/// appends only live items history can never contain -- an UNRESOLVED `request`, or a still-
-/// in-flight `tool`/`subagent` (`status: 'running'`) or streaming `assistant-text`/`thinking`.
+/// Appends live items that history cannot contain (unresolved requests, running or streaming items).
+// `start()`/`restart()` refetch history; a plain replace would drop frames that arrived meanwhile.
 pub fn merge_history_with_live(
     history: &[Arc<TranscriptItem>],
     live: &[Arc<TranscriptItem>],
@@ -110,36 +86,17 @@ pub fn merge_history_with_live(
     }
 }
 
-/// Which of the two reasons the OMP process just exited mid-turn (`SessionAgent::handle_exit`'s
-/// own `requested && stop_requested` vs everything else): #563 decision 15 splits `Cancelled`
-/// out of `Error` specifically so a user-initiated stop never reads as a failure, so finalize
-/// must settle a still-`running` row differently depending on which one happened. Issue #911
-/// extends this split to `Tool` rows too (it used to read "Tool rows have no `Cancelled`
-/// concept and always settle to `Error` regardless of `cause`" here -- no longer true).
+/// Why the OMP process exited mid-turn; a user stop must never read as a failure (#563, #911).
 #[derive(Clone, Copy, Debug)]
 pub enum SubagentFinalizeCause {
-    /// `handle_exit`'s `requested && stop_requested` branch: the user asked this session to
-    /// stop. A still-`running` Subagent row settles to `Cancelled`, matching the live
-    /// progress-update path's own `map_progress_status` mapping for `"cancelled"`/`"aborted"`.
+    /// The user asked the session to stop; running rows settle to `Cancelled`.
     UserStop,
-    /// Every other exit (a genuine crash, or `launch()`'s own internal handshake-cleanup stop,
-    /// which is not a user request either): a still-`running` Subagent row settles to `Exited`,
-    /// matching the subagent tracker's own attach-time `Exited` convention (`subagents.rs`) --
-    /// strictly better than claiming `Error`/"Failed" for an exit nobody asked for but that
-    /// also was not confirmed cancelled.
+    /// Any other exit; running subagents settle to `Exited`, tools to `Error`.
     Crash,
 }
 
-/// Settles any item the process that was updating it will now never finish: a still-`running`
-/// tool call AND a still-`running` subagent call both settle per `cause` now (`UserStop` ->
-/// `Cancelled`, `Crash` -> `Error`/`Exited` respectively, #563 decision 15, extended to `Tool`
-/// by #911: a process that just exited because the user asked it to stop told this
-/// particular still-running call nothing about whether its own work was wrong); and
-/// streaming assistant-text/thinking becomes `streaming: false`. Port of `finalizeLiveTranscript`.
-/// Without this, a crash, a `stop()`, or a mode-change `restart()` leaves those items spinning in
-/// the UI forever, and (per the TS doc comment) `merge_history_with_live`'s `is_unpersisted`
-/// check would keep mistaking them for still-live and re-append them onto every later
-/// `launch()`'s fresh history.
+/// Settles running tool/subagent rows per `cause` and ends streaming text/thinking.
+// Otherwise those items spin forever and `merge_history_with_live` re-appends them on later launches.
 pub fn finalize_live_transcript(
     mut transcript: Vec<Arc<TranscriptItem>>,
     cause: SubagentFinalizeCause,
@@ -164,9 +121,7 @@ pub fn finalize_live_transcript(
         if !needs_finalize {
             continue;
         }
-        // `Arc::make_mut` clones the value only when another reference is still outstanding (the
-        // common case while this runs: nothing else holds these items), so this stays O(1)
-        // allocation-wise per touched item, not a whole-transcript copy.
+        // Clones only if another reference is outstanding, so this is not a whole-transcript copy.
         match Arc::make_mut(item) {
             TranscriptItem::Tool { status, .. } => {
                 *status = match cause {
@@ -190,17 +145,13 @@ pub fn finalize_live_transcript(
 
 /// Pending ops a `PatchCoalescer` is accumulating for the window currently in flight.
 struct PendingState {
-    /// Set when a `reset` was queued this window; supersedes (and clears) every upsert queued
-    /// before it (issue #778) -- any upsert queued AFTER it is still tracked separately below and
-    /// still emitted on top of it, since it represents a later, incremental change.
+    /// Set when a `reset` was queued this window; it supersedes upserts queued before it (#778).
     reset_items: Option<Vec<Arc<TranscriptItem>>>,
-    /// Ids in first-seen order, so a flush emits upserts in a stable, deterministic sequence.
+    /// Ids in first-seen order, so a flush emits upserts deterministically.
     upsert_order: Vec<String>,
-    /// Keyed by id: a second `upsert` for the same id queued in the same window replaces the
-    /// first rather than both being sent (issue #778, "last write wins").
+    /// Keyed by id: a later upsert in the same window replaces the earlier one (#778).
     upserts: HashMap<String, Box<TranscriptItem>>,
-    /// Bumped by `flush_now`; a scheduled debounce timer checks this to tell whether it has
-    /// already been superseded by an explicit flush before it fired.
+    /// Bumped by `flush_now` so a pending debounce timer can tell it was superseded.
     generation: u64,
     timer_armed: bool,
 }
@@ -235,8 +186,7 @@ impl PendingState {
         }
     }
 
-    /// Takes every queued op out, in emission order (`reset` first, if any, then upserts in
-    /// first-seen order), leaving the pending state empty.
+    /// Takes every queued op out (`reset` first, then upserts in first-seen order).
     fn drain(&mut self) -> Vec<TranscriptOp> {
         let mut ops = Vec::new();
         if let Some(items) = self.reset_items.take() {
@@ -251,15 +201,8 @@ impl PendingState {
     }
 }
 
-/// Coalesces `transcript:patch` events to at most one per Session per `window` of quiet (default
-/// 50 ms, contracts/ipc.md `transcript:patch`). Port of `PatchCoalescer`
-/// (`src/main/omp/patchCoalescer.ts`), extended per issue #778 to merge same-id upserts within a
-/// window (last write wins) and to let a `reset` supersede everything queued before it, rather
-/// than the TS version's plain `pendingOps.push(...ops)` (which relied on the renderer applying
-/// every queued op in order and converging on the same final state, just with more wire traffic).
-/// The TS class's separate `reset(items)`/`clear()` methods are not part of this facade; `queue`
-/// already accepts a `TranscriptOp::Reset` like any other op, and `flush_now` covers "emit
-/// whatever is pending right now, cancelling the debounce timer".
+/// Coalesces `transcript:patch` events to at most one per Session per `window` of quiet.
+// Same-id upserts merge (last write wins) and a `reset` supersedes earlier ops (#778).
 pub struct PatchCoalescer {
     window: Duration,
     flush: Arc<dyn Fn(Vec<TranscriptOp>) + Send + Sync>,

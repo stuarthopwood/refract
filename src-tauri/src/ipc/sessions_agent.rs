@@ -126,9 +126,7 @@ fn stop_reason_of(runtime: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-// ---------------------------------------------------------------------------
 // Resume (`sessions.resume`)
-// ---------------------------------------------------------------------------
 
 /// Seam for `resume_session_core`: the agent operations a resume needs.
 pub(crate) trait ResumableAgent {
@@ -293,9 +291,7 @@ pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-// ---------------------------------------------------------------------------
 // Attach, open and recover
-// ---------------------------------------------------------------------------
 
 /// Seam for `attach_snapshot_decision`: the agent operations an attach needs.
 pub(crate) trait AttachableAgent {

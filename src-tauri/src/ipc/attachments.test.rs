@@ -3,8 +3,6 @@
 use super::*;
 use uuid::Uuid;
 
-// ---- is_unsafe_token / is_reserved_name (text-only) ----
-
 #[test]
 fn is_unsafe_token_rejects_nul_byte() {
     assert!(is_unsafe_token("a\0b"));
@@ -79,8 +77,6 @@ fn is_unsafe_token_rejects_a_reserved_name_anywhere_in_the_path() {
     assert!(is_unsafe_token("CON.png"));
 }
 
-// ---- lexical_normalize / strip_verbatim_prefix / fold_case ----
-
 #[test]
 fn lexical_normalize_collapses_parent_and_current_dir_components() {
     let out = lexical_normalize(Path::new(r"C:\a\b\..\c\.\d"));
@@ -115,8 +111,6 @@ fn fold_case_folds_ascii_only() {
         assert_eq!(folded, "AbC");
     }
 }
-
-// ---- Filesystem-backed resolve and read tests (real temp-dir fixtures, symlinks) ----
 
 /// A scratch worktree directory under the OS temp dir, uniquely named per test, removed on drop.
 struct TempWorktree {

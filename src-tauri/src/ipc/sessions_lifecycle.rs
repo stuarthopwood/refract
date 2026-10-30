@@ -361,8 +361,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             state.app_handle.clone(),
             &id,
         );
-        // Gate round 1 item 1 (#464): see `sessions_archive`'s own comment -- stop the
-        // git-changes panel's own separate watcher here too.
+        // Stop the git-changes panel's separate watcher too (#464).
         crate::fs::git_changes_watch_state::stop_watcher(&id);
         // Shut the agent down before removal: a live process holds the worktree's cwd.
         // The cwd-holder check must run after this, or it refuses every Delete of a running Session.
@@ -470,8 +469,7 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
             state.app_handle.clone(),
             &id,
         );
-        // Gate round 1 item 1 (#464): see `sessions_archive`'s own comment -- stop the
-        // git-changes panel's own separate watcher here too.
+        // Stop the git-changes panel's separate watcher too (#464).
         crate::fs::git_changes_watch_state::stop_watcher(&id);
         recreate_worktree(
             repo_path,

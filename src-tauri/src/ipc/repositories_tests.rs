@@ -1,6 +1,4 @@
-// Test module for `repositories.rs`, split into its own file via `#[path = ...]` (same pattern
-// `git/worktree_delete.rs` uses for `worktree_delete_tests.rs`) to keep `repositories.rs` itself
-// under the 600-line soft cap.
+// Tests for `repositories.rs`, split out via `#[path]` to keep it under the 600-line cap.
 
 use super::*;
 use crate::events::EventSink;
@@ -45,9 +43,6 @@ async fn make_state(dir: &std::path::Path) -> AppState {
     }
 }
 
-// Port of `renameRepository.test.ts`'s own pure-function coverage, against this crate's
-// `validate_repository_name`/`resolve_repository_name` (the `repositoryName.ts` port).
-
 #[test]
 fn trims_surrounding_whitespace_before_validating() {
     let trimmed = "  My Repo  ".trim();
@@ -84,10 +79,6 @@ fn rejects_control_characters() {
     assert_eq!(error, "name must not contain control characters");
 }
 
-// Port of `renameRepository.test.ts`'s own handler-level coverage, against this crate's
-// `repositories_rename` (the `renameRepositoryCore` port) and a real temp-dir `RegistryStore`
-// (same pattern the TS tests themselves use: never cleaned up).
-
 #[tokio::test]
 async fn repositories_rename_returns_not_found_for_an_unknown_repository_id() {
     let dir = temp_dir("not-found");
@@ -102,10 +93,7 @@ async fn repositories_rename_returns_not_found_for_an_unknown_repository_id() {
     assert_eq!(err.code, "not-found");
 }
 
-/// Ported from `repositories.ts`'s own handler (not `repositoryName.ts`'s pure functions): a
-/// defence-in-depth rejection of a RAW (untrimmed) name over 4x the real 60-character limit,
-/// checked before the repository lookup even runs -- any id works, since this never reaches
-/// `validate_repository_name` at all.
+/// A RAW (untrimmed) name over 4x the 60-character limit is rejected before any repository lookup.
 #[tokio::test]
 async fn repositories_rename_rejects_a_raw_name_over_4x_the_limit_before_any_lookup() {
     let dir = temp_dir("pre-trim-too-long");
@@ -159,8 +147,7 @@ async fn repositories_rename_notifies_the_list_and_returns_the_updated_repositor
     assert_eq!(persisted_name, "Renamed");
 }
 
-// Issue #528 parity (gate round 1 remediation): `.rename` recomputes the real remote inline,
-// same as `.add`, rather than returning the `unknown` placeholder `.list` uses.
+// `.rename` recomputes the real remote inline, like `.add`, not the `unknown` placeholder (#528).
 #[tokio::test]
 async fn repositories_rename_recomputes_the_real_remote_for_a_configured_origin() {
     let dir = temp_dir("rename-real-remote");
@@ -205,12 +192,8 @@ async fn repositories_rename_recomputes_the_real_remote_for_a_configured_origin(
     );
 }
 
-// Gate round 1 remediation: a second `repositories.remotes` call that arrives while a sweep is
-// already running must share that same sweep's result, never start a second full pool of `git`
-// spawns concurrently with the first (`repositories.ts`'s own `remotesInFlight`). `tokio::join!`
-// polls both calls from the same enclosing future, so the second call's own
-// `{ check REMOTES_IN_FLIGHT }` block runs before the first call's `remotes_bounded` has had a
-// chance to settle, exercising the actual sharing path, not just two back-to-back sweeps.
+// A second `repositories.remotes` call during a running sweep must share its result, not start
+// another pool of `git` spawns. `tokio::join!` makes the second call hit the in-flight check.
 #[tokio::test]
 async fn repositories_remotes_shares_a_single_in_flight_sweep_across_concurrent_calls() {
     let dir = temp_dir("remotes-in-flight");

@@ -1,11 +1,6 @@
-// Subagent/parent IRC messages (T079, FR-048): port of `transcript.ts` lines 292-336, moved out
-// of `transcript.rs` (#806 file-size cap) when issue #838 taught it OMP's real wire shape.
-//
-// Issue #838: OMP 18.x delivers these as `customType: "irc:incoming"` (checked against local
-// session files: `details` carries `id`, `from`, `message`, and sometimes `fromParent`,
-// `replyTo`, `wakeRelay`; never `to`). The recipient is implicit (the session whose transcript
-// it is), so a missing `to` still defaults to "main agent" -- except when `fromParent` is true:
-// the message came FROM the main agent, so the recipient is this (sub)agent, not the main one.
+// Subagent/parent IRC messages (#838): OMP delivers `customType: "irc:incoming"` with `details`
+// `id`, `from`, `message` and sometimes `fromParent`, `replyTo`, `wakeRelay`; never `to`.
+// A missing `to` defaults to "main agent", except when `fromParent` is true (recipient is this subagent).
 
 use serde_json::Value;
 

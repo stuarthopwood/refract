@@ -1,10 +1,5 @@
-// IPC handlers for `updates.*` (contracts/ipc.md "Updates", spec 006 re-scoped onto the Tauri
-// bundler -- lane R11b, issue #794). Broadcasts `updates:state-changed` via `on_state` callbacks
-// threaded into `checker::check_for_updates`/`installer::download_update` themselves, so an
-// intermediate `Checking`/`Downloading` transition is broadcast the moment it is persisted, not
-// only once the whole (possibly multi-minute) call finally resolves (gate finding, PR #829
-// round 1, perf HIGH: the store lock -- and so every broadcast -- used to be held by this file
-// across the whole network call).
+// IPC handlers for `updates.*` (#794). `on_state` callbacks broadcast `updates:state-changed` at
+// each persisted transition, so the store lock is never held across a network call.
 
 use serde_json::Value;
 use tauri::Manager;
@@ -37,10 +32,7 @@ fn store_handle(state: &AppState) -> Result<SharedUpdateState, IpcError> {
         .ok_or_else(|| IpcError::new("unsupported", "Update state not initialised yet"))
 }
 
-/// `installerPath` is main-only state (`install_on_quit`/`resolve_startup_state` both need
-/// it); every renderer-facing copy of `UpdateState` -- this function's return value, used by
-/// every handler below and by `lib.rs`'s own broadcast call sites -- has it stripped before it
-/// ever crosses the IPC boundary (plan.md "never a ... file path").
+/// `installerPath` is main-only state; it is stripped from every renderer-facing `UpdateState`.
 pub fn to_renderer_state(state: &UpdateState) -> UpdateState {
     let mut rendered = state.clone();
     rendered.installer_path = None;
@@ -63,9 +55,8 @@ fn current_version(state: &AppState) -> Result<String, IpcError> {
     Ok(app_handle.package_info().version.to_string())
 }
 
-/// Issue #883: the whole background lifecycle -- the startup check (FR-020), then the 4-hour
-/// periodic check (FR-032), both broadcasting each transition to the renderer. Kept out of
-/// `lib.rs` (`AGENTS.md` "No god files").
+/// Background lifecycle (#883): the startup check, then a 4-hour periodic check, each
+/// transition broadcast to the renderer.
 pub async fn run_update_lifecycle(
     session_manager: std::sync::Arc<crate::session::SessionManager>,
     update_state: SharedUpdateState,
@@ -87,9 +78,7 @@ pub async fn run_update_lifecycle(
     .await;
 }
 
-/// Builds the `on_state` broadcaster `checker`/`installer` call at each persisted transition,
-/// wrapping `session_manager.emit_updates_state_changed` (the only thing those lower modules
-/// cannot reach directly without depending on `session`/IPC machinery themselves).
+/// Builds the `on_state` broadcaster wrapping `session_manager.emit_updates_state_changed`.
 fn broadcaster(state: &AppState) -> impl Fn(&UpdateState) + Send + Sync {
     let session_manager = state.session_manager.clone();
     move |update_state: &UpdateState| {
@@ -97,9 +86,7 @@ fn broadcaster(state: &AppState) -> impl Fn(&UpdateState) + Send + Sync {
     }
 }
 
-/// User-initiated (contracts/ipc.md): `automatic: false` lets `check_for_updates` re-check even
-/// from a persisted `Failed` phase (the status bar's own "Try again"), unlike `lib.rs`'s own
-/// automatic startup call.
+/// User-initiated: `automatic: false` lets the check re-run even from a persisted `Failed` phase.
 fn updates_check(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let version = current_version(&state)?;
@@ -136,10 +123,8 @@ fn updates_install(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// Issue #883 (FR-035): "Update now". Requires a verified installer (`Downloaded`), flags a
-/// relaunch, then quits through the normal exit path, so `lib.rs`'s own `ExitRequested` hook stops
-/// every agent, re-verifies the installer, hands the install off, and relaunches Refract. The
-/// renderer has already asked the developer to confirm when agents are running.
+/// "Update now" (#883): needs a `Downloaded` installer, flags a relaunch, then quits so the
+/// `ExitRequested` hook stops agents, re-verifies the installer and installs.
 fn updates_install_now(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let store_handle = store_handle(&state)?;

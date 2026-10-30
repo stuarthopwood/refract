@@ -186,8 +186,6 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     crate::shell::menu::register(dispatcher);
 }
 
-// ---- Shared handler helpers ----
-
 pub fn invalid_argument(message: impl Into<String>) -> IpcError {
     IpcError::new("invalid-argument", message)
 }

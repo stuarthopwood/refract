@@ -1,15 +1,9 @@
-// #926: "attach any file type, inlining text files up to 256 KB and sending other files as a
-// path" -- the marker-parsing half of `transcript.rs`'s own file/folder attachment support,
-// split into its own module (issue #806, `check:file-size`'s soft cap) rather than grown inline
-// in `transcript.rs` itself, which already sat near its own baseline before this feature. Only
-// `FileAttachmentRef` and `build_user_item` are used outside this module; every other item here
-// (including `extract_file_attachments` itself) is parsing detail private to it.
+// File/folder attachment marker parsing, split out of `transcript.rs` (#806, #926).
 
 use super::TranscriptItem;
 use serde::{Deserialize, Serialize};
 
-/// #926: whether a `FileAttachmentRef` was inlined verbatim into the message text, or sent as
-/// its own absolute path for the agent to read with its own tools.
+/// Whether an attachment was inlined into the message text or sent as an absolute path.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FileAttachmentSentAs {
@@ -17,11 +11,7 @@ pub enum FileAttachmentSentAs {
     Path,
 }
 
-/// #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
-/// paste -- parsed back out of the plain message text at transcript-build time
-/// (`extract_file_attachments` below), never a separate OMP-side concept (OMP's own `images`
-/// field never carries this kind of data). `byte_length` is 0 for a folder (not a meaningful
-/// count). The renderer shows this as a chip, never the raw appended block text.
+/// One attached file or folder, parsed back out of the message text; `byte_length` is 0 for a folder.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FileAttachmentRef {
@@ -32,9 +22,7 @@ pub struct FileAttachmentRef {
     pub is_directory: bool,
 }
 
-/// The renderer's own `buildFileAttachmentText` (`src/renderer/features/chat/anyFileAttachments.ts`)
-/// appends every file/folder attachment AFTER this exact marker line, so a message with none
-/// never carries it at all. Never shown; stripped from the displayed text below.
+/// The renderer's `buildFileAttachmentText` appends attachments after this marker line; it is stripped from display.
 const FILE_ATTACHMENTS_MARKER: &str = "[[refract-attachments]]";
 
 fn split_first_line(s: &str) -> (&str, &str) {
@@ -50,10 +38,7 @@ enum ParsedFileHeader<'a> {
     PathFolder { name: &'a str },
 }
 
-/// Recognises exactly the three header line shapes `buildFileAttachmentText` emits; anything
-/// else (including a superficially-similar line a developer actually typed) returns `None`,
-/// which aborts the whole extraction (see `extract_file_attachments` below) -- a false positive
-/// here would silently hide real user text, so every check is exact, never fuzzy.
+// Matches exactly the header shapes `buildFileAttachmentText` emits; a fuzzy match could hide real user text.
 fn parse_file_header(line: &str) -> Option<ParsedFileHeader<'_>> {
     if let Some(after) = line.strip_prefix("Attached file \"") {
         let (name, rest) = after.split_once('"')?;
@@ -86,16 +71,8 @@ fn parse_file_header(line: &str) -> Option<ParsedFileHeader<'_>> {
     None
 }
 
-/// D1 (decided, gate round 2 correction): finds the marker's FIRST occurrence that starts a
-/// line (index 0, or immediately after a `\n`) -- never a bare substring match, which could
-/// misfire on a marker-shaped sequence a developer typed mid-sentence. FIRST, not last: the
-/// composer's own send path now refuses to send a message whose typed text contains the literal
-/// marker at all (`MessageInput.tsx`'s own `handleSend`), so the only way this string can ever
-/// legitimately appear is the ONE section Refract itself appends, always as the outermost
-/// wrapper before any inlined file content -- an inlined file whose own content happens to
-/// document this exact feature (and so contains the marker text itself, at a line start) would
-/// otherwise let a LAST-occurrence search find that coincidental occurrence instead of Refract's
-/// real one, corrupting the parse for a message that did nothing wrong.
+// Finds the FIRST line-start marker: the composer refuses typed text containing it, and a LAST search
+// could match marker text inside an inlined file.
 fn find_marker_at_line_start(text: &str) -> Option<usize> {
     let mut search_start = 0usize;
     loop {
@@ -108,17 +85,8 @@ fn find_marker_at_line_start(text: &str) -> Option<usize> {
     }
 }
 
-/// Strips the `FILE_ATTACHMENTS_MARKER` section from `text` (if present) and parses every block
-/// after it into a `FileAttachmentRef`, returning the DISPLAY text (never including the marker
-/// or any attachment block) alongside the parsed refs. Any block that fails to parse exactly as
-/// `buildFileAttachmentText` would have written it aborts the WHOLE extraction -- the original
-/// `text` is returned untouched with no refs, rather than risk ever hiding real typed text behind
-/// a misrecognised partial match. A message with no marker (the overwhelming majority, and every
-/// message from before this feature existed) returns immediately with no refs at all. Gate round
-/// 1 (D1 HIGH): a marker with ZERO successfully parsed blocks after it (every block malformed) is
-/// ALSO treated as no match at all -- the original `text` is returned untouched, never a
-/// truncated display with an empty `fileAttachments` list, which would silently have dropped
-/// whatever followed the marker line with nothing to show for it.
+// Returns the display text and parsed refs. Any malformed block, or zero parsed blocks, returns
+// `text` untouched so real typed text is never hidden.
 fn extract_file_attachments(text: &str, message_id: &str) -> (String, Vec<FileAttachmentRef>) {
     let Some(marker_at) = find_marker_at_line_start(text) else {
         return (text.to_string(), Vec::new());
@@ -181,10 +149,7 @@ fn extract_file_attachments(text: &str, message_id: &str) -> (String, Vec<FileAt
     (display, refs)
 }
 
-/// #926: builds a `TranscriptItem::User`, extracting any `[[refract-attachments]]` section out
-/// of `text` first -- the one entry point `transcript.rs`'s own `apply_message_snapshot`/
-/// `items_from_history` both call, so neither site threads `extract_file_attachments`'s own
-/// `(text, file_attachments)` pair through its own construction of the variant by hand.
+/// Builds a `TranscriptItem::User`, extracting any `[[refract-attachments]]` section from `text` first.
 pub(super) fn build_user_item(
     id: String,
     text: String,

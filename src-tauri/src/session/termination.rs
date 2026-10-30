@@ -37,8 +37,6 @@ impl TerminationDetectionResult {
     }
 }
 
-// Persisted stopped-on-request marker
-
 /// Writes the stop marker with the file's exact size; never fails the caller.
 /// `epoch_at_exit` is re-checked after the stat await so a quick Recover cannot re-arm it.
 async fn record_stopped_on_request_marker(

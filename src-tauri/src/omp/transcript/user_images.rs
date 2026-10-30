@@ -1,11 +1,5 @@
-// #513: pulls the `image` content parts out of a user message into `ImageRef`s for the
-// transcript. The transcript never carries image bytes: a `blob:sha256:<hash>` reference becomes
-// a ref whose id is the hash (read back from OMP's blob store by `images.get`), and an inline
-// base64 image (what a live frame carries) is validated, parked in the bounded `image_store`,
-// and referenced by a content id. Both shapes are read by the value's own prefix, never by which
-// path (live or history) produced it, because one history can mix both. A part that is neither
-// a valid blob reference nor a valid supported image still yields a ref (id `invalid`) so the
-// bubble shows an "Image no longer available" tile instead of silently dropping the image.
+// Extracts `image` parts of a user message into `ImageRef`s; no image bytes enter the transcript (#513).
+// An invalid part still yields an `invalid` ref so the bubble shows an "Image no longer available" tile.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

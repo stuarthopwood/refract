@@ -1,6 +1,5 @@
-// The renderer never touches `gh` directly; all GitHub access goes through `github::gh*`.
-// The staleness cache keys on `(repositoryId, number)`: mutations refuse with `'stale'` if
-// `updatedAt`/`headSha` moved since the last `detail()` call.
+// The renderer never touches `gh`; all GitHub access goes through `github::gh*`. Mutations
+// refuse with `'stale'` if `updatedAt`/`headSha` moved since the last `detail()` (cache key above).
 
 mod checks;
 mod extra_handlers;

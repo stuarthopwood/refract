@@ -235,16 +235,8 @@ pub(super) async fn on_turn_settled(agent: &SessionAgent) {
     });
 }
 
-/// `ipc::chat.rs`'s own hook (gate round 2, decided): the user is already driving `/advisor`
-/// themselves -- retires the whole background mechanism early so a real user-authored reply can
-/// never be swallowed or raced by a still-pending probe. Never resets `advisor_on` itself: the
-/// user's own command reply updates that through the normal `handle_command_output` toggle path
-/// a moment later, exactly as if the user had typed it with no probe ever having run. Gate
-/// round 3 fix (High, decided): also bumps `probe_epoch` -- an in-flight claim's own
-/// rollback-on-failure checks this, so it can never re-arm `probe_armed` after a cancel landed
-/// first. If the probe's own reply still arrives after this (the request was already accepted
-/// before the cancel), it renders as a plain notice instead of being swallowed -- acceptable,
-/// and rare, since `awaiting_silent_probe` is already false by then.
+/// Called when the user drives `/advisor` themselves: retires the probe early and bumps
+/// `probe_epoch` so an in-flight claim cannot re-arm after the cancel. `advisor_on` is left alone.
 pub async fn cancel_pending_probe(agent: &SessionAgent) {
     agent
         .with_advisor_state(|s| {
@@ -255,10 +247,8 @@ pub async fn cancel_pending_probe(agent: &SessionAgent) {
         .await;
 }
 
-/// `agent::launch`'s own exit fan-out: the next life's own `on_launch` already fails-to-unknown
-/// before it probes, but a process that exits WITHOUT a next life starting right away (a crash
-/// with no auto-restart, a deliberate Stop) must not leave a stale "on" chip showing either.
-/// Bumps the generation so any still-in-flight task from this life is abandoned quietly.
+/// Exit fan-out: a process that exits with no next life must not leave a stale "on" chip.
+/// Bumps the generation so in-flight tasks from this life are abandoned.
 pub(super) async fn on_exit(agent: &SessionAgent) {
     agent
         .with_advisor_state(|s| {
@@ -270,9 +260,7 @@ pub(super) async fn on_exit(agent: &SessionAgent) {
     apply_and_emit(agent, false).await;
 }
 
-/// `ipc::conversations::build_snapshot`'s own one-line hook (mirrors `readout`'s own
-/// `current_readout_value`): the last-known on/off state, so a Session snapshot returns the
-/// live reading instead of always starting from `false` until the first event arrives.
+/// Last-known on/off state, so a Session snapshot shows the live reading.
 pub async fn current_advisor_value(agent: &SessionAgent) -> bool {
     agent.with_advisor_state(|s| s.advisor_on).await
 }

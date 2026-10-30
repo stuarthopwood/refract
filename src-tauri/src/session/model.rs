@@ -109,9 +109,8 @@ pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
     model_support::resolve_current_selection(agent).await
 }
 
-/// `cycleOrder` (read fresh every call) plus `"plan"` (#766, Stuart's own decided design,
-/// 2026-10-13: "Ctrl+R cycles OMP's `cycleOrder` roles plus `plan`") -- the Ctrl+R selector's
-/// own listing and cycling order. Narrower than `known_chat_role_list` below on purpose.
+/// `cycleOrder` (read fresh each call) plus `"plan"` (#766): the Ctrl+R selector's listing and
+/// cycling order. Narrower than `known_chat_role_list` on purpose.
 pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
     let response = crate::omp::config::get_config("cycleOrder", &[])
         .await
@@ -136,9 +135,7 @@ pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
     Ok(merged)
 }
 
-// ---------------------------------------------------------------------------
 // User-initiated actions (composer picker, `/switch`, `/role`, Ctrl+R).
-// ---------------------------------------------------------------------------
 
 /// Shared RPC path for `set_model` and `cycle_model`. Both pick a concrete model and pin it.
 async fn pick_model_via_rpc(

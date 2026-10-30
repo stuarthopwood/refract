@@ -357,8 +357,6 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
     None
 }
 
-// Shared wire primitives for `gh_pull_requests.rs` and `gh_mutations.rs`.
-
 /// `login` is absent for a Team actor (`__typename: "Team"`); `map_actor` falls back to `'unknown'`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GhActor {
@@ -409,8 +407,6 @@ pub struct GhCheckRun {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- parse_owner_repo ---
 
     #[test]
     fn parses_https_with_git_suffix() {
@@ -482,8 +478,6 @@ mod tests {
         // Byte 15 falls inside this multi-byte character; `.get(..)` must return `None`.
         assert_eq!(parse_owner_repo("git@github.co\u{1F600}wner/repo"), None);
     }
-
-    // --- map_gh_failure ---
 
     #[test]
     fn maps_rate_limit() {

@@ -132,8 +132,6 @@ fn latest_turn_of_a_root_only_thread_is_the_root_itself() {
     assert_eq!(turn["answer"], "a");
 }
 
-// Entry deletion at a terminal turn
-
 #[test]
 fn a_running_turn_is_not_terminal() {
     assert!(!turn_reached_terminal("running"));
@@ -145,8 +143,6 @@ fn every_non_running_status_is_terminal() {
         assert!(turn_reached_terminal(status), "{status} must be terminal");
     }
 }
-
-// `apply_frame`: the real seam `on_frame` calls
 
 fn btw_record_frame(id: &str, status: &str) -> Value {
     json!({ "record": { "id": id, "leafId": format!("{id}-leaf"), "question": "q", "answer": "a", "status": status, "createdAt": 1, "updatedAt": 2, "followUps": [] } })
@@ -508,8 +504,6 @@ async fn a_tombstone_survives_a_second_conversation_switch_after_a_late_cancel()
     );
 }
 
-// `reset_after_start_with_conversation`: a stopped Session's Conversation switch resets side chat
-
 #[tokio::test]
 async fn reset_after_start_with_conversation_skips_when_the_worktree_write_never_happened() {
     let agent = make_test_agent("skip-no-write", None).await;
@@ -571,8 +565,6 @@ async fn reset_after_start_with_conversation_accepts_the_real_current_conversati
     let after = agent.with_side_chat_state(|s| s.conversation_epoch).await;
     assert_eq!(after, before.wrapping_add(1));
 }
-
-// `history` post-RPC shaping
 
 /// OMP returns topics newest first; `sort_and_flatten_threads` must reorder them oldest-to-newest.
 #[test]

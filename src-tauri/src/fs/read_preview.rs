@@ -145,8 +145,7 @@ pub async fn read_preview(absolute_path: &Path, relative_path: &str) -> FilePrev
         }
     };
 
-    // A non-regular-file target (a directory, a FIFO/device node) is `ReadError`, not `Deleted`
-    // -- the path manifestly still exists here.
+    // A directory or device node is `ReadError`, not `Deleted`; the path still exists.
     if !stat.is_file() {
         return FilePreview::bare(relative_path, FilePreviewKind::ReadError);
     }

@@ -1,11 +1,5 @@
-// Port of `src/main/omp/transcript.ts` lines 110-278 (T078, FINDINGS item 22(e)): builds and
-// updates `subagent` `TranscriptItem`s from a batch `task()` call's live frames and history
-// `toolResult`/`async-result` messages. Split out of the parent `transcript` module (#899 gate
-// round 2) so `transcript.rs` stays at its 2083-line file-size baseline while this module picks
-// up the `message_id` stamp (gate round 2 architect addendum A, #563): Stage membership keys on
-// the owning assistant message's id, not on timing, since reopened history carries no subagent
-// timing at all (`transcript.rs`'s own `from_history` stamps `h{index}` message ids, already a
-// stable per-message ordinal; a live message id orders the same way, just not numerically).
+// Builds/updates `subagent` items from a batch `task()` call's live frames and history results.
+// Stage membership keys on the owning message id, not timing: reopened history has no timing (#563).
 
 use std::sync::Arc;
 
@@ -17,9 +11,7 @@ use super::{
     SUBAGENT_NAME_LENGTH,
 };
 
-/// Issue #911 (gate-fix, file-size): moved verbatim from the parent `transcript` module (same
-/// #899 gate round 2 precedent this file's own header cites) so `transcript.rs` stays at its
-/// own file-size baseline while this story's own `ToolStatus::Cancelled` addition lands.
+/// Error notice for a hidden tool's failure.
 pub(super) fn hidden_tool_failure_notice(
     tool_call_id: &str,
     tool_name: &str,
@@ -37,9 +29,7 @@ pub(super) fn hidden_tool_failure_notice(
     }
 }
 
-/// Reads `args.tasks[]` defensively (port of `readTaskSpecs`): a malformed or absent array means
-/// the caller falls back to rendering the call as a plain `tool` item instead of silently
-/// dropping it.
+/// Reads `args.tasks[]` defensively; a malformed array makes the caller render a plain `tool` item.
 pub(super) fn read_task_specs(args: &Value) -> Vec<Value> {
     args.get("tasks")
         .and_then(Value::as_array)
@@ -47,10 +37,7 @@ pub(super) fn read_task_specs(args: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// Reads the batch call's own shared `context` argument (sibling of `tasks[]` on the wire,
-/// `omp/tools/task.md`'s batch schema `{ context, tasks[] }`): the Stage's batch brief, whose
-/// first line names the Stage (issue #941). `None` for a flat (non-batch) call or a malformed/
-/// missing string.
+/// Reads the batch call's shared `context` (its first line names the Stage, #941); `None` if absent.
 pub(super) fn read_batch_context(args: &Value) -> Option<String> {
     args.get("context")
         .and_then(Value::as_str)
@@ -81,12 +68,8 @@ pub(super) fn subagent_name(spec: &Value) -> String {
     }
 }
 
-/// Upserts one `subagent` item per `specs[]` entry, keyed by `subagent:<tool_call_id>:<index>`.
-/// Port of `upsertSubagentItems`. The owning assistant message is not known yet here -- a live
-/// `tool_execution_start` frame precedes any message snapshot that echoes the `task` call back
-/// as a `toolCall` part -- so `message_id` is stamped empty for now; `build_assistant_items`'s own
-/// task branch fills it in moments later once that snapshot arrives, every time it does, so the
-/// brief empty window self-corrects rather than needing a second code path.
+/// Upserts one `subagent` item per spec, keyed `subagent:<tool_call_id>:<index>`.
+/// `message_id` is empty here (no snapshot yet); the later snapshot path fills it in.
 pub(super) fn upsert_subagent_items(
     mut items: Vec<Arc<TranscriptItem>>,
     tool_call_id: &str,
@@ -97,11 +80,7 @@ pub(super) fn upsert_subagent_items(
         let id = format!("subagent:{tool_call_id}:{index}");
         let name = subagent_name(spec);
         let task = task_text(spec);
-        // Gate round 1 fix (issue #941): `context` is the whole batch call's own shared
-        // argument, identical for every spec in `specs[]` -- stored once, on spec index 0
-        // only, so it is never duplicated N times across a Stage's own items. The renderer
-        // (`groupSubagentStages.ts`) already reads every item's `context` and dedupes/joins,
-        // so a `None` here for index > 0 changes nothing it sees.
+        // `context` is shared by the whole batch: stored on index 0 only; the renderer dedupes (#941).
         let item_context = if index == 0 {
             context.map(str::to_string)
         } else {
@@ -142,13 +121,8 @@ pub(super) fn upsert_subagent_items(
     items
 }
 
-/// `pending`/`running` (still running) are the only statuses FINDINGS item 22(e) actually
-/// observed as in-flight; any other string is a plain completion/failure signal. Port of
-/// `mapProgressStatus`. Gate round 3 fix (`agent://Main`): `running` used to fall into the
-/// `Some(_) => Done` catch-all below, so a spawn-time `progress[i].status: "running"` entry
-/// (the repo's own `subagents-background-turn.jsonl` fixture has exactly this shape) was drawn
-/// as a quiet Finished check while the agent was still working -- matches
-/// `subagents_progress.rs:50`'s own `lower == "pending" || lower == "running"` arm.
+/// `pending`/`running` are the only in-flight statuses; any other string is a completion/failure.
+/// `running` must not hit the `Done` catch-all or a live agent shows as finished.
 fn map_progress_status(status: Option<&str>) -> SubagentStatus {
     match status {
         Some("cancelled") | Some("aborted") => SubagentStatus::Cancelled,
@@ -159,10 +133,8 @@ fn map_progress_status(status: Option<&str>) -> SubagentStatus {
     }
 }
 
-/// Applies a `task` call's own `tool_execution_end` (live, `live = true`) or `toolResult`
-/// (history) result to every `subagent` item sharing `tool_call_id`. Port of
-/// `applyBatchTaskResult`. Returns `items` unchanged when `tool_call_id` has no subagent items at
-/// all, so callers can fall through to the generic `tool` item path for a malformed `task` call.
+/// Applies a `task` call's live end or history `toolResult` to every `subagent` item sharing
+/// `tool_call_id`; returns `items` unchanged when none exist so callers fall back to a `tool` item.
 pub(super) fn apply_batch_task_result(
     items: Vec<Arc<TranscriptItem>>,
     tool_call_id: &str,
@@ -204,16 +176,9 @@ pub(super) fn apply_batch_task_result(
                 .and_then(|e| e.get("id"))
                 .and_then(Value::as_str)
                 .map(String::from);
-            // On a hard batch failure (`is_error`), a row's own `progress[i].status` wins ONLY
-            // when it maps to `Cancelled`; anything else -- including a lingering `pending`,
-            // which `map_progress_status` reads as still-Running -- falls back to `Error`
-            // instead of leaving the row spinning forever once the batch itself has already
-            // failed (#899 gate round 2 finding N1, decision 15, #563). Issue #911 (gate-fix):
-            // a member still genuinely `Running` when the user's own Stop was in flight for
-            // this turn settles `Cancelled` too, even when OMP's own per-agent `progress[i]`
-            // entry says nothing of the kind -- matching the SAME "cut short by Stop, not a
-            // failure" reasoning #563 decision 15 already applies when OMP's own entry DOES
-            // say `cancelled`/`aborted`.
+            // On batch failure a row's progress status wins only if `Cancelled`; else `Error`, so
+            // a lingering `pending` never spins forever (#563). A still-Running member during Stop
+            // also settles `Cancelled` (#911).
             if is_error {
                 let entry_status = entry.and_then(|e| e.get("status")).and_then(Value::as_str);
                 *status = match map_progress_status(entry_status) {
@@ -257,59 +222,17 @@ fn safe_stringify(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
-/// The authoritative per-subagent completion (FINDINGS item 22(e)): a later `custom`/
-/// `async-result` message's `details.jobs[]` keys each entry by `jobId`, the `wait` tool's own
-/// `tool_execution_end` by `id` instead -- both key names are matched here, falling back to
-/// `label === name` for a subagent that never got a `progress` entry at all. Port of
-/// `applyAsyncResultJobs`.
+/// Applies an `async-result`/`wait` `details.jobs[]` list: the authoritative per-subagent completion.
 ///
-/// Issue #989: the `async-result` custom message carries no `tool_call_id` of its own (unlike
-/// the richer `parentToolCallId` the subagent_lifecycle/progress/snapshot RPC payloads DO carry,
-/// `rpc-wire.schema.json`, #712's not-yet-wired-up subscription path, research.md section 16) --
-/// this function only ever sees `details.jobs[]`, where a job's own `id`/`jobId` is just its
-/// `label` echoed back verbatim, a FIXTURE-OBSERVED assumption (`job id == label`), not a
-/// documented wire guarantee. Reusing that same string across two unrelated Stages running a
-/// same-named subagent (fixture `scripts/fixtures/omp-frames/stages-941.jsonl`, "Story559" in
-/// Stage 2 then Stage 5) is therefore possible and must not let a later Stage's job clobber an
-/// earlier, already-settled Stage's row.
+/// The message has no `tool_call_id`, and a job id is only observed (not guaranteed) to echo the
+/// label, so a later Stage's job must not clobber an earlier settled Stage's row (#989).
+/// A row is settled once a job with real data resolves it; label-echo fallbacks never settle.
+/// The caller applies a message's jobs once, on `message_end`.
 ///
-/// Gate round 2 (issue #989): the caller (`apply_message_snapshot`, `transcript.rs`) now applies
-/// a custom `async-result` message's jobs exactly ONCE, on `message_end` only -- so this
-/// function no longer needs to defend against the SAME message landing twice; there is no
-/// value-based duplicate check here any more (round 1 had one; it was removed because it could
-/// also wrongly no-op a genuinely NEW job that happened to already match a settled row's
-/// current status/result/duration).
-///
-/// A row only becomes **settled** (permanently excluded from matching) once a job carrying REAL
-/// data (`resultText`/`errorText`/`schema.data`) resolves it -- a job with none of those (the
-/// `wait` tool's bare completion shape, e.g. `subagents-background-turn.jsonl`'s "gamma" job)
-/// only ever gets the label-echo fallback below, which never settles a row: a later, genuinely
-/// real job sharing that `job_id` still applies.
-///
-/// Among still-unsettled items, candidates are ranked by THREE tiers, each only a tie-break for
-/// the one before it (gate round 2, Code reviewer Q1):
-/// 1. a still-**Running** row beats one already ended by its OWN batch result (Error/Cancelled/
-///    Done without ever getting a real async result) -- a batch-failed earlier Stage must never
-///    beat a later Stage that is still genuinely running;
-/// 2. a `job_id` match beats a label-only match, but ONLY between two rows that are BOTH still
-///    Running (gate round 3 fix, `agent://Main`, LOW, decided) -- a `job_id` match from a row
-///    that is itself NOT running (it merely picked up a stale `job_id` from its own earlier
-///    progress read, same as the batch-failed row tier 1 already excludes from winning) must
-///    never out-rank a label-only match just because it shares this job's `job_id`; among two
-///    rows that are BOTH not running, tier 2 ties and tier 3 decides directly;
-/// 3. the latest `started_at` wins any remaining tie.
-///
-/// Each job claims at most one item per call. Known limit (not fixed here, tracked on #712):
-/// any overlap of two same-name jobs whose own async-result is still outstanding -- if both
-/// rows are still Running when a job for their shared name arrives (tiers 1 and 2 both tie),
-/// tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key (there is
-/// no `tool_call_id` on this frame to settle it for certain). Tier 1 itself can also swap a
-/// result the OTHER way (gate round 4, `agent://Main`): row A already ended its own batch call
-/// but is still unsettled (genuinely owed its own real async-result, not yet delivered), row B
-/// is a later, same-named Stage still Running -- a job meant for A can still land on B instead,
-/// since tier 1 always prefers the Running row regardless of which row the job actually
-/// belongs to; A then never settles. The real fix for both shapes of this limit is #712's
-/// `parentToolCallId`.
+/// Candidates among unsettled rows rank by: still-Running first; then (Running only) `job_id`
+/// match over label-only; then latest `started_at`. Each job claims at most one item.
+/// Known limit: overlapping same-name jobs are a best-effort guess until #712's
+/// `parentToolCallId` lands.
 pub(super) fn apply_async_result_jobs(
     items: Vec<Arc<TranscriptItem>>,
     jobs: &[Value],
@@ -330,10 +253,7 @@ pub(super) fn apply_async_result_jobs(
         }
         let jid = job_id_of(job);
         let label = job.get("label").and_then(Value::as_str);
-        // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
-        // (direct binary inspection, 2026-10-03), plus `'error'`/`'aborted'`: `'failed'`/
-        // `'error'` map to `error`; `'cancelled'`/`'aborted'` get their own `Cancelled`
-        // status (decision 15, #563).
+        // omp's job records use `failed`/`error` (-> error) and `cancelled`/`aborted` (-> Cancelled).
         let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
         let failed = matches!(job_status, Some("failed") | Some("error"));
         let new_status = if is_cancelled {
@@ -354,15 +274,8 @@ pub(super) fn apply_async_result_jobs(
             || result_text.is_some()
             || schema_data.is_some();
 
-        // Candidate selection, ranked (is_running, running_job_id_match, started_at)
-        // lexicographically -- tuple comparison already gives the three-tier priority above.
-        // Gate round 3 fix (issue #989, `agent://Main`, LOW, decided): tier 2 is
-        // `is_running && matches_job_id`, NOT bare `matches_job_id` -- a `job_id` match from a
-        // row that is itself NOT still running (a batch-failed/cancelled/done-without-a-real-
-        // result row that merely picked up a stale `job_id` from its own progress read) must
-        // never out-rank a label-only match just because it happens to share this job's
-        // `job_id`; among two rows that are BOTH not running, tier 2 ties (both `false`) and
-        // tier 3's `started_at` decides directly, same as it would with no tier 2 at all.
+        // Ranked (is_running, running && job_id match, started_at). A non-running row must not
+        // out-rank a label-only match on a stale `job_id` (#989).
         let mut best: Option<(bool, bool, i64, usize)> = None;
         for (item_index, item) in items.iter().enumerate() {
             if claimed[item_index] {
@@ -439,14 +352,12 @@ pub(super) fn apply_async_result_jobs(
     items
 }
 
-/// `details.jobs[]` reader shared by `tool_execution_end`/`toolResult` for the `wait` tool
-/// (port of `jobsFromDetails`).
+/// `details.jobs[]` reader shared by `tool_execution_end`/`toolResult` for the `wait` tool.
 pub(super) fn jobs_from_details(details: &Value) -> Option<Vec<Value>> {
     details.get("jobs").and_then(Value::as_array).cloned()
 }
 
-/// Returns the patched items when `message` is a batch-subagent result carrier, `None` when it
-/// is not one at all. Port of `tryApplyAsyncResult`.
+/// Returns the patched items when `message` is a batch-subagent result carrier, else `None`.
 pub(super) fn try_apply_async_result(
     items: &[Arc<TranscriptItem>],
     custom_type: &str,
@@ -459,13 +370,8 @@ pub(super) fn try_apply_async_result(
     Some(apply_async_result_jobs(items.to_vec(), jobs))
 }
 
-/// Builds/updates one message's own `subagent` items from its `toolCall` part's echoed `task`
-/// call (`build_assistant_items`'s own task branch in the parent `transcript` module): the
-/// owning assistant message's id is known HERE (unlike `upsert_subagent_items` above, called
-/// from the earlier live `tool_execution_start` frame, before any message snapshot exists), so
-/// `message_id` is stamped for real this time. Split out of `transcript.rs` itself (#806
-/// file-size discipline, issue #941's own technical note: "`transcript.rs` is over the 600-line
-/// cap ... add the parsing in a sibling module").
+/// Builds one message's `subagent` items from its echoed `task` call; unlike the live-start path
+/// the owning message id is known here, so `message_id` is stamped for real.
 pub(super) fn build_message_subagent_items(
     existing_items: &[Arc<TranscriptItem>],
     part_id: &str,
@@ -479,8 +385,7 @@ pub(super) fn build_message_subagent_items(
         let sub_id = format!("subagent:{part_id}:{spec_index}");
         let sub_name = subagent_name(spec);
         let task = task_text(spec);
-        // Gate round 1 fix (issue #941): see `upsert_subagent_items`'s own identical comment --
-        // `context` is stored once, on spec index 0 only.
+        // `context` is stored once, on spec index 0 only (see `upsert_subagent_items`).
         let item_context = if spec_index == 0 {
             context.map(str::to_string)
         } else {

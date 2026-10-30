@@ -1,23 +1,5 @@
-// Port of `src/main/omp/OmpProcess.ts` (tasks.md T011): drives one `omp --mode rpc-ui` child
-// process for a Session's own worktree (FR-001 to FR-005). This module owns process *lifecycle*
-// only -- spawn, JSONL framing (0x0A-delimited), `rpc_chunk` reassembly, request/response
-// correlation with per-request timeouts, the staged ready-wait (issue #512), and stop/
-// force-kill. It deliberately does NOT model the full `omp` wire-protocol frame union
-// (`src/shared/frames.ts`): non-response frames are forwarded to subscribers as raw
-// `serde_json::Value`, left for `omp::transcript` (Phase 2(c), OMP frame -> `TranscriptItem`)
-// and `session::agent` (Phase 3) to decode further -- the same separation `OmpProcess.ts` itself
-// has from `transcript.ts` via its own `'frame'` event.
-//
-// Deliberately NOT ported from `OmpProcess.ts` in this slice (process-level lifecycle only, not
-// Session-level orchestration -- none of the three are named by FR-001 to FR-005 or by tasks.md's
-// own T011 description, and all three coordinate across multiple Sessions/the whole app, which is
-// `session::manager`'s layer in Phase 3, not one process's own wrapper):
-//   - the process-wide start queue (`startQueue.ts`'s `acquireStartSlot`/`MAX_CONCURRENT_STARTS`);
-//   - the low-memory start defer (`memory.ts`'s `isMemoryLow`);
-//   - the pid-record fallback (`process/pidRecords.ts`) -- Job Object kill-on-close (FR-005) is
-//     the mechanism FR-001 to FR-005 actually require; the pid-record file is Electron's own
-//     secondary belt-and-braces path, not named here.
-// `build_start_failure` redacts through `crate::omp::redact::redact_secrets` (lane R9, #792).
+// Drives one `omp --mode rpc-ui` child: spawn, JSONL framing, `rpc_chunk` reassembly, request
+// correlation, ready-wait and stop. Non-response frames go to subscribers as raw `Value`.
 
 mod latency;
 pub use latency::RpcSample;
@@ -39,9 +21,8 @@ use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
 use crate::process::executables;
 
-// Issue #512: READY_PROMPT_AFTER_MS is the point at which a caller should offer "Keep waiting"/
-// "Cancel" (not ported here -- no interactive cancel surface exists in this process-lifecycle
-// slice); the wait keeps going regardless, up to READY_CEILING_MS, where it fails outright.
+// READY_PROMPT_AFTER_MS is when a caller may offer "Keep waiting"; the wait continues to
+// READY_CEILING_MS, then fails (#512).
 const READY_PROMPT_AFTER_MS: u64 = 60_000;
 const READY_CEILING_MS: u64 = 180_000;
 const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 60_000;
@@ -50,17 +31,11 @@ const STDERR_TAIL_BYTES: usize = 4 * 1024;
 const STDERR_FAILURE_TAIL_BYTES: usize = 2 * 1024;
 const OMP_LOG_READ_WINDOW_BYTES: u64 = 64 * 1024;
 const OMP_LOG_TAIL_BYTES: usize = 4 * 1024;
-// FINDINGS C22b: v1 frames are capped at maxFrameBytes; a reassembled rpc_chunk sequence above
-// this ceiling is treated as corrupt rather than buffered without bound. Reused as the same
-// ceiling for a single 0x0A-delimited stdout line that never terminates (defence in depth: the
-// Electron port has no such cap on a raw stdout line, only on chunk reassembly, but an unbounded
-// `Vec<u8>` on a line that never sees a newline would otherwise grow forever).
+// A reassembled rpc_chunk sequence above this is corrupt, not buffered. Also caps an
+// unterminated stdout line so the buffer cannot grow forever.
 const MAX_REASSEMBLED_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Settings.approvalMode (`src/shared/model.ts`), re-declared here rather than imported (no
-/// shared Rust `model` crate exists yet; `store::settings`, Phase 2(b), is the natural home for a
-/// canonical copy once it lands). Serialises with the same string values as
-/// `OMP_APPROVAL_MODE`'s own keys for any caller that round-trips this through JSON.
+/// Settings.approvalMode; serialises with the same string values as `OMP_APPROVAL_MODE`'s keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApprovalMode {
@@ -71,8 +46,7 @@ pub enum ApprovalMode {
 }
 
 impl ApprovalMode {
-    /// Maps to the value OMP's `--approval-mode` flag expects (`src/shared/model.ts`'s
-    /// `OMP_APPROVAL_MODE`).
+    /// Maps to the value OMP's `--approval-mode` flag expects.
     pub(super) fn omp_flag(self) -> &'static str {
         match self {
             ApprovalMode::Ask => "always-ask",
@@ -83,15 +57,12 @@ impl ApprovalMode {
     }
 }
 
-/// Port of `OmpProcessOptions` (`OmpProcess.ts`), narrowed to the fields this slice's spawn/
-/// ready-wait/stop lifecycle actually uses (`sessionId` drove `pidRecords.ts`, out of scope here;
-/// the start-queue/memory-defer overrides have no queue/defer left to override).
+/// Options for spawning one `omp` process.
 pub struct OmpProcessOptions {
     pub cwd: PathBuf,
     pub approval_mode: ApprovalMode,
     pub omp_path: Option<PathBuf>,
-    /// Appends `--no-session` (omp-usage.md; issue #362). See `OmpProcessOptions.noSession`'s own
-    /// doc comment in `OmpProcess.ts` for the persistence caveat.
+    /// Appends `--no-session`, so omp does not persist the session (#362).
     pub no_session: bool,
     pub ready_prompt_after_ms: u64,
     pub ready_ceiling_ms: u64,
@@ -110,10 +81,7 @@ impl OmpProcessOptions {
     }
 }
 
-/// Mirrors `OmpProcess.ts`'s thrown `Error`s: a plain message, plus a flag distinguishing the
-/// ready-wait's own ceiling outcome (`ReadyCeilingError`) from every other failure, so a future
-/// caller (`session::agent`'s one-shot retry, Phase 3) can branch on it without regex-matching
-/// `message` the way a `instanceof` check would in TS.
+/// A plain message plus a flag marking the ready-wait ceiling, so callers need not match text.
 #[derive(Debug, Clone)]
 pub struct ProcessError {
     pub message: String,
@@ -137,38 +105,31 @@ impl std::fmt::Display for ProcessError {
 
 impl std::error::Error for ProcessError {}
 
-/// Staged ready-wait progress (issue #512, `readyWait.ts`'s own `ReadyWaitStageKind`), narrowed to
-/// the two stages that matter with no interactive cancel/keep-waiting surface in this slice:
-/// `Extended` (user clicked "Keep waiting") and `Ceiling`-as-a-stage have no caller to drive them
-/// here, so the ceiling outcome is reported as a `ProcessError` (`ready_ceiling: true`) instead.
+/// Staged ready-wait progress; the ceiling is reported as a `ProcessError` (`ready_ceiling`) (#512).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadyWaitStage {
     Waiting,
     Prompt,
 }
 
-/// Port of `OmpProcess.ts`'s own `'exit'` event payload.
+/// Payload of the process exit event.
 #[derive(Debug, Clone)]
 pub struct ExitInfo {
     pub code: Option<i32>,
     pub requested: bool,
 }
 
-/// Everything a subscriber (`subscribe()`) can observe about a running `OmpProcess`, except
-/// responses to its own `request()` calls (consumed internally, never broadcast -- same rule
-/// `OmpProcess.ts`'s own `dispatchFrame` enforces for `'frame'`).
+/// Everything a subscriber can observe, except `request()` responses (consumed internally).
 #[derive(Debug, Clone)]
 pub enum ProcessEvent {
-    /// Every decoded frame except `response` (consumed by `request()`) and `rpc_chunk` (consumed
-    /// internally for reassembly, then re-dispatched as the frame it decodes to). Port of
-    /// `OmpProcess.ts`'s own `'frame'` event.
+    /// Every decoded frame except `response` and `rpc_chunk` (reassembled, then re-dispatched).
     Frame(Value),
-    /// Port of `OmpProcess.ts`'s own `'start-progress'` event.
+    /// Start-progress update.
     StartProgress {
         stage: ReadyWaitStage,
         elapsed_ms: u64,
     },
-    /// Fires exactly once. Port of `OmpProcess.ts`'s own `'exit'` event.
+    /// Fires exactly once.
     Exit { code: Option<i32>, requested: bool },
 }
 
@@ -194,41 +155,27 @@ struct Inner {
     chunks: StdMutex<HashMap<String, ChunkAssembly>>,
     stderr_tail: StdMutex<StderrTail>,
     stdin: TokioMutex<Option<tokio::process::ChildStdin>>,
-    /// Every live `subscribe()` consumer's sender half. Replaces a `tokio::sync::broadcast`
-    /// channel (code-review/perf finding, 2026-10-13): broadcast's fixed-size ring buffer could
-    /// silently drop a `session_settled`/`extension_ui_request` frame under a burst (each frame
-    /// costing several full-transcript copies downstream made that burst easier to trigger, not
-    /// just theoretical); an unbounded `mpsc` per consumer never drops a queued event.
+    /// Every live `subscribe()` consumer's sender. Unbounded `mpsc` per consumer: a broadcast ring
+    /// buffer could drop a `session_settled`/`extension_ui_request` frame under a burst.
     events_subs: StdMutex<Vec<mpsc::UnboundedSender<ProcessEvent>>>,
-    /// Set once, by `dispatch_frame`, the moment the "ready" frame itself is seen -- BEFORE
-    /// that same call's `broadcast_event` (issue #512 follow-up, 2026-10-13): `wait_ready`'s own
-    /// `events_rx` is a fresh `subscribe()` taken after `connect` has already started the
-    /// stdout reader, so a `ready` frame that lands between the reader starting and that
-    /// `subscribe()` call would otherwise reach no subscriber at all and `wait_ready` would sit
-    /// out the full ready ceiling. Checked immediately after subscribing, the same way
-    /// `wait_for_exit_or_timeout`/`hard_kill` already re-check `exited` right after their own
-    /// `exit_tx.subscribe()`.
+    /// Set by `dispatch_frame` when "ready" is seen, BEFORE the broadcast: `wait_ready` subscribes
+    /// after the reader starts, so it re-checks this instead of sitting out the ceiling (#512).
     ready_frame: StdMutex<Option<Value>>,
     exit_tx: watch::Sender<Option<ExitInfo>>,
     stop_cell: tokio::sync::OnceCell<()>,
-    /// Set once at construction, read by `wait_ready` (moved out of `spawn`'s own locals so
-    /// `connect`/`wait_ready` can be called as two separate steps -- see `OmpProcess::connect`'s
-    /// own doc comment).
+    /// Set once at construction, read by `wait_ready`.
     spawned_at: Instant,
     spawned_at_system: SystemTime,
 }
 
-/// Fans `event` out to every still-live `subscribe()` consumer, pruning any whose receiver was
-/// dropped. `&Inner` (not `&Arc<Inner>`): deref-coerces from either caller shape.
+/// Fans `event` out to every live subscriber, pruning dropped receivers.
 fn broadcast_event(inner: &Inner, event: ProcessEvent) {
     let mut subs = inner.events_subs.lock().unwrap();
     subs.retain(|tx| tx.send(event.clone()).is_ok());
 }
 
 impl Inner {
-    /// Idempotent: a second call (there should never be one, but `child.wait()` resolving twice
-    /// would be a tokio bug, not an app one) is a silent no-op, matching `OmpProcess.ts`'s own
-    /// `exitEmitted` guard.
+    /// Idempotent: a second call is a silent no-op.
     fn on_exit(&self, code: Option<i32>) {
         if self.exited.swap(true, Ordering::SeqCst) {
             return;
@@ -237,8 +184,7 @@ impl Inner {
         let info = ExitInfo { code, requested };
         let _ = self.exit_tx.send(Some(info));
         broadcast_event(self, ProcessEvent::Exit { code, requested });
-        // The process is gone: nothing will ever answer an in-flight request, so fail every one
-        // of them now rather than let each wait out its own timeout.
+        // Nothing will answer an in-flight request now; fail them rather than await timeouts.
         let mut pending = self.pending.lock().unwrap();
         for (_, tx) in pending.drain() {
             let _ = tx.send(Err(ProcessError::new(format!(
@@ -254,9 +200,8 @@ pub struct OmpProcess {
 }
 
 impl OmpProcess {
-    /// Spawns `omp` and wires up its reader tasks (FR-001), returning before the ready handshake:
-    /// a caller needing every frame (`session::agent::launch`) must `subscribe()` first, and only
-    /// THEN call `wait_ready` (code-review/perf finding, 2026-10-13).
+    /// Spawns `omp` and starts its reader tasks, returning before the ready handshake. Callers
+    /// needing every frame must `subscribe()` first, then `wait_ready`.
     pub async fn connect(opts: &OmpProcessOptions) -> Result<Self, ProcessError> {
         Self::connect_with_warnings(opts, &mut Vec::new()).await
     }
@@ -329,10 +274,7 @@ impl OmpProcess {
         Ok(OmpProcess { inner })
     }
 
-    /// Runs the ready handshake (FR-002, v2 protocol negotiation) to completion on an already-
-    /// `connect`ed process, tearing the process down itself on failure (ceiling, or an
-    /// exit-before-ready race) so a caller never has to handle a live-but-unready child on the
-    /// error path -- same contract the old combined `spawn()` had.
+    /// Runs the ready handshake on a `connect`ed process, tearing it down itself on failure.
     pub async fn wait_ready(&self, opts: &OmpProcessOptions) -> Result<(), ProcessError> {
         if let Err(err) = wait_for_ready(
             self,
@@ -348,10 +290,7 @@ impl OmpProcess {
         Ok(())
     }
 
-    /// Combined `connect` + `wait_ready` (FR-001, FR-002), for a caller that does not need to
-    /// subscribe before the ready-wait. This build's one caller that streams live frames
-    /// (`session::agent::launch`) calls `connect`/`subscribe`/`wait_ready` directly instead of
-    /// this -- see that call site's own comment.
+    /// Combined `connect` + `wait_ready`, for callers that need not subscribe before the wait.
     pub async fn spawn(opts: OmpProcessOptions) -> Result<Self, ProcessError> {
         let process = Self::connect(&opts).await?;
         process.wait_ready(&opts).await?;
@@ -373,9 +312,8 @@ impl OmpProcess {
         rx
     }
 
-    /// Sends `cmd` (a JSON object; `id` is injected here, overwriting any caller-supplied value)
-    /// with a fresh unique id and resolves on the matching `response` frame, or fails on timeout
-    /// (FR-003). Port of `OmpProcess.ts`'s own `request`.
+    /// Sends `cmd` with a fresh `id` (overwriting any caller value) and resolves on the matching
+    /// `response`, or fails on timeout.
     pub async fn request(&self, mut cmd: Value, timeout_ms: u64) -> Result<Value, ProcessError> {
         if self.inner.exited.load(Ordering::SeqCst) {
             return Err(ProcessError::new("OmpProcess: process has exited"));
@@ -425,13 +363,8 @@ impl OmpProcess {
         }
     }
 
-    /// Writes `value` to stdin verbatim, with no `id` injection and no correlated-response wait
-    /// -- unlike `request()`. Port of `OmpProcess.ts`'s own `write` (distinct from `request`):
-    /// used for `extension_ui_response` (`session::agent::answer_request`, Phase 3), whose `id`
-    /// must stay the ORIGINAL `extension_ui_request`'s own id for OMP to resolve which dialog
-    /// this answers -- `request()`'s fresh-per-call id would break that correlation, and OMP
-    /// never sends a `response` frame for this command type regardless, so there is nothing to
-    /// wait for.
+    /// Writes `value` to stdin verbatim: no `id` injection, no response wait. Used for
+    /// `extension_ui_response`, whose `id` must stay the original request's id.
     pub async fn send_raw(&self, value: Value) -> Result<(), ProcessError> {
         if self.inner.exited.load(Ordering::SeqCst) {
             return Err(ProcessError::new("OmpProcess: process has exited"));
@@ -439,8 +372,7 @@ impl OmpProcess {
         self.write_line(&value).await
     }
 
-    /// Writes one JSON object to stdin as a newline-delimited frame. Port of `OmpProcess.ts`'s
-    /// own `write`.
+    /// Writes one JSON object to stdin as a newline-delimited frame.
     async fn write_line(&self, value: &Value) -> Result<(), ProcessError> {
         let mut data = serde_json::to_vec(value).map_err(|err| {
             ProcessError::new(format!("OmpProcess: failed to serialize command: {err}"))
@@ -456,8 +388,7 @@ impl OmpProcess {
         }
     }
 
-    /// Idempotent: stdin close, wait up to `STOP_GRACE_MS`, then force-kill the whole process
-    /// tree via `taskkill /PID <pid> /T /F` (FR-004). Port of `OmpProcess.ts`'s own `stop`.
+    /// Idempotent: close stdin, wait up to `STOP_GRACE_MS`, then `taskkill /PID <pid> /T /F`.
     pub async fn stop(&self) {
         self.inner.requested_stop.store(true, Ordering::SeqCst);
         let inner = self.inner.clone();
@@ -474,8 +405,7 @@ async fn do_stop(inner: Arc<Inner>) {
     }
     {
         let mut guard = inner.stdin.lock().await;
-        // Dropping the `ChildStdin` closes the pipe's write end, the same effect as
-        // `child.stdin.end()` in the Electron port.
+        // Dropping the `ChildStdin` closes the pipe's write end.
         *guard = None;
     }
     let exited = wait_for_exit_or_timeout(&inner, STOP_GRACE_MS).await;
@@ -513,9 +443,7 @@ async fn hard_kill(inner: &Arc<Inner>) {
         .stderr(Stdio::null())
         .status()
         .await;
-    // taskkill /F should be reliable; wait for the real `exit` event it triggers rather than a
-    // second timeout, per contract ("resolve after exit") -- same as `OmpProcess.ts`'s own
-    // `hardKill`.
+    // taskkill /F is reliable; wait for the real `exit` event rather than a second timeout.
     if !inner.exited.load(Ordering::SeqCst) {
         let _ = rx.changed().await;
     }
@@ -530,10 +458,7 @@ async fn exit_wait_task(mut child: Child, inner: Arc<Inner>) {
 async fn stdout_reader_task(mut stdout: ChildStdout, inner: Arc<Inner>) {
     let mut buf: Vec<u8> = Vec::new();
     let mut read_buf = [0u8; 8192];
-    // Bytes before this index are already confirmed newline-free (perf finding, 2026-10-13): a
-    // single long line split across many reads used to get rescanned from byte 0 on every read
-    // (quadratic in the line's total length); each read now only scans the bytes it just
-    // appended.
+    // Bytes before this index are known newline-free, so a long line is not rescanned per read.
     let mut scanned = 0usize;
     loop {
         let n = match stdout.read(&mut read_buf).await {
@@ -552,9 +477,7 @@ async fn stdout_reader_task(mut stdout: ChildStdout, inner: Arc<Inner>) {
             if !trimmed.is_empty() {
                 handle_line(trimmed, &inner);
             }
-            // Positions shift after this drain, so the next search in this same buffer (if a
-            // second line already arrived in the same read) restarts from the front -- that
-            // scan is bounded by the remaining buffer, not the historical total.
+            // Positions shift after this drain, so the next search restarts from the front.
             buf.drain(..=pos);
             scanned = 0;
         }
@@ -589,8 +512,7 @@ fn handle_line(line: &str, inner: &Arc<Inner>) {
     let parsed: Value = match serde_json::from_str(line) {
         Ok(value) => value,
         Err(err) => {
-            // Logs length only, never content (security finding, 2026-10-13): a stdout line can
-            // carry transcript text or tool output that may hold secrets.
+            // Logs length only: a stdout line can carry secrets.
             log::error!(
                 "OmpProcess: skipping unparseable stdout line: {err} (length {} bytes)",
                 line.len()
@@ -605,8 +527,7 @@ fn handle_parsed(parsed: Value, inner: &Arc<Inner>) {
     let frame_type = match parsed.get("type").and_then(Value::as_str) {
         Some(t) => t.to_string(),
         None => {
-            // Logs length only, never content (security finding, 2026-10-13): same rationale as
-            // `handle_line`'s own unparseable-line case.
+            // Logs length only: same reason as the unparseable-line case.
             log::error!(
                 "OmpProcess: skipping malformed frame (no string type), length {} bytes",
                 parsed.to_string().len()
@@ -634,19 +555,15 @@ fn dispatch_frame(frame_type: &str, frame: Value, inner: &Arc<Inner>) {
         return;
     }
     if frame_type == "ready" {
-        // Recorded BEFORE `broadcast_event` below (issue #512 follow-up, 2026-10-13): see
-        // `Inner::ready_frame`'s own doc comment for the `wait_ready`-subscribes-late race this
-        // closes.
+        // Recorded BEFORE `broadcast_event`; see `Inner::ready_frame` (#512).
         *inner.ready_frame.lock().unwrap() = Some(frame.clone());
     }
     broadcast_event(inner, ProcessEvent::Frame(frame));
 }
 
-/// rpc_chunk reassembly (FINDINGS C22b / contracts/omp-usage.md "Failure handling"): validates
-/// `chunkId`/`index`/`count`/`byteLength`, rejects interleaved or duplicate sequences, enforces
-/// the 64 MiB reassembled ceiling, and decodes strictly as UTF-8. Any failure drops the whole
-/// in-flight assembly and fails every pending request, same as an unparseable line would be worse
-/// to hang on silently.
+/// rpc_chunk reassembly: validates `chunkId`/`index`/`count`/`byteLength`, rejects interleaved or
+/// duplicate sequences, enforces the 64 MiB ceiling and decodes strictly as UTF-8. Any failure
+/// drops the assembly and fails every pending request.
 fn handle_chunk(frame: Value, inner: &Arc<Inner>) {
     if let Err(err) = try_handle_chunk(&frame, inner) {
         log::error!("OmpProcess: dropping malformed rpc_chunk: {err}");
@@ -739,9 +656,7 @@ fn try_handle_chunk(frame: &Value, inner: &Arc<Inner>) -> Result<(), String> {
     Ok(())
 }
 
-/// Standard (RFC 4648) base64 decoder. No `base64` crate is a declared dependency of this crate;
-/// this hand-rolled decoder replaces `Buffer.from(data, 'base64')` for `rpc_chunk` reassembly
-/// (see this file's own header note and the final report for the stated need).
+/// Standard (RFC 4648) base64 decoder; no `base64` crate is a dependency.
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     fn value(byte: u8) -> Option<u8> {
         match byte {
@@ -827,15 +742,9 @@ async fn wait_for_ready(
 ) -> Result<(), ProcessError> {
     let mut events_rx = process.subscribe();
     let mut exit_rx = process.inner.exit_tx.subscribe();
-    // Issue #512 follow-up (2026-10-13): both subscriptions above are taken AFTER `connect`
-    // already started the stdout reader and exit-wait task, so a `ready` frame or an exit that
-    // landed in that gap would reach neither `events_rx` nor a `changed()` on `exit_rx` -- a
-    // `watch::Receiver` returned by `subscribe()` starts already "seen" at the CURRENT value, so
-    // `changed()` only fires on the NEXT update -- and the call below would then sit out the
-    // full ready ceiling instead of resolving immediately. Re-checking the already-recorded
-    // ready frame/exit state right here, the same way `wait_for_exit_or_timeout`/`hard_kill`
-    // already re-check `exited` right after their own `exit_tx.subscribe()`, closes that
-    // window.
+    // Both subscriptions were taken after `connect` started the readers, so an early `ready` or
+    // exit reached neither; a fresh `watch` receiver only fires on the NEXT update. Re-check the
+    // recorded state here instead of sitting out the ceiling (#512).
     let already_ready = process.inner.ready_frame.lock().unwrap().clone();
     if let Some(ready_frame) = already_ready {
         return finish_ready(process, &ready_frame).await;
@@ -860,8 +769,7 @@ async fn wait_for_ready(
                         }
                     }
                     Some(_) => {}
-                    // The unbounded `mpsc` channel never lags (no ring buffer to overflow); it
-                    // only closes when every sender -- i.e. the process itself -- is gone.
+                    // The unbounded channel never lags; it closes only when the process is gone.
                     None => {
                         return Err(ProcessError::new("OmpProcess: event stream closed before ready"));
                     }
@@ -869,7 +777,7 @@ async fn wait_for_ready(
             }
             changed = exit_rx.changed() => {
                 if changed.is_ok() {
-                    // Clone out first: the `watch::Ref` is not `Send` and must not live across the await below.
+                    // Clone out first: `watch::Ref` is not `Send` and must not live across the await.
                     let exited = exit_rx.borrow_and_update().clone();
                     if let Some(info) = exited {
                         let reason = format!("process exited before ready (code {:?})", info.code);
@@ -892,15 +800,8 @@ async fn wait_for_ready(
     }
 }
 
-/// Port of `OmpProcess.ts`'s own `buildStartFailure`, narrowed to what this build can match
-/// exactly: the stderr tail, the pid's own `~/.omp/logs` tail (issue #512 requirement 2), and
-/// home-dir masking plus the exact `redact.ts` port (`crate::omp::redact::redact_secrets`,
-/// lane R9 issue #792 -- this function used to fall back to a conservative whole-line
-/// heuristic while no `regex`-capable crate was declared; `fancy-regex` now is, so every raw
-/// stderr/log tail here goes through the same per-pattern redaction `github::gh`/`cli`/
-/// `git::worktrees` already use). See the final report for the one thing NOT ported at full
-/// fidelity (the free/total memory line -- no declared crate exposes it without a new Windows
-/// feature flag).
+/// Builds the start-failure message: stderr tail plus the pid's `~/.omp/logs` tail (#512), with
+/// home-dir masking and `redact_secrets` applied.
 async fn build_start_failure(
     inner: &Arc<Inner>,
     reason: String,
@@ -923,15 +824,9 @@ async fn build_start_failure(
     } else {
         stderr_text
     };
-    // Order matters (gate round 3 MEDIUM, 2026-10-14): filter -> cap -> redact, never redact
-    // first. `redact_secrets` bounds its OWN input to its last ~8 KiB before scanning -- running
-    // it on the full, unfiltered tail (this one is already `STDERR_TAIL_BYTES` = 4 KiB at the
-    // source, so harmless here, but the `omp_log_part` sibling below reads up to 64 KiB) would
-    // silently drop everything before that last 8 KiB BEFORE `filter_warn_error_lines` ever saw
-    // it, discarding warn/error lines the filter step exists to surface. Redacting LAST also
-    // means the fail-closed `redact_secrets` placeholder itself is the final text embedded here,
-    // never something `filter_warn_error_lines` could itself strip back out (the placeholder
-    // contains neither "warn" nor "error").
+    // Order matters: filter -> cap -> redact. `redact_secrets` keeps only its last ~8 KiB, so
+    // redacting first could drop warn/error lines the filter exists to surface; redacting last
+    // also keeps its fail-closed placeholder from being filtered back out.
     let stderr_filtered = filter_warn_error_lines(&stderr_for_redaction);
     let stderr_capped = cap_tail(&stderr_filtered, STDERR_FAILURE_TAIL_BYTES);
     let stderr_redacted = crate::omp::redact::redact_secrets(&mask_home_dir(&stderr_capped));
@@ -994,10 +889,7 @@ fn filter_warn_error_lines(text: &str) -> String {
     lines[start..].join("\n")
 }
 
-/// Keeps at most the last `max_len` bytes of `text`, dropping a partial leading line rather than
-/// an arbitrary mid-line cut (same reasoning as `OmpProcess.ts`'s own `capTailLines`, simplified:
-/// Rust `&str` slicing can only ever land on a UTF-8 char boundary, so the UTF-16 surrogate-pair
-/// hazard that method guards against does not exist here).
+/// Keeps at most the last `max_len` bytes of `text`, dropping a partial leading line.
 fn cap_tail(text: &str, max_len: usize) -> String {
     if text.len() <= max_len {
         return text.to_string();
@@ -1029,9 +921,8 @@ fn mask_home_dir(text: &str) -> String {
     result
 }
 
-/// Port of `ompLogTail.ts`'s own `tailOmpLogForPid`: the newest `~/.omp/logs/*.{pid}.log` file
-/// whose mtime is at or after `spawned_at`, tailed to `max_bytes`. Uses `symlink_metadata` (never
-/// following a symlink) for the same reason the Electron port uses `lstat`, not `stat`.
+/// The newest `~/.omp/logs/*.{pid}.log` whose mtime is at or after `spawned_at`, tailed to
+/// `max_bytes`. Uses `symlink_metadata` so a symlink is never followed.
 async fn read_omp_log_tail(pid: u32, spawned_at: SystemTime, max_bytes: u64) -> Option<String> {
     let home = dirs::home_dir()?;
     let logs_dir = home.join(".omp").join("logs");
@@ -1063,12 +954,8 @@ async fn read_omp_log_tail(pid: u32, spawned_at: SystemTime, max_bytes: u64) -> 
     read_tail_bytes(&path, max_bytes).await
 }
 
-/// Seeking to an arbitrary byte offset (`start`, when the file is larger than `max_bytes`) can
-/// land mid-line -- a credential straddling that point would have an unrecognisable fragment on
-/// the read side, surviving the warn/error filter and redaction downstream unredacted (security
-/// finding, gate round 4, 2026-10-14; the same hazard `build_start_failure`'s own stderr-tail
-/// truncation already guards against). When the seek actually moved, drop everything up to the
-/// first newline in what was read, so only a complete line is ever returned.
+/// A seek can land mid-line, leaving a credential fragment the redactor cannot recognise; when
+/// the seek moved, drop everything up to the first newline so only complete lines return.
 async fn read_tail_bytes(path: &Path, max_bytes: u64) -> Option<String> {
     let mut file = tokio::fs::File::open(path).await.ok()?;
     let len = file.metadata().await.ok()?.len();

@@ -27,7 +27,7 @@ static SPAWNED_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// Every stage a start can be in while in flight. `None` also covers a cancelled start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum StartStage {
-    /// Waiting for a process-wide start slot (issue #512 requirement 5).
+    /// Waiting for a process-wide start slot.
     Queued,
     /// Holding a slot, waiting for `memory.ts`'s own low-memory signal to clear.
     MemoryDeferred,
@@ -79,7 +79,7 @@ pub(super) fn validate_transition(
     }
 }
 
-/// Lane R3's runtime state, held inside `AgentState`.
+/// Runtime start state, held inside `AgentState`.
 #[derive(Default)]
 pub(super) struct State {
     stage: Option<StartStage>,
@@ -231,8 +231,7 @@ async fn bail_if_stop_requested(agent: &SessionAgent) -> bool {
     }
 }
 
-/// Resolves once a start slot is held and
-/// memory is not low (or the defer ceiling elapses). Rejects if a cancel or shutdown fired first.
+/// Waits for a start slot and low memory to clear (or the defer ceiling). Rejects on cancel/shutdown.
 pub(super) async fn acquire_slot(agent: &SessionAgent) -> Result<SlotGuard, AgentError> {
     let cancel = Arc::new(Notify::new());
     agent
@@ -374,8 +373,7 @@ impl SessionAgent {
 }
 
 pub(super) async fn on_frame(_agent: &SessionAgent, _frame_type: &str, _frame: &Value) {
-    // No-op: nothing frame-level affects the start queue (the ready frame itself settles through
-    // `OmpProcess::wait_ready`/`launch()`, not through the live frame listener).
+    // No-op: the ready frame settles through `OmpProcess::wait_ready`/`launch()`, not here.
 }
 
 /// Clears start state on exit. `stop_requested` is unused here, kept to match `termination`'s `on_exit`.

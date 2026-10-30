@@ -351,8 +351,6 @@ pub async fn list_catalog_models(kind: &str) -> Result<Vec<ModelCatalogEntry>, O
     list_catalog_models_with(&RealOmpExecutor, kind).await
 }
 
-// ---- IPC handlers ----
-
 pub fn model_roles_list(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let roles = get_model_roles().await.map_err(|err| to_ipc_error(&err))?;

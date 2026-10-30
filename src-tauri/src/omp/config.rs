@@ -56,8 +56,6 @@ impl std::fmt::Display for OmpConfigError {
 
 impl std::error::Error for OmpConfigError {}
 
-// Scratch directory (mirrors `ensureScratchDir`).
-
 static SCRATCH_DIR: AsyncMutex<Option<PathBuf>> = AsyncMutex::const_new(None);
 
 /// Exported so a test can assert a removed scratch directory is recreated on the next call.
@@ -86,8 +84,6 @@ pub async fn ensure_scratch_dir() -> Result<PathBuf, OmpConfigError> {
     ))
 }
 
-// Raw `omp` invocation and the injectable executor seam.
-
 /// One `omp` invocation. `strip_env_vars` removes variable names from the inherited environment.
 pub trait OmpExecutor: Send + Sync {
     fn call<'a>(
@@ -100,9 +96,8 @@ pub trait OmpExecutor: Send + Sync {
 
 pub struct RealOmpExecutor;
 
-/// Serialises every `omp config get/set` call process-wide. `omp models` is excluded because it
-/// never touches config. Concurrent `omp` processes sharing one scratch cwd were suspected, but
-/// not confirmed, to return incomplete config responses, so config calls run one at a time.
+/// Serialises every `omp config get/set` call process-wide (`omp models` never touches config).
+/// Concurrent `omp` on one scratch cwd was suspected, not confirmed, to return partial config.
 static OMP_INVOCATION_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
 /// Applies one deadline to lock acquisition and the `omp` call together, so queued callers fail
@@ -346,8 +341,6 @@ fn validate_config_key(key: &str) -> Result<(), OmpConfigError> {
     }
     Ok(())
 }
-
-// Generic `omp config get/set`: any key, typed as a raw `Value`.
 
 /// `omp config get <key> --json`. Returns the full `{key, value, type, description?}` object.
 pub async fn get_config_with(

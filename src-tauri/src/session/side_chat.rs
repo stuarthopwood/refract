@@ -25,10 +25,6 @@ pub(super) struct State {
     terminal_topic_order: std::collections::VecDeque<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Flatten / latest-turn
-// ---------------------------------------------------------------------------
-
 /// Flattens one topic thread into ordered records. Every record carries the root's `topicId`.
 /// Non-root ids are synthetic (`${parent}.${index}`) and must never be sent back to OMP.
 fn flatten_btw_history(thread: &Value) -> Vec<Value> {
@@ -83,10 +79,6 @@ fn latest_turn(thread: &Value) -> Value {
     // `flatten_btw_history` always visits the root first, so `flattened` is never empty.
     flattened.pop().unwrap_or(Value::Null)
 }
-
-// ---------------------------------------------------------------------------
-// Epoch / visibility gates
-// ---------------------------------------------------------------------------
 
 /// Whether a topic stamped with `topic_epoch` is stale after a Conversation switch.
 fn topic_frame_is_stale(topic_epoch: u64, conversation_epoch: u64) -> bool {
@@ -194,10 +186,6 @@ pub(super) fn apply_frame(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Lane extension points
-// ---------------------------------------------------------------------------
-
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
     let is_visible = agent.is_visible();
     let patch = agent
@@ -236,8 +224,7 @@ pub(super) async fn on_start_progress(
     _stage: ReadyWaitStage,
     _elapsed_ms: u64,
 ) {
-    // No side-chat behaviour ties to the ready-wait banner (port of `SessionAgent.ts`, which has
-    // none either).
+    // No side-chat behaviour ties to the ready-wait banner.
 }
 
 /// Bumps the Conversation epoch and tells the renderer the side-chat Conversation changed.
@@ -266,10 +253,6 @@ pub(crate) async fn reset_after_start_with_conversation(
         on_conversation_reset(agent).await;
     }
 }
-
-// ---------------------------------------------------------------------------
-// `sideChat.*` / `chat.predictWord*` (called from `ipc::side_chat`)
-// ---------------------------------------------------------------------------
 
 /// Captures the epoch before the request is sent, so a Conversation switch during the request
 /// leaves the topic stamped with the old epoch.
