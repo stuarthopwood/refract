@@ -7,10 +7,9 @@
 // BEHIND text and controls, the same `-z-10` BrandWatermark.tsx's own 'live' variant carries.
 // Renders null for every holiday the issue's own "Ambient loops" section does not name an effect
 // for (Star Wars Day, Pi Day), for `holidayTouches !== 'full'` (Artwork only/Off), and for every
-// holiday whose own effect is not yet built (`HolidayContent.hasAmbientLoop`) -- today only
-// Halloween's (Bonfire Night, Christmas, New Year are tracked as this issue's own follow-up,
-// PLAN.md), independent of `shared/holidays.ts::VERIFIED_HOLIDAYS` gating whether the holiday
-// shows at all.
+// holiday without an effect (`HolidayContent.hasAmbientLoop`): Halloween's bats, Bonfire Night's
+// sparks, Christmas's snow and New Year's confetti (`holidayArtwork.tsx`) all share the one
+// occasional-flight scheduler below (the `bat` class names are historical).
 //
 // Gate round 3 fix (High, item 2, FR-008 regression): mounted exactly ONCE per window, but
 // SCOPED to its own pane's transcript container (`ChatPane.tsx`'s `showAmbientLoop` prop, true
@@ -37,6 +36,7 @@ import { cn } from '@/lib/utils'
 import { useActiveChatWidth, useHolidayStore, useSettingsStore } from '@/state'
 import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
 import { HOLIDAY_CONTENT } from './holidayContent'
+import { flightKeyframes, LoopPieces } from './holidayArtwork'
 
 const FLIGHT_FADE_OUT_MS = 400
 
@@ -215,7 +215,6 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
   // never a flicker" promise forbids. `document.getAnimations()` is empty between flights (no
   // `.persist()` call, so the browser auto-removes the finished Animation), and
   // `will-change: transform` is set only for that one flight's own duration, never ambiently.
-  // block the next one).
   useEffect(() => {
     if (!active) {
       remainingFlightDelayMsRef.current = null
@@ -255,18 +254,14 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
         scheduleNextFlight()
         return
       }
+      const keyframes = holiday ? flightKeyframes(holiday) : null
+      if (!keyframes) {
+        scheduleNextFlight()
+        return
+      }
       setFlightCount((count) => count + 1)
       bat.style.willChange = 'transform'
-      const animation = bat.animate(
-        [
-          { transform: 'translate(0px, 0px)', offset: 0 },
-          { transform: 'translate(60px, -24px)', offset: 0.33 },
-          { transform: 'translate(120px, 6px)', offset: 0.5 },
-          { transform: 'translate(60px, -10px)', offset: 0.75 },
-          { transform: 'translate(0px, 0px)', offset: 1 }
-        ],
-        { duration: 4_000, easing: 'ease-in-out', fill: 'none' }
-      )
+      const animation = bat.animate(keyframes, { duration: 4_000, easing: 'ease-in-out', fill: 'none' })
       currentAnimation = animation
       currentBat = bat
       animation.onfinish = () => {
@@ -302,7 +297,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
         else fadeOutFlight(currentBat, currentAnimation)
       }
     }
-  }, [active, paused, motionReducedOrForcedColors, flightIntervalMsOverride])
+  }, [active, holiday, paused, motionReducedOrForcedColors, flightIntervalMsOverride])
 
   if (!active || !holiday) return null
 
@@ -328,6 +323,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
           </div>
         </>
       )}
+      <LoopPieces holiday={holiday} />
     </div>
   )
 }

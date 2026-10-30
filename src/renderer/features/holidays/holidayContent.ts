@@ -27,12 +27,8 @@ export interface HolidayContent {
   emptyStateLine: string
   /** `true` only once this holiday's own ambient effect is BUILT. Decided (gate round 1, PR
    * #1053): independent of `shared/holidays.ts::VERIFIED_HOLIDAYS` (that gate decides whether
-   * the holiday shows at all; this one decides whether it has a loop once it does) -- today only
-   * Halloween's effect (drifting bats, `HolidayAmbientLoop.tsx`) exists, so every other entry is
-   * `false` even for the three the issue's own "Ambient loops" section names an effect for
-   * (Bonfire Night, Christmas, New Year: sparks/snow/sparks, not yet built -- tracked as
-   * follow-up, specs/017-holiday-touches/tasks.md Phase 6). Star Wars Day and Pi Day are `false`
-   * by design, not just "not yet": the issue never names an effect for either. */
+   * the holiday shows at all; this one decides whether it has a loop once it does). Star Wars Day
+   * and Pi Day are `false` by design: the issue never names an effect for either. */
   hasAmbientLoop: boolean
 }
 
@@ -49,21 +45,21 @@ export const HOLIDAY_CONTENT: Record<HolidayId, HolidayContent> = {
     emoji: '🎇',
     startingMessages: ["Lighting the agent's fuse…", "Setting off the agent's sparks…"],
     emptyStateLine: '🎇 Quiet here — save the sparks for later.',
-    hasAmbientLoop: false
+    hasAmbientLoop: true
   },
   christmas: {
     icon: TreePine,
     emoji: '🎄',
     startingMessages: ["Wrapping up the agent's presents…", 'Sleighing the agent into gear…'],
     emptyStateLine: '🎄 Nothing under this tree yet.',
-    hasAmbientLoop: false
+    hasAmbientLoop: true
   },
   'new-year': {
     icon: PartyPopper,
     emoji: '🎉',
     startingMessages: ["Counting down to the agent's liftoff…", "Popping the agent's cork…"],
     emptyStateLine: '🎉 A fresh, empty start to the year.',
-    hasAmbientLoop: false
+    hasAmbientLoop: true
   },
   'star-wars-day': {
     icon: Swords,
