@@ -193,7 +193,8 @@ const refract: RefractApi = {
   },
 
   clipboard: {
-    writeText: (text) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_TEXT, text)
+    writeText: (text) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_TEXT, text),
+    readText: () => request<string>(IPC_REQUESTS.CLIPBOARD_READ_TEXT)
   },
 
   conversations: {
