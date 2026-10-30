@@ -15,7 +15,6 @@ import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { IssuesView } from '@/features/issues/IssuesView'
 import { UsageView } from '@/features/usage/UsageView'
-import { toast } from 'sonner'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import {
   RIGHT_PANE_DEFAULT_WIDTH_PX,
@@ -34,11 +33,11 @@ import { rightPaneRef } from '@/features/right-pane/right-pane-handle'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
 import { useRightPaneShortcut } from '@/features/right-pane/use-right-pane-shortcut'
 import { closeChatPane } from '@/features/chat/closeChatPane'
+import { CommandPalette } from '@/features/palette/CommandPalette'
+import { usePaletteShortcut } from '@/features/palette/usePaletteShortcut'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
-import { focusSessionPane } from '@/lib/focus'
 import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
-import { announceQuickCreateFallback } from '@/features/sessions/quickCreateFallback'
-import { createdSessionAnnouncement } from '@/features/sessions/createdSessionAnnouncement'
+import { newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
 
 const MIN_SPLIT_WIDTH_PX = 360 * 2
 
@@ -128,58 +127,11 @@ export function App() {
       if (showReadiness || view !== 'chat') return
       if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
       event.preventDefault()
-      const currentSessions = useSessionsStore.getState().sessions
-      const focusedSession = frontSessionId
-        ? currentSessions.find((session) => session.id === frontSessionId)
-        : undefined
-      const repositories = useRepositoriesStore.getState().repositories
-      const target = focusedSession
-        ? repositories.find((candidate) => candidate.id === focusedSession.repositoryId)
-        : repositories.length === 1
-          ? repositories[0]
-          : undefined
-      const repository = target?.defaultBranch ? target : undefined
-
-      if (!repository) {
-        const plus = document.querySelector<HTMLElement>('[data-quick-create-session]')
-        plus?.focus()
-        if (document.activeElement !== plus) announceQuickCreateFallback()
-        return
-      }
-
-      if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) return
-
-      const origin = document.activeElement
-      const originPaneContainer = origin?.closest('[data-session-pane]') ?? null
-
-      // Announce immediately (worktree create takes seconds); a successful focus move stands in for a "created" announcement (#620).
-      useChatAreaAnnouncer.getState().announce(`Creating session from ${repository.defaultBranch}`)
-      void useSessionsStore
-        .getState()
-        .create(repository.id, repository.defaultBranch)
-        .then((result) => {
-          if (!result.ok) {
-            toast.error(result.error.message, { duration: Infinity, closeButton: true })
-            return
-          }
-          requestAnimationFrame(() => {
-            const active = document.activeElement
-            const stillHere =
-              !active || active === document.body || !active.isConnected ||
-              active === origin ||
-              (originPaneContainer !== null && originPaneContainer.contains(active))
-            if (!stillHere || !focusSessionPane(result.value.id)) {
-              useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(result.value))
-            }
-          })
-        })
-        .catch((err: unknown) => {
-          toast.error(err instanceof Error ? err.message : String(err), { duration: Infinity, closeButton: true })
-        })
+      newSessionInFocusedPane()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showReadiness, view, frontSessionId])
+  }, [showReadiness, view])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -237,6 +189,7 @@ export function App() {
   }, [paneShown, showReadiness, view])
 
   useRightPaneShortcut(!showReadiness && view === 'chat')
+  usePaletteShortcut(!showReadiness)
   return (
     // #1200: `relative` makes this the containing block for every absolutely positioned descendant
     // (e.g. an `sr-only` node at the end of a long scroller); with `h-screen overflow-hidden` none can
@@ -269,6 +222,7 @@ export function App() {
           `isSplit` like the region above, since closing the single, non-split pane down to
           zero is the one case that region's own gate would otherwise miss. */}
       <div aria-live="polite" className="sr-only">{chatAreaAnnouncement}</div>
+      {!showReadiness && <CommandPalette />}
       <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />

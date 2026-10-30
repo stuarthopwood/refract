@@ -47,7 +47,7 @@ Ctrl+K (alias Ctrl+Shift+P) opens a modal palette over one fuzzy list grouped as
 ## Edge cases
 
 - No Session exists: Sessions and Conversations sections are empty and hidden; Actions and Settings still list.
-- The focused Session is working: Conversations are listed but selecting another one shows the existing "busy" notice instead of switching.
+- The focused Session is working: Conversations are listed but selecting another one announces a wait message through the chat-area live region instead of switching.
 - Empty result: the listbox shows a "No results" text, announced politely.
 - `conversations.list` fails: the Conversations section is omitted and a notice is raised through `notify`.
 
