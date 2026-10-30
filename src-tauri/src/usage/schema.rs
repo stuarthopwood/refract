@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OptionalExtension};
 
-pub const USER_VERSION: i64 = 1;
+pub const USER_VERSION: i64 = 2;
 
 /// `reasoning`, `model` and `project_label` are `''` rather than NULL when unknown so the rollup
 /// primary keys stay unique.
@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS file_offsets (
   agent_type TEXT NOT NULL DEFAULT 'main',
   project_label TEXT NOT NULL DEFAULT '',
   cur_model TEXT NOT NULL DEFAULT '',
-  cur_reasoning TEXT NOT NULL DEFAULT ''
+  cur_reasoning TEXT NOT NULL DEFAULT '',
+  head_len INTEGER NOT NULL DEFAULT 0,
+  head_hash INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
   session_file TEXT NOT NULL,
@@ -136,7 +138,7 @@ CREATE INDEX IF NOT EXISTS user_messages_ts ON user_messages (ts);
 static INIT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Opens `path` (creating it), applies pragmas and the schema. A corrupt file or one with a newer
-/// `user_version` is set aside as `usage.db.bak-<unix-ts>` and a fresh file is created.
+/// `user_version` (or an older, DDL-incompatible one) is set aside as `usage.db.bak-<unix-ts>` and a fresh file is created.
 pub fn open_db(path: &Path) -> rusqlite::Result<Connection> {
     let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     match try_open(path) {
@@ -159,10 +161,10 @@ fn try_open(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     conn.busy_timeout(Duration::from_secs(5))?;
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version > USER_VERSION {
+    if version > USER_VERSION || (version > 0 && version < USER_VERSION) {
         return Err(rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_NOTADB),
-            Some("usage.db was written by a newer Refract".to_string()),
+            Some("usage.db has a different schema version".to_string()),
         ));
     }
     conn.pragma_update(None, "journal_mode", "WAL")?;

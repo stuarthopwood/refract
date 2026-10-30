@@ -43,6 +43,33 @@ struct FileState {
     project_label: String,
     cur_model: String,
     cur_reasoning: String,
+    /// Bytes of the file head covered by `head_hash` (never more than the consumed offset).
+    head_len: i64,
+    head_hash: i64,
+}
+
+/// A head longer than this is not fingerprinted further.
+const HEAD_BYTES: i64 = 256;
+
+/// FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
+fn fnv1a(bytes: &[u8]) -> i64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h as i64
+}
+
+/// Hash of the first `len` bytes, or `None` when the file is now shorter than that.
+fn head_fingerprint(file: &mut File, len: i64) -> std::io::Result<Option<i64>> {
+    let mut buf = vec![0u8; len.max(0) as usize];
+    file.seek(SeekFrom::Start(0))?;
+    match file.read_exact(&mut buf) {
+        Ok(()) => Ok(Some(fnv1a(&buf))),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 enum LineRead {
@@ -83,7 +110,7 @@ fn read_line<R: BufRead>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Result<LineRe
 fn load_state(conn: &Connection, key: &str) -> rusqlite::Result<FileState> {
     Ok(conn
         .prepare(
-            "SELECT offset, session_id, cwd, project_label, cur_model, cur_reasoning \
+            "SELECT offset, session_id, cwd, project_label, cur_model, cur_reasoning, head_len, head_hash \
              FROM file_offsets WHERE session_file = ?1",
         )?
         .query_row([key], |r| {
@@ -94,6 +121,8 @@ fn load_state(conn: &Connection, key: &str) -> rusqlite::Result<FileState> {
                 project_label: r.get(3)?,
                 cur_model: r.get(4)?,
                 cur_reasoning: r.get(5)?,
+                head_len: r.get(6)?,
+                head_hash: r.get(7)?,
             })
         })
         .optional()?
@@ -110,12 +139,14 @@ fn save_state(
 ) -> rusqlite::Result<()> {
     conn.prepare(
         "INSERT INTO file_offsets (session_file, offset, last_modified, file_len, session_id, cwd, \
-         agent_type, project_label, cur_model, cur_reasoning) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) \
+         agent_type, project_label, cur_model, cur_reasoning, head_len, head_hash) \
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) \
          ON CONFLICT(session_file) DO UPDATE SET offset = excluded.offset, \
          last_modified = excluded.last_modified, file_len = excluded.file_len, \
          session_id = excluded.session_id, cwd = excluded.cwd, agent_type = excluded.agent_type, \
          project_label = excluded.project_label, cur_model = excluded.cur_model, \
-         cur_reasoning = excluded.cur_reasoning",
+         cur_reasoning = excluded.cur_reasoning, head_len = excluded.head_len, \
+         head_hash = excluded.head_hash",
     )?
     .execute(params![
         key,
@@ -128,21 +159,23 @@ fn save_state(
         state.project_label,
         state.cur_model,
         state.cur_reasoning,
+        state.head_len,
+        state.head_hash,
     ])?;
     Ok(())
 }
 
-fn num_i64(v: Option<&Value>) -> i64 {
+/// Integer JSON value (floats truncate).
+fn opt_i64(v: Option<&Value>) -> Option<i64> {
     v.and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
-        .unwrap_or(0)
+}
+
+fn num_i64(v: Option<&Value>) -> i64 {
+    opt_i64(v).unwrap_or(0)
 }
 
 fn num_f64(v: Option<&Value>) -> f64 {
     v.and_then(Value::as_f64).unwrap_or(0.0)
-}
-
-fn opt_i64(v: Option<&Value>) -> Option<i64> {
-    v.and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
 }
 
 fn text_of(v: Option<&Value>) -> Option<&str> {
@@ -413,7 +446,11 @@ pub fn ingest_file(
     projects: &ProjectIndex,
 ) -> Result<IngestOutcome, String> {
     let key = path.to_string_lossy().into_owned();
-    let file = File::open(path).map_err(|e| format!("open {key}: {e}"))?;
+    // The sessions walk never follows symlinks; a nudge must not either.
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Ok(IngestOutcome::default());
+    }
+    let mut file = File::open(path).map_err(|e| format!("open {key}: {e}"))?;
     let meta = file.metadata().map_err(|e| format!("stat {key}: {e}"))?;
     let len = meta.len();
     let mtime_ms = meta
@@ -424,7 +461,14 @@ pub fn ingest_file(
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut state = load_state(&tx, &key).map_err(|e| e.to_string())?;
-    if state.offset as u64 > len {
+    // A shrunk file or a changed head means the file was replaced: restart from byte 0. Rows
+    // already stored stay (they are real usage) and a re-read dedupes on (file, entry id), so
+    // nothing is counted twice.
+    let head_changed = state.head_len > 0
+        && head_fingerprint(&mut file, state.head_len)
+            .map_err(|e| format!("read {key}: {e}"))?
+            .is_none_or(|h| h != state.head_hash);
+    if state.offset as u64 > len || head_changed {
         state = FileState::default();
     }
     let mut reader = BufReader::new(file);
@@ -464,6 +508,14 @@ pub fn ingest_file(
     let mut state = pass.state;
     let new_messages = pass.new_messages;
     state.offset += consumed as i64;
+    state.head_len = state.offset.min(HEAD_BYTES);
+    state.head_hash = 0;
+    if state.head_len > 0 {
+        match head_fingerprint(reader.get_mut(), state.head_len) {
+            Ok(Some(h)) => state.head_hash = h,
+            _ => state.head_len = 0,
+        }
+    }
     save_state(&tx, &key, &state, agent_type, len as i64, mtime_ms).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(IngestOutcome { new_messages, more })
