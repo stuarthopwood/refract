@@ -10,7 +10,7 @@ import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { CountBadge } from '@/components/ui/count-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useRightPaneStore } from '@/state'
-import { RAIL_WIDTH_PX, TITLE_BAR_OVERLAY_HEIGHT } from '../../../shared/layout'
+import { RAIL_WIDTH_PX } from '../../../shared/layout'
 import { REORDER_MARKER_CLASS, useReorderable, type ReorderItemProps } from '@/components/reorder/use-reorderable'
 import { ReorderAnnouncer } from '@/components/reorder/ReorderAnnouncer'
 import { railCountLabel, usePanelCount, type HostedPanelDescriptor, type PanelId } from './panel-registry'
@@ -61,8 +61,6 @@ export function IconRail({ sessionId }: IconRailProps) {
       className="flex shrink-0 flex-col items-center border-l border-divider bg-sidebar-right"
       style={{ width: RAIL_WIDTH_PX }}
     >
-      {/* Spacer matching the `titleBarOverlay` height so the top button never sits under the caption buttons. */}
-      <div aria-hidden className="titlebar-surface w-full shrink-0" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -73,7 +71,6 @@ export function IconRail({ sessionId }: IconRailProps) {
             aria-label="Right pane"
             aria-expanded={rightPaneOpen}
             aria-keyshortcuts="Control+Shift+B"
-            className="mt-2"
             onClick={() => toggleRightPane()}
           >
             {rightPaneOpen ? <PanelRightCloseIcon aria-hidden /> : <PanelRightOpenIcon aria-hidden />}

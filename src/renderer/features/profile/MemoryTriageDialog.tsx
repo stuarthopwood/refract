@@ -250,7 +250,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
                 Stop idle
               </Button>
             )}
-            <Button ref={doneButtonRef} type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            <Button ref={doneButtonRef} type="button" size="sm" onClick={() => onOpenChange(false)}>
               Done
             </Button>
           </DialogFooter>
