@@ -39,7 +39,8 @@ uuid = { version = "1.28.0", features = ["v4"] }
 # reqwest's.
 base64 = "0.23"
 # Decodes the Mermaid "Copy as image" PNG to RGBA for the clipboard (#471); already in the graph via tauri.
-png = "0.18"thiserror = "2.0.21"
+png = "0.18"
+thiserror = "2.0.21"
 log = "0.4.34"
 dirs = "7.0.0"
 which = "8.0.6"

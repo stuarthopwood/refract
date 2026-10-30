@@ -24,7 +24,10 @@ fn decode_png_bytes(args: &[Value], method: &str) -> Result<Vec<u8>, IpcError> {
         return Err(invalid_argument(format!("{method} expects a base64 PNG")));
     };
     if encoded.len() > MAX_IMAGE_BYTES * 4 / 3 + 4 {
-        return Err(IpcError::new("clipboard-too-large", "The image is too large"));
+        return Err(IpcError::new(
+            "clipboard-too-large",
+            "The image is too large",
+        ));
     }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(encoded)
@@ -42,7 +45,10 @@ fn png_to_rgba(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), IpcError> {
         .map_err(|_| bad())?;
     let info = reader.info();
     if u64::from(info.width) * u64::from(info.height) > MAX_IMAGE_PIXELS {
-        return Err(IpcError::new("clipboard-too-large", "The image is too large"));
+        return Err(IpcError::new(
+            "clipboard-too-large",
+            "The image is too large",
+        ));
     }
     let mut buf = vec![0; reader.output_buffer_size().ok_or_else(bad)?];
     let frame = reader.next_frame(&mut buf).map_err(|_| bad())?;
@@ -114,12 +120,15 @@ pub fn clipboard_save_image(state: AppState, args: Vec<Value>) -> HandlerFuture 
         let Some(picked) = picked else {
             return Ok(Value::Null);
         };
-        let path = picked
-            .into_path()
-            .map_err(|_| IpcError::new("clipboard-failed", "The chosen location is not a file path"))?;
-        tokio::fs::write(&path, bytes)
-            .await
-            .map_err(|err| IpcError::new("clipboard-failed", format!("The image could not be saved: {err}")))?;
+        let path = picked.into_path().map_err(|_| {
+            IpcError::new("clipboard-failed", "The chosen location is not a file path")
+        })?;
+        tokio::fs::write(&path, bytes).await.map_err(|err| {
+            IpcError::new(
+                "clipboard-failed",
+                format!("The image could not be saved: {err}"),
+            )
+        })?;
         Ok(Value::String(path.to_string_lossy().into_owned()))
     })
 }
