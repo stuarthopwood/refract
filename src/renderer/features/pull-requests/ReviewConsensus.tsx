@@ -1,25 +1,8 @@
-// Reviewer-consensus rollup shown above the Overview tab's Markdown body (#568 decision 10,
-// FR-031). Matches GitHub's own standing-review semantics, not a bare "latest review wins"
-// reducer: per reviewer, fold every review in chronological order, tracking one "standing"
-// verdict --
-//   - approve / request-changes REPLACES the standing verdict (the latest opinionated review
-//     always wins);
-//   - comment leaves the standing verdict unchanged (a reply doesn't supersede an approval);
-//   - dismissed RESETS the standing verdict to none -- gate round 2 fix (#568 decision 10
-//     amendment, Code High N1): a dismissal clears whatever was standing, it does NOT let an
-//     EARLIER review resurface (dismissing a "changes requested" review that came after an
-//     earlier "approve" leaves the reviewer with no current opinion, not a reverted approval).
-// A reviewer with no standing verdict is counted as "commented" ONLY if they have at least one
-// actual comment-type review in their history (gate round 3 fix: a reviewer whose ENTIRE history
-// is a single now-dismissed review -- no comment ever -- has nothing to report and is left out
-// of the count entirely, rather than being miscounted as "commented"). The pull request's own
-// author is excluded, since their own comments on their own pull request aren't a reviewer's
-// verdict.
+// Matches GitHub's own standing-review semantics, not a bare "latest review wins" reducer.
 import type { Review, ReviewVerdict, TimelineEntry } from '../../../shared/github'
 
 export interface ReviewConsensusProps {
   timeline: TimelineEntry[]
-  /** The pull request's own author login (`detail.author.login`) -- excluded from the rollup. */
   authorLogin: string
 }
 
@@ -63,8 +46,6 @@ export function ReviewConsensus({ timeline, authorLogin }: ReviewConsensusProps)
     if (standing === 'approve') approved++
     else if (standing === 'request-changes') changesRequested++
     else if (hasComment) commented++
-    // else: no standing verdict and no comment ever (e.g. a single, now-dismissed review) --
-    // nothing to report for this reviewer, left out of every count.
   }
 
   const parts = [

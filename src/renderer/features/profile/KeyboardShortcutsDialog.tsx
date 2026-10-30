@@ -1,10 +1,3 @@
-// Keyboard shortcuts (spec 008 FR-020, T023): a read-only list reachable from the profile menu.
-// HONESTY RULE: lists ONLY a chord actually verified to have a working handler in this codebase
-// (a keydown listener, a textarea default, or an Electron accelerator) -- never a chord
-// docs/design/index.md's own "Keyboard" table documents that has no real handler behind it yet.
-// See the "Six rows were removed" paragraph in docs/design/index.md for the full set of rows
-// this codebase does NOT implement; this dialog is the one place that only ever shows what is
-// really there.
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -13,10 +6,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 export interface KeyboardShortcutsDialogProps {
   open: boolean
   onOpenChange(open: boolean): void
-  /** Called on close (Esc, the X button, Done, or programmatically) -- the caller
-   *  (ProfileItem.tsx) returns focus to the profile item's name button, the same explicit
-   *  close-auto-focus every dialog here needs since none is given a `Trigger` (Radix's own
-   *  default would otherwise drop focus to `<body>`, confirmed live earlier in this spec). */
+  /** Called on close; the caller restores focus since the dialog has no `Trigger`. */
   onCloseFocus?(): void
 }
 
@@ -30,16 +20,7 @@ interface ShortcutGroup {
   rows: ShortcutRow[]
 }
 
-// Every row here was individually verified against its real handler before being listed
-// (MessageInput.tsx, App.tsx, SessionList.tsx) -- see this task's own report for the full
-// row-by-row verification table. A chord in docs/design/index.md's "Keyboard" table that is NOT
-// listed here (Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) has no working
-// handler yet (#429 trimmed the table itself to match); it is left out entirely rather than
-// shown as a false promise. Ctrl+, (Open Settings, #395) and Ctrl+N (New session, #6's first
-// slice, PR #647) each moved from that list into a real row below now that a handler exists
-// (App.tsx). Issue #6 closed 2026-10-10 by decision: Ctrl+Shift+N, Ctrl+1 to Ctrl+9 and
-// Ctrl+Shift+A are not built and are no longer tracked by any open issue; Ctrl+B is tracked
-// separately by #453; Command palette (Ctrl+K) has no open issue.
+// Lists only chords with a real handler; chords documented but unhandled (Ctrl+Shift+N, Ctrl+1..9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) stay out.
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     heading: 'Message box',
@@ -51,24 +32,18 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ]
   },
   {
-    // Issue #6 (keyboard shortcut set), first slice: its own heading, listed before "Chat
-    // pane" -- creating a Session precedes using one.
     heading: 'Sessions',
     rows: [{ action: 'New session', keys: ['Ctrl', 'N'] }]
   },
   {
-    // Story #477 (pause mode): Space resumes the focused paused pane.
     heading: 'Pause',
     rows: [{ action: 'Resume the focused paused session', keys: ['Space'] }]
   },
   {
-    // Issue #621 (close chat pane): its own heading, not folded into "Split view" below --
-    // Ctrl+W closes the showing chat pane whether or not a split is open.
     heading: 'Chat pane',
     rows: [{ action: 'Close chat pane', keys: ['Ctrl', 'W'] }]
   },
   {
-    // Spec 024 FR-004 (#538): collapse or expand the right pane.
     heading: 'Right pane',
     rows: [{ action: 'Collapse or expand the right pane', keys: ['Ctrl', 'Shift', 'B'] }]
   },
@@ -85,6 +60,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   }
 ]
 
+/** Read-only list of the supported keyboard shortcuts. */
 export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: KeyboardShortcutsDialogProps) {
   const doneRef = useRef<HTMLButtonElement>(null)
 
@@ -116,10 +92,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
                     <KbdGroup className="shrink-0">
                       {row.keys.map((key) => (
                         <Kbd key={key}>
-                          {/* Quality-gate remediation (PR #637 gate, optional a11y): a lone ','
-                              glyph reads ambiguously to a screen reader (sometimes silent,
-                              sometimes "comma" depending on the engine) -- spelling it out for
-                              assistive tech while keeping the visible key-cap glyph unchanged. */}
+                          {/* A lone ',' reads ambiguously to screen readers. */}
                           {key === ',' ? (
                             <>
                               <span aria-hidden>,</span>

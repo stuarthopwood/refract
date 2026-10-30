@@ -1,13 +1,3 @@
-// One readiness check's row (extracted from Readiness.tsx, spec 008 T024): icon, label, and any
-// found/hint text, shared so the profile menu's Health check dialog (HealthCheckDialog.tsx)
-// renders the exact same row the first-run Readiness screen does, instead of a second
-// hand-rolled copy that could drift from it. `showStateWord` defaults false so Readiness.tsx's
-// own rendering is pixel-identical to before this extraction; only HealthCheckDialog.tsx sets it,
-// since that dialog shows the state word visibly (Readiness.tsx leaves it `sr-only`, matching
-// its own quieter first-run tone). `CheckStatusIcon`'s own `srWord` defaults true (Readiness's
-// quieter, icon-plus-sr-only-word tone); `CheckRow` itself passes `srWord={!showStateWord}` below
-// so a screen reader hears the state word exactly once whichever caller renders it, instead of
-// once from the icon's own sr-only span and again from the row's visible one.
 import type { ReactNode } from 'react'
 import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import type { Check } from '../../../shared/ipc'
@@ -20,9 +10,7 @@ export const CHECK_LABELS: Record<(typeof CHECK_ORDER)[number], string> = {
   ompSignedIn: 'OMP signed in'
 }
 
-/** The exact word `CheckStatusIcon`'s own `sr-only` text already uses for each state -- kept as
- *  one function so a second consumer that needs it VISIBLE (HealthCheckDialog.tsx) can never
- *  drift from what a screen reader hears here. */
+/** The word `CheckStatusIcon`'s `sr-only` text uses for each state, shared so a visible consumer cannot drift from what a screen reader hears. */
 export function checkStateWord(check: Check | undefined, checking: boolean): string {
   if (!check) return checking ? 'Checking' : 'Not checked yet'
   if (check.ok && check.warning) return 'Passed with a warning'
@@ -36,8 +24,6 @@ export function CheckStatusIcon({
 }: {
   check?: Check
   checking: boolean
-  /** Set false by a caller that already renders the state word itself (HealthCheckDialog.tsx's
-   *  `showStateWord`), so a screen reader hears it exactly once instead of twice. */
   srWord?: boolean
 }): ReactNode {
   const word = checkStateWord(check, checking)
@@ -79,7 +65,6 @@ export interface CheckRowProps {
   label: string
   check?: Check
   checking: boolean
-  /** HealthCheckDialog.tsx only: also shows the state word visibly next to the label. */
   showStateWord?: boolean
 }
 

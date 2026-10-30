@@ -1,9 +1,5 @@
-// "Uses:" -- issue #941 grill item 5: a Stage's real `agent://<id>` dependencies on an earlier
-// Stage's agent, never a guess (`groupSubagentStages.ts`'s own `applyDependencies` already
-// dropped every reference that matched nothing or pointed at the Stage's own agents or a later
-// one, and resolves a repeated name to the LATEST earlier Stage that started it). Shared by the
-// Subagent chain's Stage rows (`SubagentChainRow.tsx`) and, in a later PR, the Subagent panel's
-// own Stage node (ADR 0003: one component, not two copies).
+// "Uses:" lists a Stage's real `agent://<id>` dependencies on earlier Stages; `applyDependencies` already
+// drops unmatched or non-earlier references. Shared by the chain Stage rows and the Subagent panel (ADR 0003).
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
@@ -11,9 +7,7 @@ import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import type { StageDependency } from './groupSubagentStages'
 import { mutedLinkClassName } from './Markdown'
 
-/** Groups `dependencies` by the earlier Stage they belong to, preserving first-seen Stage
- * order, so "Uses: G923Code, G923Arch (Stage 1), Story559 (Stage 2)" never interleaves two
- * Stages' own agent ids inside one parenthesis. */
+/** Groups `dependencies` by earlier Stage in first-seen order, so "Uses: A, B (Stage 1), C (Stage 2)" never interleaves. */
 function groupByStage(dependencies: StageDependency[]): Array<{ stageIndex: number; deps: StageDependency[] }> {
   const groups: Array<{ stageIndex: number; deps: StageDependency[] }> = []
   for (const dep of dependencies) {
@@ -24,17 +18,8 @@ function groupByStage(dependencies: StageDependency[]): Array<{ stageIndex: numb
   return groups
 }
 
-/** One Stage's own "Uses:" line (issue #941 grill item 5): each referenced agent is a real,
- * link-styled button (`mutedLinkClassName`, `Markdown.tsx`'s own muted-surface link treatment,
- * so it reads as a link at rest, not only on hover) when the live Subagent list still knows the
- * EXACT matched agent (correlated by `toolCallId`+`specIndex`, not name alone -- gate round 1
- * fix: a repeated agent name across Stages must open the one `applyDependencies` actually
- * resolved to, never whichever same-named row the tracker happens to match first), else plain
- * text (decision 7's own "unbuilt actions are hidden, not disabled" pattern). Renders nothing
- * when `dependencies` is empty (the common case: most Stages have none). Gate round 2 fix (item
- * 4): the label-column indent is the CALLER's own choice (`className`), never hardcoded here --
- * a one-agent Stage's `CollapsibleContent` already supplies it, `ChainStageLine`'s own terse row
- * needs none at all (`basis-full` instead, item 6). */
+/** One Stage's "Uses:" line; an agent is a link button only when the live list knows the exact match (`toolCallId`+`specIndex`), else plain text.
+ * The label indent is the caller's choice (`className`). */
 export function StageUsesLine({
   dependencies,
   sessionId,
@@ -44,11 +29,7 @@ export function StageUsesLine({
   sessionId: string | null
   className?: string
 }) {
-  // Gate round 4 fix (issue #941, P7, LOW): the bare `?? []` fallback below used to return a
-  // fresh array identity on every render once `sessionId` is null -- `EMPTY_READOUT_ENTRY`
-  // (the same module-level singleton `SubagentPanel.tsx` already uses for this) is a stable
-  // reference instead, so zustand v5's reference-equality memoisation never sees a "changed"
-  // snapshot purely from this selector re-running.
+  // Stable singleton: a fresh `?? []` each render would look like a changed snapshot to zustand v5.
   const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
   if (dependencies.length === 0) return null
   const groups = groupByStage(dependencies)
@@ -69,10 +50,7 @@ export function StageUsesLine({
                     onClick={(event) =>
                       openHostedPanel('subagents', sessionId, {
                         selectSubagentId: match.id,
-                        // Gate round 3 fix (item 4): disambiguates two same-named agents
-                        // (`SubagentSummary.id` is name-based) so exactly the matched one --
-                        // not whichever same-named row the tracker finds first -- is selected
-                        // and focused in the panel.
+                        // `SubagentSummary.id` is name-based; this selects exactly the matched agent.
                         selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
                         opener: event.currentTarget
                       })

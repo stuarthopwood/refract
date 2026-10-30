@@ -3,11 +3,6 @@ import type { ProjectColor, Repository, RepositoryRemote } from '../../shared/mo
 import { notify } from './notify'
 import { useSessionListStore } from './session-list-store'
 
-// Gate round 4 fix (Low, a11y-auditor + security-auditor): structural equality for
-// `setRemotes`' own merge below -- lets it keep the SAME repository object (and, if nothing
-// anywhere changed, the same `state`) when a freshly computed value says the same thing the
-// current one already does, instead of creating a new object (and re-rendering every group
-// header) on every throttled focus refresh regardless of whether anything actually changed.
 function remoteEquals(current: RepositoryRemote | undefined, next: RepositoryRemote): boolean {
   if (!current) return false
   if (current.kind !== next.kind) return false
@@ -18,48 +13,14 @@ function remoteEquals(current: RepositoryRemote | undefined, next: RepositoryRem
 interface RepositoriesState {
   repositories: Repository[]
   setRepositories(repositories: Repository[]): void
-  /** Issue #528, gate round 3 fix (Medium): merges a `repositories.remotes()` response into the
-   * CURRENT `repositories` array by id -- a repository id absent from `remotes` (gate round 4
-   * fix: the shared pool now leaves a deadline-cut-off repository out of its response entirely,
-   * rather than sending an explicit `unknown` placeholder for it) is left exactly as it was, and
-   * an id present in `remotes` but no longer in `repositories` (removed in the meantime) is
-   * silently ignored, since there is nothing left to merge it onto. `add()`/`rename()` each
-   * already set their own freshly computed `remote` on success; a `remotes()` response CAN still
-   * arrive concurrently with one of those for the same repository (gate round 4 fix, a11y-
-   * auditor: the round-3 doc comment's "never runs between" claim was not actually guaranteed) --
-   * harmless either way, since every apply here is id-keyed and idempotent, and `remoteEquals`
-   * below means a merge that happens to say the same thing a fresher value already does creates
-   * no new object and no extra render. Gate round 5 fix (Low, a11y-auditor): documented, not
-   * coded, because it is not cheap to do correctly -- an OLDER `remotes()` pool call (started
-   * before an `add()`/`rename()`, but with its own up-to-10s deadline) can resolve AFTER that
-   * newer call's own fresher value has already landed, re-applying this id. `remoteEquals`
-   * makes that a no-op UNLESS the repository's actual git remote config changed externally
-   * (outside Refract) in that same window, in which case the older pool's answer briefly
-   * overwrites the newer one's -- no worse than the accepted lag of any slow refresh already
-   * inherent to this 10s-bounded, focus-triggered design (see `REMOTE_DEADLINE_MS` above
-   * `repositories.ts`'s `remotesBounded`). A correct fix needs a per-id generation counter
-   * threaded through both the IPC response and this store, to skip an apply older than the id's
-   * last `add`/`rename`; not worth the added surface for a window this narrow and a window this
-   * rare. */
   setRemotes(remotes: Record<string, RepositoryRemote>): void
   add(path: string): Promise<Repository | null>
-  /** Adds an already-persisted Repository (for example one a background clone just added in Rust);
-   * a no-op when its id is already present. */
   addLocal(repository: Repository): void
   remove(id: string): Promise<boolean>
-  /** Quality-gate fix (a11y, Medium, 2026-10-08): returns the error message (not a bare
-   * `false`) so the rename input can show it inline (`aria-describedby`) instead of only a
-   * toast -- the caller keeps the field open and the typed draft intact on failure. `null`
-   * means the rename succeeded and `repositories` was already updated with the server's
-   * resolved value. */
   rename(id: string, name: string): Promise<string | null>
-  /** Issue #887: sets or (with `null`) clears the Project colour; returns an error message or
-   * `null`, like `rename`. The saved `remote` is kept, since the IPC result carries none. */
   setColor(id: string, color: ProjectColor | null): Promise<string | null>
 }
 
-/** A Project added while the app runs has no remote until the next startup or focus refresh, and
- * Home scopes every GitHub call to Projects with a known GitHub remote (#869), so detect it now. */
 function refreshRemotesAfterAdd(): void {
   void window.refract.repositories
     .remotes()
@@ -69,7 +30,7 @@ function refreshRemotesAfterAdd(): void {
     .catch(() => {})
 }
 
-// Repositories the developer has added to Refract (contracts/ipc.md "Repositories").
+/** Store of known repositories. */
 export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
   repositories: [],
   setRepositories: (repositories) => set({ repositories }),
@@ -108,15 +69,9 @@ export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
     }
     const repositories = get().repositories.filter((repository) => repository.id !== id)
     set({ repositories })
-    // #735 decision 18: pruned only after a successful remove, never left for a later
-    // stale write to bring the id back (see `session-list-store.ts`'s own `pruneRepositories`
-    // doc comment).
     useSessionListStore.getState().pruneRepositories(new Set(repositories.map((repository) => repository.id)))
     return true
   },
-  // Issue #480: the IPC handler returns the full updated Repository (its name may have reset to
-  // the folder basename if the committed value was empty after trimming), so the store applies
-  // that exact value rather than re-sending whatever the caller passed in.
   rename: async (id, name) => {
     const result = await window.refract.repositories.rename(id, name)
     if (!result.ok) return result.error.message

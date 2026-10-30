@@ -1,22 +1,7 @@
-// Shared remove-with-focus-restoration core for a pending image or file/folder attachment
-// (#926: generalises the image-only logic `MessageInput.tsx`'s own `handleRemoveImage` used to
-// own alone, which would otherwise have been duplicated near-verbatim for the new file/folder
-// kind -- keeping both in `MessageInput.tsx` itself also pushed that file further past its own
-// `check:file-size` baseline than a second near-copy justified).
-//
-// PR #723 gate round 2/3 fixes (A11y2/A11y3 HIGH, carried over unchanged): if focus was inside
-// THIS composer's own attachment strip when Remove was activated (never `document`-wide -- split
-// view renders two independent strips), it moves to whichever chip now occupies that same
-// position, or the previous one if the removed chip was last, or the textarea if none remain;
-// `announceAttachment` always fires.
-//
-// `AttachmentStrip.tsx` renders every image chip, then every file chip, then text chips (which
-// have no remove button of their own) -- so a chip's own index among the strip's shared
-// `button[aria-label^="Remove"]` query is its bare index for an image, or `imagesCount +
-// itsIndex` for a file.
 import type { RefObject } from 'react'
 import { useDraftStore } from '@/state'
 
+/** Removes a pending attachment and restores focus to the neighbouring chip, else the textarea. */
 export function removeAttachment(
   sessionId: string,
   kind: 'image' | 'file',
@@ -42,7 +27,7 @@ export function removeAttachment(
     announceAttachment(removed?.isDirectory ? 'Folder removed.' : 'File removed.')
   }
   if (!focusWasInStrip || removedIndex === -1) return
-  const absoluteIndex = kind === 'image' ? removedIndex : imagesCount + removedIndex
+  const absoluteIndex = kind === 'image' ? removedIndex : imagesCount + removedIndex // strip renders images before files
   requestAnimationFrame(() => {
     const removeButtons = attachmentStripRef.current ? Array.from(attachmentStripRef.current.querySelectorAll('button[aria-label^="Remove"]')) : []
     const next = (removeButtons[absoluteIndex] ?? removeButtons[absoluteIndex - 1]) as HTMLElement | undefined

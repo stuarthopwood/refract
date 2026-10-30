@@ -21,13 +21,7 @@ interface ToolCallBodyProps {
   onDialogOpenChange: (open: boolean) => void
 }
 
-// A short result is safe to show as this call's own quiet one-line summary straight in the row
-// (#628, e.g. "Queued for ... (was parked; revived)."); a longer or multi-line result needs
-// "View full call" instead, never a misleading truncated first line.
 const QUIET_SUMMARY_MAX_CHARS = 200
-// Gate round 2 (G909Arch N1): the group-detail attribution prefix (the failing call's own
-// target, muted) is capped well short of the Error line's own 200-character budget, so a long
-// command never pushes the actual error text out of the 2-line clamp.
 const ATTRIBUTION_PREFIX_MAX_CHARS = 40
 
 function quietSummary(output: string | undefined): string | undefined {
@@ -35,23 +29,6 @@ function quietSummary(output: string | undefined): string | undefined {
   return output
 }
 
-// #570 decision 7 (live probe, docs/spike/bash-error-probe-570.mjs, FINDINGS item 60), AMENDED
-// after gate round 1 (G909Arch H1, G909Code, G909A11y): the ORIGINAL cut also stripped OMP's own
-// `Command exited with code N`/timed-out line, so a silent failure (`exit 9`, `grep -q`, a failed
-// `test`) showed OMP's literal `(no output)` placeholder instead of the one fact that actually
-// explains the failure -- the exit code. Fixed: only `Wall time: Ns` (OMP's own exact pattern,
-// `^Wall time: \d+(?:\.\d+)? seconds$`) is stripped from the end; the exit-code or timeout line
-// that follows it is read FIRST, as the fallback, before the cut -- any notice line OMP inserts
-// between them (for example "Timeout clamped to ...") is skipped over, never mistaken for the
-// real error. A lone `(no output)` left after the cut is also wrapper chrome, not content: when
-// nothing real remains, the fallback (the exit code or timeout line, or `item.details.exitCode`
-// when the text itself lacks one) is shown instead; "Failed." is reserved for a call with no
-// output AND no exit/timeout information at all. Every other tool is unaffected: no footer, no
-// fallback, just its own FIRST non-empty line. Control sequences (CSI/OSC), C0 controls, and
-// bidi-override characters are stripped first so a stray terminal code or a spoofing override
-// never leaks into the plain-text row (security hardening, gate round 1). #962: `sanitizeLines`
-// moved to `formatToolCommand.ts` so its own `commandRowText` can run the same cleaning over its
-// command and path text -- one copy of the regex, imported above.
 const WALL_TIME_LINE = /^Wall time: \d+(?:\.\d+)? seconds$/
 const EXIT_CODE_LINE = /^Command exited with code (-?\d+)$/
 const TIMEOUT_LINE = /^Command timed out after (\d+) seconds$/
@@ -62,9 +39,6 @@ function errorLine(item: ToolItem): string {
   let lines = raw ? sanitizeLines(raw) : []
   let fallback: string | undefined
   if (item.tool === 'bash') {
-    // Gate round 2 (G909Arch/G909Code N3): the LAST `Wall time:` line, not the first -- a
-    // command whose own real output happens to print a matching line must not have its genuine
-    // trailing footer missed, and the real footer is always the final occurrence.
     const wallTimeIndex = lines.findLastIndex((line) => WALL_TIME_LINE.test(line))
     if (wallTimeIndex !== -1) {
       for (const line of lines.slice(wallTimeIndex)) {
@@ -86,14 +60,9 @@ function errorLine(item: ToolItem): string {
       if (bracketedTimeout) fallback = `Command timed out after ${bracketedTimeout[1]} seconds`
     }
     if (!fallback) {
-      // Gate round 2 (G909Code N8): read BEFORE the `lines.length === 0` check below, not after
-      // -- a bash call with no output at all (`raw` falsy) must still fall through to this,
-      // never short-circuit straight to "Failed." while a real exit code is known.
       const details = item.details as { exitCode?: number } | undefined
       if (typeof details?.exitCode === 'number') fallback = `Exited with code ${details.exitCode}`
     }
-    // OMP's own placeholder for a call that printed nothing at all: wrapper chrome, never the
-    // actual error (that is exactly what the fallback above is for).
     if (lines.length > 0 && lines[lines.length - 1] === '(no output)') lines = lines.slice(0, -1)
   }
   if (lines.length === 0) return fallback ?? 'Failed.'
@@ -101,35 +70,9 @@ function errorLine(item: ToolItem): string {
   return line.length > QUIET_SUMMARY_MAX_CHARS ? `${line.slice(0, QUIET_SUMMARY_MAX_CHARS)}…` : line
 }
 
-// The expansion content for one tool call (#628, #630): an edit's diff (capped, with its own
-// Expand/Collapse, `DiffView`'s `capped` prop), a successful write's "Wrote N lines to <path>"
-// line, or a short successful call's own one-line result -- never a boxed Arguments/Output/
-// content block (moved into the "View full call" dialog, `ToolCallDialog.tsx`, which still
-// renders every argument and the output through the shared `CodeBlock`, T083, FR-050). A failed
-// call's own error text is NOT part of this expansion (#570 decision 10): it is the Error line,
-// a baseline fixture rendered by `CollapsedLine` itself under the row, visible whether the row is
-// collapsed or expanded, never duplicated here. Split out from the row wrapper so `ToolGroupRow`
-// can reuse the same content for a solo call (no nested `CollapsedLine`) and for each call inside
-// a multi-call group (its own nested `CollapsedLine` via `ToolCallRow` below) without ever
-// changing the *wrapper* element type at a given tree position. `dialogOpen`/`onDialogOpenChange`
-// are controlled from `ToolGroupRow` (quality-gate remediation, Medium): see that component's own
-// comment for why.
 function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProps) {
-  // Quality-gate remediation (Sec, Medium): `item.write`/`item.output` are both populated from
-  // the call's own arguments or a partial result while it is still running (`transcript.ts`),
-  // not only once it actually finishes -- "Wrote N lines to <path>" and a quiet one-line result
-  // are both claims that the call *succeeded*, so both are gated on `status === 'done'` and
-  // never shown for a running, interrupted or exited call (which could still fail, or never
-  // actually have written anything).
-  // Gate round 1 (ui-architect-v3 High, H6): #632's own acceptance is that an expanded `bash`
-  // call shows NO output text at all except a failed call's Error line -- `quietSummary` is
-  // skipped for `bash` only (FR-061's "single line, 200 chars or fewer, shows verbatim" rule now
-  // excludes it, spec.md corrected to match); every other tool is unaffected.
   const isDone = item.status === 'done'
   const summary = isDone && item.tool !== 'bash' ? quietSummary(item.output) : undefined
-  // Quality-gate remediation (Low): a `content` ending in a trailing newline (the common case for
-  // a real file) used to count one line too many -- `split('\n')` turns "a\nb\n" into
-  // `['a', 'b', '']`, counting the empty string after the final newline as a line of its own.
   const writeLineCount = item.write
     ? item.write.content === ''
       ? 0
@@ -154,30 +97,13 @@ function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProp
 
 interface ToolCallRowProps {
   item: ToolItem
-  /** Forwarded to the nested `CollapsedLine`'s `summaryWrap` (see `ToolGroupRowProps`). */
   summaryWrap?: boolean
   dialogOpen: boolean
   onDialogOpenChange: (open: boolean) => void
-  /** Quality-gate remediation (High, round 3): when the solo→multi reshape below mounts a FRESH
-   * `ToolCallRow` for a call whose dialog was already open, its nested `CollapsedLine` must
-   * start expanded -- `Collapsible`'s `CollapsibleContent` has no `forceMount` (`collapsible.tsx`,
-   * `ui/collapsible.tsx`) and renders no children at all while collapsed, so an uncontrolled
-   * `defaultOpen={false}` here would mean `ToolCallBody`/`ToolCallDialog` never mount in the new
-   * position: the dialog would stay invisible with focus dropped to `<body>` even though
-   * `ToolGroupRow`'s own `openDialogItemId` still names this item, and that stale id would later
-   * pop the dialog open unprompted the moment the user manually expanded this row. Read once, on
-   * mount, the same contract `CollapsedLine`'s own `defaultOpen` already has. */
   defaultOpen?: boolean
 }
 
-// One compact row per tool call, used only for each call nested inside an expanded multi-call
-// group (never at the top-level tree position `ToolGroupRow` itself occupies).
 function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
-  // Spec 023 (FR-001, FR-007, FR-010, FR-011): the tool icon leads (raw id as its tooltip), the
-  // label is the intent or the verb for every tool (`bash` and `grep` included, superseding spec
-  // 022's label-free command rows), and the status icon trails in `meta`. Gate round 1 (a11y M1)
-  // and (Main, D2): an explicit accessible name (FR-015), with the edit stat and duration folded
-  // in, since an explicit `aria-label` makes a browser ignore every child.
   const showToolNames = useShowToolNames()
   const display = resolveToolDisplay(item.tool, item.target)
   const rawId = showToolNames ? display.rawId : undefined
@@ -195,22 +121,14 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={display.rawId}
       label={label}
-      // #570 decision 4, FR-020: a failed call's icon and label take the error colour.
       labelClassName={failed ? 'text-severity-error' : undefined}
       summary={toolRowSummary(rawId, target)}
       summaryWrap={summaryWrap}
-      // Gate round 1 (code-reviewer High, H4): wrap-on-expand is opt-in now; a tool call's row
-      // text (FR-061) wants it for every tool, not only the command-style ones.
       wrapWhenOpen
       meta={toolRowMeta(item.status, callMeta(item))}
       triggerAriaLabel={memberAriaLabel}
-      // #570 decisions 6, 9: a failed member's own Error line, shown whether this row is
-      // collapsed or expanded -- no `hideDetailWhenOpen` here, that only applies to the GROUP
-      // header below, which this member row is not.
       detail={item.status === 'error' ? errorLine(item) : undefined}
       defaultOpen={defaultOpen}
-      // #565 decision 10: a member's expanded body starts at the label column (the default
-      // `px-2`'s own `pr-2` is kept, only the left side widens).
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
@@ -220,72 +138,18 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
 
 interface ToolGroupRowProps {
   group: ToolGroup
-  /** Opt-in (#492, spec 004 FR-022): the Subagents panel's narrower column wraps a long target
-   * instead of truncating it, where the main transcript's own wider rows stay one-line. */
   summaryWrap?: boolean
-  /** #1210: this is the transcript's one newest running row, so its label shimmers while it runs. */
   shimmer?: boolean
 }
 
-// A collapsed run of consecutive calls to the same tool (T074, docs/DESIGN.md "Chat"). Always
-// renders exactly one top-level `CollapsedLine`, whatever the run's length, so this never changes
-// element type at this tree position when a run grows from one call to two or more (FIX: focus
-// and expansion used to be lost the moment a second call arrived -- first because a lone call and
-// a run rendered through two different components, `ToolRow` vs `ToolGroupRow`, then because this
-// function's own single-call branch still returned a *different* top-level element, `ToolCallRow`,
-// than its multi-call branch's `CollapsedLine`; both cases make React unmount/remount the
-// Collapsible that holds the trigger's focus and open state; see `groupToolItems`, which now
-// always hands this a `ToolGroup`, even for a run of one). A one-item group's `CollapsedLine` gets
-// the same label/summary/meta a lone call used to show, with that call's own body as the content
-// (no multi-call header, no extra nesting). A multi-item group's own status is running while
-// any call runs, else failed when any call failed; #632 replaced its old summary ("the last
-// call's target, plus + N others") with an explicit count folded into the label itself ("bash
-// ×2") and no summary text at all -- the failed/interrupted counts and the run's own total
-// duration live in the never-shrinking `meta` slot instead (#570 decision 12, text AND colour:
-// "N failed" reads in the error colour; #632: all three join with the same "·" grammar) -- and
-// only the *children* of this one `CollapsedLine` -- never its own presence or type -- switch to
-// the per-call list.
-//
-// Quality-gate remediation (A11y, High round 3; Medium round 2): `openDialogItemId` (which
-// call's "View full call" dialog, if any, is open) is held HERE, above the solo/multi switch
-// above, keyed by `item.id` -- not as `ToolCallDialog`'s own internal state. The switch between
-// the solo branch (`ToolCallBody` directly) and the multi branch (a `SpineList` `<ol>` of `ToolCallRow`s)
-// changes the child's element type at this tree position (exactly the
-// `ToolCallRow`-vs-`CollapsedLine` problem the comment above already solved one level up), so a
-// `ToolCallBody`/`ToolCallDialog` for a call that is mid-run unmounts and remounts the moment a
-// second call of the same tool starts streaming. Lifting the state here is necessary but NOT
-// sufficient on its own (round 2's mistake): `ToolCallRow`'s own nested `CollapsedLine` is still
-// uncontrolled and mounts collapsed by default, and `Collapsible`'s content renders nothing at
-// all while collapsed (no `forceMount`) -- so without `ToolCallRow`'s own `defaultOpen` prop
-// (above), the freshly mounted `ToolCallBody`/`ToolCallDialog` would never mount into the DOM at
-// all, the dialog would stay invisible with focus dropped to `<body>`, and the stale
-// `openDialogItemId` would later pop the dialog open unprompted the next time the user manually
-// expanded that row. With BOTH the lifted state and `ToolCallRow`'s `defaultOpen={dialogOpen}`,
-// the freshly mounted nested row starts expanded, so `ToolCallDialog` mounts with `open` already
-// `true` and Radix's own focus-return targets the newly mounted trigger on close.
 export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps) {
   const [openDialogItemIdState, setOpenDialogItemId] = React.useState<string | null>(null)
-  // Defensive (round 3): `groupToolItems` only ever appends to a run, never removes from it, so
-  // this should never actually trigger today -- but a stale id naming a call that is no longer
-  // in this group must never be treated as "open" (it would silently start a nested row expanded
-  // for the wrong reason, or leave `openDialogItemId` unreclaimable).
   const openDialogItemId =
     openDialogItemIdState != null && group.items.some((item) => item.id === openDialogItemIdState) ? openDialogItemIdState : null
   const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
-  // Issue #510 slice 3 quality-gate fix (a11y, Low): a multi-call group used to name failed
-  // calls but silently drop interrupted ones, so a sighted user could not tell which (or how
-  // many) calls were cut off without expanding the group (gate round 1, #570: both counts now
-  // live in the meta slot instead of the summary text, "N failed" in the error colour).
   const interruptedCount = group.items.filter((item) => item.status === 'interrupted').length
-  // Issue #911: a user-initiated Stop never gets its own count merged into `interruptedCount`
-  // above -- same reasoning as `subagentStatus.tsx`'s own `summarizeSubagentStatuses` doc
-  // comment (decision 15): "cancelled" and "interrupted" are different claims (the user acted
-  // vs. the writing process just vanished) and must never fold into one shared number.
   const cancelledCount = group.items.filter((item) => item.status === 'cancelled').length
-  // #570 decisions 6, 9: the group header's own Error line while collapsed is the LATEST failed
-  // member's (replaced by each failed member's own line once expanded, decision 9's
-  // `hideDetailWhenOpen` below); for a solo "group" this is simply that one call.
   const lastFailedItem = failedCount > 0 ? [...group.items].reverse().find((item) => item.status === 'error') : undefined
   const status: RowStatus = group.items.some((item) => item.status === 'running')
     ? 'running'
@@ -297,11 +161,6 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
           ? 'cancelled'
           : 'done'
   const isRunning = status === 'running'
-  // #565 decision 26 (mirrors `StageGroupRow`'s own seen-set, `SubagentChainRow.tsx`): a member
-  // that mounts WHILE this group is live (running) fades in; one already present at a settled
-  // or history mount never does. Seeded synchronously during render (never in an effect, so a
-  // settled reopen never flashes a first invisible frame), then every currently-rendered id is
-  // marked seen in an effect after paint so a row only ever fades in once.
   const seenIdsRef = React.useRef<Set<string> | null>(null)
   if (seenIdsRef.current === null) {
     const seen = new Set<string>()
@@ -313,27 +172,8 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
   const last = group.items[group.items.length - 1]!
-  // Issue #543, first slice: a solo `read` whose target is a `skill://` URL (groupToolItems
-  // guarantees it is always solo -- it is exempted from every run, never merged with the calls
-  // around it) reads "Using skill <name>" ("Used skill" once settled, #1208) instead of the raw tool name, with the
-  // skill's own icon (spec 023); the usual running/done/failed status is unchanged (Accessibility note on #543:
-  // "status is icon plus text", the same convention every other row already uses).
   const skillName = solo ? last.skill?.name : undefined
-  // `toolLabel` is the tool's verb (#1208, `toolVerbs.ts`: FR-002, FR-005 no colon), read by the aria-label composition
-  // below; `visibleLabel` is what the row itself shows -- for a multi-call group that folds the
-  // run's own count in (#632, #1208 FR-013: "Ran ×2", never the last call's own command). The group header
-  // used to show `${last.target} + N others` as its `summary`, which named one call and implied
-  // the rest were minor variants of it; the fix is a header that is honestly about every call at
-  // once, so a multi-call group's `summary` below is dropped entirely (no text between the
-  // label and the meta slot, matching the issue's own mockup), not replaced with a different
-  // single-call description.
-  // A multi-call group's verb tracks only running vs settled; its failed/stopped counts carry
-  // the rest, so a group with one failed member still reads "Ran ×2", never "Failed Ran".
   const verbPhase: RowStatus = solo ? status : isRunning ? 'running' : 'done'
-  // Spec 023 (FR-007, FR-014): a solo row's label is its intent or verb; a multi-call group reads
-  // the shared tool's verb ×N (members share one display key, `groupToolItems`), never an intent.
-  // Every tool shows its label now, `bash` and `grep` included (supersedes spec 022's label-free
-  // command rows). The raw id leads the summary only while "Show tool names on rows" is on.
   const first = group.items[0]!
   const display = resolveToolDisplay(first.tool, first.target)
   const rawId = useShowToolNames() ? display.rawId : undefined
@@ -341,23 +181,9 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
   const visibleLabel = solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
   const failed = status === 'error'
   const summary = toolRowSummary(rawId, skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined)
-  // #632: a multi-call group's own total time -- the sum of every member's own `durationMs`,
-  // matching the mockup's own worked example (11.8s + 4.1s = 15.9s) -- joins the failed/
-  // interrupted counts below in the meta slot. Gate round 1 (code-reviewer Medium, M6): a
-  // missing `durationMs` used to be treated as zero, silently understating the real total as a
-  // partial sum presented as complete -- shown only once EVERY member carries its own duration.
   const totalDurationMs = group.items.reduce((sum, item) => sum + (item.durationMs ?? 0), 0)
   const allHaveDuration = group.items.every((item) => item.durationMs != null)
   const totalDuration = !isRunning && allHaveDuration ? formatDuration(totalDurationMs) : undefined
-  // #570 decision 12: a multi-call group's own failed/interrupted counts move from the summary
-  // text above into this never-shrinking meta slot, "N failed" in the error colour the instant
-  // any member fails -- even mid-run, since colour here is reinforcement, not the only signal
-  // (the word itself carries it) -- while "N interrupted" stays neutral (decision 5: interrupted
-  // is never red). Issue #911: "N stopped" joins them, same neutral treatment as interrupted
-  // (never red -- the user's own action, not a claim anything went wrong). A solo call's own
-  // meta reuses the same per-call stat `ToolCallRow` shows (an `edit`'s own "+N -M", #632,
-  // alongside its duration) -- one function, so the two can never show a different stat for
-  // what is otherwise the identical row.
   const meta = toolRowMeta(
     status,
     solo
@@ -370,25 +196,8 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
         ])
   )
 
-  // Gate round 2 (Main, G909Arch): an explicit accessible name, matching decision 15's own
-  // illustrated form ("Failed bash, 2 calls, 1 failed, 15.9 seconds"), bypassing the browser's
-  // content-based name computation entirely -- that computation inserts its own space at every
-  // sibling-element boundary regardless of nesting, which produced a doubled space before the
-  // meta separator's comma ("...+ 2 others , 1 failed") no amount of DOM restructuring removed.
-  // Read straight off the raw fields (never off the visual `meta` JSX above, which can carry a
-  // coloured diff-stat span the aria string has no use for) so this never breaks if that JSX
-  // shape changes.
-  // Gate round 1 (accessibility-auditor Medium, M1, WCAG 2.5.3 Label in Name): a solo command-
-  // style call's own VISIBLE summary is `commandRowText` (the bare command, or the quoted grep pattern), but this
-  // accessible-name text used the raw, untransformed target -- the two could read completely
-  // different text for the identical row. `commandRowText` here too, so the visible text and
-  // the accessible name's own description of it can never diverge.
   const soloSummaryText = skillName !== undefined ? skillName : commandRowText(last)
   const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
-  // Spec 023 FR-015 (on #1208 FR-006): status prefix only where the label cannot carry it, the
-  // label, the raw id while the setting is on, then the target; (Main, D2): the edit stat's aria
-  // text folds in here (never read off the visual `meta` JSX). A multi-call group keeps the count
-  // and failed/stopped words as their own parts, with a prefix only while running.
   const triggerAriaLabel = solo
     ? joinAriaParts([
         toolAriaHead(status, display.entryTool, hasIntent(last.intent), toolLabel, rawId, soloSummaryText),
@@ -413,41 +222,19 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
       labelClassName={failed ? 'text-severity-error' : undefined}
       summary={summary}
       summaryWrap={summaryWrap}
-      // Gate round 1 (H4): see `ToolCallRow`'s own comment -- the solo branch is a tool row too.
       wrapWhenOpen
       meta={meta}
       triggerAriaLabel={triggerAriaLabel}
-      // #570 decisions 6, 9: the group's own Error line while collapsed is the LATEST failed
-      // member (replaced by each failed member's own line once expanded -- `hideDetailWhenOpen`
-      // only for a multi-call group; a solo call's line has no such condition, decision 6, since
-      // there is no separate "expanded body" of other members to replace it with).
-      // Gate round 1 (accessibility-auditor/code-reviewer Medium, M5): #632 dropped the group
-      // header's own `summary` entirely (never any one call's command), so the OLD "prefix only
-      // when it differs from the last call" condition no longer applies -- the prefix is now
-      // UNCONDITIONAL for a multi-call group, through `commandRowText` (matches the row itself);
-      // a solo group shows the bare Error line, since the row directly above it is that call.
       detail={
         lastFailedItem
           ? solo
             ? errorLine(lastFailedItem)
             : (() => {
-                // Gate round 2 (G909Arch N1): the prefix used to be the raw, uncapped target --
-                // inside the same `line-clamp-2`, a target of about 90+ characters (easily hit
-                // by a real command string) could fill both lines and clip the actual error text
-                // entirely, the one thing decision 6 exists to keep visible. Sanitized the same
-                // way as the error text (ANSI/control-char stripped), capped short, and dropped
-                // outright when empty rather than rendering a bare "undefined: ".
                 const failingCommandText = sanitizeLines(commandRowText(lastFailedItem))[0]
                 const truncatedPrefix =
                   failingCommandText && failingCommandText.length > ATTRIBUTION_PREFIX_MAX_CHARS
                     ? `${failingCommandText.slice(0, ATTRIBUTION_PREFIX_MAX_CHARS)}…`
                     : failingCommandText
-                // #962: the colon used to sit INSIDE the `bdi`, with the space right after it --
-                // the space was then the last character of the inline-block's own line box, and
-                // CSS collapses/drops trailing whitespace at the end of an inline formatting
-                // context, so the visible gap vanished even though the space was in the markup
-                // ("$ exit 9:Command exited with code 9"). The space now sits OUTSIDE the `bdi`,
-                // an ordinary sibling text node between two inline elements, never collapsed.
                 return truncatedPrefix ? (
                   <>
                     <bdi className="inline-block max-w-[40%] truncate align-bottom text-muted-foreground">{truncatedPrefix}:</bdi>{' '}
@@ -460,9 +247,6 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
           : undefined
       }
       hideDetailWhenOpen={!solo}
-      // #565 decision 10 (solo): the lone call's own body starts at the label column.
-      // #565 decision 8 (multi): the only geometry once a `SpineList` is the content is its own
-      // `ml-4`/`pt-1` -- this container's own padding is zeroed (mirrors `StageGroupRow`).
       contentClassName={solo ? LABEL_COLUMN_CONTENT_CLASS : SPINE_HOST_CONTENT_CLASS}
     >
       {solo ? (

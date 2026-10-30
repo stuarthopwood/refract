@@ -1,37 +1,17 @@
-// Issue #1048 (Holiday touches): per-holiday content, kept in one place (renderer-only, unlike
-// `shared/holidays.ts`'s pure calendar -- this imports lucide-react icon components, a
-// renderer-only dependency) so every placement (watermark, start messages, sidebar accessory,
-// empty states, the spinner glyph) reads from the same six-entry table instead of six
-// hand-copied switch statements. Icon names checked against the installed lucide-react version
-// (1.49.0, `pnpm ls lucide-react`) before use (issue's own "Technical notes and risks").
 import { Flame, Ghost, PartyPopper, Pi, Swords, TreePine } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { HolidayId } from '../../../shared/holidays'
 
+/** Copy and visuals for one holiday theme. */
 export interface HolidayContent {
-  /** The glyph reused, unchanged, across the watermark, the sidebar accessory and the spinner
-   * (decision 1's three icon-shaped placements) -- one icon per holiday, not three. Rendered
-   * directly as a themed React icon (`color`/`stroke` set to a theme token at the call site),
-   * never through a hand-made SVG asset or a CSS `mask-image` -- simpler, and every lucide icon
-   * is already a flat, single-colour-ready line glyph. */
   icon: LucideIcon
-  /** The leading emoji start-message lines use, `aria-hidden` by the same convention
-   * `STARTING_MESSAGE_EMOJI` already uses (never embedded in the announced text). */
   emoji: string
-  /** Appended to `STARTING_MESSAGES`/`STARTING_MESSAGE_EMOJI` in season (never announced, same
-   * as every other entry in that pool, `startingMessages.ts`'s own header comment). */
   startingMessages: readonly string[]
-  /** A short, purely decorative line shown alongside (never replacing) an empty state's own
-   * guidance text -- `aria-hidden`, since it carries no information the sr-only description
-   * does not already carry. */
   emptyStateLine: string
-  /** `true` only once this holiday's own ambient effect is BUILT. Decided (gate round 1, PR
-   * #1053): independent of `shared/holidays.ts::VERIFIED_HOLIDAYS` (that gate decides whether
-   * the holiday shows at all; this one decides whether it has a loop once it does). Star Wars Day
-   * and Pi Day are `false` by design: the issue never names an effect for either. */
   hasAmbientLoop: boolean
 }
 
+/** Content for every holiday id. */
 export const HOLIDAY_CONTENT: Record<HolidayId, HolidayContent> = {
   halloween: {
     icon: Ghost,

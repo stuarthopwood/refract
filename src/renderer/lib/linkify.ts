@@ -1,8 +1,4 @@
-// Issue #610: a pure matcher for the one file-link detection rule this story's v1 scope covers --
-// an inline-code span whose ENTIRE text is a worktree file reference, optionally suffixed with
-// `:line[:col]`. No prose scanning, no other link kinds (web URLs are handled separately, by
-// `safeUrl`/remark-gfm's own autolinking -- see `Markdown.tsx`). Kept framework-free (no React) so
-// it can be exercised in isolation.
+// Matches an inline-code span that is entirely a worktree file reference, optionally `:line[:col]`. Framework-free. (#610)
 
 export interface FileReference {
   /** The bare path, with any trailing `:line[:col]` suffix already removed. */
@@ -11,55 +7,31 @@ export interface FileReference {
   col?: number
 }
 
-// Matches a trailing `:<digits>` or `:<digits>:<digits>` at the END of the string only -- never
-// a drive letter's own colon (`C:\...`), which this never reaches as a *trailing* match since a
-// drive letter sits at the very start, not the end, of a real path.
+// Trailing `:<digits>[:<digits>]` only; a drive letter's colon sits at the start so never matches.
 const TRAILING_LINE_COL_RE = /^(.*?):(\d+)(?::(\d+))?$/
 
-// Quality-gate fix (Code/Verif HIGH/Medium, round 2): the original rule -- any path separator
-// anywhere -- linkified `origin/main`, `owner/repo`, `feat/610-hyperlinks`, `text/html`, `and/or`,
-// `@/lib/linkify`, `**/*.ts`, and whole shell commands (`git diff origin/main`), each becoming a
-// dead "Show in File Explorer" button. A candidate must now ALSO: contain no whitespace (a real
-// single-token path never does); contain none of the characters Windows forbids in a path or that
-// signal something else entirely (`*?<>|"#`); not contain `://` (scheme-shaped -- `safeUrl` already
-// had first refusal, this is never a second path guess at the same text); not start with `//`
-// (UNC-shaped) or `@/` (this repo's own import-alias convention, not a filesystem path); and
-// finally -- unless a trailing `:line[:col]` suffix was itself already stripped, which is strong
-// standalone evidence this is a source reference -- have a real extension on its last segment, the
-// one signal that actually tells `origin/main` (no extension) apart from `src/App.tsx` (does).
+// Rejects tokens that merely contain a separator (`origin/main`, `and/or`, `@/lib/x`, globs, shell commands):
+// no whitespace, no Windows-forbidden or glob characters, no `://`, no UNC or `@/` prefix, and, unless a
+// `:line` suffix was stripped, a real extension on the last segment.
 function isPathShaped(candidate: string, hadLineSuffix: boolean): boolean {
   if (!candidate) return false
   if (/\s/.test(candidate)) return false
   if (/[*?<>|"#]/.test(candidate)) return false
   if (candidate.includes('://')) return false
-  // Quality-gate fix (round 3): normalise backslashes to forward slashes BEFORE the UNC check --
-  // `startsWith('//')` on the raw candidate missed a backslash-form UNC path (`\\host\share\x.ts`),
-  // which does not literally start with `//` even though it is exactly as UNC-shaped as
-  // `//host/share/x.ts`. Mirrors the same backslash-first normalisation `files.ts`'s own UNC
-  // check already uses.
+  // Normalise first so a backslash-form UNC path (`\\host\share`) is caught too.
   if (candidate.replace(/\\/g, '/').startsWith('//')) return false
-  // Quality-gate fix (Code3/Verif3 Low, round 4): a drive-relative token (`D:foo/x.ts`, colon NOT
-  // followed by a separator -- distinct from the drive-ABSOLUTE `driveAbsolute` check just below,
-  // which requires one) slipped through as path-shaped (it has a `/` and a real extension),
-  // rendering a live button that `files.ts`'s own identical regex always rejects server-side on
-  // click -- a dead control, never a security hole. Rejected here too so it never renders as one.
+  // A drive-relative token (`D:foo/x.ts`) is always rejected server-side, so don't render a dead button.
   if (/^[A-Za-z]:(?![\\/])/.test(candidate)) return false
   if (candidate.startsWith('@/')) return false
   const driveAbsolute = /^[A-Za-z]:[\\/]/.test(candidate)
   if (!driveAbsolute && !candidate.includes('/') && !candidate.includes('\\')) return false
   if (hadLineSuffix) return true
   const lastSegment = candidate.split(/[\\/]/).pop() ?? ''
-  // Quality-gate fix (Code2 Low, round 3): bounded to `[A-Za-z0-9_-]{1,10}` (was `[^\\/.]+`,
-  // unbounded and allowing any character including `+`) -- the old pattern matched a MIME type's
-  // own subtype tail (`application/vnd.api+json` -> "extension" `api+json`) as if it were a real
-  // file extension. A real extension on this codebase's own file types (`.ts`, `.tsx`, `.json`,
-  // `.yml`, `.gitignore` minus the leading dot, etc.) always fits this bound.
+  // Bounded so a MIME subtype like `vnd.api+json` isn't read as an extension.
   return /\.[A-Za-z0-9_-]{1,10}$/.test(lastSegment)
 }
 
-/** `null` when `token` (already trimmed by the caller) is not shaped like a file path -- a bare
- * word, a command, a ratio like "4.5:1", a package/mime name, or anything else `isPathShaped`
- * rejects is deliberately left as plain inline code, not guessed at. */
+/** `null` when `token` (already trimmed) isn't path-shaped; such tokens stay plain inline code. */
 export function parseFileReference(token: string): FileReference | null {
   if (!token) return null
   let candidate = token
@@ -70,9 +42,7 @@ export function parseFileReference(token: string): FileReference | null {
   const match = TRAILING_LINE_COL_RE.exec(token)
   if (match) {
     const [, base, lineStr, colStr] = match
-    // Guards against a drive letter alone (`C`) ever being mistaken for a path once its own
-    // colon is stripped as a line suffix; `isPathShaped` below would reject a bare `C` anyway
-    // (no separator), so this is defence in depth, not the only thing preventing it.
+    // Keeps a lone drive letter from being read as a path once its colon is stripped as a line suffix.
     if (base && base.length > 0 && !/^[A-Za-z]$/.test(base)) {
       candidate = base
       line = Number(lineStr)
@@ -85,20 +55,10 @@ export function parseFileReference(token: string): FileReference | null {
   return { path: candidate, line, col }
 }
 
-/** Cheap, string-only early-out for an absolute path that is obviously outside the Session's own
- * worktree (decision #610: "no existence check at render time; that would flood IPC"). A
- * relative path is always allowed through as a candidate -- it is presumed worktree-relative,
- * and the real, authoritative check happens server-side in `resolveInWorktree` on click. Never
- * the security boundary itself, only a visual nicety that avoids linkifying an obviously-foreign
- * absolute path as if it might work. */
+/** String-only early-out for an absolute path obviously outside the worktree; relative paths pass. Not the security boundary (`resolveInWorktree` is). */
 export function looksWithinWorktree(filePath: string, worktreePath: string): boolean {
   if (!/^[A-Za-z]:[\\/]/.test(filePath) && !filePath.startsWith('/')) return true // relative
-  // Quality-gate fix (Sec4 Medium, round 5): ASCII-letters-only fold (not Unicode `toLowerCase()`,
-  // which collapses `U+212A` the Kelvin sign to `'k'` even though NTFS treats them as different
-  // characters) -- mirrors `files.ts`'s own identical fix for its lexical pre-check. This function
-  // is never the security boundary (that is `resolveInWorktree`, main-process, on click), only a
-  // cheap client-side rendering decision, but it should still agree with main's own notion of
-  // "looks contained" rather than drift from it.
+  // ASCII-only case fold: Unicode `toLowerCase()` maps the Kelvin sign to 'k', which NTFS treats as distinct.
   const normalize = (value: string) =>
     value
       .replace(/\\/g, '/')

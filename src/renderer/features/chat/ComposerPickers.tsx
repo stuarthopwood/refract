@@ -1,34 +1,4 @@
-// The composer's Reasoning picker and Attach button (#564 FR-064/FR-065). `ModelPicker` moved to
-// its own file, `ModelPicker.tsx` (gate round 2, LOW: this file had grown to three components and
-// 427 lines, past the single-responsibility threshold).
-//
-// Reasoning picker: a labelled trigger naming the Session's current value (the same last-known
-// `lastThinkingLevel` value the old read-only line read, T062/T063). It stays enabled while the
-// Session is working or stopped (#766 part B): a change is queued by Rust and shows the "next
-// turn" clock glyph until applied. A
-// `DropdownMenuRadioGroup`/`RadioItem` (gate round 1 fix, code-reviewer HIGH) exposes the current
-// level as `aria-checked`/`role="menuitemradio"`, never a plain item with a decorative check
-// icon. Gate round 2 (LOW): the disabled reason is now ALSO a visible Tooltip, not only the
-// accessible name.
-//
-// Gate round 5 fixes (fifth-gate UI/UX review, PR #877, `agent://Arch877`):
-// - A local `pendingLabel` mirrors `ModelPicker.tsx`'s own pending state: set for the duration of
-//   `setThinkingLevel`, shown on the trigger with a `Loader2Icon`, `aria-busy`, and folded into
-//   `usePickerOpenState`'s own `disabled` so the menu cannot reopen mid-request.
-// - The accessible name now starts with the trigger's own visible text (the bare level, e.g.
-//   "High") -- matching `ModelPicker.tsx`'s own fix for the SAME WCAG 2.5.3 finding -- with the
-//   "Reasoning" noun moved to the Tooltip instead of prefixing the visible/accessible text.
-// - `AttachButton` now names its OWN disabled reason (it previously stayed "Attach images" in
-//   both the Tooltip and the accessible name while stopped, unlike both pickers), and uses the
-//   same shared focus/disabled-opacity classes as everything else in this row.
-//
-// Gate round 6 fixes (`agent://Arch877`, action items):
-// - The "Reasoning" noun suffix/prefix (accessible name and Tooltip) is now skipped whenever the
-//   trigger's own label ALREADY starts with "Reasoning" ("Reasoning not reported"/"Reasoning not
-//   known yet") -- it used to append unconditionally, reading "Reasoning not reported, reasoning"
-//   and "Reasoning: Reasoning not reported".
-// - `AttachButton` now imports the shared `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`) instead
-//   of duplicating its exact string locally.
+// The composer's Reasoning picker and Attach button. A level change is queued by Rust and shows the "next turn" clock glyph until applied. (#564, #766)
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -130,13 +100,7 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   )
 }
 
-// #926: picks real absolute OS paths via the native multi-file dialog (`attachments.pickFiles`,
-// no extension filter -- "any file type" is the point of this feature) and routes each one
-// through `attachResolvedPaths` (`attachDroppedPaths.ts`), the SAME shared attach-loop/notify
-// core #432's drag-and-drop already uses, generalised by #926 to also attach non-image files.
-// Replaces the old `<input type="file">` element: Tauri's `File` API exposes no OS path for a
-// picker-selected file (same gap `getPathForFile` already documents for a dropped `File`), so a
-// non-image file picked that way would have no path to send as a path-only attachment.
+// Picks OS paths via the native dialog (Tauri's `File` exposes no path) and attaches them through the shared drag-and-drop core. (#926)
 export function AttachButton({ sessionId, disabled }: { sessionId: string; disabled: boolean }) {
   async function handlePickFiles() {
     if (disabled) return
@@ -153,10 +117,6 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
     await attachResolvedPaths(sessionId, resolved, [], paths.length, remainingSlots, false, 'picker')
   }
 
-  // Gate round 5 fix (Flow LOW): named its own disabled reason -- previously stayed "Attach
-  // images" in both the Tooltip and the accessible name while stopped, unlike both pickers
-  // (which already name theirs). #926: "images" -> "files" (Accessibility: "Drop-zone and Attach
-  // wording change from 'images' to 'files'").
   const disabledReason = disabled ? 'Start the agent to attach files.' : null
   return (
     <Tooltip>
@@ -167,29 +127,9 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
           size="icon-xs"
           aria-label={`Attach files${disabledReason ? `. ${disabledReason}` : ''}`}
           aria-disabled={disabled}
-          // Gate round 1 fix (LOW): the described-by Radix's own Tooltip auto-wires here would
-          // just repeat this button's own accessible name -- a screen reader would say it
-          // twice. Suppressed; the tooltip still shows visually.
+          // The Tooltip would repeat the accessible name via described-by; suppress it.
           aria-describedby={undefined}
-          // Gate round 5 fix (Visual LOW): shares the SAME disabled-opacity value and the same
-          // opaque focus outline every other composer control now uses, instead of its own
-          // bespoke `opacity-60` and Button's default ring-based focus. Gate round 6 fix
-          // (`agent://Arch877` Visual): imports `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`)
-          // instead of duplicating its exact string, so the two can never drift apart. Gate
-          // round 7 fix (`agent://Arch877` Visual L1): `button.tsx`'s `ghost` variant has its
-          // own `dark:hover:bg-muted/50`, same specificity as the shared reset's
-          // `aria-disabled:hover:bg-transparent` -- `dark:aria-disabled:hover:bg-transparent`
-          // adds the extra `dark:` level so the reset wins in Dark/Dark-HC too.
-          //
-          // Live-check fix (verify-927-928-quiet-composer.mjs, real failure not a script bug):
-          // Attach never picked up the SAME U1/U2 treatment `PICKER_TRIGGER_CLASS` already
-          // gives its three siblings (Approval/Model/Reasoning) -- issue #927's own "Intended
-          // behaviour" names all four as one set of ghost buttons, but Attach stayed on the
-          // bare `Button variant="ghost"` with neither `cursor-pointer` (U2) nor the enforced
-          // Dark-high-contrast resting border (U1, `border-composer-control-border`,
-          // transparent in Dark/Obsidian so no visual change there). Not `PICKER_TRIGGER_CLASS`
-          // itself -- that's sized as a padded text+icon pill (`h-6 px-2`); Attach stays the
-          // icon-only square `size="icon-xs"` square its own design already is.
+          // Dark variant needed so the disabled hover reset beats `ghost`'s `dark:hover:bg-muted/50`; border/cursor match the sibling pickers.
           className={cn(
             'cursor-pointer border-composer-control-border',
             COMPOSER_DISABLED_CLASS,

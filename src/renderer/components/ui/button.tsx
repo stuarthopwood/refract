@@ -9,18 +9,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
-        // 2026-10-15 grill (issue #564, decision 5): a solid neutral fill (inverted
-        // foreground-on-background), never red/destructive -- stopping a turn keeps the work,
-        // so it reads as the opposite of a destructive action, not one. Used so far only by the
-        // composer's Stop button (MessageInput.tsx), which sits beside Send's own dedicated
-        // `--send` accent fill (gate round 1, 2026-10-15: Send no longer shares `--primary`,
-        // which reads as a near-identical near-white neutral to THIS fill in two of the three
-        // built-in themes) -- the two are never the same colour, so they stay visually distinct
-        // even though both are solid. Hover mixes 15% of the page background into the fill (gate
-        // round 2 fix: a bare `hover:bg-foreground/85` opacity modifier violated the design
-        // rules' own "never a Tailwind opacity modifier on a token class", `secondary`'s own
-        // `color-mix` pattern below instead; before that, `hover:bg-foreground` with no modifier
-        // at all was identical to the resting fill, no hover feedback whatsoever).
+        // Solid neutral, never red: stopping a turn keeps the work. Hover mixes 15% background
+        // (an opacity modifier on a token class breaks the design rules).
         invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
@@ -30,17 +20,13 @@ const buttonVariants = cva(
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 font-normal",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/80 focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
-        // An outlined destructive action at rest (e.g. "Close pull request"): the destructive
-        // colour on the edge and label only, never a fill, so the surface's one filled button
-        // stays the primary action. The confirm dialog then uses the filled `destructive`.
+        // Outlined at rest so the surface's one filled button stays the primary action; confirm dialogs use filled `destructive`.
         "destructive-outline":
           "border-destructive bg-background text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:bg-input/30 dark:hover:bg-muted",
         link: "text-primary underline underline-offset-4 font-normal",
-        // #746: a non-primary action beside an `outline` primary (PaneBanner). Foreground text, no
-        // border or fill; underlined on hover AND keyboard focus so it still reads as an action,
-        // with a 2px focus ring (the border it lacks cannot carry the focus state).
+        // Non-primary action beside an `outline` primary (#746); underlines on hover and focus, with a ring since it has no border.
         text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
-        // Same shape as `text` for a destructive action (always opens a confirm dialog): red label, no fill.
+        // Same shape as `text`, red label, for actions that open a confirm dialog.
         "text-destructive":
           "min-h-6 rounded-md text-destructive hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
       },

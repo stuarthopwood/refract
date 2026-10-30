@@ -1,26 +1,3 @@
-// Issue #457: two independent Settings switches for what the chat transcript shows -- Show
-// thinking output and Show tool calls. Immediate apply, no Save step, matching the existing
-// "Session readout" toggles' own pattern (`SettingsScreen.tsx`) and the issue's own suggested
-// default behaviour ("They apply immediately, like the readout toggles, with no Save step").
-//
-// Scope note: this section persists the setting and exposes it to the renderer
-// (`Settings.transcriptDisplay`, `useSettingsStore`); `Transcript.tsx`'s `rowVisibility` is the
-// consumer that actually filters the rendered rows from these two booleans (a `thinking` row for
-// the first switch; a `ToolGroup`/`subagent` row, unless it reports an error/interruption, for the
-// second -- see that function's own comment for the full "never hide a problem" rule this
-// section's description text below summarises).
-//
-// Quality-gate remediation: `setTranscriptDisplay` now takes one field at a time (not the whole
-// object spread from the current render), so toggling the second switch before the first save
-// returns can no longer revert it -- the merge happens in main against the persisted row, the
-// same per-field pattern the existing readout toggles already use.
-//
-// Issue #772 (lane R6, Rust build only; Main's review decision 2026-10-14): the word-prediction
-// (ghost-text) toggle below calls `settings.setWordPredictionEnabled`, which has no Electron
-// implementation -- `Settings.wordPredictionEnabled` stays `undefined` there forever (Electron's
-// `settings.ts` never sets it), so the toggle is simply never rendered on Electron (no
-// "unsupported" toast to show); Electron keeps ghost text always on instead (`MessageInput.tsx`'s
-// own `wordPredictionEnabled !== false` read treats absent as enabled).
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
@@ -76,7 +53,6 @@ export function ChatDisplaySection() {
           checked={transcriptDisplay.toolCalls}
           onCheckedChange={(checked) => void setTranscriptDisplay('toolCalls', checked)}
         />
-        {/* Issue #469: off by default. */}
         <SettingSwitchRow
           id="transcript-display-tool-names"
           label="Show tool names on rows"
@@ -84,7 +60,6 @@ export function ChatDisplaySection() {
           checked={transcriptDisplay.toolNames}
           onCheckedChange={(checked) => void setTranscriptDisplay('toolNames', checked)}
         />
-        {/* Issue #1250 (spec 001 FR-119): off by default; the running turn's live total always shows. */}
         <SettingSwitchRow
           id="show-finished-turn-times"
           label="Show finished turn times"
@@ -92,7 +67,6 @@ export function ChatDisplaySection() {
           checked={showFinishedTurnTimes}
           onCheckedChange={(checked) => void setShowFinishedTurnTimes(checked)}
         />
-        {/* Issue #1246: on by default. */}
         <SettingSwitchRow
           id="code-ligatures"
           label="Code ligatures"
@@ -100,7 +74,6 @@ export function ChatDisplaySection() {
           checked={codeLigatures}
           onCheckedChange={(checked) => void setCodeLigatures(checked)}
         />
-        {/* Issue #754 (spec 041): on by default. */}
         <SettingSwitchRow
           id="show-scrollbar-map"
           label="Show scrollbar map"
@@ -128,7 +101,6 @@ export function ChatDisplaySection() {
         )}
       </SettingsGroup>
       <SettingsGroup title="Context usage">
-        {/* Issue #1082 (spec 004 FR-034): on by default. */}
         <SettingSwitchRow
           id="show-context-usage-bar"
           label="Show context usage bar"
@@ -136,7 +108,6 @@ export function ChatDisplaySection() {
           checked={showContextUsageBar}
           onCheckedChange={(checked) => void setShowContextUsageBar(checked)}
         />
-        {/* Issue #1238 (spec 004 FR-053): on by default; Copilot models only. */}
         <SettingSwitchRow
           id="show-ai-credits"
           label="Show AI credits"

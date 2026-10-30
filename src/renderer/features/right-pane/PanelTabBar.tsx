@@ -1,96 +1,3 @@
-// The pane header (spec 013 FR-007/FR-008/FR-011, issue://394): a single title row with a Close
-// button for exactly one open panel, or an ARIA tabs pattern bar for two or more. Either way it
-// reserves the window-controls corner so no pane control ever sits under the native minimise/
-// maximise/close buttons (FR-011) -- the same trailing spacer `ChatHeader.tsx` uses while it owns
-// that corner instead.
-//
-// The tab bar is hand-rolled, not the shared `Tabs` primitive (`components/ui/tabs.tsx`): each
-// tab needs its own close button. PR1 kept each close button inside a wrapping `<span>` alongside
-// its tab, both direct children of `role="tablist"` -- harmless in practice (the pattern the W3C
-// ARIA working group tested and confirmed accessible across NVDA/JAWS/VoiceOver, w3c/aria#2322),
-// but still flagged by axe-core's static `aria-required-children` rule, and deferred to PR2
-// (tasks.md T028's own note) since a second real panel was needed to reach it at all.
-//
-// PR2 round 1: the tablist's own children became ONLY `role=tab` buttons, with every close button
-// a DOM sibling outside it -- verified by direct DOM query (`tablist` children are only
-// `role=tab`), not by running axe, and a real screen reader pass (NVDA/JAWS/VoiceOver) was not
-// performed in this environment; both recorded as open live-check items (issue #650), not claimed.
-//
-// PR2 round 3 (spec 013's settled rule, corrected mid-round-2 before pushing round 2's design:
-// EVERY tab keeps its own close and live count -- round 2's withdrawn icon-only/activation-only
-// compact design for inactive tabs is NOT this spec): round 1's `min-w-0 shrink` let a tab's own
-// measured box (used to position its close button) shrink below content that does not shrink --
-// the icon, and the close button's own reserved space -- so at the pane's 320px default with
-// three panels the close button could land ON TOP OF the icon (WCAG 2.5.8), and every label
-// clipped to near nothing with no Tooltip to recover the name (FR-026). The actual shortfall is
-// structural, not fixable by trimming any one tab further: the pane header's own top row must
-// also reserve the window-controls corner (FR-011), and at the 240px floor with three panels the
-// row has only ~122px left for three tabs that each need an icon, a close button and (today) a
-// label -- not enough even fully truncated.
-//
-// Fixed by moving the tab strip into its OWN row, below the row that reserves the window-controls
-// corner (the single-panel title row above is unaffected and still carries that reservation).
-// Freed from competing with the caption-button spacer, the strip's available width is `pane width
-// - 16px` (this row's own `px-2`) instead of `pane width - 118px` -- live-measured at the 240px
-// floor with three panels: `clientWidth` 224px (see the geometry table in tasks.md). The
-// close-button reserve was tightened from `pr-8` (32px, the round-1/round-2 value) to 28px, and the 8px grid put it back at `pr-8`
-// (32px: `CLOSE_BUTTON_PX` 24 + its own 4px inset rounded up to the grid, the button's real drawn footprint, not an extra
-// margin on top of it). Round 4 gate remediation (High, Code3/A11y3/Verif3 converged): a tab's
-// live count has its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks, so the figure itself
-// stays legible, FR-012) and its trailing WORD (`shrink-[1000] min-w-0 truncate`, a direct flex
-// sibling of the label and the number, not wrapped with either -- round 5 tried wrapping it with
-// the number for spacing/colour, which broke the shrink priority below, round 6 fixed it) -- the
-// word gives way before the label does (`shrink-[1000]` against the label's own `shrink-[100]`),
-// since a label collapsed to nothing with a meaningless word fragment left over is worse than the
-// word disappearing first and the label truncating normally with an ellipsis. Every plain tab's
-// own content needs `60px` (`pl-2` 8 + icon 16 + one `gap-1` 4 + `pr-8` 32), but `min-w-15`
-// (60px) is a hard CSS minimum matching that -- a plain tab's actual RENDERED
-// floor is `60px`, not its own lower content requirement. A count-showing tab's content floor is
-// `68px` (the same four terms, but THREE `gap-1`s -- icon-label, label-number, number-word --
-// since the word is always a rendered sibling even once it shrinks to 0 width, and CSS `gap`
-// spaces every flex item regardless of its own final size) plus that tab's number's own digit
-// width. `min-w-15` is the only CSS-enforced floor for every tab; the count tab's `68px` + digit
-// width is what its own content NEEDS to avoid spilling its `shrink-0` number into the `pr-8`
-// close reserve, but the flex layout does not enforce that -- it holds today only because of how
-// flex shares space among today's three panel labels (measured `82.375px` live), not because of
-// any CSS minimum (see the "known limit" note in tasks.md). Three tabs' worst case with a
-// two-digit running count is `60 + 60 + 68 + 15.546875 + 2*4 = ~211.5px` against `224px` available
-// at the 240px floor (`~12.5px` slack, current `min-w-15`/`pr-8`/`gap-1`; #1270: below a 280px
-// strip every count tab collapses to icon, label and one compact figure, so two count tabs never
-// reach this worst case) -- see tasks.md's "Tab-strip width geometry" for the full,
-// pixel-exact derivation (rounds 7-8). Live-verified with a REAL count change (temporary
-// local-only dev-store injection in the scratch instance only, reverted before each push, never
-// shipped):
-// `running` set to 1 then 12 on the actual focused Session while the strip was already squeezed
-// at the 240px floor -- both digit counts rendered with zero overflow and every tab's own close
-// button stayed inside that tab's own rect.
-//
-// Round 4 also fixed the bug that live count change was exposing: the `ResizeObserver` from round
-// 3 watched only the tablist container, which -- once the strip is already squeezed and the
-// tablist's own outer width is pinned to its flex parent rather than driven by its children's
-// natural size -- never fires when one tab's internal content changes length without changing the
-// tablist's own total width (confirmed live: the total stayed 224px before and after the count
-// change, redistributed among tabs, while the single tablist-level observer would have missed it
-// entirely). Fixed: every open tab's own element is observed too, not just the tablist, so any
-// one tab's own resize now triggers a full `closePositions` recompute.
-//
-// Every tab -- selected or not -- renders its icon, a truncating label, a truncating count and its
-// own close button (restoring round 1's per-tab close, but still a DOM sibling of the tablist via
-// an absolutely-positioned overlay per open tab, keeping the tablist's own children limited to
-// `role=tab` so axe's `aria-required-children` rule stays satisfied); every tab also carries its
-// own Tooltip (full name plus count) for sighted users when its label visually truncates, since
-// the accessible name (the tab's own text content) is never actually truncated by the CSS
-// ellipsis regardless -- `aria-describedby={undefined}` on the `TooltipTrigger` itself (round 5,
-// corrects round 4's own `aria-hidden`-on-content attempt, which did not actually stop Radix's
-// `aria-describedby` wiring on the trigger once the tooltip is open) keeps that same name from
-// being announced a second time. Clicking a tab's own body selects it; clicking its close button
-// closes it directly, selected or not, with no select-first step.
-// Delete on a focused tab -- selected or not -- still closes it directly,
-// unchanged from round 1/2 (`handleTabKeyDown` reads the keystroke from the tab button itself,
-// never from a close overlay). Only the ACTIVE tab's own close button is a Tab stop (`tabIndex=0`,
-// round 4, Medium A11y3: every close button being a Tab stop added N of them to the tab order,
-// jumping back to the leftmost X after the rightmost selected tab); inactive tabs' close buttons
-// stay reachable by mouse only, and also answer Delete directly if somehow focused programmatically.
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
@@ -106,18 +13,12 @@ import { compactPanelCount, formatPanelCount, getPanelDescriptor, splitPanelCoun
 import { closeHostedPanel } from './hosted-panel-actions'
 import { WINDOW_CONTROLS_SPACER_STYLE, WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 
-// Inset (negative offset), matching `RightPaneShell.tsx`'s own content-focus ring: an outset ring
-// drawn outside this row's `overflow` wrapper gets its top/bottom (and the first tab's left edge)
-// clipped, since the wrapper is exactly as tall as a tab (gate remediation, round 1).
 const FOCUS_VISIBLE = 'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
 const COMPACT_HIDE = '@max-[17.5rem]:hidden'
-// 24px minimum target (FR-026/WCAG 2.5.8), matching `icon-sm`'s own footprint.
 const CLOSE_BUTTON_PX = 24
 const CLOSE_BUTTON_INSET_PX = 4
 
 interface PanelTabBarProps {
-  /** The focused chat pane's Session -- feeds a per-Session panel's live count (data-model.md
-   * `getPanelCount`), independent of which Session that panel's own content is bound to. */
   sessionId: string | null
 }
 
@@ -126,24 +27,10 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const openPanel = useRightPaneStore((s) => s.openPanel)
   const tabRefs = useRef<Partial<Record<PanelId, HTMLButtonElement | null>>>({})
-  // Gate remediation (Sec2, Low): scoped to this component's own rendered subtree, so a future
-  // second `PanelTabBar` instance (there is only ever one today) could never steal focus from
-  // this one's `[data-panel-close]` query. Shared by both render branches below.
   const wrapperRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const tabListRef = useEnterOnSwitch<HTMLDivElement>(activePanelId, 'tabs')
 
-  // Round 3: every open tab draws its own close button, so every tab's own position is tracked
-  // (restoring round 1's map, which round 2 had narrowed to just the active tab). Round 4 gate
-  // remediation (High, Code3/A11y3/Verif3 converged): observing only the tablist container missed
-  // a live count changing length while the strip is already squeezed -- once the tablist's own
-  // width is pinned to its flex parent (not driven by its children's natural size), a tab growing
-  // or shrinking internally (its count's digit count changing) does not change the tablist's own
-  // border-box size, so that single observer never fires and a stale `closePositions` entry leaves
-  // a close button sitting over the WRONG tab (a click meant to select one tab could close its
-  // neighbour instead, WCAG 2.5.8). Fixed: observe every open tab's own element too, not just the
-  // tablist -- any one tab's own resize now triggers a full recompute, re-subscribed whenever
-  // `openPanelIds` changes.
   const [closePositions, setClosePositions] = useState<Partial<Record<PanelId, { left: number; top: number }>>>({})
 
   const recomputeClosePositions = () => {
@@ -173,13 +60,6 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openPanelIds])
 
-  // Gate remediation (round 2, Code2/Verif2): `scrollIntoView` scrolls every scrollable ancestor
-  // needed to bring the element into view, including `RightPaneShell`'s own `overflow-hidden`
-  // region and the `ResizablePanel` itself -- both still technically "scrollable containers" to
-  // the browser even though neither is meant to scroll, so a stray call could shift the whole pane
-  // sideways instead of only this row's own strip. Adjusts `wrapRef`'s own `scrollLeft` directly
-  // instead. Also returns early while the pane is collapsed, when this row's measurements (and the
-  // whole point of scrolling it into view) do not mean anything yet.
   useLayoutEffect(() => {
     if (!activePanelId) return
     if (!useRightPaneStore.getState().open) return
@@ -230,21 +110,10 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     tabRefs.current[id]?.focus()
   }
 
-  // Gate remediation (High, round 1): closing a tab used to focus a neighbour computed
-  // independently of `right-pane-store.ts`'s own `closePanel`, which could leave focus on a tab
-  // that `aria-selected=false` while a DIFFERENT tab's content showed. Now `closePanel` itself
-  // picks the neighbour (see its own doc comment), and this function simply reads that choice back
-  // -- there is exactly one source of truth for "which tab is next" instead of two that can drift.
-  // `closeHostedPanel`'s own rail/chip fallback is suppressed (`skipFocusFallback`) whenever
-  // another panel remains, so its `requestAnimationFrame` can't race this one and steal focus back
-  // out. This function only ever runs from the tab-bar branch below, which never renders with
-  // fewer than two open panels, so closing one here always leaves at least one behind.
   function closeTab(id: PanelId): void {
     const remainingCount = openPanelIds.length - 1
     closeHostedPanel(id, { skipFocusFallback: true })
     if (remainingCount === 1) {
-      // Drops into the single-panel title-row branch above on the next render; focus its Close
-      // button (not a tab ref, which no longer exists once the tablist itself unmounts).
       requestAnimationFrame(() => {
         wrapperRef.current?.querySelector<HTMLElement>('[data-panel-close]')?.focus()
       })
@@ -277,10 +146,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
 
   return (
     <div className="flex shrink-0 flex-col">
-      {/* Row 1: reserves the window-controls corner only (FR-011); stays `aria-hidden`. */}
       <WindowControlsSpacerRow />
-      {/* Row 2: the tab strip, directly under the corner row, with the whole pane width (less
-          this row's own padding) to itself. */}
       <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 px-2">
         <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
           <div ref={tabListRef} role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
@@ -355,48 +221,15 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   const Icon = descriptor.icon
   const countText = count ? formatPanelCount(count) : undefined
   const fullLabel = `${descriptor.name}${countText ? ` ${countText}` : ''}`
-  // The compact state shows only the changed-files figure for Git, so the accessible name leads
-  // with it (WCAG 2.5.3) and spells the +a -d figure out in words.
+  // The compact Git tab leads with the changed-files figure in its accessible name (WCAG 2.5.3).
   const accessibleLabel =
     count?.kind === 'additions-deletions'
       ? `${descriptor.name}, ${count.files} ${count.files === 1 ? 'file' : 'files'}, ${count.additions} ${count.additions === 1 ? 'addition' : 'additions'}, ${count.deletions} ${count.deletions === 1 ? 'deletion' : 'deletions'}`
       : fullLabel
-  // Round 4 gate remediation (High, Verif3/Code3, Stuart's "every tab has its own count" rule):
-  // round 3 made the whole count span `min-w-0 shrink truncate`, so at the 240px floor with three
-  // panels a running count could shrink all the way to an ellipsis, leaving colour as the only
-  // signal (FR-012). Split the count into its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks,
-  // so the figure itself is always legible) and the trailing WORD (`running`, `min-w-0 truncate`
-  // -- gives way first). `+a -d` has no separate word, so its whole text stays `shrink-0` too --
-  // `usePanelCount` never actually produces this kind today (only `running`), so it is a forward-
-  // looking case, not exercised live.
-  //
-  // Round 5 gate remediation (Medium, Code4/Verif4): the word was `' running'` with a leading
-  // space baked into the string, inside its own `white-space: nowrap` (`truncate`) span -- CSS
-  // collapses a leading space at the start of an inline box, so the space never actually
-  // rendered ("12running"/"12r." in the screenshots, not "12 running"). Fixed: `splitPanelCount`
-  // (`panel-registry.ts`) returns the word with no leading space, spaced by a real gap instead of
-  // a text character.
-  //
-  // Round 6 gate remediation (High, Code5/Verif5, corrects round 5): wrapping the number and word
-  // in their own `<span>` made that span, not the word itself, the thing competing against the
-  // label in the BUTTON's own flex layout -- the wrapper's own (unset, default 1) shrink factor
-  // lost to the label's `shrink-[100]` every time, so the label still collapsed first regardless
-  // of the word's own `shrink-[1000]` (round 5's own screenshot showed the label gone, "12 r"
-  // surviving -- the opposite of the intended order). Fixed by dropping the wrapper: the number
-  // and word are now direct children of the button's own flex row, spaced by its own `gap-1` like
-  // every other child, so the word's `shrink-[1000]` genuinely outcompetes the label's
-  // `shrink-[100]` the way round 5 intended. The running-state colour moves onto each child
-  // directly (a wrapper's `text-state-working` would have nothing left to apply to). The
-  // `overflow-hidden` "guard" from round 5 is removed -- it would have clipped the number itself,
-  // the one thing that must never visually disappear (FR-012); `overflow-x-auto` on the whole
-  // strip remains the real safety net for a hypothetical fourth panel (tasks.md's own scope note).
   const parts = splitPanelCount(count)
   const countNumber = parts?.number
   const countWord = parts?.word
   const runningCls = count?.kind === 'running' ? 'text-state-working' : undefined
-  // #1270: below a 17.5rem (280px) strip the full count collapses to ONE compact figure (the
-  // tab's icon, label and that number), so two count tabs never slide under the close button at
-  // the 240px pane floor; the full text stays in the accessible name and the tooltip.
   const compactCount = compactPanelCount(count)
   const button = (
     <button
@@ -409,9 +242,6 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       className={cn(
         'inline-flex h-6 min-w-15 shrink items-center gap-1 rounded-md px-2 pr-8 text-sm',
         FOCUS_VISIBLE,
-        // Same explicit weight in both states: white text steps down one on the weight scale and
-        // muted text steps up one, so `font-semibold` selected equals `font-medium` unselected
-        // and the label width never shifts when the selection moves.
         selected
           ? cn('font-semibold', TAB_ACTIVE_UNDERLINE_CLASS)
           : 'font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -438,18 +268,6 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
     </button>
   )
 
-  // Round 3: every tab carries a Tooltip with its full name and count -- a sighted-user recovery
-  // path when the label visually truncates (the accessible name, this button's own text content,
-  // is never actually truncated by the CSS ellipsis regardless of how little of it is visible).
-  // Round 5 gate remediation (Medium, Code4/A11y4/Verif4, corrects round 4): `aria-hidden` on the
-  // tooltip's own content does NOT stop the double announcement -- Radix sets `aria-describedby`
-  // on the TRIGGER whenever the tooltip is open (keyboard focus opens it), and a screen reader's
-  // accessible-description computation follows that reference into hidden content regardless;
-  // round 4's "confirmed absent" check was taken with the tooltip CLOSED, which never sets the
-  // attribute in the first place. Fixed at the actual source: `aria-describedby={undefined}` on
-  // the `TooltipTrigger` itself, which Radix's `asChild` spreads onto this button AFTER its own
-  // internally-computed props, so the explicit override wins -- re-verified with the tooltip
-  // OPEN (keyboard-focused), not closed.
   return (
     <Tooltip>
       <TooltipTrigger asChild aria-describedby={undefined}>

@@ -1,11 +1,3 @@
-// #1170: live Markdown styling for the composer. The textarea stays a plain value; while a draft
-// has anything to style, its glyph fill is masked (the same highlight-within-textarea technique
-// as the command pill, `CommandPillOverlay.tsx`) and this mirror, directly beneath it, draws the
-// whole draft with per-construct colour. Styling is width-neutral: no font-size, weight, slant,
-// letter-spacing or padding change, so every glyph keeps its advance and the native caret,
-// selection, IME underline and spellcheck squiggle stay on the text. "Bold" is a thin text
-// stroke in the text colour, italic is colour only. Forced colours and Dark (high contrast) show
-// the plain textarea text instead (mirror hidden, textarea fill restored).
 import type { ReactNode, RefObject } from 'react'
 import { useMemo } from 'react'
 import { COMPOSER_MIRROR_CLASS } from '@/components/ComposerBox'
@@ -25,8 +17,10 @@ const KIND_CLASS: Record<MdKind, string | undefined> = {
   code: 'text-accent-text'
 }
 
-/** Added to the textarea while the mirror is drawing: masks the glyph fill (the mirror shows
- * through), keeps the native caret, and restores plain fill in Dark (high contrast). */
+/**
+ * Added to the textarea while the mirror is drawing: masks the glyph fill (the mirror shows
+ * through), keeps the native caret, and restores plain fill in Dark (high contrast).
+ */
 export const COMPOSER_MARKDOWN_TEXTAREA_CLASS =
   'relative z-[1] [-webkit-text-fill-color:transparent] caret-foreground forced-colors:[-webkit-text-fill-color:CanvasText] [.theme-dark-high-contrast_&]:[-webkit-text-fill-color:var(--foreground)]'
 
@@ -49,7 +43,6 @@ export function ComposerMarkdownMirror({
   mirrorRef: RefObject<HTMLDivElement | null>
   className?: string
 }): ReactNode {
-  // A trailing newline needs a visible character or the mirror ends one line shorter than the textarea.
   return (
     <div ref={mirrorRef} aria-hidden="true" data-composer-markdown-mirror className={cn(COMPOSER_MIRROR_CLASS, MIRROR_HIDDEN_CLASS, className)}>
       {segments.map((seg, index) => (

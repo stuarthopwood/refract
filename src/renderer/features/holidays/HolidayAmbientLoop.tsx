@@ -1,36 +1,7 @@
-// Issue #1048 (Holiday touches, "Ambient loops (Full only)"): the decorative motion layer
-// painted behind a ChatPane's normal-flow content, in the exact same spot `BrandWatermark.tsx`'s
-// own 'live' variant mounts (`isolate` ancestor) -- this component's own root carries `-z-10`
-// itself (gate round 1 fix, High: the root used to rely on the CSS class alone, which set no
-// z-index at all, so the layer could paint ON TOP of later-painted siblings depending on DOM
-// order even though `pointer-events: none` already made it un-clickable) so it genuinely paints
-// BEHIND text and controls, the same `-z-10` BrandWatermark.tsx's own 'live' variant carries.
-// Renders null for every holiday the issue's own "Ambient loops" section does not name an effect
-// for (Star Wars Day, Pi Day), for `holidayTouches !== 'full'` (Artwork only/Off), and for every
-// holiday without an effect (`HolidayContent.hasAmbientLoop`): Halloween's bats, Bonfire Night's
-// sparks, Christmas's snow and New Year's confetti (`holidayArtwork.tsx`) all share the one
-// occasional-flight scheduler below (the `bat` class names are historical).
-//
-// Gate round 3 fix (High, item 2, FR-008 regression): mounted exactly ONCE per window, but
-// SCOPED to its own pane's transcript container (`ChatPane.tsx`'s `showAmbientLoop` prop, true
-// only for `paneIndex === 0`), never spanning the whole chat panel -- round 2's App.tsx-level
-// hoist fixed "one instance, not one per ChatPane" but accidentally let the layer paint UNDER
-// the composer too (the composer is a separate sibling only within a `ChatPane`, not within the
-// outer panel round 2 hoisted into). `EmptyChatState.tsx` (no session open at all, no composer
-// in that branch) keeps its own separate mount.
-//
-// Pause rules (decision 3, WCAG 2.2.2): hidden/unfocused window, no-input idle, and a modal
-// dialog/menu/select open are all JS-driven (`data-paused`) since none is expressible in plain
-// CSS; OS reduced motion and Windows forced-colors are both plain `@media` rules in `globals.css`
-// for the whole layer, PLUS a live `matchMedia` listener here (gate round 3 fix, Medium, item 5)
-// that cancels any in-flight animation -- a `display:none` ancestor does not stop a running Web
-// Animations API animation from consuming CPU in the background, so hiding the layer alone is
-// not enough. `paused`'s initial value is computed from the REAL `document.hidden`/
-// `document.hasFocus()` state, both at the lazy initializer and again at the top of the effect --
-// a mount that happens to land on an already-hidden/unfocused window must start paused, not wait
-// for the next blur/visibilitychange event to notice. `wheel` and `pointermove` both count as
-// activity (gate round 3 fix, Medium, item 6: both throttled to about 1/s, not just
-// `pointermove`) -- a reader scrolling with no clicks or keystrokes must not be treated as idle.
+/** Decorative motion layer painted behind a ChatPane's content (`-z-10`, so it never paints over text or controls); renders null unless the holiday has an ambient effect and touches are 'full'. */
+// Mounted once per window, scoped to pane 0's transcript container so it never paints under the composer (#1048).
+// Pausing (hidden/unfocused, idle, overlay open) is JS-driven via `data-paused`; reduced-motion and forced-colors are CSS plus a live `matchMedia` listener that cancels in-flight animations, since a `display:none` ancestor does not stop them using CPU.
+// Wheel and pointermove count as activity so a scrolling reader is not idle.
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useActiveChatWidth, useHolidayStore, useSettingsStore } from '@/state'
@@ -40,9 +11,7 @@ import { flightKeyframes, LoopPieces } from './holidayArtwork'
 
 const FLIGHT_FADE_OUT_MS = 400
 
-/** #1256: a pause mid-flight freezes the bat where it is and fades it out, then returns it to
- * its resting spot (it used to snap there). The reduced-motion/forced-colors path cancels
- * outright instead (the whole layer is `display: none` there). */
+/** A pause mid-flight freezes the bat and fades it out, then returns it to rest; reduced-motion/forced-colors cancels outright (#1256). */
 function fadeOutFlight(bat: HTMLElement, flight: Animation) {
   flight.pause()
   const fade = bat.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FLIGHT_FADE_OUT_MS, easing: 'ease-out', fill: 'forwards' })
@@ -53,14 +22,7 @@ function fadeOutFlight(bat: HTMLElement, flight: Animation) {
   }
 }
 
-/** Gate round 3 fix (High, item 1): the real flight gap is randomised 90-180s, so a 60s
- * CPU-budget sample almost never contains one -- `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS` (debug
- * build only, surfaced via `debug.getOverrides().flightIntervalMs`) overrides that gap to a
- * short fixed value so a live check's own sample window reliably contains several. Render-gated
- * by its own callers, the same `showWatermark`-boolean pattern `BrandWatermark.tsx` already
- * uses -- `ChatPane.tsx`'s own `showAmbientLoop` prop (true only for `paneIndex === 0`, gate
- * round 3 fix, High, item 2) and `EmptyChatState.tsx`'s unconditional mount (no composer in
- * that branch, so no pane-scoping question applies there). */
+/** Debug-only `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS` override: the real 90-180s flight gap rarely falls inside a 60s CPU sample, so a short fixed gap makes live checks measurable. */
 export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColumn?: boolean } = {}) {
   const chatWidth = useActiveChatWidth()
   const holidayTouches = useSettingsStore((s) => s.settings.holidayTouches)
@@ -79,9 +41,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
 
   const active = holidayTouches === 'full' && holiday !== null && HOLIDAY_CONTENT[holiday].hasAmbientLoop
 
-  // Gate round 3 fix (Medium, item 5): a single reactive `matchMedia` listener -- the emulated
-  // media the live check toggles mid-session (`Emulation.setEmulatedMedia`) must cancel an
-  // already-running flight immediately, not just block the NEXT one from being scheduled.
+  // A reactive `matchMedia` listener so emulated media toggled mid-session cancels a running flight immediately.
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce), (forced-colors: active)')
     function handleChange() {
@@ -93,17 +53,9 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
 
   useEffect(() => {
     if (!active) return
-    // Re-checked here (not just the lazy initializer above): this effect re-runs whenever
-    // `idleTimeoutMs` changes (a debug-only override arriving after the first mount), and the
-    // real hidden/unfocused state could have changed in between.
+    // Re-checked here: the effect re-runs when `idleTimeoutMs` changes, and hidden/focus state may have changed since the lazy initializer.
     setPaused(document.hidden || !document.hasFocus())
-    // Gate round 3 fix (Medium, item 6): the shared `OVERLAY_OPEN_SELECTOR` (`App.tsx`'s own
-    // window-wide keyboard chords already use it to the same end) covers every Radix overlay
-    // that steals the user's attention -- dialog, alert-dialog, menu, select-content -- not just
-    // a true modal dialog/sheet (Sheet is itself built on the Dialog primitive, so its own
-    // `role="dialog"` is already covered). Cached in a ref, refreshed only by the mutation
-    // observer below, so `handleActivity` (which can fire many times a second via
-    // `pointermove`/`wheel`) never re-queries the DOM itself.
+    // `OVERLAY_OPEN_SELECTOR` covers every Radix overlay that takes attention. Cached in a ref refreshed by the mutation observer, so the high-frequency `handleActivity` never queries the DOM.
     function updateDialogOpenCache() {
       dialogOpenRef.current = !!document.querySelector(OVERLAY_OPEN_SELECTOR)
     }
@@ -111,23 +63,13 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
       window.clearTimeout(idleTimerRef.current)
       idleTimerRef.current = window.setTimeout(() => setPaused(true), idleTimeoutMs)
     }
-    // An unfocused window under the cursor (another app on top, or this window merely hovered
-    // without being the active one) must not restart the loop -- `pointermove`/`wheel` fire on
-    // an unfocused-but-visible window just from the OS routing hover/scroll to whatever is under
-    // the cursor, which is not "the user is reading this window". The cached overlay-open flag
-    // gates it the same way: any input while one is open targets the overlay, never this
-    // ambient background.
+    // An unfocused window gets pointermove/wheel from OS hover routing, which is not reading; input while an overlay is open targets the overlay.
     function handleActivity() {
       if (document.hidden || !document.hasFocus() || dialogOpenRef.current) return
       setPaused(false)
       schedulePause()
     }
-    // `pointermove`/`wheel` both fire dozens of times a second while the cursor is merely
-    // resting/twitching or the wheel is spinning -- every one of those used to reschedule the
-    // idle timer (`clearTimeout`+`setTimeout`, a real timer churn cost for no behavioural
-    // benefit over one reschedule a second), so both throttle to about 1/s; the leading call
-    // still runs immediately (first movement/scroll in a quiet window still counts right away),
-    // only the CHATTER during continuous movement is dropped.
+    // Throttled to about 1/s to avoid idle-timer churn; the leading call still runs immediately.
     let lastPointerMoveAt = 0
     function handlePointerMove() {
       const now = Date.now()
@@ -171,13 +113,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
     window.addEventListener('focus', handleActivity)
     document.addEventListener('visibilitychange', handleVisibility)
     const dialogObserver = new MutationObserver(handleDialogMutation)
-    // Radix's `Dialog.Portal`/`AlertDialog.Portal`/`Sheet.Portal`/`DropdownMenu.Portal`/
-    // `Select.Portal` all default to `document.body` as their container, so any of
-    // `OVERLAY_OPEN_SELECTOR` opening or finally unmounting is a `childList` change on body's
-    // own DIRECT children -- `childList: true` alone (no `subtree`, no `attributes`) catches all
-    // of them without reacting to anything else in the app (gate round 2 fix, High: `subtree`
-    // + `attributes` measured 0.156s/60s of CPU while genuinely idle, over budget, from reacting
-    // to the whole app's own DOM churn).
+    // Radix portals mount on `document.body`, so `childList` alone (no `subtree`/`attributes`) catches overlays; broader observation cost 0.156s/60s idle CPU.
     dialogObserver.observe(document.body, { childList: true })
     return () => {
       window.clearTimeout(idleTimerRef.current)
@@ -192,29 +128,9 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
     }
   }, [active, idleTimeoutMs])
 
-  // Gate round 2 fix (High, item 1 fallback): a continuous CSS animation (even `steps()`-timed)
-  // measured about 3.2s of CPU per 60s above Artwork-only in the live budget check (budget
-  // 1.0s/60s) -- three elements animating for the whole window, however cheaply each tick costs,
-  // adds up over a sustained 60s. The bats sit STATIC (no CSS animation at all, see
-  // `globals.css`) almost all the time; one randomly-chosen bat flies for about 4s via a single
-  // `Element.animate()` call every 90-180s (randomised in production; `flightIntervalMsOverride`
-  // replaces that gap with a short fixed value in a debug build only, so a live check's own 60s
-  // sample reliably contains several flights to measure). Gate round 4 fix (Main's decision on
-  // #1048, 2026-10-20): the live budget check found ~0.86s of CPU per flight at the round 3
-  // duration (7s) and rate -- WebView2's own frame-production cost for ANY running animation,
-  // the same rate the round 2 continuous loop cost, not specific to this shape. Shorter and
-  // rarer is the real lever: duration cut to 4s (also now under WCAG 2.2.2's 5s "no more than
-  // 5 seconds" threshold, decision 3), gap widened to 90-180s. The animated target is now the
-  // WRAPPING `<div class="holiday-ambient-loop-bat-wrap">` (`transform`/`will-change` both set
-  // on the div, never the `<svg>` root) -- `globals.css` moved the `position`/`:nth-child`
-  // placement rules onto that wrapper; the bat SVG inside is unpositioned, purely visual
-  // (colour/opacity/shape). Gate round 3 fix (Medium, item 4): the
-  // flight is now a round trip back to `translate(0,0)` -- the round 2 version ended at
-  // `translate(120px, 6px)` with `fill: 'none'`, so the bat SNAPPED 120px back to its resting
-  // spot the instant the animation finished, a visible pop the component's own "gentle drift,
-  // never a flicker" promise forbids. `document.getAnimations()` is empty between flights (no
-  // `.persist()` call, so the browser auto-removes the finished Animation), and
-  // `will-change: transform` is set only for that one flight's own duration, never ambiently.
+  // A continuous CSS animation cost ~3.2s CPU/60s, so bats sit static and one flies for ~4s via a single `Element.animate()` every 90-180s (under WCAG 2.2.2's 5s).
+  // The animated target is the wrapping div (not the svg root); the flight is a round trip to `translate(0,0)` so the bat never snaps back.
+  // `will-change: transform` is set only for the flight's duration.
   useEffect(() => {
     if (!active) {
       remainingFlightDelayMsRef.current = null
@@ -229,8 +145,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
     let timerDelayMs = 0
     let timerStartedAt = 0
 
-    // #1233: a pause (idle, blur, overlay) freezes the countdown instead of discarding it, so a
-    // reader who pauses and resumes still gets a flight once the unpaused time reaches the delay.
+    // A pause freezes the countdown instead of discarding it, so a resumed reader still gets a flight (#1233).
     function scheduleNextFlight(resumeDelayMs?: number) {
       const delayMs =
         resumeDelayMs ?? (flightIntervalMsOverride !== null ? flightIntervalMsOverride : 90_000 + Math.random() * 90_000)
@@ -328,16 +243,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
   )
 }
 
-/** One drifting bat (Halloween, "pick the calmer one" -- gentle drift, never a flicker). Plain
- * hand-drawn shapes, not a lucide icon: lucide has no bat glyph. Gate round 3 fix (High, item 3,
- * third round on this item): the round 1/2 redraws still read as two arrowheads pointing in at a
- * bar -- each wing narrowed FROM its tip TO the body, the opposite of a real bat wing (widest at
- * the body, tapering to the tip), and the "scallops" were straight `L` segments, not curves. Now
- * curved paths (`ui-architect-v3` review, `agent://Gate1053UI3.VisualReview`): each wing attaches
- * along the body's full height and arches up to a raised tip, with curved scalloped trailing
- * edges; ears raised clear of the head circle so they render at this opacity; 48x16 viewBox (a
- * flat 3x span-to-height ratio, the "span at least 3x height, 40-48px" the review asked for),
- * reused three times with only its CSS position/timing varied (`:nth-child` in `globals.css`). */
+/** One drifting bat: hand-drawn curved wings (widest at the body, tapering to the tip), 48x16 viewBox, reused with only CSS position/timing varied. */
 function BatSilhouette() {
   return (
     <svg className="holiday-ambient-loop-bat" width="48" height="16" viewBox="0 0 48 16" fill="currentColor" focusable={false}>

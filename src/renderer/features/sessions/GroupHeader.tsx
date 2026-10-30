@@ -7,40 +7,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { StateIcon } from './sessionDisplay'
 import type { GroupWaitingState } from './sessionDisplay'
 
-// #567 decision 6: named so it reads as "the width of the row's own action buttons", not a bare
-// magic number -- three 24px `icon-xs` ghost buttons (RepositoryGroup.tsx's own "+" quick-
-// create, branch picker, and "..." menu, replacing the previous mixed 28px/28px/22px sizes),
-// the header's own `gap-1` between the trigger and each of them (3 real gaps, trigger-to-first
-// and between each pair after it, 4px apiece): 3*24 + 3*4 = 84px, PLUS the header row's own
-// trailing `px-1` PADDING (not a fourth gap) that closes the row out, 4px more, giving
-// `sideOffset`'s own 88px (a tooltip sits OUTSIDE the trigger, past the actions AND that
-// trailing padding, so it needs the full distance to the header's own right edge).
-//
-// Gate round 1 fix (High, three independent reviewers): `ArchivedGroup.tsx`'s own spacer is
-// INSIDE its trigger's row, the same as the three action buttons it stands in for -- it must
-// NOT also add the trailing px-1 padding a second time (that padding closes the row once, after
-// the spacer or the real buttons, not after each). The previous single shared constant used here
-// for both purposes double-counted that padding on the spacer (96px realised width against an
-// 88px real Repository actions column), leaving Archived's own marker about 8px left of a
-// Repository header's -- the exact #908 "Archived marker column" defect this change claimed,
-// wrongly, to have fixed "by construction". `GROUP_HEADER_ACTIONS_WIDTH_PX` is the actions
-// column alone (3*24 + 2*4 = 80, the real gaps BETWEEN three buttons, none trailing) for
-// `ArchivedGroup.tsx`'s spacer; `GROUP_HEADER_ACTIONS_OFFSET_PX` (88, unchanged) stays the
-// tooltip's own `sideOffset`, which legitimately needs the trailing padding too.
 export const GROUP_HEADER_ACTIONS_WIDTH_PX = 80
 export const GROUP_HEADER_ACTIONS_OFFSET_PX = 88
 
-// Issue #527 decision 1: the one trigger styling (chevron, size, case, padding) shared by a
-// Repository header and the cross-repository Archived header in ArchivedGroup.tsx, so the two headers cannot
-// drift apart from each other again. A Repository header passes its own rename support; the
-// Archived header (no rename, no actions) passes only a label.
-// Issue #528: an optional leading `icon` slot (aria-hidden, decorative) plus `tooltip` text --
-// when a Repository header's icon alone carries NEW information (remote vs local-only) not
-// otherwise visible, `tooltip` both shows a Radix tooltip on hover/focus AND is appended to the
-// trigger's own accessible name, so the status is never conveyed by the icon's shape alone to a
-// screen reader that does not surface hover tooltips. The Archived header passes no tooltip:
-// its icon is pure decoration, the visible "Archived" label plus its own count (decision 5)
-// already says everything.
+// Shared trigger styling for the Repository and Archived headers so they cannot drift. `icon` is decorative;
+// `tooltip` is also appended to the accessible name so screen readers get the status (#527, #528).
 export function GroupHeaderTrigger({
   label,
   count,
@@ -55,10 +26,6 @@ export function GroupHeaderTrigger({
   color
 }: {
   label: string
-  /** #567 decision 5: the Archived header's own count, shown as a separate `tabular-nums` span
-   *  after `label` ("Archived" + "3"), never `Archived (N)` -- product-look-and-feel.md:27 bans
-   *  brackets. Folded into the accessible name as "Archived, 3" by `extraNameParts` below,
-   *  rather than a second `aria-describedby` region. A Repository header passes none. */
   count?: number
   title?: string
   icon?: ComponentType<{ 'aria-hidden'?: boolean; className?: string }>
@@ -66,26 +33,14 @@ export function GroupHeaderTrigger({
   triggerRef?: Ref<HTMLButtonElement>
   onDoubleClick?: () => void
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
-  /** #735 decision 21: the Waiting marker -- the most urgent state among this
-   * (closed) Group's Sessions, or `null`/`undefined` for an open Group or one with nothing to
-   * flag. */
   marker?: GroupWaitingState | null
-  /** #735 decision 22: this (closed) Group contains the currently visible Session. */
+  /** This (closed) Group contains the currently visible Session. */
   containsOpenSession?: boolean
-  /** Issue #887: the Project colour as a CSS colour (a `var(--project-N)` token or a validated,
-   * contrast-adjusted hex). Tints the whole trigger; the chevron and icon follow through
-   * `currentColor`. Dropped under forced-colors by `.project-colored` in globals.css. */
   color?: string
 }) {
   const pathId = useId()
-  // Gate round 2 fix (Low, a11y-auditor): dropping the native `title` below (so it never shows
-  // a second overlapping tooltip) also dropped the repository's path from assistive tech
-  // entirely, since that span was never focusable or read either way -- an `sr-only` span plus
-  // `aria-describedby` restores it, only when there is a path to describe.
   const describedByPath = tooltip && title
-  // #735 decisions 21, 22: the marker's status word and "contains open session" both extend
-  // the trigger's own accessible name, the same way `tooltip` already does -- combined into one
-  // name, not read twice over by a second `aria-describedby` region.
+  // Marker status and "contains open session" extend the trigger's accessible name, like `tooltip` (no second aria-describedby).
   const extraNameParts = [
     count !== undefined ? String(count) : null,
     tooltip,
@@ -99,17 +54,7 @@ export function GroupHeaderTrigger({
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
       aria-label={ariaLabel}
-      // Gate round 1 fix (Low, a11y-auditor): without this, the Tooltip wrapper below adds its
-      // own `aria-describedby` pointing at the SAME text `aria-label` above already carries, so
-      // a screen reader would read the remote status twice for one hover/focus. Radix's Slot
-      // merge lets this explicit prop win over the one Tooltip injects.
       aria-describedby={describedByPath ? pathId : undefined}
-      // Gate round 1 fix (Medium, architect ruling on decision 8): `gap-1`/`px-1` (was
-      // `gap-2`/`px-1`, itself off-grid per decision 28) -- moves the Project icon's own
-      // left edge to exactly 24px (4px container padding + 4px this padding + 12px chevron +
-      // 4px gap), so `SessionRow.tsx`'s own `pl-6` status icon finally lines up under it.
-      // Issue #1122: `data-choice-item` joins the shared square-choice selector (globals.css),
-      // which overrides `rounded-md` below; the focus-visible outline is unaffected.
       data-choice-item
       data-project-colored={color ? '' : undefined}
       style={color ? { color } : undefined}

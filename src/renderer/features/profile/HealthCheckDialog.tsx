@@ -1,18 +1,6 @@
-// Health check (spec 008 FR-022, T024): reachable from the profile menu, re-running the exact
-// same `readiness.check()` the first-run Readiness screen uses, rendering each row through the
-// shared CheckRow.tsx (extracted from Readiness.tsx) so the icon, colour, and found/hint text
-// never drift from what that screen already shows -- this dialog's only addition is making the
-// state word VISIBLE (`showStateWord`) instead of `sr-only`, since a deliberate "run a check"
-// action reads better with it on screen. Never invents a hint string or a version number: every
-// value rendered comes straight from the real `Check` the main process returned.
-//
-// Post-build review fixes: `healthCheckAnnouncement` counts failures and warnings separately so
-// the announcement never conflates a real failure with a row that merely "needs attention" (a
-// warning); `runCheck`'s own `catch` mirrors Readiness.tsx's -- a thrown `readiness.check` marks
-// every row failed with a real hint rather than leaving "Checking…" as the last thing announced;
-// and a re-run keeps the previous `checks` on screen (dimmed, `aria-busy`) instead of passing
-// `undefined` for every row, so the dialog never shrinks and Check again never moves under the
-// pointer mid re-run.
+// Re-runs `readiness.check()` through the shared CheckRow with the state word visible. Never invents a
+// hint or version: every value comes from the real `Check`. A thrown check marks every row failed, and a
+// re-run keeps the previous `checks` on screen (dimmed, `aria-busy`) so the dialog does not shrink.
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -24,11 +12,7 @@ import { CHECK_LABELS, CHECK_ORDER, CheckRow } from '../readiness/CheckRow'
 export interface HealthCheckDialogProps {
   open: boolean
   onOpenChange(open: boolean): void
-  /** Called on close (Esc, the X button, Done, or programmatically) -- each caller
-   *  (ProfileItem.tsx's profile-menu item, ProfileAlertRows.tsx's "Check" action, issue #560)
-   *  owns its own `open` state and its own instance of this dialog, and returns focus to
-   *  whichever control it opened from, the same explicit close-auto-focus every dialog here
-   *  needs since none is given a `Trigger`. */
+  /** Called on close; each caller owns its `open` state and returns focus to its opener (no `Trigger`). */
   onCloseFocus?(): void
 }
 
@@ -41,9 +25,7 @@ function warningPhrase(count: number): string {
   return count === 1 ? 'with a warning' : 'with warnings'
 }
 
-/** H1 (post-build review): counts failures and warnings separately, since a pass-with-a-warning
- *  row is never a failure (CheckRow.tsx's own "Passed with a warning" state) -- the old
- *  "{n} need attention" wording conflated the two and was also ungrammatical for n=1. */
+/** Counts failures and warnings separately; a pass-with-a-warning row is never a failure. */
 function healthCheckAnnouncement(checks: ReadinessChecks): string {
   let failed = 0
   let warned = 0
@@ -69,17 +51,13 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
   const [assertive, announceAssertive] = useClearedAnnouncement()
   const doneRef = useRef<HTMLButtonElement>(null)
   const checkAgainRef = useRef<HTMLButtonElement>(null)
-  // NEW-F (Phase 6 re-check): a run-id guard so closing and reopening the dialog mid-run (which
-  // starts a second `runCheck`) can never have the first run's stale `finally` clear `loading`
-  // or overwrite the second run's still-in-flight results.
+  // Run-id guard: a stale first run's `finally` must not clear `loading` or overwrite a second run's results.
   const runIdRef = useRef(0)
 
   async function runCheck(focusCheckAgain: boolean): Promise<void> {
     const id = ++runIdRef.current
     setLoading(true)
-    // NEW-B (Phase 6 re-check): clear the OTHER live region too -- setting the same text twice in
-    // the same region is a no-op React commit, so a second identical result within
-    // useClearedAnnouncement's 6s window would otherwise announce nothing.
+    // Clear the other live region too: identical text twice in one region is a no-op commit and would announce nothing.
     announcePolite('Checking…')
     announceAssertive('')
     try {
@@ -107,8 +85,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
   useEffect(() => {
     if (!open) return
     void runCheck(false)
-    // Re-checks fresh every time the dialog opens; `runCheck` closes over nothing that changes
-    // across opens.
+    // Re-checks on every open; `runCheck` closes over nothing that changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 

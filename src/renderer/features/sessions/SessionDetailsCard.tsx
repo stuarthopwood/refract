@@ -12,11 +12,7 @@ import type { Repository } from '../../../shared/model'
 import { DiffStatLine, StateIcon, displayLabel, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
-/** The session details card (T069/T070): wraps the row's open button (`children`, passed through
- * unchanged via `asChild` except for an added `aria-describedby`) in a shadcn `HoverCard`, owns
- * the diff-stat fetch for its own lifetime, and renders the Copy path / Open in file explorer
- * actions. Extracted out of `SessionRow` so that row (focus management, rename, menu) and card
- * (hover-card lifecycle, diff stat, worktree actions) each stay a single concern. */
+/** Extracted out of `SessionRow` so that row (focus management, rename, menu) and card (hover-card lifecycle, diff stat, worktree actions) each stay a single concern. */
 export function SessionDetailsCard({
   session,
   repository,
@@ -28,36 +24,26 @@ export function SessionDetailsCard({
   session: SessionSummary
   repository: Repository
   worktreeMissing: boolean
-  /** #567 decision 16: the row's own line-2 text, when it is not the branch (the start-progress
-   *  or "Terminated unexpectedly" text `SessionRow.tsx` shows instead) -- leads the accessible
-   *  description below so it is never silently dropped just because it does not fit on line 2. */
+  // #567 decision 16: the row's own line-2 text, when it is not the branch (the start-progress or
+  // "Terminated unexpectedly" text `SessionRow.tsx` shows instead) -- leads the accessible
+  // description below so it is never silently dropped just because it does not fit on line 2.
   activityDescription?: string
-  /** #526 (FR-110): the full Activity line text while line 2 shows it; leads the card itself. */
+  // #526: the full Activity line text while line 2 shows it; leads the card itself.
   activityText?: string | null
   children: ReactElement<{ 'aria-describedby'?: string }>
 }) {
-  // T069: fetched fresh each time the details card opens, never cached across opens.
+  // fetched fresh each time the details card opens, never cached across opens.
   const [diffStatResult, setDiffStatResult] = useState<DiffStat | null | 'loading'>('loading')
-  // Each card-open issues a new `diffStat` request (up to 3 s); re-hovering or tabbing through
-  // rows before the first one resolves must not let a stale response overwrite a newer one (or
-  // apply after the card has closed), so only the most recently issued request's result is kept.
+  // Each card-open issues a new `diffStat` request (up to 3 s); re-hovering or tabbing through rows
+  // before the first one resolves must not let a stale response overwrite a newer one (or apply
+  // after the card has closed), so only the most recently issued request's result is kept.
   const requestIdRef = useRef(0)
   const { copyPath, reveal } = useWorktreeActions(session)
   const descriptionId = `${session.id}-details`
 
   // Screen readers never reach this card's content: it is portaled to the end of `<body>` and
   // closes on blur before a virtual cursor could Tab into it, and `openDelay` means it is not yet
-  // mounted when the trigger receives focus. The base branch, worktree path, and missing state
-  // are otherwise only ever shown inside the card, so they are duplicated here as a plain-text,
-  // visually-hidden description linked to the trigger via `aria-describedby` (not pointed at the
-  // card content itself, which may not exist yet at focus time).
-  // #567 decision 16: "{activity text}. {branch} from {base}. Last active {long time}. {path}" --
-  // replaces the shorter `From {base}. {path}` form, now that the row's own accessible name
-  // (`SessionRow.tsx`'s `aria-label`) no longer carries the branch, base, or last-active time
-  // itself; this description is the one place they still reach assistive technology.
-  // Gate round 1 fix (Medium, a11y): "Last active" uses `formatAbsoluteTime`, not
-  // `formatRelativeTime` -- see that function's own comment for why (description churn on a
-  // focused row, once a minute, from the shared tick).
+  // mounted when the trigger receives focus.
   const descriptionText = [
     activityDescription,
     `${session.branch} from ${session.baseBranch}`,
@@ -67,8 +53,8 @@ export function SessionDetailsCard({
     .filter((part): part is string => Boolean(part))
     .join('. ')
 
-  // T069: fetches a fresh diff stat and re-lists Sessions (so a since-deleted worktree's
-  // `stopReason` is current, not a stale cached value) every time the card opens.
+  // fetches a fresh diff stat and re-lists Sessions (so a since-deleted worktree's `stopReason`
+  // is current, not a stale cached value) every time the card opens.
   function handleCardOpenChange(open: boolean): void {
     if (!open) return
     const requestId = ++requestIdRef.current
@@ -117,12 +103,7 @@ export function SessionDetailsCard({
                 )}
               </p>
             </div>
-            {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)"
-                    suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). Gate round 1 fix
-                    (LOW #12): the model/effort row and its own "via <Provider>" caption below are
-                    grouped in one `flex flex-col gap-1` -- the outer card's own `gap-2` between
-                    EVERY row read as "via Provider" belonging to the NEXT unrelated row, not a
-                    caption of the model row directly above it. */}
+            {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="flex min-w-0 items-center gap-2 truncate">
@@ -139,21 +120,12 @@ export function SessionDetailsCard({
                   </span>
                 )}
               </div>
-              {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map,
-                  raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this
-                  card has room for it that the composer strip does not. `pl-6` aligns it under
-                  the model name's own text, past the CpuIcon (`size-4` + `gap-2` above it). */}
+              {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map, raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this card has room for it that the composer strip does not. */}
               {session.lastModel && <p className="truncate pl-6 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FileDiffIcon aria-hidden className="size-4 shrink-0" />
-              {/* Gate round 5 fix (Flow LOW): this line had no `sr-only` full-figure pairing at
-                  all, unlike the status line's identical `ChangesReadout`, which carries one
-                  (`formatDiffStatAccessible`, shared from `sessionDisplay.tsx` precisely so
-                  this card and the status line can never phrase the same stat two ways). Issue
-                  #925: both now render through the shared `DiffStatLine`, so the figure is
-                  coloured (and paired with its sr-only text) exactly the same way in both
-                  places. */}
+              {/* Issue #925: both now render through the shared `DiffStatLine`, so the figure is coloured (and paired with its sr-only text) exactly the same way in both places. */}
               {worktreeMissing || diffStatResult === 'loading' || diffStatResult === null ? (
                 <span className="truncate">
                   {worktreeMissing ? 'Not available' : diffStatResult === 'loading' ? 'Counting changes…' : 'Not available'}

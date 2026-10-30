@@ -1,13 +1,6 @@
-// Shared sign-out confirmation (FR-011, T016): one AlertDialog instance used from both
-// ManageAccountsDialog's per-row Sign out button and ProfileMenu's Sign out item (ProfileItem.tsx
-// owns the single instance as a sibling of the DropdownMenu, never nested inside menu content --
-// menu items unmount when the menu closes, which would unmount a dialog launched from inside it).
-//
-// Focus-on-close is always explicit via `onCloseFocus`, for BOTH the Cancel/Escape path and the
-// Confirm path: this and ManageAccountsDialog are controlled dialogs with no `Trigger`, so Radix
-// has no trigger ref of its own to fall back to and would otherwise drop focus to `<body>`
-// (confirmed live, not merely assumed). The caller (ProfileItem.tsx) decides the real target,
-// since it alone knows which surface launched this dialog and what the new state looks like.
+// Shared sign-out confirmation for ManageAccountsDialog and ProfileMenu; the single instance lives outside the
+// menu, whose items unmount on close. Focus-on-close is always explicit via `onCloseFocus`: there is no
+// Trigger, so Radix would otherwise drop focus to `<body>`.
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
@@ -27,19 +20,10 @@ import type { GitHubAccount } from '../../../shared/accounts'
 export interface SignOutDialogProps {
   /** Non-null opens the dialog for this account. */
   account: GitHubAccount | null
-  /** The full, raw-CLI-order account list (data-model.md), used only to work out which account
-   *  becomes active next (FR-011) -- never Manage accounts' own active-first display order. */
+  /** The raw-CLI-order account list, used only to work out which account becomes active next. */
   accounts: GitHubAccount[]
   onOpenChange(open: boolean): void
-  /** Called once, on every close (Cancel, Esc, or a successful Confirm), from this dialog's own
-   *  close-auto-focus -- by which point Radix has already lifted the `aria-hidden` it puts on
-   *  everything outside this dialog while it was open (quality-gate remediation, accessibility-
-   *  auditor High), so this is also where the caller must build any "Signed out {name}"
-   *  announcement, not from `signOutAccount`'s own resolution (too early: this dialog, and
-   *  whatever it hid, is still open then). Returning `true` means the caller moved focus itself,
-   *  so this dialog suppresses its own default (there being no Trigger to fall back to).
-   *  Returning `false` (or omitting the prop) leaves focus wherever Radix would otherwise drop
-   *  it. */
+  /** Called once on every close, after Radix lifts `aria-hidden`, so the caller builds its announcement here. Return `true` if the caller moved focus itself. */
   onCloseFocus?(outcome: 'confirmed' | 'cancelled', account: GitHubAccount): boolean
 }
 
@@ -58,13 +42,10 @@ export function SignOutDialog({ account, accounts, onOpenChange, onCloseFocus }:
   const [signingOut, setSigningOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
-  // Same live-account-vs-closure-capture rationale as DeleteDialog.tsx's sessionIdRef: an async
-  // handleConfirm in flight must never act on a DIFFERENT account's dialog that opened while it
-  // awaited.
+  // Live account ref so an in-flight confirm never acts on a different account's dialog.
   const accountRef = useRef(account)
   accountRef.current = account
-  // Kept so the closing animation (open -> false) still has an account to render, the same
-  // reason DeleteDialog.tsx's own AlertDialogContent never conditionally unmounts on its prop.
+  // Keeps an account to render during the closing animation.
   const lastAccountRef = useRef<GitHubAccount | null>(account)
   if (account) lastAccountRef.current = account
   const justConfirmedRef = useRef(false)

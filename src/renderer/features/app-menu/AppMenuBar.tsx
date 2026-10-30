@@ -1,11 +1,3 @@
-// The in-app File/Edit/View/Window menu bar (docs/DESIGN.md "Layout"; FR-057): Electron's native
-// menu does not reveal on Alt once the title bar is merged into the app's top row
-// (`titleBarStyle: 'hidden'`, confirmed live, docs/spike/FINDINGS.md item 33), so this draws the
-// same four items itself. A standalone Alt tap (keydown then keyup with no other key pressed in
-// between -- never a combo like Alt+Tab or Alt+F4) toggles it; Esc or a click outside the bar
-// hides it. Each item still opens the one real Electron `Menu` (`src/main/menu.ts`) by id, so
-// every accelerator and role (copy, paste, undo, redo, zoom, and in development reload/toggle
-// developer tools) behaves identically whether the bar is shown or not.
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { notify } from '@/state'
@@ -22,30 +14,19 @@ const MENU_LABEL: Record<AppMenuId, string> = {
   window: 'Window'
 }
 
-// Ids come from the one shared list (`shared/ipc.ts`'s `APP_MENU_IDS`, also used by
-// `src/main/menu.ts` and `src/main/ipc/window.ts`); only the display label is this component's
-// own.
+// Ids come from the shared `APP_MENU_IDS`; only the label is local.
 const MENUS: Array<{ id: AppMenuId; label: string }> = APP_MENU_IDS.map((id) => ({ id, label: MENU_LABEL[id] }))
 
 const MENU_BUTTON_CLASS =
   'px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
+/** In-app menu bar toggled by a standalone Alt tap; each item opens the native menu by id. */
 export function AppMenuBar() {
   const [visible, setVisible] = useState(false)
   const barRef = useRef<HTMLDivElement>(null)
-  // Armed on Alt's own keydown; any other keydown before the matching keyup disarms it, so a
-  // held Alt used as part of a shortcut never toggles the bar, only a standalone tap does. Also
-  // cleared on window blur and on any mousedown/pointerdown: without this, an Alt+Tab away and
-  // back (the OS consumes the Tab, so this page never sees a clearing keyup) could leave the
-  // flag armed and let a later, unrelated Alt-keyup pop the bar open unexpectedly.
+  // Armed on Alt keydown, disarmed by any other key, blur or pointerdown, so Alt+Tab away and back can't leave it armed.
   const altArmedRef = useRef(false)
-  // Whatever held focus right before Alt opened the bar (e.g. the message box mid-draft),
-  // captured on Alt's keydown so every dismissal path below can restore it instead of leaving
-  // focus to fall through to <body> (WCAG 2.1 AA 2.4.3). Only captured while focus is OUTSIDE
-  // the bar: the SECOND Alt tap that closes an already-open bar also fires this keydown, and by
-  // then the bar's own autoFocused "File" button holds focus, so without the `barRef` guard
-  // below this ref would get clobbered with the bar's own button instead of keeping the
-  // original pre-bar target.
+  // Focus before the bar opened, restored on dismissal; only captured while focus is outside the bar (else the second Alt tap would clobber it).
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -84,28 +65,11 @@ export function AppMenuBar() {
       if (barRef.current?.contains(event.target as Node)) return
       // The Right pane dropdown's items are portalled outside the bar (scoped by data attribute).
       if ((event.target as Element).closest('[data-app-menu-dropdown]')) return
-      // A click away is itself the user choosing a new focus target (e.g. clicking straight into
-      // the message textarea): clear the captured ref so the restore effect below does not then
-      // fight that click by yanking focus back to the pre-bar element on the next render.
+      // A click away chooses a new focus target; clear the ref so the restore effect doesn't fight it.
       previousFocusRef.current = null
       setVisible(false)
     }
     function onKeyDown(event: KeyboardEvent): void {
-      // Quality-gate remediation (a11y, round 2, corroborated by all three reviewers): closing
-      // the Alt-opened bar via Escape must not look like an unhandled keypress to anything else
-      // also listening for Escape on window (AppearanceSection.tsx's own preview-cancel handler
-      // checks exactly this -- see its 'role="menubar"' guard for the order-independent half of
-      // this fix).
-      //
-      // Quality-gate remediation (round 5): a round-4 `if (event.repeat) return` guard used to
-      // live here, reasoning that it stopped a held-down Escape's auto-repeat from reaching
-      // AppearanceSection.tsx's own preview-cancel listener. It did not: by the time the repeat
-      // keydown fires (~500ms after the first), this effect's cleanup has already removed this
-      // very listener (React re-rendered after the first event's `setVisible(false)`), so the
-      // repeat event was never intercepted here regardless -- it fell straight through to
-      // AppearanceSection.tsx's listener either way. The real fix now lives there instead (see
-      // that file's own comment). Guarding here was harmless but pointless, so it is removed
-      // along with the comment that claimed it worked.
       if (event.key === 'Escape') {
         // Escape inside the open dropdown only closes that dropdown (Radix), not the whole bar.
         if ((event.target as Element).closest('[data-app-menu-dropdown]')) return
@@ -121,10 +85,7 @@ export function AppMenuBar() {
     }
   }, [visible])
 
-  // Restores focus on Esc or a second Alt tap: both just flip `visible` to false with
-  // `previousFocusRef` still holding the pre-bar target. A click-away also flips `visible` to
-  // false, but its `onMouseDown` handler above clears the ref first, so this effect is a no-op
-  // for that path and the user's own click target keeps focus instead of being fought over.
+  // Restores pre-bar focus on Esc or a second Alt tap; a click-away clears the ref first, making this a no-op.
   useEffect(() => {
     if (visible) return
     const target = previousFocusRef.current
@@ -191,9 +152,7 @@ export function AppMenuBar() {
           {menu.label}
         </button>
       ))}
-      {/* View > "Right pane width" (spec 013 FR-025, WCAG 2.5.7): the native View menu is built in
-          Rust (src-tauri/src/shell/menu.rs), so the renderer-drawn bar carries this entry as its
-          own dropdown until the native submenu exists. */}
+      {/* The native View menu lacks "Right pane width", so the bar carries it as a dropdown (WCAG 2.5.7). */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button

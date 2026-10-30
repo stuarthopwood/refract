@@ -1,8 +1,5 @@
-// The message box (docs/DESIGN.md "Chat", "Keyboard"): grows up to ~8 lines, Enter sends,
-// Shift+Enter inserts a newline, Esc clears, Ctrl+Shift+X stops a running turn. Queue chips come
-// only from `useQueueStore` (queue:update events), never from optimistic local state. The
-// slash-command menu (T044, FR-032, FR-033) lives in SlashMenu.tsx; this file only decides when
-// to show it and handles the keys that drive it.
+// The message box: Enter sends, Shift+Enter inserts a newline, Esc clears, Ctrl+Shift+X stops a running turn.
+// Queue chips come only from `useQueueStore`, never optimistic local state; the slash menu lives in SlashMenu.tsx.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
   ClipboardEvent as ReactClipboardEvent,
@@ -65,16 +62,10 @@ import { parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
 
-// Stable reference so the zustand selector below never returns a fresh array when there is no
-// match; a new `[]` literal every call breaks useSyncExternalStore's snapshot stability and
-// causes an infinite re-render loop.
+// Stable reference: a fresh `[]` per call breaks useSyncExternalStore snapshot stability and loops.
 const EMPTY_COMMANDS: SlashCommand[] = []
 
-// T103, FR-058: debounce before a predict_word request, and a local mirror of the server's own
-// gating (rpc.md "Word prediction"): the cursor must sit at the end of its line and end a
-// plausible prose word, with no slash-command or path-shaped token being typed. Keeping this
-// local means the vast majority of keystrokes (mid-word, mid-line, slash commands, paths) never
-// reach a request at all; the server re-applies the same gates regardless.
+// Debounce before a predict_word request; `isGhostTextEligible` mirrors the server's gating (rpc.md "Word prediction") so most keystrokes never reach a request.
 const GHOST_TEXT_DEBOUNCE_MS = 300
 
 function isGhostTextEligible(text: string, cursor: number): boolean {
@@ -100,9 +91,7 @@ interface MessageInputProps {
   sessionId: string
   stopReason?: StopReason
   stopDetail?: string
-  /** Focus the textarea once on mount. Set only by ChatPane when this session's MessageInput
-   * instance is a fresh remount (`key={sessionId}`) replacing one that had focus (e.g. a
-   * notification reopening the Session the user was typing in); never on first load. */
+  /** Focus the textarea once on mount; set by ChatPane when this is a fresh remount replacing one that had focus. */
   autoFocusOnMount?: boolean
   /** The shared queued-message state (useQueuedMessages), owned by ChatPane beside the Queued panel. */
   queued: QueuedMessages
@@ -110,35 +99,23 @@ interface MessageInputProps {
 
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount, queued }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
-  // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
-  // clipboard image itself is never affected by this).
+  // Turns off path-based image-attach detection; a pasted clipboard image is unaffected (#514).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
-  // Issue #772 (Settings::word_prediction_enabled, Rust build only): absent means enabled (Electron).
+  // Absent means enabled (#772).
   const wordPredictionEnabled = useSettingsStore((s) => s.settings.wordPredictionEnabled !== false)
-  // PR #723 gate round 1 fix (Code1 Medium): reactive read so the Send button's own
-  // `aria-disabled` reflects an in-flight path/drop read, same guard as `handleSend` (draft-store.ts).
+  // Reactive so Send's `aria-disabled` reflects an in-flight path/drop read, like `handleSend`.
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
-  // Spec 010: draft text lives in draft-store.ts, keyed by sessionId, instead of local useState,
-  // so it survives this component unmounting (a ChatPane.tsx `key={sessionId}` Session switch,
-  // or App.tsx's Settings view-swap) rather than being silently discarded (FR-001).
+  // Draft text lives in draft-store.ts so it survives unmounts (Session switch, Settings view-swap).
   const text = useDraftStore((s) => s.bySession[sessionId]?.text ?? '')
   const [starting, setStarting] = useState(false)
   const [slashActiveIndex, setSlashActiveIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const stopReasonId = `${sessionId}-stop-reason`
   const slashMenuId = `${sessionId}-slash-menu`
-  // Accessibility remediation (High): a transient polite announcement for a chip being created,
-  // an image being attached, or a chip being silently dropped (FR-014) -- none of which otherwise
-  // reach a screen-reader user, who only ever hears the textarea's own plain-text value. Separate
-  // live region from the slash-menu one below so an attachment event is never swallowed by (or
-  // swallows) an unrelated "No matching commands" announcement.
-  // #514/#432: now held in `useDraftStore` (per session), not local state -- ChatPane.tsx's own
-  // drag-and-drop handler (#432) needs to announce through this EXACT same live region, and it
-  // lives outside this component. The sequence-number re-render trick (a repeated identical
-  // message, e.g. pasting the same image twice, must still force a fresh DOM node) now lives in
-  // the store's own `announceAttachment` action instead of a local ref.
+  // Polite live region for attachment events, separate from the slash-menu one so neither swallows the other.
+  // Held in the draft store because ChatPane's drag-and-drop handler (#432) announces through it too.
   const attachmentAnnouncement = useDraftStore((s) => s.bySession[sessionId]?.attachmentAnnouncement ?? null)
   const announceAttachment = useCallback(
     (message: string) => {
@@ -146,11 +123,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     },
     [sessionId]
   )
-  // PR #723 gate round 2 fix (Code2/A11y2 Medium): announces "Attaching…" once per
-  // 0-to-positive transition of `pendingAttachmentReads` (never on every re-render while it
-  // stays above 0, and never again on the already-covered 0-to-0/no-op case) -- the paired
-  // visible text line above this component's own JSX is the courtesy UI; this is the
-  // announcement a screen-reader user needs for the exact same state.
+  // Announces "Attaching…" once per 0-to-positive transition of `pendingAttachmentReads`.
   const prevPendingAttachmentReadsRef = useRef(pendingAttachmentReads)
   useEffect(() => {
     if (pendingAttachmentReads > 0 && prevPendingAttachmentReadsRef.current === 0) {
@@ -160,23 +133,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [pendingAttachmentReads, announceAttachment])
   const attachmentsStatusId = `${sessionId}-attachments-status`
   const attachmentsSummaryId = `${sessionId}-attachments-summary`
-  // Issue #533: sr-only accessible description for the composer's empty-state hint overlay --
-  // an inert overlay cannot act as a native `placeholder` for assistive tech, so the same
-  // content reaches it through `aria-describedby` instead (gated off whenever the overlay
-  // itself is not shown, mirroring `ghostHintId`/`attachmentsSummaryId` above).
+  // An inert overlay can't act as a `placeholder` for assistive tech, so its text is exposed via `aria-describedby` (#533).
   const composerHintId = `${sessionId}-composer-hint`
 
   const statusRef = useRef(status)
   statusRef.current = status
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
-  // Quality-gate remediation (accessibility-auditor, High, also FR-010): this component's own
-  // Ctrl+Shift+X listener is a window-level listener, one per mounted MessageInput -- with a
-  // split open, BOTH panes' listeners used to fire on the same keypress, so Stop silently acted
-  // on whichever pane's Session happened to be `working`, including the UNFOCUSED one, with no
-  // way to target just one pane from the keyboard (the pointer-driven Stop button is already
-  // correctly scoped, since it lives inside this exact pane). Gated below so only the focused
-  // pane's own listener (or the sole listener, when there is no split) ever acts.
+  // Window-level listener, one per mounted MessageInput: gated so only the focused pane acts in a split (FR-010).
   const isFocusedPane = useSplitStore((s) => s.paneSessionIds.length < 2 || s.paneSessionIds[s.focusedIndex] === sessionId)
   const isFocusedPaneRef = useRef(isFocusedPane)
   isFocusedPaneRef.current = isFocusedPane
@@ -184,40 +148,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // #897: Chromium fires no blur when a focused element unmounts, so this still reads true after
   // Stop disappears at the end of a turn.
   const stopHadFocusRef = useRef(false)
-  // PR #723 gate round 3 fix (A11y3 HIGH): scopes `handleRemoveImage`'s own focus query to THIS
-  // composer's own attachment strip -- in split view each pane renders its own MessageInput, so
-  // a `document`-wide query always found whichever pane's strip happened to render first.
+  // Scopes `handleRemoveImage`'s focus query to this pane's strip; a `document` query hits the first pane in split view.
   const attachmentStripRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
-  // Spec 009: pending images and oversized-text chips for the draft currently being composed
-  // (data-model.md "AttachmentsState"). Spec 010: held in draft-store.ts alongside `text`
-  // above, keyed by sessionId -- renderer-memory-only, cleared on send success (FR-007) but no
-  // longer on this component's own remount (spec 010 FR-002, FR-003).
+  // Pending images and oversized-text chips live in draft-store.ts: renderer-memory-only, cleared on send success, kept across remounts.
   const attachments = useDraftStore((s) => s.bySession[sessionId]?.attachments ?? EMPTY_ATTACHMENTS)
-  // Mirrors the ghost-text overlay's own scroll-sync div (T103, FR-058) for the text-chip
-  // overlay: an inert sibling matching the textarea's box model so each chip's clickable overlay
-  // lands exactly over its label's rendered position (research.md Decision 10).
+  // Inert sibling matching the textarea's box model so each chip's click overlay lands over its label.
   const chipOverlayRef = useRef<HTMLDivElement>(null)
   const { commandToken, commandPillOverlayRef, markdownSegments, textareaClass } = useCommandPillOverlay(text, commands, textareaRef) // FR-092, #1050
-  // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
-  // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
-  // predictWord response against a newer edit superseding it before it resolves (same guard as
-  // SessionDetailsCard's diffStat stale-response fix).
+  // `ghost` is the suggestion shown, bound to the draft/cursor it was requested for; `ghostGenerationRef` drops a stale predictWord response.
   const [ghost, setGhost] = useState<{ text: string; cursor: number; suffix: string } | null>(null)
-  // Mirrors `ghost` for `handleSend`'s async body (#358/#359 round-3 remediation): that function is an
-  // ordinary closure captured once per render, so after its `await`s resolve its own `ghost`
-  // binding is whatever was current when it started -- stale against anything that happened
-  // during the gap. Refs are stable across renders, so reading through `ghostRef` instead always
-  // sees the live value regardless of which render's closure is asking.
+  // Ref mirror so `handleSend`'s async body sees the live `ghost`, not its render-time closure value (#358/#359).
   const ghostRef = useRef<typeof ghost>(null)
   const ghostGenerationRef = useRef(0)
   const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ghostHintId = `${sessionId}-ghost-hint`
-  // Separate from `ghost` so the screen-reader hint doesn't flicker through '' and back on every
-  // debounce cycle: `scheduleGhostCheck` clears `ghost` (and the overlay) immediately on each
-  // edit, but leaves the last-announced suggestion text alone until eligibility fails outright or
-  // a new suggestion actually resolves. Re-announcing identical text on every keystroke is what
-  // the remediation review flagged for a slow typist (#358/#359).
+  // Separate from `ghost` so the screen-reader hint doesn't flicker on every debounce cycle (#358/#359).
   const [announcedSuggestion, setAnnouncedSuggestion] = useState<string | null>(null)
 
   useEffect(() => {
@@ -226,17 +172,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
   }, [])
 
-  // Keeps the overlay's scroll position pinned to the textarea's whenever a suggestion is newly
-  // shown (the `onScroll` handler below covers scrolling while one is already showing) (#359).
+  // Pins the overlay's scroll to the textarea's when a suggestion is newly shown (#359).
   useEffect(() => {
     if (ghost && overlayRef.current && textareaRef.current) {
       overlayRef.current.scrollTop = textareaRef.current.scrollTop
     }
   }, [ghost])
 
-  // Same scroll-sync reasoning as the ghost overlay above, for the text-chip overlay: pins its
-  // scroll position whenever the set of pending chips changes (the `onScroll` handler below
-  // covers scrolling while chips are already showing).
+  // Same scroll pinning for the text-chip overlay when the chip set changes.
   useEffect(() => {
     if (chipOverlayRef.current && textareaRef.current) {
       chipOverlayRef.current.scrollTop = textareaRef.current.scrollTop
@@ -245,18 +188,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   useEffect(() => {
     if (autoFocusOnMount) textareaRef.current?.focus()
-    // High remediation (accessibility-auditor, quality gate 2026-10-04): a restored
-    // (non-empty) draft's own caret otherwise lands at position 0, not the end -- live-verified
-    // against this same Electron build: a controlled <textarea> does NOT default its caret to
-    // the end of a non-empty `value` set at mount, focused or not (spec.md's Clarifications
-    // wrongly assumed it would). Setting it explicitly, every mount, matches how a freshly typed
-    // draft already looks and keeps a keyboard-only user (Tab back in, or a focus-carrying
-    // Session switch) from silently prepending into restored text (FR-001).
+    // A controlled textarea doesn't default its caret to the end of a restored draft, so set it explicitly (FR-001).
     const end = textareaRef.current?.value.length ?? 0
     textareaRef.current?.setSelectionRange(end, end)
-    // Runs once per mount only: this component remounts (`key={sessionId}`) whenever the
-    // visible Session changes, so re-running on prop changes would steal focus back after the
-    // user deliberately moves it elsewhere.
+    // Once per mount: the component remounts on Session change, and re-running would steal focus back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -268,8 +203,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     stopHadFocusRef.current = false
     if (isFocusStranded(document.activeElement, null)) textareaRef.current?.focus()
   }, [isWorking])
-  // Issue #1205 (FR-104): any stop without a stop banner (not started, or stopped on request)
-  // keeps the composer usable; a send starts the agent.
+  // Any stop without a stop banner keeps the composer usable; a send starts the agent (#1205).
   const notStarted = status === 'stopped' && (stopReason === 'not-started' || stopReason === undefined)
   const disabled = status === 'stopped' && !notStarted
 
@@ -283,24 +217,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     textChips: attachments.textChips,
     announceChipRemoval
   })
-  // `slashActiveIndex` is reset to 0 by the post-commit effect below, but for the one commit in
-  // between a shorter filtered list and that effect running, it can still reference a row past
-  // the end -- clamp at render so `aria-activedescendant` and the highlighted option never
-  // point at a row that no longer exists.
+  // Clamp at render: until the reset effect runs, the index can point past a shorter filtered list.
   const clampedSlashActiveIndex = slashMatches.length > 0 ? Math.min(slashActiveIndex, slashMatches.length - 1) : 0
 
   // Issue #1067: steer the oldest queued follow-up on a plain Enter against a blank composer.
   const enterQueuedFollowUp = computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, queued.chips, showSlashMenu, ghost, disabled)
-  // The active row resets whenever the typed query changes, so a stale index from a longer list
-  // never survives into a shorter, filtered one. Gate round 1 fix (Low): `useLayoutEffect`, not
-  // `useEffect` -- the plain-`useEffect` version could still commit one paint with the OLD
-  // active index against the NEW (shorter) list before this ran, visibly highlighting the wrong
-  // row for a frame.
+  // Reset on query change; a layout effect so no paint shows the old index against the new list.
   useLayoutEffect(() => {
     setSlashActiveIndex(0)
   }, [slashMenuKey])
-  // Ctrl+Shift+X stops the running turn while this pane is mounted AND focused (docs/DESIGN.md
-  // "Keyboard"; spec 005 FR-010: acts only on the focused/owning pane while a split is open).
+  // Ctrl+Shift+X stops the running turn, acting only on the focused pane in a split (FR-010).
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== 'x') return
@@ -313,23 +239,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  /** `overrideText` (issue #938 item 1): a just-completed "Run /<cmd>" or exact-subcommand
-   * selection must send THAT text at once -- `text` is this render's stale closure value until
-   * the store write it just made applies on a later render. */
+  /** `overrideText` sends that text at once; `text` is this render's stale closure value (#938). */
   async function handleSend(overrideText?: string) {
-    // PR #723 gate round 1 fix (Code1 Medium): refuses while a background path/drop image read
-    // for this session is still in flight (`pendingAttachmentReads`, draft-store.ts's own doc
-    // comment) -- otherwise Enter mid-read sent the message WITHOUT the image (which then landed
-    // on the NEXT draft instead), the same race class `disabled`/`starting` already guard against.
+    // Refuse mid-read, or Enter sends the message without the pending image.
     if (disabled || starting || pendingAttachmentReads > 0) return
     const draftText = overrideText ?? text
     if (!hasSendableContent(draftText, attachments)) return
-    // #744 (spec 009 FR-042): OMP's queue cannot tell two image-only follow-ups apart.
+    // OMP's queue cannot tell two image-only follow-ups apart (#744).
     const imageOnly = isImageOnlyDraft(draftText, attachments)
     if (imageOnly && isImageOnlyQueued(followUp, steering)) return void toast.error(SECOND_IMAGE_ONLY_REFUSAL)
-    // Enter-send and the Send button both clear the draft via `clear(sessionId)` below, bypassing
-    // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
-    // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
+    // Send bypasses `scheduleGhostCheck`, so a shown suggestion would outlive it without this (#358/#359).
     clearGhostState()
     // Issue #762: bare `/models` opens Settings > Model roles; bare `/role` (#766) opens the switcher.
     const modelsInvocation = parseSlashCommand(draftText)
@@ -341,107 +260,51 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     if (notStarted) {
-      // Spec 005 (research.md Decision 4): sending the first message to a just-restored,
-      // not-yet-opened pane is itself the "real action" that clears its pristine flag. Cleared
-      // FIRST, before awaiting open() below: this lets ChatPane's own pristine-cleared effect
-      // (triggered by this exact state change) be the SOLE place that calls `applySnapshot` for
-      // this open.
-      //
-      // Quality-gate remediation (code-reviewer, Medium): this branch no longer calls
-      // `applySnapshot` itself (a second apply raced `transcript:patch` and could flash the
-      // pre-send transcript); it only awaits `open()` to know the agent has started.
+      // Clear pristine before open() so ChatPane's effect is the sole `applySnapshot` caller (a second apply races `transcript:patch`).
       useSplitStore.getState().markOpened(sessionId)
       let snapshot
       try {
         setStarting(true)
-        // Issue #1205 (FR-104): a typed send is an explicit start -- `open(sessionId, true)`
-        // starts the stopped agent and resolves once it is ready, then this one send goes out.
+        // A typed send is an explicit start (#1205).
         snapshot = await useSessionsStore.getState().open(sessionId, true)
       } finally {
         setStarting(false)
       }
-      // A failed start keeps the draft (it is only cleared after `chat.send` succeeds) and the
-      // stop banner shows from the live status event.
+      // A failed start keeps the draft.
       if (!snapshot || snapshot.runtime.status === 'stopped') return
     }
-    // FR-013: every pending text chip's full original text is substituted back into the draft at
-    // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
-    // sees is exactly what the developer would have gotten pasting the whole block directly.
+    // Chips are expanded back to their full text before `chat.send`.
     const message = substituteChips(imageOnly ? '' : draftText, attachments.textChips)
     // #926 (D1 HIGH): typed text carrying the literal marker is refused, draft stays intact.
     if (message.includes(FILE_ATTACHMENTS_MARKER)) {
       toast.error(`The message contains the reserved "${FILE_ATTACHMENTS_MARKER}" marker line used internally for file attachments. Remove it and try again.`)
       return
     }
-    // FR-006: every pending image goes out as a real `images` entry on this same call, whether it
-    // sends immediately or queues as a followUp (FR-017) -- `SessionAgent.send` decides which
-    // based on the Session's live status, not this call site.
     const images = attachments.images.length > 0 ? attachments.images.map(toImageContent) : undefined
-    // Issue #485: a bare `/new` here is `chat.ts`'s own third `conversations.startNew` call
-    // site (SessionAgent.startNewConversation, via chat.send) -- unlike ConversationSwitcher's
-    // and ChatPane's `handleStartNewConversation`, its reset reaches the renderer as an ordinary
-    // `transcript:patch` on the SAME event stream this call's own result races against, not as a
-    // returned SessionSnapshot this call site could clear-then-apply itself. Mirrors chat.ts's own
-    // `parsed.name === 'new' && parsed.rest === ''` recognition exactly (the only entry in
-    // NATIVE_BUILT_COMMANDS with a working implementation) so the clear runs BEFORE the request
-    // is even sent -- clearing only after awaiting the result below risks the reset patch having
-    // already landed and the Transcript's landing effect already reading the stale memory.
-    //
-    // Quality-gate remediation (round 2, 2026-10-07): `disabled` (`status === 'stopped' &&
-    // !notStarted`, see its definition above) does NOT cover every non-idle status -- a typed
-    // `/new` while `status === 'working'` reaches here perfectly able to send, then
-    // `SessionAgent.startNewConversation` rejects with `SessionNotIdleError` because a turn is
-    // still running. That failed send must not have silently thrown away the developer's restore
-    // point for whatever they were reading before typing `/new`: snapshot it first, and only put
-    // it back if `chat.send` fails below AND nothing newer has been recorded for this Session in
-    // the meantime (`restoreIfAbsent`).
+    // A bare `/new` resets via `transcript:patch`, racing this call's result, so scroll memory is cleared before sending (#485).
+    // A failed send (e.g. SessionNotIdleError) restores the saved scroll position via `restoreIfAbsent`.
     const slashInvocation = parseSlashCommand(message)
-    // FR-007 (constitution II): `/btw` is Refract's own locally-handled native command, never
-    // forwarded to OMP as a literal prompt (the defensive `NATIVE_RESERVED_COMMANDS` guard in
-    // `chat.ts` would refuse it anyway if this ever slipped through) -- opens and focuses the
-    // Side chat panel for this Session (`sideChatFocusRequestId`, bumped inside `openPanel`
-    // itself) and, when `.rest` is non-empty, issues the side question itself through
-    // `useSideChatStore`, bypassing `chat.send` entirely.
+    // `/btw` is handled locally and never forwarded to OMP: it opens the Side chat panel and asks through `useSideChatStore`.
     if (slashInvocation?.name === 'btw') {
-      // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field (contracts/ipc.md);
-      // refuse rather than silently drop a pasted screenshot.
+      // `btw` has no `images` field; refuse rather than silently drop a screenshot.
       if (attachments.images.length > 0 || attachments.files.length > 0) {
         toast.error("Side questions don't support attachments. Remove them and try again.")
         return
       }
-      // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) while a `btw` is still
-      // running -- spec Assumption 7's single-flight rule, as on the panel's own Send button.
+      // Single-flight, as on the panel's own Send button.
       if (useSideChatStore.getState().bySession[sessionId]?.running) {
         toast.error('A side question is already running for this Session.')
         return
       }
-      // Gate-fix (round 6, Code6 LOW): a bare `/btw` only opens (and focuses) the panel -- moved
-      // above the `!loaded` gate below, which otherwise always refused it with an error toast
-      // even though it asks nothing and has nothing to load yet.
+      // A bare `/btw` only opens the panel, so it sits above the `!loaded` gate.
       if (slashInvocation.rest.length === 0) {
         useRightPaneStore.getState().openPanel('side-chat')
         useDraftStore.getState().clear(sessionId)
         clearGhostState()
         return
       }
-      // Gate-fix (round 5, Code5 Medium; round 6, Code6/Sec6/A11y6/Verif6 Medium): the panel's
-      // own Send button already refuses while `!loaded` -- this path did not, so `/btw` typed
-      // before `loadHistory` finishes (the first one per Session per app run, and every one
-      // right after a Conversation change) ran `ask` with `activeTopicRecordId` still
-      // `undefined`, silently starting a FRESH topic instead of continuing the Session's real
-      // one. Opens the panel WITHOUT moving focus away from the main composer (the draft, and
-      // the retry, both stay here) -- `focus: false` leaves `sideChatFocusRequestId` untouched;
-      // the panel's own mount effect still fires its own `loadHistory`. Wording matches the
-      // actual cause instead of always claiming "still loading": `loadError` means a permanent
-      // failure that a retry will not fix either; a stopped Session means there is nothing
-      // running yet to load from. Gate-fix (round 8, Code8/A11y8/Sec8/Verif8 Low): the loading
-      // branch now uses the SAME `SIDE_CHAT_LOADING_HINT` constant `SideChatPanel.tsx`'s own
-      // hint does -- round 7 claimed the two already matched exactly; they never did. Gate-fix
-      // (round 9, Code9/A11y9/Sec9 Low): sharing the constant verbatim dropped this toast's own
-      // "Try again in a moment." retry guidance (WCAG 3.3.3) -- the persistent hint under the
-      // textarea needs no call to action (it is always visible while `!loaded`), but THIS toast
-      // is a one-shot message the whole point of which is telling the user what to do next, so
-      // it appends its own suffix instead of being pulled into the shared constant.
+      // Asking before `loadHistory` finishes would start a fresh topic; open the panel without stealing focus.
+      // The toast appends its own retry guidance (WCAG 3.3.3) to the shared hint.
       if (!useSideChatStore.getState().bySession[sessionId]?.loaded) {
         useRightPaneStore.getState().openPanel('side-chat', { focus: false })
         const sideChatState = useSideChatStore.getState().bySession[sessionId]
@@ -454,10 +317,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         return
       }
       useRightPaneStore.getState().openPanel('side-chat')
-      // Gate-fix (round 2, Code2/Sec2/Verif2 Medium): the draft (and its attachments) only
-      // clears AFTER `ask` resolves -- the old code cleared it first, so a question over 10,000
-      // characters, a Session with no live process, or any other RPC failure silently lost the
-      // typed text with nothing but a toast left behind.
+      // Clear only after `ask` resolves so a failed RPC doesn't lose the typed text.
       try {
         await useSideChatStore.getState().ask(sessionId, slashInvocation.rest)
         useDraftStore.getState().clear(sessionId)
@@ -478,21 +338,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       : undefined
     if (isNewConversationCommand) {
       useChatScrollStore.getState().clear(sessionId)
-      // Quality-gate finding (code review, High): the ONLY one of the four call sites whose
-      // reset reaches the renderer via an ordinary `transcript:patch` (SessionAgent's own event
-      // stream) rather than a `SessionSnapshot` this call site applies itself -- a second
-      // `clear()` right before `applySnapshot` (the other three sites' pattern) has no
-      // equivalent moment here, so the store-level `inFlight` flag (see `scroll-store.ts`) is
-      // the only fix available: blocks `record()` for this Session until `chat.send` below
-      // settles, success or failure, so a scroll on the still-visible OLD Conversation during
-      // the await can never write a detached position the new (empty) Conversation inherits.
+      // `inFlight` blocks `record()` until send settles so the old Conversation's scroll isn't inherited by the new one.
       useChatScrollStore.getState().setInFlight(sessionId, true)
     }
-    // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); a listed
-    // command given unverified arguments gets `unsupported-arguments` instead (issue #129); notify
-    // below shows either as a toast, same as any other IPC error. FR-019: a failed send (whether
-    // image-related or not) leaves the draft and every pending attachment untouched -- nothing
-    // below this `if` runs until `chat.send` actually succeeds.
     let result
     // #926: appended to the OUTGOING text only, never into `message` above, so `parseSlashCommand` keeps reading the developer's own typed text.
     const outgoingMessage = appendFileAttachmentText(message, attachments.files)
@@ -512,39 +360,18 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     dismissSlashCommandRefusalToast(sessionId)
     if (imageOnly) useQueueStore.getState().setImageOnly(sessionId, result.value.queued ? imageDisplayNames(attachments.images) : null)
-    // Spec 010 FR-005: one atomic clear for both text and attachments (replacing the former
-    // separate `setText('')`/`setAttachments(EMPTY_ATTACHMENTS)` calls) -- FR-007: pending image
-    // attachments clear once the send is accepted, not once the agent's turn finishes; pending
-    // text chips are a draft-only concept with nothing left to track once the draft is cleared.
-    // Medium remediation (code-reviewer + test-reviewer, quality gate 2026-10-04): the draft now
-    // outlives this component, so `await chat.send()` above can straddle a Session switch away
-    // and back, or just the user continuing to type/paste during the request -- an unconditional
-    // clear here would silently wipe whatever newer draft/attachments now sit in the store, which
-    // the old local-`useState` code could never do (a stale `setState` on an unmounted instance
-    // was always a no-op). Only clear if the store still holds exactly what THIS send captured
-    // (`draftText`/`attachments`, both read at the top of this call); a draft that changed in the
-    // meantime is left alone rather than destroyed, even though its now-stale pending attachments
-    // (already part of the accepted send) stay visibly pending until removed or sent again.
+    // Clear only if the store still holds what this send captured; the user may have kept typing during the await.
     const currentDraft = useDraftStore.getState().bySession[sessionId]
     if (currentDraft?.text === draftText && currentDraft?.attachments === attachments) {
       useDraftStore.getState().clear(sessionId)
     }
-    // Second invalidation (#358/#359 round-3 remediation): typing during the `await open()` / `await
-    // chat.send()` gap above can schedule a fresh ghost-text debounce/request -- or let one
-    // already in flight resolve -- against the draft `clear(sessionId)` just wiped; the early
-    // `clearGhostState()` above ran before those awaits and can't see state that changed during
-    // them. Calling it again here bumps the generation ref (dropping/cancelling anything from the
-    // gap), and `dismissGhost` reads through `ghostRef` so this acts on whatever ghost is actually
-    // current now, not this function's own stale `ghost` binding from before the awaits.
+    // Typing during the awaits can schedule a ghost request against the wiped draft; invalidate again (#358/#359).
     clearGhostState()
   }
 
-  /** Sends `predictWordFeedback` for whatever suggestion is currently shown, at most once per
-   * shown-then-abandoned suggestion (FR-058), then clears it. A no-op when nothing is shown. */
+  /** Sends `predictWordFeedback` for the shown suggestion, then clears it; no-op when none is shown. */
   function dismissGhost(accepted: boolean) {
-    // Reads `ghostRef` rather than the closed-over `ghost` so a second, post-await call from
-    // `handleSend` (#358/#359 round-3 remediation) acts on whatever ghost state is actually current, not a
-    // snapshot from before the `await open()` / `await chat.send()` calls.
+    // Reads `ghostRef`, not the closed-over `ghost`, so post-await calls see live state.
     const current = ghostRef.current
     if (!current) return
     void window.refract.chat.predictWordFeedback(sessionId, current.text, current.cursor, current.suffix, accepted)
@@ -552,9 +379,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     setGhost(null)
   }
 
-  /** Fully resets ghost-prediction state outside the normal onChange path (Enter-send, Esc-clear,
-   * and slash-command completion all call `setText` directly, bypassing `scheduleGhostCheck`) --
-   * bumps `ghostGenerationRef`, cancels any pending request, dismisses what's shown (#358/#359). */
+  /** Resets ghost state for paths that bypass `scheduleGhostCheck` (send, Esc, slash completion) (#358/#359). */
   function clearGhostState() {
     ghostGenerationRef.current++
     if (ghostDebounceRef.current) {
@@ -570,12 +395,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wordPredictionEnabled])
 
-  /** Re-evaluates ghost text after every composer edit (FR-058): first dismisses (`accepted:
-   * false`) whatever suggestion was showing -- typing past it or deleting into it both count as
-   * abandoning it -- then, only when the new draft/cursor passes the local gate
-   * (`isGhostTextEligible`), debounces a fresh `predictWord` request. `ghostGenerationRef` is
-   * bumped on every call so a response for an already-superseded draft is dropped on arrival
-   * instead of showing a stale suggestion. */
+  /** Dismisses the shown suggestion after each edit, then debounces a `predictWord` request if eligible; stale responses are dropped. */
   function scheduleGhostCheck(nextText: string, nextCursor: number) {
     const generation = ++ghostGenerationRef.current
     if (ghostDebounceRef.current) {
@@ -592,19 +412,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       void window.refract.chat.predictWord(sessionId, nextText, nextCursor).then((result) => {
         if (ghostGenerationRef.current !== generation) return // superseded by a later edit
         if (!result.ok || typeof result.value !== 'string' || result.value.length === 0) {
-          // never surfaced as an error: a failed predict_word is just no ghost text, but a
-          // lingering stale announcement would mislead a screen reader user
+        // A failed predict_word is just no ghost text; clear any stale announcement.
           setAnnouncedSuggestion(null)
           return
         }
-        // The caret may have moved away (click/arrow key) *before* this request resolved --
-        // the only case the `selectionchange` listener above can't catch, since no *further*
-        // selection change happens after a caret move that predates the suggestion's arrival.
-        // Showing it now would render (and let Tab insert) at a cursor position that's no
-        // longer current, so require the textarea's live selection to still match the exact
-        // collapsed position this request was made for; otherwise drop it, still sending
-        // `accepted: false` feedback so the server-side loop sees the same silently-dropped
-        // suggestion any other abandoned one gets (round 5 remediation, #358/#359).
+        // The caret may have moved before this resolved (selectionchange can't catch that); drop it with `accepted: false` feedback (#358/#359).
         const target = textareaRef.current
         if (!target || target.selectionStart !== nextCursor || target.selectionEnd !== nextCursor) {
           void window.refract.chat.predictWordFeedback(sessionId, nextText, nextCursor, result.value, false)
@@ -618,16 +430,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }, GHOST_TEXT_DEBOUNCE_MS)
   }
 
-  // FR-058: a pure cursor move away from an already-shown suggestion dismisses it too, with no
-  // accompanying text edit -- onChange already covers the edit case via `scheduleGhostCheck`'s own
-  // `dismissGhost` call. React's `onSelect` prop (the native `select` DOM event) looked like the
-  // obvious hook for this, but live verification found Chromium never actually fires `select` for
-  // a plain caret reposition -- only for an actual non-collapsed text-range selection -- so an
-  // `onSelect` handler here was dead code for exactly the click/arrow-key case FR-058 names (round
-  // 4 remediation, #358/#359). `selectionchange` (necessarily document-scoped: the Selection APIs
-  // have no per-element event) fires for both a click and a bare arrow key. Mount-once (`[]`) like
-  // the autoFocus effect below: reads `ghostRef` rather than `ghost` state, so it never goes stale
-  // across renders, same reasoning as `dismissGhost` itself.
+  // A pure caret move dismisses the suggestion; Chromium never fires `select` for that, so use document `selectionchange` (#358/#359).
   useEffect(() => {
     function handleSelectionChange() {
       const target = textareaRef.current
@@ -662,8 +465,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           if (outcome) void handleSend(outcome.sendText)
           return
         }
-        // 'unhandled' (an empty list, or Shift+Tab, gate round 1 Low): falls through so Tab's
-        // own ghost-suggestion/focus-movement handling further below still runs for this key.
+        // 'unhandled' (empty list or Shift+Tab) falls through to Tab's ghost/focus handling below.
       }
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -671,12 +473,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         return
       }
     }
-    // Tab accepts a shown ghost-text suggestion (FR-058); with none shown, or modified (Shift+Tab
-    // / Ctrl+Tab / Alt+Tab / Meta+Tab focus movement, or mid-IME-composition), Tab is left
-    // unhandled below so it keeps its normal field-leaving focus-movement behavior. `ghost.text
-    // === text` is an extra invariant on top of the generation bump: a suggestion computed
-    // against a draft that's since changed outside the normal onChange path must never be
-    // insertable (#358 remediation).
+    // Tab accepts a shown suggestion; modified Tab or IME composition keeps normal focus movement.
+    // `ghost.text === text` rejects a suggestion computed against a draft changed outside onChange (#358).
     if (
       ghost &&
       ghost.text === text &&
@@ -702,10 +500,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       })
       return
     }
-    // `ghost.text === text` guard mirrors the Tab-accept and render invariants above: a stale
-    // ghost computed against a draft that's since changed outside the normal onChange path (e.g.
-    // #358/#359's round-3 post-send gap) must not swallow Esc into a silent no-op dismiss -- fall through to
-    // the real composer-clear Esc below instead.
+    // Same `ghost.text === text` guard: a stale ghost must not swallow Esc; fall through to composer-clear.
     if (ghost && ghost.text === text && event.key === 'Escape') {
       event.preventDefault()
       dismissGhost(false)
@@ -718,13 +513,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     if (event.key === 'Escape') {
-      // Gate round 1 fix 3 (#700/#701 slice b): belt to `useReadoutCard.ts`'s own capture-phase Escape handler, which already calls `preventDefault`/`stopPropagation` on this exact keypress when a hover-focus card is open -- without this, a `defaultPrevented` Escape that somehow still reached this far would wipe the whole draft instead of only closing the card.
+      // An Escape already handled by `useReadoutCard.ts` (closing a hover card) must not also wipe the draft (#700/#701).
       if (event.defaultPrevented) return
       event.preventDefault()
       clearGhostState()
       useDraftStore.getState().setText(sessionId, '')
-      // Medium remediation (test-reviewer): same bypass as `completeSlashCommand` above -- plain Esc-clear calls `setText` directly too, skipping onChange's own `pruneDanglingChips`.
-      // Every chip's label is gone from the (now-empty) draft, so this simply drops them all, with the same silent-removal announcement any other drop gets.
+      // `setText` bypasses onChange's `pruneDanglingChips`, so drop all chips here with the usual removal announcement.
       const prunedChips = pruneDanglingChips('', attachments.textChips)
       if (prunedChips.length !== attachments.textChips.length) {
         announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
@@ -737,11 +531,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     await stopAndRestore(sessionId, () => textareaRef.current?.focus())
   }
 
-  /** Accessibility remediation (High): announces a chip's own silent removal (`pruneDanglingChips`
-   * dropping it because its label no longer appears intact in the draft, FR-014) via the live
-   * region above -- a screen-reader user otherwise gets no indication that editing, clearing, or
-   * completing a slash command discarded a whole pasted block, with the broken label text sent in
-   * its place and no undo. A no-op when nothing was actually removed. */
+  /** Announces a chip silently dropped by `pruneDanglingChips`, which screen-reader users would otherwise miss (FR-014). */
   function announceChipRemoval(removed: readonly PendingTextChip[]) {
     const [first] = removed
     if (!first) return
@@ -750,17 +540,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     )
   }
 
-  /** FR-001 to FR-003, FR-010, FR-011, Edge Cases: an image representation always wins over a
-   * plain-text one when a paste carries both (e.g. a spreadsheet-cell copy) -- the text
-   * representation is never also turned into a chip in that case. A short paste (at or under the
-   * chip threshold) falls through untouched, landing in the textarea exactly as before (FR-010);
-   * this handler only ever intervenes for an image or an over-threshold text block. */
+  /** An image paste wins over plain text; short text falls through to the textarea, only images and over-threshold text are intercepted. */
   async function handlePaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
     const data = event.clipboardData
     const imageFile = findClipboardImageItem(data)
     const pastedFiles = Array.from(data.files ?? [])
-    // #926: a plain clipboard-image paste is the single-image case with nothing else in
-    // `data.files` (`attachPastedImage`'s own doc comment covers the shared FR-039 cap).
+    // A plain clipboard-image paste has nothing else in `data.files` (#926).
     if (imageFile != null && pastedFiles.length <= 1) {
       event.preventDefault()
       await attachPastedImage(sessionId, imageFile)
@@ -775,42 +560,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
     const pastedText = data.getData('text/plain')
 
-    // #514: paste-time image-path detection, shares the main-process reader with #432's
-    // drag-and-drop. Runs on EVERY paste with no clipboard image (even a short one, well under
-    // the FR-011 chip threshold below) -- a pasted path is typically only a few dozen characters.
+    // Paste-time image-path detection runs on every paste without a clipboard image, however short (#514).
     if (detectImagePathsOnPaste) {
       const pathCandidates = extractImagePathCandidates(pastedText)
       if (pathCandidates.length > 0) {
         if (isImagePathOnlyText(pastedText)) {
-          // #514 point 3: nothing else in the paste -- the path text is replaced by the
-          // attachment(s), the box stays clean. Any candidate that fails to resolve (missing,
-          // not an image, too large) falls back to its own raw text instead of vanishing.
-          // PR #723 gate round 1 fix (Sec1/Code1/A11y1/Verif1 HIGH, reproduced by all four
-          // reviewers): `event.currentTarget`/`selectionStart`/`selectionEnd` MUST be captured
-          // synchronously, right here, BEFORE the first `await` below -- React nulls a synthetic
-          // event's `currentTarget` the instant this handler's synchronous portion returns, so
-          // reading it after an `await` threw a TypeError that silently discarded the pasted
-          // text with no notice at all (`onPaste`'s own `void handlePaste(event)` swallowed the
-          // rejection). The fallback insert below also no longer reads the stale, paste-time
-          // `text` closure -- it reads the LIVE draft text from the store.
-          //
-          // PR #723 gate round 2 fix (Code2 Medium): `before` (the textarea's own value at THIS
-          // exact moment) is captured alongside `start`/`end` -- if the live text at fallback
-          // time no longer matches it, the developer typed during the IPC round trip and
-          // `start`/`end` are no longer meaningful offsets into `liveText` (splicing at them
-          // could delete or duplicate characters the developer just typed, round 2's own
-          // reproduction: select text, paste a missing path, type a character before the read
-          // resolves). The fallback then inserts at the textarea's CURRENT caret position
-          // instead (or at the end of the live text if the ref is gone), never the stale
-          // offsets. `pruneDanglingChips` now also runs on the result, matching every other
-          // write path (onChange, Esc, slash-command completion).
+          // Path-only paste: attachments replace the text; unresolved candidates fall back to raw text.
+          // Capture `currentTarget` and the selection before the first `await`: React nulls the synthetic event afterwards.
+          // `before` detects typing during the IPC round trip, in which case the fallback inserts at the current caret instead of stale offsets.
           event.preventDefault()
           const target = event.currentTarget
           const before = target.value
           const start = target.selectionStart
           const end = target.selectionEnd
-          // PR #723 gate round 1 fix (Code1 LOW) / gate round 1 (FR-039 Medium): the cap applies
-          // PER MESSAGE, shared with pending files too, not a static slice of this one paste.
+          // The cap applies per message, shared with pending files (FR-039).
           const remainingSlots = remainingAttachmentSlots(sessionId)
           const capped = pathCandidates.slice(0, remainingSlots)
           const overflow = pathCandidates.slice(remainingSlots)
@@ -833,13 +596,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           if (attachedCount > 0) {
             announceAttachment(attachedCount === 1 ? 'Image attached from a file path.' : `${attachedCount} images attached from file paths.`)
           }
-          // PR #723 gate round 3 fix (Code3 Low): re-inserts each candidate's own RAW pasted
-          // text (FR-022's actual wording), never the normalized form `buildImagePathAttachment`
-          // above was given -- a quoted path's quotes, and a `file://…%20…` URL's own encoding,
-          // are no longer silently rewritten on fallback. Round 4 fix (Verif4 HIGH): `raw` itself
-          // used to be the quote-stripped regex capture for a QUOTED candidate, so this still
-          // dropped the quotes on fallback despite the comment above; `attachments.ts`'s
-          // `extractImagePathCandidates` now keeps `raw` as the full quoted match.
+          // Re-insert each candidate's RAW text so quoting and `file://` encoding aren't rewritten (FR-022).
           const unresolved = [...overflow, ...loopFailures.map((f) => f.candidate)].map((c) => c.raw)
           if (unresolved.length > 0) {
             const liveText = useDraftStore.getState().bySession[sessionId]?.text ?? ''
@@ -859,10 +616,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             requestAnimationFrame(() => {
               textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
             })
-            // PR #723 gate round 3 fix (A11y3 Low): overflow and read-failure sentences are now
-            // BOTH reported when a paste has both at once (previously the ternary below only
-            // ever reported overflow, silently dropping the failure half), matching the join
-            // pattern `ChatPane.tsx`'s own drop-overflow notice already uses.
+            // Report overflow and read failures together.
             const overflowText =
               overflow.length > 0
                 ? remainingSlots === 0
@@ -879,9 +633,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           }
           return
         }
-        // Mixed paste (#514 point 3): the path stays exactly where it was pasted below (never
-        // prevented) -- each candidate is resolved in the background and attached silently if it
-        // turns out to be a real image, with no interruption to typing or the normal paste (FR-039: shares the cap with pending files too).
+        // Mixed paste: the path stays in the draft; candidates resolve in the background and attach silently if they are images (FR-039).
         const remainingSlots = remainingAttachmentSlots(sessionId)
         const capped = pathCandidates.slice(0, remainingSlots)
         const overflow = pathCandidates.slice(remainingSlots)
@@ -907,12 +659,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               attachedCount === 1 ? 'Image attached from a file path in your message.' : `${attachedCount} images attached from file paths in your message.`
             )
           }
-          // PR #723 gate round 2 fix (Code2/A11y2 Medium): a path past the per-message cap, or
-          // one that failed to resolve, used to be silently dropped here with no notice at all
-          // -- FR-026 says even a mixed paste's own over-cap/unresolved paths get "a quiet
-          // notice", the same wording the path-only branch already uses (the path TEXT itself
-          // still stays in the draft either way, untouched -- only the ATTACH attempt failed).
-          // Round 3 fix (A11y3 Low): both sentences now join, same as the path-only branch above.
+          // Over-cap or unresolved paths get a quiet notice (FR-026); the path text stays in the draft.
           const skipped = overflow.length + failedCount
           if (skipped > 0) {
             const overflowText =
@@ -935,8 +682,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
     if (!isLargePaste(pastedText)) return // FR-010: at or under the threshold, paste as normal
 
-    // FR-011: collapse it into a pending text chip, replacing the raw text at the paste position
-    // with a short literal label instead of inserting the raw block.
+    // Collapse into a pending text chip with a short literal label (FR-011).
     event.preventDefault()
     const target = event.currentTarget
     const start = target.selectionStart
@@ -958,18 +704,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     })
   }
 
-  // PR #723 gate round 2 fix (A11y2 Medium) / #926: Remove restores focus and announces -- the
-  // shared `removeAttachment` core owns both the image and file/folder case (`removeAttachment.ts`).
+  // Remove restores focus and announces via the shared `removeAttachment` core (#926).
   const handleRemoveImage = (id: string) => removeAttachment(sessionId, 'image', id, attachmentStripRef, textareaRef, announceAttachment)
   const handleRemoveFile = (id: string) => removeAttachment(sessionId, 'file', id, attachmentStripRef, textareaRef, announceAttachment)
 
   const placeholder = disabled
     ? describeStopReason(stopReason, stopDetail)
-    // Issue #533: the empty-state hint overlay below now carries this copy (with icons), so the
-    // native `placeholder` is left empty here to avoid drawing both on top of each other -- the
-    // disabled branch above is unchanged, it has no overlay.
     : ''
-  // Accessibility remediation (High): a persistent sr-only pending-attachments summary, linked via `aria-describedby`.
   const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length + attachments.files.length
   const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId, composerHintId].filter(Boolean).join(' ')
   const composerClearanceRef = useComposerClearanceCallbackRef() // #980 gate round 2: hoisted out of JSX for clarity
@@ -984,9 +725,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <div data-slot="slash-menu-announcement" role="status" aria-live="polite" className="sr-only">
         {slashAnnouncement}
       </div>
-      {/* Accessibility remediation (High): announces a chip/image being created or a chip being
-          silently dropped (`announceChipRemoval`, `handlePaste`) -- separate from the slash-menu
-          status above so the two never step on each other. */}
       <div id={attachmentsStatusId} role="status" aria-live="polite" className="sr-only">
         <span key={attachmentAnnouncement?.seq ?? 0}>{attachmentAnnouncement?.message ?? ''}</span>
       </div>
@@ -995,20 +733,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           ? `${pendingAttachmentsCount} pending attachment${pendingAttachmentsCount === 1 ? '' : 's'}`
           : ''}
       </span>
-      {/* Issue #533: sr-only description for the composer's empty-state hint overlay below --
-          an inert overlay is not read as a `placeholder` by assistive tech, so the same wording
-          reaches it through `aria-describedby` instead. Empty whenever the visible hint itself
-          is not shown (disabled, or the draft has text), same pattern as `ghostHintId`/
-          `attachmentsSummaryId` above. */}
       <span id={composerHintId} className="sr-only">
         {!disabled && text === '' ? (enterQueuedFollowUp.applies ? 'Enter sends the next queued message. Markdown is supported. Type slash for commands.' : 'Markdown is supported. Type slash for commands.') : ''}
       </span>
-      {/* Status line (docs/design/product-chat.md "Status line"; spec 004 FR-023, #564,
-          2026-10-15): the old chip row, minus the Approval mode pill -- it now lives in the box's
-          own bottom row below (spec 001 FR-065) instead of as this row's guaranteed first item. */}
       <ComposerStatusLine sessionId={sessionId} textareaRef={textareaRef} />
-      {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
-          entirely while nothing is pending. */}
       <AttachmentStrip
         images={attachments.images}
         files={attachments.files}
@@ -1017,19 +745,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         onRemoveFile={handleRemoveFile}
         containerRef={attachmentStripRef}
       />
-      {/* PR #723 gate round 2 fix (Code2/A11y2 Medium): while a background path/drop read is in
-          flight, Send/Enter are refused (`pendingAttachmentReads`) with no visible or announced
-          reason -- a developer who pressed Enter right after a mixed paste or a drop saw nothing
-          happen at all. A real network stall (a OneDrive placeholder hydrating, a disconnected
-          mapped drive) can make this last a while, so a visible, text-only line here (never only
-          a cursor/disabled-state change) is the actual notice, not just a courtesy. The
-          announcement itself (`useEffect` below) fires once per 0-to-positive transition, not on
-          every re-render while the count stays above 0. */}
       {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching…</p>}
-      {/* Composer tone (#927): fill, border and focus ring are per-theme tokens (globals.css).
-          Composer dimming (Stuart, 2026-10-15, PR #877): while disabled the unusable parts dim
-          as one `opacity-60` layer in `ComposerField`; the box edge and the Approval pill (still
-          usable while stopped) never dim. */}
       <ComposerBox>
         <ComposerField disabled={disabled}>
           {showSlashMenu && (
@@ -1064,9 +780,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               useDraftStore.getState().setText(sessionId, value)
               setSlashDismissed(false)
               scheduleGhostCheck(value, cursor)
-              // FR-014, Edge Cases: every edit re-checks every pending chip's label (an explicit
-              // delete, or an edit that merely breaks the label, both drop it); the drop is now
-              // announced via the live region below (previously silent to a screen reader).
+              // Drops chips whose label was broken or deleted, announced via the live region (FR-014).
               const prunedChips = pruneDanglingChips(value, attachments.textChips)
               if (prunedChips.length !== attachments.textChips.length) {
                 announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
@@ -1075,8 +789,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             }}
             onPaste={(event) => void handlePaste(event)}
             onScroll={(event) => {
-              // The overlay doesn't track the textarea's scroll on its own (#359 remediation):
-              // without this a suggestion on a tall, scrolled draft renders on the wrong line.
+              // The overlay doesn't track the textarea's scroll on its own (#359).
               const scrollTop = (event.target as HTMLTextAreaElement).scrollTop
               if (overlayRef.current) overlayRef.current.scrollTop = scrollTop
               if (chipOverlayRef.current) chipOverlayRef.current.scrollTop = scrollTop
@@ -1085,25 +798,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
-            // The disabled placeholder carries the stop reason, so it brightens to
-            // `text-foreground` (in `ComposerTextarea`) to stay readable under the 0.6 dim.
+            // The disabled placeholder carries the stop reason, so `ComposerTextarea` brightens it under the dim.
             className={textareaClass}
           />
-          {/* Issue #533: empty-state hint overlay. A native `placeholder` cannot carry icons, so
-              this inert sibling shows "Message the agent" plus two hints (slash commands,
-              Markdown) with leading icons, spaced apart, not bracketed (product-look-and-feel.md
-              "No bracket/parenthetical UI copy"). Hidden once there is any text and while
-              disabled (the native `placeholder` carries the stop reason then). The accessible
-              name stays "Message"; `composerHintId` carries the same wording through
-              `aria-describedby`. Responsive: `shrink-[100000]` on each hint group makes the
-              groups absorb a narrow pane's shortfall first (flexbox shares it by basis * shrink,
-              and 100x still left the main prompt about 0.46% of it, enough for an ellipsis); the
-              main prompt truncates only once both groups sit at their `min-w-4` floor. Each label
-              span needs `min-w-0` so `truncate` can fire inside the group. A tooltip cannot attach
-              to a `pointer-events-none` overlay, so there is no icons-only stage (Stuart's call).
-              `text-composer-placeholder` is the quiet placeholder token (#1149), and
-              `forced-colors:text-[GrayText]` matches the native placeholder so the hint is never
-              mistaken for typed text in Windows High Contrast. */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
@@ -1123,23 +820,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               </span>
             </div>
           )}
-          {/* Ghost-text overlay (T103, FR-058): an inert sibling, not part of the textarea's own
-              accessible value -- matching its box model exactly (same padding/font classes) so
-              the invisible leading span reserves the same space the real draft occupies, landing
-              the dimmed suffix immediately after the cursor. Gated on `ghost.text === text` as an
-              extra invariant on top of the generation bump: a suggestion computed against a draft
-              that's since changed outside the normal onChange path must never render (#358
-              remediation). */}
           {ghost && ghost.text === text && (
             <div ref={overlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <span className="invisible">{text.slice(0, ghost.cursor)}</span>
               <span className="text-muted-foreground/60">{ghost.suffix}</span>
             </div>
           )}
-          {/* Text-chip overlay (spec 009, FR-012, research.md Decision 10): reuses the ghost-text
-              overlay technique above -- same inert sibling, same box-model-matching classes -- so
-              each pending chip's clickable, chip-styled label lands exactly over its own rendered
-              position in the draft. Independent of `ghost`: both overlays can render at once. */}
           {attachments.textChips.length > 0 && (
             <div ref={chipOverlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <ChipOverlaySegments
@@ -1149,19 +835,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               />
             </div>
           )}
-          {/* Screen reader users never heard WHAT was suggested, only a generic hint -- Tab would
-              send unseen text to the agent (#359 remediation). `announcedSuggestion` is separate
-              state from `ghost` so the hint doesn't flicker through '' and back on every debounce
-              cycle (`scheduleGhostCheck` clears `ghost` immediately on each edit, but leaves the
-              last-announced text alone until eligibility fails outright or a new suggestion
-              actually resolves, so the identical text is not re-announced on every keystroke). */}
           <div id={ghostHintId} role="status" aria-live="polite" className="sr-only">
             {announcedSuggestion ? `Suggestion: "${announcedSuggestion}". Tab to accept, Escape to dismiss.` : ''}
           </div>
-          {/* Send and Stop (2026-10-15 grill, #564 decision 5): Send is the one accent-filled commit
-              action (`--send`); Stop is a solid NEUTRAL fill, never red, since stopping keeps the
-              work. Both show while a turn runs because Send still queues a follow-up (FR-011),
-              a documented exception to "one filled button per surface". */}
           <ComposerActions>
             {isWorking && (
               <ComposerStopButton
@@ -1179,23 +855,18 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                 onBlur={() => { stopHadFocusRef.current = false }}
               />
             )}
-            {/* The shared dim applies for the refusal reasons other than `disabled`, which
-                already dims the whole field block. */}
             <ComposerSendButton
               blocked={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
               dimWhenBlocked={!disabled}
               keyShortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
               onSend={() => void handleSend()}
               tooltip={
-                // aria-disabled while the rule applies (blank text) and Radix wires this into
-                // aria-describedby, so it must not describe an action the button cannot perform.
+                // The button is aria-disabled when blank and Radix wires the tooltip into aria-describedby, so it must not describe an impossible action.
                 enterQueuedFollowUp.applies ? 'Send' : <Kbd>Enter</Kbd>
               }
             />
           </ComposerActions>
         </ComposerField>
-        {/* Composer bottom row (#564): Approval pill, combined Role.Model pill (#766), Reasoning
-            picker, branch label, then Attach. */}
         <ComposerFooter>
           <ApprovalModePill sessionId={sessionId} />
           <ModelPicker sessionId={sessionId} />

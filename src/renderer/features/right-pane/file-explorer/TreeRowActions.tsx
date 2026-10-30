@@ -1,10 +1,6 @@
-// Inline row actions for a File explorer tree row (spec 036, #756): the shared path-action
-// buttons (`path-actions.tsx`) between the name/status mark and the kebab. They are mouse
-// shortcuts only (`tabIndex={-1}`, grill 2026-10-29): the keyboard route stays the kebab menu and
-// Shift+F10. How many show follows the PANE's width, via a container query on the Explorer
-// panel's `@container` root: below 300px none; 300px up to 380px Open in VS Code + Copy path; 380px
-// and wider all three. The container is the panel's content box (p-2 = 16px of padding), so the
-// literals below are 284 (300 - 16) and 365 (381 - 16); keep them in step with these numbers.
+// Inline row actions: mouse shortcuts only (`tabIndex={-1}`); the keyboard route is the kebab menu and Shift+F10.
+// How many show follows the pane width via a container query: <300px none, 300-380px two, wider all three.
+// The container is the panel's content box (p-2 = 16px), so the literals are 284 (300 - 16) and 365 (381 - 16).
 import { PathActionButtons, type PathActionHandlers } from './path-actions'
 
 interface TreeRowActionsProps {

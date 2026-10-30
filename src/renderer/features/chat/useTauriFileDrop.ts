@@ -1,17 +1,5 @@
-// Tauri build only (issue #793, spike section 2): Tauri's own native drag-drop handler swallows
-// the HTML5 `drop` DOM event before `ChatPane.tsx`'s own `handlePaneDrop` ever sees it
-// (`dragDropEnabled` defaults to `true`, left unset in `tauri.conf.json`'s window config), so the
-// composer never attaches a dropped image there today. Listens to `window.refract.attachments.
-// onFileDrop` instead (absent in the Electron build, where the DOM path already works
-// unmodified), hit-tests the drop's physical-pixel `position` against whichever mounted pane it
-// landed on, and shares the attach-loop/notify core with `ChatPane.tsx`'s own Electron `File[]`
-// path (`attachDroppedPaths.ts`).
-//
-// ONE global `onFileDrop` subscription for the whole app (gate fix), not one per mounted
-// `ChatPane` (split view can mount two): `getCurrentWebview().onDragDropEvent` is a single native
-// hook, so every `useTauriFileDrop` caller instead registers/deregisters its own pane descriptor
-// in `panes` below, and the one shared listener fans a drop out to whichever pane's own
-// `getBoundingClientRect()` the position actually falls inside.
+// Tauri's native drag-drop swallows the DOM `drop` event, so drops arrive via `onFileDrop` instead (#793).
+// One app-wide subscription (the native hook is single); panes register here and a drop is hit-tested against each. 
 import { useEffect, useRef } from 'react'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
 import { notify } from '@/state'
@@ -19,8 +7,7 @@ import { notify } from '@/state'
 interface PaneDescriptor {
   sessionId: string
   paneRef: { current: HTMLElement | null }
-  /** Read fresh on every drop, not captured at registration time -- `composerDisabled` changes
-   * across renders without the pane ever unmounting/re-registering. */
+  /** Read fresh per drop; `composerDisabled` changes without re-registering. */
   isComposerDisabled: () => boolean
   dragDepthRef: { current: number }
   setIsDraggingFiles: (value: boolean) => void
@@ -34,27 +21,18 @@ function ensureSubscribed(): void {
   const onFileDrop = window.refract.attachments.onFileDrop
   if (!onFileDrop) return
   unsubscribe = onFileDrop(({ paths, position }) => {
-    // Nothing else ever clears the drag-over overlay for a real drop in this build (the DOM
-    // `drop` event each pane's own `handlePaneDrop` normally resets it on never fires here) --
-    // reset every mounted pane unconditionally; idempotent and harmless for the ones not hit.
+    // The DOM `drop` never fires here, so nothing else clears the drag-over overlay.
     for (const pane of panes) {
       pane.dragDepthRef.current = 0
       pane.setIsDraggingFiles(false)
     }
-    // `position` is physical pixels relative to the webview's own top-left corner (spike section
-    // 2's own doc comment on `DragDropEvent`); `getBoundingClientRect()` is CSS pixels AT THE
-    // CURRENT ZOOM. `devicePixelRatio` is exactly the physical-to-CSS conversion factor Chromium
-    // itself uses at any zoom level (it is defined as OS scale factor times page zoom, the same
-    // combination that turns a physical input coordinate into a CSS one) -- not just the OS
-    // scale factor, so this stays correct at a non-100% page zoom too, not only a non-100% OS
-    // display scale.
+    // `position` is physical px; devicePixelRatio (OS scale x page zoom) converts to CSS px at any zoom.
     const x = position.x / window.devicePixelRatio
     const y = position.y / window.devicePixelRatio
     for (const pane of panes) {
       const rect = pane.paneRef.current?.getBoundingClientRect()
       if (!rect) continue
-      // Half-open bounds (gate fix): a drop exactly on the shared edge between two side-by-side
-      // panes (split view) must land in exactly one of them, never both.
+      // Half-open bounds so a drop on a shared split-view edge lands in exactly one pane.
       if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) continue
       void handleDrop(pane, paths)
       break
@@ -63,14 +41,8 @@ function ensureSubscribed(): void {
 }
 
 async function handleDrop(pane: PaneDescriptor, paths: string[]): Promise<void> {
-  // Gate round 1 (D2 Medium): records the native drop's own paths against this Session's
-  // allow-list BEFORE attaching any of them -- `readFile` refuses an absolute path that was
-  // never recorded this way (or via `pickFiles`), so a CONFUSED renderer (a stale/incorrect
-  // in-memory path, a logic bug) can no longer read an arbitrary absolute file merely by asking
-  // for it.
-  // Gate round 3 (Code3 HIGH): the Result is now checked -- an unknown/deleted sessionId (the
-  // same `invalid-argument` `resolve_session_worktree` already surfaces to `pickFiles`) used to
-  // be silently swallowed here, then fail confusingly later at the first `readFile` call instead.
+  // Record paths on the Session allow-list first: `readFile` refuses unrecorded absolute paths.
+  // Check the Result so an unknown session fails here, not confusingly at `readFile`.
   const recordResult = await window.refract.attachments.recordDroppedPaths(pane.sessionId, paths)
   if (!recordResult.ok) {
     notify(recordResult.error)

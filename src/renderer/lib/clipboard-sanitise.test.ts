@@ -1,7 +1,3 @@
-// Quality-gate remediation (cycles 2-4, PR #597): regression coverage for the clipboard
-// sanitiser (security review rounds 1-4 -- pastejacking via C0/C1 controls, Trojan Source bidi
-// overrides, deprecated format controls, Unicode tag-character ASCII smuggling, and the
-// surrogate-splice bypass of the tag-character strip).
 import { describe, it, expect } from 'vitest';
 import { sanitiseForClipboard } from './clipboard-sanitise';
 
@@ -78,9 +74,6 @@ describe('sanitiseForClipboard', () => {
   });
 
   it('keeps the England and Wales subdivision-flag tag sequences', () => {
-    // Real RGI emoji subdivision-flag sequences (not synthetic spelled-out data): England is
-    // the black-flag base + tags for ISO 3166-2 subdivision code "gbeng" ('g','b','e','n','g'),
-    // Wales is the base + tags for "wls" ('w','l','s'), both terminated by the cancel tag.
     const england = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}';
     expect(sanitiseForClipboard(england)).toBe(england);
     const wales = '\u{1F3F4}\u{E0077}\u{E006C}\u{E0073}\u{E007F}';
@@ -130,11 +123,6 @@ describe('sanitiseForClipboard', () => {
   });
 
   it('strips a tag character spliced between two unpaired surrogates (surrogate-splice bypass, cycle 4)', () => {
-    // A lone high surrogate, then the valid tag character U+E0001 (itself the pair
-    // \uDB40\uDC01), then a lone low surrogate. Stripping only the well-formed middle pair
-    // would leave the two lone surrogates adjacent, and \uDB40 + \uDC69 together form a NEW
-    // valid surrogate pair, U+E0069 -- another tag character the single regex pass never
-    // re-scans for. The fix strips every unpaired surrogate in the same pass, so nothing survives.
     const splice = '\uDB40' + '\u{E0001}' + '\uDC69';
     expect(sanitiseForClipboard(splice)).toBe('');
   });
@@ -144,14 +132,8 @@ describe('sanitiseForClipboard', () => {
     expect(sanitiseForClipboard(nested)).toBe('');
   });
 
+  // The C0/bidi pass must run first: it makes \uDB40+\uDC69 adjacent so the tag pass strips them as U+E0069.
   it('strips a C0 control sandwiched between unpaired surrogate halves (pass-order regression)', () => {
-    // If the C0/bidi-control pass ran AFTER the tag/surrogate pass instead of before it, the
-    // lone \uDB40 and \uDC69 would each be seen with a non-surrogate neighbour (\u0001) and
-    // stripped individually by the tag/surrogate pass, leaving only \u0001 for the C0 pass to
-    // remove next -- same end result here, but it is the C0/bidi pass running FIRST that
-    // collapses \uDB40 and \uDC69 into an adjacent, well-formed pair (U+E0069, a tag character)
-    // for the tag/surrogate pass to then catch as a single codepoint. Keeping this pinned to ''
-    // guards the documented pass order (C0/bidi before tag/surrogate).
     const spliced = '\uDB40' + '\u0001' + '\uDC69';
     expect(sanitiseForClipboard(spliced)).toBe('');
   });

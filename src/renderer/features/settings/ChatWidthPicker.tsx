@@ -1,10 +1,4 @@
-// Issue #554 (amends FR-049, new FR-073): a keyboard-operable chat width picker, reusing
-// `ThemePicker.tsx`'s own hand-rolled `role="radiogroup"`/`role="radio"` roving-tabindex pattern
-// unchanged (ui-architect-v3 roundtable, Decided, Skippy, delegated by Stuart 2026-10-18) -- the
-// issue asks for exactly ThemePicker's live-preview-on-arrow interaction model, not merely its
-// visual shape, so the shared `components/ui/radio-group.tsx` primitive (Space-selects,
-// Home/End-move-focus-only) is the wrong precedent to copy here, same as it was for ThemePicker
-// itself. Two entries instead of three; otherwise identical structure.
+// Hand-rolled radiogroup like ThemePicker: arrows live-preview, unlike the shared radio-group primitive (#554).
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { CheckIcon } from 'lucide-react'
@@ -18,9 +12,7 @@ const CHAT_WIDTH_OPTIONS: ReadonlyArray<{ id: ChatWidth; name: string; descripti
 ]
 
 interface ChatWidthPickerProps {
-  /** Issue #554 gate round 2 (L1): same accessible-name/description wiring as
-   * `ThemePicker`'s own group -- the heading and hint `<p>` both live in
-   * `AppearanceSection.tsx`, this group only points at their ids. */
+  /** Ids of the heading and hint rendered in AppearanceSection. */
   labelledBy: string
   describedBy: string
 }
@@ -30,8 +22,6 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
   const preview = useChatWidthStore((state) => state.preview)
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
 
-  // FR-002/FR-006 deviation note (2a, carried over from ThemePicker): choosing the already-active
-  // entry is a deliberate no-op -- it never re-fires `preview` for nothing.
   function choose(id: ChatWidth) {
     if (id === activeId) return
     preview(id)
@@ -77,8 +67,6 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
               )}
             >
               <span className="flex w-full items-center gap-2">
-                {/* L4: an aria-hidden size-4 slot so this group's labels align with Theme's own
-                    swatch-led rows -- Chat width has no per-option colour, so this stays empty. */}
                 <span aria-hidden className="size-4 shrink-0" />
                 <span id={`chat-width-option-${option.id}-name`} className="flex-1">{option.name}</span>
                 {isActive && (
@@ -93,10 +81,7 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
           )
         })}
       </div>
-      {/* H2 gate fix: a small aria-hidden preview tile, modelled on `BrandWatermark`'s own
-          'preview' variant -- live-driven by `activeId` (NOT a separate store read, so it
-          updates on every arrow/click the instant `useActiveChatWidth()` does, same as the
-          radio rows above it) so the chosen width is shown, not just named, before Save. */}
+      {/* Preview tile driven by activeId so it tracks arrows/clicks before Save. */}
       <div aria-hidden className="mt-2 w-full max-w-56 rounded-md border border-border bg-muted/30 p-2">
         <div data-chat-width-preview-bars className={cn('mx-auto flex flex-col gap-1', activeId === 'reading-column' && 'w-2/3')}>
           <div className="h-1.5 w-full rounded-full bg-muted-foreground/40" />
