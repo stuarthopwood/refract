@@ -132,8 +132,8 @@ export function PullRequestReadout({ sessionId }: { sessionId: string }) {
         icon={READOUT_KIND_ICONS['pull-request']}
         accessibleName={`Open pull request #${pullRequest.number}`}
         onActivate={() => {
-          usePullRequestsStore.getState().selectPullRequest(session.repositoryId, pullRequest.number)
-          useViewStore.getState().openPullRequests(session.repositoryId)
+          usePullRequestsStore.getState().openPullRequest(session.repositoryId, pullRequest.number)
+          useViewStore.getState().openPullRequests()
         }}
       >
         <span aria-hidden>#{pullRequest.number}</span>

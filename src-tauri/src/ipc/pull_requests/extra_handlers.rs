@@ -3,6 +3,8 @@
 
 use serde_json::Value;
 
+mod list_across;
+
 use crate::github::gh_close::close_pull_request_mutation;
 use crate::github::images::fetch_pr_image;
 use crate::ipc::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
@@ -15,6 +17,10 @@ use super::{
 pub(super) fn register(d: &mut Dispatcher) {
     d.register("pullRequests.close", pull_requests_close);
     d.register("pullRequests.fetchImage", pull_requests_fetch_image);
+    d.register(
+        "pullRequests.listAcross",
+        list_across::pull_requests_list_across,
+    );
 }
 
 /// Closes without merging. The staleness check is lenient (no cache entry is fine, like
