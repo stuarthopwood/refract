@@ -1,0 +1,133 @@
+import { useRef, useState, type ReactNode } from 'react'
+import { toast } from 'sonner'
+import { notify } from '@/state'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu'
+
+type FieldAction = 'cut' | 'copy' | 'paste' | 'paste-text' | 'select-all'
+
+interface FieldState {
+  hasSelection: boolean
+  editable: boolean
+  hasText: boolean
+}
+
+// IPC for both directions: the webview's Clipboard API can raise a permission prompt or resolve without reaching the OS clipboard.
+async function writeClipboard(text: string): Promise<boolean> {
+  const result = await window.refract.clipboard.writeText(text)
+  if (!result.ok) notify(result.error)
+  return result.ok
+}
+
+async function readClipboard(): Promise<string | null> {
+  const result = await window.refract.clipboard.readText()
+  if (!result.ok) {
+    notify(result.error)
+    return null
+  }
+  if (result.value === '') {
+    toast.info('The clipboard has no text. Use Ctrl+V to paste images or files.')
+    return null
+  }
+  return result.value
+}
+
+async function runAction(field: HTMLTextAreaElement, action: FieldAction): Promise<void> {
+  const start = field.selectionStart
+  const end = field.selectionEnd
+  const value = field.value
+  const selected = value.slice(start, end)
+  switch (action) {
+    case 'select-all':
+      field.select()
+      return
+    case 'copy':
+      await writeClipboard(selected)
+      return
+    case 'cut':
+      // Delete only after a confirmed write, and only if the text and selection did not move meanwhile.
+      if (!(await writeClipboard(selected))) return
+      if (field.value !== value || field.selectionStart !== start || field.selectionEnd !== end) return
+      document.execCommand('delete')
+      return
+    case 'paste':
+    case 'paste-text': {
+      const text = await readClipboard()
+      if (text == null) return
+      // Plain paste replays a paste event so the composer's own handler (large-text chip, image
+      // paths) runs; "as plain text" inserts the literal text and skips it.
+      if (action === 'paste') {
+        const data = new DataTransfer()
+        data.setData('text/plain', text)
+        const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+        if (!field.dispatchEvent(event)) return
+      }
+      document.execCommand('insertText', false, text)
+    }
+  }
+}
+
+/** Right-click / Shift+F10 / Menu key menu for a composer text field (#471): Cut, Copy, Paste,
+ * Paste as plain text, Select all. Wraps the textarea without changing its layout. */
+export function ComposerContextMenu({ children }: { children: ReactNode }) {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const pendingRef = useRef<FieldAction | null>(null)
+  const [state, setState] = useState<FieldState>({ hasSelection: false, editable: false, hasText: false })
+
+  const field = () => boxRef.current?.querySelector('textarea') ?? null
+
+  return (
+    <ContextMenu
+      onOpenChange={(open) => {
+        const el = field()
+        if (!open || !el) return
+        setState({ hasSelection: el.selectionStart !== el.selectionEnd, editable: !el.readOnly && !el.disabled, hasText: el.value !== '' })
+      }}
+    >
+      <ContextMenuTrigger asChild>
+        <div ref={boxRef} className="contents select-text">
+          {children}
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent
+        aria-label="Text editing"
+        collisionPadding={8}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const el = field()
+          const action = pendingRef.current
+          pendingRef.current = null
+          el?.focus()
+          if (el && action) void runAction(el, action)
+        }}
+      >
+        <ContextMenuItem disabled={!state.editable || !state.hasSelection} onSelect={() => (pendingRef.current = 'cut')}>
+          Cut
+          <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!state.hasSelection} onSelect={() => (pendingRef.current = 'copy')}>
+          Copy
+          <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!state.editable} onSelect={() => (pendingRef.current = 'paste')}>
+          Paste
+          <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!state.editable} onSelect={() => (pendingRef.current = 'paste-text')}>
+          Paste as plain text
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem disabled={!state.hasText} onSelect={() => (pendingRef.current = 'select-all')}>
+          Select all
+          <ContextMenuShortcut>Ctrl+A</ContextMenuShortcut>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
