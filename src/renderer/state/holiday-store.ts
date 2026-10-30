@@ -1,17 +1,3 @@
-// Issue #1048 (Holiday touches): resolves "today" for `shared/holidays.ts::activeHoliday` at
-// startup, and keeps it correct for the rest of the run -- the debug-only date override
-// (`REFRACT_DATE_OVERRIDE`, read via `window.refract.debug.getOverrides()`, itself gated
-// `#[cfg(debug_assertions)]` in Rust, so this call is always inert in a release build) never
-// changes while the app is running, but the REAL calendar date can roll over mid-session (a
-// Session left open past local midnight) -- a one-shot resolve at startup alone would leave
-// that session showing yesterday's holiday (or none) until the next full reload. Gate round 1
-// fix (High, #1053): re-resolved on a timer at the next local midnight, and again on
-// `visibilitychange`/`focus` (catches a sleeping machine whose clock jumped while the window was
-// hidden). `idleTimeoutMs` is read by `HolidayAmbientLoop.tsx` for the same override reason: a
-// live check can shorten the ambient loop's 60s no-input pause without waiting a full minute.
-// `flightIntervalMs` (gate round 3 fix, High, item 1) is read the same way, overriding the
-// flight-scheduling effect's real 90-180s random gap to a short fixed value so a live check's
-// own 60s CPU-budget sample window reliably contains several flights to measure.
 import { create } from 'zustand'
 import { activeHoliday } from '../../shared/holidays'
 import type { HolidayId } from '../../shared/holidays'
@@ -19,13 +5,8 @@ import type { HolidayId } from '../../shared/holidays'
 export const HOLIDAY_IDLE_PAUSE_MS_DEFAULT = 60_000
 
 interface HolidayState {
-  /** The debug-only date override (`YYYY-MM-DD`), or `null` for the real system date -- kept
-   * here (not just closed over) so the midnight/visibility re-resolve below can recompute
-   * against the SAME override every time, not just the real clock. */
   dateOverride: string | null
   idleTimeoutMs: number
-  /** `null` means the real randomised 90-180s gap (the production behaviour); a debug-only
-   * fixed value overrides it for a live check. */
   flightIntervalMs: number | null
   activeHoliday: HolidayId | null
 }
@@ -48,8 +29,6 @@ function reresolveActiveHoliday(): void {
   if (next !== current) useHolidayStore.setState({ activeHoliday: next })
 }
 
-/** A few seconds past midnight (not exactly on it): avoids a clock-precision race where the
- * timer fires a moment before the new day's own `Date.now()` would actually report it. */
 const MIDNIGHT_RERESOLVE_MARGIN_MS = 5_000
 
 function scheduleNextMidnightReresolve(): void {
@@ -62,11 +41,7 @@ function scheduleNextMidnightReresolve(): void {
   }, delayMs)
 }
 
-/** Called once from `init-stores.ts`'s own bootstrap sequence. A failed/unsupported
- * `debug.getOverrides` call (the `Result` envelope's `ok: false`, same shape every other initial
- * load in that file already handles) is treated exactly like a release build's always-inert
- * reply: no override, no shortened idle timeout. Also arms the ongoing re-resolve triggers
- * (midnight timer, `visibilitychange`, `focus`) for the rest of the app's run. */
+/** Called once from `init-stores.ts`'s own bootstrap sequence. */
 export async function initHolidayOverrides(): Promise<void> {
   const result = await window.refract.debug.getOverrides()
   const dateOverride = result.ok ? result.value.date : null

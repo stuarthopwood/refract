@@ -1,8 +1,3 @@
-// The generalised right pane shell (spec 013): renders the header (a single title row, a tab
-// bar, or the centred launcher, picked purely from `openPanelIds.length` -- data-model.md
-// `OpenPanelsState`) plus the active panel's own content. Mounted as the `right-pane`
-// `ResizablePanel`'s content in `App.tsx`; the permanent icon rail is a separate sibling, not
-// rendered here.
 import { useEffect, useRef } from 'react'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { useRightPaneStore, useSideChatStore, useSubagentPanelStore } from '@/state'
@@ -19,12 +14,6 @@ import { OutlinePanel } from './outline/OutlinePanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
-  /** The focused chat pane's Session -- passed down to the launcher/tab bar for opening a new
-   * panel and for a per-Session panel's live count. Most hosted panels read their own binding
-   * instead (e.g. `SubagentPanel` reads `subagent-store.ts`'s `sessionId`); `SideChatPanel` is
-   * the one exception (spec 014 T006/T007) and reads this prop directly, since a side-chat
-   * thread has no independent binding of its own (FR-005: it always follows whichever Session
-   * the chat pane currently shows). */
   sessionId: string | null
 }
 
@@ -34,33 +23,18 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
   const paneOpen = useRightPaneStore((s) => s.open)
-  // Panel size changes instantly (#678); only the content (launcher or active panel) fades and slides in, on open and on a panel switch;
-  // closing is ignored.
+  // Panel size changes instantly (#678); only content fades and slides in; closing is ignored.
   const panelKey = paneOpen ? activePanelId : null
   const launcherRef = useEnterOnSwitch<HTMLDivElement>(paneOpen ? 'launcher' : null, 'panel')
   useEnterOnSwitch(panelKey, 'panel', contentRef)
-  // Seeded from the store so a panel restored from settings (spec 024) is not mistaken for a
-  // genuine open and does not steal focus at launch.
   const prevOpenPanelIdsRef = useRef<PanelId[]>(useRightPaneStore.getState().openPanelIds)
 
-  // A Subagents tab restored from settings has no Session binding yet; bind it to the shown
-  // Session once the pane is visible (spec 024 US2).
   useEffect(() => {
     if (paneOpen && sessionId && !subagentSessionId && openPanelIds.includes('subagents')) {
       useSubagentPanelStore.getState().openPanel(sessionId)
     }
   }, [paneOpen, sessionId, subagentSessionId, openPanelIds])
 
-  // Focus moves into the newly opened panel's own content -- but only for a genuine open (this
-  // panel was not already one of the open tabs a moment ago), never for switching between two
-  // already-open tabs (arrow keys or a direct tab click both keep focus on the tab bar, the
-  // standard ARIA tabs behaviour). Gate-fix (round 7, Code7/A11y7/Sec7 HIGH): also skipped when
-  // `openPanel` was called with `{ focus: false }` (`suppressNextContentFocus`, read fresh via
-  // `getState()` since this effect must not re-run just because that flag changed) -- round 6's
-  // own `focus:false` only suppressed `sideChatFocusRequestId` (the side-chat TEXTAREA'S own
-  // focus request), so this effect still stole focus into the pane's content wrapper for the
-  // common "/btw while !loaded, pane collapsed" case. The flag is always cleared on read, even
-  // when this is not a genuine open, so it never leaks into a LATER, unrelated real open.
   useEffect(() => {
     const prevIds = prevOpenPanelIdsRef.current
     const isGenuineOpen = activePanelId !== null && !prevIds.includes(activePanelId)
@@ -122,9 +96,6 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   )
 }
 
-// #674: the header rows above are `drag-region`, and an overlapping `-webkit-app-region` resolves
-// by DOM order, so they would swallow the resize handle's hit area at the pane's left edge. This
-// strip is the shell's LAST child, so it wins that tie and hands the pixels back to the handle.
 function HandleHitStrip() {
   return <div aria-hidden className="no-drag-region pointer-events-none absolute inset-y-0 left-0 w-1.5" />
 }
