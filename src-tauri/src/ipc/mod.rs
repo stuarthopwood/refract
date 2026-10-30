@@ -20,6 +20,7 @@ pub mod attachments;
 pub mod chat;
 pub mod chat_pause;
 pub mod clipboard;
+pub mod spellcheck;
 pub mod conversations;
 pub mod copilot_plan;
 pub mod debug;
@@ -166,6 +167,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     chat_pause::register(dispatcher);
     subagents::register(dispatcher);
     clipboard::register(dispatcher);
+    spellcheck::register(dispatcher);
     file_explorer::register(dispatcher);
     git_changes::register(dispatcher);
     images::register(dispatcher);

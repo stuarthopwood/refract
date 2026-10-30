@@ -5,9 +5,32 @@ import {
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 import { runTextFieldAction } from '@/features/menus/textFieldActions'
-import { textEditItems, type TextEditAction } from '@/features/palette/menuItems'
+import { spellingItems, textEditItems, type TextEditAction } from '@/features/palette/menuItems'
 
-type FieldAction = TextEditAction
+type FieldAction = TextEditAction | { replace: string } | 'add-word'
+
+interface SpellState {
+  word: string
+  start: number
+  end: number
+  suggestions: string[]
+}
+
+const NO_SPELL: SpellState = { word: '', start: 0, end: 0, suggestions: [] }
+const WORD_CHAR = /[\p{L}\p{M}'’]/u
+
+// The selection when it is one word, else the word around the caret.
+function wordAt(el: HTMLTextAreaElement): { word: string; start: number; end: number } | null {
+  let start = el.selectionStart ?? 0
+  let end = el.selectionEnd ?? 0
+  if (start === end) {
+    while (start > 0 && WORD_CHAR.test(el.value.charAt(start - 1))) start--
+    while (end < el.value.length && WORD_CHAR.test(el.value.charAt(end))) end++
+  }
+  const word = el.value.slice(start, end).replace(/^'+|'+$/g, '')
+  if (!word || /[^\p{L}\p{M}'’]/u.test(word)) return null
+  return { word, start: el.value.indexOf(word, start), end: el.value.indexOf(word, start) + word.length }
+}
 
 interface FieldState {
   hasSelection: boolean
@@ -21,6 +44,8 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const pendingRef = useRef<FieldAction | null>(null)
   const copyTextRef = useRef('')
+  const spellEpochRef = useRef(0)
+  const [spell, setSpell] = useState<SpellState>(NO_SPELL)
   const [state, setState] = useState<FieldState>({ hasSelection: false, editable: false, hasText: false })
 
   const field = () => boxRef.current?.querySelector('textarea') ?? null
@@ -30,6 +55,14 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
       onOpenChange={(open) => {
         const el = field()
         if (!open || !el) return
+        const epoch = ++spellEpochRef.current
+        setSpell(NO_SPELL)
+        const target = el.readOnly || el.disabled ? null : wordAt(el)
+        if (target) {
+          void window.refract.spellcheck.suggest(target.word, navigator.language).then((result) => {
+            if (result.ok && epoch === spellEpochRef.current) setSpell({ ...target, suggestions: result.value })
+          })
+        }
         copyTextRef.current = el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0)
         setState({ hasSelection: el.selectionStart !== el.selectionEnd, editable: !el.readOnly && !el.disabled, hasText: el.value !== '' })
       }}
@@ -48,9 +81,15 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
           const action = pendingRef.current
           pendingRef.current = null
           el?.focus()
-          if (el && action) void runTextFieldAction(el, action, copyTextRef.current)
+          if (!el || !action) return
+          if (typeof action === 'object') {
+            el.setSelectionRange(spell.start, spell.end)
+            document.execCommand('insertText', false, action.replace)
+          } else if (action === 'add-word') void window.refract.spellcheck.add(spell.word, navigator.language)
+          else void runTextFieldAction(el, action, copyTextRef.current)
         }}
       >
+        {spellingItems({ ...spell, onReplace: (replace) => (pendingRef.current = { replace }), onAdd: () => (pendingRef.current = 'add-word') })}
         {textEditItems({ ...state, onSelect: (action) => (pendingRef.current = action) })}
       </ContextMenuContent>
     </ContextMenu>
