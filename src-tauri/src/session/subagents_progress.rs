@@ -6,7 +6,8 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::super::agent::SessionAgent;
-use super::{State, SummaryStatus};
+use super::{State, SummaryEntry, SummaryStatus};
+use crate::omp::transcript::subagent_items::{classify_progress_status, ProgressOutcome};
 
 /// Coalesces `subagent:patch` on the same window as `readout`'s transcript patches.
 const PATCH_COALESCE_MS: u64 = 50;
@@ -18,21 +19,30 @@ const MAX_STREAM_ROWS: usize = 500;
 /// Maps OMP's progress status to a terminal or running `SubagentStatus`.
 /// Any terminal word settles the entry; `pending`/`running`/absent stays running.
 fn map_progress_status(status: &str) -> SummaryStatus {
-    let lower = status.to_lowercase();
-    if lower.contains("cancel") || lower.contains("abort") {
-        return SummaryStatus::Cancelled;
+    match classify_progress_status(Some(status)) {
+        ProgressOutcome::Running => SummaryStatus::Running,
+        ProgressOutcome::Finished => SummaryStatus::Finished,
+        ProgressOutcome::Failed => SummaryStatus::Failed,
+        ProgressOutcome::Cancelled => SummaryStatus::Cancelled,
     }
-    if lower.contains("fail") || lower.contains("error") {
-        return SummaryStatus::Failed;
-    }
-    if matches!(
-        lower.as_str(),
-        "pending" | "running" | "started" | "queued" | "spawned" | ""
-    ) {
-        return SummaryStatus::Running;
-    }
-    // Unrecognised terminal words count as success.
-    SummaryStatus::Finished
+}
+
+type TranscriptSettle = (String, u32, ProgressOutcome, Option<i64>);
+
+/// The transcript settle for a summary that just left `Running` (#1437); `Exited` has none.
+fn settle_of(entry: &SummaryEntry) -> Option<TranscriptSettle> {
+    let outcome = match entry.status {
+        SummaryStatus::Finished => ProgressOutcome::Finished,
+        SummaryStatus::Failed => ProgressOutcome::Failed,
+        SummaryStatus::Cancelled => ProgressOutcome::Cancelled,
+        SummaryStatus::Running | SummaryStatus::Exited => return None,
+    };
+    Some((
+        entry.tool_call_id.clone(),
+        entry.spec_index,
+        outcome,
+        entry.duration_ms,
+    ))
 }
 
 /// Applies per-index progress from a `task` call's batch, matched by id then by position.
@@ -46,7 +56,7 @@ pub(super) async fn apply_progress_to_batch(
     if progress_list.is_empty() {
         return;
     }
-    let (summaries_value, visible_ops) = agent
+    let (summaries_value, visible_ops, settles) = agent
         .with_subagents_state(|s| {
             let batch_indices: Vec<usize> = s
                 .summaries
@@ -56,9 +66,10 @@ pub(super) async fn apply_progress_to_batch(
                 .map(|(i, _)| i)
                 .collect();
             if batch_indices.is_empty() {
-                return (None, Vec::new());
+                return (None, Vec::new(), Vec::new());
             }
             let mut changed = false;
+            let mut settles: Vec<TranscriptSettle> = Vec::new();
             let mut visible_ops: Vec<Value> = Vec::new();
             for (i, progress) in progress_list.iter().enumerate() {
                 let progress_id = progress.get("id").and_then(Value::as_str).unwrap_or("");
@@ -78,7 +89,8 @@ pub(super) async fn apply_progress_to_batch(
                     .and_then(Value::as_i64)
                     .filter(|d| *d > 0);
                 let entry = &mut s.summaries[target_index];
-                if entry.status != new_status {
+                let status_changed = entry.status != new_status;
+                if status_changed {
                     entry.status = new_status;
                     changed = true;
                 }
@@ -90,6 +102,9 @@ pub(super) async fn apply_progress_to_batch(
                     }
                 }
 
+                if status_changed {
+                    settles.extend(settle_of(entry));
+                }
                 let stream_id = entry.id.clone();
                 let is_visible = s.visible_id.as_deref() == Some(stream_id.as_str());
                 let new_rows = apply_subagent_progress_in_place(s, &stream_id, progress);
@@ -102,10 +117,11 @@ pub(super) async fn apply_progress_to_batch(
                 }
             }
             let summaries_value = changed.then(|| summaries_to_value(&s.summaries));
-            (summaries_value, visible_ops)
+            (summaries_value, visible_ops, settles)
         })
         .await;
 
+    agent.settle_transcript_subagents(&settles).await;
     if let Some(value) = summaries_value {
         emit_subagents_update(agent, value).await;
     }
@@ -118,9 +134,10 @@ pub(super) async fn apply_progress_to_batch(
 /// Settles a running summary with no `progress[]` entry, matched by label. A missing status
 /// on arrival counts as done.
 pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
-    let summaries_value = agent
+    let (summaries_value, settles) = agent
         .with_subagents_state(|s| {
             let mut changed = false;
+            let mut settles: Vec<TranscriptSettle> = Vec::new();
             for entry in &mut s.summaries {
                 if entry.status != SummaryStatus::Running {
                     continue;
@@ -144,10 +161,12 @@ pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
                         entry.duration_ms = Some(d);
                     }
                 }
+                settles.extend(settle_of(entry));
             }
-            changed.then(|| summaries_to_value(&s.summaries))
+            (changed.then(|| summaries_to_value(&s.summaries)), settles)
         })
         .await;
+    agent.settle_transcript_subagents(&settles).await;
     if let Some(value) = summaries_value {
         emit_subagents_update(agent, value).await;
     }
@@ -182,8 +201,9 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
     };
     let detached = payload.get("detached").and_then(Value::as_bool) == Some(true);
     let is_lifecycle = frame_type == "subagent_lifecycle";
-    let (summaries_value, visible_ops) = agent
+    let (summaries_value, visible_ops, settles) = agent
         .with_subagents_state(|s| {
+            let mut settles: Vec<TranscriptSettle> = Vec::new();
             let (changed, ops) = (|| {
                 let Some(target) = s
                     .summaries
@@ -208,6 +228,7 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
                         let observed = super::now_ms() - entry.started_at;
                         entry.status = new_status;
                         entry.duration_ms = Some(entry.duration_ms.unwrap_or(0).max(observed));
+                        settles.extend(settle_of(entry));
                         changed = true;
                     }
                     return (changed, Vec::new());
@@ -233,9 +254,10 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
                 };
                 (changed, ops)
             })();
-            (changed.then(|| summaries_to_value(&s.summaries)), ops)
+            (changed.then(|| summaries_to_value(&s.summaries)), ops, settles)
         })
         .await;
+    agent.settle_transcript_subagents(&settles).await;
     let settled = summaries_value.is_some();
     if let Some(value) = summaries_value {
         emit_subagents_update(agent, value).await;

@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::notice_prefixes::HIDDEN_TOOL_NOTICE_PREFIX;
 use super::{
-    now_ms, NoticeLevel, SubagentStatus, TranscriptItem, ASYNC_RESULT_CUSTOM_TYPE,
+    now_ms, NoticeLevel, SubagentStatus, TranscriptItem, TranscriptState, ASYNC_RESULT_CUSTOM_TYPE,
     SUBAGENT_NAME_LENGTH,
 };
 
@@ -121,15 +121,77 @@ pub(super) fn upsert_subagent_items(
     items
 }
 
-/// `pending`/`running` are the only in-flight statuses; any other string is a completion/failure.
-/// `running` must not hit the `Done` catch-all or a live agent shows as finished.
+/// One OMP status word -> outcome, shared with the session's Agents summaries so the pill, panel
+/// and chain row never read the same word differently (#1437).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressOutcome {
+    Running,
+    Finished,
+    Failed,
+    Cancelled,
+}
+
+/// Absent, empty and in-flight words are `Running`; any other unrecognised word counts as success.
+pub fn classify_progress_status(status: Option<&str>) -> ProgressOutcome {
+    let lower = status.unwrap_or("").to_lowercase();
+    if lower.contains("cancel") || lower.contains("abort") {
+        return ProgressOutcome::Cancelled;
+    }
+    if lower.contains("fail") || lower.contains("error") {
+        return ProgressOutcome::Failed;
+    }
+    if matches!(
+        lower.as_str(),
+        "pending" | "running" | "started" | "queued" | "spawned" | ""
+    ) {
+        return ProgressOutcome::Running;
+    }
+    ProgressOutcome::Finished
+}
+
+fn outcome_to_status(outcome: ProgressOutcome) -> SubagentStatus {
+    match outcome {
+        ProgressOutcome::Running => SubagentStatus::Running,
+        ProgressOutcome::Finished => SubagentStatus::Done,
+        ProgressOutcome::Failed => SubagentStatus::Error,
+        ProgressOutcome::Cancelled => SubagentStatus::Cancelled,
+    }
+}
+
 fn map_progress_status(status: Option<&str>) -> SubagentStatus {
-    match status {
-        Some("cancelled") | Some("aborted") => SubagentStatus::Cancelled,
-        Some("failed") | Some("error") => SubagentStatus::Error,
-        Some("pending") | Some("running") => SubagentStatus::Running,
-        None => SubagentStatus::Running,
-        Some(_) => SubagentStatus::Done,
+    outcome_to_status(classify_progress_status(status))
+}
+
+impl TranscriptState {
+    /// Settles a still-running `subagent` item from a lifecycle, jobs or progress signal (#1437).
+    /// A settled item never moves back, so a late signal cannot rewrite a result.
+    pub fn settle_subagent(
+        &mut self,
+        tool_call_id: &str,
+        spec_index: u32,
+        outcome: ProgressOutcome,
+        duration_ms: Option<i64>,
+    ) {
+        if outcome == ProgressOutcome::Running {
+            return;
+        }
+        let Some(pos) = self.items.iter().position(|item| {
+            matches!(item.as_ref(), TranscriptItem::Subagent { tool_call_id: t, spec_index: s, status: SubagentStatus::Running, .. } if t == tool_call_id && *s == spec_index)
+        }) else {
+            return;
+        };
+        if let TranscriptItem::Subagent {
+            status,
+            duration_ms: item_duration,
+            started_at,
+            ..
+        } = Arc::make_mut(&mut self.items[pos])
+        {
+            *status = outcome_to_status(outcome);
+            *item_duration = duration_ms
+                .filter(|d| *d > 0)
+                .or_else(|| started_at.map(|sa| (now_ms() - sa).max(0)));
+        }
     }
 }
 
@@ -241,21 +303,20 @@ pub(super) fn apply_async_result_jobs(
     let mut claimed = vec![false; items.len()];
     for job in jobs {
         let job_status = job.get("status").and_then(Value::as_str);
-        if matches!(job_status, Some("pending") | Some("running")) {
+        // A job with no status arrived already finished.
+        let outcome = if job_status.is_none() {
+            ProgressOutcome::Finished
+        } else {
+            classify_progress_status(job_status)
+        };
+        if outcome == ProgressOutcome::Running {
             continue;
         }
         let jid = job_id_of(job);
         let label = job.get("label").and_then(Value::as_str);
-        // omp's job records use `failed`/`error` (-> error) and `cancelled`/`aborted` (-> Cancelled).
-        let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
-        let failed = matches!(job_status, Some("failed") | Some("error"));
-        let new_status = if is_cancelled {
-            SubagentStatus::Cancelled
-        } else if failed {
-            SubagentStatus::Error
-        } else {
-            SubagentStatus::Done
-        };
+        let is_cancelled = outcome == ProgressOutcome::Cancelled;
+        let failed = outcome == ProgressOutcome::Failed;
+        let new_status = outcome_to_status(outcome);
         let error_text = job.get("errorText").and_then(Value::as_str);
         let result_text = job.get("resultText").and_then(Value::as_str);
         let schema_data = job.get("schema").and_then(|s| s.get("data"));
