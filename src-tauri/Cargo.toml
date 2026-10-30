@@ -1,6 +1,6 @@
 [package]
 name = "refract-tauri"
-version = "0.15.0"
+version = "0.16.0"
 description = "Rust (Tauri v2) backend of Refract (spec 016, issue #780, the architecture spec\nsince the parity gate and cutover, issue #796). The only desktop shell: the Electron build\n(src/main, src/preload) was deleted at the cutover."
 edition = "2021"
 rust-version = "1.90"
@@ -132,4 +132,7 @@ windows = { version = "0.62.2", features = [
   "Win32_System_RestartManager",
   # Issue #561: `GetProcessMemoryInfo` (`session::health`) reads each agent's own working set.
   "Win32_System_ProcessStatus",
+  # Issue #1431: ISpellChecker (composer menu spelling suggestions).
+  "Win32_Globalization",
+  "Win32_System_Com",
 ] }

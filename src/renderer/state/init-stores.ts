@@ -2,6 +2,7 @@ import type { Repository } from '../../shared/model'
 import type { Result, SessionSummary } from '../../shared/ipc'
 import type { GitHubAccount } from '../../shared/accounts'
 import { useAccountsStore } from './accounts'
+import { useAdvisorRosterStore } from './advisor-roster-store'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { showTokenGuardWarning } from './token-guard-store'
@@ -145,6 +146,7 @@ export function initStores(): void {
   })
   window.refract.onTokenGuardLaunchWarning(showTokenGuardWarning)
   window.refract.onTokenGuardCalls((payload) => useTokenGuardCallsStore.getState().setCalls(payload))
+  window.refract.onAdvisorRosterDetected((payload) => useAdvisorRosterStore.getState().setDetected(payload))
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })
@@ -267,6 +269,8 @@ export function initStores(): void {
     useChatWidthStore.getState().setChatWidth(settingsLoad.value.chatWidth)
     // Restored here, not deferred, so groups don't draw open then snap shut; runs on the DEFAULT_SETTINGS fallback too. (#735)
     useSessionListStore.getState().restore(settingsLoad.value.sessionListCollapse)
+    // A persisted Show hidden with nothing hidden would draw a toggle with nothing behind it (#1416).
+    if (sessionsLoad.ok && !sessionsLoad.value.some((session) => session.hiddenAt)) useSessionListStore.getState().setShowHidden(false)
     usePullRequestsLayoutStore.getState().restoreFromSettings(settingsLoad.value.pullRequestsListWidthPx)
     restoreRightPane(settingsLoad.value.rightPane)
     startRightPanePersistence()

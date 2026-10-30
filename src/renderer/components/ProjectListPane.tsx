@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronRightIcon, FunnelIcon, SearchXIcon } from 'lucide-react'
 import { FilterTabs } from '@/components/FilterTabs'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
+import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { SearchField } from '@/components/SearchField'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -20,6 +21,9 @@ import type { IpcError } from '../../shared/ipc'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
 
 export type ListStateFilter = 'open' | 'closed' | 'all'
+
+/** Fixed width of the Filters panel's Project and Label pickers: never the column width (#1391). */
+export const FILTER_PICKER_CLASS = 'w-40 shrink-0'
 
 const STATE_OPTIONS: Array<{ value: ListStateFilter; label: string }> = [
   { value: 'open', label: 'Open' },
@@ -59,6 +63,10 @@ export interface ProjectListPaneProps<Tab extends string> {
   /** Filters this view adds beside State and Project (for example Issues' Label), and how many are set. */
   extraFilters?: ReactNode
   extraActiveCount?: number
+  /** Chips for the chosen extra filters, shown beneath the pickers (for example dismissible label pills). */
+  filterChips?: ReactNode
+  /** Blurs the rows behind a Loading card while refetching, when rows are already shown. */
+  blurWhileLoading?: boolean
   loading: boolean
   fetchedAt: string | null
   error: IpcError | null
@@ -162,7 +170,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           />
           <div className="flex flex-wrap items-center gap-2">
             <Select value={state} onValueChange={(value) => props.onStateChange(value as ListStateFilter)}>
-              <SelectTrigger aria-label="State" className="w-28 shrink-0">
+              <SelectTrigger aria-label="State" className="shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper">
@@ -179,10 +187,11 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
               options={projects.map((project) => ({ value: project.id, label: project.name }))}
               selected={repositoryIds}
               onChange={props.onRepositoryIdsChange}
-              className="min-w-0 max-w-44 flex-1"
+              className={FILTER_PICKER_CLASS}
             />
             {props.extraFilters}
           </div>
+          {props.filterChips}
         </div>
       )}
       <div className="text-xs text-muted-foreground" role="status" aria-live="polite">
@@ -243,6 +252,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           )
         ) : (
           <>
+            <LoadingOverlay loading={Boolean(props.blurWhileLoading) && loading && itemCount > 0}>
             <div
               ref={listRef}
               tabIndex={-1}
@@ -250,6 +260,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             >
               {props.children}
             </div>
+            </LoadingOverlay>
             {failedLoadMore && error && (
               <div role="alert" className="p-2 text-center text-xs text-destructive">
                 {ERROR_MESSAGES[error.code] ?? error.message} Try Show more again.

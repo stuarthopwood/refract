@@ -75,6 +75,9 @@ jobs:
       - name: Check spacing grid
         run: pnpm check:spacing
 
+      - name: Check advisor roster
+        run: pnpm check:advisor-roster
+
       # Release pipeline (scripts/release.mjs is the only thing allowed to bump these): fails
       # unless package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml ([package]
       # refract-tauri), and src-tauri/Cargo.lock (the refract-tauri entry) all name the same

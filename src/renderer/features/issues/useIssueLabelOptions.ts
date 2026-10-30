@@ -1,10 +1,10 @@
 // Label options for the Issues view's Label filter: each in-scope Project's own labels
-// (`issues.labels`), merged by name. The selected label is always kept so it never vanishes from
+// (`issues.labels`), merged by name. The selected labels are always kept so it never vanishes from
 // the control when a Project filter narrows the scope.
 import { useEffect, useMemo, useState } from 'react'
 import type { IssueLabel } from '../../../shared/ipc-issues'
 
-export function useIssueLabelOptions(repositoryIds: string[], selected: string | null): IssueLabel[] {
+export function useIssueLabelOptions(repositoryIds: string[], selected: string[]): IssueLabel[] {
   const [byRepository, setByRepository] = useState<Record<string, IssueLabel[]>>({})
   const key = repositoryIds.join('|')
 
@@ -29,7 +29,7 @@ export function useIssueLabelOptions(repositoryIds: string[], selected: string |
     for (const id of repositoryIds) {
       for (const label of byRepository[id] ?? []) if (!merged.has(label.name)) merged.set(label.name, label)
     }
-    if (selected && !merged.has(selected)) merged.set(selected, { name: selected, color: '', description: '' })
+    for (const name of selected) if (!merged.has(name)) merged.set(name, { name, color: '', description: '' })
     return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, byRepository, selected])

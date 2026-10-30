@@ -1,4 +1,4 @@
-import { ClipboardPasteIcon, ClipboardTypeIcon, CopyIcon, ScissorsIcon, TextSelectIcon } from 'lucide-react'
+import { BookPlusIcon, ClipboardPasteIcon, ClipboardTypeIcon, CopyIcon, ScissorsIcon, SpellCheckIcon, TextSelectIcon } from 'lucide-react'
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from '@/components/ui/context-menu'
 import { DropdownMenuItem, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
 import { chordText, findAction, isActionEnabled } from './actionRegistry'
@@ -33,6 +33,24 @@ export function actionMenuItem(id: string, options: ActionMenuItemOptions = {}) 
       {label}
       {hint && <ContextMenuShortcut>{hint}</ContextMenuShortcut>}
     </ContextMenuItem>
+  )
+}
+
+/** Spelling suggestions for the word at the caret (#1431) plus "Add to dictionary", shown above the text-edit items. */
+export function spellingItems({ suggestions, word, onReplace, onAdd }: { suggestions: string[]; word: string; onReplace: (text: string) => void; onAdd: () => void }) {
+  if (suggestions.length === 0) return null
+  return (
+    <>
+      {suggestions.map((suggestion) => (
+        <ContextMenuItem key={suggestion} icon={SpellCheckIcon} onSelect={() => onReplace(suggestion)}>
+          {suggestion}
+        </ContextMenuItem>
+      ))}
+      <ContextMenuItem icon={BookPlusIcon} onSelect={onAdd}>
+        Add “{word}” to dictionary
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+    </>
   )
 }
 

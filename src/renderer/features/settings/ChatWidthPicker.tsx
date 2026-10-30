@@ -1,4 +1,4 @@
-// Hand-rolled radiogroup like ThemePicker: arrows live-preview, unlike the shared radio-group primitive (#554).
+// Hand-rolled radiogroup like ThemePicker: arrows save the choice, unlike the shared radio-group primitive (#554).
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { CheckIcon } from 'lucide-react'
@@ -19,12 +19,12 @@ interface ChatWidthPickerProps {
 
 export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProps) {
   const activeId = useActiveChatWidth()
-  const preview = useChatWidthStore((state) => state.preview)
+  const save = useChatWidthStore((state) => state.save)
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   function choose(id: ChatWidth) {
     if (id === activeId) return
-    preview(id)
+    void save(id)
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -81,7 +81,7 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
           )
         })}
       </div>
-      {/* Preview tile driven by activeId so it tracks arrows/clicks before Save. */}
+      {/* Preview tile driven by activeId so it tracks the saved choice. */}
       <div aria-hidden className="mt-2 w-full max-w-56 rounded-md border border-border bg-muted/30 p-2">
         <div data-chat-width-preview-bars className={cn('mx-auto flex flex-col gap-1', activeId === 'reading-column' && 'w-2/3')}>
           <div className="h-1.5 w-full rounded-full bg-muted-foreground/40" />

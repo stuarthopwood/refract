@@ -29,7 +29,8 @@ import type {
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames'; import type { ModelApi, RoleChangeSummary } from './ipc-model';
-import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
+import type { AdvisorRosterApi, AdvisorRosterDetected } from './ipc-advisor-roster';
+import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { SpellcheckApi } from './ipc-spellcheck'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi } from './ipc-issues'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
 import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
@@ -62,6 +63,7 @@ export type IpcErrorCode =
   | 'file-missing'
   | 'outside-worktree'
   | 'clipboard-failed'
+  | 'spellcheck-failed'
   | 'unsupported-image-type'
   | 'image-too-large'
   | 'invalid-theme'
@@ -249,6 +251,8 @@ export const IPC_REQUESTS = {
   CLIPBOARD_READ_TEXT: 'clipboard.readText',
   CLIPBOARD_WRITE_IMAGE: 'clipboard.writeImage',
   CLIPBOARD_SAVE_IMAGE: 'clipboard.saveImage',
+  SPELLCHECK_SUGGEST: 'spellcheck.suggest',
+  SPELLCHECK_ADD: 'spellcheck.add',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
@@ -347,6 +351,8 @@ export const IPC_REQUESTS = {
   TOKEN_GUARD_SET: 'tokenGuard.set',
   TOKEN_GUARD_RESET: 'tokenGuard.reset',
   TOKEN_GUARD_HANDOFF: 'tokenGuard.handoff',
+  ADVISOR_ROSTER_DETECT: 'advisorRoster.detect',
+  ADVISOR_ROSTER_OPEN: 'advisorRoster.open',
   COPILOT_PLAN_USAGE: 'copilot.planUsage',
   ACCOUNTS_GITHUB_LIST: 'accounts.github.list',
   ACCOUNTS_GITHUB_ADD_START: 'accounts.github.addStart',
@@ -380,6 +386,7 @@ export const IPC_EVENTS = {
   MEMORY_WARNING: 'memory:warning',
   TOKEN_GUARD_LAUNCH_WARNING: 'token-guard:launch-warning',
   TOKEN_GUARD_CALLS: 'token-guard:calls',
+  ADVISOR_ROSTER_DETECTED: 'advisor-roster:detected',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   ADVISOR_UPDATE: 'advisor:update',
@@ -445,6 +452,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   attachments: AttachmentsApi;
 
   clipboard: ClipboardApi;
+  advisorRoster: AdvisorRosterApi;
+  spellcheck: SpellcheckApi;
 
   conversations: {
     list(sessionId: string): Promise<Result<ConversationInfo[]>>;
@@ -585,6 +594,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
   onTokenGuardLaunchWarning(handler: (payload: TokenGuardLaunchWarning) => void): Unsubscribe;
   onTokenGuardCalls(handler: (payload: TokenGuardCalls) => void): Unsubscribe;
+  onAdvisorRosterDetected(handler: (payload: AdvisorRosterDetected) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;

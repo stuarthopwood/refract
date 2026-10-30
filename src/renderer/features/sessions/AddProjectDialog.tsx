@@ -85,7 +85,7 @@ export function AddProjectDialog({ trigger, open: controlledOpen, onOpenChange }
                 aria-describedby="repository-path-hint"
                 className="flex-1"
               />
-              <Button type="button" variant="outline" disabled={browsing} onClick={() => void handleBrowse()}>
+              <Button type="button" variant="ghost" disabled={browsing} onClick={() => void handleBrowse()}>
                 <FolderOpenIcon aria-hidden />
                 {browsing ? 'Browsing…' : 'Browse'}
               </Button>

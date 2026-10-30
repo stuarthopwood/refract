@@ -1,10 +1,11 @@
 // The selected issue's detail pane (issue #504, spec 051): title, state, labels, assignees, the
-// body through the sanitised `Markdown` path, and Open on GitHub / Copy link. Every field is
+// body through the sanitised `Markdown` path, and Open on GitHub / Copy Issue Link. Every field is
 // untrusted GitHub text and renders as text or sanitised Markdown only.
 import { useEffect, useRef, useState } from 'react'
 import { CircleCheckIcon, CircleDotIcon, ExternalLinkIcon } from 'lucide-react'
 import { ColourDot } from '@/components/ColourDot'
 import { Button } from '@/components/ui/button'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Markdown } from '@/features/chat/Markdown'
 import { RefreshButton } from '@/features/pull-requests/RefreshButton'
 import { resolvePullRequestImage } from '@/features/pull-requests/prImages'
@@ -20,7 +21,6 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
-  const [copied, setCopied] = useState(false)
   const sequenceRef = useRef(0)
 
   async function load(): Promise<void> {
@@ -42,18 +42,10 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
 
   useEffect(() => {
     setDetail(null)
-    setCopied(false)
     void load()
     // The parent re-keys this component per issue; `load` is stable for its lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repositoryId, number])
-
-  async function copyLink(): Promise<void> {
-    if (!detail) return
-    const result = await window.refract.clipboard.writeText(detail.url)
-    setCopied(result.ok)
-    if (result.ok) window.setTimeout(() => setCopied(false), 2000)
-  }
 
   if (!detail) {
     return (
@@ -102,14 +94,9 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
                 Open on GitHub
               </a>
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void copyLink()}>
-              {copied ? 'Copied' : 'Copy link'}
-            </Button>
+            <CopyButton getText={() => detail.url} label="Copy Issue Link" announcement="Issue link copied" />
           </div>
         </div>
-        <p role="status" className="sr-only">
-          {copied ? 'Link copied' : ''}
-        </p>
         {error && (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {error}

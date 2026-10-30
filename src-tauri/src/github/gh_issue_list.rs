@@ -56,12 +56,12 @@ impl IssueStateFilter {
     }
 }
 
-/// One validated list request. `label` and `search` are already cleaned.
+/// One validated list request. `labels` (matched any-of) and `search` are already cleaned.
 #[derive(Debug, Clone)]
 pub struct IssueListQuery {
     pub tab: IssueTab,
     pub state: IssueStateFilter,
-    pub label: Option<String>,
+    pub labels: Vec<String>,
     pub search: Option<String>,
 }
 
@@ -69,17 +69,13 @@ impl IssueListQuery {
     pub fn new(
         tab: IssueTab,
         state: IssueStateFilter,
-        label: Option<&str>,
+        labels: &[String],
         search: Option<&str>,
     ) -> Result<Self, GhError> {
-        let label = match label.map(str::trim).filter(|value| !value.is_empty()) {
-            Some(value) => validate_labels(&[value.to_string()])?.into_iter().next(),
-            None => None,
-        };
         Ok(Self {
             tab,
             state,
-            label,
+            labels: validate_labels(labels)?,
             search: search.and_then(clean_search_query),
         })
     }
@@ -193,10 +189,20 @@ fn argv_for_list(slug: &str, query: &IssueListQuery) -> Vec<String> {
         IssueTab::Authored => args.push("--author=@me".into()),
         IssueTab::Mentions => args.push("--mention=@me".into()),
     }
-    if let Some(label) = &query.label {
-        args.push(format!("--label={label}"));
+    // `--label` is all-of, so any-of goes through the search qualifier `label:"a","b"`.
+    let mut search = query.search.clone().unwrap_or_default();
+    if !query.labels.is_empty() {
+        let quoted: Vec<String> = query
+            .labels
+            .iter()
+            .map(|label| format!("\"{}\"", label.replace('\\', "\\\\").replace('"', "\\\"")))
+            .collect();
+        if !search.is_empty() {
+            search.push(' ');
+        }
+        search.push_str(&format!("label:{}", quoted.join(",")));
     }
-    if let Some(search) = &query.search {
+    if !search.is_empty() {
         args.push(format!("--search={search}"));
     }
     args

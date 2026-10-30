@@ -1,10 +1,11 @@
 // The Issues list column (issue #504, spec 051): the shared `ProjectListPane` (Filter tabs, Filters
 // toggle, search, State, Project, summary, skipped disclosure, empty state) plus Issues' own Label
 // filter and rows.
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { ColourDot } from '@/components/ColourDot'
-import { ProjectListPane } from '@/components/ProjectListPane'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { FILTER_PICKER_CLASS, ProjectListPane } from '@/components/ProjectListPane'
+import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
+import { Badge } from '@/components/ui/badge'
 import { useIssuesStore, useRepositoriesStore } from '@/state'
 import type { IssueTab } from '../../../shared/ipc-issues'
 import { IssueRow } from './IssueRow'
@@ -17,17 +18,36 @@ const TABS: Array<{ value: IssueTab; label: string }> = [
   { value: 'mentions', label: 'Mentions me' }
 ]
 
-// Radix Select forbids an empty-string item value, so "any label" gets a sentinel.
-const ANY_LABEL = '__any__'
+function labelSummary(labels: string[]): string {
+  if (labels.length === 0) return 'Any label'
+  return labels.length === 1 ? (labels[0] ?? '') : `${labels.length} labels`
+}
 
 export function IssueList() {
   const repositories = useRepositoriesStore((s) => s.repositories)
   const store = useIssuesStore()
+  const pillsRef = useRef<HTMLDivElement>(null)
+  const pickerRef = useRef<HTMLButtonElement>(null)
+  const pendingFocus = useRef<number | null>(null)
+
+  // A dismissed pill unmounts its focused button: move focus to the next pill, else the previous, else the picker.
+  const dismissLabel = (name: string) => {
+    const index = store.labels.indexOf(name)
+    pendingFocus.current = index < store.labels.length - 1 ? index : index - 1
+    store.removeLabel(name)
+  }
+  useEffect(() => {
+    if (pendingFocus.current === null) return
+    const target = pendingFocus.current
+    pendingFocus.current = null
+    const buttons = pillsRef.current?.querySelectorAll<HTMLButtonElement>('[data-label-pill] button')
+    ;(buttons?.[target] ?? pickerRef.current)?.focus()
+  }, [store.labels])
 
   const allIds = repositories.map((repo) => repo.id)
   const allIdsKey = allIds.join('|')
   const scopeIds = store.repositoryIds.length > 0 ? store.repositoryIds : allIds
-  const labelOptions = useIssueLabelOptions(scopeIds, store.label)
+  const labelOptions = useIssueLabelOptions(scopeIds, store.labels)
   const { refresh } = store
 
   // Fetches on open and on every filter change; never polled (spec 051).
@@ -35,7 +55,7 @@ export function IssueList() {
     void refresh(allIds)
     // `allIds` is covered by `allIdsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.tab, store.state, store.repositoryIds, store.label, allIdsKey, refresh])
+  }, [store.tab, store.state, store.repositoryIds, store.labels, allIdsKey, refresh])
 
   return (
     <ProjectListPane
@@ -54,24 +74,33 @@ export function IssueList() {
       onQueryChange={store.setQuery}
       onRefresh={() => void refresh(allIds)}
       onClearFilters={store.clearFilters}
-      extraActiveCount={store.label !== null ? 1 : 0}
+      extraActiveCount={store.labels.length > 0 ? 1 : 0}
+      blurWhileLoading
       extraFilters={
-        <Select value={store.label ?? ANY_LABEL} onValueChange={(value) => store.setLabel(value === ANY_LABEL ? null : value)}>
-          <SelectTrigger aria-label="Label" className="min-w-0 max-w-44 flex-1">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper">
-            <SelectItem value={ANY_LABEL}>Any label</SelectItem>
-            {labelOptions.map((label) => (
-              <SelectItem key={label.name} value={label.name}>
-                <span className="flex items-center gap-2">
-                  <ColourDot color={label.color} />
-                  {label.name}
-                </span>
-              </SelectItem>
+        <MultiSelectChecklist
+          label="Label"
+          summary={labelSummary(store.labels)}
+          options={labelOptions.map((label) => ({
+            value: label.name,
+            label: label.name,
+            leading: <ColourDot color={label.color} />
+          }))}
+          selected={store.labels}
+          onChange={store.setLabels}
+          triggerRef={pickerRef}
+          className={FILTER_PICKER_CLASS}
+        />
+      }
+      filterChips={
+        store.labels.length > 0 && (
+          <div ref={pillsRef} className="flex flex-wrap items-center gap-1">
+            {store.labels.map((name) => (
+              <Badge key={name} data-label-pill variant="secondary" title={name} onDismiss={() => dismissLabel(name)} dismissLabel={`Remove label filter ${name}`}>
+                {name}
+              </Badge>
             ))}
-          </SelectContent>
-        </Select>
+          </div>
+        )
       }
       loading={store.loading}
       fetchedAt={store.fetchedAt}

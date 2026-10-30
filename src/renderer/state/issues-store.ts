@@ -10,7 +10,8 @@ interface IssuesState {
   state: IssueStateFilter
   /** Chosen Project ids; empty means every Project. */
   repositoryIds: string[]
-  label: string | null
+  /** Chosen label names, matched any-of; empty means no label filter. */
+  labels: string[]
   /** The still-typed search text; applies on Enter, copied to `appliedQuery` by `refresh()`. */
   query: string
   appliedQuery: string
@@ -23,7 +24,8 @@ interface IssuesState {
   setTab(tab: IssueTab): void
   setState(state: IssueStateFilter): void
   setRepositoryIds(ids: string[]): void
-  setLabel(label: string | null): void
+  setLabels(labels: string[]): void
+  removeLabel(label: string): void
   setQuery(query: string): void
   clearFilters(): void
   select(selected: { repositoryId: string; number: number } | null): void
@@ -37,7 +39,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   tab: 'all',
   state: 'open',
   repositoryIds: [],
-  label: null,
+  labels: [],
   query: '',
   appliedQuery: '',
   items: [],
@@ -50,20 +52,21 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   setTab: (tab) => set({ tab, selected: null }),
   setState: (state) => set({ state, selected: null }),
   setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null }),
-  setLabel: (label) => set({ label, selected: null }),
+  setLabels: (labels) => set({ labels, selected: null }),
+  removeLabel: (label) => set((s) => ({ labels: s.labels.filter((l) => l !== label), selected: null })),
   setQuery: (query) => set({ query }),
   // A fresh `repositoryIds` array on every reset is what re-runs the list's fetch effect, so Clear
   // filters refetches even when only the search was active.
   clearFilters: () =>
-    set({ state: 'open', repositoryIds: [], label: null, query: '', appliedQuery: '', selected: null }),
+    set({ state: 'open', repositoryIds: [], labels: [], query: '', appliedQuery: '', selected: null }),
   select: (selected) => set({ selected }),
   async refresh(allRepositoryIds) {
-    const { tab, state, repositoryIds, label, query } = get()
+    const { tab, state, repositoryIds, labels, query } = get()
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
     refreshSequence += 1
     const sequence = refreshSequence
     set({ loading: true, error: null, appliedQuery: query })
-    const result = await window.refract.issues.list(tab, state, ids, label, query.trim())
+    const result = await window.refract.issues.list(tab, state, ids, labels, query.trim())
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
     if (sequence !== refreshSequence) return
     if (!result.ok) {

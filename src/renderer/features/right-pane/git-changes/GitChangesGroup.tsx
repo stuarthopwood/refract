@@ -10,7 +10,7 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useGitChangesStore } from '@/state'
-import { GroupHeaderTrigger } from '@/features/sessions/GroupHeader'
+import { GroupHeaderRow, GroupHeaderTrigger } from '@/features/sessions/GroupHeader'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { GitChangesFileRow } from './GitChangesFileRow'
 import { focusNearestGroupTrigger } from './focus'
@@ -85,7 +85,7 @@ export function GitChangesGroup({
   return (
     <div className="group flex flex-col">
       <Collapsible open={open} onOpenChange={onOpenChange}>
-        <div className="flex items-center gap-1 px-1">
+        <GroupHeaderRow>
           <GroupHeaderTrigger label={label} count={entries.length} triggerRef={triggerRef} />
           {bulk && (
             <Tooltip>
@@ -109,7 +109,7 @@ export function GitChangesGroup({
               <TooltipContent>{bulkAccessibleName}</TooltipContent>
             </Tooltip>
           )}
-        </div>
+        </GroupHeaderRow>
         <CollapsibleContent>
           <ul data-git-group-list={kind} aria-label={`${label} files`} className="flex flex-col gap-0 py-1">
             {entries.map((entry) => (

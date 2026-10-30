@@ -11,7 +11,12 @@ use super::git::git_raw;
 const MAX_FILES: i64 = 200;
 #[cfg(test)]
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
-const TIMEOUT: Duration = Duration::from_secs(3);
+// Tests get a longer budget: a parallel `cargo test` run on Windows can push the git spawns past 3 s (#1445).
+const TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_secs(30)
+} else {
+    Duration::from_secs(3)
+};
 /// Only the first slice of a file is checked for a NUL byte (git's binary heuristic).
 #[cfg(test)]
 const BINARY_SNIFF_BYTES: usize = 8000;

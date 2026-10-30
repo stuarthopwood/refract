@@ -15,6 +15,7 @@ use crate::store::registry::{RegistryStore, RegistryStoreError};
 use crate::store::settings::SettingsStore;
 
 pub mod accounts;
+pub mod advisor_roster;
 pub mod app;
 pub mod attachments;
 pub mod chat;
@@ -50,6 +51,7 @@ pub mod settings_scrollbar_map;
 pub mod settings_status_style;
 pub mod settings_typography;
 pub mod side_chat;
+pub mod spellcheck;
 pub mod subagents;
 pub mod theme;
 pub mod token_guard;
@@ -166,6 +168,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     chat_pause::register(dispatcher);
     subagents::register(dispatcher);
     clipboard::register(dispatcher);
+    spellcheck::register(dispatcher);
     file_explorer::register(dispatcher);
     git_changes::register(dispatcher);
     images::register(dispatcher);
@@ -178,6 +181,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     theme::register(dispatcher);
     app::register(dispatcher);
     token_guard::register(dispatcher);
+    advisor_roster::register(dispatcher);
     copilot_plan::register(dispatcher);
     usage::register(dispatcher);
     updates::register(dispatcher);

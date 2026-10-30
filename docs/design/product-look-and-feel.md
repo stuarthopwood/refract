@@ -6,7 +6,7 @@ This page covers Refract's old `docs/DESIGN.md` "Look and feel" section, reprodu
 
 ## Look and feel
 
-- **Theme** (spec 007): dark only (Stuart, 2026-10-02: "I don't think I want a light mode"). Two built-in presets at the time this page was first written, Dark and Dark (high contrast); a third, **Obsidian** (#550, theme foundation palette v2, PR #596), has since shipped, picked from the Settings screen's Appearance section: every preset shown by name and swatch, the active one marked in text and colour, choosing a different entry repaints the whole app immediately while Settings is open, and only Save persists the choice -- Cancel, Esc, or leaving Settings reverts to whichever theme was active before. No OS light/dark follow, since there is nothing to follow between all-dark presets.
+- **Theme** (spec 007): dark only (Stuart, 2026-10-02: "I don't think I want a light mode"). Two built-in presets at the time this page was first written, Dark and Dark (high contrast); a third, **Obsidian** (#550, theme foundation palette v2, PR #596), has since shipped, picked from the Settings screen's Appearance section: every preset shown by name and swatch, the active one marked in text and colour, choosing a different entry repaints the whole app and saves it at once (no Save/Cancel; spec 068, #1424). No OS light/dark follow, since there is nothing to follow between all-dark presets.
 - **Density**: medium. Neither terminal-tight nor roomy chat-app.
 - **Fonts**: two independent, user-customisable settings.
   - **UI font** for the app chrome.
