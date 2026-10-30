@@ -266,14 +266,22 @@ pub fn record_user_message(
         == 1)
 }
 
-const ROLLUP_MESSAGES_OF_FILE: &str = "INSERT INTO message_rollup (hour, project_label, model, reasoning, agent_type, calls, input, \
+/// Adds (`?2` = 1) or subtracts (`?2` = -1) one file's messages that are not yet labelled `?1`,
+/// under `label`: `?1` for the new label, `project_label` for each row's own stored label.
+fn rollup_messages_of_file(label: &str) -> String {
+    format!(
+        "INSERT INTO message_rollup (hour, project_label, model, reasoning, agent_type, calls, input, \
 output, cache_read, cache_write, total_tokens, cost_total, cost_input, cost_output, cost_cache_read, \
 cost_cache_write, credits) \
-SELECT ts - ts % 3600000, ?1, model, reasoning, agent_type, ?2 * count(*), ?2 * sum(input), ?2 * sum(output), \
+SELECT ts - ts % 3600000, {label}, model, reasoning, agent_type, ?2 * count(*), ?2 * sum(input), ?2 * sum(output), \
 ?2 * sum(cache_read), ?2 * sum(cache_write), ?2 * sum(total_tokens), ?2 * sum(cost_total), \
 ?2 * sum(cost_input), ?2 * sum(cost_output), ?2 * sum(cost_cache_read), ?2 * sum(cost_cache_write), \
-?2 * sum(coalesce(credits, 0)) FROM messages WHERE session_file = ?3 \
-GROUP BY ts - ts % 3600000, model, reasoning, agent_type \
+?2 * sum(coalesce(credits, 0)) FROM messages WHERE session_file = ?3 AND project_label <> ?1 \
+GROUP BY ts - ts % 3600000, project_label, model, reasoning, agent_type {ROLLUP_MESSAGES_UPSERT}"
+    )
+}
+
+const ROLLUP_MESSAGES_UPSERT: &str = "\
 ON CONFLICT(hour, project_label, model, reasoning, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, input = input + excluded.input, output = output + excluded.output, \
 cache_read = cache_read + excluded.cache_read, cache_write = cache_write + excluded.cache_write, \
@@ -282,29 +290,31 @@ cost_input = cost_input + excluded.cost_input, cost_output = cost_output + exclu
 cost_cache_read = cost_cache_read + excluded.cost_cache_read, \
 cost_cache_write = cost_cache_write + excluded.cost_cache_write, credits = credits + excluded.credits";
 
-const ROLLUP_TOOLS_OF_FILE: &str = "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_share) \
-SELECT ts - ts % 3600000, ?1, tool, agent_type, ?2 * count(*), ?2 * sum(coalesce(is_error, 0)), \
-?2 * sum(result_chars), ?2 * sum(cost_share) FROM tool_calls WHERE session_file = ?3 \
-GROUP BY ts - ts % 3600000, tool, agent_type \
+fn rollup_tools_of_file(label: &str) -> String {
+    format!(
+        "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_share) \
+SELECT ts - ts % 3600000, {label}, tool, agent_type, ?2 * count(*), ?2 * sum(coalesce(is_error, 0)), \
+?2 * sum(result_chars), ?2 * sum(cost_share) FROM tool_calls WHERE session_file = ?3 AND project_label <> ?1 \
+GROUP BY ts - ts % 3600000, project_label, tool, agent_type {ROLLUP_TOOLS_UPSERT}"
+    )
+}
+
+const ROLLUP_TOOLS_UPSERT: &str = "\
 ON CONFLICT(hour, project_label, tool, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
 result_chars = result_chars + excluded.result_chars, cost_share = cost_share + excluded.cost_share";
 
-/// Moves one file's rows from the `old` label to the `new` label: subtracts its contribution from
-/// the rollups under `old`, adds it under `new`, rewrites the row labels and drops emptied rollup
-/// rows. Run inside a transaction (`usage.relabel`).
-pub fn relabel_file(
-    conn: &Connection,
-    session_file: &str,
-    old: &str,
-    new: &str,
-) -> rusqlite::Result<()> {
-    if old == new {
-        return Ok(());
-    }
-    for (label, sign) in [(old, -1i64), (new, 1i64)] {
-        conn.execute(ROLLUP_MESSAGES_OF_FILE, params![label, sign, session_file])?;
-        conn.execute(ROLLUP_TOOLS_OF_FILE, params![label, sign, session_file])?;
+/// Moves one file's rows to the `new` label. Each row's contribution is subtracted from the rollup
+/// row under that row's own stored label (rows of one file can carry different labels), added under
+/// `new`, and the row labels are rewritten. Emptied rollup rows are dropped and float residue is
+/// clamped to zero. Run inside a transaction (`usage.relabel`).
+pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlite::Result<()> {
+    for (label, sign) in [("project_label", -1i64), ("?1", 1i64)] {
+        conn.execute(
+            &rollup_messages_of_file(label),
+            params![new, sign, session_file],
+        )?;
+        conn.execute(&rollup_tools_of_file(label), params![new, sign, session_file])?;
     }
     for table in ["messages", "tool_calls", "user_messages"] {
         conn.execute(
@@ -316,13 +326,22 @@ pub fn relabel_file(
         "UPDATE session_rollup SET project_label = ?1 WHERE session_file = ?2",
         params![new, session_file],
     )?;
+    conn.execute("DELETE FROM message_rollup WHERE calls <= 0", [])?;
     conn.execute(
-        "DELETE FROM message_rollup WHERE project_label = ?1 AND calls <= 0",
-        [old],
+        "DELETE FROM tool_rollup WHERE calls <= 0 AND errors <= 0",
+        [],
     )?;
     conn.execute(
-        "DELETE FROM tool_rollup WHERE project_label = ?1 AND calls <= 0 AND errors <= 0",
-        [old],
+        "UPDATE message_rollup SET cost_total = max(cost_total, 0.0), cost_input = max(cost_input, 0.0), \
+         cost_output = max(cost_output, 0.0), cost_cache_read = max(cost_cache_read, 0.0), \
+         cost_cache_write = max(cost_cache_write, 0.0), credits = max(credits, 0.0) \
+         WHERE cost_total < 0 OR cost_input < 0 OR cost_output < 0 OR cost_cache_read < 0 \
+         OR cost_cache_write < 0 OR credits < 0",
+        [],
+    )?;
+    conn.execute(
+        "UPDATE tool_rollup SET cost_share = max(cost_share, 0.0) WHERE cost_share < 0",
+        [],
     )?;
     Ok(())
 }
