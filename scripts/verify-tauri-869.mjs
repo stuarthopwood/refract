@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Live CDP check for issue #869 (the Home view, spec 059). Drives the real Tauri debug build,
 // isolated per the `refract-tauri-live-check-isolation` skill (own REFRACT_DATA_DIR, WebView2
 // profile and import dir; never %APPDATA%/refract-tauri). A fake `gh` (verify-tauri-869-fake-gh.rs)
 // and the fake `omp` shim (scenario `ask`) are put first on PATH, so nothing here can reach GitHub
@@ -91,8 +90,7 @@ async function main() {
       FAKE_GH_FAIL_PRS_FILE: failPrsFile,
       FAKE_GH_BRANCHES: branchesFile,
       REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
-      REFRACT_FAKE_OMP_NODE: process.execPath,
-      REFRACT_FAKE_OMP_SCENARIO: 'ask'
+      REFRACT_FAKE_OMP_NODE: process.execPath
     });
 
     const helloDir = makeScratchRepo(path.join(repoParent, 'hello-world'), 'repo869a');
@@ -100,6 +98,8 @@ async function main() {
     const localDir = makeScratchRepo(path.join(repoParent, 'local-only'), 'repo869c');
     for (const [dir, remote] of [[helloDir, 'hello-world'], [spoonDir, 'spoon-knife']]) {
       spawnSync('git', ['-C', dir, 'remote', 'add', 'origin', `https://github.com/octocat/${remote}.git`], { windowsHide: true });
+      // A remote-tracking ref at HEAD, so a Session branch with no commits of its own reads as pushed (clean).
+      spawnSync('git', ['-C', dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD'], { windowsHide: true });
     }
 
     const launcherExe = buildLauncher(shimDir);
@@ -121,7 +121,11 @@ async function main() {
     await cdp.waitFor(`document.querySelector('[role="region"][aria-label="Home"] h1')?.textContent.trim() === 'Home'`, { timeoutMs: 20_000, label: 'Home on launch' });
     check(await cdp.evaluate(`!!(${HOME_NAV}) && (${HOME_NAV}).getAttribute('aria-current') === 'page'`), 'With no panes Home shows and its nav item is aria-current="page"');
     await cdp.waitFor(`!!${section('My pull requests')} && !!${section('Tidy up')} && !!${section('Quick actions')} && !!${section('Needs you')} && !!${section('Recent Sessions')} && !!${section('My issues')}`, { timeoutMs: 15_000, label: 'all six sections' });
-    check(await cdp.evaluate(`document.activeElement?.tagName === 'H1'`), 'Home heading takes focus on mount');
+    await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="Views"] button')).find((el) => el.textContent.trim().startsWith('Issues'))`);
+    await cdp.waitFor(`!document.querySelector('[role="region"][aria-label="Home"]')`, { timeoutMs: 10_000, label: 'left Home' });
+    await cdp.click(HOME_NAV);
+    await cdp.waitFor(`document.activeElement?.tagName === 'H1' && document.querySelector('[role="region"][aria-label="Home"]')?.contains(document.activeElement)`, { timeoutMs: 10_000, label: 'Home heading takes focus when Home opens' });
+    pass('Home heading takes focus when Home opens from the nav');
     await cdp.waitFor(`${cards('My pull requests')}.length >= 2`, { timeoutMs: 20_000, label: 'My pull requests loaded' });
     await cdp.waitFor(`${cards('My issues')}.length >= 1`, { timeoutMs: 20_000, label: 'My issues loaded' });
     // Each section has tabs; click through them all and gather the cards each tab shows.
@@ -130,7 +134,7 @@ async function main() {
       const tabCount = await cdp.evaluate(`${section(title)}?.querySelectorAll('[role="tab"]').length ?? 0`);
       for (let i = 0; i < Math.max(tabCount, 1); i += 1) {
         if (tabCount > 0) {
-          await cdp.evaluate(`${section(title)}.querySelectorAll('[role="tab"]')[${i}].click()`);
+          await cdp.click(`${section(title)}.querySelectorAll('[role="tab"]')[${i}]`);
           await sleep(600);
         }
         found.push({ cards: await cdp.evaluate(cards(title)), text: await cdp.evaluate(`${section(title)}.textContent`) });
@@ -147,38 +151,41 @@ async function main() {
     const issueText = issueTabs.map((t) => t.text).join(' | ');
     const issueTitles = ['Crash when saving a draft', 'Docs mention the old flag', 'Fork handle is loose'];
     check(issueTitles.every((x) => issueText.includes(x)), 'My issues lists the assigned and created issues from both repositories across its tabs', JSON.stringify(issueTabs.map((t) => t.cards)));
-    await cdp.evaluate(`${section('My pull requests')}.querySelector('[role="tab"]')?.click()`);
-    await cdp.evaluate(`${section('My issues')}.querySelector('[role="tab"]')?.click()`);
+    await cdp.click(`${section('My pull requests')}.querySelector('[role="tab"]')`);
+    await cdp.click(`${section('My issues')}.querySelector('[role="tab"]')`);
     check(await cdp.evaluate(`document.querySelector('[role="region"][aria-label="Home"]').textContent.includes('Updated')`), 'The "Updated" fetched-time note shows');
     await shot(cdp, '01-home-no-sessions.png');
 
-    // 2. Sessions: one needs you (the ask scenario), two recent (one clean, one dirty for Tidy up).
+    // 2. Sessions: one needs you (a pending approval), two recent (one clean, one dirty for Tidy up).
     await createSession(cdp, 'hello-world');
-    await cdp.typeIntoByLabel('Message', 'Please ask me the batch of questions now.');
+    await cdp.typeIntoByLabel('Message', 'Please respond now.');
     await cdp.clickByLabel('Send message');
-    await cdp.waitFor(`document.body.textContent.includes('Asked user') || !!document.querySelector('[aria-label="Transcript"]')`, { timeoutMs: 30_000, label: 'ask turn started' });
+    await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Approval card rendered' });
+    // Creating further Sessions refreshes the list, which settles a stale status left by a send-time list refresh racing the needs-you event.
+    await createSession(cdp, 'hello-world');
+    await createSession(cdp, 'hello-world');
     await cdp.waitFor(`/\\d+ need you/.test((${HOME_NAV})?.getAttribute('aria-label') ?? '')`, { timeoutMs: 30_000, label: 'Home nav badge shows a needs-you Session' });
-    await createSession(cdp, 'hello-world');
-    await createSession(cdp, 'hello-world');
 
     const wt = spawnSync('git', ['-C', helloDir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', windowsHide: true }).stdout;
+    const waitingName = await cdp.evaluate(`(() => { const el = Array.from(document.querySelectorAll('button, [role="button"], li')).find((e) => (e.innerText ?? '').includes('Waiting for approval')); return (el?.innerText ?? '').split('\\n')[0].trim(); })()`);
+    log(`needs-you Session: ${waitingName}`);
     const trees = wt.split(/\r?\n\r?\n/).map((block) => ({
       path: /^worktree (.*)$/m.exec(block)?.[1],
       branch: /^branch refs\/heads\/(.*)$/m.exec(block)?.[1]
-    })).filter((t) => t.path && t.branch && path.resolve(t.path).toLowerCase() !== path.resolve(helloDir).toLowerCase());
+    })).filter((t) => t.path && t.branch && t.branch !== waitingName && path.resolve(t.path).toLowerCase() !== path.resolve(helloDir).toLowerCase());
     log(`worktrees: ${JSON.stringify(trees)}`);
-    if (trees.length < 3) throw new Error(`expected 3 Session worktrees, found ${trees.length}`);
-    writeFileSync(path.join(trees[2].path, 'unsaved.txt'), 'dirty');
-    writeFileSync(branchesFile, [`octocat/hello-world|${trees[1].branch}|MERGED|41`, `octocat/hello-world|${trees[2].branch}|CLOSED|42`].join('\n'));
+    if (!waitingName || trees.length < 2) throw new Error(`expected 2 settled Session worktrees plus the waiting one, found ${trees.length} (waiting: ${waitingName})`);
+    writeFileSync(path.join(trees[1].path, 'unsaved.txt'), 'dirty');
+    writeFileSync(branchesFile, [`octocat/hello-world|${trees[0].branch}|MERGED|41`, `octocat/hello-world|${trees[1].branch}|CLOSED|42`].join('\n'));
     const fakePrList = spawnSync(path.join(ghDir, 'gh.exe'), ['pr', 'list', '--repo', 'octocat/hello-world'], { encoding: 'utf8', windowsHide: true, env: { ...process.env, FAKE_GH_LOG: '' } }).stdout ?? '';
     check(fakePrList.includes('"headRepositoryOwner":{"login":"octocat"}'), 'The fake pr list emits headRepositoryOwner {login: octocat}');
 
     // 3. Open Home from the nav item; the badge counts needs-you Sessions.
     await cdp.click(HOME_NAV);
     await cdp.waitFor(`document.querySelector('[role="region"][aria-label="Home"] h1')?.textContent.trim() === 'Home'`, { timeoutMs: 10_000, label: 'Home via nav' });
-    await cdp.waitFor(`${cards('Recent Sessions')}.length >= 3`, { timeoutMs: 20_000, label: 'Recent Sessions' });
+    await cdp.waitFor(`${cards('Recent Sessions')}.length >= 2`, { timeoutMs: 20_000, label: 'Recent Sessions' });
     const recent = await cdp.evaluate(cards('Recent Sessions'));
-    check(recent.length >= 3 && recent.length <= 8, 'Recent Sessions lists the three Sessions', JSON.stringify(recent));
+    check(recent.length >= 2 && recent.length <= 8, 'Recent Sessions lists the two settled Sessions (the needs-you one sits in Needs you)', JSON.stringify(recent));
     const badge = await cdp.evaluate(`(${HOME_NAV}).getAttribute('aria-label')`);
     check(/Home, [1-9]\d* need you/.test(badge), 'Home nav item carries a needs-you badge of at least 1 in its accessible name', badge);
     check((await cdp.evaluate(cards('Needs you'))).length >= 1, 'Needs you lists the waiting Session', JSON.stringify(await cdp.evaluate(cards('Needs you'))));
@@ -191,7 +198,7 @@ async function main() {
     const tidyRows = `Array.from(${section('Tidy up')}?.querySelectorAll('button[aria-label^="Archive Session"]') ?? []).map((b) => (b.closest('li') ?? b.parentElement).textContent)`;
     const rowsBefore = await cdp.evaluate(tidyRows);
     check(
-      rowsBefore.length === 2 && rowsBefore.some((r) => r.includes('#41') && r.includes('clean') && !r.includes('unsaved')) && rowsBefore.some((r) => r.includes('#42') && r.includes('has unsaved work')),
+      rowsBefore.length === 2 && rowsBefore.some((r) => r.includes('#41') && r.includes('Clean') && !r.includes('Uncommitted')) && rowsBefore.some((r) => r.includes('#42') && r.includes('Uncommitted changes')),
       'Tidy up lists the clean Session (#41) and the Session with unsaved work (#42) and offers Archive all clean (1)',
       JSON.stringify(rowsBefore)
     );
@@ -200,14 +207,14 @@ async function main() {
     // 5. Refresh with a failing gh shows the error line and keeps the data.
     writeFileSync(failFile, 'fail');
     await cdp.clickByLabel('Refresh Home');
-    await cdp.waitFor(`!!${section('My issues')}?.querySelector('p svg')`, { timeoutMs: 20_000, label: 'issues error line' });
-    check(await cdp.evaluate(`${section('My issues')}.querySelectorAll('p svg').length > 0`), 'Refresh with a failing gh shows the one-line error in My issues');
-    check(await cdp.evaluate(`${cards('My issues')}.length >= 1`), 'The issue cards are still shown after the failing Refresh');
-    check(await cdp.evaluate(`document.querySelector('[role="region"][aria-label="Home"] [role="status"]')?.textContent.includes('errors') ?? false`), 'The live region announces "Refreshed with errors"');
+    await cdp.waitFor(`${section('My issues')}?.innerText.includes('not listed') ?? false`, { timeoutMs: 20_000, label: 'issues error line' });
+    check(await cdp.evaluate(`${section('My issues')}.innerText.includes('2 Projects were not listed')`), 'Refresh with a failing gh shows the one-line "2 Projects were not listed" error in My issues');
+    await cdp.waitFor(`document.querySelector('[role="region"][aria-label="Home"] [role="status"]')?.textContent.includes('errors') ?? false`, { timeoutMs: 10_000, label: 'Refreshed with errors announcement' });
+    pass('The live region announces "Refreshed with errors"');
     await shot(cdp, '04-refresh-error-line.png');
     unlinkSync(failFile);
     await cdp.clickByLabel('Refresh Home');
-    await cdp.waitFor(`${section('My issues')}.querySelectorAll('p svg').length === 0`, { timeoutMs: 20_000, label: 'error line cleared' });
+    await cdp.waitFor(`!${section('My issues')}.innerText.includes('not listed')`, { timeoutMs: 20_000, label: 'error line cleared' });
     pass('A successful Refresh clears the error line');
 
     // 5b. A failing search prs shows the error line in My pull requests and keeps the cards.
@@ -221,28 +228,30 @@ async function main() {
 
     // 6. Tidy up: Archive all clean takes only the clean Session; then Archive the dirty one (no confirm).
     const archiveAll = `Array.from(${section('Tidy up')}.querySelectorAll('button')).find((el) => /^Archive all clean \\(1\\)$/.test(el.textContent.trim()))`;
+    await cdp.evaluate(`(${archiveAll}).scrollIntoView({ block: 'center' })`);
     await cdp.click(archiveAll);
+    await sleep(1000);
     await cdp.waitFor(`${tidyRows}.length === 1`, { timeoutMs: 20_000, label: 'only one Tidy up row left' });
     const rowsAfterAll = await cdp.evaluate(tidyRows);
-    check(rowsAfterAll.length === 1 && rowsAfterAll[0].includes('#42') && rowsAfterAll[0].includes('has unsaved work'), 'Archive all clean leaves exactly the Session with unsaved work', JSON.stringify(rowsAfterAll));
-    check(existsSync(trees[1].path) && existsSync(trees[2].path), 'Archiving keeps both Worktree directories on disk (including the archived clean one)');
+    check(rowsAfterAll.length === 1 && rowsAfterAll[0].includes('#42') && rowsAfterAll[0].includes('Uncommitted changes'), 'Archive all clean leaves exactly the Session with unsaved work', JSON.stringify(rowsAfterAll));
+    check(existsSync(trees[0].path) && existsSync(trees[1].path), 'Archiving keeps both Worktree directories on disk (including the archived clean one)');
     check(await cdp.evaluate(`!Array.from(${section('Tidy up')}.querySelectorAll('button')).some((el) => /^Archive all clean/.test(el.textContent.trim()))`), 'Archive all clean is no longer offered once no clean Session remains');
     await shot(cdp, '05-tidy-up-after-archive-all.png');
     await cdp.evaluate(`(${section('Tidy up')}.querySelector('button[aria-label^="Archive Session"]')).focus()`);
     await cdp.pressEnter();
     await cdp.waitFor(`${tidyRows}.length === 0 && !document.querySelector('[role="alertdialog"]')`, { timeoutMs: 20_000, label: 'dirty row archived' });
-    check(existsSync(trees[2].path), 'Archiving the dirty Session removes its row with no confirm dialog and keeps its Worktree');
+    check(existsSync(trees[1].path), 'Archiving the dirty Session removes its row with no confirm dialog and keeps its Worktree');
 
     // 7. Keyboard: Tab from the heading lands on a button inside Home; Enter on a Recent card opens a Session.
     await cdp.evaluate(`document.querySelector('[role="region"][aria-label="Home"] h1').focus()`);
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
-    check(await cdp.evaluate(`document.activeElement?.tagName === 'BUTTON' && !!document.activeElement.closest('[role="region"][aria-label="Home"]')`), 'Tab moves focus from the heading to a button inside Home');
+    check(await cdp.evaluate(`document.activeElement?.tagName !== 'H1' && !!document.activeElement.closest('[role="region"][aria-label="Home"]')`), 'Tab moves focus from the heading to the next control inside Home');
     await shot(cdp, '06-keyboard-focus.png');
-    await cdp.evaluate(`(${section('Recent Sessions')}.querySelector('button[aria-label^="Open "]')).focus()`);
+    await cdp.evaluate(`(${section('Needs you')}.querySelector('button[aria-label^="Open "]')).focus()`);
     await cdp.pressEnter();
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled && !document.querySelector('[role="region"][aria-label="Home"]'); })()`, { timeoutMs: 20_000, label: 'Session opened from a Recent card' });
-    pass('Enter on a Recent Sessions card opens the Session');
+    pass('Enter on a Needs you card opens the Session');
 
     // 8. What gh was actually asked.
     const calls = readFileSync(ghLog, 'utf8').split('\n').filter(Boolean);

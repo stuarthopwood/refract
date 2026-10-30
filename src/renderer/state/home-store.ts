@@ -49,9 +49,10 @@ export function githubRepositoryIds(repositories: Repository[]): string[] {
 /** Sections that currently hold an error, by display name, for the Refresh announcement. */
 export function failedHomeSections(state: Pick<HomeState, 'prs' | 'issues' | 'closed'>): string[] {
   const failed: string[] = []
-  if (state.prs.authored.error || state.prs['review-requested'].error) failed.push('My pull requests')
-  if (state.issues.assigned.error || state.issues.authored.error) failed.push('My issues')
-  if (state.closed.error) failed.push('Tidy up')
+  const bad = (section: HomeSection<unknown>): boolean => section.error !== null || section.skipped.length > 0
+  if (bad(state.prs.authored) || bad(state.prs['review-requested'])) failed.push('My pull requests')
+  if (bad(state.issues.assigned) || bad(state.issues.authored)) failed.push('My issues')
+  if (bad(state.closed)) failed.push('Tidy up')
   return failed
 }
 
