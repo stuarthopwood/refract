@@ -1,16 +1,8 @@
-// Quiet alert rows (low memory, unverified omp version) rendered after <ProfileItem/> (#560).
-// Announced once per appearance via a hidden -> shown transition tracked in `useAlertDismissStore`.
-//
-// Announcements go through `useChatAreaAnnouncer`, not a local live region: this component sits in a
-// collapsible nav column that is `inert` when collapsed, which would silence it. One effect joins
-// both messages when both appear in the same commit, since two `announce()` calls would clear each other.
-//
-// Focus: a row that disappears (own condition or Dismiss) while focused redirects to the other row's
-// action, else the profile item name. Dismiss redirects at the click site (a Tooltip trigger's delayed
-// Portal cleanup could outlast a reactive retry); a self-clearing row is caught by `focusout`.
-//
-// The row says "Low memory" with no Session count: `warning.liveAgents` counts every non-stopped agent
-// while Triage lists only idle ones, so the two can differ.
+// Quiet alert rows (low memory, unverified omp version) after <ProfileItem/> (#560).
+// Announced via `useChatAreaAnnouncer`, not a local live region: the collapsed nav column is `inert`.
+// One effect joins both messages in the same commit, since two `announce()` calls clear each other.
+// Dismiss redirects focus at the click site (a Tooltip's delayed Portal cleanup can outlast a retry).
+// "Low memory" omits the Session count: `warning.liveAgents` counts non-stopped agents, Triage only idle ones.
 import { useEffect, useRef, useState } from 'react'
 import { focusProfileItemName, isFocusStranded } from '@/lib/focus'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'

@@ -1,5 +1,4 @@
-// With no recognised token the textarea keeps its ordinary opaque rendering and this component
-// renders nothing -- byte-identical to the pre-#1050 composer.
+// With no recognised token this renders nothing and the textarea keeps its opaque rendering.
 import type { ReactNode, RefObject } from 'react'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { classifySlashInvocation, parseSlashCommand } from '../../../shared/slash-commands'
@@ -28,12 +27,6 @@ export function findRecognisedCommandToken(text: string, commands: readonly Slas
 /** Shared box-model-matching classes for every inert composer mirror (the ghost-text overlay, the pending-text-chip overlay, and this pill) -- one constant instead of three verbatim copies, so a future padding/font change can never silently drift one mirror out of alignment with the others. */
 export { COMPOSER_MIRROR_CLASS }
 
-// Cyber Amber did too originally, until #1039 (2026-10-20) retuned its surfaces to Default Dark's
-// own pure-neutral values: the new, lighter `--muted` no longer clears the 1.4:1 floor against the
-// new, darker-relative `--background` (1.31:1), so Cyber Amber's own `--command-pill-bg` is now a
-// literal too (Dark's own `oklch(0.31 0 0)`, since its `--background` is now byte-identical to
-// Dark's) -- `--command-pill-fg` still needs no lightened step (the vivid orange accent clears
-// 4.5:1 on that fill directly, 5.83:1).
 const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-command-pill-fg shadow-[-2px_0_0_2px_var(--command-pill-bg),2px_0_0_2px_var(--command-pill-bg)] [box-decoration-break:clone]'
 
 /** `-webkit-text-fill-color` masks ONLY the glyph fill; `color` stays whatever it would ordinarily resolve to (a real, visible value), so anything that reads `color` rather than the fill (composition underlines, any future `currentColor` decoration) keeps rendering correctly. */

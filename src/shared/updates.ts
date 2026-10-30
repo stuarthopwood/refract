@@ -40,10 +40,8 @@ export interface UpdatesApi {
     /** "Update now": quits, installs the verified download, and relaunches. Needs phase `'downloaded'`. */
     installNow(): Promise<Result<void>>;
   };
-  /** Drives the first-run readiness screen's Install progress text. */
   onReadinessInstallProgress(handler: (payload: DependencyInstallProgress) => void): Unsubscribe;
   onReadinessChanged(handler: (payload: Readiness) => void): Unsubscribe;
-  /** Drives the update badge in the status bar. */
   onUpdatesStateChanged(handler: (payload: UpdateState) => void): Unsubscribe;
 }
 
