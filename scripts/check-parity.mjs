@@ -250,6 +250,8 @@ const REQUEST_LANES = {
   ATTACHMENTS_READ_IMAGE_FILE: 'R4', // #787, ipc/attachments.rs
   CLIPBOARD_WRITE_TEXT: 'R1', // scaffold; clipboard.rs not reassigned to a later lane
   CLIPBOARD_READ_TEXT: 'R1',
+  CLIPBOARD_WRITE_IMAGE: 'R1',
+  CLIPBOARD_SAVE_IMAGE: 'R1',
   SPELLCHECK_SUGGEST: 'R1',
   SPELLCHECK_ADD: 'R1',
   CONVERSATIONS_LIST: 'R1', // scaffold; conversations.rs not reassigned

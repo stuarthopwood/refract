@@ -214,7 +214,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
       ) : preview.kind === 'markdown' ? (
         <div className="flex flex-col gap-2">
           {showSource ? (
-            <CodeBlock code={preview.content ?? ''} lang="markdown" wrap={wrap} lineNumbers />
+            <CodeBlock code={preview.content ?? ''} lang="markdown" wrap={wrap} hideWrap lineNumbers />
           ) : (
             <Markdown text={preview.content ?? ''} id={preview.path} />
           )}
@@ -222,7 +222,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
       ) : (
         // `kind: 'text'` (every other preview kind is handled above).
         <div className="flex flex-col gap-2">
-          <CodeBlock code={preview.content ?? ''} lang={guessLangFromPath(preview.path)} wrap={wrap} lineNumbers />
+          <CodeBlock code={preview.content ?? ''} lang={guessLangFromPath(preview.path)} wrap={wrap} hideWrap lineNumbers />
         </div>
       )}
       </div>

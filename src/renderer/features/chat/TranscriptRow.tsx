@@ -14,6 +14,7 @@ import { StageGroupRow } from './SubagentChainRow'
 import { ToolGroupRow } from './ToolRow'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { UserMessageRow } from './UserMessageRow'
+import { MessageMenu } from './MessageMenu'
 import { NoticeRow } from './NoticeRow'
 import { TurnErrorRow } from './TurnErrorRow'
 import { SkillPromptRow } from './SkillPromptRow'
@@ -100,14 +101,16 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
 
     case 'assistant-text':
       return (
-        <Message>
-          <MessageContent className="w-full">
-            <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
-            {item.streaming && (
-              <span aria-hidden className="ml-1 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
-            )}
-          </MessageContent>
-        </Message>
+        <MessageMenu id={item.id} text={item.text} streaming={item.streaming} sessionId={sessionId}>
+          <Message>
+            <MessageContent className="w-full">
+              <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
+              {item.streaming && (
+                <span aria-hidden className="ml-1 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
+              )}
+            </MessageContent>
+          </Message>
+        </MessageMenu>
       )
 
     case 'thinking':

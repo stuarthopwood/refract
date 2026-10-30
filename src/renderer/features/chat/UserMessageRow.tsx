@@ -5,6 +5,7 @@ import { UserAvatar } from '@/components/UserAvatar'
 import { Markdown } from './Markdown'
 import { FileAttachmentChip } from './FileAttachmentChip'
 import { MessageImageGrid } from '@/components/MessageImageGrid'
+import { MessageMenu } from './MessageMenu'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -57,6 +58,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
   return (
     <>
       <UserMessageTime at={item.at} hide={hideTime} />
+      <MessageMenu id={item.id} text={item.text} align="end">
       <Message align="end">
         <MessageAvatar aria-hidden>
           <UserAvatar name={name} src={userAvatarUrl} />
@@ -77,6 +79,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
           {item.text.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
         </MessageContent>
       </Message>
+      </MessageMenu>
     </>
   )
 }
