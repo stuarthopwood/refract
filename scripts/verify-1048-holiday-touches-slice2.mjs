@@ -1,15 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1048 slice 2 (Bonfire Night, Christmas, New Year, Star Wars Day,
-// Pi Day). One fresh launch per faked local date (REFRACT_DATE_OVERRIDE, debug builds only):
-// asserts the watermark glyph, the sidebar logo accessory and the working-spinner glyph for
-// that holiday, screenshots them, and checks the ambient loop (present and flying for Bonfire
-// Night, Christmas, New Year; absent for Star Wars Day and Pi Day). The Christmas launch also
-// checks Artwork only, Off and emulated reduced motion. The 31 Dec and 1 Jan launches prove the
-// year-boundary window; 2026-12-27 and 2026-12-30 prove no holiday either side of it.
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1048-holiday-touches-slice2.mjs
-// (after `pnpm exec tauri build --debug --no-bundle`). Scratch data dir, recorded-frame fake omp
-// (call log: REFRACT_FAKE_OMP_DEBUG_LOG) and fake gh on PATH; never %APPDATA%\refract-tauri.
+// Live CDP check for #1048 slice 2: one launch per faked date (REFRACT_DATE_OVERRIDE, debug builds only).
+// Run after `pnpm exec tauri build --debug --no-bundle` with CARGO_TARGET_DIR set.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
