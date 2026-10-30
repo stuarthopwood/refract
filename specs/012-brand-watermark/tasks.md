@@ -109,11 +109,20 @@ chat area.
   `paneB` (index 1, the right pane) of a true two-pane split, never `paneA` — and mount
   `<BrandWatermark variant="live" />` (with its own small `relative` wrapper) inside the
   `paneSessionIds.length === 0` div (research.md decision 3) (depends on T009). (#417)
-- [ ] T011 [US1] Verify live per quickstart.md Story 1: default-on mark anchored to the reading
+- [X] T011 [US1] Verify live per quickstart.md Story 1: default-on mark anchored to the reading
   area's corner, directly above the composer, never covered by it even as the message box grows to
   its ~8-line maximum; visible in the "Select a Session" empty state; scales on resize with no
   layout shift; exactly one instance, in the right pane's reading area, with a split chat pane
   open; unaffected by the Subagent panel or session list (depends on T010). (#418)
+  Partial evidence 2026-10-30 (`scripts/verify-406-watermark.mjs`, debug build of main at v0.14.0,
+  fake omp and gh): the empty state shows one mark; a single pane shows one mark whose bottom
+  (569px) sits above the composer top (647px); a split shows one mark, inside `#split-pane-1`
+  only. Completed 2026-10-30 (same script, 29 of 29 checks, debug exe from main after #1364):
+  composer growth to its 192px cap keeps the mark above it; resizing to 1100, 800 and 620px always
+  leaves one in-window mark above the composer, and restoring returns the original geometry; the
+  right pane and Subagent panel opened three times with one mark above the composer (the closed
+  state is covered by the first run and the divider drags); the Home view that now
+  opens after adding a project shows no mark (the empty state was verified in the first run).
 
 **Checkpoint**: quickstart.md Story 1 passes in full.
 
@@ -133,11 +142,17 @@ without leaving Settings.
   `useSettingsStore`'s `watermarkEnabled`/`setWatermarkEnabled`; beside it, a small bordered box
   containing `<BrandWatermark variant="preview" />`, shown or hidden by the same state (research.md
   decisions 9, 14) (depends on T007, T009). (#419)
-- [ ] T013 [US2] Verify live per quickstart.md Story 2: the divider visually separates the switch
+- [X] T013 [US2] Verify live per quickstart.md Story 2: the divider visually separates the switch
   from the theme picker's Save/Cancel row; the switch reflects and changes `watermarkEnabled` live
   with no restart; the preview updates immediately; the real mark in the chat area updates
   immediately; the choice survives a full restart; a missing or non-boolean stored value falls
   back to on (depends on T012, T004). (#420)
+  Partial evidence 2026-10-30 (`verify-406-watermark.mjs`): switch defaults on; the preview and the
+  live mark update immediately when toggled off and on; `settings.json` holds
+  `watermarkEnabled: false` after a restart and the mark and switch stay off. Completed 2026-10-30:
+  with `watermarkEnabled` deleted from `settings.json`, or set to the string `nope`, the app starts
+  with the mark and switch on. The divider is whitespace plus the Decoration heading, not an `hr`
+  (the spec FR-017 wording is a follow-up).
 
 **Checkpoint**: quickstart.md Story 2 passes in full.
 
@@ -166,6 +181,16 @@ below WCAG 2.2 AA.
   not shown regardless of the switch; turn off "Show transparency in Windows" and confirm the same;
   run the extended `check-theme-contrast.mjs` and confirm every built-in theme preset still passes
   (depends on T014). (#422)
+  Partial evidence 2026-10-30 (`verify-406-watermark.mjs`): `pointer-events: none`,
+  `aria-hidden="true"`, no `tabindex`, no focusable descendants, `elementFromPoint` at the mark
+  centre returns real content, hidden under CDP-emulated `forced-colors` and
+  `prefers-reduced-transparency` (both media features recognised by WebView2). Completed
+  2026-10-30:   a CDP drag from the message text to the mark's centre selects the message text and the
+    mark never takes the pointer (screenshot 11; no prose sat under the mark because the transcript has
+    end padding, so overlapping text was not exercised; the Tab check is static: no focusable markup); `pnpm check:theme-contrast` passes all 1766 pairs across
+  5 themes.
+  Needs a human: Narrator never announces the mark; real Windows High Contrast; the Windows
+  "Show transparency" toggle.
 
 **Checkpoint**: quickstart.md Story 3 passes in full, including the extended contrast script's
 numbers.
@@ -179,11 +204,17 @@ session-list/Subagent-panel/split state, and consistently absent from every full
 
 **Independent test**: [quickstart.md](quickstart.md) Story 4.
 
-- [ ] T016 [US4] Verify live per quickstart.md Story 4: drag the session-list/chat and
+- [X] T016 [US4] Verify live per quickstart.md Story 4: drag the session-list/chat and
   chat/Subagent-panel dividers through their full range; open and close the Subagent panel and a
   split chat pane repeatedly; narrow the window to the 360px chat-area floor; confirm the mark is
   never shown on the Settings screen, the Readiness screen, or (once spec 008 builds it) the
   Manage sessions screen (depends on T010, T012). (#423)
+  Partial evidence 2026-10-30 (`verify-406-watermark.mjs`, one mark in the right pane only, none
+  in the left; none on Readiness or Settings). Completed 2026-10-30: dragging the session-list and chat-pane
+  dividers (-700, +700, -300px) always leaves one mark above the composer with the chat panel
+  at 750 to 1230px; one right pane divider drag (-700px) leaves the chat panel at 490px with one
+  mark above the composer; none on Manage sessions or Home. At a 620px window the chat panel
+  is 354px, below the 360px floor because the window itself is too narrow (not a watermark effect).
 
 **Checkpoint**: quickstart.md Story 4 passes in full.
 
@@ -198,6 +229,10 @@ session-list/Subagent-panel/split state, and consistently absent from every full
   first build" naming the switch (depends on T011, T013). (#424)
 - [ ] T018 Run every check in [quickstart.md](quickstart.md), all four stories, on one clean build;
   confirm `pnpm typecheck` and `pnpm build` both pass (depends on T011, T013, T015, T016, T017). (#425)
+  Partial evidence 2026-10-30: `pnpm typecheck` passes and the debug build succeeds on v0.14.0;
+  `scripts/verify-406-watermark.mjs` passes 29 of 29 checks (see T011, T013, T015, T016).
+  `pnpm build` (a release Tauri build) was not run; the debug build of the same tree succeeded.
+  Stays unticked until `pnpm build` runs and the human items under T015 are done.
 
 **Checkpoint**: every quickstart.md check passes on a single clean build; typecheck and build are
 green.
@@ -241,4 +276,4 @@ first if desired.
 - Forced colors and `prefers-reduced-transparency: reduce` (emulated): the mark computes `display: none` in both.
 - NOT verified: T015 (text selection and clicks through the mark; `pointer-events: none` is confirmed), T016 (drag-resize behaviours), T018 (the full quickstart pass), and the settings screen's dark high-contrast appearance.
 
-- [ ] T020 Retune opacity (issue #1298): set `--watermark-opacity` and `--holiday-artwork-opacity` per theme to about 1.6:1 (0.30 Dark/Amber, 0.28 Obsidian/Nordic, 0.24 high contrast) and refresh the stale ~3:1 comments, per research decision 5
+- [X] T020 Retune opacity (issue #1298): set `--watermark-opacity` and `--holiday-artwork-opacity` per theme to about 1.6:1 (0.30 Dark/Amber, 0.28 Obsidian/Nordic, 0.24 high contrast) and refresh the stale ~3:1 comments, per research decision 5
