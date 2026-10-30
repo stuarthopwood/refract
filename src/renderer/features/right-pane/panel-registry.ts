@@ -1,7 +1,7 @@
-import { BotIcon, FolderTreeIcon, GitBranchIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
 
-export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline'
+export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage'
 
 export interface HostedPanelDescriptor {
   id: PanelId
@@ -17,7 +17,8 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false },
   { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false },
   { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false },
-  { id: 'outline', name: 'Outline', icon: ListTreeIcon, hasCount: false }
+  { id: 'outline', name: 'Outline', icon: ListTreeIcon, hasCount: false },
+  { id: 'session-usage', name: 'Session usage', icon: GaugeIcon, hasCount: false }
 ]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {

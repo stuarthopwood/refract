@@ -5,12 +5,13 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use super::queries_session as session;
 use super::timeutil::{hour_start, iso_date, DAY_MS, HOUR_MS};
 
 /// The range names a renderer may send.
 pub const RANGES: [&str; 5] = ["today", "7d", "30d", "all", "custom"];
 /// The agent-type filter values.
-pub const AGENT_TYPES: [&str; 2] = ["main", "subagent"];
+pub const AGENT_TYPES: [&str; 3] = ["main", "subagent", "advisor"];
 /// Widest time-zone offset in minutes either way.
 pub const MAX_TZ_MINUTES: i64 = 14 * 60;
 /// Clamp for custom `from`/`to`, in ms either side of the epoch.
@@ -37,6 +38,8 @@ pub struct Filters {
     pub model: Option<String>,
     pub reasoning: Option<String>,
     pub agent_type: Option<String>,
+    /// A Refract Session directory; matches every conversation file at or below it.
+    pub session_dir: Option<String>,
 }
 
 /// The clock and time zone a query runs in.
@@ -61,6 +64,7 @@ pub(super) struct Target {
     pub model: Option<&'static str>,
     pub reasoning: Option<&'static str>,
     pub agent: Option<&'static str>,
+    pub session: Option<&'static str>,
 }
 
 pub(super) const MESSAGE_ROLLUP: Target = Target {
@@ -69,6 +73,7 @@ pub(super) const MESSAGE_ROLLUP: Target = Target {
     model: Some("model"),
     reasoning: Some("reasoning"),
     agent: Some("agent_type"),
+    session: None,
 };
 pub(super) const MESSAGES: Target = Target {
     time: "ts",
@@ -76,6 +81,7 @@ pub(super) const MESSAGES: Target = Target {
     model: Some("model"),
     reasoning: Some("reasoning"),
     agent: Some("agent_type"),
+    session: Some("session_file"),
 };
 pub(super) const TOOL_ROLLUP: Target = Target {
     time: "hour",
@@ -83,6 +89,7 @@ pub(super) const TOOL_ROLLUP: Target = Target {
     model: None,
     reasoning: None,
     agent: Some("agent_type"),
+    session: None,
 };
 pub(super) const TOOL_CALLS: Target = Target {
     time: "ts",
@@ -90,6 +97,7 @@ pub(super) const TOOL_CALLS: Target = Target {
     model: Some("model"),
     reasoning: Some("reasoning"),
     agent: Some("agent_type"),
+    session: Some("session_file"),
 };
 pub(super) const USER_MESSAGES: Target = Target {
     time: "ts",
@@ -97,6 +105,7 @@ pub(super) const USER_MESSAGES: Target = Target {
     model: None,
     reasoning: None,
     agent: None,
+    session: Some("session_file"),
 };
 pub(super) const SESSION_ROLLUP: Target = Target {
     time: "last_ts",
@@ -104,6 +113,7 @@ pub(super) const SESSION_ROLLUP: Target = Target {
     model: None,
     reasoning: None,
     agent: None,
+    session: Some("session_file"),
 };
 
 /// Rollup table and per-call table backing its exact edges.
@@ -228,7 +238,17 @@ impl Filters {
                 w.push(column, "=", Value::Text(value.to_string()));
             }
         }
+        if let Some(clause) = self.session_clause(&mut w, target.session)? {
+            w.clauses.push(clause);
+        }
         Ok(w)
+    }
+
+    fn session_clause(&self, w: &mut Where, column: Option<&str>) -> QueryResult<Option<String>> {
+        match (self.session_dir.as_deref(), column) {
+            (Some(dir), Some(column)) => session::clause(w, dir, column).map(Some),
+            _ => Ok(None),
+        }
     }
 
     /// Checks the allowlists and that a custom range is not inverted. `ipc/usage.rs` calls it too.
@@ -250,6 +270,9 @@ impl Filters {
             if self.range == "custom" && from > to {
                 return Err(QueryError::InvalidArgument("from is after to".into()));
             }
+        }
+        if let Some(dir) = self.session_dir.as_deref() {
+            session::normalise(dir)?;
         }
         Ok(())
     }
@@ -283,8 +306,10 @@ impl Filters {
                 format!(" WHERE {}", c.join(" AND "))
             }
         };
-        if exact {
-            let c = bounds(w, "ts");
+        // The rollups carry no session column, so a Session filter reads the per-call rows.
+        if exact || self.session_dir.is_some() {
+            let mut c = bounds(w, "ts");
+            c.extend(self.session_clause(w, Some("session_file"))?);
             return Ok(format!(
                 "(SELECT ts AS hour, {rest} FROM {fact}{})",
                 clause(&c)
@@ -320,9 +345,9 @@ impl Filters {
         ))
     }
 
-    /// True when a model or reasoning filter forces the per-call tool table.
-    fn needs_tool_calls(&self) -> bool {
-        self.model.is_some() || self.reasoning.is_some()
+    /// True when a model, reasoning or Session filter forces the per-call tool table.
+    pub(super) fn needs_tool_calls(&self) -> bool {
+        self.model.is_some() || self.reasoning.is_some() || self.session_dir.is_some()
     }
 }
 

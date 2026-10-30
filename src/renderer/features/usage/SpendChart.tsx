@@ -2,7 +2,7 @@
 // day or hour toggle built from the shared Filter tabs.
 import { FilterTabs } from '@/components/FilterTabs'
 import { ScreenSection } from '@/components/ScreenSection'
-import { StackedBarChart, useChartView } from '@/components/ui/chart'
+import { Sparkline, StackedBarChart, useChartView } from '@/components/ui/chart'
 import type { UsageTimeBucket } from '../../../shared/ipc-usage'
 import { formatBucketLabel, formatUsd } from './format'
 
@@ -11,16 +11,29 @@ const OTHER = 'Other'
 
 export function SpendChart({
   buckets,
-  bucket,
+  bucket = 'day',
   onBucketChange,
-  loading
+  loading,
+  compact = false
 }: {
   buckets: UsageTimeBucket[]
-  bucket: 'day' | 'hour'
-  onBucketChange(bucket: 'day' | 'hour'): void
+  bucket?: 'day' | 'hour'
+  onBucketChange?(bucket: 'day' | 'hour'): void
   loading?: boolean
+  /** Narrow-column form: a sparkline of total spend, no bucket tabs or table toggle. */
+  compact?: boolean
 }) {
   const view = useChartView(loading === true || buckets.length === 0)
+  if (compact) {
+    return (
+      <ScreenSection title="Spend over time" loading={loading} empty={buckets.length === 0 ? 'No spend yet.' : null}>
+        <Sparkline
+          label={`Spend per ${bucket}, ${buckets.length} ${bucket === 'day' ? 'days' : 'hours'}`}
+          values={buckets.map((b) => b.byModel.reduce((sum, m) => sum + m.usd, 0))}
+        />
+      </ScreenSection>
+    )
+  }
   const totals = new Map<string, number>()
   for (const b of buckets) for (const m of b.byModel) totals.set(m.model, (totals.get(m.model) ?? 0) + m.usd)
   const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([model]) => model)
@@ -49,7 +62,7 @@ export function SpendChart({
               { value: 'hour', label: 'By hour' }
             ]}
             value={bucket}
-            onValueChange={onBucketChange}
+            onValueChange={(value) => onBucketChange?.(value)}
           />
           {view.toggle}
         </>
