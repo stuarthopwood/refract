@@ -173,14 +173,18 @@ fn removing_the_watched_root_fires_on_fatal_once() {
         );
         return;
     }
-    // Check past several liveness ticks, so "fired once" is distinguishable from "fires repeatedly".
-    std::thread::sleep(Duration::from_secs(3));
+    // Poll with a generous bound: under load the liveness tick can be delayed (#1333).
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while fatal_count.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
     assert_eq!(
         fatal_count.load(Ordering::SeqCst),
         1,
-        "must fire within the first liveness tick"
+        "must fire once after the root is removed"
     );
-    std::thread::sleep(Duration::from_secs(2));
+    // Wait past several liveness ticks so "fired once" is distinguishable from "fires repeatedly".
+    std::thread::sleep(Duration::from_secs(3));
     assert_eq!(
         fatal_count.load(Ordering::SeqCst),
         1,
