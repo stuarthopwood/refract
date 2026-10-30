@@ -7,6 +7,9 @@ import type { IssueSkippedProject } from './ipc-issues';
 /** `home.lastMessages` reads at most this many Sessions' Conversation tails per call. */
 export const HOME_LAST_MESSAGES_MAX = 8;
 
+/** Home names at most this many Projects in any one GitHub call. */
+export const HOME_PROJECTS_MAX = 40;
+
 /** A merged or closed pull request, matched to a Session by `repositoryId` and head `branch` in
  * the renderer. Every text field comes from GitHub and is untrusted: render it as text only. */
 export interface ClosedBranchItem {

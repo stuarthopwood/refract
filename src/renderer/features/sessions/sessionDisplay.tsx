@@ -33,6 +33,11 @@ export function displayLabel(s: Pick<SessionSummary, 'status' | 'unread' | 'paus
   return s.pause === 'pausing' && s.status !== 'needs-you' ? 'Pausing…' : STATUS_LABEL[displayStatus(s)]
 }
 
+/** The one definition of "needs you" for Home's section and the nav's Home count: a live (not archived or hidden) Session waiting on the user. */
+export function isNeedsYouSession(s: Pick<SessionSummary, 'status' | 'archivedAt' | 'hiddenAt'>): boolean {
+  return s.status === 'needs-you' && !s.archivedAt && !s.hiddenAt
+}
+
 export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
   working: 'Working',
   idle: 'Idle',

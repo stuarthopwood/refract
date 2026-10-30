@@ -1,7 +1,7 @@
 // Fake `gh` for the #869 live check: records every call's argv to FAKE_GH_LOG and serves pull
 // requests (`search prs`), issues (`issue list`) and closed or merged pull requests (`pr list`)
 // for octocat/hello-world and octocat/spoon-knife. While FAKE_GH_FAIL_FILE exists, `issue list`
-// fails (the Refresh error line). `pr list` reads FAKE_GH_BRANCHES: one `repo|branch|state|number`
+// fails (the Refresh error line), and while FAKE_GH_FAIL_PRS_FILE exists, search prs fails. `pr list` reads FAKE_GH_BRANCHES: one `repo|branch|state|number`
 // per line, written by the verify script once it knows the Sessions' generated branch names.
 // It never talks to GitHub.
 use std::io::Write;
@@ -57,6 +57,10 @@ fn main() {
     } else if joined.starts_with("api user") {
         r#"{"login":"octotest"}"#.to_string()
     } else if joined.starts_with("search prs") {
+        if std::env::var("FAKE_GH_FAIL_PRS_FILE").map_or(false, |f| std::path::Path::new(&f).exists()) {
+            eprintln!("fake gh: forced search prs failure");
+            std::process::exit(1);
+        }
         let review = !flag_values(&args, "--review-requested").is_empty();
         let rows: Vec<String> = repos
             .iter()
@@ -93,7 +97,7 @@ fn main() {
             .filter_map(|l| {
                 let p: Vec<&str> = l.split('|').collect();
                 if p.len() == 4 && p[0] == repo {
-                    Some(format!(r#"{{"number":{n},"state":"{s}","url":"https://github.com/{repo}/pull/{n}","headRefName":"{b}"}}"#, n = p[3], s = p[2], b = p[1]))
+                    Some(format!(r#"{{"number":{n},"state":"{s}","url":"https://github.com/{repo}/pull/{n}","headRefName":"{b}","headRepositoryOwner":{{"login":"octocat"}}}}"#, n = p[3], s = p[2], b = p[1]))
                 } else {
                     None
                 }

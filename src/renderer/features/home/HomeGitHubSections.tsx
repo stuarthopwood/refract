@@ -7,17 +7,18 @@ import { ListCardButton } from '@/components/ListCardButton'
 import { RelativeTime } from '@/components/relative-time'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
-import { useHomeStore, type HomePrTab } from '@/state/home-store'
+import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
+import { useHomeStore, type HomeIssueTab, type HomePrTab } from '@/state/home-store'
 import { useIssuesStore, usePullRequestsStore, useViewStore } from '@/state'
 import type { IssueSkippedProject } from '../../../shared/ipc-issues'
 
 const PR_TABS: Array<{ value: HomePrTab; label: string }> = [
-  { value: 'authored', label: 'Mine' },
-  { value: 'review-requested', label: 'Review requested' }
+  { value: 'authored', label: 'Authored by me' },
+  { value: 'review-requested', label: 'Review requested from me' }
 ]
-const ISSUE_TABS: Array<{ value: 'assigned' | 'authored'; label: string }> = [
-  { value: 'assigned', label: 'Assigned' },
-  { value: 'authored', label: 'Created' }
+const ISSUE_TABS: Array<{ value: HomeIssueTab; label: string }> = [
+  { value: 'assigned', label: 'Assigned to me' },
+  { value: 'authored', label: 'Authored by me' }
 ]
 
 function skippedNote(skipped: IssueSkippedProject[]): string | null {
@@ -28,33 +29,31 @@ function skippedNote(skipped: IssueSkippedProject[]): string | null {
 export function MyPullRequestsSection({ hasGithubProjects }: { hasGithubProjects: boolean }) {
   const [tab, setTab] = useState<HomePrTab>('authored')
   const section = useHomeStore((state) => state.prs[tab])
+  const firstFetch = useHomeStore((state) => state.fetchedAt === null)
   const openPullRequest = usePullRequestsStore((state) => state.openPullRequest)
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   return (
     <ScreenSection
       title="My pull requests"
       count={section.items.length}
+      loading={firstFetch}
+      empty={section.items.length === 0 ? (hasGithubProjects ? 'No open pull requests here.' : 'Add a Project with a GitHub remote to see pull requests.') : null}
       note={skippedNote(section.skipped)}
       error={section.error}
       actions={
         <>
-          <FilterTabs<HomePrTab> value={tab} onValueChange={setTab} tabs={PR_TABS} />
-          <Button type="button" variant="ghost" size="sm" onClick={openPullRequests}>
+          <FilterTabs<HomePrTab> value={tab} onValueChange={setTab} tabs={PR_TABS} ariaLabel="Pull request filter" />
+          <Button type="button" variant="outline" size="sm" onClick={openPullRequests}>
             Show all
           </Button>
         </>
       }
     >
-      {section.items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {hasGithubProjects ? 'No open pull requests here.' : 'Add a Project with a GitHub remote to see pull requests.'}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2">
           {section.items.map((item) => (
             <li key={`${item.repositoryId}-${item.number}`}>
               <ListCardButton
-                ariaLabel={`Open pull request ${item.number}, ${item.title}, ${item.repositoryName}`}
+                ariaLabel={`Open pull request ${item.number}, ${item.title}, ${item.repositoryName}, ${item.state.toLowerCase()}, updated ${formatRelativeTime(item.updatedAt)}`}
                 onClick={() => {
                   openPullRequest(item.repositoryId, item.number)
                   openPullRequests()
@@ -71,41 +70,38 @@ export function MyPullRequestsSection({ hasGithubProjects }: { hasGithubProjects
             </li>
           ))}
         </ul>
-      )}
     </ScreenSection>
   )
 }
 
 export function MyIssuesSection({ hasGithubProjects }: { hasGithubProjects: boolean }) {
-  const [tab, setTab] = useState<'assigned' | 'authored'>('assigned')
+  const [tab, setTab] = useState<HomeIssueTab>('assigned')
   const section = useHomeStore((state) => state.issues[tab])
+  const firstFetch = useHomeStore((state) => state.fetchedAt === null)
   const select = useIssuesStore((state) => state.select)
   const openIssues = useViewStore((state) => state.openIssues)
   return (
     <ScreenSection
       title="My issues"
       count={section.items.length}
+      loading={firstFetch}
+      empty={section.items.length === 0 ? (hasGithubProjects ? 'No open issues here.' : 'Add a Project with a GitHub remote to see issues.') : null}
       note={skippedNote(section.skipped)}
       error={section.error}
       actions={
         <>
-          <FilterTabs<'assigned' | 'authored'> value={tab} onValueChange={setTab} tabs={ISSUE_TABS} />
-          <Button type="button" variant="ghost" size="sm" onClick={openIssues}>
+          <FilterTabs<HomeIssueTab> value={tab} onValueChange={setTab} tabs={ISSUE_TABS} ariaLabel="Issue filter" />
+          <Button type="button" variant="outline" size="sm" onClick={openIssues}>
             See all
           </Button>
         </>
       }
     >
-      {section.items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {hasGithubProjects ? 'No open issues here.' : 'Add a Project with a GitHub remote to see issues.'}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2">
           {section.items.map((item) => (
             <li key={`${item.repositoryId}-${item.number}`}>
               <ListCardButton
-                ariaLabel={`Open issue ${item.number}, ${item.title}, ${item.repositoryName}`}
+                ariaLabel={`Open issue ${item.number}, ${item.title}, ${item.repositoryName}, updated ${formatRelativeTime(item.updatedAt)}`}
                 onClick={() => {
                   select({ repositoryId: item.repositoryId, number: item.number })
                   openIssues()
@@ -122,7 +118,6 @@ export function MyIssuesSection({ hasGithubProjects }: { hasGithubProjects: bool
             </li>
           ))}
         </ul>
-      )}
     </ScreenSection>
   )
 }
