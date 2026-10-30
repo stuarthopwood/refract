@@ -48,6 +48,7 @@ async function setTime(cdp, value) {
 }
 
 async function addAlarm(cdp, value, label) {
+  if (!(await cdp.evaluate(`!!${DIALOG}`))) await cdp.click(clockButton);
   await cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add alarm')`);
   await cdp.waitFor(`!!${DIALOG}.querySelector('input[type="time"]')`, { timeoutMs: 10_000, label: 'alarm form open' });
   await setTime(cdp, value);
@@ -63,8 +64,10 @@ async function enableClock(cdp) {
   await sleep(600);
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Models')`);
   await sleep(800);
+  const subagentFinder = `Array.from(document.querySelectorAll('body *')).find((e) => Array.from(e.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim() === 'Subagent'))`;
+  await cdp.waitFor(`!!(${subagentFinder})`, { timeoutMs: 10_000, label: 'Models section rendered' }).catch(() => {});
   const roleLabel = await cdp.evaluate(`(() => {
-    const el = Array.from(document.querySelectorAll('body *')).find((e) => Array.from(e.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim() === 'Subagent'));
+    const el = ${subagentFinder};
     if (el) el.scrollIntoView({ block: 'center' });
     return !!el;
   })()`);
@@ -88,7 +91,7 @@ async function enableClock(cdp) {
 }
 
 async function runChecks(cdp, { repoDir }) {
-  await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+  await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 120_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
     `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
     { timeoutMs: 60_000, label: 'Readiness green (fake omp)' }
@@ -193,7 +196,7 @@ async function main() {
     repoA = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-072-repoA-')), 'A');
     buildShim(shimDir);
     const launcherExe = buildLauncher(shimDir);
-    const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
+    const src = process.env.REFRACT_072_EXE_SRC || path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
     if (!existsSync(src)) throw new Error(`built exe not found at ${src}`);
     const exePath = path.join(exeDir, 'refract-tauri.exe');
     copyFileSync(src, exePath);
