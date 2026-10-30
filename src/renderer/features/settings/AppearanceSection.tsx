@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react'
-import { Button } from '@/components/ui/button'
+import { useRef } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { SettingRow } from '@/components/settings/SettingRow'
@@ -9,7 +8,7 @@ import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
 import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
-import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } from '@/state'
+import { useHolidayStore, useSettingsStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
 import { TextSizeGroup } from './TextSizeGroup'
@@ -17,9 +16,6 @@ import { ChatRowSpacingGroup } from './ChatRowSpacingGroup'
 import { StatusStylePicker } from './StatusStylePicker'
 
 export function AppearanceSection() {
-  const themeDirty = useThemeStore((state) => state.previewing !== null)
-  const chatWidthDirty = useChatWidthStore((state) => state.previewing !== null)
-  const isDirty = themeDirty || chatWidthDirty
   const watermarkEnabled = useSettingsStore((state) => state.settings.watermarkEnabled)
   const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
   const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
@@ -31,81 +27,12 @@ export function AppearanceSection() {
   const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
   const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const wasDirtyRef = useRef(false)
-  const lastDirtyGroupRef = useRef<'theme' | 'chatWidth' | null>(null)
-  const prevThemeDirtyRef = useRef(false)
-  const prevChatWidthDirtyRef = useRef(false)
-  useEffect(() => {
-    if (themeDirty && !prevThemeDirtyRef.current) lastDirtyGroupRef.current = 'theme'
-    if (chatWidthDirty && !prevChatWidthDirtyRef.current) lastDirtyGroupRef.current = 'chatWidth'
-    prevThemeDirtyRef.current = themeDirty
-    prevChatWidthDirtyRef.current = chatWidthDirty
-  }, [themeDirty, chatWidthDirty])
-  const rootRef = useRef<HTMLDivElement>(null)
 
   // SettingsPage focuses this heading (shared via headingRef) on mount, which covers every
   // section switch because SettingsScreen never keeps a section mounted-but-hidden.
 
-  useEffect(() => {
-    if (wasDirtyRef.current && !isDirty) {
-      const active = document.activeElement
-      const activeWasOutside = active !== null && active !== document.body && !rootRef.current?.contains(active)
-      if (!activeWasOutside) {
-        const activeIsCheckedRadio =
-          active instanceof HTMLElement &&
-          active.getAttribute('role') === 'radio' &&
-          active.getAttribute('aria-checked') === 'true' &&
-          (rootRef.current?.contains(active) ?? false)
-        if (!activeIsCheckedRadio) {
-          const groupLabel = lastDirtyGroupRef.current === 'chatWidth' ? 'chat-width-heading' : 'theme-heading'
-          const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
-            `[role="radiogroup"][aria-labelledby="${groupLabel}"] [role="radio"][aria-checked="true"]`
-          )
-          if (checkedRadio) checkedRadio.focus()
-          else headingRef.current?.focus()
-        }
-      }
-    }
-    wasDirtyRef.current = isDirty
-  }, [isDirty])
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (event.repeat) return
-      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"], [role="menubar"][aria-label="App menu"]')) return
-      // Issue #554: Escape cancels whichever preview(s) are actually open -- a no-op call to
-      // `cancelPreview()` when nothing is previewed is harmless (both stores' own contract).
-      if (useThemeStore.getState().previewing === null && useChatWidthStore.getState().previewing === null) return
-      event.preventDefault()
-      useThemeStore.getState().cancelPreview()
-      useChatWidthStore.getState().cancelPreview()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      useThemeStore.getState().cancelPreview()
-      useChatWidthStore.getState().cancelPreview()
-    }
-  }, [])
-
-  function handleSave() {
-    const themeState = useThemeStore.getState()
-    if (themeState.previewing !== null) void themeState.save(themeState.previewing)
-    const chatWidthState = useChatWidthStore.getState()
-    if (chatWidthState.previewing !== null) void chatWidthState.save(chatWidthState.previewing)
-  }
-
-  function handleCancel() {
-    useThemeStore.getState().cancelPreview()
-    useChatWidthStore.getState().cancelPreview()
-  }
-
   return (
-    <div ref={rootRef}>
+    <div>
       <SettingsPage title="Appearance" intro="Choose how the app looks and reads." headingRef={headingRef}>
         {/* Issue #554 gate round 2 (L1): each group has its own heading and hint, wired via
             aria-labelledby/aria-describedby on the picker -- the intro above is the shared lead-in
@@ -121,20 +48,11 @@ export function AppearanceSection() {
               <ChatWidthPicker labelledBy="chat-width-heading" describedBy="chat-width-hint" />
             </div>
           </SettingsGroup>
-          <div className="flex gap-2">
-            <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
-              Save
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleCancel} disabled={!isDirty}>
-              Cancel
-            </Button>
-          </div>
         </div>
         {/* Spec 036 (#842): applies live, no Save/Cancel. */}
         <TextSizeGroup />
         <ChatRowSpacingGroup />
-        {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live, no Save/Cancel --
-            the Save/Cancel row above governs only the Theme and Chat width pickers. */}
+        {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live. */}
         <SettingsGroup title="Decoration">
           <div>
             {/* Quality-gate remediation (accessibility-auditor, Low): only the title is the label;

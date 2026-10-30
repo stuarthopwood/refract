@@ -5,33 +5,18 @@ import { notify } from './notify'
 
 interface ThemeState {
  theme: ThemeId
- previewing: ThemeId | null
- preview(id: ThemeId | null): void
  save(id: ThemeId): Promise<boolean>
- cancelPreview(): void
  setTheme(theme: ThemeId): void
 }
 
-export const useThemeStore = create<ThemeState>((set, get) => ({
+export const useThemeStore = create<ThemeState>((set) => ({
  theme: 'dark',
- previewing: null,
-
- preview: (id) => {
-  const normalized = id !== null && id === get().theme ? null : id
-  set({ previewing: normalized })
-  window.refract.theme.preview(normalized).then(
-   (result) => {
-    if (!result.ok) notify(result.error)
-   },
-   (err: unknown) => console.error('theme.preview threw', err)
-  )
- },
 
  save: async (id) => {
   try {
    const result = await window.refract.theme.set(id)
    if (result.ok) {
-    set((s) => ({ theme: result.value.theme, previewing: s.previewing === id ? null : s.previewing }))
+    set({ theme: result.value.theme })
     return true
    }
    notify(result.error)
@@ -43,17 +28,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   }
  },
 
- cancelPreview: () => {
-  if (get().previewing === null) return
-  get().preview(null)
- },
-
  setTheme: (theme) => set({ theme })
 }))
 
 /** Data-model.md's derived `activeThemeId`: */
-export function activeThemeId(state: Pick<ThemeState, 'theme' | 'previewing'>): ThemeId {
- if (state.previewing) return state.previewing
+export function activeThemeId(state: Pick<ThemeState, 'theme'>): ThemeId {
  return isThemeId(state.theme) ? state.theme : 'dark'
 }
 
