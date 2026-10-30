@@ -60,7 +60,7 @@ function Snowflake() {
       viewBox="0 0 22 22"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.6"
+      strokeWidth="1.5"
       strokeLinecap="round"
       focusable={false}
     >
@@ -73,7 +73,6 @@ function Confetti() {
   return (
     <svg className="holiday-ambient-loop-bat" width="20" height="20" viewBox="0 0 20 20" fill="currentColor" focusable={false}>
       <rect x="3" y="7" width="14" height="6" rx="1" />
-      <circle cx="10" cy="10" r="1.5" fillOpacity="0.4" />
     </svg>
   )
 }
