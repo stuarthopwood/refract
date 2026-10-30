@@ -59,7 +59,7 @@ Open:
 
 | Size | Height | Use |
 |---|---|---|
-| `default` | 32px | First run and Settings primary actions (for example Add repository), and anywhere outside a denser `sm`/`xs` context. |
+| `default` | 32px | First run and Settings primary actions (for example Add project), and anywhere outside a denser `sm`/`xs` context. |
 | `sm` | 24px | Cards, dialogs, and panes. |
 | `xs` | 24px | Dense rows. |
 | `icon` | 32px | Icon-only buttons outside a dense context. |
@@ -89,7 +89,7 @@ Menus and context menus (#471) follow one rule by menu type, not by menu mechani
 
 | Menu type | Icons | Examples |
 |---|---|---|
-| Action menus | Text only, never an icon | Session row, repository row, manage-session row, and every right-click context menu: Rename, Archive, Delete, Copy. |
+| Action menus | Text only, never an icon | Session row, project row, manage-session row, and every right-click context menu: Rename, Archive, Delete, Copy. |
 | Destination and settings menus | A leading icon on every item | Profile, Appearance, GitHub accounts, Approval mode. |
 
 Within a single menu it is all items or none: never a mix (matches the agenda item 1 rule that decisions are labels, not icons).
@@ -140,7 +140,7 @@ Decided for #538 (spec 024, Skippy delegated by Stuart 2026-10-26, see the decis
 
 ## Reorderable lists
 
-A list whose items the user can rearrange uses `useReorderable` (`src/renderer/components/reorder/use-reorderable.ts`) and `ReorderAnnouncer`, never its own drag code (issue #730). Pointer drag starts after 6 px so a click still works, Esc cancels, `Alt+Shift+Up/Down` (Left/Right on a horizontal list, `axis: 'x'`) is the keyboard alternative (WCAG 2.5.7), each move is announced politely, the moved item keeps focus, and `REORDER_MARKER_CLASS` draws the insertion bar on a `relative` item. The icon rail is the first consumer; #638 (repositories) adopts it next.
+A list whose items the user can rearrange uses `useReorderable` (`src/renderer/components/reorder/use-reorderable.ts`) and `ReorderAnnouncer`, never its own drag code (issue #730). Pointer drag starts after 6 px so a click still works, Esc cancels, `Alt+Shift+Up/Down` (Left/Right on a horizontal list, `axis: 'x'`) is the keyboard alternative (WCAG 2.5.7), each move is announced politely, the moved item keeps focus, and `REORDER_MARKER_CLASS` draws the insertion bar on a `relative` item. The icon rail is the first consumer; #638 (projects) adopts it next.
 
 ## Cards and boxes
 
@@ -185,7 +185,7 @@ Chips and pills carry metadata or a removable value (attachment chips, pasted-te
 
 ## List rows
 
-A list row (session row, repository row, subagent row) is an unboxed row under the zero-box rule, with a state icon or leading icon, its label, and trailing actions. Repeated row actions are icon-only with a tooltip (agenda item 1). The row's own action menu is an action menu (text only, see "Menus" above) reachable from an `⋮` trigger, a right-click, and the row's native context-menu keys (`Shift+F10`, the Menu key).
+A list row (session row, project row, subagent row) is an unboxed row under the zero-box rule, with a state icon or leading icon, its label, and trailing actions. Repeated row actions are icon-only with a tooltip (agenda item 1). The row's own action menu is an action menu (text only, see "Menus" above) reachable from an `⋮` trigger, a right-click, and the row's native context-menu keys (`Shift+F10`, the Menu key).
 
 **Row line 2 type (#526):** line 2 of a Session row uses the normal UI font for the live Activity line and monospace (`font-code`) for the branch, on purpose: the Activity line is prose, the branch is an identifier. Rows also swap their line-2 text without the current-work banner's fade, on purpose: a list of rows changing at once would shimmer, so the shared 600 ms hold paces them instead.
 

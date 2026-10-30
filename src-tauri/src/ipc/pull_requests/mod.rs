@@ -118,7 +118,7 @@ pub(super) async fn repo_path_for(
     let registry = state.registry.lock().await;
     let repository = registry
         .get_repository(repository_id)
-        .ok_or_else(|| not_found(format!("Repository not found: {repository_id}")))?;
+        .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?;
     Ok((
         std::path::PathBuf::from(&repository.path),
         repository.name.clone(),

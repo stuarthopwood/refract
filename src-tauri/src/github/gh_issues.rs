@@ -249,7 +249,7 @@ pub async fn create_issue(
             Ok(Err(err)) => return Err(GhError::new(GhErrorCode::GhFailed, err.to_string())),
             Err(_) => return Err(GhError::new(
                 GhErrorCode::Timeout,
-                "GitHub did not answer in time; check the repository's issues before trying again.",
+                "GitHub did not answer in time; check the GitHub repository's issues before trying again.",
             )),
         };
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -260,7 +260,7 @@ pub async fn create_issue(
     parse_created_issue(&stdout, &owner, &repo).ok_or_else(|| {
         GhError::new(
             GhErrorCode::GithubFailed,
-            "gh did not report the new issue's address; check the repository's issues.",
+            "gh did not report the new issue's address; check the GitHub repository's issues.",
         )
     })
 }

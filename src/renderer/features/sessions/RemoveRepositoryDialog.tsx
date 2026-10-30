@@ -93,7 +93,7 @@ export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemov
       // verification window is hidden) is just long enough for React to commit that unmount.
       window.setTimeout(() => onRemoved?.(preferredRepositoryId), 0)
     } catch {
-      toast.error('Could not remove the repository. Try again.')
+      toast.error('Could not remove the project. Try again.')
     } finally {
       removingRef.current = false
       setRemoving(false)
@@ -120,8 +120,8 @@ export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemov
             {blocked
               ? `${repository.name} still owns ${describeOwnedSessions(activeCount, archivedCount)}. Delete ${
                   activeCount + archivedCount === 1 ? 'it' : 'them'
-                } first, then remove this repository.`
-              : "This removes only Refract's entry for this repository. The folder on disk is untouched."}
+                } first, then remove this project.`
+              : "This removes only Refract's entry for this project. The folder on disk is untouched."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

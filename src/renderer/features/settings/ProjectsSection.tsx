@@ -27,7 +27,7 @@ export function ProjectsSection() {
   }
 
   return (
-    <SettingsPage title="Projects" intro="Where Refract puts repositories you clone from GitHub.">
+    <SettingsPage title="Projects" intro="Where Refract puts projects you clone from GitHub.">
       <SettingsGroup title="Cloning">
         <SettingRow
           id="default-clone-folder"

@@ -234,7 +234,7 @@ export function RepositoryGroup({
                 }}
                 onBlur={() => void commitRename()}
                 onKeyDown={handleNameKeyDown}
-                aria-label="Repository name"
+                aria-label="Project name"
                 aria-invalid={renameError ? true : undefined}
                 aria-describedby={renameError ? renameErrorId : undefined}
                 className="min-w-0 flex-1 rounded border border-border bg-transparent px-1 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
@@ -341,7 +341,7 @@ export function RepositoryGroup({
                 ref={menuTriggerRef}
                 variant="ghost"
                 size="icon-xs"
-                aria-label={`Repository actions for ${repository.name}`}
+                aria-label={`Project actions for ${repository.name}`}
                 className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
               >
                 <EllipsisVerticalIcon aria-hidden />
@@ -387,7 +387,7 @@ export function RepositoryGroup({
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
-                Remove repository…
+                Remove project…
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

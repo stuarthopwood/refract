@@ -350,7 +350,7 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
             let registry = state.registry.lock().await;
             registry
                 .get_repository(&id)
-                .ok_or_else(|| not_found(format!("Repository not found: {id}")))?
+                .ok_or_else(|| not_found(format!("Project not found: {id}")))?
                 .clone()
         };
         let trimmed = name.trim();
@@ -505,7 +505,7 @@ pub fn repositories_branches(state: AppState, args: Vec<Value>) -> HandlerFuture
             let registry = state.registry.lock().await;
             let repository = registry
                 .get_repository(&id)
-                .ok_or_else(|| not_found(format!("Repository not found: {id}")))?;
+                .ok_or_else(|| not_found(format!("Project not found: {id}")))?;
             repository.clone()
         };
         let branches = list_branches(std::path::Path::new(&repository.path))
@@ -561,7 +561,7 @@ pub fn repositories_user_name(state: AppState, args: Vec<Value>) -> HandlerFutur
             let registry = state.registry.lock().await;
             registry
                 .get_repository(&id)
-                .ok_or_else(|| not_found(format!("Repository not found: {id}")))?
+                .ok_or_else(|| not_found(format!("Project not found: {id}")))?
                 .clone()
         };
         let name = resolve_user_name(&repository.id, std::path::Path::new(&repository.path)).await;

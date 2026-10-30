@@ -353,7 +353,7 @@ async fn supervise(
                     "phase": "done-not-added",
                     "destination": destination_text,
                     "message": format!(
-                        "Cloned to {destination_text}, but couldn't add it as a Project. Use Add project > Local folder."
+                        "Cloned to {destination_text}, but couldn't add it as a project. Use Add project > Local folder."
                     ),
                 }),
             }

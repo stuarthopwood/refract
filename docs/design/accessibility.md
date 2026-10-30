@@ -43,11 +43,11 @@ Existing controls measured below 24px, verified in code, not fixed by this docum
 - The resizable-panel handle (`resizable.tsx`): the visible line is 1px and the hit area (`after:w-3`) is 12px wide, with a 32px by 4px always-visible grip (#738). It also needs the single-pointer resize alternative above (2.5.7).
 - Resolved: the pasted-image remove button (`AttachmentStrip.tsx:67-80`, `size-6`) is a 24px target.
 - Resolved: the queued-message remove button (`QueuedChipList.tsx:78-93`, `icon-xs`, `size-6`) is a 24px target.
-- The session-row and repository-header `⋮` menu triggers (`SessionList.tsx:299-301` and `:414-416`, `p-1` around a `size-4` icon): about 24px.
+- The session-row and project-header `⋮` menu triggers (`SessionList.tsx:299-301` and `:414-416`, `p-1` around a `size-4` icon): about 24px.
 
 ### Hover-only actions need a keyboard path
 
-Nothing in Refract exists only in a context menu or only on hover. Every action reachable by hovering a row (row actions, the Repository actions menu) or by right-clicking (#471) is also reachable by keyboard:
+Nothing in Refract exists only in a context menu or only on hover. Every action reachable by hovering a row (row actions, the Project actions menu) or by right-clicking (#471) is also reachable by keyboard:
 
 - The row's own `⋮` menu trigger, reachable by Tab.
 - The Menu key and `Shift+F10` open the same menu as a right-click, once the row has focus.

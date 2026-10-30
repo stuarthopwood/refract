@@ -12,7 +12,7 @@ Three treatments, chosen by what the control does (agenda item 1):
 | --- | --- | --- |
 | Decision buttons in cards, dialogs, and banners | Label only | Approve, Deny, Recover, Delete, Cancel |
 | Repeated row and toolbar actions | Icon only, with the bundle below | History, refresh, row menus |
-| Standalone commands that create, open, or copy | Leading icon plus label | New conversation, Add repository, Open in file explorer, Copy path |
+| Standalone commands that create, open, or copy | Leading icon plus label | New conversation, Add project, Open in file explorer, Copy path |
 
 ## Icon-only bundle
 
@@ -27,7 +27,7 @@ Give every icon-only control all of the following (agenda item 2):
 
 Dialog and sheet Close controls follow the same bundle.
 
-**Never make a destructive or ambiguous action icon-only.** Destructive means it loses work that cannot be recovered — Delete session, Delete repository data, Discard draft. These always carry a label or live in a menu.
+**Never make a destructive or ambiguous action icon-only.** Destructive means it loses work that cannot be recovered — Delete session, Delete project data, Discard draft. These always carry a label or live in a menu.
 
 **Reversible removals are the one exception**: Remove attachment and Remove queued message stay icon-only, with the full bundle above and no confirm step.
 
@@ -57,7 +57,7 @@ Colour is meaning, never decoration (agenda item 9). It appears only for state, 
 
 ## Metadata iconography
 
-Current rule, unchanged by the #474 grill: every piece of metadata shown in a tooltip, hover card, or compact info row — status, repository, branch, worktree path, model, files changed, and the like — gets a leading icon; bare text labels are not used for structured data of this kind. Actionable buttons inside a tooltip or card are right-aligned (trailing edge), never stacked at the left.
+Current rule, unchanged by the #474 grill: every piece of metadata shown in a tooltip, hover card, or compact info row — status, project, branch, worktree path, model, files changed, and the like — gets a leading icon; bare text labels are not used for structured data of this kind. Actionable buttons inside a tooltip or card are right-aligned (trailing edge), never stacked at the left.
 
 ## Status, action, tool, and brand icons
 

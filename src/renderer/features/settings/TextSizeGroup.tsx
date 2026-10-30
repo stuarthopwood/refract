@@ -24,7 +24,7 @@ const ROLE_ROWS: Record<TypographyRole, { label: string; description: string; fo
     label: 'App',
     description: 'Menus, lists, headers, dialogs and these settings.',
     fontClass: 'font-ui',
-    preview: 'Sessions, repositories and settings read like this.'
+    preview: 'Sessions, projects and settings read like this.'
   },
   chat: {
     label: 'Chat',

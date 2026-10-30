@@ -97,7 +97,7 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             let registry = state.registry.lock().await;
             registry
                 .get_repository(&repository_id)
-                .ok_or_else(|| not_found(format!("Repository not found: {repository_id}")))?
+                .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
                 .clone()
         };
         let repo_path = std::path::Path::new(&repository.path);
@@ -292,9 +292,7 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .clone();
             let repository = registry
                 .get_repository(&session.repository_id)
-                .ok_or_else(|| {
-                    not_found(format!("Repository not found: {}", session.repository_id))
-                })?
+                .ok_or_else(|| not_found(format!("Project not found: {}", session.repository_id)))?
                 .clone();
             (session, repository)
         };
@@ -378,9 +376,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 .clone();
             let repository = registry
                 .get_repository(&session.repository_id)
-                .ok_or_else(|| {
-                    not_found(format!("Repository not found: {}", session.repository_id))
-                })?
+                .ok_or_else(|| not_found(format!("Project not found: {}", session.repository_id)))?
                 .clone();
             (session, repository)
         };
@@ -542,9 +538,7 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
                 .clone();
             let repository = registry
                 .get_repository(&session.repository_id)
-                .ok_or_else(|| {
-                    not_found(format!("Repository not found: {}", session.repository_id))
-                })?
+                .ok_or_else(|| not_found(format!("Project not found: {}", session.repository_id)))?
                 .clone();
             (session, repository)
         };

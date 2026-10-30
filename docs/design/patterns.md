@@ -8,19 +8,19 @@ Naming and microcopy (agenda item 6) is sentence case, verb first, with no trail
 
 | Term | Means |
 |---|---|
-| **Add** | Bring an existing, outside thing in (Add repository, Add GitHub account). |
+| **Add** | Bring an existing, outside thing in (Add project, Add GitHub account). |
 | **New** | Start a fresh thing Refract owns (New conversation, New session). |
 | **Create** | Only on the confirm button of a form that makes something new. |
 | **Cancel** | Abandon a pending choice or form. |
 | **Close** | Dismiss a read-only view with nothing pending. |
 | **Dismiss** | Hide a notice that may come back. |
-| **Remove** | Take it out of Refract without deleting data (for example, a repository). |
+| **Remove** | Take it out of Refract without deleting data (for example, a project). |
 | **Delete** | Permanent. |
 | **Archive** | Reversible; moves the Session to the Archived group and stops the agent. |
 | **Hide** | Removes a Session from the session list only; nothing stops (#748). Reversible with Unhide or the toast's Undo. |
 | **Retry** | Run a refused action again, in the same dialog (issue #891 gate round 1, ui-architect-v3: the confirm button relabels to Retry after a refusal rather than adding a second control). |
 
-Confirm buttons repeat the verb ("Delete session"), never "OK" or "Yes." Evidence at `origin/main` 9f23d22: Add repository (`AddRepositoryDialog`), Cancel (`PullRequestDetail`'s `AlertDialogCancel`), Close (the read-only/blocked dialog footer).
+Confirm buttons repeat the verb ("Delete session"), never "OK" or "Yes." Evidence at `origin/main` 9f23d22: Add project (`AddRepositoryDialog`), Cancel (`PullRequestDetail`'s `AlertDialogCancel`), Close (the read-only/blocked dialog footer).
 
 This vocabulary sits alongside the existing **"no project terms"** rule: UI text never refers to requirements, tasks, stories, specs, or build state, partly enforced on built bundles by `pnpm check:ui-text` (`scripts/check-ui-text.mjs`), which fails on the exact, case-sensitive patterns `FR-NNN`/`SC-NNN`/`TNNN`/`USN`, "later task," "wired up," and "User Story"; "not implemented" is currently allow-listed everywhere (a Mermaid bundle string contains it), so that phrase is never caught. Anything else (for example "spec 007" or "build state" itself) is a review check, not a script check.
 
@@ -30,7 +30,7 @@ The UPPERCASE tracked micro-labels shown in the AI Studio mock (for example "ORC
 
 Agenda item 2 and its follow-up (reversible removals) define "destructive":
 
-- **Destructive** means losing work that cannot be recovered (Delete session, Delete repository data, Discard draft). A destructive action is never icon-only: it always carries a label, or lives inside a menu or a dialog (see [components.md](components.md)).
+- **Destructive** means losing work that cannot be recovered (Delete session, Delete project data, Discard draft). A destructive action is never icon-only: it always carries a label, or lives inside a menu or a dialog (see [components.md](components.md)).
 - A **reversible removal** (Remove attachment, Remove queued message) may stay icon-only, but only with the full icon-only bundle: a `Tooltip` whose text equals the `aria-label`, the `aria-label` itself, and a 24px minimum target. No confirmation step.
 - Reversible removals never get a confirm dialog.
 

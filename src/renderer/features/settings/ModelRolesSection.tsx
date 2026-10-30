@@ -353,7 +353,7 @@ export function ModelRolesSection() {
       title="Models"
       width="wide"
       headingRef={headingRef}
-      intro="Choose which model OMP uses for each role. Changes save immediately to OMP's global configuration and apply to new sessions, unless a repository's own .omp config overrides a role."
+      intro="Choose which model OMP uses for each role. Changes save immediately to OMP's global configuration and apply to new sessions, unless a project's own .omp config overrides a role."
     >      <div aria-live="polite" className="sr-only">
         {polite}
       </div>
