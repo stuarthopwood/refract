@@ -93,6 +93,16 @@ The soft cap is 600 lines per source file (TypeScript, TSX, scripts, and the Rus
   renderer-main boundary. A constant used by one consumer lives beside it too; it moves out only
   when two modules must agree on the same value.
 
+## Comments (HARD RULE, issue #1322)
+
+Every comment line costs tokens each time an agent reads or edits a file. Comments are "why" only.
+
+- A comment is one or two lines explaining a non-obvious constraint, an invariant, a security reason or a workaround, optionally ending with an issue ref.
+- Exported TypeScript items and Rust `pub` items keep a one-line doc comment.
+- No history, issue archaeology, gate or review narration, spec or task IDs, or prose that restates the code. That record goes in the PR, the issue or `git log`.
+- `pnpm check:comment-density` (part of `pnpm ci:local`) fails a file whose comment lines exceed 25% of its non-blank lines (files of 40 or more lines) or that has a comment block over 6 lines. Baselined offenders (`scripts/comment-density-baseline.json`) may shrink, never grow.
+- Put this rule in every delegation brief.
+
 ## Reusable UI components (HARD RULE)
 
 On 2026-10-15 the user decided (#934 grill, ADR 0003): "All UI elements should be re-usable

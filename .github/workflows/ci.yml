@@ -69,6 +69,9 @@ jobs:
       - name: Check file size
         run: pnpm check:file-size
 
+      - name: Check comment density
+        run: pnpm check:comment-density
+
       - name: Check spacing grid
         run: pnpm check:spacing
 
