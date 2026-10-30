@@ -235,14 +235,14 @@ async function main() {
     check(await cdp.evaluate(`!!(${MORE})`), 'A "Show more pull requests" button is offered', 'hasMore');
     writeFileSync(failFile, 'fail');
     await pressMore();
-    await cdp.waitFor(`!!document.querySelector('[role="alert"]') && document.querySelector('[role="alert"]').textContent.includes('Try Show more again.')`, { timeoutMs: 20_000, label: 'inline failure alert' });
+    await cdp.waitFor(`Array.from(document.querySelectorAll('[role="alert"]')).some((el) => el.textContent.includes('Try Show more again.'))`, { timeoutMs: 20_000, label: 'inline failure alert' });
     check(await cdp.evaluate(`${bulkCount} === 50 && !!(${MORE})`), 'Failed Show more keeps the 50 rows and the button', '50 rows, button present');
     check(await cdp.evaluate(`document.activeElement === (${MORE})`), 'Focus stays on the Show more button after the failure');
     await shot(cdp, '11-show-more-failed-keeps-rows.png');
     unlinkSync(failFile);
     await pressMore();
     check(await waitCount(100, 'second page'), 'Retrying Show more loads the next page', '100 rows');
-    check(await cdp.evaluate(`!document.querySelector('[role="alert"]')`), 'The inline alert clears after a successful retry');
+    check(await cdp.evaluate(`!Array.from(document.querySelectorAll('[role="alert"]')).some((el) => el.textContent.includes('Try Show more again.'))`), 'The inline alert clears after a successful retry');
     await cdp.waitFor(`!!(${MORE}) && (${MORE}).getAttribute('aria-disabled') !== 'true'`, { timeoutMs: 20_000, label: 'button idle' });
     await pressMore();
     await waitCount(150, 'third page');

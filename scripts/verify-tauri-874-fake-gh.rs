@@ -121,7 +121,7 @@ fn main() {
             eprintln!("fake gh: forced failure for limit {limit}");
             std::process::exit(1);
         }
-        let bulk = bulk_prs();
+        let bulk = if query.as_deref().map_or(false, |q| q.contains("bulk")) { bulk_prs() } else { Vec::new() };
         let rows: Vec<String> = PRS
             .iter()
             .chain(bulk.iter())
