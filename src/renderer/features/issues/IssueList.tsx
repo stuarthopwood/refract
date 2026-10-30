@@ -3,7 +3,7 @@
 // filter and rows.
 import { useEffect } from 'react'
 import { ColourDot } from '@/components/ColourDot'
-import { ProjectListPane } from '@/components/ProjectListPane'
+import { FILTER_PICKER_CLASS, ProjectListPane } from '@/components/ProjectListPane'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useIssuesStore, useRepositoriesStore } from '@/state'
 import type { IssueTab } from '../../../shared/ipc-issues'
@@ -57,7 +57,7 @@ export function IssueList() {
       extraActiveCount={store.label !== null ? 1 : 0}
       extraFilters={
         <Select value={store.label ?? ANY_LABEL} onValueChange={(value) => store.setLabel(value === ANY_LABEL ? null : value)}>
-          <SelectTrigger aria-label="Label" className="min-w-0 max-w-44 flex-1">
+          <SelectTrigger aria-label="Label" className={FILTER_PICKER_CLASS}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent position="popper">
