@@ -87,12 +87,7 @@ Decided (Stuart, 2026-10-21, #1144): one rule for the space between a control's 
 
 Menus and context menus (#471) follow one rule by menu type, not by menu mechanism (agenda item 5): the same rule applies to a `DropdownMenu`, a `ContextMenu`, or a right-click menu.
 
-| Menu type | Icons | Examples |
-|---|---|---|
-| Action menus | Text only, never an icon | Session row, project row, manage-session row, and every right-click context menu: Rename, Archive, Delete, Copy. |
-| Destination and settings menus | A leading icon on every item | Profile, Appearance, GitHub accounts, Approval mode. |
-
-Within a single menu it is all items or none: never a mix (matches the agenda item 1 rule that decisions are labels, not icons).
+Every item in every menu has a leading icon (#1405, decided by Stuart 2026-10-30, replacing the text-only rule for action menus): pass the lucide `icon` prop on `ContextMenuItem`, `DropdownMenuItem`, their checkbox and radio items and sub-trigger. The icon is 16px, muted, `aria-hidden`, and takes the destructive colour on destructive items; an icon-less item in a menu with icons passes `inset` so labels align. Registry actions carry an `icon`, and a menu item that is a registry action is built with `actionMenuItem` in `features/palette/menuItems.tsx` so label, icon, chord hint and enabled state come from one place. Cut, Copy, Paste, Paste as text and Select all come from `textEditItems`. Only one menu is open at a time (`components/ui/exclusive-menu.ts`), and `AppContextMenu` blocks the native WebView2 menu everywhere else (#1404).
 
 For both kinds:
 

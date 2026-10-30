@@ -31,13 +31,10 @@ import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
 import { RightPaneResizeHandle } from '@/features/right-pane/RightPaneResizeHandle'
 import { rightPaneRef } from '@/features/right-pane/right-pane-handle'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
-import { useRightPaneShortcut } from '@/features/right-pane/use-right-pane-shortcut'
-import { closeChatPane } from '@/features/chat/closeChatPane'
 import { CommandPalette } from '@/features/palette/CommandPalette'
 import { usePaletteShortcut } from '@/features/palette/usePaletteShortcut'
+import { useChordDispatcher } from '@/features/palette/useChordDispatcher'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
-import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
-import { newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
 
 const MIN_SPLIT_WIDTH_PX = 360 * 2
 
@@ -74,91 +71,6 @@ export function App() {
   )
   const chatAreaAnnouncement = useChatAreaAnnouncer((s) => s.text)
   useEffect(() => {
-    if (!isSplit) return
-    function onKeyDown(event: KeyboardEvent) {
-      if (!event.ctrlKey || !event.shiftKey || event.code !== 'Backslash') return
-      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
-      event.preventDefault()
-      useSplitStore.getState().focusOther()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSplit])
-
-  // Ctrl+W closes the showing pane; `isSplit ? focusedIndex : 0` matches the JSX `paneIndex` below (#621).
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
-      const isW = latin ? event.key.toLowerCase() === 'w' : event.code === 'KeyW'
-      if (
-        !event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey ||
-        event.metaKey ||
-        event.repeat ||
-        event.isComposing ||
-        !isW
-      )
-        return
-      if (showReadiness || view !== 'chat' || paneSessionIds.length === 0) return
-      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
-      event.preventDefault()
-      closeChatPane(isSplit ? focusedIndex : 0)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showReadiness, view, paneSessionIds.length, isSplit, focusedIndex])
-
-  // Ctrl+N: create in the focused pane's repo (or the only repo); otherwise focus the quick-create "+" rather than guess (#6).
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
-      const isN = latin ? event.key.toLowerCase() === 'n' : event.code === 'KeyN'
-      if (
-        !event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey ||
-        event.metaKey ||
-        event.repeat ||
-        event.isComposing ||
-        !isN
-      )
-        return
-      if (showReadiness || view !== 'chat') return
-      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
-      event.preventDefault()
-      newSessionInFocusedPane()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showReadiness, view])
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
-      const isComma = latin ? event.key === ',' : event.code === 'Comma'
-      if (
-        !event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey ||
-        event.metaKey ||
-        event.repeat ||
-        event.isComposing ||
-        !isComma
-      )
-        return
-      // Already in Settings: a no-op, not a second `openSettings()` call, which would reset
-      // the open section back to the default and silently discard where the developer was.
-      if (showReadiness || view === 'settings') return
-      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
-      event.preventDefault()
-      useViewStore.getState().openSettings()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showReadiness, view])
-
-  useEffect(() => {
     function onPointerDownCapture(event: PointerEvent) {
       if (focusMoveButtonRef.current?.contains(event.target as Node)) event.preventDefault()
     }
@@ -188,7 +100,7 @@ export function App() {
     } else if (!handle.isCollapsed()) handle.collapse()
   }, [paneShown, showReadiness, view])
 
-  useRightPaneShortcut(!showReadiness && view === 'chat')
+  useChordDispatcher(!showReadiness)
   usePaletteShortcut(!showReadiness)
   return (
     // #1200: `relative` makes this the containing block for every absolutely positioned descendant

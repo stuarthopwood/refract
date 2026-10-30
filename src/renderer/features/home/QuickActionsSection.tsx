@@ -1,7 +1,7 @@
 // Home's Quick actions row (#869): New session (a Project picker menu, then the shared New session
 // dialog on the chosen Project) and Add project (local or clone, the shared Add project menu).
 import { useRef, useState } from 'react'
-import { ChevronDownIcon, PlusIcon } from 'lucide-react'
+import { ChevronDownIcon, FolderGit2Icon, PlusIcon } from 'lucide-react'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -39,6 +39,7 @@ function NewSessionMenu() {
           {repositories.map((repository) => (
             <DropdownMenuItem
               key={repository.id}
+              icon={FolderGit2Icon}
               onSelect={() => {
                 openingDialogRef.current = true
                 setPickedId(repository.id)

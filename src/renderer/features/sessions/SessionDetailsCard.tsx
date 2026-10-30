@@ -1,7 +1,8 @@
-import { cloneElement, useRef, useState } from 'react'
+import { cloneElement, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, FolderOpenIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useAnyMenuOpen } from '@/components/ui/exclusive-menu'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { useSessionsStore } from '@/state'
@@ -40,6 +41,12 @@ export function SessionDetailsCard({
   const requestIdRef = useRef(0)
   const { copyPath, reveal } = useWorktreeActions(session)
   const descriptionId = `${session.id}-details`
+  // The card never shows while any menu is open (#1404).
+  const menuOpen = useAnyMenuOpen()
+  const [cardOpen, setCardOpen] = useState(false)
+  useEffect(() => {
+    if (menuOpen) setCardOpen(false)
+  }, [menuOpen])
 
   // Screen readers never reach this card's content: it is portaled to the end of `<body>` and
   // closes on blur before a virtual cursor could Tab into it, and `openDelay` means it is not yet
@@ -68,7 +75,15 @@ export function SessionDetailsCard({
 
   return (
     <>
-      <HoverCard openDelay={750} onOpenChange={handleCardOpenChange}>
+      <HoverCard
+        openDelay={750}
+        open={cardOpen && !menuOpen}
+        onOpenChange={(open) => {
+          if (open && menuOpen) return
+          setCardOpen(open)
+          handleCardOpenChange(open)
+        }}
+      >
         <HoverCardTrigger asChild>
           {cloneElement(children, { 'aria-describedby': descriptionId })}
         </HoverCardTrigger>

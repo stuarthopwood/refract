@@ -1,10 +1,26 @@
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  Columns2Icon,
+  CopyIcon,
+  EyeIcon,
+  EyeOffIcon,
+  FolderOpenIcon,
+  PauseIcon,
+  PencilIcon,
+  PlayIcon,
+  PlusIcon,
+  SquareIcon,
+  Trash2Icon,
+  type LucideIcon
+} from 'lucide-react'
 import type { SessionSummary } from '../../../shared/ipc'
 import { canTogglePause } from '../chat/pauseActions'
 
 /** A session row menu entry: a separator or an item. */
 export type SessionRowAction =
   | { kind: 'separator' }
-  | { kind: 'item'; key: string; label: string; variant?: 'destructive'; disabled?: boolean; onSelect: () => void }
+  | { kind: 'item'; key: string; label: string; icon: LucideIcon; variant?: 'destructive'; disabled?: boolean; onSelect: () => void }
 
 /** Callbacks behind each session row menu item. */
 export interface SessionRowActionHandlers {
@@ -35,6 +51,7 @@ export function buildSessionRowActions(
           {
             kind: 'item',
             key: 'new-session',
+            icon: PlusIcon,
             label: `New session from ${newSession.branch}`,
             disabled: newSession.disabled,
             onSelect: () => handlers.onNewSession?.()
@@ -42,34 +59,36 @@ export function buildSessionRowActions(
           { kind: 'separator' }
         ] as const)
       : []),
-    { kind: 'item', key: 'rename', label: 'Rename', onSelect: handlers.onRename },
-    { kind: 'item', key: 'open-in-split', label: 'Open in split', onSelect: handlers.onOpenInSplit },
-    { kind: 'item', key: 'copy-path', label: 'Copy worktree path', onSelect: handlers.onCopyPath },
-    { kind: 'item', key: 'reveal', label: 'Open worktree folder', onSelect: handlers.onReveal },
+    { kind: 'item', key: 'rename', icon: PencilIcon, label: 'Rename', onSelect: handlers.onRename },
+    { kind: 'item', key: 'open-in-split', icon: Columns2Icon, label: 'Open in split', onSelect: handlers.onOpenInSplit },
+    { kind: 'item', key: 'copy-path', icon: CopyIcon, label: 'Copy worktree path', onSelect: handlers.onCopyPath },
+    { kind: 'item', key: 'reveal', icon: FolderOpenIcon, label: 'Open worktree folder', onSelect: handlers.onReveal },
     session.hiddenAt
-      ? { kind: 'item', key: 'unhide', label: 'Unhide', onSelect: handlers.onUnhide }
-      : { kind: 'item', key: 'hide', label: 'Hide', onSelect: handlers.onHide },
+      ? { kind: 'item', key: 'unhide', icon: EyeIcon, label: 'Unhide', onSelect: handlers.onUnhide }
+      : { kind: 'item', key: 'hide', icon: EyeOffIcon, label: 'Hide', onSelect: handlers.onHide },
     isArchived
-      ? { kind: 'item', key: 'restore', label: 'Restore', onSelect: handlers.onRestore }
-      : { kind: 'item', key: 'archive', label: 'Archive', onSelect: handlers.onArchive },
+      ? { kind: 'item', key: 'restore', icon: ArchiveRestoreIcon, label: 'Restore', onSelect: handlers.onRestore }
+      : { kind: 'item', key: 'archive', icon: ArchiveIcon, label: 'Archive', onSelect: handlers.onArchive },
     ...(canTogglePause(session)
       ? ([
           { kind: 'separator' },
           {
             kind: 'item',
             key: 'pause',
+            icon: session.pause ? PlayIcon : PauseIcon,
             label: session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause',
             onSelect: handlers.onTogglePause
           }
         ] as const)
       : []),
     ...(session.status !== 'stopped'
-      ? ([{ kind: 'item', key: 'stop', label: 'Stop agent', onSelect: handlers.onStopAgent }] as const)
+      ? ([{ kind: 'item', key: 'stop', icon: SquareIcon, label: 'Stop agent', onSelect: handlers.onStopAgent }] as const)
       : []),
     { kind: 'separator' },
     {
       kind: 'item',
       key: 'delete',
+      icon: Trash2Icon,
       label: 'Delete…',
       variant: 'destructive',
       onSelect: handlers.onDelete
