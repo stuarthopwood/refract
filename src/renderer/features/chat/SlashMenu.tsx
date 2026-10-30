@@ -105,7 +105,7 @@ export function SlashMenu({
     return (
       <div
         aria-hidden="true"
-        className="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-popover p-2 text-sm text-muted-foreground shadow-md ring-1 ring-foreground/10"
+        className="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-popover p-2 text-sm text-muted-foreground shadow-md ring-1 ring-elevated-edge"
       >
         {noMatchesText}
       </div>
@@ -118,7 +118,7 @@ export function SlashMenu({
       id={id}
       role="listbox"
       aria-label={ariaLabel}
-      className="absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10"
+      className="absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-elevated-edge"
     >
       {commands.map((match, index) => (
         <li

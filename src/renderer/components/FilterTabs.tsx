@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 const TABS_FADE_PX = 24
 
 const FILTER_TAB_TRIGGER_CLASS = cn(
-  'flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset',
+  'flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-row-hover-bg hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset',
   TAB_ACTIVE_UNDERLINE_CLASS
 )
 

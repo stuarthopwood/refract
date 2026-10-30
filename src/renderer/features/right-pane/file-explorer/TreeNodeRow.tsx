@@ -105,7 +105,7 @@ export function TreeNodeRow({
       tabIndex={tabbable ? 0 : -1}
       data-tree-row-path={node.path}
       style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
-      className="group no-drag-region relative flex w-full cursor-default items-center gap-1 rounded px-1 py-1 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
+      className="group no-drag-region relative flex w-full cursor-default items-center gap-1 rounded px-1 py-1 text-left text-sm hover:bg-row-hover-bg focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
       onClick={() => onRowClick(node)}
       // Only the row itself selects on focus: clicking an inline button or the kebab focuses that child, which must not select the row.
       onFocus={(event) => event.target === event.currentTarget && onRowFocus(node)}

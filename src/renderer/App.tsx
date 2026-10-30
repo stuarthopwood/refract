@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeftRightIcon } from 'lucide-react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
+import { IconButton } from '@/components/IconButton'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { HomeView } from '@/features/home/HomeView'
 import { ChatPane } from '@/features/chat/ChatPane'
@@ -237,18 +238,18 @@ export function App() {
                         Separator -> this button -> pane 1) instead of landing after the entire
                         second pane's own content; the library's hit-region scan sorts by
                         `offsetLeft`, not DOM order, so this placement does not affect it. */}
-                    <button
+                    <IconButton
                       ref={focusMoveButtonRef}
-                      type="button"
-                      className="absolute top-1/2 z-20 flex size-6 -translate-x-1/2 -translate-y-10 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      label="Move focus to the other pane"
+                      shortcut={['Ctrl', 'Shift', '\\']}
+                      variant="outline"
+                      className="absolute top-1/2 z-20 -translate-x-1/2 -translate-y-10 bg-background text-muted-foreground hover:bg-muted"
                       style={{ left: `${liveDividerPercent}%` }}
-                      title="Move focus to other pane (Ctrl+Shift+\)"
-                      aria-label="Move focus to the other pane"
                       aria-keyshortcuts="Control+Shift+\"
                       onClick={() => useSplitStore.getState().focusOther()}
                     >
-                      <ArrowLeftRightIcon aria-hidden className="size-4" />
-                    </button>
+                      <ArrowLeftRightIcon aria-hidden />
+                    </IconButton>
                     <ResizablePanel id="split-pane-1" defaultSize={`${100 - dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>
                         {/* Spec 012 (research.md decision 3, FR-008): the right-most pane's own

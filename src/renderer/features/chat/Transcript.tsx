@@ -41,6 +41,7 @@ import { JumpToStageContext, stageRowDomId } from './stageJump'
 import { ChatNavBridge } from '../chat-nav/ChatNavBridge'
 import { ChatNavOverlays } from '../chat-nav/ChatNavOverlays'
 import { startRowJumpLoop, type JumpControl } from '../chat-nav/rowJumpLoop'
+import { IconButton } from '@/components/IconButton'
 
 const ANNOUNCEMENT_MAX_CHARS = 80
 function clampAnnouncement(text: string | undefined): string | undefined {
@@ -570,12 +571,10 @@ export function Transcript({
           {stageAnnouncement}
         </span>
         <ChatNavOverlays sessionId={sessionId} />
-        <Button
+        <IconButton
           ref={buttonRef}
-          type="button"
           variant="secondary"
-          size="icon-sm"
-          aria-label="Scroll to end"
+          label="Scroll to end"
           inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
@@ -587,8 +586,7 @@ export function Transcript({
           )}
         >
           <ArrowDownToLineIcon />
-          <span className="sr-only">Scroll to end</span>
-        </Button>
+        </IconButton>
       </MessageScroller>
     </MessageScrollerProvider>
     </LinkContext.Provider>

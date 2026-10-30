@@ -3,7 +3,6 @@ import { useEnterOnAppear } from '@/components/useEnterOnAppear'
 import { HiddenMarker } from './HiddenMarker'
 import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -14,7 +13,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
@@ -37,6 +35,7 @@ import {
   onDropdownOpenChange
 } from './SessionRowParts'
 import type { SessionRowSurface } from './sessionRowSurface'
+import { IconButton } from '@/components/IconButton'
 
 // The menu trigger stays in the DOM and focusable (opacity/pointer-events swap, overlaid on the time cell under
 // hover:hover) because a `hidden` trigger can't take focus, stranding keyboard close paths. `group-has[...]`
@@ -229,26 +228,20 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             </span>
             <span className="absolute right-2 top-1 flex h-5 items-center gap-1">
               {canResume && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      ref={resumeButtonRef}
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label={`Resume ${session.name}`}
-                      aria-disabled={resuming || undefined}
-                      className={cn('aria-disabled:opacity-50', ROW_ACTION_HOVER_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
-                      onClick={() => void handleResume()}
-                    >
-                      {resuming ? (
-                        <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
-                      ) : (
-                        <RotateCwIcon aria-hidden className="size-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Resume {session.name}</TooltipContent>
-                </Tooltip>
+                <IconButton
+                  ref={resumeButtonRef}
+                  size="icon-xs"
+                  label={`Resume ${session.name}`}
+                  aria-disabled={resuming || undefined}
+                  className={cn('aria-disabled:opacity-50', ROW_ACTION_HOVER_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
+                  onClick={() => void handleResume()}
+                >
+                  {resuming ? (
+                    <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
+                  ) : (
+                    <RotateCwIcon aria-hidden className="size-4" />
+                  )}
+                </IconButton>
               )}
               <SessionAgentsButton
                 sessionId={session.id}
@@ -266,15 +259,14 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                 </span>
                 <DropdownMenu onOpenChange={(open) => onDropdownOpenChange(row, open)}>
                   <DropdownMenuTrigger asChild>
-                    <Button
+                    <IconButton
                       ref={menuTriggerRef}
-                      variant="ghost"
                       size="icon-xs"
-                      aria-label={`${session.name} actions`}
+                      label={`${session.name} actions`}
                       className={TRAILING_MENU_BUTTON_CLASS}
                     >
                       <EllipsisVerticalIcon aria-hidden className="size-4" />
-                    </Button>
+                    </IconButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>
                     <DropdownActionItems actions={actions} />

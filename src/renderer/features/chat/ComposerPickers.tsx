@@ -140,7 +140,7 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
           aria-disabled={disabled}
           // The Tooltip would repeat the accessible name via described-by; suppress it.
           aria-describedby={undefined}
-          // Dark variant needed so the disabled hover reset beats `ghost`'s `dark:hover:bg-muted/50`; border/cursor match the sibling pickers.
+          // Dark variant needed so the disabled hover reset beats `ghost`'s `dark:hover:bg-row-hover-bg`; border/cursor match the sibling pickers.
           className={cn(
             'cursor-pointer border-composer-control-border',
             COMPOSER_DISABLED_CLASS,

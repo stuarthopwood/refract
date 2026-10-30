@@ -4,8 +4,7 @@
 // screens adopt it one group per PR (#935).
 import type { ReactNode, Ref } from 'react'
 import { ArrowLeftIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { IconButton } from '@/components/IconButton'
 
 export interface ScreenHeaderProps {
   title: string
@@ -26,14 +25,9 @@ export function ScreenHeader({ title, headingRef, backLabel, onBack, count, chil
   return (
     <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
       {backLabel && onBack && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="no-drag-region" aria-label={backLabel} onClick={onBack}>
-              <ArrowLeftIcon aria-hidden className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{backLabel}</TooltipContent>
-        </Tooltip>
+        <IconButton label={backLabel} side="bottom" className="no-drag-region" onClick={onBack}>
+          <ArrowLeftIcon aria-hidden />
+        </IconButton>
       )}
       <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
         {title}

@@ -4,13 +4,13 @@
 // alone) and offers "Open details" through a plain http(s) anchor, as ChangesTab does (no IPC).
 import { ChevronRightIcon, CircleAlertIcon, EllipsisVerticalIcon, ExternalLinkIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
 import { useState, type ComponentType } from 'react'
-import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { MenuItemIcon } from '@/components/ui/menu-item-icon'
 import { cn } from '@/lib/utils'
 import type { CheckOutcome, PullRequestCheck, PullRequestDetail } from '../../../shared/github'
 import { CHECK_STATE_DISPLAY } from './PullRequestRow'
+import { IconButton } from '@/components/IconButton'
 
 interface OutcomeDisplay {
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
@@ -74,9 +74,9 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-xs" aria-label={`Actions for ${check.name}`}>
+          <IconButton size="icon-xs" label={`Actions for ${check.name}`}>
             <EllipsisVerticalIcon aria-hidden />
-          </Button>
+          </IconButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isHttpUrl(check.detailsUrl) ? (

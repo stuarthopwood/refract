@@ -34,7 +34,7 @@ Agenda item 2 and its follow-up (reversible removals) define "destructive":
 - A **reversible removal** (Remove attachment, Remove queued message) may stay icon-only, but only with the full icon-only bundle: a `Tooltip` whose text equals the `aria-label`, the `aria-label` itself, and a 24px minimum target. No confirmation step.
 - Reversible removals never get a confirm dialog.
 
-Verified in code: `AttachmentStrip.tsx:41-49` ("Remove pasted image") and `MessageInput.tsx:714-722` ("Remove queued message") already have the `aria-label` but are missing the required `Tooltip` — an open audit finding, tracked by the #474 follow-up sweep issue, not fixed by this documentation change.
+Resolved by #579 (spec 077): "Remove pasted image" and "Remove queued message" carry the Tooltip through `IconButton`.
 
 ## Banners
 
