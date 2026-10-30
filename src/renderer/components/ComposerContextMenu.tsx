@@ -16,18 +16,12 @@ interface FieldState {
   hasText: boolean
 }
 
+// IPC for both directions: the webview's Clipboard API can raise a permission prompt or resolve without reaching the OS clipboard.
 async function writeClipboard(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return
-  } catch {
-    // The sandboxed webview can refuse the Clipboard API; main's channel needs no permission.
-  }
   const result = await window.refract.clipboard.writeText(text)
   if (!result.ok) notify(result.error)
 }
 
-// IPC only: the webview's own readText can raise a permission prompt.
 async function readClipboard(): Promise<string | null> {
   const result = await window.refract.clipboard.readText()
   if (!result.ok) {
