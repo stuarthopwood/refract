@@ -881,9 +881,9 @@ Also filed 2026-10-30: **#1397** (`p1`), Issues detail header: the text-only Cop
 
 Also filed 2026-10-30: **#1399** (`p1`), App-wide select-type pickers: the `MultiSelectChecklist` trigger matches `SelectTrigger`, every select-type trigger becomes a ghost button, all triggers share one height and text size, and the opened lists share one width rule and item size; land after #1391; placed as an index line after #1397's line. **Status: built by spec 071 (`app-wide-ui-polish`), awaiting merge.**
 
-Also filed 2026-10-30: **#1400** (`p1`), Issues filters: Label becomes a multi-select (any of the ticked labels), ticked labels show as a dismissible pill row beneath the pickers, and a centred Loading text sits over the blurred list while it loads; pairs with #1399; placed as an index line after #1399's line.
+Also filed 2026-10-30: **#1400** (`p1`), Issues filters: Label becomes a multi-select (any of the ticked labels), ticked labels show as a dismissible pill row beneath the pickers, and a centred Loading text sits over the blurred list while it loads; pairs with #1399; placed as an index line after #1399's line. Status: built on branch `filters-usage-panel-advisor-roster` (spec 070), awaiting merge.
 
-Also filed 2026-10-30: **#1402** (`p1`), Right pane Session usage panel: the Usage stats scoped to the focused Session (every conversation in its directory, whole lifetime, live refresh) in a compact vertical layout, with the Session's share of the monthly credit budget; needs a new `sessionDir` usage filter; placed as an index line after #1400's line.
+Also filed 2026-10-30: **#1402** (`p1`), Right pane Session usage panel: the Usage stats scoped to the focused Session (every conversation in its directory, whole lifetime, live refresh) in a compact vertical layout, with the Session's share of the monthly credit budget; needs a new `sessionDir` usage filter; placed as an index line after #1400's line. Status: built on branch `filters-usage-panel-advisor-roster` (spec 070), awaiting merge.
 
 Also filed 2026-10-30: **#1404** (`p1`, bug), context menus: suppress the native WebView2 menu app-wide (text fields keep a themed Cut, Copy, Paste menu), give the Session list repo header a right-click menu matching its ellipsis, and allow only one menu open at a time (session row context and ellipsis menus no longer stack); placed as an index line after #1402's line. **In review 2026-10-30** with the Command palette slice 2 (spec 064).
 
@@ -891,7 +891,7 @@ Also filed 2026-10-30: **#1405** (`p1`), context menus: an `icon` prop on the sh
 
 Also filed 2026-10-30: **#1407** (`p1`), Usage view: 32px between major stats sections (column and chart row `gap-4` to `gap-8`), Usage view only; placed as an index line after #1405's line. Status: built on branch `chat-nav-context-warning-usage` (spec 066), awaiting merge.
 
-Also filed 2026-10-30: **#1409** (`p1`, bug), Advisor: a `WATCHDOG.yml` roster silently overrides the Settings Advisor model; detect rosters on OMP's search path at Session launch, warn on the Advisor row and in the Session, caption roster models in Usage, and add a `check:advisor-roster` gate in `ci:local`; placed as an index line after #1407's line.
+Also filed 2026-10-30: **#1409** (`p1`, bug), Advisor: a `WATCHDOG.yml` roster silently overrides the Settings Advisor model; detect rosters on OMP's search path at Session launch, warn on the Advisor row and in the Session, caption roster models in Usage, and add a `check:advisor-roster` gate in `ci:local`; placed as an index line after #1407's line. Status: built on branch `filters-usage-panel-advisor-roster` (spec 070), awaiting merge.
 
 Also filed 2026-10-30: **#1411** (`p1`, bug), Context usage: warn when the active model's window matches its `-1m` variant's (OMP 18.13.3 reports 1M for Opus 5.5 and the other 5.x Claude base models on Copilot; upstream can1357/oh-my-pi#17481), on the readout and in Settings > Models, never substituting a guessed window; placed as an index line after #1409's line. Status: built on branch `chat-nav-context-warning-usage` (spec 066), awaiting merge.
 

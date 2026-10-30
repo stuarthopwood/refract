@@ -319,6 +319,8 @@ const REQUEST_LANES = {
   TOKEN_GUARD_SET: 'TG',
   TOKEN_GUARD_RESET: 'TG',
   TOKEN_GUARD_HANDOFF: 'TG',
+  ADVISOR_ROSTER_DETECT: 'TG', // #1409, ipc/advisor_roster.rs
+  ADVISOR_ROSTER_OPEN: 'TG',
   COPILOT_PLAN_USAGE: 'R9', // #1238, ipc/copilot_plan.rs
   ACCOUNTS_GITHUB_LIST: 'R9', // #792, accounts.rs
   ACCOUNTS_GITHUB_ADD_START: 'R9',
@@ -363,6 +365,7 @@ const EVENT_LANES = {
   MEMORY_WARNING: 'R5', // #788, "memory warning" in R5's own work description
   TOKEN_GUARD_LAUNCH_WARNING: 'TG', // #1212, token guard launch warning
   TOKEN_GUARD_CALLS: 'TG', // #1212, per-Conversation model-call count
+  ADVISOR_ROSTER_DETECTED: 'TG', // #1409, roster found at Session launch
   READOUT_UPDATE: 'R5',
   SUBAGENTS_UPDATE: 'R5',
   SUBAGENT_PATCH: 'R5',

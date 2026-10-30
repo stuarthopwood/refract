@@ -99,7 +99,7 @@ fn tool_breakdown(
     f: &Filters,
     ctx: &QueryCtx,
 ) -> QueryResult<Vec<BreakdownRow>> {
-    let per_call = f.model.is_some() || f.reasoning.is_some();
+    let per_call = f.needs_tool_calls();
     let (w, sql_body) = if per_call {
         (
             f.build(&TOOL_CALLS, ctx)?,

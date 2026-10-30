@@ -86,12 +86,12 @@ export interface IssuesApi {
    * characters, body up to 60,000, up to 20 labels without commas. */
   create(repositoryId: string, title: string, body: string, labels: string[]): Promise<Result<CreatedIssue>>;
   /** Up to 50 issues per Project, newest updated first, across `repositoryIds` (at most 40; two
-   * Projects on one remote list once). `label` is one label name or null; `query` is free text. */
+   * Projects on one remote list once). `labels` are label names matched any-of (empty means no label filter); `query` is free text. */
   list(
     tab: IssueTab,
     state: IssueStateFilter,
     repositoryIds: string[],
-    label: string | null,
+    labels: string[],
     query: string,
   ): Promise<Result<IssueListResult>>;
   /** One issue with its body. */

@@ -2,6 +2,7 @@ import type { Repository } from '../../shared/model'
 import type { Result, SessionSummary } from '../../shared/ipc'
 import type { GitHubAccount } from '../../shared/accounts'
 import { useAccountsStore } from './accounts'
+import { useAdvisorRosterStore } from './advisor-roster-store'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { showTokenGuardWarning } from './token-guard-store'
@@ -145,6 +146,7 @@ export function initStores(): void {
   })
   window.refract.onTokenGuardLaunchWarning(showTokenGuardWarning)
   window.refract.onTokenGuardCalls((payload) => useTokenGuardCallsStore.getState().setCalls(payload))
+  window.refract.onAdvisorRosterDetected((payload) => useAdvisorRosterStore.getState().setDetected(payload))
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })

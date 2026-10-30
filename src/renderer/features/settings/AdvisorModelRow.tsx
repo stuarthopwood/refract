@@ -4,6 +4,8 @@
 import { useEffect, useState } from 'react'
 import { useTokenGuardStore } from '@/state/token-guard-store'
 import type { ModelCatalogEntry } from '../../../shared/model'
+import { describeAdvisorRoster } from '../../../shared/ipc-advisor-roster'
+import type { AdvisorRoster } from '../../../shared/ipc-advisor-roster'
 import type { RoleValues } from './modelRoleCurrent'
 import { RoleRow } from './RoleRow'
 
@@ -28,6 +30,17 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
   const reset = useTokenGuardStore((state) => state.reset)
   const [pending, setPending] = useState(false)
   const [saveError, setSaveError] = useState<string | undefined>()
+  const [roster, setRoster] = useState<AdvisorRoster | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.refract.advisorRoster.detect().then((result) => {
+      if (!cancelled) setRoster(result.ok ? result.value : null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!loaded) void load()
@@ -67,6 +80,7 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
       catalogError={catalogError}
       isPending={pending || !loaded}
       saveError={saveError}
+      warning={roster ? `${describeAdvisorRoster(roster)}. File: ${roster.path}` : undefined}
       selectedProvider={selectedProvider}
       unsetLabel="Refract's default"
       onCommit={(next, announcement) => void commit(next, announcement)}
