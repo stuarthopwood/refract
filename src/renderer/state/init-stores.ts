@@ -14,6 +14,7 @@ import { usePullRequestsStore } from './pull-requests-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { initHolidayOverrides } from './holiday-store'
+import { notifyAlarm } from './notify'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
@@ -101,6 +102,9 @@ export function initStores(): void {
     useSettingsStore.getState().setSettings(settings)
     useThemeStore.getState().setTheme(settings.theme)
     useChatWidthStore.getState().setChatWidth(settings.chatWidth)
+  })
+  window.refract.onAlarmFired((alarm) => {
+    if (document.hasFocus()) notifyAlarm(alarm.label)
   })
   window.refract.onReadoutUpdate(({ sessionId, readout }) => {
     useReadoutStore.getState().applyReadout(sessionId, readout)

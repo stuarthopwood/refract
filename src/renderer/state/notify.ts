@@ -65,6 +65,20 @@ export function notifyPersistentError(text: string): void {
   announceAssertive(text)
 }
 
+let alarmListOpen = false
+
+/** The Alarms popover lists the fired row itself, so a toast over it would only hide that row. */
+export function setAlarmListOpen(open: boolean): void {
+  alarmListOpen = open
+}
+
+/** A fired Alarm while the window is focused; the toast stays until dismissed so a glance away cannot miss it. */
+export function notifyAlarm(label: string): void {
+  const text = label ? `Alarm: ${label}` : 'Alarm'
+  if (!alarmListOpen) toast.info(text, { duration: Infinity, closeButton: true })
+  announceAssertive(text)
+}
+
 export interface ProgressToast {
   update(text: string): void
   succeed(text: string, action?: { label: string; onClick(): void }): void
