@@ -893,6 +893,8 @@ Also filed 2026-10-30: **#1407** (`p1`), Usage view: 32px between major stats se
 
 Also filed 2026-10-30: **#1409** (`p1`, bug), Advisor: a `WATCHDOG.yml` roster silently overrides the Settings Advisor model; detect rosters on OMP's search path at Session launch, warn on the Advisor row and in the Session, caption roster models in Usage, and add a `check:advisor-roster` gate in `ci:local`; placed as an index line after #1407's line.
 
+Also filed 2026-10-30: **#1411** (`p1`, bug), Context usage: warn when the active model's window matches its `-1m` variant's (OMP 18.13.3 reports 1M for Opus 5.5 and the other 5.x Claude base models on Copilot; upstream can1357/oh-my-pi#17481), on the readout and in Settings > Models, never substituting a guessed window; placed as an index line after #1409's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
