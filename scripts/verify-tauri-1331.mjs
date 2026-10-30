@@ -75,6 +75,7 @@ async function main() {
   let child;
   let cdp;
   let logs;
+  const extraDirs = [];
   const call = async (method, ...args) => {
     const expr = `window.refract.usage.${method}(${args.map((a) => JSON.stringify(a)).join(', ')})`;
     const r = await cdp.evaluate(expr);
@@ -171,6 +172,79 @@ async function main() {
     check(ghCalls.length > 0 && ghCalls.some((c) => c[0] === 'auth'), 'the fake gh was used (call log shows `gh auth ...`)', { calls: ghCalls });
 
     await cdp.screenshot(path.join(SHOTS_DIR, '1-usage-slice1.png'));
+
+    // Slice 2, step 5: open Usage from the left nav and check the populated state.
+    const text = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.innerText ?? '')`;
+    await cdp.clickByText('Usage');
+    await cdp.waitFor(`!!document.querySelector('section[aria-label="Usage"] h1')`, { label: 'Usage view with h1 landmark' });
+    await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes('Spend')`, { label: 'headline cards render' });
+    const pageText = await cdp.evaluate(text('section[aria-label="Usage"]'));
+    for (const label of ['Spend', 'AI credits', 'Model calls', 'Cache hit rate', 'Tool error rate', 'Frustration index']) {
+      check(pageText.includes(label), `Usage view shows "${label}"`);
+    }
+    check(await cdp.evaluate(`!!document.querySelector('section[aria-label="Usage"] [role="group"]')`), 'stat cards are labelled groups');
+    check(await cdp.evaluate(`document.querySelectorAll('section[aria-label="Usage"] th[aria-sort]').length > 0`), 'tables expose aria-sort on sortable headers');
+    check(await cdp.evaluate(`!!document.querySelector('section[aria-label="Usage"] button[aria-pressed]')`), 'charts offer a "View as table" toggle (aria-pressed)');
+    await cdp.screenshot(path.join(SHOTS_DIR, '2-usage-populated.png'));
+
+    // Every filter persists: pick 7 days, reload, reopen, and the tab is still selected.
+    await cdp.clickByText('7 days', { tag: '*' });
+    await sleep(800);
+    await cdp.evaluate(`location.reload()`).catch(() => {});
+    await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'reloaded' });
+    await cdp.clickByText('Usage');
+    await cdp.waitFor(`!!document.querySelector('section[aria-label="Usage"] [role="tab"][aria-selected="true"]')`, { label: 'selected range tab' });
+    const tab = await cdp.evaluate(`document.querySelector('section[aria-label="Usage"] [role="tab"][aria-selected="true"]').innerText`);
+    check(/7 days/i.test(tab), 'the 7 days filter persists after a reload', tab);
+
+    // Progress: a large generated backfill shows the progress bar with value and the sins copy.
+    const big = path.join(sessionsDir, '--big--');
+    mkdirSync(big, { recursive: true });
+    const line = readFileSync(mainFile, 'utf8').split('\n').filter(Boolean)[1];
+    for (let i = 0; i < 400; i++) writeFileSync(path.join(big, `s${i}.jsonl`), `${line}\n`.repeat(200));
+    await call('start');
+    let sawProgress = false;
+    for (let i = 0; i < 100 && !sawProgress; i++) {
+      sawProgress = await cdp.evaluate(`!!document.querySelector('section[aria-label="Usage"] [role="progressbar"][aria-valuenow]')`);
+      if (!sawProgress) await sleep(50);
+    }
+    if (sawProgress) await cdp.screenshot(path.join(SHOTS_DIR, '3-usage-progress.png'));
+    check(sawProgress, 'a large backfill shows a progressbar with aria-valuenow');
+    check(!sawProgress || (await cdp.evaluate(text('section[aria-label="Usage"]'))).includes('Counting your sins:'), 'progress copy reads "Counting your sins: N of M sessions"');
+    await awaitStatus((s) => !s.running && s.sessionsDone >= s.sessionsSeen, 120_000);
+
+    // Jokes off: captions and the frustration card go away, the choice persists.
+    await call('setPrefs', { jokes: false });
+    await cdp.evaluate(`location.reload()`).catch(() => {});
+    await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'reloaded again' });
+    await cdp.clickByText('Usage');
+    await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes('Spend')`, { label: 'cards render with jokes off' });
+    const clean = await cdp.evaluate(text('section[aria-label="Usage"]'));
+    check(!clean.includes('Frustration index'), 'jokes off hides the frustration card');
+    check(!clean.includes('Counting your sins'), 'jokes off uses the plain progress copy');
+    await cdp.screenshot(path.join(SHOTS_DIR, '4-usage-jokes-off.png'));
+
+    // Empty state: relaunch against an empty sessions folder and a fresh data dir.
+    cdp.close();
+    await stopLauncher(child).catch(() => {});
+    const emptySessions = mkdtempSync(path.join(tmpdir(), 'refract-1331-empty-'));
+    const emptyData = mkdtempSync(path.join(tmpdir(), 'refract-1331-emptydata-'));
+    extraDirs.push(emptySessions, emptyData);
+    const port2 = await getFreePort();
+    const launched2 = await launchBuiltExe(launcherExe, exeInfo.dest, {
+      port: port2,
+      dataDir: emptyData,
+      pathPrepend: shimDir,
+      logFile: path.join(exeDir, 'app2.log'),
+      extraEnv: { REFRACT_IMPORT_SOURCE_DIR: importSourceDir, REFRACT_OMP_SESSIONS_DIR: emptySessions }
+    });
+    child = launched2.child;
+    cdp = await CdpSession.connect(await waitForCdpTarget(port2, { timeoutMs: 60_000 }));
+    await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'second launch ready' });
+    await cdp.clickByText('Usage');
+    await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes(${JSON.stringify(emptySessions)})`, { label: 'empty state names the sessions folder' });
+    check(true, 'the empty state names the sessions folder');
+    await cdp.screenshot(path.join(SHOTS_DIR, '5-usage-empty.png'));
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     failures.push('run crashed');
@@ -186,7 +260,7 @@ async function main() {
     }
     if (cdp) cdp.close();
     if (child) await stopLauncher(child).catch(() => {});
-    for (const dir of [dataDir, sessionsDir, importSourceDir, exeDir, launcherDir, shimDir]) await safeRmSync(dir, LOG);
+    for (const dir of [dataDir, sessionsDir, importSourceDir, exeDir, launcherDir, shimDir, ...extraDirs]) await safeRmSync(dir, LOG);
   }
 
   console.log(`${LOG}: ${failures.length ? `FAILED (${failures.length})` : 'all checks passed'}; evidence in ${SHOTS_DIR}`);
