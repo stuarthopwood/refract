@@ -6,6 +6,7 @@
 import { ArchiveIcon, ArchiveRestoreIcon, EllipsisVerticalIcon, FolderGit2Icon, GitBranchIcon, TriangleAlertIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -17,9 +18,6 @@ import { StateIcon, displayLabel, displayStatus, formatRelativeTime } from './se
 import { ContextActionItems, DropdownActionItems, SessionRenameInput, onContextMenuOpenChange, onDropdownOpenChange } from './SessionRowParts'
 import type { SessionRowSurface } from './sessionRowSurface'
 import type { useSessionRowActions } from './useSessionRowActions'
-
-const ICON_BUTTON_CLASS =
-  'rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 export function SessionRowTable({
   session,
@@ -98,15 +96,17 @@ export function SessionRowTable({
             <div className="flex shrink-0 items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     aria-label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
                     aria-disabled={row.quickActionPending || undefined}
                     onClick={row.runQuickAction}
-                    className={cn(ICON_BUTTON_CLASS, 'aria-disabled:opacity-50')}
+                    className="text-muted-foreground aria-disabled:opacity-50"
                   >
                     {isArchived ? <ArchiveRestoreIcon aria-hidden className="size-4" /> : <ArchiveIcon aria-hidden className="size-4" />}
-                  </button>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">{isArchived ? 'Restore' : 'Archive'}</TooltipContent>
               </Tooltip>
@@ -114,9 +114,16 @@ export function SessionRowTable({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                      <button ref={row.menuTriggerRef} type="button" aria-label={`${session.name} actions`} className={ICON_BUTTON_CLASS}>
+                      <Button
+                        ref={row.menuTriggerRef}
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`${session.name} actions`}
+                        className="text-muted-foreground"
+                      >
                         <EllipsisVerticalIcon aria-hidden className="size-4" />
-                      </button>
+                      </Button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">More actions</TooltipContent>
