@@ -17,7 +17,8 @@ const RAPID_SWITCH_MS = 150
 /**
  * Switching motion (#678, spec 058). Returns a ref for the element whose content just changed.
  * When `switchKey` changes after the first render, the variant's enter animation restarts on that
- * same element (no remount, so scroll and state survive). The first render never animates, and a
+ * same element (no remount, so scroll and state survive). The first render never animates, a
+ * switch to a null/undefined key (nothing shown, e.g. a pane closing) never animates, and a
  * switch within `RAPID_SWITCH_MS` of the previous one clears the animation instead of restarting it.
  */
 export function useEnterOnSwitch<T extends HTMLElement = HTMLDivElement>(
@@ -40,7 +41,7 @@ export function useEnterOnSwitch<T extends HTMLElement = HTMLDivElement>(
     lastSwitchAt.current = now
     const className = VARIANT_CLASS[variant]
     el.classList.remove(className)
-    if (rapid) return
+    if (rapid || switchKey == null) return
     void el.offsetWidth // restart the animation
     el.classList.add(className)
   }, [switchKey, variant])
