@@ -1,15 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckIcon, Code2Icon, EllipsisVerticalIcon, EyeIcon, Loader2Icon, MinusIcon, PlusIcon } from 'lucide-react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useGitChangesStore } from '@/state'
@@ -165,33 +156,21 @@ export function GitChangesFileRow({
         </DropdownMenuContent>
       </DropdownMenu>
       {isConflict && (
-        <AlertDialog open={confirmResolveOpen} onOpenChange={setConfirmResolveOpen}>
-          <AlertDialogContent
-            onCloseAutoFocus={(event) => {
-              event.preventDefault()
-              kebabTriggerRef.current?.focus()
-            }}
-          >
-            <AlertDialogHeader>
-              <AlertDialogTitle>Mark {fileName} as resolved?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This stages {entry.path} exactly as it is in the worktree right now. If any conflict markers
-                (<code>{'<<<<<<<'}</code>, <code>{'======='}</code>, <code>{'>>>>>>>'}</code>) are still in the file, they are staged too.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(event) => {
-                  event.preventDefault()
-                  void handleConfirmResolve()
-                }}
-              >
-                Mark as resolved
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmAlertDialog
+          open={confirmResolveOpen}
+          busy={false}
+          title={`Mark ${fileName} as resolved?`}
+          description={
+            <>
+              This stages {entry.path} exactly as it is in the worktree right now. If any conflict markers
+              (<code>{'<<<<<<<'}</code>, <code>{'======='}</code>, <code>{'>>>>>>>'}</code>) are still in the file, they are staged too.
+            </>
+          }
+          confirmLabel="Mark as resolved"
+          onCancel={() => setConfirmResolveOpen(false)}
+          onConfirm={() => void handleConfirmResolve()}
+          onCloseAutoFocus={() => kebabTriggerRef.current?.focus()}
+        />
       )}
     </div>
   )

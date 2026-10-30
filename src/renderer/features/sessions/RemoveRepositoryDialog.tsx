@@ -1,14 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { toast } from 'sonner'
 import { useRepositoriesStore, useSessionsStore } from '@/state'
 
@@ -73,57 +64,26 @@ export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemov
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent
-        aria-busy={removing}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          if (!removedRef.current) onCancelled?.()
-        }}
-        onEscapeKeyDown={(event) => {
-          if (removing) event.preventDefault()
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>{blocked ? `Can't remove ${repository.name} yet` : `Remove ${repository.name}?`}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {blocked
-              ? `${repository.name} still owns ${describeOwnedSessions(activeCount, archivedCount)}. Delete ${
-                  activeCount + archivedCount === 1 ? 'it' : 'them'
-                } first, then remove this project.`
-              : "This removes only Refract's entry for this project. The folder on disk is untouched."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          {blocked ? (
-            <AlertDialogCancel>Close</AlertDialogCancel>
-          ) : (
-            <>
-              <AlertDialogCancel
-                aria-disabled={removing}
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                onClick={(event) => {
-                  if (removing) event.preventDefault()
-                }}
-              >
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                aria-disabled={removing}
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                onClick={(event) => {
-                  event.preventDefault()
-                  if (removing) return
-                  void handleRemove()
-                }}
-              >
-                {removing ? 'Removing…' : 'Remove'}
-              </AlertDialogAction>
-            </>
-          )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmAlertDialog
+      open={open}
+      busy={removing}
+      title={blocked ? `Can't remove ${repository.name} yet` : `Remove ${repository.name}?`}
+      description={
+        blocked
+          ? `${repository.name} still owns ${describeOwnedSessions(activeCount, archivedCount)}. Delete ${
+              activeCount + archivedCount === 1 ? 'it' : 'them'
+            } first, then remove this project.`
+          : "This removes only Refract's entry for this project. The folder on disk is untouched."
+      }
+      cancelLabel={blocked ? 'Close' : 'Cancel'}
+      confirmLabel={blocked ? undefined : 'Remove'}
+      busyLabel="Removing…"
+      tone="destructive"
+      onCancel={() => onOpenChange(false)}
+      onConfirm={() => void handleRemove()}
+      onCloseAutoFocus={() => {
+        if (!removedRef.current) onCancelled?.()
+      }}
+    />
   )
 }

@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react'
 import { FolderIcon, FolderOpenIcon, TriangleAlertIcon } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { toast } from 'sonner'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
@@ -512,9 +513,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
           </EmptyHeader>
         </Empty>
       ) : status === 'loading' ? (
-        <p role="status" className="p-2 text-sm text-muted-foreground">
-          Loading…
-        </p>
+        <InlineStatus tone="loading">Loading…</InlineStatus>
       ) : status === 'error' ? (
         <Empty className="h-full">
           <EmptyHeader>
@@ -554,9 +553,9 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
           <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
             <ResizablePanel defaultSize="60%" minSize="20%">
               {rows.length === 0 ? (
-                <p className="p-2 text-xs text-muted-foreground">
+                <InlineStatus density="compact">
                   Every entry here is ignored. Turn on "Show ignored files" above to see them.
-                </p>
+                </InlineStatus>
               ) : (
                 <div ref={treeContainerRef} role="tree" aria-label="Files" className="h-full">
                   <Virtuoso

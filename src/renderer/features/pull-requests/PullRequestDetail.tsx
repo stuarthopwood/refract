@@ -3,16 +3,8 @@
 // not-mergeable pull request shows that reason instead of Merge.
 import { useEffect, useRef, useState } from 'react'
 import { ExternalLinkIcon } from 'lucide-react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Badge } from '@/components/ui/badge'
@@ -141,14 +133,10 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   }
 
   if (loading && !detail) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading…</div>
+    return <InlineStatus tone="loading">Loading…</InlineStatus>
   }
   if (error && !detail) {
-    return (
-      <div role="alert" className="p-4 text-sm text-destructive">
-        {error}
-      </div>
-    )
+    return <InlineStatus tone="error">{error}</InlineStatus>
   }
   if (!detail) return null
 
@@ -328,38 +316,24 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
         restoreFocusTo={mergeButtonRef}
         restoreFocusFallbackTo={headingRef}
       />
-      <AlertDialog open={forkWarningOpen} onOpenChange={setForkWarningOpen}>
-        <AlertDialogContent
-          onCloseAutoFocus={(event) => {
-            // Restore focus to the "New session" button (or the detail heading if it is now disabled), like `MergeDialog`.
-            event.preventDefault()
-            const button = newSessionButtonRef.current
-            if (button && !button.disabled) button.focus()
-            else headingRef.current?.focus()
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Start a Session on untrusted code?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {title} comes from a fork{detail.headRepositoryOwner ? ` owned by ${detail.headRepositoryOwner}` : ''}, not this project's GitHub repository.
-              Its branch may contain code, commit messages, or an AGENTS.md written by someone you don't control, which an agent session
-              would then read and could act on. Only continue if you trust this pull request's author.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault()
-                setForkWarningOpen(false)
-                void handleNewSession()
-              }}
-            >
-              Start Session anyway
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmAlertDialog
+        open={forkWarningOpen}
+        busy={false}
+        title="Start a Session on untrusted code?"
+        description={`${title} comes from a fork${detail.headRepositoryOwner ? ` owned by ${detail.headRepositoryOwner}` : ''}, not this project's GitHub repository. Its branch may contain code, commit messages, or an AGENTS.md written by someone you don't control, which an agent session would then read and could act on. Only continue if you trust this pull request's author.`}
+        confirmLabel="Start Session anyway"
+        onCancel={() => setForkWarningOpen(false)}
+        onConfirm={() => {
+          setForkWarningOpen(false)
+          void handleNewSession()
+        }}
+        onCloseAutoFocus={() => {
+          // Restore focus to the "New session" button (or the detail heading if it is now disabled), like `MergeDialog`.
+          const button = newSessionButtonRef.current
+          if (button && !button.disabled) button.focus()
+          else headingRef.current?.focus()
+        }}
+      />
     </div>
   )
 }

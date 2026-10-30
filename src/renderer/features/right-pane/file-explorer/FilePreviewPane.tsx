@@ -2,6 +2,7 @@
 // since the preview is reachable without opening it). `FileExplorerPanel.tsx` owns the Session/store wiring and handlers.
 import { useEffect, useState } from 'react'
 import { FileIcon, FileWarningIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { CodeBlock, Markdown } from '@/features/chat/Markdown'
@@ -158,9 +159,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
         className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
       {previewLoading ? (
-        <p role="status" className="p-2 text-sm text-muted-foreground">
-          Loading…
-        </p>
+        <InlineStatus tone="loading">Loading…</InlineStatus>
       ) : !preview ? (
         <Empty className="h-full">
           <EmptyHeader>

@@ -4,6 +4,7 @@
 // rendered by `TimelineCards.tsx`; reply/resolve controls live in `ThreadReply.tsx`.
 import type { ReactNode } from 'react'
 import type { TimelineEntry } from '../../../shared/github'
+import { InlineStatus } from '@/components/InlineStatus'
 import { CommentCard, CommitRow, ReviewCard, ThreadCard } from './TimelineCards'
 
 interface TimelineProps {
@@ -42,7 +43,7 @@ function Item({ children }: { children: ReactNode }) {
 
 export function Timeline({ repositoryId, number, entries, viewerLogin, replyDrafts, onReplyDraftChange, onChanged }: TimelineProps) {
   if (entries.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">No activity yet.</p>
+    return <InlineStatus>No activity yet.</InlineStatus>
   }
   return (
     <div className="relative p-4">
