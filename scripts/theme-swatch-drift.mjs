@@ -1,15 +1,9 @@
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
 import { hexToLinearSrgb } from './theme-contrast-pairs.mjs'
 
-// #1043 (swatchPrimary vs --primary drift check), moved out of check-theme-contrast.mjs for the
-// same #806 file-size reason as the composited checks that stayed in check-theme-contrast.mjs. Confirms
-// `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color`/
-// `titleBarOverlay.symbolColor` literals never silently drift from the preset's REAL resolved
-// `--background`/`--primary`/`--foreground` CSS tokens. #1074: `symbolColor` is now a
-// composited check (`--foreground` alpha-blended over `--background`, `resolvedLinear`, a
-// pass-through when alpha is 1) rather than byte-equality, since `--foreground` is translucent
-// in every non-HC preset while `setTitleBarOverlay` takes an opaque hex. Returns
-// `{ checkedCount, failCount, rows }` (one count per theme, a row only on failure).
+// Confirms themes.ts swatch/titleBarOverlay literals never drift from the resolved CSS tokens.
+// symbolColor is composited, not byte-compared: --foreground is translucent in non-HC presets
+// while setTitleBarOverlay takes an opaque hex (#1074).
 export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds) {
   let checkedCount = 0
   let failCount = 0
@@ -43,7 +37,7 @@ export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds
     if (meta.swatchPrimary !== actualPrimaryHex) mismatches.push(`swatchPrimary '${meta.swatchPrimary}' != --primary '${actualPrimaryHex}'`)
     if (meta.titleBarOverlayColor !== actualTitlebarHex) mismatches.push(`titleBarOverlay.color '${meta.titleBarOverlayColor}' != --titlebar '${actualTitlebarHex}'`)
     if (meta.symbolColor !== actualSymbolColorHex) mismatches.push(`titleBarOverlay.symbolColor '${meta.symbolColor}' != --foreground composited over --titlebar '${actualSymbolColorHex}'`)
-    // Chrome band (#682): native caption symbols need 3:1 on the bar; High contrast dark has no soft divider, so its bottom edge needs a solid 4.5:1.
+    // Native caption symbols need 3:1 on the bar; HC dark has no soft divider, so its bottom edge needs a solid 4.5:1.
     const symbolRatio = contrastRatio(relativeLuminance(hexToLinearSrgb(meta.symbolColor)), relativeLuminance(titlebar.linear))
     if (symbolRatio < 3) mismatches.push(`titleBarOverlay.symbolColor '${meta.symbolColor}' is ${symbolRatio.toFixed(2)}:1 on --titlebar, under 3:1`)
     if (id === 'dark-high-contrast') {
@@ -52,8 +46,7 @@ export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds
     }
     if (mismatches.length > 0) fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, mismatches.join('; '))
   }
-  // #1256: Cyber Amber's canvas tokens are deliberately byte-identical to Dark's (every shared
-  // contrast pair and themes.ts's swatch rely on it); fail loudly when one drifts.
+  // Cyber Amber's canvas tokens must stay byte-identical to Dark's; shared contrast pairs and the swatch rely on it (#1256).
   for (const token of ['background', 'card', 'popover']) {
     const amber = themes['cyber-amber']?.[token]
     const dark = themes.dark?.[token]

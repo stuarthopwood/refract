@@ -1,24 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #558 (blocker/concern advisory callout: accent bar, locations,
-// Copy advisory, "Ask agent to address this"), required before the draft PR.
-//
-// Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
-// override, matching #570/#557's own isolation posture: only Refract's OWN data,
-// `REFRACT_DATA_DIR`, is scratch). Real model tokens, small prompts.
-//
-// Advisor reachability depends on the signed-in `omp` profile's own persisted settings, not on
-// anything this script controls (an earlier draft wrongly assumed RPC hosts always start the
-// advisor disabled, filed as #917 -- live runs since have repeatedly shown a real `<advisory>`
-// note arriving against the ambient profile used here). It sends a warm-up turn plus a few
-// turns shaped to read as risky to a code-review advisor and records whatever severity actually
-// appears (never forced, never guaranteed -- the advisor's own judgement decides each run).
-// #558's severity-specific behaviour (default-open, accent colour, locations, Copy, Ask-agent,
-// focus-return, keyboard order, the concern-run reveal) is asserted live only if a real advisory
-// actually materialises this run; otherwise it is code-reviewed only, with no unit or
-// live-advisory coverage -- see the PR body's own "Not exercised" list.
-//
-// The exe under test is rebuilt immediately before this script runs and checked against the
-// just-built renderer bundle for three #558-only strings before anything else is trusted.
+// Live CDP check for #558 (blocker/concern advisory callout: accent bar, locations, Copy advisory,
+// "Ask agent to address this") against a real ambient `omp`; only REFRACT_DATA_DIR is scratch.
+// Severity-specific checks run only if the advisor actually raises a note this run.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -46,20 +29,14 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_558_SHOTS_DIR || path.join(tmpdir(), 'refract-558-blocker-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 const WARMUP_PROMPT = "Reply with exactly the single word 't558warmup' and nothing else.";
-// Open-ended implementation requests (never an explicit "write this insecurely" instruction):
-// an advisor watchdog is designed to catch the AGENT's OWN unprompted mistakes, not compliance
-// with an explicit user instruction for intentionally-insecure demo code -- an earlier attempt
-// that asked outright for insecure patterns completed cleanly but never triggered a note across
-// two full runs (6 turns), plausibly because the advisor reasonably treats an explicit request
-// as the user's own informed choice, not a lapse to flag. Letting the agent choose its own
-// (hopefully naive) implementation is a closer match to the advisor's real intended use case.
+// Open-ended requests, never "write this insecurely": the advisor flags the agent's own lapses,
+// and an explicit request for insecure code never triggered a note.
 const RISKY_PROMPTS = [
   ['t558a', "Add a simple user login check function to this repo, in a new file auth_demo.py, that takes a username and password and returns whether they are valid against a small hardcoded user list. Then reply with exactly the single word 't558a' and nothing else."],
   ['t558b', "Add a function to this repo, in a new file db_demo.py, that looks up a user record from a SQL database by username, taking the username as a plain string argument. Then reply with exactly the single word 't558b' and nothing else."]
 ];
 const SEVERITY_RANK = { blocker: 3, concern: 2, nit: 1 };
-// Matches a CollapsedLine trigger (or the plain nit row) by its exact label text, never a
-// substring match against the whole row's textContent (the note itself could contain these words).
+// Matches a collapsed-line trigger (or nit row) by its exact label, not a substring of the row text.
 const ADVISORY_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button, [aria-label="Transcript"] div[tabindex]')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); return label && ['Blocker','Concern','Nit'].includes(label.textContent.trim()); })`;
 
@@ -74,10 +51,7 @@ function assertBundleContainsStory558Markers() {
   }
 }
 
-/** Reads the REAL OS clipboard directly (not via `navigator.clipboard` in the renderer, which
- * the sandboxed WebView2 process denies by its own permission handler, `src-tauri/src/main.rs`
- * -- `window.refract.clipboard.writeText` instead writes the actual OS clipboard over its own
- * Rust IPC channel, so reading it back needs a real OS-level read, not a CDP page evaluation). */
+/** Reads the OS clipboard directly: the sandboxed WebView2 denies `navigator.clipboard` (src-tauri/src/main.rs). */
 function readOsClipboardText() {
   const result = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-Clipboard -Raw'], { encoding: 'utf8', windowsHide: true });
   return result.status === 0 ? result.stdout.replace(/\r?\n$/, '') : null;
@@ -91,10 +65,7 @@ async function readAdvisorySeverities(cdp) {
   return cdp.evaluate(`(${ADVISORY_FINDER}).map((el) => el.querySelector('[data-slot="collapsed-line-label"]').textContent.trim().toLowerCase())`);
 }
 
-// Gate round 1: the accent bar is drawn as an absolutely-positioned `::before` pseudo-element
-// (zero layout impact, so the icon stays on-grid), not a real border -- read its own
-// background-color via `getComputedStyle(el, '::before')`. `null` for a nit (no wrapper div
-// exists at all, decision 14).
+// The accent bar is a `::before` pseudo-element, so read its background; `null` for a nit (no wrapper).
 async function readAccentBorderColor(cdp, index) {
   return cdp.evaluate(`(() => { const el = (${ADVISORY_FINDER})[${index}]; const wrapper = el.closest('[data-advisory-severity]'); return wrapper ? getComputedStyle(wrapper, '::before').backgroundColor : null; })()`);
 }
@@ -103,8 +74,7 @@ async function probeTokenBorderColor(cdp, className) {
   return cdp.evaluate(`(() => { const probe = document.createElement('span'); probe.style.position = 'fixed'; probe.className = ${JSON.stringify(className)}; document.body.appendChild(probe); const c = getComputedStyle(probe, '::before').backgroundColor; probe.remove(); return c; })()`);
 }
 
-// `pressTab`'s own Shift-modified counterpart (gate round 3, M3 focus-ring proof): CDP's
-// `Input.dispatchKeyEvent` modifier bitmask has Shift at bit 3 (value 8).
+// CDP's modifier bitmask has Shift at bit 3 (value 8).
 async function pressShiftTab(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab', modifiers: 8 });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab', modifiers: 8 });
@@ -203,8 +173,7 @@ async function main() {
     let countBefore = await countAdvisories(cdp);
     for (const [sentinel, prompt] of RISKY_PROMPTS) {
       await sendAndWait(sentinel, prompt);
-      // Advisor review is async after the turn settles (reviewMode: agent-end) -- poll for a
-      // NEW advisory item beyond this turn's own pre-send count, not a fixed sleep.
+      // Advisor review is async after the turn settles; poll for a new advisory, not a fixed sleep.
       try {
         await cdp.waitFor(`(${ADVISORY_FINDER}).length > ${countBefore}`, { timeoutMs: 120_000, label: `New advisory after turn ${sentinel}` });
         const severities = await readAdvisorySeverities(cdp);
@@ -224,12 +193,7 @@ async function main() {
       findings.push(`Best severity observed live: "${bestSeverity}" (blocker is the ideal outcome but is the advisor model's own call, not forced).`);
       const severities = await readAdvisorySeverities(cdp);
       const targetIndex = severities.lastIndexOf(bestSeverity);
-      // The transcript can have scrolled this row out of the viewport by now (three risky-action
-      // turns plus the agent's own replies); cdp.click() dispatches Input.dispatchMouseEvent at
-      // getBoundingClientRect() viewport coordinates with no auto-scroll, so a click on an
-      // off-screen element silently lands nowhere. Scroll it into view once, up front, so every
-      // click below (expand, Copy, Tab-order, Ask-agent) targets a coordinate that is actually
-      // on screen.
+      // cdp.click() does not auto-scroll, so an off-screen row would be clicked at nothing.
       await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].scrollIntoView({ block: 'center' })`);
       await cdp.screenshot(path.join(SHOTS_DIR, '00-dark-advisory-arrived.png'));
 
@@ -259,14 +223,9 @@ async function main() {
         if (locationsText.length > 0) findings.push(`Location(s) extracted and shown as monospace text: ${JSON.stringify(locationsText)} (decisions 4-5).`);
         else notExercised.push('The advisor\'s own note text did not happen to name a path:line this run (advisor phrasing is not caller-controlled); location extraction (and both a note-only and a note-plus-guidance location together) is code-reviewed only, no unit or live coverage.');
 
-        // Captured now (the row's own expanded body, already open) for the gate round 2 High
-        // fix below: asserting this exact text later reappears inside the POSTED Ask-agent user
-        // bubble, not just the "Please address this..." lead-in line (the old `<advisory>` tag
-        // wrapper was silently dropped by the sanitised Markdown renderer; the agent still
-        // received it, but the transcript misrepresented what the user sent).
+        // Captured now to assert the same text appears inside the posted Ask-agent bubble below.
         const noteText = await cdp.evaluate(`(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); return wrapper.querySelector('.whitespace-pre-wrap')?.textContent ?? ''; })()`);
 
-        // ---- Copy advisory: real OS clipboard ----
         const copyBefore = readOsClipboardText();
         await cdp.evaluate(`(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); const btn = Array.from(wrapper.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '') === 'Copy advisory'); btn.click(); })()`);
         await sleep(500);
@@ -277,32 +236,23 @@ async function main() {
         else if (!clipboardText.startsWith(expectedPrefix)) failures.push(`Clipboard reads "${clipboardText.slice(0, 80)}...", expected it to start with "${expectedPrefix}" (decision 6).`);
         else findings.push(`Copy advisory wrote the REAL OS clipboard (read back directly, not via the sandboxed renderer API): "${clipboardText.slice(0, 80)}${clipboardText.length > 80 ? '…' : ''}".`);
 
-        // ---- Keyboard-only: Tab from the trigger reaches Copy then Ask-agent, then Shift+Tab
-        // back proves the trigger's own focus-ring/z-index fix (gate round 3: the previous
-        // version's `.focus()` + immediate screenshot proved nothing -- a script `.focus()`
-        // right after a prior real click does not set Chromium's `:focus-visible`, so the
-        // z-[1] lift (which applies only under `:focus-visible`) was never even in play; the
-        // 06-focused-trigger.png from that run shows no ring on any side, confirming it). ----
+        // A script `.focus()` after a real click does not set `:focus-visible`, so the z-index lift
+        // is only provable via real Tab/Shift+Tab.
         try {
-          // `Emulation.setFocusEmulationEnabled` first: the offscreen scratch WebView2 instance
-          // likely has no real OS window focus, under which `:focus-visible` never paints
-          // regardless of how focus is set.
+          // An offscreen WebView2 likely lacks OS window focus, under which `:focus-visible` never paints.
           await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
           await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].focus()`);
           await pressTab(cdp);
           const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
           await pressTab(cdp);
           const afterTab2 = (await getActiveElementAccessibleName(cdp)).name;
-          // "Copied" (not "Copy advisory") is also a pass here: the Copy click just above
-          // (COPIED_RESET_MS = 1500) can still be inside its post-click window by the time this
-          // check runs -- same physical button, same correct Tab position, a transient label.
+          // "Copied" also passes: the Copy click above can still be inside its COPIED_RESET_MS window.
           if ((afterTab1 === 'Copy advisory' || afterTab1 === 'Copied') && (afterTab2 || '').startsWith('Ask agent to address this')) {
             findings.push(`Keyboard Tab order confirmed: trigger -> "${afterTab1}" -> "${afterTab2}" (decision 12, standard DOM order).`);
           } else {
             failures.push(`Keyboard Tab order from the trigger reached "${afterTab1}" then "${afterTab2}", expected "Copy advisory" then "Ask agent to address this...".`);
           }
-          // Shift+Tab twice: back to Copy, then back to the trigger itself -- via REAL keyboard
-          // navigation this time, the only way Chromium actually sets `:focus-visible`.
+          // Real keyboard navigation is the only way Chromium sets `:focus-visible`.
           await pressShiftTab(cdp);
           await pressShiftTab(cdp);
           const ring = await cdp.evaluate(`(() => {
@@ -325,23 +275,18 @@ async function main() {
             failures.push(`Focused trigger computed style was position:${ring.position} z-index:${ring.zIndex} outline:${ring.outlineStyle} ${ring.outlineWidth}, expected position:relative z-index:1 outline:solid 2px (decision 1's stripe/focus-ring fix, gate round 2/3).`);
           } else {
             findings.push(`Keyboard-focused trigger confirmed :focus-visible with the accent-bar z-index lift active (position:relative, z-index:1, a solid 2px outline) -- the fix that raises it above the stripe is proven live, not just code-reviewed.`);
-            // Clipped to the row's own left edge (where the stripe and the ring's left side
-            // overlap) -- a full-window shot would not show whether the fix actually works.
+            // Clipped to the row's left edge, where the stripe and the ring overlap.
             const rect = await cdp.evaluate(`(() => { const r = (${ADVISORY_FINDER})[${targetIndex}].getBoundingClientRect(); return { x: Math.max(0, r.x - 4), y: r.y, width: Math.min(240, r.width + 8), height: r.height }; })()`);
             const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { ...rect, scale: 1 } });
             writeFileSync(path.join(SHOTS_DIR, '06-focused-trigger.png'), Buffer.from(data, 'base64'));
           }
-          // Return focus to the trigger (a plain .focus(), same reasoning as above) so the row
-          // is left exactly as the Ask-agent step below expects it: open, trigger focused.
+          // Leave the row open with the trigger focused, as the Ask-agent step expects.
           await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].focus()`);
         } catch (err) {
           notExercised.push(`Keyboard Tab-order/focus-ring check did not complete (${err.message}).`);
         }
 
-        // ---- Ask agent to address this <severity>: real chat.send, real new user turn ----
-        // A REAL pointer click (Input.dispatchMouseEvent via cdp.click), not a raw `.click()`
-        // call: only a real click focuses the clicked element first, the same way a genuine
-        // user interaction would -- needed for the focus-return check below to mean anything.
+        // A real pointer click (not `.click()`) focuses the element first, as the focus-return check needs.
         const transcriptTextBefore = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]').textContent`);
         const askButtonFinder = `(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); return Array.from(wrapper.querySelectorAll('button')).find((b) => b.textContent.trim().startsWith('Ask agent to address this')); })()`;
         try {
@@ -351,13 +296,8 @@ async function main() {
             { timeoutMs: 60_000, label: 'Ask-agent message posted as a new user turn' }
           );
           findings.push(`"Ask agent to address this ${bestSeverity}" sent a real message through chat.send, visible as a new user turn (decision 7).`);
-          // Gate round 2 High fix: the old `<advisory>` tag wrapper was dropped as a raw
-          // CommonMark HTML block by the sanitised Markdown renderer, so the posted bubble
-          // showed only the "Please address this..." lead-in -- the note itself was invisible.
-          // Asserting the lead-in appeared (above) is NOT enough; the note text must be in the
-          // SAME bubble, not just somewhere else in the transcript (the original advisory row,
-          // still mounted above, also contains it -- a whole-transcript substring check would
-          // pass even if the bubble itself were empty, which is exactly the bug this missed).
+          // The lead-in alone is not enough: the note must be in the same bubble, not merely in the
+          // still-mounted advisory row above (a transcript-wide check would pass on an empty bubble).
           const notePreview = noteText.slice(0, 40);
           const bubbleContainsNote = await cdp.evaluate(`(() => {
             const bubbles = Array.from(document.querySelectorAll('[aria-label="Transcript"] [data-slot="message"][data-align="end"]'));
@@ -373,7 +313,6 @@ async function main() {
           const activeHasTag = await cdp.evaluate(`document.activeElement && document.activeElement.getAttribute('data-558-test-trigger') === '1'`);
           if (activeHasTag) findings.push('Focus returned to the advisory row\'s own trigger after the send completed (decision 13).');
           else failures.push('Focus did not return to the advisory row\'s own trigger after Ask-agent sent.');
-          // Let the agent actually answer before the next step touches the composer again.
           await cdp.waitFor(
             `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return t && t.textContent !== ${JSON.stringify(transcriptTextBefore)}; })()`,
             { timeoutMs: 120_000, label: 'A response to the Ask-agent message arrived' }
@@ -383,7 +322,6 @@ async function main() {
         }
       }
     }
-    // ---- Themes ----
     try {
       await switchTheme(cdp, 'obsidian', 'Obsidian');
       await cdp.screenshot(path.join(SHOTS_DIR, '01-obsidian.png'));
@@ -395,7 +333,6 @@ async function main() {
       notExercised.push(`Theme screenshots did not complete (${err.message}).`);
     }
 
-    // ---- Narrow width (360px) ----
     try {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
@@ -403,12 +340,7 @@ async function main() {
       if (narrowOverflow) failures.push('A horizontal scrollbar appeared at 360px width.');
       else findings.push('No horizontal scroll at 360px width.');
       await cdp.screenshot(path.join(SHOTS_DIR, '03-360px.png'));
-      // Gate round 3 fix (Medium): the page-level `scrollWidth` check above only catches a
-      // horizontal SCROLLBAR on the whole document -- a nested element can overflow its OWN
-      // container (clipped, not scrolled) with no effect on that page-level measurement.
-      // Screenshot the advisory row and the posted Ask-agent bubble specifically, the two
-      // surfaces this story actually touches, instead of relying on the generic whole-window
-      // shot to happen to show either one legibly.
+      // The page-level scrollWidth check misses a nested element clipped inside its own container.
       const rowCountAtNarrow = await cdp.evaluate(`(${ADVISORY_FINDER}).length`);
       if (rowCountAtNarrow > 0) {
         await cdp.evaluate(`(${ADVISORY_FINDER})[${rowCountAtNarrow} - 1].scrollIntoView({ block: 'center' })`);
@@ -428,7 +360,6 @@ async function main() {
       notExercised.push(`360px width check did not complete (${err.message}).`);
     }
 
-    // ---- Reduced motion ----
     try {
       await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
       await cdp.screenshot(path.join(SHOTS_DIR, '04-reduced-motion.png'));

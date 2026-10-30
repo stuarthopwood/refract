@@ -1,61 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1043 (Theme submenu real radio list, shared DropdownMenuRadioItem,
-// ADR 0003). Grilled 2026-10-19, converged into spec 008 (Clarifications "Session 2026-10-20",
-// FR-019/FR-030) 2026-10-20. Built the same way `verify-tauri-569.mjs`/`verify-741-role-chip.mjs`
-// drive this app: `scripts/verify-tauri-launcher.rs`'s kill-on-close Job Object, a fresh scratch
-// `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR` per launch, the real
-// rendered DOM over CDP -- never `window.refract.theme.set`/`.setThinkingLevel` as a shortcut for
-// anything the UI itself should do, except the two documented exceptions below (same exceptions
-// `verify-tauri-735.mjs`/`verify-564-gate2-live-check.mjs` already establish).
-//
-// Proves, against the real rendered DOM, in each of the 5 built-in presets:
-//   - The Theme submenu is a real `DropdownMenuRadioGroup`: every row `role="menuitemradio"`,
-//     exactly one `aria-checked="true"`, matching the active theme (`useThemeStore`).
-//   - The leading ring-and-dot mark (`radio-group.tsx`'s `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`):
-//     the dot (`DropdownMenuPrimitive.ItemIndicator`) is structurally mounted on the checked row
-//     ONLY, never on an unchecked one.
-//   - The colour swatch is a two-colour chip (`rounded-[3px]`, never `rounded-full`) AFTER the
-//     name, never confused for a second radio.
-//   - Pointer selection (`switchTheme`, `verify-tauri-scratch-helpers.mjs`, fixed for #1043's new
-//     `menuitemradio` rows) moves the check, once per preset (5/5 transitions exercised).
-//   - Keyboard selection: ArrowRight into the submenu lands focus on the ACTIVE preset first (the
-//     existing keyboard-open-focus behaviour, unregressed) -- seeded on 'Dark (high contrast)',
-//     the SECOND-listed preset, not the first-listed 'Dark', so this cannot pass merely because
-//     Radix's own unmodified default (focus the first item) coincidentally matches; ArrowDown +
-//     Enter from there selects Obsidian, the checked radio re-read as having actually moved.
-//   - The focus-bar/checked-state split (2026-10-15 decision, "the bar follows focus, never
-//     selection" -- unchanged by this fix): an UNCHECKED row that has keyboard focus carries the
-//     inset-shadow focus bar; the CHECKED-but-unfocused row does not.
-//   - Forced-colours: WebView2's own CDP endpoint has no working `Emulation.setEmulatedMedia` for
-//     `forced-colors` (the same limitation `verify-tauri-567.mjs`'s header comment already
-//     records) -- a structural check confirms the ring's own
-//     `forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]` utility class is
-//     literally present in the rendered markup, AND the real built CSS read off disk
-//     (`forcedColorsRuleCompiled`, every `out/tauri-web/assets/*.css`) confirms
-//     Tailwind genuinely compiled a matching `@media (forced-colors: ...)` CSS rule declaring
-//     `border-color: Highlight` (not just that the class name exists as rendered-DOM text);
-//     real OS forced-colours rendering is reported `notExercised`, not silently skipped or
-//     falsely claimed.
-// Then, the shared `DropdownMenuRadioItem`'s OTHER caller:
-//   - The composer's Reasoning picker (`ComposerPickers.tsx`, needed ONLY the label-truncation
-//     wrapper for #1043, no radio-mark change): `menuitemradio` x8 (every `THINKING_LEVELS` entry), exactly one checked matching
-//     the Session's real selected `lastThinkingLevel` (set through a real click/keyboard
-//     selection in the UI, never a seed -- see the exception note below), the same
-//     dot-on-checked-only structural proof, and a real keyboard selection through the real
-//     `model.setThinkingLevel` IPC.
-//
-// Exceptions to "never a shortcut": `window.refract.theme.set`/`window.refract.sessions.list()`
-// read-only calls (confirming a real store round trip after a UI-driven action, not driving the
-// UI itself). An earlier cut of this script seeded `registry.json`'s `lastThinkingLevel`
-// directly (the same approach `verify-564-gate2-live-check.mjs` established for that exact
-// field) -- dropped once that seed turned out to race the real post-attach session-settle
-// resync that persists `lastThinkingLevel` back onto the Session row, silently overwriting it
-// before this script ever read it back. A real pointer click (then a real keyboard selection)
-// has no such race, so Part B below drives both through the actual UI instead.
-//
-// Every launched app instance (and its CDP connection) is registered in `openHandles` the
-// instant it is created and torn down in ONE top-level `finally`-equivalent, regardless of which
-// step throws. A hard `process.exit(...)` at every exit path.
+// Live CDP check for #1043: the Theme submenu and Reasoning picker are real radio lists (shared DropdownMenuRadioItem).
+// Only read-only non-UI calls are used for confirmation. Forced-colours can't be emulated over WebView2 CDP, so it is
+// checked structurally (class plus compiled `@media (forced-colors)` rule on disk); the real OS render is `notExercised`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
@@ -98,20 +44,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1043_SHOTS_DIR || path.join(tmpdir(), 'refract-1043-shots');
-// LOW fix (#1043): this is a FIXED folder name (not a fresh mkdtempSync per run), so a previous
-// run's output -- including an early "first build" attempt's own screenshots, possibly captured
-// at the wrong zoom/DPI before some later fix landed -- would otherwise linger here untouched by
-// any filename this run does not happen to regenerate (e.g. a run that FAILs before reaching a
-// later screenshot). Cleared by exact literal filename only (`clearKnownOutputFiles`'s own
-// guard, never a recursive delete of a variable-overridable folder), every name this script is
-// known to ever write: the per-theme Theme-submenu shots, the keyboard/reasoning shots, both
-// report files, and every retry attempt's own app log (`launchFresh`'s own 1-5 attempts x 2
-// labels, 'themes'/'reasoning'). The `*-zoom.png`/`*-theme-submenu-zoom2.png`/`*-reopen-*.log`
-// entries below are confirmed stale leftovers from an EARLIER, no-longer-existing cut of this
-// script (found still sitting in `refract-1043-shots` from a 03:49/06:26 run, untouched by the
-// THEN-current `clearKnownOutputFiles` call because that call's own list never named them) --
-// the exact "first-build zoom shots" this fix clears, listed for every theme/attempt so the
-// same dead-name problem cannot recur for THESE specific names again.
+// Fixed folder (not mkdtemp): cleared by exact literal filename, never a recursive delete of an overridable path.
 const SHOT_NAMES_1043 = [
   ...THEMES_1043.map((theme) => `${theme.id}-theme-submenu.png`),
   ...THEMES_1043.map((theme) => `${theme.id}-theme-submenu-zoom2.png`),
@@ -230,11 +163,7 @@ async function main() {
     exeHash = built.hash;
     log(`verify-1043-theme-radio: exe sha256 ${exeHash} copied to ${exePath}`);
 
-    // -----------------------------------------------------------------------------------------
-    // Part A: the Theme submenu -- a real radio group in every preset, pointer AND keyboard
-    // selection, the radio dot, the two-colour gradient chip, the focus-bar/checked-state split, and
-    // the forced-colours structural check.
-    // -----------------------------------------------------------------------------------------
+    // ---- Part A: Theme submenu in every preset ----
     const repoParentA = mkdtempSync(path.join(tmpdir(), 'refract-1043-repoA-'));
     track(() => safeRmSync(repoParentA));
     const repoDirA = makeScratchRepo(path.join(repoParentA, 'repo'), 'refract-1043-repoA');
@@ -242,13 +171,8 @@ async function main() {
     await addRepository(cdp, repoDirA);
     checkPass('Added a scratch repository (the Theme submenu needs no Session to exist)');
 
-    // MEDIUM fix (#1043): the app's own default/starting theme is 'dark' (THEMES_1043[0]),
-    // so a loop that starts by switching TO 'dark' first would make that one iteration a no-op
-    // click (ProfileMenu.tsx's `chooseTheme` returns early for `id === activeId`, calling
-    // `useThemeStore.save` zero times) -- not a real transition, undercutting the "5/5
-    // transitions exercised" claim below to really only 4/5. Seed a different preset first so
-    // every one of the 5 iterations below, including the first (switching away from this seed
-    // back to 'dark'), is a genuine pointer-driven transition.
+    // Seed a non-default preset first: switching to the starting 'dark' theme is a no-op
+    // (`chooseTheme` returns early for the active id), so the first iteration wouldn't be a real transition.
     await switchTheme(cdp, 'cyber-amber', 'Cyber Amber');
     let realTransitions = 0;
     for (const theme of THEMES_1043) {
@@ -287,16 +211,9 @@ async function main() {
     if (realTransitions === THEMES_1043.length) checkPass(`Pointer selection moves the check: ${realTransitions}/${THEMES_1043.length} switchTheme calls changed the active theme (seeded on Cyber Amber beforehand, so the first iteration switching to Dark is a real transition too, not a same-theme no-op click)`);
     else checkFail(`Pointer selection moves the check: every switchTheme call changes the active theme`, `${realTransitions}/${THEMES_1043.length} real transitions`);
 
-    // ---- Keyboard: open via Enter, ArrowDown x2 + ArrowRight into the submenu, confirm focus
-    // lands on the ACTIVE preset first. Seeds 'Dark (high contrast)' (THEMES_1043[1]), not
-    // 'Dark' (THEMES_1043[0]) -- MEDIUM fix (#1043): asserting focus lands on 'Dark' here would
-    // be a VACUOUS test, since Radix's own unmodified default (focus the first `RadioItem` in
-    // DOM order) would ALSO land on 'Dark' purely because it happens to be first-listed, proving
-    // nothing about ProfileMenu.tsx's own `onOpenChange` focus-steering code (the exact habitual-
-    // Enter-on-the-wrong-row bug that code's own doc comment describes). Asserting focus lands
-    // on 'Dark (high contrast)' instead -- the SECOND-listed preset -- only passes if that
-    // steering code genuinely ran; Radix's own default would leave focus on 'Dark' (the first
-    // item) instead, which this assertion would then catch as a FAIL. ----
+    // ---- Keyboard: focus must land on the ACTIVE preset first. Seeds 'Dark (high contrast)', not the
+    // first-listed 'Dark', or Radix's default (focus the first item) would pass without ProfileMenu's
+    // `onOpenChange` focus-steering ever running. ----
     await switchTheme(cdp, 'dark-high-contrast', 'Dark (high contrast)');
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
@@ -333,12 +250,9 @@ async function main() {
     else checkFail('Keyboard selection moved the checked radio to Obsidian (re-opened and re-read)', JSON.stringify(rowsAfterKeyboard));
     await cdp.screenshot(path.join(SHOTS_DIR, 'keyboard-selection-obsidian.png'));
 
-    // ---- Focus-bar vs checked-state: the 2026-10-15 "bar follows focus, never selection" rule. ----
-    // Pointer-driven open does not reliably land focus on a row inside the submenu (the same
-    // Radix quirk `navigateRadioGroupByKeyboardTo`'s own comment documents for the Reasoning
-    // picker's trigger -- confirmed live here too: an ArrowDown from an unfocused SubTrigger
-    // escapes to the NEXT ROOT menu item instead of moving within the submenu, closing it).
-    // Focus the checked row explicitly first, so ArrowDown moves within the submenu for real.
+    // ---- Focus bar follows focus, never selection ----
+    // Pointer-driven open doesn't reliably focus a submenu row (ArrowDown from an unfocused SubTrigger
+    // escapes to the next ROOT item and closes it), so focus the checked row explicitly first.
     const onThemeRow = await cdp.evaluate(`document.activeElement?.getAttribute('role') === 'menuitemradio'`);
     if (!onThemeRow) {
       await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.textContent.trim() === 'Obsidian')?.focus()`);
@@ -365,24 +279,16 @@ async function main() {
     if (focusBarOk) checkPass('Focus-bar follows focus, never selection: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
     else checkFail('Focus-bar follows focus, never selection: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
 
-    // ---- Forced-colours: structural check plus a real compiled-CSS-rule check (see header
-    // comment for the WebView2 CDP media-emulation limitation this still cannot get around). ----
+    // ---- Forced-colours: structural check plus a compiled-CSS-rule check ----
     const forcedColors = await ringCarriesForcedColorsOverride(cdp);
     if (forcedColors.checkedHasOverride && forcedColors.uncheckedHasOverride) {
       checkPass('Forced-colours override utility class present on the ring markup (structural proof -- see notExercised for the real-rendering caveat)', JSON.stringify(forcedColors));
     } else {
       checkFail('Forced-colours override utility class present on the ring markup', JSON.stringify(forcedColors));
     }
-    // MEDIUM fix (#1043): the check above only proves the `forced-colors:...` class NAME is
-    // present as rendered-DOM text -- true even if Tailwind's JIT silently failed to compile a
-    // matching rule for this exact combination (a media variant wrapping a named-group variant
-    // wrapping an arbitrary value), since JSX never strips an unmatched class name. Reads the
-    // real built `out/tauri-web/assets/*.css` straight off disk instead of `document.styleSheets`
-    // over CDP (`forcedColorsRuleCompiled`'s own comment: the CDP/CSSOM route scanned 0 rules
-    // every run, a WebView2 cross-origin-style restriction on reading a `<link>`-loaded sheet's
-    // rules back out, unrelated to whether the CSS itself works) -- confirms a rule genuinely
-    // sitting inside an `@media (forced-colors: ...)` block whose own selector matches this
-    // ring, and that its declaration actually sets `border-color: highlight`.
+    // The class name alone proves little (JSX never strips an unmatched class, and Tailwind may not
+    // compile a media+named-group+arbitrary-value variant). Reads the built CSS off disk because the
+    // CDP/CSSOM route scans 0 rules (WebView2 blocks reading `<link>` sheet rules).
     const forcedColorsRule = forcedColorsRuleCompiled(REPO_ROOT);
     if (forcedColorsRule.selectorFound && forcedColorsRule.insideForcedColorsMedia && forcedColorsRule.declaresHighlightBorder) {
       checkPass('Forced-colours: a REAL compiled CSS rule exists inside @media (forced-colors: ...) matching the ring, declaring border-color: highlight (read from the built CSS bundle, not just the className string)', JSON.stringify(forcedColorsRule));
@@ -398,10 +304,7 @@ async function main() {
     await switchTheme(cdp, 'dark', 'Dark');
     await teardownA();
 
-    // -----------------------------------------------------------------------------------------
-    // Part B: the Reasoning picker (ComposerPickers.tsx) -- needed only the label-truncation wrapper for #1043,
-    // but is the shared DropdownMenuRadioItem's only other caller, so it is live-checked here.
-    // -----------------------------------------------------------------------------------------
+    // ---- Part B: Reasoning picker (the shared DropdownMenuRadioItem's other caller) ----
     const repoParentB = mkdtempSync(path.join(tmpdir(), 'refract-1043-repoB-'));
     track(() => safeRmSync(repoParentB));
     const repoDirB = makeScratchRepo(path.join(repoParentB, 'repo'), 'refract-1043-repoB');
@@ -418,9 +321,7 @@ async function main() {
 
     const REASONING_LABELS = THINKING_LEVELS_1043.map((level) => THINKING_LEVEL_LABEL_1043[level]);
 
-    // Pointer selection: click "Low" directly -- the real model.setThinkingLevel IPC, never a
-    // UI-bypassing shortcut (and no registry seed: a fresh Session's real post-attach resync can
-    // clobber a seeded lastThinkingLevel before this script ever reads it back).
+    // Click "Low" via the real IPC; no registry seed (the post-attach resync can clobber it).
     await openReasoningPicker(cdpB);
     await cdpB.click(`Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.textContent.trim() === 'Low')`);
     await cdpB.waitFor(
@@ -441,8 +342,7 @@ async function main() {
     else checkFail(`Reasoning picker: the checked row's dot is PIXEL-VISIBLE`, JSON.stringify({ reasoningDotState, reason: reasoningDotCheck.reason }));
     await cdpB.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-open.png'));
 
-    // Keyboard selection: navigate from WHEREVER focus actually lands (Radix does not reliably
-    // refocus the checked item on a plain reopen) to "Medium", then Enter.
+    // Navigate from wherever focus lands: Radix doesn't reliably refocus the checked item on reopen.
     await navigateRadioGroupByKeyboardTo(cdpB, REASONING_LABELS, 'Medium');
     await cdpB.waitFor(
       `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.lastThinkingLevel === 'medium')`,

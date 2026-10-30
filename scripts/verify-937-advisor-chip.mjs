@@ -1,26 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #937 (the composer status line's Advisor readout/chip, follow-up to
-// #917/PR #923). Modelled directly on `verify-917-advisor-command.mjs`'s own scratch-launch/CDP
-// pattern (same ambient-signed-in-`omp` posture; only Refract's OWN data, `REFRACT_DATA_DIR`, is
-// scratch) and on `verify-927-928-quiet-composer.mjs`'s own geometry/theme-switch conventions.
-// The actual per-cycle assertions (busy window, notice confirmation, AX-tree removal, focus,
-// live-region announcement) live in `verify-937-advisor-chip-helpers.mjs`, split out to stay
-// under the #806 600-line soft cap.
-//
-// WRITTEN, NOT RUN: no build slot has been granted for this sub-task (CONTEXT.md/PLAN.md/
-// tasks.md T272-T274 all record this plainly) -- this script has never executed against a real
-// built app. `node --check` is the only command that has been run against it. Every claim this
-// script makes, once it does run, is grounded in a real CDP read; see the `notExercised` entry
-// below for the one thing it still cannot prove even then (the silent attach/resume probe's own
-// transcript suppression, which needs a second scratch run across an app restart).
-//
-// Sequence: launch a scratch instance, create a Session, then for EACH of a mouse-driven and a
-// separate keyboard-driven toggle cycle (never the same run for both -- mouse never exercises
-// the keyboard route): `/advisor on` -> assert the chip's AX name "Advisor on. Turn off" ->
-// measure its geometry against another status-line chip (24px row, 14px icon) -> activate it ->
-// assert the busy window, the chip leaving the AX tree, the authoritative "Advisor disabled."
-// reply, focus landing on the message textarea, and the "Advisor off" live-region announcement.
-// Finally, three themed screenshots of the chip ON (Dark, Obsidian, Dark high contrast).
+// Live CDP check for #937 (composer status line's Advisor chip): separate mouse and keyboard
+// toggle cycles, geometry, and themed screenshots. Per-cycle assertions live in
+// `verify-937-advisor-chip-helpers.mjs`. The silent attach/resume probe's transcript
+// suppression needs an app restart and is recorded in `notExercised`.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -61,11 +43,8 @@ async function pressEnterKey(cdp) {
   await cdp.pressEnter();
 }
 
-/** Gate round 2 fix (High, falsified against a DOM read): the status line (and so the Advisor
- * chip) renders BEFORE the message textarea in `MessageInput.tsx`'s own JSX
- * (`ComposerStatusLine` at line ~1327, the textarea itself further down) -- a FORWARD Tab chain
- * starting at the textarea can never reach it; only Shift+Tab (CDP modifier bitmask 8) walks
- * backward into it. */
+/** The chip renders before the textarea in the DOM, so only Shift+Tab (CDP modifier 8) reaches
+ * it from the textarea; a forward Tab chain never can. */
 async function pressShiftTabKey(cdp) {
   await pressKey(cdp, 9, 'Tab', 'Tab', 8);
 }
@@ -149,21 +128,12 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // Gate round 2 fix (High, item 12): moved to BEFORE any visible `/advisor` command this
-    // script itself sends (the mouse/keyboard cycles below, each of which sends a real,
-    // visible `/advisor status` whose OWN reply -- e.g. `Advisor "default" is running.` --
-    // would otherwise match the same leak pattern and fail this check for a reason that has
-    // nothing to do with the SILENT probe). Waits long enough for `session::advisor`'s own
-    // bounded attempts (idle-gated, ~2s) plus its reply timeout (~5s) to have long settled one
-    // way or the other before reading the transcript.
+    // Runs before any visible `/advisor` command: those replies would match the same leak
+    // pattern. Waits for the silent probe's bounded attempts (~2s) and reply timeout (~5s).
     await new Promise((resolve) => setTimeout(resolve, 8_000));
     await assertNoProbeLeak(cdp, findings, failures, notExercised, 'Before any visible /advisor command');
 
-    // Gate round 2 fix (Medium, item 14): polled, not a single immediate read -- the silent
-    // probe (if this profile's own omp config defaults the advisor on) needs the SAME ~8s this
-    // script already waited above to have had a chance to confirm/seed the chip's own state;
-    // an immediate read right after Session creation could read "absent" only because that
-    // probe had not yet resolved, not because the profile genuinely defaults the advisor off.
+    // Polled: an immediate read could see "absent" only because the silent probe has not resolved.
     let absentAtStart = true;
     const absentDeadline = Date.now() + 8_000;
     while (Date.now() < absentDeadline) {
@@ -182,13 +152,12 @@ async function main() {
       }
     }
 
-    // ---- Mouse-driven cycle (item 2-4 of the issue's own brief) ----
+    // Mouse-driven cycle.
     await runAdvisorToggleCycle(cdp, { mode: 'mouse', pressShiftTab: pressShiftTabKey, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
 
-    // ---- Keyboard-only cycle, a FRESH `/advisor on` (item 5: never the same run as mouse) ----
+    // Keyboard-only cycle, with a fresh `/advisor on`.
     await runAdvisorToggleCycle(cdp, { mode: 'keyboard', pressShiftTab: pressShiftTabKey, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
-    // ---- Geometry comparison (item 3): a third, final `/advisor on` so the chip is present to
-    // measure, since both cycles above end with it toggled off ----
+    // Geometry: both cycles end with the chip off, so turn it on a third time to measure it.
     await sendAdvisorOnForGeometryPhase(cdp, findings, failures);
     const advisorGeometry = await readAdvisorChipGeometry(cdp);
     const otherGeometry = await readOtherChipGeometry(cdp);
@@ -206,17 +175,10 @@ async function main() {
     } else {
       findings.push(`Advisor chip geometry matches a neighbouring status-line chip's own measured geometry: ${JSON.stringify(otherGeometry)}`);
     }
-    // Gate round 2 fix (High, item 11), tightened gate round 3 (Medium, item 12): a fresh
-    // scratch profile leaves `current-time` off by default (`DEFAULT_SESSION_READOUT`,
-    // `shared/model.ts`), so the ORIGINAL "Advisor is last of all readout chips" assertion here
-    // was vacuously true of an EMPTY set of later siblings -- it could never catch Advisor
-    // actually landing after the `ml-auto` Current time chip, the one sibling the decision
-    // text (`ComposerStatusLine.tsx`'s own gate round 1 comment) specifically orders against.
-    // Turns `current-time` on for this scratch profile first, so a REAL later sibling exists.
+    // A fresh profile has `current-time` off, which would make "Advisor is last" vacuously true;
+    // turn it on so a real later sibling exists.
     const readoutResult = await cdp.evaluate(`window.refract.settings.setReadoutVisibility('current-time', true).then((r) => r.ok)`);
-    // Gate round 4 fix (Medium, decided): skips the rest of this check entirely on setup
-    // failure, rather than falling through into a `waitFor` timeout and an order read that
-    // would both fail too -- a single clear cause, not three cascading failures from one root.
+    // Skip the rest on setup failure so one root cause does not cascade into three failures.
     if (!readoutResult) {
       failures.push('Could not enable the Current time readout chip via settings.setReadoutVisibility -- skipping the order check.');
     } else {
@@ -242,20 +204,12 @@ async function main() {
     }
 
 
-    // ---- Themed screenshots of the chip ON (Dark, Obsidian, Dark high contrast) ----
+    // Themed screenshots of the chip ON.
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
-      // Gate round 5 fix (confirmed by a live screenshot, `advisor-chip-on-dark.png`/
-      // `-obsidian.png`): `switchTheme` clicks `[data-profile-name-button]` to open the theme
-      // menu, which leaves THAT button both focused and hovered once the menu closes --
-      // Radix keeps its own tooltip ("Stuart Hopwood", the account name) open on focus OR
-      // hover, so it never actually closes again on its own. A later generic
-      // `document.querySelector('[role="tooltip"]')` read (this function's own, below) can
-      // then find THIS stray tooltip instead of the Advisor chip's -- it is still in the DOM,
-      // ahead of the chip's own tooltip portal in document order. Clicking a neutral, always-
-      // present element (the transcript, never the chip itself -- clicking the chip would
-      // toggle the advisor off, which this geometry/screenshot phase must never do) blurs the
-      // profile button and lets its own tooltip actually close before the hover check below.
+      // `switchTheme` leaves the profile button focused and hovered, so its Radix tooltip stays
+      // open and a later `[role="tooltip"]` read finds it instead of the chip's. Click the
+      // transcript (never the chip, which would toggle the advisor off) to blur it first.
       await cdp.click(`document.querySelector('[aria-label="Transcript"]')`).catch(() => {});
       await cdp
         .waitFor(`!document.querySelector('[role="tooltip"]')`, {
@@ -268,17 +222,15 @@ async function main() {
         failures.push(`Advisor chip disappeared after switching to the ${theme.name} theme (a theme switch must never toggle it).`);
         continue;
       }
-      // Gate round 1 fix (Medium, item 15): full AX name (never `textContent`, per the UI gate
-      // checklist's own rule), visible text, tooltip text, and never a digit/`$`/"Spend" in any
-      // of them -- plus a real, live-measured contrast ratio against this theme's own resolved
-      // background colour, reusing `contrast-math.mjs` exactly like `check-theme-contrast.mjs`.
+      // Full AX name (not `textContent`), visible text and tooltip must carry no cost figure,
+      // plus a measured contrast ratio via `contrast-math.mjs`.
       await assertAdvisorChipNameTooltipAndContrast(cdp, theme.name, findings, failures, notExercised);
       const shotName = `advisor-chip-on-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
       findings.push(`Screenshot captured: Advisor chip ON under the ${theme.name} theme (${shotName}).`);
     }
 
-    // ---- Cleanup: leave the Session in a known state (advisor off) ----
+    // Cleanup: leave the Session with the advisor off.
     await cdp.click(`Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor')`).catch(() => {});
 
     notExercised.push(
@@ -331,8 +283,7 @@ async function main() {
   }
 }
 
-/** A plain `/advisor on`, for the geometry/screenshot phase only (no toggle-off assertions
- * follow it here -- those are `runAdvisorToggleCycle`'s own job above). */
+/** A plain `/advisor on` for the geometry/screenshot phase; toggle-off assertions live elsewhere. */
 async function sendAdvisorOnForGeometryPhase(cdp, findings, failures) {
   try {
     await sendSlashCommand(cdp, '/advisor on', /Advisor enabled\./);
@@ -344,18 +295,12 @@ async function sendAdvisorOnForGeometryPhase(cdp, findings, failures) {
 
 const ADVISOR_CHIP_SELECTOR =
   `Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor')`;
-// No digit, `$`, or the word "Spend" anywhere in the accessible name, the visible text, or the
-// tooltip -- issue #937's own "no cost shown" requirement, checked structurally rather than
-// against one fixed string, so a future wording change still gets caught if it reintroduces a
-// figure.
+// No digit, `$` or "Spend" in the name, text or tooltip (#937 "no cost shown"); checked by
+// pattern so a reworded figure is still caught.
 const NO_COST_LEAK_PATTERN = /\d|\$|Spend/;
 
-/** Gate round 1 fix (Medium, item 15): the FULL accessible name (via CDP
- * `Accessibility.getPartialAXTree`, never `textContent` -- the UI gate checklist's own rule),
- * the visible text, and a REAL hover-revealed tooltip, none of which may ever contain a digit,
- * `$`, or "Spend"; plus a live-measured WCAG contrast ratio of the chip's own resolved text
- * colour against its nearest opaque ancestor background, reusing `contrast-math.mjs` exactly
- * like `check-theme-contrast.mjs` already does for every other status-line pairing. */
+/** Checks the full AX name (via `Accessibility.getPartialAXTree`), visible text and hover tooltip
+ * for cost figures, and the chip's text contrast against its nearest opaque ancestor background. */
 async function assertAdvisorChipNameTooltipAndContrast(cdp, themeName, findings, failures, notExercised) {
   const { name } = await getAccessibleNameAndRole(cdp, ADVISOR_CHIP_SELECTOR);
   if (name !== 'Advisor on. Turn off') {
@@ -370,18 +315,15 @@ async function assertAdvisorChipNameTooltipAndContrast(cdp, themeName, findings,
     findings.push(`[${themeName}] Advisor chip visible text is exactly "Advisor".`);
   }
 
-  // A real hover (mouseMoved, not a scripted focus/state toggle) over the chip's own centre,
-  // matching `switchTheme`'s own established hover-before-interact pattern in this same repo.
+  // A real mouseMoved hover over the chip's centre, not a scripted state toggle.
   const rect = await cdp.evaluate(`(() => { const el = ${ADVISOR_CHIP_SELECTOR}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
   let tooltipText = null;
   try {
     await cdp.waitFor(`!!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `[${themeName}] Advisor chip tooltip opened on hover` });
     tooltipText = await cdp.evaluate(`document.querySelector('[role="tooltip"]')?.textContent ?? null`);
-    // Gate round 2 fix (Low, item 16): confirms OUR OWN deliberate `aria-describedby={undefined}`
-    // override still holds -- Radix sets this on the trigger while its tooltip is open by
-    // default (a double-announcement risk the UI gate checklist calls out), suppressed here on
-    // purpose; a regression that dropped the override would otherwise go unnoticed.
+    // Confirms our deliberate `aria-describedby={undefined}` override still holds; Radix sets it
+    // by default, which risks a double announcement.
     const describedBy = await cdp.evaluate(`(${ADVISOR_CHIP_SELECTOR})?.getAttribute('aria-describedby') ?? null`);
     if (describedBy !== null) {
       failures.push(`[${themeName}] Advisor chip button carries aria-describedby=${JSON.stringify(describedBy)} while its tooltip is open -- the deliberate override must suppress this (risk of a double announcement).`);
@@ -409,27 +351,10 @@ async function assertAdvisorChipNameTooltipAndContrast(cdp, themeName, findings,
     }
   }
 
-  // Gate round 2 fix (High, item 13): the hover above leaves `hover:bg-muted`/`hover:text-
-  // foreground` active -- measuring contrast WHILE still hovering reads the wrong (hover-state)
-  // colours, not what a user normally sees at rest. The background walk below starts AT the
-  // chip itself (not its parent, which silently skipped the chip's own background and would
-  // still have missed a hover-state background had the mouse still been over it).
-  //
-  // Gate round 5 (falsified, not a product bug): originally also moved the mouse away and
-  // waited for `[role="tooltip"]` to vanish before measuring, matching `check-theme-
-  // contrast.mjs`'s own hover-state-avoidance pattern. That wait failed in every theme; before
-  // blaming the chip, a diagnostic poll (`document.elementFromPoint`, the tooltip's own
-  // `data-state`, `document.activeElement`) proved it is NOT a chip defect: the chip never had
-  // focus, `elementFromPoint(0, 0)` correctly resolves to a DIFFERENT element after the move
-  // (the pointer genuinely left -- Chromium's own internal hover-state tracking, which drives
-  // the `:hover` CSS pseudo-class and so the contrast measurement below, is independent of JS
-  // event dispatch and updates correctly), yet the tooltip's `data-state` NEVER once leaves
-  // `delayed-open`/`instant-open` across a 3s poll. Radix's own open/close state is driven by
-  // its trigger's `onPointerLeave` React handler, which needs a real `pointerleave` DOM event;
-  // `Input.dispatchMouseEvent`'s synthetic `mouseMoved` does not reliably produce one against
-  // this Tauri/WebView2 CDP target (a harness gap, not a renderer bug) -- so this one specific
-  // close-assertion cannot be proven either way through this exact mechanism and is recorded
-  // honestly below, once, rather than asserted as a failure it cannot actually back up.
+  // Hover leaves `hover:` styles active, so contrast is measured with the pointer moved away,
+  // and the background walk starts at the chip itself.
+  // Waiting for the tooltip to close is not asserted: Radix closes on `pointerleave`, which
+  // CDP's synthetic `mouseMoved` does not reliably fire on this WebView2 target (harness gap).
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
   if (themeName === THEMES[0].name) {
     const elementAtOrigin = await cdp.evaluate(`document.elementFromPoint(0, 0)?.tagName ?? null`);
@@ -454,9 +379,7 @@ async function assertAdvisorChipNameTooltipAndContrast(cdp, themeName, findings,
   if (!styles) {
     failures.push(`[${themeName}] could not read the Advisor chip's own computed style for a contrast measurement.`);
   } else if (!styles.background) {
-    // Gate round 2 fix (High, item 13): no opaque background was found walking up from the
-    // chip itself -- failing loudly here, never silently substituting an unrelated `<body>`
-    // reading as a stand-in for "the real background this text actually sits on".
+    // No opaque background found: fail loudly rather than substitute an unrelated `<body>` colour.
     failures.push(`[${themeName}] could not resolve an opaque background behind the Advisor chip for a contrast measurement (walked up to <html> and found none): ${JSON.stringify(styles)}`);
   } else {
     const ratio = measuredContrastRatio(styles.color, styles.background);

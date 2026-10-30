@@ -1,10 +1,7 @@
-// #926 launch helper, split out of `verify-926-attach-any-file.mjs` (AGENTS.md: an over-cap file
-// must never grow; a baseline raise is not an acceptable fix) into its own sibling module, the
-// same pattern `verify-926-drag-drop-trap.mjs` already uses.
+// #926 launch helper, split into its own module so `verify-926-attach-any-file.mjs` doesn't grow past the file-size cap.
 //
-// Local launcher (not the shared `verify-tauri-scratch-helpers.mjs` one): that shared helper has
-// no `pathPrepend`/`extraEnv` hooks, needed here for the fake-omp shim on `PATH` and its own
-// `REFRACT_FAKE_OMP_*` env vars -- the exact extension `verify-tauri-ask.mjs` already carries.
+// Local launcher, not the shared `verify-tauri-scratch-helpers.mjs` one: that has no `pathPrepend`/`extraEnv` hooks,
+// which the fake-omp shim on `PATH` and its `REFRACT_FAKE_OMP_*` env vars need.
 import { mkdirSync, createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { launchViaJobObject } from './verify-tauri-cdp.mjs';

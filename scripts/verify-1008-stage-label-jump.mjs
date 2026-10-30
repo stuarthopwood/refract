@@ -1,71 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1008 (UI polish: Stage rows -- failed Stage label colour and jump to
-// Stage from the chain row). Both items already Decided (Skippy, delegated by Stuart
-// 2026-10-18) on the issue; gate round 1 remediation (Main, 2026-10-18) added items 6-9 below;
-// gate round 2 (Main, 2026-10-18) found/fixed a real product bug (item 2's own jump, see below)
-// plus polish items 1-5. Decisions recorded in `research.md` decision 23 and `spec.md` FR-089.
-//
-// Item 1: a failed Stage's own label now gets `text-severity-error` the same way a failed tool
-// row's label already does (`ToolRow.tsx` :209/:405) -- `SubagentChainRow.tsx`'s `StageGroupRow`
-// and `ChainStageLine.tsx`'s own `ChainStageLine` both read the shared `subagentStatusTextClass`.
-// Item 2: each "Stage N" label in the chain row (`ChainStageLine`) is a real `<button>` ("Go to
-// Stage N, <label>") that scrolls its own Stage row into view (the transcript's own scroll
-// viewport only, top-aligned), opens it through the SAME persisted path `useStickyDisclosure`
-// reads (`useStageToggleStore`, issue #991 -- so a jump counts as the user's own manual open),
-// and moves focus to the Stage's own trigger. Gate round 2 fix (High, Code+UI): the function that
-// actually does this, `jumpToStageRow`, now lives in `Transcript.tsx` itself (reached by
-// `ChainStageLine` via `JumpToStageContext`, `stageJump.ts`) instead of a standalone
-// `stageJump.ts#jumpToStage` -- only `Transcript.tsx` holds `autoScrollSuppressed`, the local
-// state that actually keeps `MessageScrollerProvider`'s own sticky follow-bottom auto-scroll from
-// re-snapping to the end the instant the jumped-to Stage's own expansion mutates the DOM (falsified
-// live: the old standalone function's own bounded settle loop could never reach it, and lost that
-// fight on every animation frame, confirmed by a `scrollTop` trace pinned at
-// `scrollHeight - clientHeight` from frame 0 for over a second straight). Gate round 1 item 1
-// (High): the button only renders while its own Stage row is genuinely `'visible'`
-// (`transcriptRowVisibility.ts`) -- "Show tool calls" off can drop a settled, problem-free Stage
-// entirely, leaving no row to jump to. Gate round 2 item 4 (Low): also requires a real
-// `sessionId` -- without one there is no persisted store to record a manual-open against.
-//
-// Reuses the recorded-frame fake `omp` harness and the SAME `stages-941.jsonl` fixture (scenario
-// `stages-941`) every `verify-941-*`/`verify-991-*`/`verify-1000-*` script already shares
-// (AGENTS.md: no new fixtures) -- it already carries a genuinely failed Stage (Stage 5, one
-// FailAgent member) among ten Stages, so the turn already satisfies "2+ Stages where one fails"
-// with no fixture change needed. Gate round 2 item 5 (Live, UI): the same fixture also gives a
-// jump-while-still-streaming check for free, falsified live (Main 2026-10-19) as JUMP-SPECIFIC
-// not pre-existing (issue #1021; full record at that phase's own comment below).
-//
-// Two Stages used as independent jump targets against the FINAL settled turn -- both multi-member,
-// fully finished, and never otherwise touched by this script before their own jump, so each starts
-// genuinely CLOSED (no failed/cancelled/exited member, issue #1000's multi-Stage auto-open rule):
-// Stage 4 (mouse click) and Stage 3 (keyboard: focus its own jump button directly, then a real
-// Enter keypress -- native <button> Enter activation needs no special-casing in `jumpToStageRow`
-// itself). Stage 1 is deliberately NOT used for either settled-turn proof: it runs alone first in
-// this fixture, auto-opens under the single-Stage exception (research.md decision 22), and STAYS
-// open forever -- never starting closed. Gate round 1 item 8 (Medium): the transcript is
-// explicitly scrolled to its own end before EACH settled-turn jump and the target row's own
-// off-screen state is asserted as a hard precondition, not assumed; after the jump, a fixed settle
-// delay then one definitive `elementFromPoint` hit test at the row's own centre confirms landing
-// (not a bounds-only read, which a screenshot alone can misleadingly satisfy).
-//
-// Gate round 1 item 9 (Medium): #991 persistence is exercised cheaply by toggling "Show tool
-// calls" off then back on (a real IPC round trip, `window.refract.settings.setTranscriptDisplay`,
-// the same dev-exposed call `verify-557-thought-runs.mjs` already uses) right after Stage 4's own
-// mouse jump -- this is a genuine unmount/remount of Stage 4's own row (gate round 1 item 1's own
-// visibility gate), doubling as the proof that Stage 4's manual-open (set by the jump) survives
-// it, and that Stage 5 (a failed Stage, force-visible regardless of the toggle) never disappears.
-// prefers-reduced-motion is not emulated; jumpToStageRow has no reduced-motion branch because
-// runScrollSettleLoop never animates, so the path tested above is the reduced-motion path.
-// Recorded in `notExercised` below (the CDP session's own emulation gap), never silently skipped.
-//
-// Gate round 1 fix (falsified live, that round): the chain row is NEVER clicked open by this
-// script -- see `ChainStageLine` section's own comment below for the full story of the bug that
-// `expandByFinder`'s click-if-not-expanded guard caused here (it could toggle an already-auto-open
-// chain row CLOSED on a stale read); this script only ever asserts FR-068's own guaranteed
-// default-open state via `cdp.waitFor`.
-//
-// Live-checked, full granted-slot chain, gate round 2: 0 failures, every selector/finder
-// expression below (`stageTriggerSelector`, `titleSelector`, `jumpButtonExpr`,
-// `viewportHitTestExpr`) confirmed live against a real build, not merely `node --check`ed.
+// Live CDP check for #1008: a failed Stage's label is error-coloured and each chain-row "Go to Stage N" button
+// scrolls to, opens (persisted as a manual open, #991) and focuses its Stage row. Uses the shared `stages-941` fixture.
+// Not emulated: prefers-reduced-motion (`jumpToStageRow` never animates); recorded in `notExercised`.
 
 import { mkdtempSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -123,9 +59,6 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// The chain row's own label is always the literal string "Subagents" (`SubagentChainRow.tsx`),
-// never duplicated elsewhere -- same constant every `verify-941-*`/`verify-991-*`/`verify-1000-*`
-// script shares.
 const CHAIN_TRIGGER = `document.querySelector('[title="Subagents"]')?.closest('[data-slot="collapsible-trigger"]')`;
 
 async function main() {
@@ -196,9 +129,7 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
 
-    // Shim-confirmed check (same pattern as `verify-941-part2.mjs`/`verify-1000-stage-defer.mjs`):
-    // without this, a silently-wrong fake-omp shim could still let the whole run "pass" on UI
-    // state alone. `exeDir` is freshly `mkdtemp`'d above, so this log can never be a stale one.
+    // A silently-wrong fake-omp shim could still pass on UI state alone, so confirm from its log.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-1008: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
@@ -219,16 +150,9 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
 
-    // ---- Gate round 2 item 5 (Live, UI, Main 2026-10-18/19): a jump while the transcript is
-    // STILL ACTIVELY STREAMING. Jumping to Stage 2 HERE, then re-checking once Stage 10's own
-    // button ALSO exists plus a flat 2s delay, falsified live that "still growing AFTER the jump
-    // settles" is JUMP-SPECIFIC, not a general scroller defect: a REAL wheel scroll (issue
-    // #1021's own TEST A) holds against identical new content; the jump does not (`jumpToStageRow`
-    // jsdoc has the full record; #1021, not fixed here) -- recorded as a finding either way, no
-    // pass/fail asserted (see the `notExercised` entry after the re-check).
+    // Mid-stream jump: #1021 (not fixed here) means it can be dragged back as later Stages stream in, so findings only, no pass/fail.
     const stage2TriggerExpr = stageTriggerSelector(STAGE2_TITLE);
-    // Gate round 4 fix (Test Low, falsified live): raced Stage 2's own mount -- Stage 1 runs
-    // alone first in this fixture. Wait for it, THEN check its state and position for contrast.
+    // Stage 1 runs alone first, so wait for Stage 2's mount before reading its state.
     await cdp.waitFor(`!!(${stage2TriggerExpr})`, { timeoutMs: 15_000, label: "Stage 2's own trigger exists (baseline for the mid-stream jump proof)" });
     const stage2BeforeExpanded = await cdp.evaluate(`(${stage2TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
     if (stage2BeforeExpanded !== 'false') {
@@ -267,9 +191,6 @@ async function main() {
     }
     await sleep(2_000);
     const stage2CheckLater = await cdp.evaluate(viewportHitTestExpr(stage2TriggerExpr));
-    // Gate round 2 item 5 (issue #1021, not fixed here -- see the header/phase comments above for
-    // the full falsification record): recorded as an honest finding either way, never asserted
-    // pass/fail, plus a `notExercised` entry so this is never mistaken for an un-run check.
     findings.push(`Stage 2's own row ${stage2CheckLater.found && stage2CheckLater.inBounds && stage2CheckLater.hit ? 'is STILL' : 'is no longer'} in a hit-testable viewport position 2s after the mid-stream jump, once Stage 10's own content streamed in (rect ${JSON.stringify(stage2CheckLater.rect)}).`);
     notExercised.push('Gate round 2 item 5 (issue #1021): a jump made while the turn is still actively streaming can be dragged back toward the end once a LATER Stage streams in afterward -- JUMP-SPECIFIC, not a general scroller defect: a REAL user wheel scroll holds against the identical new content (issue #1021\'s own TEST A, CDP trace), but `jumpToStageRow`\'s own programmatic jump does not replicate whatever signal the vendored scroller\'s internal `userScrollIntent()` reacts to (not exposed via the public hook this codebase uses). Not a regression in #1008\'s own two settled-turn acceptance items (Stage 4/Stage 3 below, unaffected). Not asserted as pass/fail here; tracked on #1021, not fixed in this PR.');
 
@@ -280,32 +201,14 @@ async function main() {
       findings.push("Stage 2's own manual-open survived 8+ more Stages streaming in afterward (issue #991 persistence, proven against ongoing content, not just a settled turn).");
     }
 
-    // ---- Wait for the whole ten-Stage turn to settle; this feature (unlike issue #1000) has
-    // no real-time running-state window to catch, so every proof below runs against the final,
-    // settled state only. ----
+    // Every proof below runs against the settled state only.
     await cdp.waitFor(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && !t.textContent.includes('Running'); })()`,
       { timeoutMs: 30_000, label: 'All ten Stages and the plain tool row settled' }
     );
 
-    // ---- Item 2: "Go to Stage N" in the chain row scrolls+opens+focuses the target Stage row,
-    // by mouse click (Stage 4) and by keyboard (Stage 3, a real Enter keypress). Both targets
-    // are multi-member, fully finished, never otherwise touched by this script, so each starts
-    // genuinely CLOSED (no failed/cancelled/exited member) -- a clean baseline. Stage 1 is
-    // deliberately NOT a jump target here (gate round 1, falsified live): it runs alone first in
-    // this fixture and is observed genuinely running before Stage 2 streams in, so it auto-opens
-    // under the single-Stage exception and then STAYS open forever via the upward-only latch
-    // (research.md decision 22) -- it would never start closed for this proof.
-    //
-    // The chain row must already be open for `ChainStageLine`'s own jump buttons to exist in the
-    // DOM at all. Gate round 1 fix (falsified live): NEVER click it open -- Stage 5's
-    // permanently-failed member already keeps the whole turn "unsettled" (FR-068), so it MUST
-    // already be open by the time the turn settles; a click-if-not-expanded guard here risked
-    // reading a stale/transitional `aria-expanded` and TOGGLING AN ALREADY-OPEN row CLOSED
-    // instead (confirmed live: the first run of this script left the chain visibly collapsed in
-    // every screenshot, with every "Go to Stage N" button consequently unreachable -- a bug in
-    // this script's own `expandByFinder` use, not in `SubagentChainRow.tsx`). Asserting the open
-    // state directly, with no click, removes that risk entirely. ----
+    // Stage 1 is not a jump target: it auto-opens and stays open (upward-only latch), so it never starts closed.
+    // Never click the chain row open: Stage 5's failed member keeps it open already, and a click could toggle it closed.
     try {
       await cdp.waitFor(`(${CHAIN_TRIGGER})?.getAttribute('aria-expanded') === 'true'`, {
         timeoutMs: 15_000,
@@ -317,10 +220,7 @@ async function main() {
     }
 
     const stage4TriggerExpr = stageTriggerSelector(STAGE4_TITLE);
-    // Gate round 1 fix (falsified live): a single-shot read right after the "nothing Running"
-    // wait can race a final render still settling for one specific Stage's own title/trigger --
-    // `cdp.waitFor` polls for the trigger's own existence first (it is never expected to be
-    // genuinely absent), closing that race before reading its `aria-expanded`/rect state.
+    // A single-shot read can race a final render still settling, so poll for the trigger first.
     await cdp.waitFor(`!!(${stage4TriggerExpr})`, { timeoutMs: 10_000, label: "Stage 4's own trigger exists" });
     const stage4BeforeExpanded = await cdp.evaluate(`(${stage4TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
     if (stage4BeforeExpanded !== 'false') {
@@ -344,9 +244,7 @@ async function main() {
       failures.push(`The chain row's own "Go to Stage 4" jump button was never found: ${err.message} -- issue #1008 item 2 regression.`);
     }
     if (stage4JumpFound) {
-      // Direct click, no pre-click `scrollIntoView` (gate round 2: `clickScrolled`'s own
-      // instant/smooth scrollIntoView-of-the-button clobbered the OLD `jumpToStage`'s own scroll --
-      // redundant anyway, since `scrollTranscriptToEnd` above already put this button on screen).
+      // No pre-click scrollIntoView: it would clobber the jump's own scroll.
       await cdp.click(jumpButtonExpr(STAGE4_TITLE));
       const stage4AfterExpanded = await cdp.evaluate(`(${stage4TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
       if (stage4AfterExpanded !== 'true') {
@@ -360,11 +258,7 @@ async function main() {
       } else {
         findings.push('Clicking "Go to Stage 4" moved keyboard focus to Stage 4\'s own trigger.');
       }
-      // A fixed settle delay, then one definitive `elementFromPoint` hit test (gate round 2:
-      // `jumpToStageRow`'s own settle loop, `Transcript.tsx`/`scrollLanding.ts`'s shared
-      // `runScrollSettleLoop`, fights the vendored scroller's sticky follow-bottom mode for up to
-      // `SCROLL_LANDING_MAX_FRAMES` frames and keeps `autoScrollSuppressed` engaged afterward --
-      // this sleep only needs to outlast the loop's own brief window, not poll it).
+      // The jump's settle loop fights sticky follow-bottom for a few frames; outlast it, then hit-test once.
       await sleep(1_500);
       const stage4Check = await cdp.evaluate(viewportHitTestExpr(stage4TriggerExpr));
       if (stage4Check.found && stage4Check.inBounds && stage4Check.hit) {
@@ -375,11 +269,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-stage4-jumped-open-focused.png'));
 
-    // ---- Gate round 1 items 1 & 9: toggling "Show tool calls" off genuinely unmounts Stage 4's
-    // own row (no bad member -- `rowVisibility` returns 'hidden') and its own jump button
-    // disappears; Stage 5 (a failed Stage) stays force-visible regardless. Toggling back on
-    // remounts Stage 4, and its manual-open (set by the jump above) must survive the remount
-    // (issue #991 persistence) -- a real IPC round trip, not a store mutation. ----
+    // Toggling Show tool calls unmounts Stage 4 (Stage 5 failed, stays visible); its manual-open must survive the remount (#991).
     if (stage4JumpFound) {
       const toolCallsOff = await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('toolCalls', false)`);
       if (!toolCallsOff || toolCallsOff.ok !== true) {
@@ -439,14 +329,7 @@ async function main() {
       failures.push(`The chain row's own "Go to Stage 3" jump button was never found: ${err.message} -- issue #1008 item 2 regression.`);
     }
     if (stage3JumpFound) {
-      // Keyboard path (distinct from Stage 4's mouse click above): focus the jump button itself
-      // directly (proving it is keyboard-reachable), then a REAL Enter keypress -- `cdp.pressEnter()`
-      // (sends `text`/`unmodifiedText: '\r'` alongside the keycode), NOT the bare `pressKey`
-      // helper (keycode only): a native `<button>`'s own default "Enter activates the focused
-      // button" behaviour needs those text fields to fire in this WebView2 build (the same gap
-      // `verify-tauri-560-helpers.mjs`'s own `pressRealEnter` doc comment and
-      // `verify-tauri-567.mjs`'s own Delete-dialog Enter press already document -- confirmed
-      // live here too: the bare `pressKey` form moved focus nowhere and opened nothing).
+      // Use cdp.pressEnter(), not bare pressKey: WebView2 needs the text fields for Enter to activate a button.
       await cdp.evaluate(`(() => { const el = (${jumpButtonExpr(STAGE3_TITLE)}); if (el) el.scrollIntoView({ block: 'center' }); })()`);
       await cdp.evaluate(`(${jumpButtonExpr(STAGE3_TITLE)})?.focus()`);
       const stage3ButtonFocused = await cdp.evaluate(`document.activeElement === (${jumpButtonExpr(STAGE3_TITLE)})`);
@@ -454,8 +337,7 @@ async function main() {
         failures.push('Could not place keyboard focus on the "Go to Stage 3" button itself before pressing Enter.');
       } else {
         findings.push('Keyboard focus placed on the "Go to Stage 3" button itself (keyboard-reachable, issue #1008 item 2).');
-        // Gate round 4 fix (Test Low): the jump button's own scrollIntoView can itself move the
-        // viewport -- re-measure the off-screen precondition HERE, right before the real jump.
+        // The button's scrollIntoView can move the viewport, so re-measure the off-screen precondition here.
         const stage3RectBeforeKeyboardJump = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
         if (rectIsInViewport(stage3RectBeforeKeyboardJump)) {
           failures.push(`Stage 3's own row is already in the viewport right before the keyboard jump (rect ${JSON.stringify(stage3RectBeforeKeyboardJump)}, after the jump button's own scrollIntoView) -- the off-screen precondition this proof depends on no longer holds.`);
@@ -474,8 +356,7 @@ async function main() {
           failures.push('Pressing Enter on "Go to Stage 3" did not move keyboard focus to Stage 3\'s own trigger.');
         } else {
           findings.push('Pressing Enter on "Go to Stage 3" moved keyboard focus to Stage 3\'s own trigger.');
-        }
-        // Same settle-then-hit-test proof as the mouse jump above (gate round 2).
+        }
         await sleep(1_500);
         const stage3Check = await cdp.evaluate(viewportHitTestExpr(stage3TriggerExpr));
         if (stage3Check.found && stage3Check.inBounds && stage3Check.hit) {
@@ -487,10 +368,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '02-stage3-jumped-via-keyboard.png'));
 
-    // ---- Item 1/gate round 1 item 7: re-resolve --severity-error/--severity-success INSIDE the
-    // theme loop, after each switchTheme -- a theme preset's own resolved value is never assumed
-    // to carry over from an earlier pass. Checks both the in-place Stage label (StageGroupRow)
-    // and the chain row's own "Go to Stage 5" button text, in all 3 themes. ----
+    // Re-resolve the severity colours after each switchTheme; a preset's value never carries over.
     const labelColorExpr = (titleText) => `(() => { const el = (${titleSelector(titleText)}); return el ? getComputedStyle(el).color : null; })()`;
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
@@ -514,11 +392,7 @@ async function main() {
       } else {
         findings.push(`[${theme.name}] The chain row's own "Go to Stage 5" button text resolves to --severity-error.`);
       }
-      // Gate round 2 item 4 (Low): one real screenshot of the chain row itself, scrolled into
-      // view, showing the red "Go to Stage 5" button beside the other (green/neutral) Stage
-      // lines -- the colour checks above prove the computed value, this is the visual proof
-      // Main asked for. Dark theme only (the per-theme loop's own first pass), matching the
-      // "one extra screenshot, not one per theme" ask.
+      // One visual screenshot of the red "Go to Stage 5" button, dark theme only.
       if (theme.id === 'dark') {
         await scrollTranscriptToEnd(cdp);
         await cdp.screenshot(path.join(SHOTS_DIR, '1008-chain-row-stage5-red.png'));

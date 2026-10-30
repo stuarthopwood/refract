@@ -1,18 +1,6 @@
-// Throwaway live-check for lane RM (#454, #740, #741, #762, #766, #760), run once over CDP
-// against the already-built debug exe. Isolated `OMP_PROFILE` (never used before, no real
-// credentials) so this never touches Stuart's real omp profile; `REFRACT_DATA_DIR`/
-// `WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR` are scratch too -- drives every RM
-// channel directly through `window.refract.*` (no UI exists for this feature yet).
-//
-// Root cause of the earlier "start-failed" run (2026-10-14): a brand-new, never-used profile
-// has NO default model configured at all, so `omp --mode rpc-ui` exits immediately with "No
-// default model selected" before ever emitting a `ready` frame -- confirmed by a direct manual
-// repro (same profile, same `--approval-mode=always-ask`, isolated, no app involved). Setting
-// `modelRoles.default` to an unreachable selector string is NOT enough on its own: `omp` also
-// needs that selector to resolve to a REGISTERED model, so this seeds a `models.yml` defining a
-// real (but unreachable) local provider first -- the exact established pattern
-// `docs/spike/model-roles-probe.mjs`/`config-watch-role-probe.mjs`/`slash-commands-probe.mjs`
-// already use (`probe-fake`/`probe-fake-model`, `baseUrl: http://127.0.0.1:1`).
+// Throwaway live check for lane RM (#454, #740, #741, #762, #766, #760), run once over CDP against the built debug exe.
+// Uses scratch OMP_PROFILE/REFRACT_DATA_DIR/WEBVIEW2_USER_DATA_FOLDER/REFRACT_IMPORT_SOURCE_DIR so Stuart's real data is never touched.
+// A fresh omp profile has no default model and exits before `ready`, so a models.yml with an unreachable local provider is seeded first.
 //
 // Usage: node scripts/verify-rm-live-check.mjs (requires CARGO_TARGET_DIR set to the shared
 // build cache; issue #946, no worktree-local src-tauri/target fallback).
@@ -59,18 +47,11 @@ function makeScratchRepo(dir) {
   return dir;
 }
 
-// Same seeded-fake-provider pattern as the committed RM0 probes: a real, registered, but
-// unreachable local model, so `omp --mode rpc-ui` has something to resolve at startup. Never
-// touches a real provider or spends a real turn; this lane's own checks never send a prompt.
+// A registered but unreachable local model, so `omp --mode rpc-ui` can resolve a default at startup without a real provider.
 function ensureFakeModel(profile) {
   const agentDir = path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile, 'agent');
   mkdirSync(agentDir, { recursive: true });
-  // Two DISTINCT fake models (not one reused for every role): so a real role switch
-  // (`/switch @smol`) has a genuinely different model to move to and the verify-effect check
-  // (get_state before/after) can observe a real change, not just the one configured role. A
-  // THIRD model's own `id` contains a colon (round 5, Ollama `llama3:8b`/Bedrock `...-v1:0`
-  // style) -- `selector_matches_model` must not mistake its own colon for a `:thinkingLevel`
-  // suffix and wrongly truncate it.
+  // Distinct models so a role switch is observable; the third id contains a colon (Ollama/Bedrock style) that `selector_matches_model` must not treat as a thinking-level suffix.
   const yml = [
     'providers:',
     '  probe-fake:',
@@ -105,10 +86,7 @@ async function main() {
   const dataDir = path.join(scratchRoot, 'data');
   const repoDir = path.join(scratchRoot, 'repo');
   const exeDir = path.join(scratchRoot, 'exe');
-  // Safety (lane R13a, #833): the one-time Electron->Rust import defaults its SOURCE to
-  // Stuart's REAL `%APPDATA%\pinion` unless `REFRACT_IMPORT_SOURCE_DIR` overrides it -- scratch
-  // `REFRACT_DATA_DIR` alone does not stop this. This empty folder makes the import a
-  // guaranteed no-op, so this harness never merges in Stuart's real Sessions/repositories.
+  // Safety (#833): the Electron->Rust import reads Stuart's real %APPDATA%\pinion unless overridden; an empty folder makes it a no-op.
   const importSourceDir = path.join(scratchRoot, 'electron-import-source-empty');
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(importSourceDir, { recursive: true });
@@ -136,11 +114,7 @@ async function main() {
 
   const profile = `refract-rm-live-check-${stamp.toLowerCase().replace(/[^a-z0-9._-]/g, '-')}`;
   ensureFakeModel(profile);
-  // Give the isolated profile a resolvable default (`omp config set modelRoles`, the same CLI
-  // path `ipc::model_roles`/`known_role_list` already use) -- `models.yml` alone registers the
-  // providers; `modelRoles` is what omp's startup check actually reads. `smol`/`slow` both map
-  // to the SAME, DIFFERENT-from-`default` model so `/switch @smol`/`/role slow` each have a
-  // real change to make while `default` is still on the other one.
+  // `models.yml` only registers providers; omp's startup check reads `modelRoles`. smol/slow map to the non-default model so role switches change something.
   run('omp', [
     '--profile',
     profile,
@@ -158,9 +132,7 @@ async function main() {
     REFRACT_DATA_DIR: dataDir,
     // Safety (lane R13a, #833): empty, see `importSourceDir`'s own comment above.
     REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-    // omp's own profile-name charset: `^[a-z0-9][a-z0-9._-]{0,63}$` (lowercase only, confirmed
-    // live: an uppercase stamp like `...T07-56...Z` was rejected outright with "Invalid OMP
-    // profile").
+    // omp profile names must match `^[a-z0-9][a-z0-9._-]{0,63}$` (uppercase stamps are rejected).
     OMP_PROFILE: profile,
   };
 
@@ -241,8 +213,7 @@ async function main() {
     const modelBareRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, '/model')`);
     record('/model bare (rewritten to /switch)', modelBareRes.ok === true, modelBareRes.ok ? undefined : modelBareRes);
 
-    // --- /switch @<role from cycleOrder>: role alias forward, a LIVE agent -- asserts the
-    // model ids actually recorded, not only `ok` (`smol` -> probe-fake-model-2). ---
+    // --- /switch @<role from cycleOrder>: asserts the recorded model ids (`smol` -> probe-fake-model-2). ---
     const roles = listRolesRoleNames;
     const firstRole = roles.find((r) => r !== 'plan') ?? roles[0];
     let firstRoleExpectedId;
@@ -267,9 +238,7 @@ async function main() {
       record(`model.applyRole(${secondRole}) on a live agent`, applyRoleRes.ok === true, applyRoleRes.ok ? undefined : applyRoleRes);
     }
 
-    // --- #766: /role <role> switching directly, {queued:false} wire shape, and the resulting
-    // currentRole/pinned fields in SessionSummary (#741) -- the Session is on "default" (model
-    // 1) from the previous check, "slow" resolves to model 2, a real change. ---
+    // --- #766: /role <role> switches directly ({queued:false}) and updates currentRole/pinned (#741); "slow" resolves to model 2. ---
     const slowRoleRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, '/role slow')`);
     const afterSlowList = await cdp.evaluate(`window.refract.sessions.list()`);
     const afterSlowSummary = afterSlowList.ok ? afterSlowList.value.find((s) => s.id === sessionId) : undefined;
@@ -283,14 +252,11 @@ async function main() {
       { slowRoleRes, afterSlowSummary },
     );
 
-    // --- model.setModel on a LIVE agent, with the seeded fake model (the only one this
-    // isolated profile has) -- proves the real success path, not only the failure path. Pins
-    // the Session (Decision 1). ---
+    // --- model.setModel on a LIVE agent; pins the Session (Decision 1). ---
     const setModelRes = await cdp.evaluate(`window.refract.model.setModel(${JSON.stringify(sessionId)}, 'probe-fake', 'probe-fake-model')`);
     record('model.setModel(probe-fake/probe-fake-model) on a live agent', setModelRes.ok === true, setModelRes.ok ? undefined : setModelRes);
 
-    // --- #766/Decision 1: choosing a role again un-pins a previously-pinned Session --
-    // confirmed pinned BEFORE, not only un-pinned after. ---
+    // --- #766/Decision 1: choosing a role again un-pins a pinned Session (pinned confirmed before). ---
     const beforeUnpinList = await cdp.evaluate(`window.refract.sessions.list()`);
     const beforeUnpinPinned = beforeUnpinList.ok ? beforeUnpinList.value.find((s) => s.id === sessionId)?.pinned : undefined;
     const unpinRes = await cdp.evaluate(`window.refract.model.applyRole(${JSON.stringify(sessionId)}, 'smol')`);
@@ -305,8 +271,7 @@ async function main() {
       { beforeUnpinPinned, unpinRes, afterUnpinSummary },
     );
 
-    // --- model.cycleModel on a LIVE agent: the seeded catalog has TWO models, so this must
-    // both succeed AND move to the other one, not just return a well-shaped envelope. ---
+    // --- model.cycleModel on a LIVE agent: must move to the other seeded model. ---
     const beforeCycleList = await cdp.evaluate(`window.refract.sessions.list()`);
     const beforeCycleModelId = beforeCycleList.ok ? beforeCycleList.value.find((s) => s.id === sessionId)?.lastModel?.id : undefined;
     const cycleRes = await cdp.evaluate(`window.refract.model.cycleModel(${JSON.stringify(sessionId)})`);
@@ -316,11 +281,7 @@ async function main() {
       { cycleRes, beforeCycleModelId },
     );
 
-    // --- #740 sweep: build four more Sessions in the four distinct states the sweep must
-    // treat differently, then change the "default" role to the OTHER seeded fake model and
-    // inspect which bucket each Session landed in. (`sessionId` above is already pinned by the
-    // `model.setModel` call a few lines up, so it is reused as the fifth, skippedPinned,
-    // case instead of creating a spare Session for it.) ---
+    // --- #740 sweep: four Sessions in distinct states, then change "default" and check each bucket (`sessionId` is already pinned, reused as skippedPinned). ---
     async function createSweepSession(label) {
       const createRes = await cdp.evaluate(`window.refract.sessions.create({ repositoryId: ${JSON.stringify(repositoryId)}, baseBranch: 'main' })`);
       if (!createRes.ok) {
@@ -352,10 +313,7 @@ async function main() {
     }
 
     const stoppedId = await createSweepSession('stopped candidate');
-    // Deliberately never `.open()`ed (which would auto-start it): `model.listRoles` still
-    // calls `get_or_create_agent`, registering a genuine Stopped-status agent entry the sweep
-    // can see, without starting a real omp process -- the actual `skippedStopped` case, not
-    // merely a Session absent from the agents map entirely (that is the other-role case above).
+    // Never `.open()`ed: `model.listRoles` still registers a Stopped agent without starting omp, giving the real `skippedStopped` case.
     if (stoppedId) await cdp.evaluate(`window.refract.model.listRoles(${JSON.stringify(stoppedId)})`);
 
     const workingId = await createSweepSession('working candidate');
@@ -375,23 +333,14 @@ async function main() {
       { pinned: summaryOf(sessionId), otherRole: summaryOf(otherRoleId) },
     );
 
-    // --- Decision 1: mid-turn refusal, on its OWN dedicated Session (never the sweep's own
-    // `workingId` below -- four extra round trips on the SAME Session reliably outlasted the
-    // narrow window before the unreachable fake model's connection failure settles the turn,
-    // observed live). All four calls are dispatched CONCURRENTLY (`Promise.all`, not one
-    // `await` after another) so the whole group needs only one round trip's worth of the
-    // window, not four. ---
+    // --- Decision 1: mid-turn refusal on its own Session; the four calls run concurrently because four sequential round trips outlast the window before the fake model's connection failure ends the turn. ---
     const midTurnId = await createSweepSession('mid-turn candidate');
     if (midTurnId) {
       await openAndWaitIdle(midTurnId, 'mid-turn candidate');
       const midTurnPromise = cdp
         .evaluate(`window.refract.chat.send(${JSON.stringify(midTurnId)}, 'hello')`)
         .catch((err) => ({ ok: false, error: String(err) }));
-      // Wait for Refract's own status to genuinely flip to `working` (set only once OMP's
-      // `agent_start` frame arrives, not synchronously on `chat.send`) before firing the
-      // refusal checks below -- racing them immediately after `chat.send` itself (no wait)
-      // left `setModel`'s own atomic check landing before that flip on a fast, local,
-      // immediately-connection-refused turn, observed live.
+      // Wait for status `working` (set on OMP's `agent_start`, not on `chat.send`); firing sooner let setModel's atomic check land first on a fast refused turn.
       try {
         await cdp.waitFor(
           `window.refract.sessions.list().then(r => r.ok && r.value.find(s => s.id === ${JSON.stringify(midTurnId)})?.status === 'working')`,
@@ -415,11 +364,7 @@ async function main() {
       record('mid-turn candidate sessions.create', false, 'could not create the mid-turn Session');
     }
 
-    // Fire a chat turn on the "working" candidate without awaiting it, racing the role-change
-    // propagation below against a Session genuinely mid-turn (the seeded fake model's endpoint
-    // is unreachable, so the turn stays in-flight briefly -- immediately followed by
-    // `modelRoles.set` below with NO other call in between, the same minimal-latency pattern
-    // that reliably lands the race).
+    // Fire a turn without awaiting, then `modelRoles.set` with no call in between, so the role change races a genuinely mid-turn Session.
     const workingTurn = workingId
       ? cdp.evaluate(`window.refract.chat.send(${JSON.stringify(workingId)}, 'hello')`).catch((err) => ({ ok: false, error: String(err) }))
       : null;
@@ -452,16 +397,10 @@ async function main() {
       }
     }
 
-    // #740's settle-time reapply (the queued working candidate actually moving once its turn
-    // ends) is NOT live-checked here: the unreachable fake provider's own retry/backoff makes a
-    // real turn's full settlement take long enough that this harness either times out waiting
-    // (observed: 60s and 180s both insufficient) or the WebView2 host itself becomes unstable
-    // first (observed: `CdpSession: send(...) after the connection closed` partway through a
-    // 180s wait). Disclosed as an open acceptance item in the PR body rather than left in as a
-    // check that would misreport an infrastructure timeout/crash as a product defect.
+    // #740's settle-time reapply is not live-checked: the fake provider's retry/backoff outlasts 60s/180s waits and destabilises WebView2,
+    // which would misreport an infrastructure failure as a product defect (disclosed in the PR body).
 
-    // --- model.setModel with a made-up, unresolvable provider/id: the failure path, exact
-    // code and message, not just `ok === false`. ---
+    // --- model.setModel with an unresolvable provider/id: exact failure code and message. ---
     const badSetModelRes = await cdp.evaluate(
       `window.refract.model.setModel(${JSON.stringify(sessionId)}, 'no-such-provider', 'no-such-model-xyz')`,
     );
@@ -473,9 +412,7 @@ async function main() {
       badSetModelRes,
     );
 
-    // --- #762: /switch <unknown model> leaves the model unchanged (text-command path, distinct
-    // from the dedicated model.setModel RPC checked above) -- compares `lastModel.id` before
-    // and after, not only the error message text. ---
+    // --- #762: /switch <unknown model> leaves `lastModel.id` unchanged (text-command path). ---
     const beforeSwitchUnknownList = await cdp.evaluate(`window.refract.sessions.list()`);
     const beforeSwitchUnknownModelId = beforeSwitchUnknownList.ok
       ? beforeSwitchUnknownList.value.find((s) => s.id === sessionId)?.lastModel?.id
@@ -497,9 +434,7 @@ async function main() {
       { switchUnknownRes, beforeSwitchUnknownModelId, afterSwitchUnknownModelId },
     );
 
-    // --- #766 round 4: /role <role> validates the WIDER chat-role set, not just cycleOrder --
-    // prove `smol` still validates with `smol` removed from `cycleOrder` (still configured in
-    // `modelRoles`, so `known_chat_role_list` still accepts it). ---
+    // --- #766: /role validates the wider chat-role set; `smol` stays valid with it removed from `cycleOrder`. ---
     run('omp', ['--profile', profile, 'config', 'set', 'cycleOrder', '["default","slow"]', '--json']);
     const roleSmolId = await createSweepSession('role-smol-validation candidate');
     if (roleSmolId) {
@@ -512,9 +447,7 @@ async function main() {
       );
     }
 
-    // --- #766 round 5: /switch @<role> now validates against the SAME wider list /role uses
-    // (previously two different lists) -- prove it too accepts `smol` with `smol` removed from
-    // `cycleOrder`. ---
+    // --- #766: /switch @<role> uses the same wider list as /role. ---
     const switchSmolId = await createSweepSession('switch-at-smol-validation candidate');
     if (switchSmolId) {
       await openAndWaitIdle(switchSmolId, 'switch-at-smol-validation candidate');
@@ -526,9 +459,7 @@ async function main() {
       );
     }
 
-    // --- #766 round 5/6: a WORKLOAD role ("not a conversation role... not in scope" per #766)
-    // is refused by `/role` even though it IS configured in `modelRoles` (the probe seeds
-    // `vision`) -- proving the exclusion is absolute, not just "unconfigured roles left out". ---
+    // --- #766: a workload role (seeded `vision`) is refused by /role even though configured. ---
     const workloadRoleId = await createSweepSession('workload-role-refusal candidate');
     if (workloadRoleId) {
       await openAndWaitIdle(workloadRoleId, 'workload-role-refusal candidate');
@@ -540,9 +471,7 @@ async function main() {
       );
     }
 
-    // --- round 6: a genuinely CUSTOM role (`myrole`, not any of OMP's own named roles, not a
-    // workload/model-kind id) is accepted by `/role` as long as it has its own `modelRoles`
-    // entry (the probe seeds it). ---
+    // --- a custom role (`myrole`) with its own `modelRoles` entry is accepted by /role. ---
     const customRoleId = await createSweepSession('custom-role-acceptance candidate');
     if (customRoleId) {
       await openAndWaitIdle(customRoleId, 'custom-role-acceptance candidate');
@@ -554,9 +483,7 @@ async function main() {
       );
     }
 
-    // --- round 5: `selector_matches_model` must not mistake a model id's OWN colon (Ollama
-    // `llama3:8b`/Bedrock `...-v1:0` style) for a `:thinkingLevel` suffix -- re-picking the SAME
-    // colon-id model must be a valid no-op, not truncated and wrongly "Model unchanged". ---
+    // --- re-picking the same colon-id model must be a valid no-op, not truncated to "Model unchanged". ---
     const colonModelId = await createSweepSession('colon-id same-model candidate');
     if (colonModelId) {
       await openAndWaitIdle(colonModelId, 'colon-id same-model candidate');

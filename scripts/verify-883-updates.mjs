@@ -1,22 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #883 (frictionless in-app updates: periodic check, background download,
-// "Update now" row, restart-to-update confirm). Two launches of one debug exe:
-//
-//   Run A (stubbed release source, no seeded state): a fake `gh` (scripts/verify-883-gh-shim.rs,
-//     first on PATH) reports only the running version. Asserts (a) no prompt at launch and the
-//     periodic tick runs while nothing is newer, (b) after a flag file flips the fake release list,
-//     the periodic check detects it with no clicks, (c) the download starts by itself, and the
-//     fake installer's Authenticode check (never weakened) fails, so (d-failure) the failure
-//     surfaces cleanly as the "Update failed" footer badge and no "ready" row appears.
-//   Run B (seeded `updateState.json` in the Downloaded phase, a fake-omp turn left running):
-//     asserts (d) the sidebar "Refract 9.9.9 is ready" row with its "Update now" action plus the
-//     footer "Update ready" badge, (e) "Update now" with one agent mid-turn shows the confirm
-//     dialog naming the count, Cancel keeps the app running, and "Restart and update" quits the
-//     app without running the (fake, unsigned) installer: the quit hook's own signature
-//     re-check refuses it. The real installer is never executed.
-//
+// Live CDP check of the in-app update flow (periodic check, download, "Update now", restart confirm).
+// A fake `gh` stubs releases; the fake installer is unsigned so the real installer is never executed.
 // Usage: REFRACT_883_EXE=<copied debug exe> node scripts/verify-883-updates.mjs
-// (build: `pnpm exec tauri build --debug --no-bundle`, copy refract-tauri.exe out first).
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -158,7 +143,6 @@ async function runA(ctx) {
     }
   });
   try {
-    // (a) no prompt at launch, and the periodic tick really runs while nothing is newer.
     await cdp.waitFor(`!!document.querySelector('footer')`, { timeoutMs: 15_000, label: 'footer mounted' });
     const launchChecks = countCalls(callLog, 'release list');
     check(launchChecks >= 1, '(a) the launch check ran `gh release list` against the stub', { launchChecks });
@@ -170,7 +154,6 @@ async function runA(ctx) {
     check(countCalls(callLog, 'release download') === 0, '(a) nothing was downloaded');
     await cdp.screenshot(path.join(SHOTS_DIR, 'a1-launch-no-prompt.png'));
 
-    // (b)(c) flip the stub; no clicks from here on.
     writeFileSync(flagFile, 'newer');
     await cdp.waitFor(`(() => { const b = document.querySelector('footer button'); return !!b && /Downloading update|Update failed|Update ready/.test(b.textContent ?? ''); })()`, {
       timeoutMs: 60_000,
@@ -186,7 +169,6 @@ async function runA(ctx) {
       downloads: countCalls(callLog, 'release download')
     });
 
-    // (d-failure) the fake asset has no valid Authenticode signature: verification must refuse it.
     check((await footerBadgeText(cdp)) === 'Update failed', '(d) the signature check refused the stub installer and the failure surfaced as "Update failed"', {
       badge: await footerBadgeText(cdp)
     });
@@ -241,7 +223,6 @@ async function runB(ctx) {
     await createSession(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, 'b1-ready-row-and-badge.png'));
 
-    // (e) leave one agent mid-turn (fake omp holds the turn until aborted).
     await cdp.typeIntoByLabel('Message', 'keep working for the update check');
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`document.body.textContent.includes('Running a long command')`, {
@@ -260,8 +241,7 @@ async function runB(ctx) {
     check(processAlive(targetPid), '(e) Cancel leaves the app running');
     check((await readyRowText(cdp)) !== null, '(e) Cancel keeps the "ready" row');
 
-    // Restart and update: the pre-quit re-verification (Authenticode) refuses the stub, so the
-    // error returns over IPC, the dialog closes, and the app stays running (issue #1175).
+    // The pre-quit Authenticode re-check refuses the stub, so the app must stay running.
     await cdp.clickByLabel('Restart and install the update now');
     await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'confirm dialog reopened' });
     await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((b) => b.textContent.trim() === 'Restart and update')`);

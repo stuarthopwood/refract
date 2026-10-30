@@ -1,46 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for issue #741 (composer role chip, pin persistence, OMP-fallback signal,
-// Session details card provider line). Decided (Stuart, 2026-10-19, `issuecomment-6266024041`).
-//
-// Fake-omp tape (`scripts/fixtures/omp-frames/role-chip-741.jsonl`, same preamble shape
-// `session.jsonl`/`verify-555-user-message-time.mjs` already use): launches 1, 3 and 4 below are
-// all BRAND-NEW Sessions (`launch.rs`'s `attachAndVerify` skips `switch_session` for those) and
-// share this one tape; launch 2 reopens the EXISTING Session launch 1 created, so it drives a
-// separate companion tape (`role-chip-741-reopen.jsonl`) that scripts the real `switch_session`
-// request a genuine reattach sends first (same split `user-message-time`/`user-message-time-
-// reopen.jsonl` already use for issue #555). What differs per launch is the literal content Node
-// pre-writes into the Session's own Conversation file BEFORE launch (`$conversationFile`
-// sentinel), since #741 decision 2/FINDINGS item 51 establishes `currentRole` has no RPC source
-// at all: Rust's own `session::model::read_role_from_session_file` reads that file directly off
-// disk. A role chip (Default, no chip for an unknown role, Fallback) is therefore proven by what
-// this script seeds on disk BEFORE the app ever opens the Session, never by a tape frame.
-//
-// Five launches, one build (gate round 1 added launch 5, the empty-conversation case):
-//   1. "default" conversation file -> Default chip, 60-char-plus model name truncation (real
-//      geometry, not a guessed selector), details card name/provider line, AX names, muted-text
-//      contrast >= 4.5:1 in all five theme presets (screenshots), a real keyboard path (Tab,
-//      focus-visible, tooltip, Escape, Shift+Tab), then a real `set_model` IPC call (the backend
-//      contract itself, matching `verify-rm-live-check.mjs`'s own established precedent for
-//      RPC-level proof -- NOT a UI click, since #741's hand-pick is a Rust/registry concern the
-//      DOM cannot exercise any more directly) pins the Session -> Custom chip. Gate round 1 fix
-//      (MEDIUM #4): with the Session still pinned, a fallback `model_change` line is appended to
-//      the SAME conversation file and the tape autonomously emits a real `retry_fallback_
-//      succeeded` frame -- the chip must flip to Fallback with NO restart, proving `model.rs`'s
-//      own "fallback outranks a pin" fix, and the registry's own `pinned` flag must stay true
-//      underneath (never cleared by a fallback).
-//   2. SAME `dataDir` as launch 1 (a fresh process, same `registry.json`): proves the pin survives
-//      a restart (`ensure_pin_seeded` folding `pinnedModel` back in) -- Custom chip reappears with
-//      NO hand-pick repeated this run.
-//   3. "fallback" conversation file (`resolvedModelIsFallback:true` on its one `model_change`
-//      line) -> Fallback chip, tape-proven per FINDINGS item 61 (a live-forced fallback could not
-//      be produced in 90s against a real OMP; forcing/confirming that transition live is #650).
-//   4. "unknown-role" conversation file (a role string outside every known chat role) -> no chip
-//      at all (#741: "if the role cannot be established, show nothing rather than a guess"),
-//      asserted only after `sessions.list()` itself reports the seeded `currentRole` (gate round
-//      1 fix HIGH #3b: a fixed sleep used to stand in for that real wait).
-//   5. Gate round 1 fix (HIGH #3b): an EMPTY conversation file (no `model_change` line at all)
-//      -> `currentRole` reads `null` and no chip renders -- the other half of "show nothing
-//      rather than a guess" launch 4 alone never exercised.
+// Live CDP check for #741: composer role chip, pin persistence, OMP-fallback signal and the
+// Session details card provider line. `currentRole` has no RPC source; Rust reads it from the
+// Conversation file, so each launch seeds that file on disk before the app opens the Session.
+// Launch 2 reopens launch 1's Session on a companion tape that scripts the `switch_session` frame.
+// Launches: 1 default chip, truncation, a11y, contrast, pin -> Custom, fallback outranks pin;
+// 2 pin survives restart; 3 fallback chip; 4 unknown role shows no chip; 5 empty file shows none.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -77,9 +41,8 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TAPE_NAME = 'role-chip-741';
-// Launch 2 reopens an EXISTING Session (`currentConversation` already set from launch 1), so
-// `launch.rs`'s `attachAndVerify` sends a real `switch_session` request first -- a brand-new
-// Session never does (see `TAPE_NAME`'s own README row). A separate tape scripts that frame.
+// Launch 2 reopens an existing Session, so `attachAndVerify` sends a `switch_session` request a
+// brand-new Session never does; a separate tape scripts that frame.
 const TAPE_NAME_REOPEN = 'role-chip-741-reopen';
 
 async function main() {
@@ -143,10 +106,7 @@ async function main() {
     exeHash = built.hash;
     console.log(`verify-741: exe copied to ${exePath} (sha256 ${exeHash.slice(0, 12)}...)`);
 
-    // ---------------------------------------------------------------------
-    // Launch 1: Default role chip, 60-char truncation, details card, AX names, 5 theme
-    // screenshots, then a real `model.setModel` pin -> Custom.
-    // ---------------------------------------------------------------------
+    // Launch 1: Default chip, truncation, details card, AX names, themes, then a pin -> Custom.
     dataDir1 = mkdtempSync(path.join(tmpdir(), 'refract-741-data1-'));
     importSourceDir1 = mkdtempSync(path.join(tmpdir(), 'refract-741-import1-'));
     repoDir1 = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-741-repo1-')), 'verify-741-1');
@@ -184,10 +144,7 @@ async function main() {
     await stopLauncher(child1);
     child1 = undefined;
 
-    // ---------------------------------------------------------------------
-    // Launch 2: SAME dataDir1 -- proves the pin (registry.json's pinnedModel field) survives a
-    // full app restart with no hand-pick repeated this run.
-    // ---------------------------------------------------------------------
+    // Launch 2: same dataDir1; the pin in registry.json must survive a full restart.
     const port2 = await getFreePort();
     const launched2 = await launchBuiltExeWithEnv(launcherExe, exePath, {
       port: port2,
@@ -218,9 +175,7 @@ async function main() {
       failures.push(`Role chip did not read Custom after restart: ${err.message}`);
     });
     const restartList = await cdp2.evaluate(`window.refract.sessions.list()`);
-    // Gate round 1 fix (LOW #13a): looked up by `sessionId1` (the real id launch 1 created),
-    // never an assumed `[0]` -- a brand-new, incidental Session (readiness probes, import, etc.)
-    // could otherwise silently shift the index this reads.
+    // Look up by `sessionId1`, never `[0]`: an incidental Session could shift the index.
     const restartSummary = restartList.ok ? restartList.value.find((s) => s.id === sessionId1) : undefined;
     if (restartSummary?.pinned === true) {
       findings.push('Pin persisted across a full app restart with the same REFRACT_DATA_DIR (registry.json\'s pinnedModel field round-tripped) -- Custom chip shown with zero hand-pick repeated this run.');
@@ -234,11 +189,7 @@ async function main() {
     await stopLauncher(child2);
     child2 = undefined;
 
-    // ---------------------------------------------------------------------
-    // Launch 3: a fresh Session whose conversation file's one model_change entry already carries
-    // resolvedModelIsFallback:true -> Fallback chip (tape-proven per FINDINGS item 61; forcing
-    // this transition live against a real OMP is #650).
-    // ---------------------------------------------------------------------
+    // Launch 3: conversation file already marks the model_change as a fallback -> Fallback chip.
     dataDir3 = mkdtempSync(path.join(tmpdir(), 'refract-741-data3-'));
     importSourceDir3 = mkdtempSync(path.join(tmpdir(), 'refract-741-import3-'));
     repoDir3 = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-741-repo3-')), 'verify-741-3');
@@ -301,10 +252,7 @@ async function main() {
     await stopLauncher(child3);
     child3 = undefined;
 
-    // ---------------------------------------------------------------------
-    // Launch 4: a fresh Session whose conversation file's role string matches no known chat role
-    // -> no chip at all (#741: "show nothing rather than a guess").
-    // ---------------------------------------------------------------------
+    // Launch 4: an unrecognised role string -> no chip ("show nothing rather than a guess").
     dataDir4 = mkdtempSync(path.join(tmpdir(), 'refract-741-data4-'));
     importSourceDir4 = mkdtempSync(path.join(tmpdir(), 'refract-741-import4-'));
     repoDir4 = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-741-repo4-')), 'verify-741-4');
@@ -333,14 +281,8 @@ async function main() {
     if (!isTargetOwningPort(port4, launched4.targetPid)) throw new Error(`verify-741: CDP target on port ${port4} is not owned by this run's own process`);
 
     await openScratchSession(cdp4, repoDir4);
-    // Gate round 1 fix (HIGH #3b): a real wait for `sessions.list()` to report the SEEDED
-    // unrecognised `currentRole` (proving the Rust side actually read it off disk), not a fixed
-    // sleep standing in for that real signal before asserting absence.
-    // Gate round 2 fix (MEDIUM #7): ALSO wait for `lastModel.id` to be the expected post-
-    // `get_state` model id, and for the Model picker trigger to actually show its name in the
-    // DOM -- the role-only wait above could pass before the renderer's OWN Sessions store had
-    // received the `get_state` snapshot at all, letting "no chip" pass vacuously (nothing in
-    // the composer rendered yet) rather than for the genuine reason (an unrecognised role).
+    // Wait for `sessions.list()` to report the seeded role, and for `lastModel.id` and the Model
+    // picker to render: otherwise "no chip" could pass vacuously before the store has a snapshot.
     await cdp4.waitFor(
       `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole === 'a-role-no-chat-role-map-recognises' && r.value[0]?.lastModel?.id === ${JSON.stringify(SIXTY_CHAR_MODEL_ID)})`,
       { timeoutMs: 15_000, label: 'sessions.list() reports the seeded unrecognised currentRole and the post-get_state lastModel id' }
@@ -359,13 +301,7 @@ async function main() {
     await stopLauncher(child4);
     child4 = undefined;
 
-    // ---------------------------------------------------------------------
-    // Launch 5 (gate round 1 fix HIGH #3b): an EMPTY conversation file (no `model_change` line
-    // at all) -> `currentRole` reads `null` and no chip renders -- unlike launch 4 (a role
-    // STRING that fails to resolve against any known chat role), this proves the "no
-    // `model_change` entry found at all" branch too (the other half of "show nothing rather
-    // than a guess").
-    // ---------------------------------------------------------------------
+    // Launch 5: an empty conversation file (no model_change line) -> null role, no chip.
     dataDir5 = mkdtempSync(path.join(tmpdir(), 'refract-741-data5-'));
     importSourceDir5 = mkdtempSync(path.join(tmpdir(), 'refract-741-import5-'));
     repoDir5 = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-741-repo5-')), 'verify-741-5');
@@ -394,9 +330,7 @@ async function main() {
     if (!isTargetOwningPort(port5, launched5.targetPid)) throw new Error(`verify-741: CDP target on port ${port5} is not owned by this run's own process`);
 
     await openScratchSession(cdp5, repoDir5);
-    // Gate round 1 fix (HIGH #3b): a real wait, not a fixed sleep, same rationale as launch 4.
-    // Gate round 2 fix (MEDIUM #7): ALSO wait for `lastModel.id` and the Model picker trigger
-    // (same rationale as launch 4's own identical fix).
+    // Same waits as launch 4.
     await cdp5.waitFor(
       `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole == null && r.value[0]?.lastModel?.id === ${JSON.stringify(SIXTY_CHAR_MODEL_ID)})`,
       { timeoutMs: 15_000, label: 'sessions.list() reports currentRole: null and the post-get_state lastModel id for an empty conversation file' }

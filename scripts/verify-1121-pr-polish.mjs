@@ -1,51 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issues #1120 (State select rendered at the default 32px, matching the
-// adjacent SearchField), #1121 (check-status colour: passed/failed/pending/none), #1131 (the
-// muted reason line under the detail header hidden for a state-only disable -- draft, closed,
-// merged -- kept for a conflict, a blocked merge, or GitHub still computing mergeability) and
-// #1132 (a ghost icon-only "Open on GitHub" link beside Refresh).
-//
-// A deterministic FAKE `gh` (never real GitHub -- `scripts/verify-1121-pr-polish-fake-gh.mjs`)
-// exercises every check state and every pull request state these four issues care about in one
-// run, never relying on whichever real pull requests happen to exist on `stuarthopwood/refract`
-// today (`verify-tauri-568.mjs`/`verify-tauri-499-930.mjs`'s own real-clone approach, which
-// cannot guarantee a draft/conflict/blocked/still-checking row exists). `owner_repo_for`
-// (`src-tauri/src/github/gh.rs`) resolves purely from the scratch repository's local `origin`
-// remote (`git remote get-url origin`, no network); every other `gh` call this feature makes
-// (`pr list`, `pr view`, the Overview-timeline GraphQL query, the allowed-merge-methods probe,
-// the changed-files REST call) is answered by a real, freshly-compiled `gh.exe` shim on the
-// launched app's own `PATH` (a `.cmd`/`.bat` script is invisible to Windows' `CreateProcessW`,
-// which only auto-appends `.exe` to a bare program name -- see
-// `verify-1121-fake-gh-launcher.rs`'s own header comment).
-//
-// Rebuilds the exe fresh via `buildAndCopyExeFresh` (never trusts a possibly sibling-lane-
-// clobbered shared-target binary); asserts a story-only bundle marker AFTER that build, then a
-// live story-only DOM marker (`a[data-open-on-github]` in the running app) before judging any
-// row (refract-ui-lane-gate-checklist: "assert a story-only DOM marker before judging any
-// check"). The launched app gets no GitHub credentials: GH_TOKEN/GITHUB_TOKEN/
-// GH_ENTERPRISE_TOKEN/GH_HOST are stripped and GH_CONFIG_DIR points at an empty scratch dir.
-// `plugin:opener|open_url` is intercepted at `window.fetch` (the IPC custom-protocol request;
-// Tauri makes `__TAURI_INTERNALS__.invoke` non-writable) before the one real activation this run
-// makes on the new link, and a probe proves the hook is live first, so no real browser opens.
-//
-// Checks made, against the real rendered DOM:
-//   - #1120: the State select's own rendered height equals the SearchField's, both exactly
-//     32px, once the Filters disclosure is open.
-//   - #1121: a passed/failed/pending/none row each colours its check icon AND word
-//     (text-severity-success/error/warning, text-muted-foreground for none; pending's icon still
-//     spins), both in the list
-//     row and the detail header; State=All brings closed/merged rows into view too.
-//   - #1131: draft, closed and merged each hide the visible reason line (the already-visible
-//     StatePill is the reason) while the Review/Merge buttons' own tooltips still carry it and
-//     stay disabled; a conflict, a blocked merge, and GitHub still-computing-mergeability each
-//     keep the visible line, with the exact reason text `mapping.rs` computes.
-//   - #1132: the new link's accessible name and role from the AX tree ("Open on GitHub (opens in
-//     browser)", link), its tooltip (on both mouse hover and keyboard focus), its Tab position
-//     right after Refresh, and that activating it requests
-//     exactly the pull request's own `url` through the opener plugin -- intercepted, not a real
-//     browser window.
-//   - Dark, Dark (high contrast) and Obsidian screenshots, including a keyboard-focus shot of
-//     the new button.
+// Live CDP check for #1120 (State select height), #1121 (check-status colour), #1131 (reason line
+// hidden only for state-only disables) and #1132 (icon-only "Open on GitHub" link).
+// Uses a fake `gh.exe` shim on PATH (a .cmd is invisible to CreateProcessW) so every PR state exists
+// deterministically; opener `open_url` is intercepted at `window.fetch` so no real browser opens.
 
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -80,7 +37,7 @@ import { PR_FIXTURES, REASON, FAKE_OWNER, FAKE_REPO, buildFakeGh, makeFakeGithub
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+// Refuses to fall back to a worktree-local src-tauri/target (#946).
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1121_SHOTS_DIR || path.join(tmpdir(), 'refract-1121-pr-polish-shots');
 const FAKE_URL = (number) => `https://github.com/${FAKE_OWNER}/${FAKE_REPO}/pull/${number}`;
@@ -242,15 +199,10 @@ async function main() {
     checkPass('Fake pull request list settles to real fixture rows');
 
     async function openDetail(number) {
-      // Gate-fix (self-caught): 10 fixture rows do not all fit in the list panel's visible
-      // scrollable area at the default window size -- a raw coordinate click on a row below the
-      // fold landed on whatever (if anything) was actually rendered at that screen position,
-      // silently leaving the PREVIOUSLY selected row's detail showing, never the one this call
-      // asked for. Scrolled into view first so the click always lands on the real row.
+      // Rows below the fold are not clickable by coordinate; scroll into view first.
       await cdp.evaluate(`(() => { const el = document.querySelector('[data-pr-row][data-pr-number="${number}"]'); if (el) el.scrollIntoView({ block: 'center' }); return !!el; })()`);
       await cdp.click(`document.querySelector('[data-pr-row][data-pr-number="${number}"]')`);
-      // Exact match on the heading's own number span (`{title} <span>#{number}</span>`), so
-      // asking for #1 can never be satisfied by #10's heading.
+      // Exact number-span match so #1 is never satisfied by #10's heading.
       await cdp.waitFor(`(() => { const span = document.querySelector('h2.line-clamp-2 > span'); return !!span && span.textContent.trim() === '#${number}'; })()`, { timeoutMs: 15_000, label: `detail view for #${number} loaded` });
     }
     async function detailShape() {
@@ -270,16 +222,12 @@ async function main() {
       })()`);
     }
 
-    // ---- Live story marker: the running app's own DOM must carry this lane's new link before
-    // any row or detail is judged. Throws (not a soft fail) so nothing below runs against a
-    // binary without this lane's code. ----
+    // Throws, not a soft fail, so nothing is judged against a binary lacking this lane's code.
     await openDetail(1);
     const liveMarker = await cdp.waitFor(`!!${OPEN_ON_GITHUB_LINK}`, { timeoutMs: 10_000, label: 'live story marker a[data-open-on-github] in the running app' }).catch(() => false);
     assert(liveMarker, 'live story marker a[data-open-on-github] absent from the running app\'s DOM -- the exe under test does not contain this lane\'s code');
     checkPass('Live story marker a[data-open-on-github] present in the running app');
 
-    // ---- Default State=Open: the fixture's two non-open rows (#6 closed, #7 merged) must be
-    // absent; every open row (including #5, a draft) must be present. ----
     const openNumbers = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-pr-row]')).map((el) => Number(el.getAttribute('data-pr-number'))).sort((a, b) => a - b)`);
     const expectedOpen = PR_FIXTURES.filter((p) => p.state === 'OPEN').map((p) => p.number).sort((a, b) => a - b);
     if (JSON.stringify(openNumbers) === JSON.stringify(expectedOpen)) {
@@ -288,7 +236,6 @@ async function main() {
       checkFail('Default State=Open list matches the fixture\'s open rows exactly', `got ${JSON.stringify(openNumbers)}, expected ${JSON.stringify(expectedOpen)}`);
     }
 
-    // ---- #1121: row check-status colour, both icon and word, list row ----
     async function rowCheckClass(number) {
       return cdp.evaluate(`(() => {
         const row = document.querySelector('[data-pr-row][data-pr-number="${number}"]');
@@ -321,7 +268,6 @@ async function main() {
       else checkFail(name, JSON.stringify(shape));
     }
 
-    // ---- #1120: Filters disclosure -> State select height equals the SearchField's ----
     await cdp.click(`document.querySelector('[aria-label^="Filters"]')`);
     await cdp.waitFor(`!!document.getElementById('pull-request-filters-panel')`, { timeoutMs: 10_000, label: 'Filters disclosure open' });
     const heights = await cdp.evaluate(`(() => {
@@ -339,7 +285,6 @@ async function main() {
       checkFail('State select renders at the same 32px height as the SearchField', JSON.stringify(heights));
     }
 
-    // ---- #1120/#1121 extended: State=All brings Closed/Merged rows into view ----
     await cdp.click(`document.querySelector('[aria-label="State"]')`);
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === 'All')`, { timeoutMs: 10_000, label: 'State select open' });
     await cdp.clickByText('All', { tag: '[role="option"]' }).catch(async () => {
@@ -352,7 +297,6 @@ async function main() {
     if (allNumbers) checkPass('State=All brings Closed (#6) and Merged (#7) rows into view', allNumbers);
     else checkFail('State=All brings Closed (#6) and Merged (#7) rows into view', 'rows #6/#7 never appeared');
 
-    // ---- #1131: detail-view reason line, per PR ----
     const stateOnlyCases = [
       [5, REASON.draft, 'draft'],
       [6, REASON.closed, 'closed'],
@@ -381,7 +325,6 @@ async function main() {
       else checkFail(name, JSON.stringify(shape));
     }
 
-    // ---- #1121 (detail header) + #1132 (Open on GitHub) on a plain passing-open PR (#1) ----
     await openDetail(1);
     const detailCheckShape = await cdp.evaluate(`(() => {
       const header = document.querySelector('h2.line-clamp-2')?.closest('.shrink-0');
@@ -420,7 +363,6 @@ async function main() {
     if (linkOk) checkPass(linkCheckName, JSON.stringify({ linkShape, linkAx }));
     else checkFail(linkCheckName, JSON.stringify({ linkShape, linkAx, expectedHref }));
 
-    // Mouse hover: move the real pointer onto the link's centre; its tooltip must show.
     const linkRect = await cdp.evaluate(`(() => { const el = ${OPEN_ON_GITHUB_LINK}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     let hoverTooltip = null;
     if (linkRect) {
@@ -433,12 +375,8 @@ async function main() {
       checkFail('Mouse hover on Open on GitHub shows its tooltip', JSON.stringify({ linkRect, hoverTooltip, visible: await cdp.evaluate(VISIBLE_TOOLTIP_TEXTS) }));
     }
 
-    // Keyboard focus: Tab from the Refresh button lands on the link next; tooltip shows. Move the
-    // real pointer to a neutral corner first and require the hover tooltip to close, so the focus
-    // check below can only pass on a tooltip opened by keyboard focus.
-    // Radix Tooltip closes a hover-opened tooltip from a document `pointermove` checked against
-    // its grace area, not from the trigger's `pointerleave` alone, so one CDP jump leaves it open:
-    // send two moves outside the grace area.
+    // Radix closes a hover tooltip from a document `pointermove` against its grace area, so send two
+    // moves outside it; otherwise the focus check could pass on the hover tooltip.
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3 });
     const hoverClosed = await cdp.waitFor(`!${VISIBLE_TOOLTIP_TEXTS}.includes(${JSON.stringify(OPEN_ON_GITHUB_TOOLTIP)})`, { timeoutMs: 5_000, label: 'hover tooltip closed before the keyboard check' }).catch(() => false);
@@ -457,10 +395,8 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-open-on-github-focused.png'));
 
-    // Activating it requests exactly this pull request's URL through the opener plugin --
-    // intercepted at the Tauri IPC boundary, never a real browser window. Tauri's injected
-    // init script defines __TAURI_INTERNALS__.invoke/ipc/postMessage as non-writable, so the hook
-    // goes on window.fetch, which the custom-protocol IPC calls at dispatch time.
+    // Tauri defines __TAURI_INTERNALS__.invoke/ipc/postMessage non-writable, so hook window.fetch,
+    // which the custom-protocol IPC calls at dispatch time.
     const openerCheckName = 'Activating Open on GitHub requests the pull request\'s own URL through the opener plugin (intercepted)';
     const hook = await cdp.evaluate(`(async () => {
       const internals = window.__TAURI_INTERNALS__;

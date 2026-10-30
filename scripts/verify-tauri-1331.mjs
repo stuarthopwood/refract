@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for spec 060 / issue #1331 (Usage view), slice 1: the ingest worker and the
-// `usage.*` IPC. Drives a REAL built Tauri debug exe over CDP against a synthetic OMP sessions
-// folder, a fake `omp` and a fake `gh` (both real exes first on PATH, every call logged), a scratch
-// REFRACT_DATA_DIR and its own remote-debugging port. It never touches %APPDATA%\refract-tauri or
-// an installed Refract.
-//
-// Usage (after `pnpm exec tauri build --debug --no-bundle` on this head, shared target dir set):
-// CARGO_TARGET_DIR=<shared target dir> SHOTS_DIR=<evidence dir> node scripts/verify-tauri-1331.mjs
+// Live CDP check for #1331 (Usage view): ingest worker and `usage.*` IPC, against a real debug
+// exe, fake `omp`/`gh`, a scratch REFRACT_DATA_DIR and its own port; never touches %APPDATA%.
+// Usage: CARGO_TARGET_DIR=<shared target dir> SHOTS_DIR=<evidence dir> node scripts/verify-tauri-1331.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

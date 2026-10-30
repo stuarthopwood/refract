@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #513 (user chat bubbles show their attached images): a reopened
-// Conversation (the `get_messages_page` history path, same two-launch pattern as
-// verify-555-user-message-time.mjs) whose user messages carry real OMP `image` content parts
-// (`{ type: 'image', mimeType, data }`, data = bare base64 or `blob:sha256:<hash>`).
-// Fixture: scripts/fixtures/omp-frames/user-bubble-images-513-reopen.jsonl; the image payloads
-// are generated here and handed over through `$env:REFRACT_FAKE_OMP_IMG_*` sentinels.
-// The blob case seeds ONE uniquely-named file in the real ~/.omp/agent/blobs and removes it
-// (and the folder only if this run created it) in `finally`.
+// Live CDP check (#513): user chat bubbles show attached images on a reopened Conversation (`get_messages_page` history path).
+// Fixture: scripts/fixtures/omp-frames/user-bubble-images-513-reopen.jsonl; payloads arrive via `$env:REFRACT_FAKE_OMP_IMG_*`.
+// The blob case seeds one uniquely-named file in the real ~/.omp/agent/blobs and removes it (and the folder if this run made it) in `finally`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, createWriteStream, existsSync, unlinkSync, rmdirSync } from 'node:fs';
 import path from 'node:path';
@@ -97,8 +92,7 @@ async function main() {
     console.log(`verify-513: git HEAD ${gitHeadSha}`);
     console.log(`verify-513: shots dir ${SHOTS_DIR}`);
 
-    // Images: distinct colours so six tiles/viewer steps are distinguishable (identical bytes
-    // would share one content id). Flat gradients keep each env var far below the Windows limit.
+    // Distinct colours: identical bytes would share one content id. Flat gradients keep env vars under the Windows limit.
     const wide = makePng(600, 300, [20, 90, 200], [240, 120, 30]);
     const palette = [[200, 40, 40], [40, 160, 60], [40, 70, 200], [220, 170, 20], [150, 50, 180], [30, 170, 170]];
     const six = palette.map((c, i) => makePng(120 + i * 20, 90, c, [255 - c[0], 255 - c[1], 255 - c[2]]));
@@ -110,8 +104,7 @@ async function main() {
       return text;
     };
 
-    // Blob seeding: unique random name, extensionless (the first path the app tries), never an
-    // existing file (wx flag fails if present).
+    // Extensionless (the first path the app tries); wx flag refuses to clobber an existing file.
     const blobHash = randomBytes(32).toString('hex');
     if (!existsSync(BLOBS_DIR)) {
       mkdirSync(BLOBS_DIR, { recursive: true });
@@ -137,7 +130,6 @@ async function main() {
       REFRACT_FAKE_OMP_CONVERSATION_FILE: conversationFile,
     };
 
-    // ---- Launch 1: create the Session (one real send so it persists its Conversation) ----
     const port1 = await getFreePort();
     const launched1 = await launchBuiltExe(launcherExe, exePath, {
       port: port1, dataDir, importSourceDir, pathPrepend: shimDir, logFile: path.join(SHOTS_DIR, 'app-launch1.log'),
@@ -168,7 +160,6 @@ async function main() {
     await stopLauncher(child1);
     child1 = undefined;
 
-    // ---- Launch 2: reattach, history carries the image parts ----
     const port2 = await getFreePort();
     const launched2 = await launchBuiltExe(launcherExe, exePath, {
       port: port2, dataDir, importSourceDir, pathPrepend: shimDir, logFile: path.join(SHOTS_DIR, 'app-launch2.log'),
@@ -192,11 +183,10 @@ async function main() {
     await cdp2.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session reattached' });
     await setViewport(cdp2, NARROW);
     await cdp2.waitFor(`document.querySelector('[aria-label="Transcript"]')?.textContent.includes('Blob image message.')`, { timeoutMs: 30_000, label: 'History rendered' });
-    // Tiles load lazily (IntersectionObserver, ~200px margin): scroll each group into view, then wait.
+    // Tiles load lazily (IntersectionObserver, ~200px margin).
     const GROUP_IMGS = [1, 4, 1, 0, 1];
     for (let g = 0; g < GROUP_IMGS.length; g += 1) await revealGroup(cdp2, g, GROUP_IMGS[g]);
 
-    // ---- Narrow ----
     await cdp2.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
     await cdp2.evaluate(`document.querySelector('[data-slot="message-scroller-viewport"]')?.scrollTo(0, 0)`);
     await cdp2.waitFor(`(document.querySelector('[data-slot="message-scroller-viewport"]')?.scrollTop ?? 0) === 0`, { timeoutMs: 5000, label: 'scrolled to top' });
@@ -205,7 +195,6 @@ async function main() {
     for (const [name, i] of [['single', 0], ['six', 1], ['imageOnly', 2], ['invalid', 3], ['blob', 4]]) narrow[name] = await cdp2.evaluate(probeBubble(i));
     console.log('verify-513: narrow probes', JSON.stringify(narrow));
 
-    // (a) single
     const s = narrow.single;
     check(s.tiles === 1 && s.imgs === 1 && s.imgSrcData, 'single: one tile with an <img> whose src is a data: URL.', `single: expected 1 tile + data: img, got ${JSON.stringify(s)}`);
     check(/^Image attached to your message, PNG, [\d.]+ (B|KB|MB)\. Open larger view$/.test(s.tileLabels[0] ?? ''), `single: tile name "${s.tileLabels[0]}".`, `single: tile name "${s.tileLabels[0]}" does not match "Image attached to your message, TYPE, size. Open larger view".`);
@@ -214,7 +203,6 @@ async function main() {
     check(s.imgW <= s.natW && s.imgH <= s.natH, `single: rendered ${s.imgW}x${s.imgH} within natural ${s.natW}x${s.natH} (not upscaled).`, `single: rendered ${s.imgW}x${s.imgH} exceeds natural ${s.natW}x${s.natH}.`);
     check(s.natW === 600 && s.natH === 300, 'single: natural size is the generated 600x300.', `single: natural size ${s.natW}x${s.natH}, expected 600x300.`);
     check(s.hasText && s.text.includes('Single image message.'), 'single: the text part still renders in the bubble.', `single: text missing ("${s.text}").`);
-    // (b) six
     const x = narrow.six;
     check(x.tiles === 4 && x.imgs === 4, 'six: exactly 4 tiles with images are shown.', `six: expected 4 tiles, got ${x.tiles}/${x.imgs}.`);
     check(x.imgSrcData, 'six: every tile img src is a data: URL.', 'six: a tile img src is not a data: URL.');
@@ -228,21 +216,17 @@ async function main() {
     check(x.tileImgAlts.every((a) => a === ''), 'six: every tile <img> has alt="".', `six: tile <img> alts ${JSON.stringify(x.tileImgAlts)}.`);
     check(x.minTileSize >= 24, `six: smallest tile side ${Math.round(x.minTileSize)}px (>= 24).`, `six: smallest tile side ${x.minTileSize}px (< 24).`);
     check(x.tileBorder === '1px', 'six: tiles have a 1px border.', `six: tile border width ${x.tileBorder}, expected 1px.`);
-    // (c) image-only
     const o = narrow.imageOnly;
     check(o.tiles === 1 && o.imgs === 1, 'image-only: one image tile renders.', `image-only: expected one tile, got ${JSON.stringify(o)}.`);
     check(!o.hasText && !o.emptyTextBlock, 'image-only: the bubble has no text block at all (no empty paragraph).', `image-only: unexpected text/empty block ${JSON.stringify(o)}.`);
     check(!o.bubbleText.includes('Image attached') && !o.transcriptHasImageAttached, 'image-only: no "Image attached" text anywhere.', 'image-only: "Image attached" text found.');
-    // (d) invalid
     const inv = narrow.invalid;
     check(inv.placeholders === 1 && inv.imgs === 0, 'invalid: shows the "Image no longer available" placeholder, no img.', `invalid: expected one placeholder, got ${JSON.stringify(inv)}.`);
     check(inv.hasText, 'invalid: the message text still renders.', 'invalid: message text missing.');
-    // (e) blob
     const bl = narrow.blob;
     check(bl.tiles === 1 && bl.imgs === 1 && bl.imgSrcData, 'blob: the blob:sha256 reference resolves to a data: URL image (images.get).', `blob: expected a loaded image, got ${JSON.stringify(bl)}.`);
     check(!narrow.six.docOverflowX && !narrow.six.groupOverflowX, 'narrow: no horizontal overflow (document and group).', `narrow: horizontal overflow ${JSON.stringify({ doc: narrow.six.docOverflowX, group: narrow.six.groupOverflowX })}.`);
 
-    // ---- Viewer (narrow window) ----
     await revealGroup(cdp2, 1, 4);
     await cdp2.screenshot(path.join(SHOTS_DIR, '02-narrow-six-grid.png'));
     // The "+2" tile (4th) opens the viewer at the first hidden image (5th), not at the 4th.
@@ -299,7 +283,6 @@ async function main() {
     await cdp2.waitFor(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(tile2Label)}`, { timeoutMs: 5000, label: 'focus back after Close button' });
     pass('viewer: the Close button closes the dialog and focus returns to the opener tile.');
 
-    // ---- Wide ----
     await setViewport(cdp2, WIDE);
     await revealGroup(cdp2, 1, 4);
     const wideSix = await cdp2.evaluate(probeBubble(1));

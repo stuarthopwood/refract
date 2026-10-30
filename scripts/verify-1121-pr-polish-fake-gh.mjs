@@ -1,13 +1,6 @@
-// Deterministic fake `gh` CLI for `scripts/verify-1121-pr-polish.mjs` (issues #1120, #1121,
-// #1131, #1132): a real `gh.exe` (compiled at run time, see `verify-1121-fake-gh-launcher.rs`'s
-// own header comment for why a `.cmd`/`.bat` shim does not work) that answers every `gh`
-// invocation `src-tauri/src/github/gh.rs`/`gh_pull_requests.rs`/`gh_mutations.rs` makes for the
-// "All" tab's `list`/`detail` surface, from a fixed, offline fixture set -- every check state
-// (failed, pending/running, passed, none) and every pull request state this lane's issues care
-// about (open, draft, closed, merged, open-with-conflicts, open-blocked, open-still-checking),
-// never real GitHub. Owner/repo resolution (`owner_repo_for`) is plain local `git remote
-// get-url origin`, so the scratch repository this module also builds never needs network
-// access either.
+// Deterministic fake `gh` CLI for verify-1121-pr-polish.mjs (#1120, #1121, #1131, #1132): a real
+// compiled `gh.exe` (a .cmd shim doesn't work, see verify-1121-fake-gh-launcher.rs) serving fixed
+// offline fixtures, so no check touches real GitHub. Owner/repo comes from a local `git remote`.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -22,11 +15,7 @@ export const FAKE_REMOTE_URL = `https://github.com/${FAKE_OWNER}/${FAKE_REPO}.gi
 const AUTHOR = { login: 'octocat', name: 'The Octocat' };
 const NOW = '2026-10-21T12:00:00.000Z';
 
-// One row per state this lane's four issues need distinguished: #1121's four check colours
-// (passed/failed/pending/none), #1131's three disable shapes (state-only -- draft/closed/merged
-// -- versus conflict/blocked/still-checking), #1120 and #1132 are unaffected by PR *data* (a
-// select's own rendered height and a header button never depend on which row is selected), so
-// they are exercised against whichever row the test happens to pick.
+// One row per check colour and PR state the checks must distinguish; #1120/#1132 don't depend on PR data.
 export const PR_FIXTURES = [
   { number: 1, title: 'Add passing feature', state: 'OPEN', isDraft: false, checks: 'passed', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' },
   { number: 2, title: 'Add failing feature', state: 'OPEN', isDraft: false, checks: 'failed', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' },
@@ -40,9 +29,7 @@ export const PR_FIXTURES = [
   { number: 10, title: 'GitHub still checking', state: 'OPEN', isDraft: false, checks: 'passed', mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }
 ];
 
-// `mapping.rs`'s own exact reason strings (`compute_review_disabled_reason`/
-// `compute_merge_disabled_reason`) -- duplicated here deliberately (this script has no access to
-// the Rust source at run time) so an assertion failure names the real string it expected.
+// Duplicated from mapping.rs (no Rust access at run time) so a failure names the expected string.
 export const REASON = {
   draft: 'This pull request is a draft.',
   closed: 'This pull request is closed.',
@@ -93,15 +80,7 @@ function toViewDetail(pr) {
   };
 }
 
-/** The fake `gh` dispatcher, written fresh into `destDir/fake-gh-logic.cjs` every run (never a
- * checked-in copy with stale fixture data): handles exactly the `gh` invocations this feature's
- * Rust code makes for the "All" tab's list and detail calls -- `pr list --state <s> --json ...`,
- * `pr view <n> --json ...`, `api graphql` (the Overview timeline/review-threads query, answered
- * with an empty but well-shaped timeline -- this lane does not test the Overview tab), `api
- * repos/.../pulls/<n>/files --paginate` (answered `[]`, falls back to the porcelain `files`
- * field) and `repo view ... --json mergeCommitAllowed,...` (the allowed-merge-methods probe).
- * Any other invocation is a hard failure (never a silent empty success), so a code path this
- * fixture set does not yet cover fails loudly instead of returning a misleadingly empty list. */
+/** Fake `gh` dispatcher, regenerated each run; unknown invocations hard-fail so uncovered paths aren't silently empty. */
 function fakeGhLogicSource() {
   const fixturesJson = JSON.stringify(PR_FIXTURES);
   return `#!/usr/bin/env node
@@ -162,11 +141,7 @@ if (args[0] === 'pr' && args[1] === 'list') {
 `;
 }
 
-/** Compiles the native `gh.exe` shim (plain `rustc`, no `cargo`/shared `CARGO_TARGET_DIR` --
- * same standalone-compile precedent as `verify-tauri-scratch-helpers.mjs`'s own `buildLauncher`)
- * and writes this run's `fake-gh-logic.cjs` beside it. Returns `destDir`, meant to be prepended
- * to the launched app's own `PATH` so `resolve_gh`'s `which::which_global("gh")` finds this
- * fixture-backed shim before any real `gh` installed on the machine. */
+/** Compiles the `gh.exe` shim with plain `rustc` and writes this run's logic beside it; returns the dir to prepend to PATH. */
 export function buildFakeGh(destDir) {
   mkdirSync(destDir, { recursive: true });
   writeFileSync(path.join(destDir, 'fake-gh-logic.cjs'), fakeGhLogicSource());
@@ -181,9 +156,7 @@ function spawnSync_(cmd, cmdArgs, opts = {}) {
   return spawnSync(cmd, cmdArgs, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
-/** A scratch git repository whose `origin` remote resolves to the fake owner/repo above --
- * `owner_repo_for` only ever reads this locally (`git remote get-url origin`), never reaches
- * the network, so the remote need not be real or reachable. */
+/** Scratch git repo whose `origin` is the fake owner/repo; only read locally, so it needn't be reachable. */
 export function makeFakeGithubRepo(dir) {
   mkdirSync(dir, { recursive: true });
   const run = (gitArgs) => {

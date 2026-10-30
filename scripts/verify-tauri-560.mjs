@@ -1,55 +1,8 @@
 #!/usr/bin/env node
-// Quiet alert rows live check (issue #560) against the scratch Tauri debug build. Reuses the
-// shared CDP primitives (verify-tauri-cdp.mjs) and session-list driving helpers
-// (verify-tauri-session-list-helpers.mjs) the #559/#735/#567 scripts already established; adds
-// only what is new here -- the two alert rows themselves, the Memory Triage dialog, and the
-// Health Check dialog reached from the alert row (distinct from the Settings-screen entry).
-//
-// Proves, against the real rendered DOM (CDP Accessibility domain for accessible names, never
-// textContent for a name):
-//   - Both alert rows appear once a repository exists: "Low memory" (forced by
-//     REFRACT_FORCE_LOW_MEMORY=1, a pre-existing debug-only test knob in memory.rs -- this
-//     script never touches memory.rs) and "omp 18.10.1: unverified version" (the fake-omp
-//     shim's hardcoded --version answer, which readiness.rs's own documented rule already
-//     treats as a warning: at or above 18.6.3 but outside the specifically re-probed 18.8.x
-//     range).
-//   - Every interactive control's accessible name (Open memory triage/Open Health check/both
-//     Dismiss buttons), proven as a side effect of a real keyboard-only Tab walk from the
-//     profile item's own name button through the cog, through both alert rows -- Enter
-//     activates the Check button instead of a mouse click for that one step.
-//   - That Enter activation opens the REAL HealthCheckDialog (distinct instance from the one
-//     ProfileItem's own menu already reaches -- both just mount the same component): it shows
-//     a visible "Passed with a warning" state word on the omp row, Done closes it, and focus
-//     returns to the alert row's own Check button (not the Settings cog, not <body>).
-//   - Memory Triage: lists only idle Sessions, never one still mid-attach/working. A per-row
-//     Stop asks "Stop {name}'s agent?", confirms, and the Session's own status flips to
-//     'stopped' (proven via window.refract.sessions.list(), not just the dialog's own DOM).
-//     A second idle Session plus the bulk "Stop idle" action asks "Stop {N} idle agents?" with
-//     the real count, stops every listed Session, and the dialog falls back to "No idle agents
-//     to stop right now."
-//   - Dismissing either alert row is immediate, LOCAL-ONLY state (never persisted): the
-//     low-memory row's dismissal survives a second real memory-sampler tick (~6s) even though
-//     REFRACT_FORCE_LOW_MEMORY=1 keeps the underlying condition true the whole run.
-//   - Gate round 2 F1 (focus theft on blank-space click): clicking the low-memory row's own
-//     non-focusable label (a real blank-space click inside the row) while Triage is focused
-//     leaves focus on <body> -- never redirected back onto an alert row's own control, the bug
-//     the round 1 focus-redirect fix introduced. A keyboard-only close of the Triage dialog
-//     (two Escapes) still returns focus to the row's own Triage button, unaffected.
-//   - Gate round 2 F2 (failed Stop announced as success): `window.refract.sessions.stopAgent`
-//     is monkey-patched in the renderer (no real process touched) to force one Session's Stop
-//     to resolve `{ok:false}` -- both its own per-row Stop AND "Stop idle" (bulk, n=1: a second
-//     concurrently-idle Session would race issue #512's real low-memory start-defer feature
-//     this harness's own REFRACT_FORCE_LOW_MEMORY=1 triggers, confirmed live) -- confirming the
-//     live region announces the real outcome, naming the failing Session, never success; the
-//     forced-failed Session stays listed since it was never actually stopped.
-//
-// Isolation (refract-tauri-live-check-isolation skill): same pattern as verify-tauri-559.mjs.
-// Uses the already-frozen exe named by REFRACT_560_FROZEN_EXE (default: the path this story's
-// build step froze to) rather than rebuilding, UNLESS this worktree's HEAD has moved past the
-// commit that exe was built from, or the frozen file's own hash no longer matches what was
-// recorded at freeze time -- either one falls back to a fresh `pnpm tauri build --debug
-// --no-bundle` via the shared `buildAndCopyExeFresh` helper instead of silently trusting a
-// stale or foreign exe.
+// Quiet alert rows live check (#560) against the scratch Tauri debug build: the two alert rows, the
+// Memory Triage dialog, and the Health Check dialog reached from the alert row. Names are read from
+// the CDP Accessibility domain, never textContent. Reuses the frozen exe (REFRACT_560_FROZEN_EXE)
+// unless HEAD moved or its hash differs, then rebuilds via `buildAndCopyExeFresh`.
 
 import { mkdtempSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -100,30 +53,22 @@ import {
   runForcedStopFailureRegressionTests
 } from './verify-tauri-560-gate2.mjs';
 
-// #946 (PR #949): refuses to build without the shared CARGO_TARGET_DIR, never falling back to a
-// worktree-local `src-tauri/target` (that fallback already filled this session's disk once,
-// building a SECOND full target tree alongside the real one) -- same shared guard every other
-// live-check script in this repo now uses, rather than this file's own earlier hardcoded-path
-// check (gate round 2, item 6).
+// Refuses to build without the shared CARGO_TARGET_DIR: a worktree-local target tree already filled the disk once (#946).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOT_DIR = process.env.REFRACT_560_SHOT_DIR || path.join(tmpdir(), 'refract-560-shots');
 
-// Frozen-exe reuse-vs-rebuild constants and `resolveExe`'s own logic now live in
-// verify-tauri-560-helpers.mjs (split out to keep this file under the 600-line soft cap).
+// Frozen-exe constants and `resolveExe` live in verify-tauri-560-helpers.mjs (600-line cap).
 
-// ---- Finders (JS expressions evaluated in the renderer; same `expr-string` convention every
-// other verify-tauri-*.mjs script uses, never a literal CSS-only selector when text/role
-// matching is needed). ----
+// Finders are JS expression strings evaluated in the renderer (text/role matching needs more than a CSS selector).
 const PROFILE_NAME_BUTTON = `document.querySelector('[data-profile-name-button]')`;
 const TRIAGE_BUTTON = `document.querySelector('[aria-label="Open memory triage"]')`;
 const CHECK_BUTTON = `document.querySelector('[aria-label="Open Health check"]')`;
 const DISMISS_MEMORY_BUTTON = `document.querySelector('[aria-label="Dismiss low memory alert"]')`;
 const DISMISS_OMPVERSION_BUTTON = `document.querySelector('[aria-label="Dismiss unverified version alert"]')`;
-// Item 12 (gate round 2): the row no longer states a Session count (`warning.liveAgents`
-// counts every non-stopped agent, not just the idle ones Triage lists, so stating a number here
-// implied a 1:1 match with Triage's own list that was never guaranteed) -- just "Low memory".
+// The row states no Session count: `warning.liveAgents` counts every non-stopped agent, not just
+// the idle ones Triage lists, so a number would imply a match that isn't guaranteed.
 const LOW_MEMORY_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'Low memory')`;
 const OMPVERSION_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'omp 18.10.1: unverified version')`;
 const DIALOG = `document.querySelector('[role="dialog"]')`;
@@ -132,24 +77,18 @@ const DIALOG_TITLE = `document.querySelector('[data-slot="dialog-title"]')`;
 const ALERT_DIALOG_TITLE = `document.querySelector('[data-slot="alert-dialog-title"]')`;
 const HEALTH_LIST = `document.querySelector('[aria-label="Health checks"]')`;
 const OMP_CHECK_ROW = `Array.from((${HEALTH_LIST})?.querySelectorAll('li') ?? []).find((li) => li.textContent.includes('OMP found'))`;
-// The app-level `useChatAreaAnnouncer` region (App.tsx's single global `aria-live="polite"`
-// region) -- distinct from any dialog-local live region, same finder convention
-// verify-tauri-559.mjs's own `CHAT_AREA_ANNOUNCE_REGION` already established.
+// App-level `useChatAreaAnnouncer` region (App.tsx's single global aria-live), distinct from dialog-local live regions.
 const CHAT_AREA_ANNOUNCE_REGION = `document.querySelector('[aria-live="polite"]')`;
 
 
 async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   const notExercised = [];
 
-  // Wraps the real `window.refract.sessions.stopAgent` bridge once, early (before any Stop is
-  // clicked), to count invocations -- Item 2's busy-guard assertion below proves a second real
-  // Enter keypress on an already-"Stopping…" button does not reach the IPC call a second time.
-  // `fake-omp-invocations.log` (REFRACT_FAKE_OMP_DEBUG_LOG) only records the fake-omp CHILD
-  // PROCESS's own argv per spawn, not per-call `sessions.stopAgent` IPC traffic into the Rust
-  // backend, so it cannot answer this; this in-page counter is the direct equivalent.
+  // Count `stopAgent` calls: the busy-guard check needs to show a second Enter doesn't reach the
+  // IPC. The fake-omp debug log records only child argv per spawn, so it can't answer this.
   await cdp.evaluate(`(() => { window.__stopAgentCallCount = 0; const orig = window.refract.sessions.stopAgent.bind(window.refract.sessions); window.refract.sessions.stopAgent = (...args) => { window.__stopAgentCallCount++; return orig(...args); }; })()`);
 
-  // ---- Setup: readiness green, one scratch repository, one idle Session (sessionA) ----
+  // ---- Setup ----
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
     `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -164,7 +103,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await waitForSessionStatus(cdp, sessionA.id, 'idle');
   log(`STEP PASS: Session "${sessionA.name}" (${sessionA.id}) created and reached idle.`);
 
-  // ---- Item 1: both alert rows appear, with the exact text/labels ----
+  // ---- Both alert rows ----
   await cdp.waitFor(LOW_MEMORY_ROW_SPAN + ' !== undefined', { timeoutMs: 30_000, label: 'Low memory alert row appears (REFRACT_FORCE_LOW_MEMORY=1)' });
   const memoryRowName = await axText(cdp, LOW_MEMORY_ROW_SPAN);
   assert(memoryRowName === 'Low memory', `low-memory row's own accessible name must read exactly "Low memory" (got ${JSON.stringify(memoryRowName)})`);
@@ -176,27 +115,20 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log('STEP PASS: unverified-omp-version alert row present with the exact expected text, with zero extra setup beyond the normal fake-omp harness launch.');
   await cdp.screenshot(path.join(evidenceDir, '01-both-alert-rows.png'));
 
-  // ---- Item 12: gate round 3 H1 regression test (verify-tauri-560-gate2.mjs) -- run here,
-  // before anything else touches either row's own dismiss/condition state, and restores both
-  // rows to their exact original state before returning. Gracefully reports NOT EXERCISED (into
-  // `notExercised`, surfaced in the final summary) rather than throwing if window.__refractStores
-  // is unavailable in this build. ----
+  // Runs first, before anything touches the rows' dismiss state, and restores it. Reports NOT
+  // EXERCISED rather than throwing if window.__refractStores is unavailable in this build.
   await runSelfClearingRowFocusRegressionTest(cdp, { TRIAGE_BUTTON, CHECK_BUTTON, LOW_MEMORY_ROW_SPAN, OMPVERSION_ROW_SPAN }, log, notExercised);
 
-  // ---- Items 7 & 8: a real keyboard-only Tab walk, HealthCheckDialog open/close via keyboard
-  // (verify-tauri-560-gate2.mjs, split out round 3 to keep this file under the 600-line soft
-  // cap -- no behaviour change). Returns the profile name button's own accessible name, needed
-  // later for item 6's keyboard-driven Dismiss fallback assertion. ----
+  // Keyboard-only Tab walk and HealthCheckDialog open/close (verify-tauri-560-gate2.mjs); returns the
+  // profile name button's accessible name for the later keyboard Dismiss fallback assertion.
   const nameButtonAx = await runTabWalkAndHealthCheckDialogTest(cdp, { PROFILE_NAME_BUTTON, DIALOG_TITLE, DIALOG, OMP_CHECK_ROW }, evidenceDir, log);
 
-  // ---- Item 9: gate round 2 F1 regression test (verify-tauri-560-gate2.mjs) ----
+  // ---- Focus-theft regression (verify-tauri-560-gate2.mjs) ----
   await runFocusTheftRegressionTest(cdp, { TRIAGE_BUTTON, LOW_MEMORY_ROW_SPAN }, log);
 
-  // ---- Item 2: Memory Triage -- lists the idle Session, per-row Stop with confirmation ----
-  // A settle sleep before this first mouse click is REQUIRED, confirmed live: the very next
-  // synthetic mouse click right after the preceding keyboard-only sequence is a proven one-shot
-  // miss (CDP's elementFromPoint confirms the button genuinely IS the hit target -- a timing
-  // race in this script's own input sequencing, not an app bug).
+  // ---- Memory Triage: per-row Stop with confirmation ----
+  // The settle sleep is REQUIRED: a synthetic click right after the keyboard-only sequence is a
+  // one-shot miss (a CDP input-timing race, not an app bug).
   await cdp.evaluate(`document.activeElement?.blur()`);
   await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
@@ -213,13 +145,9 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionA.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'per-Session Stop confirmation opened' });
   log('STEP PASS: the Session\'s own Stop button opens a confirmation naming that exact Session.');
 
-  // Item 5a (round 2, for the next live run): Escape closes the per-row confirm WITHOUT
-  // stopping anything, then a second Escape closes the Triage Dialog itself, landing focus
-  // back on the alert row's own Triage button -- never <body>, never left inside the (now
-  // closed) Dialog. A settle sleep before the FIRST Escape is REQUIRED, confirmed live (same
-  // race as the bulk-confirm Escape below and the Triage button's own first click, above):
-  // dispatching the Escape keydown immediately after the mouse click that opened this
-  // AlertDialog intermittently races its FocusScope/DismissableLayer setup and is lost.
+  // Escape closes the confirm without stopping; a second closes Triage and returns focus to its alert-row button.
+  // The settle sleep before the first Escape is REQUIRED: right after the opening click it races the
+  // AlertDialog's FocusScope/DismissableLayer setup and is lost.
   await sleep(300);
   await pressEscape(cdp);
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'per-Session confirmation closed via Escape (no stop)' });
@@ -233,9 +161,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await waitForSessionStatus(cdp, sessionA.id, 'idle');
   log('STEP PASS: Escape-cancelling the per-Session confirm never stops the Session, and a second Escape (a keyboard-only close of the Triage dialog) returns focus to the alert row\'s own Triage button -- F1\'s second half, unaffected by the blank-space-click fix above.');
 
-  // Re-open the Dialog and the SAME Session's confirm to actually perform the stop below. A
-  // settle sleep before each click is REQUIRED (same WebView2/CDP input-timing race documented
-  // above): the very next synthetic click right after a flurry of dialog churn is a one-shot miss.
+  // Settle sleeps before each click are REQUIRED (WebView2/CDP input-timing race): the click right
+  // after dialog churn is a one-shot miss.
   await cdp.evaluate(`document.activeElement?.blur()`);
   await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
@@ -244,9 +171,6 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.click(`(${sessionARow})?.querySelector('button')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionA.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'per-Session Stop confirmation reopened' });
 
-  // Item 5b (round 2): the title is sampled TWICE against the same expected exact string --
-  // immediately on open (just above/below) and again right before the destructive click -- so
-  // neither moment is ever blank/undefined/stale.
   const titleAtOpen = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
   assert(
     titleAtOpen === `Stop ${sessionA.name}'s agent?`,
@@ -262,10 +186,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log(`STEP PASS: the per-Session confirm's own title read the exact expected string at both sampled moments (open: ${JSON.stringify(titleAtOpen)}, pre-click: ${JSON.stringify(titleBeforeClick)}).`);
   await cdp.click(singleStopActionExpr);
 
-  // Item 5c (round 2): the Stop button's own visible text is read BEFORE the second Enter
-  // fires -- if it does not read "Stopping…" at that exact moment (e.g. the first call already
-  // settled faster than this script's own round trip to read it), this sub-check is recorded
-  // NOT EXERCISED rather than silently passed or falsely failed.
+  // The button text is read BEFORE the second Enter: if it isn't "Stopping…" (first call already
+  // settled) the sub-check is recorded NOT EXERCISED, not falsely passed or failed.
   const stopButtonTextBeforeSecondEnter = await cdp.evaluate(`(${singleStopActionExpr})?.textContent.trim()`);
   if (stopButtonTextBeforeSecondEnter === 'Stopping…') {
     log('STEP PASS: the Stop button read "Stopping…" immediately before the second Enter, confirming the busy guard is actually being exercised.');
@@ -274,9 +196,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
       `Item 5c busy-guard-text sub-check: the Stop button read ${JSON.stringify(stopButtonTextBeforeSecondEnter)}, not "Stopping…", at the moment this script sampled it (the first stopAgent call likely already settled before the sample) -- the busy-guard COUNT assertion below still ran, but this specific textual sub-check did not.`
     );
   }
-  // Gate-round-1 remediation (busy guard in handleConfirmStop): a second real Enter on the SAME
-  // button while it reads "Stopping…" must not reach stopAgent a second time -- fired with no
-  // intervening await for the first call to settle, while the real IPC stop is still in flight.
+  // Busy guard: a second Enter while the button reads "Stopping…" must not reach stopAgent again,
+  // so it fires with no await for the first call to settle.
   await pressRealEnter(cdp);
   const singleTitleSamples = await sampleWhileAlive(cdp, `(${ALERT_DIALOG_TITLE})?.textContent.trim()`, `!!(${ALERT_DIALOG})`);
   assert(singleTitleSamples.length > 0, 'expected at least one title sample while the per-Session confirmation was still mounted and closing');
@@ -302,7 +223,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await pressEscape(cdp);
   await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'Triage dialog closed via Escape' });
 
-  // ---- Item 3: a second idle Session, bulk "Stop idle" ----
+  // ---- Bulk "Stop idle" with a second idle Session ----
   await createSessionViaQuickCreate(cdp, repoName);
   const sessionB = await latestSessionIdAndName(cdp, repoName, [sessionA.id]);
   assert(sessionB.id !== sessionA.id, 'the second quick-create must produce a genuinely new Session id');
@@ -318,8 +239,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await sleep(300); // same settle-sleep race guard as every other post-dialog-open click in this file
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   const bulkTitle = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
-  // Gate round 3 (L4): a bulk confirm targeting exactly one Session reuses the single-stop
-  // wording verbatim, not "Stop 1 idle agent?".
+  // A bulk confirm targeting one Session reuses the single-stop wording, not "Stop 1 idle agent?".
   assert(bulkTitle === `Stop ${sessionB.name}'s agent?`, `a bulk confirmation targeting exactly one Session must reuse the single-stop wording (got ${JSON.stringify(bulkTitle)})`);
   const ALERT_DIALOG_DESCRIPTION = `document.querySelector('[data-slot="alert-dialog-description"]')`;
   const bulkDescription = await cdp.evaluate(`(${ALERT_DIALOG_DESCRIPTION})?.textContent.trim()`);
@@ -329,17 +249,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   );
   log('STEP PASS: "Stop idle" confirms with the real, current idle count, and its description names the Session(s) being stopped.');
 
-  // Item 5a (round 2): Escape closes the bulk confirm WITHOUT stopping anything, then a second
-  // Escape closes the Triage Dialog itself, landing focus back on "Open memory triage". A
-  // settle sleep before the FIRST Escape is REQUIRED, confirmed live: this exact Escape timed
-  // out intermittently (the keydown, dispatched immediately after two evaluate() round trips
-  // reading the confirm's own title/description, raced the bulk AlertDialog's own just-opened
-  // FocusScope/DismissableLayer setup) in two separate live runs, then passed cleanly with no
-  // retry needed in a third once this same settle convention (already proven for the Triage
-  // button's own first click, above) was tried here too -- the same class of WebView2/CDP
-  // input-timing race this script has already hit once, not a product bug (the confirm's own
-  // title/description/count all read correctly every time; only the FIRST post-open keyboard
-  // event right after a flurry of dialog churn is ever lost).
+  // Same Escape sequence as above; the settle sleep before the first Escape is REQUIRED (the
+  // keydown right after the confirm opens intermittently races its FocusScope setup and is lost).
   await sleep(300);
   await pressEscape(cdp);
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed via Escape (no stop)' });
@@ -353,7 +264,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await waitForSessionStatus(cdp, sessionB.id, 'idle');
   log('STEP PASS: Escape-cancelling the bulk confirm never stops any Session, and a second Escape returns focus to the alert row\'s own Triage button.');
 
-  // Re-open and "Stop idle" again to perform the bulk stop. Same settle-sleep guard as above.
+  // Same settle-sleep guard as above.
   await cdp.evaluate(`document.activeElement?.blur()`);
   await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
@@ -372,16 +283,15 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await pressEscape(cdp);
   await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'Triage dialog closed via Escape' });
 
-  // ---- Item 11: gate round 2 F2 regression tests (verify-tauri-560-gate2.mjs) ----
+  // ---- Focus-theft / dismiss regressions (verify-tauri-560-gate2.mjs) ----
   await runForcedStopFailureRegressionTests(
     cdp,
     { repoName, sessionA, sessionB, evidenceDir, DIALOG_TITLE, ALERT_DIALOG_TITLE, ALERT_DIALOG, DIALOG, TRIAGE_BUTTON, CHAT_AREA_ANNOUNCE_REGION },
     log
   );
 
-  // ---- Item 4: dismissing the low-memory row is immediate and LOCAL-only (survives a second
-  // real memory-sampler tick, ~6s, even though REFRACT_FORCE_LOW_MEMORY=1 never stops being
-  // true) ----
+  // ---- Dismissing the low-memory row is immediate and local-only (survives a second sampler tick,
+  // though REFRACT_FORCE_LOW_MEMORY=1 stays true) ----
   await cdp.click(DISMISS_MEMORY_BUTTON);
   await cdp.waitFor(LOW_MEMORY_ROW_SPAN + ' === undefined', { timeoutMs: 5_000, label: 'low-memory row removed immediately on Dismiss' });
   assert((await cdp.evaluate(OMPVERSION_ROW_SPAN + ' !== undefined')) === true, 'dismissing the low-memory row must not affect the unrelated omp-version row');
@@ -390,9 +300,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert((await cdp.evaluate(LOW_MEMORY_ROW_SPAN + ' === undefined')) === true, 'the low-memory row must NOT reappear on its own after a further sampler tick -- dismissal is local React state, never re-derived from the store');
   log('STEP PASS: the dismissed low-memory row did not return after a further real sampler tick, confirming dismissal is local-only state, not read back from the store.');
 
-  // ---- Item 6: dismissing the unverified-version row, via Tab + Enter (item 5d, round 2) --
-  // the low-memory row is already gone at this point, so the real Tab order from the profile
-  // name button is just: Settings -> Check -> Dismiss. ----
+  // ---- Dismissing the unverified-version row via Tab + Enter: with the low-memory row gone, Tab order
+  // from the profile name button is Settings -> Check -> Dismiss. ----
   await cdp.evaluate(`(() => { const el = ${PROFILE_NAME_BUTTON}; el?.focus(); return !!el; })()`);
   await pressTab(cdp);
   await pressTab(cdp);
@@ -404,12 +313,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   );
   await pressRealEnter(cdp);
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' === undefined', { timeoutMs: 5_000, label: 'omp-version row removed immediately on keyboard-driven Dismiss' });
-  // Gate round 3 fix (M4): asserts the EXACT expected fallback (the proactive Dismiss-click
-  // redirect, since the low-memory row is already dismissed, falls through to
-  // `focusProfileItemName()`) immediately after the keypress, then AGAIN about a second later,
-  // rather than accepting any named connected control within a generous window -- a later
-  // library cleanup stealing focus back to something else, still connected and named, would
-  // have passed the old assertion.
+  // Asserts the exact fallback (`focusProfileItemName()`) right after the keypress and again ~1s
+  // later: a later cleanup stealing focus to another named control would pass a looser check.
   const postKeyboardDismissActive = await getActiveElementAccessibleName(cdp);
   assert(
     postKeyboardDismissActive.role === 'button' && postKeyboardDismissActive.name === nameButtonAx.name,
@@ -424,9 +329,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log(`STEP PASS: dismissing the unverified-version row via Tab + Enter hides it immediately and leaves focus EXACTLY on the profile item's own name button (${JSON.stringify(nameButtonAx.name)}), confirmed both immediately and ~1s later.`);
   await cdp.screenshot(path.join(evidenceDir, '05-both-rows-dismissed.png'));
 
-  // ---- Item 5e (round 2): a Settings round trip must not resurrect a dismissed row or
-  // re-announce it -- reuses `openSettingsAndReturn` (verify-tauri-session-list-helpers.mjs)
-  // rather than a duplicate in-script Settings round trip. ----
+  // ---- A Settings round trip must not resurrect or re-announce a dismissed row ----
   const announceTextBeforeRoundTrip = await cdp.evaluate(`(${CHAT_AREA_ANNOUNCE_REGION})?.textContent ?? null`);
   await openSettingsAndReturn(cdp);
   await sleep(500); // lets any stray re-announce effect actually commit before sampling
@@ -500,11 +403,8 @@ async function main() {
     const result = await runChecks(cdp, SHOT_DIR, log, { repoDir, repoName });
     notExercised = result.notExercised;
 
-    // Isolation proof (refract-tauri-live-check-isolation skill): the scratch REFRACT_DATA_DIR
-    // actually took effect (its own registry.json exists -- RegistryStore::open only creates it
-    // on the first WRITE, e.g. the add-repository step runChecks just did, never merely on
-    // open, so this is checked after runChecks rather than right after launch), and Stuart's
-    // real profile under %APPDATA%\refract-tauri was never touched by this run.
+    // The scratch REFRACT_DATA_DIR took effect: its registry.json exists (RegistryStore::open only
+    // creates it on first write, so check after runChecks) and the real %APPDATA% profile was untouched.
     const scratchRegistryPath = path.join(dataDir, 'registry.json');
     assert(existsSync(scratchRegistryPath), `the scratch REFRACT_DATA_DIR must have its own registry.json (got none at ${scratchRegistryPath}) -- the override may not have taken effect`);
     log(`verify-tauri-560: isolation confirmed -- scratch data dir has its own registry.json at ${scratchRegistryPath}.`);
@@ -562,8 +462,7 @@ async function main() {
     if (repoDir) await safeRmSync(worktreesDirFor(repoDir));
     await safeRmSync(repoDir);
     await safeRmSync(exeDir);
-    // Deliberately NOT removing SHOT_DIR: its STEP-PASS report and screenshots are this run's
-    // own audit trail (same convention as verify-tauri-559.mjs).
+    // Deliberately NOT removing SHOT_DIR: its report and screenshots are this run's audit trail.
     process.exitCode = exitCode;
   }
 }

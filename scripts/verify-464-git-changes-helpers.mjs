@@ -1,10 +1,5 @@
-// Shared helpers for `verify-464-git-changes.mjs` (issue #464, spec 018 slice 1), split into its
-// own file so the orchestrating script stays under `check-file-size.mjs`'s 600-line soft cap
-// (#806) -- the same "god file" convention this repo already applies to its own `verify-941-*`/
-// `verify-926-*` scripts. Two kinds of helper live here: (1) plain Node `git` plumbing used to
-// build a REALISTIC scratch working tree (never faked DOM state), and (2) CDP driving/reading
-// helpers specific to this panel's own DOM shape (`GitChangesGroup.tsx`/`GitChangesFileRow.tsx`/
-// `GitCommitBox.tsx`), not generic enough to belong in `verify-tauri-scratch-helpers.mjs`.
+// Helpers for `verify-464-git-changes.mjs`, split out to stay under the 600-line file cap:
+// real `git` plumbing for a realistic scratch tree, and CDP helpers specific to the Git changes panel.
 
 import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdirSync, rmSync, mkdtempSync, readFileSync } from 'node:fs';
@@ -20,9 +15,7 @@ export function runGit(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).toString();
 }
 
-/** Never throws: returns `{ status, stdout, stderr }` even on a non-zero exit -- used only for
- * the merge step below, where a non-zero exit (a real conflict) is the EXPECTED, wanted outcome,
- * not a failure to propagate. */
+/** Never throws: the merge step needs a non-zero exit (a real conflict) as the wanted outcome. */
 export function runGitAllowFailure(cwd, args) {
   try {
     const stdout = execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
@@ -32,16 +25,11 @@ export function runGitAllowFailure(cwd, args) {
   }
 }
 
-/** Exported (gate round 1 live-check addition, item 4): `main()`'s own partial-staged (`MM`)
- * fixture needs the exact same real-baseline-commit idiom `buildScratchWorkingTree` already uses
- * for `conflict.txt`, built INLINE there rather than duplicated. */
 export function commitPaths(cwd, paths, message) {
   runGit(cwd, ['add', '--', ...paths]);
   runGit(cwd, [...GIT_AUTHOR_ARGS, 'commit', '-q', '-m', message]);
 }
 
-// Literal filenames the whole fixture is built from -- exported so the orchestrating script
-// never re-types (and risks typo-drifting from) the exact same strings used to build the tree.
 export const FIXTURE = {
   readme: 'README.md',
   deletedTracked: 'src/example.txt',
@@ -54,35 +42,19 @@ export const FIXTURE = {
   readmeEditedLine: 'An unstaged edit for verify-464.',
   stagedNewContent: 'staged content for verify-464\n',
   stagedNewContentLine: 'staged content for verify-464',
-  // Gate round 1 live-check additions (2026-10-20): item 4 (partial-staged `MM` dual grouping)
-  // and item 5 (`--literal-pathspecs` end-to-end proof) each build their own small fixture
-  // INLINE in `main()` (never here) -- both are deliberately introduced AFTER the rest of the
-  // script's existing checks have already run their own group-count assertions against the
-  // original four-group fixture above, then fully cleaned up again before the theme loop's own
-  // fixed expectation -- so only their literal filenames/content live here, typo-safety only.
   partialStaged: 'partial-staged.txt',
   partialStagedBaseline: 'partial baseline line\n',
   partialStagedFirstEdit: 'partial baseline line\nfirst edit appended\n',
   partialStagedSecondEdit: 'partial baseline line\nfirst edit appended\nsecond edit appended\n',
-  // Gate round 2 fix (item 15, 2026-10-20): the sibling MUST be `i.txt`, not `[id]-other.txt` --
-  // `[id].txt` interpreted as a GLOB bracket expression (the exact bug `--literal-pathspecs`
-  // exists to prevent) matches a SINGLE character from the set {i, d} followed by literally
-  // ".txt", i.e. it matches a file named "i.txt" or "d.txt", but it does NOT match
-  // "[id]-other.txt" (the trailing "-other" never matches that pattern at all, glob or
-  // literal) -- the old sibling would therefore have passed this check even with
-  // `--literal-pathspecs` silently removed, proving nothing. "i.txt" is the one sibling name a
-  // broken (non-literal) pathspec interpretation would actually sweep up alongside the real
-  // target, so it is the only name that genuinely discriminates the two behaviours.
+  // The sibling must be `i.txt`: as a glob, `[id].txt` matches `i.txt`, so only that name proves
+  // `--literal-pathspecs` is in effect.
   bracketFile: '[id].txt',
   bracketSibling: 'i.txt',
   bracketFileContent: 'literal bracket file content for verify-464\n',
   bracketSiblingContent: 'sibling must remain untouched for verify-464\n'
 };
 
-/** Commits a real baseline (README.md + src/example.txt) onto `repoDir`'s own default branch --
- * run BEFORE the repo is added as a Project/a Session's worktree is created off it, so the new
- * worktree inherits a real, non-empty HEAD (a real branch/base to show in the panel's header,
- * FR-014) rather than `makeScratchRepo`'s own bare `--allow-empty` init commit. */
+/** Run before the session worktree is created so it inherits a real, non-empty HEAD. */
 export function commitRepoBaseline(repoDir) {
   writeFileSync(path.join(repoDir, FIXTURE.readme), FIXTURE.readmeBaseline);
   mkdirSync(path.join(repoDir, 'src'), { recursive: true });
@@ -90,22 +62,11 @@ export function commitRepoBaseline(repoDir) {
   commitPaths(repoDir, [FIXTURE.readme, FIXTURE.deletedTracked], 'Add baseline files');
 }
 
-/** Builds the realistic, mixed working tree this live check needs -- all four FR-002 groups
- * populated at once -- directly in the SESSION'S OWN worktree (never `repoDir`: a Session's
- * worktree is a separate `git worktree add` checkout, so anything staged/modified/untracked in
- * `repoDir` itself would never appear in it; only committed history on `repoDir` propagates).
- *
- * Conflicts (optional stretch, done anyway since it was straightforward): built from a REAL
- * failed merge, never faked. Two divergent commits touching the same line of `conflict.txt` --
- * one on the Session's own branch (commit W), one on a throwaway `conflict-source` branch
- * created via a SECOND, temporary `git worktree add` off the common ancestor (so the Session's
- * own worktree is never checked out onto a different branch mid-build) -- then
- * `git merge conflict-source` inside the Session's worktree, left deliberately unresolved
- * (never committed/aborted away). Asserts real `<<<<<<<` conflict markers landed afterward: a
- * hard throw here (not a pushed `failures[]` entry) means the fixture itself is broken, not a
- * behaviour this script is trying to observe. */
+/** Populates all four groups in the SESSION's worktree (a separate checkout, so changes made in
+ * `repoDir` would never appear). The conflict comes from a real, deliberately unresolved merge;
+ * a throw means the fixture is broken, not the app. */
 export function buildScratchWorkingTree(worktreePath) {
-  // --- Conflicts: a real failed merge, first (before anything else touches this worktree). ---
+  // Conflicts first, before anything else touches this worktree.
   writeFileSync(path.join(worktreePath, FIXTURE.conflict), 'shared\n');
   commitPaths(worktreePath, [FIXTURE.conflict], 'Add conflict.txt baseline'); // commit B
   writeFileSync(path.join(worktreePath, FIXTURE.conflict), 'worktree change\n');
@@ -126,29 +87,17 @@ export function buildScratchWorkingTree(worktreePath) {
     throw new Error('buildScratchWorkingTree: conflict.txt has no real conflict markers after the merge attempt -- the fixture is not genuinely conflicted.');
   }
 
-  // --- Staged: a brand-new file, `git add`ed, never committed. ---
   writeFileSync(path.join(worktreePath, FIXTURE.stagedNew), FIXTURE.stagedNewContent);
   runGit(worktreePath, ['add', '--', FIXTURE.stagedNew]);
 
-  // --- Changes (modified, unstaged): edits the baseline README.md, never staged. ---
   writeFileSync(path.join(worktreePath, FIXTURE.readme), FIXTURE.readmeEdited);
 
-  // --- Untracked: a brand-new file, never `git add`ed at all. ---
   writeFileSync(path.join(worktreePath, FIXTURE.untracked), 'untracked content for verify-464\n');
 
-  // --- Changes (deleted, unstaged): removes a tracked file from disk, never `git rm`. ---
   rmSync(path.join(worktreePath, FIXTURE.deletedTracked));
 }
 
-// ---------------------------------------------------------------------------
-// CDP driving/reading helpers specific to this panel's own DOM shape.
-// ---------------------------------------------------------------------------
-
-/** A real `mouseMoved` hover before the click -- `GitChangesFileRow.tsx`'s kebab and
- * `GitChangesGroup.tsx`'s bulk-action button are both `opacity-0 group-hover:opacity-100`
- * (revealed on hover/focus-within), the same `:hover`/`group-hover` CSS-reveal pattern
- * `verify-tauri-session-list-helpers.mjs`'s own `hoverRow` documents needing a real pointer
- * move for, not just a synthetic click landing at the right coordinates. */
+/** The kebab and bulk-action buttons are `group-hover:opacity-100`, so a real pointer move must precede the click. */
 export async function clickWithHover(cdp, finderExpr, { timeoutMs = 15_000, label } = {}) {
   const rect = await cdp.waitFor(
     `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
@@ -163,9 +112,7 @@ export function fileRowActionsFinder(filePath) {
   return `document.querySelector('[aria-label=${JSON.stringify(`More actions for ${filePath}`)}]')`;
 }
 
-/** The row's own name/folder button (the one `onOpenDiff` is bound to) -- located via the
- * `title={entry.path}` span `GitChangesFileRow.tsx` renders inside it (exact, certain), never
- * guessed from visible truncated text. */
+/** Located via the exact `title` span, never from truncated visible text. */
 export function fileRowOpenButtonFinder(filePath) {
   return `Array.from(document.querySelectorAll('span[title=${JSON.stringify(filePath)}]')).map((el) => el.closest('button')).find(Boolean)`;
 }
@@ -186,10 +133,7 @@ export async function clickBulkAction(cdp, ariaLabel) {
   await clickWithHover(cdp, `document.querySelector('[aria-label=${JSON.stringify(ariaLabel)}]')`, { label: `bulk action: ${ariaLabel}` });
 }
 
-/** Every rendered group's own trigger button, read generically (never assuming which groups are
- * non-empty right now) -- `{ name, count }` pairs in DOM order, which is always FR-002's fixed
- * Conflicts/Staged/Changes/Untracked order since `GitChangesPanel.tsx` filters `GROUP_ORDER`
- * rather than reordering it. */
+/** `{ name, count }` per rendered group, in DOM order (fixed Conflicts/Staged/Changes/Untracked). */
 export async function readGroupSummaries(cdp) {
   return cdp.evaluate(`(() => {
     const names = ['Conflicts', 'Staged', 'Changes', 'Untracked'];
@@ -200,8 +144,7 @@ export async function readGroupSummaries(cdp) {
   })()`);
 }
 
-/** The exact (already alphabetically sorted server-side) file paths rendered inside one named
- * group's own `<ul aria-label="<Label> files">`, via each row's `title={entry.path}` span. */
+/** Paths in one group's list, already sorted server-side. */
 export async function readGroupFileTitles(cdp, groupLabel) {
   return cdp.evaluate(`(() => {
     const ul = document.querySelector('[aria-label=${JSON.stringify(`${groupLabel} files`)}]');
@@ -210,8 +153,6 @@ export async function readGroupFileTitles(cdp, groupLabel) {
   })()`);
 }
 
-// Also used by `runMarkAsResolvedCheck` below (Check 9's own `collectTabTrail` seed-click on
-// this SAME trigger toggles the Conflicts group closed -- see that function's own comment).
 export const CONFLICTS_TRIGGER_FINDER = `Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Conflicts, '))`;
 
 export async function diffViewRendered(cdp) {
@@ -222,16 +163,10 @@ export async function diffViewText(cdp) {
   return cdp.evaluate(`document.querySelector('.diff-view')?.textContent ?? null`);
 }
 
-// #1101 item 6: the Back button is now a ghost icon-only control (`ArrowLeftIcon`, no visible
-// text) with its own file-naming `aria-label` ("Back to changes from <file>") instead of a
-// literal "Back to changes" text node -- matched by that label's stable prefix so this finder
-// still works regardless of which file is currently open.
+// Icon-only button with no text; match the stable aria-label prefix, not the file name.
 export const BACK_TO_CHANGES_FINDER = `Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`;
 
-/** Real Ctrl+Enter: a `rawKeyDown` for Control (carrying the Ctrl bit in its own `modifiers`,
- * the exact technique `verify-980-toast-send.mjs`'s own `ctrlClickSessionRow` already
- * established for a real `event.ctrlKey` reading true downstream), then Enter with the same
- * bit set, then both key-ups. */
+/** Real Ctrl+Enter; the modifier bit is needed for `event.ctrlKey` to read true. */
 export async function pressCtrlEnter(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 2 });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r', modifiers: 2 });
@@ -239,10 +174,7 @@ export async function pressCtrlEnter(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 });
 }
 
-/** Clears an already-focused, already-clicked text field via real Ctrl+A then Backspace --
- * `Input.insertText` only ever inserts at the caret, never replaces, the same reasoning
- * `verify-tauri-session-list-helpers.mjs`'s own `renameSessionViaF2` documents for its rename
- * input. */
+/** Ctrl+A then Backspace: `Input.insertText` only inserts at the caret, never replaces. */
 export async function clearField(cdp, finderExpr) {
   await cdp.click(finderExpr);
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
@@ -259,12 +191,8 @@ export async function typeIntoField(cdp, finderExpr, text) {
 export const SUBJECT_FINDER = `document.querySelector('input[placeholder="Commit subject"]')`;
 export const BODY_FINDER = `document.querySelector('textarea[placeholder="Description (optional)"]')`;
 
-/** The Commit button's own disabled/title/visible-reason state, read as one atomic snapshot
- * (`GitCommitBox.tsx`'s own `disabledReason` span is the button's immediately preceding
- * sibling whenever one is shown). Gate round 1 fix (2026-10-20): the button moved from native
- * `disabled` to `aria-disabled` (so it stays focusable/tabbable while "disabled" -- the same
- * `aria-disabled`-not-`disabled` convention this whole app's own other busy/blocked controls
- * use) -- `btn.disabled` is now ALWAYS `false` regardless of state; read the attribute instead. */
+/** One atomic snapshot of the Commit button. It uses `aria-disabled` (stays tabbable), so
+ * `btn.disabled` is always false; read the attribute. */
 export async function readCommitButtonState(cdp) {
   return cdp.evaluate(`(() => {
     const btn = Array.from(document.querySelectorAll('button')).find((el) => { const t = el.textContent.trim(); return t === 'Commit' || t === 'Committing…'; });
@@ -281,10 +209,7 @@ export async function readCommitButtonState(cdp) {
 
 export const COMMIT_BUTTON_FINDER = `Array.from(document.querySelectorAll('button')).find((el) => { const t = el.textContent.trim(); return t === 'Commit' || t === 'Committing…'; })`;
 
-/** Clicks the Conflicts group trigger (always present, always first) to seed a known starting
- * focus point, then presses Tab up to `maxSteps` times, recording each stop's real computed
- * accessible name (CDP Accessibility domain, never textContent) until `stopWhenName` is reached
- * or the budget runs out. */
+/** Seeds focus on the Conflicts trigger, then records each Tab stop's computed accessible name. */
 export async function collectTabTrail(cdp, conflictsTriggerFinder, stopWhenName, maxSteps = 25) {
   await cdp.click(conflictsTriggerFinder);
   const trail = [];
@@ -297,9 +222,7 @@ export async function collectTabTrail(cdp, conflictsTriggerFinder, stopWhenName,
   return trail;
 }
 
-/** Asserts `expectedNames` appear in `trail` as a (not necessarily contiguous) subsequence, in
- * order -- proves Tab reaches every named stop without over-specifying exactly how many other
- * rows/buttons sit between them. */
+/** Order-preserving subsequence check; tolerates other stops in between. */
 export function assertTabSubsequence(trail, expectedNames, label, findings, failures) {
   let searchFrom = 0;
   for (const expected of expectedNames) {
@@ -313,11 +236,7 @@ export function assertTabSubsequence(trail, expectedNames, label, findings, fail
   findings.push(`${label}: Tab reached every expected stop in order: ${JSON.stringify(expectedNames)}.`);
 }
 
-/** Value equality per element (never `===`, which only works for the string-array call sites --
- * `readGroupSummaries`'s own `{name, count}` objects are a NEW object literal every read, so
- * reference equality always fails even when the content genuinely matches -- a real bug this
- * script's own "Initial group summaries" check hit, confirmed by the failure message printing
- * byte-identical `expected`/`got` JSON). */
+/** Value equality per element: `readGroupSummaries` returns fresh objects each read, so `===` always fails. */
 export function assertArrayEqual(actual, expected, label, findings, failures) {
   const same = Array.isArray(actual) && actual.length === expected.length && actual.every((v, i) => JSON.stringify(v) === JSON.stringify(expected[i]));
   if (!same) failures.push(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
@@ -329,15 +248,7 @@ export function assertEqual(actual, expected, label, findings, failures) {
   else findings.push(`${label}: ${JSON.stringify(actual)}`);
 }
 
-// ---------------------------------------------------------------------------
-// Gate round 1 live-check additions (2026-10-20): focus-restoration (`focus.ts`) and readout-chip
-// (`session::readout::schedule_readout_update`) proofs, plus the small per-row/git-status reads
-// item 4 (partial-staged `MM` dual grouping) and item 7 ("Mark as resolved" confirmation) need.
-// ---------------------------------------------------------------------------
-
-/** Whether `document.activeElement` is literally the element `finderExpr` evaluates to right
- * now -- used for the "Back to changes"/Commit-subject focus-restoration targets, which have no
- * `data-*` marker of their own (unlike a row or a group trigger, below). */
+/** Whether `document.activeElement` is the element `finderExpr` evaluates to (for targets with no `data-*` marker). */
 export async function activeElementIs(cdp, finderExpr) {
   return cdp.evaluate(`document.activeElement === (${finderExpr})`);
 }
@@ -347,30 +258,22 @@ export async function activeElementText(cdp) {
   return cdp.evaluate(`document.activeElement ? document.activeElement.textContent.trim() : null`);
 }
 
-/** `document.activeElement`'s own `aria-label` (#1101 item 6: the Back button is now icon-only,
- * so its accessible name lives in this attribute, not in `textContent`). */
+/** Icon-only Back button: its accessible name lives in `aria-label`, not `textContent`. */
 export async function activeElementAriaLabel(cdp) {
   return cdp.evaluate(`document.activeElement ? document.activeElement.getAttribute('aria-label') : null`);
 }
 
-/** `document.activeElement`'s own `data-git-row-path` (`focus.ts`'s `focusGitRow` target) --
- * read via the attribute rather than an element reference, since a stage/unstage re-renders the
- * row into a DIFFERENT DOM node in its new group; the attribute value survives that, the node
- * identity does not. */
+/** Read via the attribute: a stage/unstage re-renders the row as a different DOM node. */
 export async function activeElementRowPath(cdp) {
   return cdp.evaluate(`document.activeElement ? document.activeElement.getAttribute('data-git-row-path') : null`);
 }
 
-/** `document.activeElement`'s own `data-git-group-trigger` (`focus.ts`'s `focusGitGroupTrigger`
- * target). */
+/** The group-trigger marker on the focused element. */
 export async function activeElementGroupTrigger(cdp) {
   return cdp.evaluate(`document.activeElement ? document.activeElement.getAttribute('data-git-group-trigger') : null`);
 }
 
-/** `GitCommitBox.tsx`'s own `sr-only role="status"` commit-success announcement, scoped via
- * `.closest('.no-drag-region')` from the Commit subject input (that class is the commit box's
- * own root, so this is unambiguous regardless of how many OTHER `.no-drag-region` elements the
- * rest of the app happens to use elsewhere). */
+/** Scoped via the commit box's own `.no-drag-region` root so other uses of that class don't collide. */
 export async function readCommitAnnouncementText(cdp) {
   return cdp.evaluate(`(() => {
     const subj = ${SUBJECT_FINDER};
@@ -380,12 +283,8 @@ export async function readCommitAnnouncementText(cdp) {
   })()`);
 }
 
-/** One row's own `DiffStatCounts` sr-only accessible text ("N addition(s), M deletion(s)"),
- * scoped to one named group's own `<ul>` -- needed for item 4's partially-staged (`MM`) fixture,
- * which renders the SAME path as two separate rows (one per group), each with its own
- * independently-scored badge. Matched by content (`/addition/`), never by position: the row's
- * OTHER `sr-only` span (its status-icon label, "`<mark> — Open diff for <path>`") would
- * otherwise be picked up first. */
+/** One row's diff-stat sr-only text within a group's `<ul>`. An `MM` file renders the same path
+ * in two groups; match by `/addition/`, since the row's other sr-only span would be found first. */
 export async function readRowDiffStatAccessibleText(cdp, groupLabel, filePath) {
   return cdp.evaluate(`(() => {
     const ul = document.querySelector('[aria-label=${JSON.stringify(`${groupLabel} files`)}]');
@@ -397,37 +296,18 @@ export async function readRowDiffStatAccessibleText(cdp, groupLabel, filePath) {
   })()`);
 }
 
-/** `git status --porcelain` for exactly one path, trimmed -- the same real-git-status-not-just-
- * DOM grounding `buildScratchWorkingTree`'s own conflict self-check already uses, reused here for
- * item 4's `MM` self-check and item 7's "the dialog opening alone must not touch git state" /
- * "the confirm action must genuinely re-stage it" proofs. Empty string means "clean" (no
- * difference from HEAD on either side). */
+/** `git status --porcelain` for one path, trimmed; empty means clean. Grounds checks in real git state, not the DOM. */
 export function gitStatusPorcelain(worktreePath, filePath) {
   return runGit(worktreePath, ['status', '--porcelain', '--', filePath]).trim();
 }
 
-// ---------------------------------------------------------------------------
-// Gate round 1 live-check additions, continued: whole self-contained check RUNNERS (never just
-// reads/finders) for items 4/5/7 -- each is built, asserted, and (items 4/5) fully torn down in
-// one call, moved here (rather than inlined in `main()`) purely to keep the orchestrating
-// script under `check-file-size.mjs`'s own 600-line soft cap (#806), the same reason this whole
-// file exists in the first place (see this file's own header comment).
-// ---------------------------------------------------------------------------
-
 const PLAUSIBLE_DIFF_STAT_BADGE = /^\d+ additions?, \d+ deletions?$/;
 
-/** Check (item 7): the Conflicts row's own "Mark as resolved" kebab item confirms first --
- * clicking it only OPENS a confirmation dialog (Radix `role="alertdialog"`); the real `stage()`
- * call (a real `git add`, genuinely resolving the conflict at the git level) happens only once
- * the dialog's own "Mark as resolved" action is clicked. Both halves grounded in real
- * `git status --porcelain`, not just the DOM. Leaves `conflictPath` staged for real on return --
- * the caller's own "script fixture fix" step still needs to run afterward to clean the literal
- * conflict markers out of its content before committing. */
+/** The kebab item only opens a confirmation dialog; the real `git add` happens on confirm.
+ * Both halves are asserted against `git status --porcelain`. Leaves `conflictPath` staged. */
 export async function runMarkAsResolvedCheck(cdp, worktreePath, conflictPath, shot, findings, failures) {
-  // Check 9's own `collectTabTrail` seeds its own tab order with a click on this SAME trigger --
-  // which, since the Conflicts group defaults OPEN, TOGGLES it closed (Radix `CollapsibleContent`
-  // without `forceMount` does not render its children in the DOM at all while closed, so the
-  // row this check needs next would not exist). Reopen it before anything else.
+  // The tab-trail seed click toggled the Conflicts group closed, and closed content is not
+  // rendered, so reopen it first.
   await cdp.click(CONFLICTS_TRIGGER_FINDER);
   await cdp.waitFor(`!!document.querySelector('[aria-label=${JSON.stringify(`More actions for ${conflictPath}`)}]')`, { timeoutMs: 10_000, label: 'Conflicts group reopened, its row rendered again' });
   const statusBeforeMenu = gitStatusPorcelain(worktreePath, conflictPath);
@@ -455,12 +335,8 @@ export async function runMarkAsResolvedCheck(cdp, worktreePath, conflictPath, sh
   await shot('11-mark-resolved-staged.png');
 }
 
-/** Check (item 4): a partially staged (`MM`) file renders as TWO separate rows for the SAME path
- * -- one in Staged (scored against the index, `git diff --cached`), one in Changes (scored
- * against the worktree, plain `git diff`) -- `changes_status.rs`'s own gate round 1 item 5
- * dual-row fix. Builds its own tiny baseline-commit-then-partially-edit fixture, asserts both
- * rows and their own independently-scored diff-stat badges, then FULLY TEARS IT DOWN again
- * before returning, so it never perturbs any other check's own group-count expectations. */
+/** A partially staged (`MM`) file must render as two rows for one path (Staged scored against the
+ * index, Changes against the worktree). The fixture is fully torn down so other group counts are unaffected. */
 export async function runPartialStagedDualGroupingCheck(cdp, worktreePath, shot, findings, failures) {
   writeFileSync(path.join(worktreePath, FIXTURE.partialStaged), FIXTURE.partialStagedBaseline);
   commitPaths(worktreePath, [FIXTURE.partialStaged], 'Add partial-staged.txt baseline');
@@ -483,11 +359,8 @@ export async function runPartialStagedDualGroupingCheck(cdp, worktreePath, shot,
   else findings.push(`partial-staged.txt's own Changes-row diff-stat badge: "${badgeInChanges}".`);
   await shot('15-partial-staged-dual-rows.png');
 
-  // Item 3 (gate round 2): opening the diff from the CHANGES-half row specifically (scoped via
-  // `data-git-group-list="changes"`, since both halves share the identical `data-git-row-path`),
-  // then returning, must land focus on that SAME half's row -- never the Staged-half row
-  // sharing its path (`focus.ts`'s own group-scoped `focusGitRowInGroup`, `GitChangesPanel.tsx`'s
-  // `lastSelectionRef.current.group`).
+  // Opening the diff from the Changes-half row and going back must restore focus to that same
+  // half's row, not the Staged row sharing its path.
   await cdp.click(`document.querySelector('[data-git-group-list="changes"] span[title=${JSON.stringify(FIXTURE.partialStaged)}]')?.closest('button')`);
   await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: "Diff view opened from partial-staged.txt's own Changes-half row" });
   await cdp.click(BACK_TO_CHANGES_FINDER);
@@ -507,24 +380,9 @@ export async function runPartialStagedDualGroupingCheck(cdp, worktreePath, shot,
   await cdp.waitFor(neitherRowPresent, { timeoutMs: 1_500, intervalMs: 100, label: 'partial-staged.txt fixture torn down: gone from both Staged and Changes' });
 }
 
-/** Check (pre-existing, moved here purely for the 600-line soft cap, #806; expectations fixed
- * 2026-10-20): the Commit button's own disabled-with-reason states, read via a real CDP DOM read
- * (`readCommitButtonState`). conflict.txt is NOT resolved until much later (the caller's own
- * Check 11), so `conflictCount > 0` wins `GitCommitBox.tsx`'s own `disabledReason` priority
- * throughout this whole function regardless of staged count or typed message -- every
- * expectation below is "Resolve conflicts first", never "Nothing staged"/"Write a message"/
- * enabled (the ORIGINAL pre-existing expectations here assumed the OLD priority order, before
- * gate round 1 item 11 made a conflict block Commit unconditionally; this is a genuine fix, not
- * a rewrite of the check's own intent). Leaves the panel staged (Staged, 2: the re-staged
- * Changes group) with a real subject/body typed in, the state the caller's own next checks
- * (conflict-priority, Ctrl+Enter commit) rely on. Returns the same subject/body strings the
- * caller needs later for its own `git log` assertions. Gate round 2 fix (item 15): every state
- * this function exercises shows "Resolve conflicts first" (the conflict fixture is still
- * unresolved throughout) -- its own screenshots are named for that REAL displayed reason, not
- * the misleading "nothing-staged"/"write-message" names a round-1 pass gave them (the conflict
- * always wins here, so neither of those two reasons is ever genuinely ON SCREEN in this
- * function; `main()`'s own post-resolution flow never re-derives them live either, so this
- * rename -- not fabricating a new, unverified check sequencing -- is this round's own fix). */
+/** Commit-button disabled reasons. The conflict stays unresolved throughout, so every state
+ * must read "Resolve conflicts first". Leaves 2 staged files and a typed subject/body for later
+ * checks, and returns that subject/body. */
 export async function runCommitDisabledReasonCheck(cdp, shot, findings, failures) {
   let commitState = await readCommitButtonState(cdp);
   assertEqual(commitState?.disabled, true, 'Commit disabled with 0 staged (no message yet)', findings, failures);

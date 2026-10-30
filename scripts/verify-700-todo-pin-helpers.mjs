@@ -1,5 +1,4 @@
-// Shared selectors and small assertion helpers for verify-700-todo-pin.mjs (issue #700/#701
-// slice (a) live check), split out to stay under the #806 600-line soft cap.
+// Shared selectors and assertion helpers for verify-700-todo-pin.mjs.
 import { sleep } from './verify-tauri-cdp.mjs';
 
 export const TODO_PILL_SELECTOR =
@@ -8,8 +7,7 @@ export const PANEL_SELECTOR = `document.querySelector('[data-slot="pinned-todo-p
 export const STOP_BUTTON_SELECTOR = `document.querySelector('[aria-label="Stop"]')`;
 export const SCROLLER_SELECTOR = `document.querySelector('[data-slot="message-scroller-viewport"]')`;
 
-/** Reads the pill's own live state without assuming it is present (it is intentionally absent
- * once there is no plan, or once `sessionReadout['todo-progress']` is turned off). */
+/** Reads the pill's live state; it is absent once there is no plan or the readout is off. */
 export async function readPill(cdp) {
   return cdp.evaluate(`(() => {
     const el = ${TODO_PILL_SELECTOR};
@@ -23,10 +21,7 @@ export async function readPill(cdp) {
   })()`);
 }
 
-/** Reads the panel's own current rendered state: header text, whether it is collapsed (the
- * scrolling list is simply absent from the DOM while collapsed, per `PinnedTodoPanel.tsx`'s own
- * `{!collapsed && (...)}` guard), every task row's own text/status-derived class, and the
- * Collapse/Unpin buttons' own `aria-expanded`/presence. */
+/** Reads the panel's rendered state; the list is absent from the DOM while collapsed. */
 export async function readPanel(cdp) {
   return cdp.evaluate(`(() => {
     const panel = ${PANEL_SELECTOR};
@@ -72,8 +67,7 @@ export async function clickTodoPill(cdp) {
   await cdp.click(TODO_PILL_SELECTOR);
 }
 
-/** The transcript's own real scrollable viewport (gate round 1 fix, Main E1: `[role="log"]`
- * itself never scrolls -- the library's own inner `Viewport` does). */
+/** `[role="log"]` itself never scrolls; the library's inner Viewport does. */
 export async function readScrollerScrollTop(cdp) {
   return cdp.evaluate(`(${SCROLLER_SELECTOR})?.scrollTop ?? null`);
 }
@@ -86,8 +80,7 @@ export async function readScrollerMetrics(cdp) {
   })()`);
 }
 
-/** The first user message row's own `getBoundingClientRect().top` -- a second, independent
- * "did the transcript visually move" signal alongside `scrollTop` (gate round 1, Main E1). */
+/** First message row's top: a second "did the transcript move" signal alongside `scrollTop`. */
 export async function readFirstMessageTop(cdp) {
   return cdp.evaluate(`(() => {
     const el = document.querySelector('[data-slot="message-scroller-viewport"] [role="log"] *');
@@ -104,27 +97,10 @@ export async function readStillRunning(cdp) {
   return cdp.evaluate(`!!(${STOP_BUTTON_SELECTOR})`);
 }
 
-/** Gate round 1 (Main E7): move the pointer to a neutral spot and wait out any stray tooltip or
- * hover card before a screenshot that must be clean -- used for every theme shot, not only the
- * narrow-width ones. `.finish()` throws `InvalidStateError` on an animation with an infinite
- * target effect end (self-caught live-check failure, a looping spinner); caught per-animation
- * since it has no "final" state to settle to anyway.
- * Gate round 6 fixes (#700, Main MEDIUM 4): a hardcoded `(700, 50)` neutral point could sit
- * OUTSIDE a narrow (360px) viewport, landing on nothing (or something with its own tooltip);
- * clamped to the CURRENT viewport instead. A keyboard-focused Popover/Tooltip survives a pointer
- * move alone -- blur the active element and press Escape too. The stray-overlay wait no longer
- * swallows its own timeout (a `.catch(() => {})` let a screenshot with a visible hover card
- * silently pass) -- it now throws, which `main()`'s own outer catch records as a fatal
- * `ok:false` run-crashed step. `activeElement` is logged every call for the next failure's own
- * diagnosis.
- * Gate round 7 fix (self-caught live-check failure, "Stuart Hopwood" profile-name tooltip still
- * visible in a theme screenshot): a single CDP `mouseMoved` teleports the pointer with no
- * intermediate path, unlike a real mouse -- genuinely fires `pointerleave` on whatever was last
- * hovered/focused only if the browser treats the jump as leaving it, which is not reliable for
- * a CDP-synthesised click at an earlier coordinate. Two real moves (an extreme corner, then the
- * actual neutral point) force two distinct transitions. The stray-overlay check also now
- * matches `[data-slot="tooltip-content"]` directly (`tooltip.tsx`'s own render marker), not
- * only `[role="tooltip"]`, which Radix does not guarantee here. */
+/** Clears stray tooltips/hover cards before a screenshot. Two pointer moves (corner, then a point
+ * clamped to the viewport) are needed because one CDP teleport does not reliably fire
+ * `pointerleave`; blur + Escape handle keyboard-focused popovers; `finish()` throws on infinite
+ * animations, so it is caught per animation. The overlay wait throws rather than swallowing. */
 export async function settleForScreenshot(cdp) {
   const { width } = await cdp.evaluate(`({ width: window.innerWidth })`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
@@ -139,9 +115,7 @@ export async function settleForScreenshot(cdp) {
   console.log(`verify-700: settleForScreenshot activeElement`, JSON.stringify(activeElement));
 }
 
-/** Gate round 6 fix (#700, Main MEDIUM 8): an E1/E4 "did not move" read taken the instant after
- * a click/dispatch can beat a correction that lands one or two frames later, same pattern as
- * `verify-941-stage-naming-helpers.mjs:152`'s own single-frame wait (doubled here). */
+/** A read taken right after a click can beat a correction that lands a frame or two later. */
 export async function waitTwoFrames(cdp) {
   await cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
 }

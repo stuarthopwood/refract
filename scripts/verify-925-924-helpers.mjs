@@ -1,8 +1,5 @@
-// Shared helpers for `scripts/verify-925-924-polish.mjs` (issue #925 diff-stat colouring across
-// four surfaces, issue #924 reasoning gauge needle, issue #919 per-file header): split out from
-// the start (#806 file-size ratchet -- the main script already needs every one of
-// `verify-tauri-scratch-helpers.mjs`'s own exports plus a real GitHub PR flow plus a reasoning-
-// level picker drive plus a gauge-needle reader, which would not fit the 600-line cap alone).
+// Shared helpers for `scripts/verify-925-924-polish.mjs` (#925 diff-stat colouring, #924 reasoning
+// gauge needle, #919 per-file header), split out for the #806 file-size cap.
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -13,12 +10,8 @@ function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
-// Issue #925: `makeScratchRepo` (the shared helper every other `verify-5xx-*.mjs` script reuses)
-// commits an EMPTY initial tree -- nothing to edit for a real, non-zero diffStat. This variant
-// commits one tracked, multi-line file instead, so the main script can later edit it (inside the
-// Session's own worktree, once Refract creates one) to produce a genuine `+A -D` diffStat rather
-// than only ever exercising the "0 files changed +0 -0" muted case a fresh worktree already shows
-// for free.
+// Unlike `makeScratchRepo` (empty initial tree), commits one tracked file so a worktree edit
+// yields a real non-zero diffStat (#925).
 export const TRACKED_FILE_NAME = 'notes.md';
 export const TRACKED_FILE_INITIAL_LINES = ['# Scratch notes', '', 'line one', 'line two', 'line three', 'line four', ''];
 
@@ -36,32 +29,9 @@ export function makeScratchRepoWithTrackedFile(dir, label) {
   return dir;
 }
 
-/** Issue #925: edits the tracked file INSIDE a Session's own worktree (not the scratch repo's
- * own origin checkout, a different directory once Refract creates the worktree) to produce a
- * real, non-zero, uncommitted diffStat -- appends 3 new lines (a genuine addition) and removes
- * one existing line (a genuine deletion), so the resulting `+3 -1` exercises BOTH the green and
- * the red branch of `DiffStatCounts` in one edit, not just one or the other.
- *
- * Gate round 1 fix (H1): on Windows, `git worktree add` checks the file out through
- * `core.autocrlf=true` (the system default, confirmed), so the worktree's own copy of this file
- * is CRLF, not the LF the scratch repo's own commit holds -- splitting on a bare `\n` left a
- * trailing `\r` on every line, so `'line one\r' !== 'line one'` and the filter below silently
- * removed nothing; every run measured a real `+4 -0`, never a genuine deletion, so the red
- * branch was never actually exercised despite the PASS. Splits on `\r?\n` to normalise BOTH line
- * endings before comparing, then rejoins with the file's OWN original EOL style (preserving it
- * for every untouched line, so git diff shows exactly the one real removal and three real
- * additions this function intends -- rejoining with a different EOL would make every surviving
- * line look both removed and re-added).
- *
- * Gate round 2 fix (live-check H1, caught by a real CDP run measuring `+4 -1` instead of the
- * documented `+3 -1`): `raw.split(/\r?\n/)` on a file that ends with a newline (every commit
- * here does) produces a trailing `''` array element standing in for that one trailing newline,
- * not a real blank line. The old code left that element in place and then appended FOUR more
- * entries (`'line five'`, `'line six'`, `'line seven'`, a FRESH `''`) after it, turning the
- * former end-of-file artifact into a genuine new blank line in the middle of the file -- a real,
- * unintended fourth addition. Drops that one trailing marker first, so the three new lines land
- * directly after `'line four'` and the fresh `''` appended at the very end is once again only
- * the file's own trailing newline, never a visible line. */
+/** Edits the tracked file inside a Session's worktree to make a `+3 -1` diff (both green and red branches).
+ * Worktree checkout is CRLF (core.autocrlf) so split on `\r?\n` and rejoin with the original EOL;
+ * the trailing '' marker is dropped first so it does not become a fourth added blank line. */
 export function editTrackedFileForDiff(worktreePath) {
   const filePath = path.join(worktreePath, TRACKED_FILE_NAME);
   const raw = readFileSync(filePath, 'utf8');
@@ -73,12 +43,8 @@ export function editTrackedFileForDiff(worktreePath) {
   writeFileSync(filePath, edited.join(eol));
 }
 
-// Issue #924: the SAME 7-step angle formula `ReasoningGaugeIcon.tsx` computes, reimplemented
-// here in plain JS so the script can derive the EXPECTED angle for whatever level the real UI
-// settles on (including an `inherit` request OMP may resolve to any real level, or report back
-// as `null`/`'inherit'` literally) and compare it against the ACTUAL angle read off the rendered
-// SVG -- a self-consistent check that never hardcodes per-level expectations that could silently
-// drift from the component's own source.
+// Same 7-step angle formula as `ReasoningGaugeIcon.tsx`, so the expected angle is derived for
+// whatever level the UI settles on rather than hardcoded per level.
 const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const ARC_START_DEG = 150;
 const ARC_SWEEP_DEG = 240;
@@ -90,11 +56,8 @@ export function needleAngleDeg(level) {
   return ARC_START_DEG + (stepIndex * ARC_SWEEP_DEG) / (LEVELS.length - 1);
 }
 
-/** Reads the rendered `ReasoningGaugeIcon`'s own needle `<path>` (`M12 14L{x} {y}`, the first of
- * its two `<path>` children -- the second is the static arc) off the live DOM and derives the
- * needle's actual angle in degrees via `atan2`, in the SAME bearing system (0deg = right, 90deg
- * = down, matching SVG's y-down coordinate space) `needleAngleDeg` above uses -- never trusting
- * a screenshot or a guessed geometry. `null` if the icon or its needle path is not found. */
+/** Reads the rendered gauge's needle `<path>` (`M12 14L{x} {y}`) and returns its angle in degrees
+ * (0 = right, 90 = down, as in `needleAngleDeg`), or `null` if not found. */
 export async function readGaugeNeedleAngle(cdp, svgFinderExpr) {
   return cdp.evaluate(`(() => {
     const svg = ${svgFinderExpr};
@@ -110,26 +73,9 @@ export async function readGaugeNeedleAngle(cdp, svgFinderExpr) {
   })()`);
 }
 
-/** Issue #925: reads a `DiffStatCounts`-rendered pair of spans (the first containing `+N`, the
- * second `-N`) under the element `containerExpr` resolves to -- their own text, class list
- * (asserting the EXACT colour class the zero/positive rule picks, not merely a plausible colour)
- * and computed `color`, plus the nearest real rendered background behind them (walking up
- * `parentElement` for the first OPAQUE `background-color`, the same technique the real browser
- * cascade uses -- #927's own composer box made `--composer-background` transparent in two of
- * three themes specifically so the chat background paints through, so a naive "read this one
- * ancestor's background" guess would silently measure the wrong backdrop in those themes).
- * `null` if the container or its own `.tabular-nums` counts wrapper is not found.
- *
- * Gate round 2 fix (High, Main): the opacity walk used to parse ONLY `rgb()`/`rgba()` via a
- * hand-rolled regex, so it fell straight through to `document.body` on Dark and Dark (high
- * contrast) -- both report their own backgrounds as `oklch()` (Chromium's native serialisation
- * for any colour declared via the `oklch()`/`oklab()` CSS functions, which every `--background`/
- * `--muted`/`--popover` token in this codebase is), which the old regex never matched at all.
- * The browser-side walk below now only COLLECTS every ancestor's raw `backgroundColor` string
- * (plus `document.body`'s own as the final fallback); the actual opacity test runs in Node
- * through `parseComputedColorToEntry` (`contrast-math.mjs`), the SAME parser `measuredContrastRatio`
- * already uses for the colour values themselves -- one shared colour grammar, not two (a second,
- * rgb()-only copy here could silently drift from the real one again). */
+/** Reads a `DiffStatCounts` pair of spans (+N, -N) under `containerExpr`: text, class, computed colour
+ * and the nearest opaque backdrop. Backgrounds are collected in the browser and tested in Node via
+ * `parseComputedColorToEntry`, since Dark themes report `oklch()`. `null` if not found. */
 export async function readDiffStatSpans(cdp, containerExpr) {
   const raw = await cdp.evaluate(`(() => {
     const container = ${containerExpr};
@@ -155,39 +101,15 @@ export async function readDiffStatSpans(cdp, containerExpr) {
     };
   })()`);
   if (!raw) return null;
-  // Gate round 1 fix (L4): a PARTIALLY transparent background (alpha strictly between 0 and 1)
-  // is not the real opaque backdrop either -- the true rendered colour still depends on
-  // whatever is further beneath it. Only `alpha === 1` counts as "found"; anything else keeps
-  // walking up (`document.body`'s own entry, always pushed last above, is the final fallback).
+  // Only alpha === 1 is the real backdrop; `document.body` (pushed last) is the final fallback.
   const opaque = raw.backgrounds.find((bg) => parseComputedColorToEntry(bg)?.alpha === 1);
   return { added: raw.added, removed: raw.removed, background: opaque ?? raw.backgrounds[raw.backgrounds.length - 1] };
 }
 
-/** Issue #925: asserts one `DiffStatCounts` pair's own class/colour rule against the real
- * numbers parsed out of its own text -- never trusting the app to have applied the rule
- * correctly, deriving the expectation independently from `+N`/`-N` text each time.
- *
- * Gate round 1 fix (H2): `requireBothPositive` (the chip/card non-zero call sites, where this
- * script itself controls the edit and so KNOWS both should be positive) turns "removed happened
- * to read zero" into a hard failure instead of a silent, semantically-true-but-wrong "zero stays
- * muted" pass -- the whole point of that edit is to exercise BOTH the green and the red branch,
- * and a script bug that only ever produced an addition must not pass as if it had. The PR
- * surfaces (real GitHub data, not scripted) leave this off: a real PR's own deletions count is
- * outside this script's control.
- *
- * Gate round 2 fix (Low, Main): parses with `\D` (strip every non-digit), not `[^\d-]` (strip
- * every non-digit-or-minus) -- the removed span's own text is literally "-N" (`DiffStatCounts`'s
- * `-{removedText}` glyph, not a numeric sign), so the old pattern kept that glyph and parsed
- * every real removed count as negative (harmless here, since both branches below only ever
- * compare against `=== 0`/`> 0` through `requireBothPositive`, but the same bug silently broke
- * the PR row scan's own `probeRemoved`, which this script's `\D` fix already matches).
- *
- * Gate round 2 (Medium, Main): `tokenColors` (when supplied, `resolveDiffTokenColors`'s own
- * `{ added, removed, muted }`, resolved through a REAL probe element per theme) asserts the
- * span's own COMPUTED colour too, not only its class name -- a class name alone cannot catch a
- * Tailwind build that silently stripped or mis-mapped the utility (exactly the #928 bug this
- * same PLAN.md row already found once, in `tailwind-merge`), the stricter version of #570's own
- * "check the token actually rendered" rule. */
+/** Asserts one `DiffStatCounts` pair's class/colour rule against the numbers in its own text.
+ * `requireBothPositive` fails when removed reads zero, so an edit that never deleted cannot pass.
+ * `tokenColors` also checks the computed colour, since a class name alone cannot catch a stripped
+ * Tailwind utility (#928). */
 export function assertDiffStatSpans(label, spans, findings, failures, { requireBothPositive = false, tokenColors = null } = {}) {
   if (!spans) {
     failures.push(`${label}: DiffStatCounts spans not found.`);
@@ -227,14 +149,8 @@ export function assertDiffStatSpans(label, spans, findings, failures, { requireB
   }
 }
 
-/** Issue #925 gate round 2 (Medium, Main): resolves `--diff-added`/`--diff-removed`/
- * `--muted-foreground` through a REAL probe element's own `getComputedStyle()`
- * (`resolveCssVarColor`, `verify-tauri-cdp.mjs`) -- the SAME technique #927's own gate already
- * established for `--composer-focus`/`--ring` -- so `assertDiffStatSpans` can compare a span's
- * own computed colour against the token's resolved value, never a hardcoded literal that could
- * drift from a `color-mix()`/`var()` chain only the browser's cascade can finish computing.
- * Resolved once per theme (the three colours never change mid-theme), reused across every
- * surface checked under that theme. */
+/** Resolves the diff and muted colour tokens through a real probe element, since a `color-mix()`/`var()`
+ * chain can only be finished by the browser cascade. Resolve once per theme. */
 export async function resolveDiffTokenColors(cdp) {
   const [added, removed, muted] = await Promise.all([
     resolveCssVarColor(cdp, '--diff-added', 'color'),
@@ -244,13 +160,8 @@ export async function resolveDiffTokenColors(cdp) {
   return { added, removed, muted };
 }
 
-/** Issue #924: drives the REAL composer Reasoning picker (click trigger, click the
- * `menuitemradio` whose own text matches `levelLabel`), then waits for the trigger's own visible
- * label to settle (pending spinner clears) before the caller reads the icon. Returns the
- * trigger's own final visible label text, which may differ from `levelLabel` requested (an
- * `inherit`/Default request OMP resolves to a real level, or does not confirm at all) -- the
- * caller derives its OWN expectation from whatever this returns, never from the requested label.
- */
+/** Drives the composer Reasoning picker to `levelLabel`, waits for the trigger to settle and returns its
+ * final label, which may differ from the request (OMP resolves `inherit`); derive expectations from it. */
 export async function selectReasoningLevel(cdp, triggerFinderExpr, levelLabel) {
   await cdp.click(triggerFinderExpr);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: `Reasoning picker menu open (requesting "${levelLabel}")` });

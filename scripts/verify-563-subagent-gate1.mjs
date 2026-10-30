@@ -1,35 +1,10 @@
 #!/usr/bin/env node
-// Real-omp live gate check for issue #563 (requested by Main after the quality-gate remediation
-// round): the fake-omp tape (`verify-563-subagent-stage.mjs`, one Stage, two subagents, no
-// failure/cancel path) cannot exercise the multi-Stage chain, a visible Running/Cancelled status
-// word, or the Show-thinking-toggle independence fix. This script drives a REAL `omp` (resolved
-// from PATH, no fake, no shim -- `omp --version` reports 18.10.1) against the ambient, already
-// signed-in default profile (no `OMP_PROFILE` override): the established pattern this repo's own
-// `docs/spike/chat-lines-probe.mjs`/`get-subagents-probe.mjs`/`context-usage-probe.mjs` already
-// use for "a real model is needed" checks -- cwd is a brand-new scratch git repo (never Stuart's
-// real worktrees), and `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR`
-// are all scratch too, so this never reads or writes Stuart's real Session list. The Session this
-// creates is a brand-new entry under the ambient profile's own `agent/sessions/`, keyed by this
-// scratch cwd -- it can never collide with, or be read back by, any of Stuart's real sessions.
-//
-// Spends real model tokens (small, tiny-echo subagent prompts only, per the standing "keep
-// prompts tiny" instruction). Three scenarios, one Session:
-//   (a) one turn: two parallel task() calls (Stage 1, 2 agents), then a third serial task() call
-//       (Stage 2) -> the Subagent chain row renders; open the panel from a chain entry, confirm
-//       pre-selection + focus landed on it, confirm closing returns focus to that entry.
-//   (b) a second turn: one task() call, Stopped mid-run -> Cancelled status word captured in the
-//       StageGroupRow's `meta` slot (not the icon slot), not overlapping the agent name; a
-//       Running-state screenshot captured first, before Stop is clicked.
-//   (c) the same (a) turn, re-rendered with "Show thinking" toggled off via the IPC bridge
-//       directly (`window.refract.settings.setTranscriptDisplay`, no Settings-screen navigation
-//       needed) -> Stage count and numbering must read identically either way (the H1/H4 fix).
-//
-// Reuses the already-built debug exe (ci-local's own `tauri build --debug --no-bundle` this
-// session), copied to a PRIVATE scratch dir first (the cross-lane shared-`CARGO_TARGET_DIR`
-// overwrite lesson from this story's own earlier live check). Every scratch path is a fresh
-// `mkdtempSync` result, removed in `finally` by that same literal variable -- never built from a
-// variable interpolated into a shell string, never a bare drive letter, never touching anything
-// inside this repo or Stuart's real `%APPDATA%/refract-tauri`/`~/.omp` data.
+// Real-omp live gate check for #563: the fake-omp tape can't exercise the multi-Stage chain, a visible Running/Cancelled
+// word, or Show-thinking independence. Uses the ambient signed-in profile with scratch repo/data dirs; spends a few real tokens.
+//   (a) two parallel task() calls then a serial one: chain row renders, panel pre-selected, closing returns focus.
+//   (b) one task() call Stopped mid-run: Cancelled word in StageGroupRow's `meta` slot.
+//   (c) (a) re-rendered with Show thinking off: Stage count and numbering identical.
+// The exe is copied to a private dir first because a concurrent lane can overwrite the shared CARGO_TARGET_DIR exe.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';
@@ -49,10 +24,7 @@ const SHOTS_DIR = path.join(tmpdir(), 'refract-563-gate1-shots');
 const TURN_A_PROMPT =
   "Make your very first tool call be exactly ONE call to the task tool that starts TWO subagents together in that SAME call (not two separate calls -- one call, two subagents in it): the first subagent's entire job is to reply with exactly the single word 'uno' and nothing else; the second subagent's entire job is to reply with exactly the single word 'dos' and nothing else. Wait for both of those to finish. Then, once both have finished, call the task tool a second time, by itself, with one tiny subagent whose entire job is to reply with exactly the single word 'tres' and nothing else. Once all three subagents have replied, reply with exactly the single word 'gate563complete' yourself and nothing else.";
 const TURN_B_PROMPT =
-  // Gate round 2 fix: a bare one-word reply finished before Stop could land in testing here
-  // (the subagent settled to Finished on its own, never giving Stop anything to interrupt), so
-  // the subagent's own task now pads out a slow, pointless count first -- giving Stop a real
-  // window to land mid-run -- before it replies with the sentinel word.
+  // The subagent pads out a slow count first so Stop can land mid-run; a one-word reply settled before Stop landed.
   "Call the task tool once with one tiny subagent whose entire job is to count out loud from 1 to 200, one number per line, then on its own final line reply with exactly the single word 'quattro' and nothing else. Do not reply with anything else yourself.";
 const TURN_A_SENTINEL = 'gate563complete';
 
@@ -94,14 +66,9 @@ function sha256OfFile(filePath) {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
 }
 
-/** Rebuilds the debug exe fresh, then copies it to `destDir` IMMEDIATELY -- the standing rule
- * from this story's own earlier live check (the shared `CARGO_TARGET_DIR`'s own `debug/
- * refract-tauri.exe` can be overwritten mid-session by a concurrent lane's own build). Confirms
- * the source file's own mtime/hash are UNCHANGED from the instant the build finished to the
- * instant the copy completed; if a concurrent write landed in that window (detected by the
- * source's mtime/size/hash differing from what was read right after the build), the whole
- * build-and-copy is retried from scratch, up to `maxAttempts` times, rather than trusting a
- * copy that might have raced a concurrent writer mid-file. */
+/** Rebuilds the debug exe, then copies it to `destDir` immediately: a concurrent lane's build can overwrite the shared
+ * `CARGO_TARGET_DIR` exe mid-session. The whole build-and-copy is retried up to `maxAttempts` times if the source's
+ * mtime/size/hash changed between the build finishing and the copy completing. */
 function buildAndCopyExeFresh(destDir, { maxAttempts = 3 } = {}) {
   mkdirSync(destDir, { recursive: true });
   const dest = path.join(destDir, 'refract-tauri.exe');
@@ -130,11 +97,7 @@ async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourc
   const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
   mkdirSync(webview2DataDir, { recursive: true });
   const pidFile = path.join(path.dirname(exePath), 'target.pid');
-  // No PATH override, no OMP_PROFILE: resolves the REAL ambient omp (already on PATH, 18.10.1)
-  // against the REAL, already-signed-in default profile -- the established "real model needed"
-  // isolation posture this repo's own docs/spike probes already use (scratch cwd/session dir,
-  // never a credential copy, never touching ~/.omp/agent/sessions in a way Stuart would ever see
-  // or reopen, since this Session's cwd is a path that has never existed until this run).
+  // No PATH override and no OMP_PROFILE: resolves the real ambient omp and signed-in profile; the scratch cwd never existed before this run.
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
@@ -167,11 +130,8 @@ async function safeRmSync(dir) {
   }
 }
 
-/** Gate round 2 fix ([CRITICAL] N-new, G899Tests): re-hashes the private-scratch exe copy and
- * throws loudly if it has drifted from the hash recorded right after the build-and-copy step --
- * a concurrent lane's own rebuild overwriting the SHARED CARGO_TARGET_DIR mid-run cannot reach
- * this private copy, but this still catches the equivalent failure mode (anything else touching
- * `exePath` after launch) before a critical assertion below is allowed to trust stale output. */
+/** Throws if the private exe copy's hash drifted from the one recorded after build-and-copy, so a critical assertion
+ * never trusts output from a modified binary. */
 function assertExeUnchanged(exePath, expectedHash, label) {
   const actualHash = sha256OfFile(exePath);
   if (actualHash !== expectedHash) {
@@ -185,11 +145,8 @@ async function transcriptText(cdp) {
   return cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.textContent ?? ''`);
 }
 
-/** Background poller: clicks every visible "Approve" button (RequestCard.tsx's own approval
- * card, exact button text, no aria-label of its own) as it appears, so the default "Ask"
- * Approval mode never blocks this script's task() calls on a manual click. Runs until `stop()`
- * is awaited; never throws on a transient evaluate failure (a mid-close/mid-render DOM read),
- * since a single missed poll just gets caught on the next 400ms tick. */
+/** Background poller that clicks every visible "Approve" button (RequestCard.tsx) so the default "Ask" Approval mode never
+ * blocks task() calls. Transient evaluate failures are ignored; the next 400ms tick retries. */
 function startAutoApprove(cdp) {
   let stopped = false;
   const loop = (async () => {
@@ -278,20 +235,15 @@ async function main() {
     );
     await cdp.clickByText('Create session', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
-    // Real omp spawn + handshake can take noticeably longer than the fake shim.
+    // A real omp spawn plus handshake takes longer than the fake shim.
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
       timeoutMs: 90_000,
       label: 'Session opened, real agent attached, composer enabled',
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // Default Approval mode is "Ask" (FR-015), which gates the `task` tool behind its own
-    // Allow-tool card per subagent batch (observed live: two separate "Allow tool: task" cards,
-    // one per parallel subagent, before Stage 1 ever renders). Switching Approval mode to Auto
-    // via the IPC bridge did NOT take effect in time for the very next message in testing here
-    // (FR-020's "restart behind the scenes" is asynchronous and this script raced ahead of it),
-    // so instead a background poller clicks every pending "Approve" button as it appears,
-    // throughout both scenario (a) and (b) below -- started now, stopped in the `finally` block.
+    // "Ask" mode gates `task` behind an Allow-tool card per subagent batch. Switching to Auto via the IPC bridge raced the
+    // asynchronous restart (FR-020) and did not take effect in time, so a poller clicks every pending "Approve" instead.
     autoApprove = startAutoApprove(cdp);
 
     // ---- Scenario (a): 2 parallel task() calls then 1 serial -> chain row, pre-select, focus ----
@@ -299,13 +251,9 @@ async function main() {
     await cdp.clickByLabel('Send message');
 
     try {
-      // The composer stays enabled during a running turn (queuing is supported), so it is NOT a
-      // turn-completion signal -- wait for the literal final reply ("done", the exact word this
-      // prompt asked for) to actually appear in the transcript instead.
+      // The composer stays enabled during a running turn, so wait for the literal final reply instead.
       await cdp.waitFor(
-        // The sentinel appears once already, inside the user's own prompt bubble (quoted
-        // instructional text) -- a SECOND occurrence means the assistant actually said it back,
-        // not merely that the prompt asking for it rendered.
+        // The sentinel already appears once in the user's prompt bubble; a second occurrence means the assistant said it back.
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && (t.textContent.match(/${TURN_A_SENTINEL}/g) ?? []).length >= 2; })()`,
         { timeoutMs: 180_000, label: 'Turn (a) finished (assistant echoed the sentinel back)' },
       );
@@ -315,9 +263,7 @@ async function main() {
       writeFileSync(path.join(SHOTS_DIR, 'turn-a-transcript-onfailure.html'), htmlOnFailure);
       throw err;
     }
-    // Always dump the raw transcript HTML for this turn (not only on failure): the exact class
-    // names/structure are the fastest way to tell a genuine Stage-group render from a bare
-    // SubagentRow render apart, which plain `.textContent` cannot disambiguate reliably.
+    // Always dump the transcript HTML: class names/structure tell a Stage-group render from a bare SubagentRow, which `.textContent` cannot.
     const transcriptHtml = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.outerHTML ?? ''`);
     writeFileSync(path.join(SHOTS_DIR, 'turn-a-transcript.html'), transcriptHtml);
     const hasStageHeader = await cdp.evaluate(
@@ -327,8 +273,7 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, '99-diag-turn-a-stage1-failure.png'));
       notExercised.push('No "Stage 1" header text found after turn (a) settled; see turn-a-transcript.html for the raw DOM dump. Continuing to check what did render.');
     }
-    // Capture a Running-state screenshot while Stage 1's agents are still in flight, if we are
-    // not already past it (real model timing is not controllable the way the fake tape is).
+    // Real model timing is not controllable like the fake tape, so capture Running only if Stage 1 is still in flight.
     const stillRunningA = await cdp.evaluate(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && t.textContent.includes('Running'); })()`,
     );
@@ -339,9 +284,7 @@ async function main() {
       findings.push('Stage 1 had already settled by the time this script could poll for a Running state (real-model timing); the Running status word is instead captured from turn (b) below.');
     }
 
-    // Wait for the full turn to finish: Stage 2 (the serial third task()) plus the chain row,
-    // which only renders for 2+ Stages (FR-065). Poll the chain's own distinguishing summary
-    // text ("N stages, M agents") rather than guessing a fixed wait.
+    // The chain row only renders for 2+ Stages (FR-065); poll its "N stages, M agents" summary rather than a fixed wait.
     try {
       await cdp.waitFor(
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && /\\d+\\s+stages,\\s+\\d+\\s+agents/.test(t.textContent); })()`,
@@ -353,25 +296,16 @@ async function main() {
         `(document.querySelector('[aria-label="Transcript"]')?.textContent.match(/\\d+\\s+stages,\\s+\\d+\\s+agents[^.]*/) ?? [''])[0]`,
       );
       if (!chainSummary) throw new Error('chainSummary matched empty: the chain row text did not actually contain "N stages, M agents" despite the waitFor above passing.');
-      // Gate round 2 fix ([CRITICAL] N-new): a #563 DOM marker, not just substring text that an
-      // OLDER build (lacking this story's own code) could never produce by coincidence -- the
-      // `role="group"`-labelled Stage line this round's own `ChainStageLine` introduces. Proves
-      // the running build genuinely contains this PR's code, not a stale pre-#563 binary.
+      // A `role="group"` Stage line is a #563 DOM marker an older build could not produce, proving the binary has this code.
       const hasStageGroupMarker = await cdp.evaluate(
         `!!document.querySelector('[role="group"][aria-label^="Stage "]')`,
       );
       if (!hasStageGroupMarker) throw new Error('No [role="group"][aria-label^="Stage "] element found in the chain body -- the running build may not actually contain this PR\u2019s ChainStageLine markup.');
       findings.push(`Subagent chain row rendered: "${chainSummary}" -- confirms the real model followed the 2-parallel-then-1-serial instruction into two Stages within one turn; the chain's own [role="group"] Stage marker is present, confirming this build.`);
 
-      // Decision 6: the chain row defaults OPEN while any agent in the turn is running, failed,
-      // cancelled, or exited -- by the time this script polls for it, Stage 1 (uno/dos) has
-      // likely already settled but Stage 2 (tres) may still be running, so the chain can already
-      // be mounted EXPANDED. The `[role="group"][aria-label^="Stage "]` check just above only
-      // ever finds a match while expanded (Radix unmounts `CollapsibleContent` while collapsed),
-      // so reaching this point already proves the chain is open -- clicking its trigger
-      // unconditionally would COLLAPSE it instead, leaving `entryFinder` below searching
-      // unmounted content (the real cause of this check's prior failures, not a timing race).
-      // Read `aria-expanded` first; click only when it is genuinely "false".
+      // The chain defaults open while any agent is running/failed/cancelled/exited, so it may already be expanded. The Stage `group`
+      // match below only exists while expanded (Radix unmounts collapsed content); clicking the trigger unconditionally would collapse it.
+      // Read `aria-expanded` first; click only when "false".
       const chainTriggerFinder = `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; return Array.from(t.querySelectorAll('button,[role="button"]')).find((el) => el.textContent.includes('Subagents')); })()`;
       const chainExpandedAlready = await cdp.evaluate(`${chainTriggerFinder}?.getAttribute('aria-expanded')`);
       if (chainExpandedAlready !== 'true') {
@@ -385,13 +319,7 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, '04-turn-a-chain-expanded.png'));
       findings.push('Chain row expands to show its per-Stage entries (uno/dos in Stage 1, tres in Stage 2).');
 
-      // Click the "tres" chain entry (a real <button>, since the tracker still knows it) and
-      // confirm the panel opens pre-selected on it with focus landed there. Gate round 2 fix:
-      // scoped to a `[role="group"][aria-label^="Stage "]` wrapper -- the chain's own
-      // `ChainStageLine` markup -- not just "any button containing 'tres'", which also matches
-      // Stage 2's OWN in-place disclosure trigger now that gate round 2 addendum B renders a
-      // solo Stage with the agent's bare name as its label ("Tres"), identical text to the
-      // chain's compact entry; the two are only distinguishable by DOM position/ancestry.
+      // Scoped to a `[role="group"][aria-label^="Stage "]` wrapper: a bare "button containing 'tres'" also matches Stage 2's own disclosure trigger.
       const entryFinder = `(() => { const groups = document.querySelectorAll('[role="group"][aria-label^="Stage "]'); for (const g of groups) { const btn = Array.from(g.querySelectorAll('button')).find((el) => el.textContent.toLowerCase().includes('tres')); if (btn) return btn; } return null; })()`;
       const entryExists = await cdp.evaluate(`!!${entryFinder}`);
       if (!entryExists) {
@@ -409,18 +337,9 @@ async function main() {
         await cdp.screenshot(path.join(SHOTS_DIR, '05-turn-a-panel-preselected.png'));
         findings.push(`Activating the "tres" chain entry opened the panel pre-selected on it (decision 13); focus landed on the selected tree row: ${focusOnSelected}.`);
 
-        // Gate round 3 (M7, code-reviewer/accessibility-auditor High on PR #899): the pre-select
-        // focus above landed via a plain `.focus()` call, which Chromium does not always treat
-        // as keyboard-originated for `:focus-visible` purposes. A real arrow key (`Input.
-        // dispatchKeyEvent`, not a script `.focus()`) is unambiguously keyboard input, so the row
-        // it moves focus to is a genuine `:focus-visible` test case -- the exact case the fix
-        // (`focus-visible:outline-solid`, SubagentPanel.tsx) targets. No new model turn needed:
-        // reuses the tree already open from the pre-select above. `ArrowUp`, not `ArrowDown`:
-        // "tres" is Stage 2's only agent, so it is the LAST row in start order -- `ArrowDown`
-        // from the last row has no next row to move to and never fires (confirmed live: a prior
-        // run's own `ArrowDown` wait timed out here). Wrapped in its own `try`/`catch` so a
-        // failure in this SUPPLEMENTARY check can never swallow the close/focus-return check
-        // below, which is the one this round's actual acceptance criteria need.
+        // The pre-select used `.focus()`, which Chromium may not treat as keyboard for `:focus-visible`; a real arrow key
+        // (`Input.dispatchKeyEvent`) is. `ArrowUp` because "tres" is the last row and `ArrowDown` never fires there.
+        // Own try/catch so this supplementary check cannot swallow the close/focus-return check below.
         try {
           await pressKey(cdp, 'ArrowUp', 38);
           await cdp.waitFor(
@@ -454,15 +373,10 @@ async function main() {
       notExercised.push(`Chain row / pre-select / focus-return path did not complete: ${err.message}`);
     }
 
-    // ---- Scenario (c): toggle "Show thinking" off, confirm Stage count/numbering unchanged ----
     try {
       assertExeUnchanged(exePath, exeHash, 'before thinking-toggle check');
       const stagesBefore = await cdp.evaluate(`(document.querySelector('[aria-label="Transcript"]')?.textContent.match(/Stage \\d+/g) ?? []).join(',')`);
-      // Gate round 2 fix ([CRITICAL] N-new, G899Tests): the prior version compared `stagesBefore
-      // === stagesAfter` unconditionally, so two EMPTY strings (no "Stage N" text ever found,
-      // meaning this check was run against a build with no Stage rendering at all, or ran before
-      // the chain-row wait above actually settled) silently passed as "identical: true". Assert
-      // non-empty first, so a vacuous pass is impossible.
+      // Assert non-empty first: two empty strings (no "Stage N" text found) would otherwise pass `stagesBefore === stagesAfter` vacuously.
       if (!stagesBefore) throw new Error('stagesBefore matched empty: no "Stage N" text found before toggling -- this check cannot prove anything about numbering stability.');
       await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('thinking', false)`);
       await sleep(500);
@@ -484,26 +398,17 @@ async function main() {
       notExercised.push(`Show-thinking toggle check failed or regressed: ${err.message}`);
     }
 
-    // ---- Scenario (b): a second turn, Stopped mid-run -> Cancelled status word, no overlap ----
     try {
       await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
       await cdp.clickByLabel('Send message');
       await cdp.waitFor(
-        // Exact-text match on a span (the subagent row's own label), not a substring-anywhere
-        // check -- the user's own prompt bubble already contains the word "quattro" in prose,
-        // so a substring check resolves instantly, before the model has even called task().
+        // Exact-text span match: the user's prompt bubble already contains "quattro", so a substring check resolves before task() is called.
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return false; return Array.from(t.querySelectorAll('span')).some((el) => el.textContent.trim().toLowerCase() === 'quattro'); })()`,
         { timeoutMs: 60_000, label: 'Turn (b) subagent "quattro" row rendered (its own label span, case-insensitive -- the model may title-case the subagent name)' },
       );
       await cdp.screenshot(path.join(SHOTS_DIR, '08-turn-b-running.png'));
-      // Measured overlap check: the status word (meta slot) and the label (agent name/Stage N)
-      // must not share horizontal space -- read both elements' own getBoundingClientRect. Gate
-      // round 2 fix: starts from the exact label span (same query as the waitFor above), then
-      // walks up to its own `CollapsedLine` row container (`rounded-md`, that component's own
-      // class) -- the prior "any element whose combined textContent includes both substrings"
-      // search could match an unrelated ancestor wrapping the whole transcript (anything with
-      // "quattro" and "Running" ANYWHERE inside it, observed live matching an unrelated
-      // "Info:" notice row instead).
+      // Start from the exact label span and climb to its `CollapsedLine` row (`rounded-md`); matching any element containing both
+      // substrings hit an unrelated transcript-wide ancestor (live: an "Info:" notice row).
       const runningLayout = await cdp.evaluate(
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; const label = Array.from(t.querySelectorAll('span')).find((el) => el.textContent.trim().toLowerCase() === 'quattro'); const row = label ? label.closest('[class*="rounded-md"]') : null; if (!row || !row.textContent.includes('Running')) return null; const r = row.getBoundingClientRect(); return { rowText: row.textContent.trim().slice(0, 120), rowWidth: r.width }; })()`,
       );
@@ -515,9 +420,7 @@ async function main() {
         { timeoutMs: 30_000, label: 'Turn (b) subagent settled to Cancelled after Stop' },
       );
       await cdp.screenshot(path.join(SHOTS_DIR, '09-turn-b-cancelled.png'));
-      // Confirm the visible "Cancelled" word sits in the meta slot (not inside the icon's own
-      // fixed-width span) and does not visually collide with the label text -- compare the
-      // label span's right edge against the word's left edge.
+      // The Cancelled word must sit in the meta slot, not the icon's fixed-width span, and not collide with the label.
       const cancelledLayout = await cdp.evaluate(
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; const wordEl = Array.from(t.querySelectorAll('span')).find((el) => el.textContent.trim() === 'Cancelled'); if (!wordEl) return { found: false }; const wr = wordEl.getBoundingClientRect(); const row = wordEl.closest('div'); const labelEl = row ? Array.from(row.querySelectorAll('span')).find((el) => el !== wordEl && el.textContent.toLowerCase().includes('quattro')) : null; const lr = labelEl ? labelEl.getBoundingClientRect() : null; return { found: true, wordRect: { x: wr.x, width: wr.width }, labelRect: lr ? { x: lr.x, right: lr.x + lr.width } : null, overlaps: lr ? wr.x < lr.x + lr.width : null }; })()`,
       );
@@ -529,10 +432,7 @@ async function main() {
 
     writeFileSync(path.join(SHOTS_DIR, 'findings.json'), JSON.stringify({ findings, notExercised }, null, 2));
     if (notExercised.length) {
-      // Gate round 2 fix ([CRITICAL] N-new): the prior version always printed PASS regardless of
-      // this list, so an incomplete run (a target missing, an assertion that degraded itself to
-      // "not exercised" instead of failing) was indistinguishable from a genuinely clean one in
-      // both this console output and the caller's exit code.
+      // PASS must depend on this list: an incomplete run (a missing target, an assertion degraded to "not exercised") must not look clean.
       console.log('verify-563-gate1: INCOMPLETE -- see findings below, then NOT EXERCISED.');
       for (const f of findings) console.log(' -', f);
       console.log('verify-563-gate1: NOT EXERCISED:');

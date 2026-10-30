@@ -1,37 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #911 (a user-initiated Stop mid-flight must settle a tool row to a
-// neutral `cancelled` treatment, never the full failed/red treatment a genuine failure gets).
-// Modelled on `scripts/verify-570-tool-colours.mjs` (the real Stop button, `readHeaderColours`'s
-// never-guess-from-class-names approach to computed colour) and `scripts/verify-1000-stage-defer.mjs`
-// (fake-omp fixture, `report.json`, `clearKnownOutputFiles`, themed screenshots).
-//
-// New fixture `scripts/fixtures/omp-frames/stop-911.jsonl` (AGENTS.md: a fake-omp frame fixture
-// genuinely needed here -- no existing tape scripts an `abort_and_restore_queue` wait, and a real `omp`'s own abort
-// timing is not deterministic enough to assert a settled DOM state against, unlike #570's own
-// turn (c), which only ever RECORDED what happened, asserting nothing). Three turns against one
-// scratch Session:
-//   Turn A: a `read` call that finishes immediately (done, unaffected baseline), then a `bash`
-//     call that stays running until the script's own REAL Stop click sends OMP's `abort_and_restore_queue` command
-//     -- the fixture then settles that SAME call's own `tool_execution_end` with `isError:true`
-//     and `result.content` reading "Command aborted" (OMP's own real wire shape confirmed live
-//     at #570's own gate round 1, `verify-570-tool-colours.mjs` turn (c), 2026-10-16), followed by
-//     `prompt_result{status:"aborted"}`.
-//   Turn B: a second, genuine `bash` failure (`isError:true`, no abort in flight for this turn --
-//     `AgentState.turn_abort_requested` was cleared when turn A settled) -- proves a real failure
-//     in a LATER turn still settles `error`, never `cancelled`.
-//
-// THE ONE RED/GREEN DISCRIMINATOR: turn A's `bash` row settling to the neutral `cancelled`
-// treatment (stop-circle icon, muted colour token, "Stopped" label, no `aria-describedby`/Error
-// line) instead of `error` (red icon/label, an Error line reading "Command aborted"). MUST FAIL on
-// `origin/main`: there, `ToolStatus` has no `Cancelled` variant and `apply_tool_execution_end`
-// always maps `isError:true` to `Error` regardless of why -- turn A's row would read `error`
-// exactly like turn B's, with an Error line reading "Command aborted".
-//
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task, and the fix
-// itself is Rust-side (`ToolStatus::Cancelled`, `AgentState.turn_abort_requested`), so the live
-// check cannot genuinely pass without a rebuilt exe containing it -- `node --check` plus a real
-// `import()` load-check are the only commands that have actually been run against this file and
-// the new fixture (same precedent `verify-1000-stage-defer.mjs`'s own header comment set).
+// Live CDP check for #911: a user-initiated Stop must settle a tool row to neutral `cancelled`, never red `error`.
+// Uses fixture `fixtures/omp-frames/stop-911.jsonl` (real omp abort timing is non-deterministic).
+// Turn A: `bash` is stopped mid-flight and must show neutral "Stopped". Turn B: a genuine bash failure must stay `error`.
+// Fails on a build where `apply_tool_execution_end` maps every `isError:true` to `Error`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -80,8 +51,7 @@ const THEMES = [
 
 const TRANSCRIPT_BUTTONS = `Array.from(document.querySelectorAll('[aria-label="Transcript"] button'))`;
 
-// The `read` call's solo row is never command-style (`COMMAND_STYLE_TOOLS` is bash/grep only),
-// so it keeps its own visible label ("Read", `ToolGroupRow`'s `visibleLabel`, #1208 verb map).
+// Solo `read` rows aren't command-style (COMMAND_STYLE_TOOLS is bash/grep only), so they keep the "Read" label.
 function rowByLabelFinder(text) {
   return `(${TRANSCRIPT_BUTTONS}).find((el) => {
     const label = el.querySelector('[data-slot="collapsed-line-label"]');
@@ -89,10 +59,7 @@ function rowByLabelFinder(text) {
   })`;
 }
 
-// A solo `bash` row drops its own tool-name label (M2, command-style) and shows "$ <command>" as
-// its summary instead (`commandRowText`) -- found by a distinctive substring of its own command
-// text, never by index, so turn A's stopped call and turn B's genuinely-failed call (both
-// `bash`, in different turns, never merged into one group either way) are never confused.
+// Find the solo `bash` row by command substring, never by index, so turn A's and B's rows can't be confused.
 function rowByCommandSubstringFinder(substring) {
   return `(${TRANSCRIPT_BUTTONS}).find((el) => {
     const s = el.querySelector('span.min-w-0.flex-1');
@@ -104,12 +71,7 @@ const READ_ROW = rowByLabelFinder('Read');
 const STOPPED_BASH_ROW = rowByCommandSubstringFinder('sleep 30');
 const FAILED_BASH_ROW = rowByCommandSubstringFinder('definitely-not-a-real-path-911');
 
-// Reads the row's own status icon colour, accessible status word (`StatusIcon`'s own sr-only
-// span, scoped to the icon SLOT specifically -- `span.flex.h-5.w-4`, `CollapsedLine.tsx` -- never
-// the meta slot's own unrelated `, ` separator sr-only span), and whether an Error line is
-// mounted at all (`aria-describedby` is only ever set when `detail !== undefined`,
-// `CollapsedLine.tsx`'s own `showDetail`/`detailMounted`) -- never guessed from class names, the
-// same discipline `verify-570-tool-colours.mjs`'s own `readHeaderColours` already established.
+// Status icon is scoped to `span.flex.h-5.w-4` (not the meta slot's `, ` span); `aria-describedby` is set only when `detail !== undefined`.
 function rowStateExpr(finderExpr) {
   return `(() => {
     const header = (${finderExpr});
@@ -201,8 +163,7 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
 
-    // Shim-confirmed guard (same pattern as verify-862/941/991/1000): without this, a silently-
-    // wrong fake-omp shim could still let the whole run "pass" on UI state alone.
+    // Shim-confirmed guard: otherwise a wrong fake-omp shim could let the run pass on UI state alone.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-911: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
@@ -236,17 +197,14 @@ async function main() {
     }
 
     await cdp.waitFor(`(${STOPPED_BASH_ROW}) !== undefined`, { timeoutMs: 15_000, label: 'bash row (to be stopped) rendered' });
-    // Gate-fix (Main, 2026-10-18): confirm the call is GENUINELY running before Stop is
-    // clicked -- without this, a fast-settling fixture replay could click Stop after the row
-    // already moved on, making the whole discriminator meaningless.
+    // Confirm the call is genuinely running before Stop: a fast fixture replay could otherwise click after the row moved on.
     await cdp.waitFor(`${rowStateExpr(STOPPED_BASH_ROW)}?.statusWord === 'Running'`, {
       timeoutMs: 15_000,
       label: 'bash row genuinely Running before Stop is clicked'
     });
     await cdp.screenshot(path.join(SHOTS_DIR, '01-turn-a-bash-running.png'));
 
-    // Real Stop click -- sends OMP's own `abort_and_restore_queue` command, which `stop-911.jsonl`'s tape is
-    // paused waiting for (`{"__wait__":["abort_and_restore_queue"]}`) before it ever settles the running call.
+    // Real Stop click sends `abort_and_restore_queue`, which the `stop-911.jsonl` tape waits for (`{"__wait__":["abort_and_restore_queue"]}`).
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[aria-label="Stop"]'); return !!b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 15_000, label: 'Stop button enabled' }
@@ -297,9 +255,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '03-turn-b-genuine-failure-red.png'));
 
-    // Gate-fix (Main, 2026-10-18): colour-token comparisons run ONCE PER THEME (not only
-    // under the default theme) -- both tokens resolve differently per theme, so checking them
-    // only before this loop started would never catch a theme-specific regression.
+    // Colour tokens resolve differently per theme, so compare once per theme, not only under the default.
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
       const mutedForeground = await resolveCssVarColor(cdp, '--muted-foreground', 'color');
@@ -326,9 +282,6 @@ async function main() {
     notExercised.push(
       "This fixture's own turn-A abort sequence (`tool_execution_start`, a REAL `abort_and_restore_queue` wait, then that same call's own `tool_execution_end{isError:true, \"Command aborted\"}`, then `prompt_result{status:\"aborted\"}`) is hand-written against the documented wire contract (src/shared/frames.ts's PromptResultFrame.status already lists 'aborted'; transcript.rs's own apply_prompt_result_notice already has an \"aborted\" arm) and against issue #911's own live finding (verify-570-tool-colours.mjs turn (c), 2026-10-16, real signed-in omp, which captured this exact isError:true/\"Command aborted\" shape once, live) -- it is NOT itself a fresh live capture of a real omp's own abort response; re-probing a real omp for it was out of scope for this fix."
     );
-    // Issue #911 live-verified (build slot granted by Main, 2026-10-18): ran end to end,
-    // 0 failures, screenshots viewed in all 3 themes. The "written, not run" note this script
-    // carried before that run is removed -- it is no longer true.
 
     const verdict = failures.length > 0 ? 'FAILED' : 'DONE';
     const exitCode = failures.length > 0 ? 1 : 0;

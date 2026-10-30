@@ -1,30 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for issue #570 (tool row colour treatment), gate round 1 requirement.
-//
-// Drives a REAL `omp` (resolved from PATH, ambient already-signed-in default profile, no
-// `OMP_PROFILE` override), the same isolation posture `verify-565-spine.mjs`/this repo's own
-// `docs/spike/*-probe.mjs` scripts already use: scratch cwd/worktree/`REFRACT_DATA_DIR` never
-// touch Stuart's real Session list. Spends real model tokens, tiny echo-only prompts only.
-//
-// The exe under test is tied to the commit two ways (gate round 1, test-reviewer Low): rebuild
-// immediately before this script runs (never a reused, possibly sibling-lane-clobbered exe --
-// gate round 1's own first rerun lost exactly this race once), and assert a #570-only string
-// (`hideDetailWhenOpen`) is present in the built renderer bundle before trusting anything else.
-//
-// Three turns, one scratch Session (Approval mode seeded to Auto so no approval-card grouping
-// boundary ever exists, same root-cause fix `verify-565-spine.mjs` already applied):
-//   (a) three bash calls, the SECOND deliberately failing (with no output, to directly exercise
-//       gate round 1's exit-code fallback fix) and the THIRD deliberately slow -- a window where
-//       the group is still "running" (third call in flight) but already has one failed member,
-//       to catch decision 12's "N failed" meta colour showing mid-run while the header's own
-//       icon/label stay neutral until the group SETTLES.
-//   (b) a solo failing bash call -- decision 6's Error line must show whether collapsed or
-//       expanded, decision 4's icon+label/summary colour (M2 moves it to summary once the
-//       label is dropped for this command-style call), decision 10's no-duplicate-in-expansion.
-//   (c) a slow bash call, stopped (Stop button) before it finishes -- PURELY DIAGNOSTIC (gate
-//       round 1, G909Arch M3 [INFERENCE]): an ordinary graceful Stop is not what model.ts's own
-//       'interrupted' status comes from (a died PROCESS), so this turn asserts nothing, only
-//       RECORDS what the row settles to (colour, label, status word).
+// Live CDP check for #570 (tool row colour treatment) against a real `omp` with scratch
+// cwd/worktree/REFRACT_DATA_DIR (spends a few model tokens on echo-only prompts). Rebuild right
+// before running, and assert `hideDetailWhenOpen` is in the built bundle so the exe matches the commit.
+// Turns: (a) three bash calls, #2 failing and #3 slow; (b) a solo failing call; (c) a stopped slow
+// call, diagnostic only, since a graceful Stop is not what produces 'interrupted' (a died process).
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -46,12 +25,9 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+// Requires the shared CARGO_TARGET_DIR; never falls back to a worktree-local src-tauri/target (#946).
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-// Gate round 1 (code-reviewer Low): a hard-coded user path. Overridable; defaults to a fresh,
-// timestamped folder under the OS temp dir so a rerun never mixes its own screenshots with a
-// stale prior run's (the exact confusion gate round 1's test-reviewer/G909Arch findings caught:
-// shot 00 from an earlier session, shot 05 claimed but never written).
+// Overridable; defaults to a fresh timestamped temp folder so reruns never mix screenshots.
 const SHOTS_DIR = process.env.REFRACT_570_SHOTS_DIR || path.join(tmpdir(), 'refract-570-gate1-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 const TURN_A_PROMPT =
@@ -62,9 +38,8 @@ const TURN_C_PROMPT =
   "Make exactly ONE bash tool call: run exactly `sleep 20`. Then reply with exactly the single word 't570c' and nothing else.";
 const TURN_A_SENTINEL = 't570a';
 const TURN_B_SENTINEL = 't570b';
-// #570-only DOM marker: matches a `ToolGroupRow`/solo header by its label text ("bash", matching
-// #632's "bash ×N" multi-call form too), falling back to a label-less button whose own summary
-// starts with "$ " (M2 drops the label for a solo/member command-style row; `commandRowText`).
+// Matches a `ToolGroupRow`/solo header by its "bash" label (or "bash ×N", #632), falling back to a
+// label-less button whose summary starts with "$ " (`commandRowText`).
 const BASH_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
     const label = el.querySelector('[data-slot="collapsed-line-label"]');
@@ -120,10 +95,8 @@ async function readHeaderColours(cdp, index) {
 }
 
 
-// Gate round 1 (test-reviewer Low): tie the exe under test to the actual commit, not merely to a
-// comment's own assertion. `hideDetailWhenOpen` (CollapsedLine.tsx) exists only from this story's
-// own commits onward -- grepping the just-built renderer bundle for it is a real, cheap proof
-// that THIS build really contains #570's code, independent of git log reasoning about timing.
+// `hideDetailWhenOpen` (CollapsedLine.tsx) only exists from this story's commits, so finding it in the
+// built bundle proves the exe contains #570's code.
 function assertBundleContainsStory570Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory570Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
@@ -215,17 +188,14 @@ async function main() {
     }
     findings.push(`Scratch Session launched already in Auto approval mode (pill reads "${approvalPillLabel}").`);
 
-    // ---- Turn (a): 3 bash calls, #2 fails, #3 is slow -- catch the group mid-run ----
     await cdp.typeIntoByLabel('Message', TURN_A_PROMPT);
     await cdp.clickByLabel('Send message');
 
     let midRunCapture = null;
     let midRunGenuine = false;
     try {
-      // Genuinely mid-run (decision 12) means the group's OWN header icon is still the spinner
-      // (`animate-spin`) -- not merely "fewer than 3 items known yet", which can ALSO be read
-      // between one call ending and the next one starting (a real, correctly-red gap: with no
-      // item currently running, `status` is accurately 'error', not a mid-run violation).
+      // Mid-run means the header icon is still the spinner (`animate-spin`); "fewer than 3 items"
+      // also occurs between calls, where status is correctly 'error'.
       await cdp.waitFor(
         `(() => { const h = (${BASH_HEADER_FINDER})[0]; if (!h) return false; const icon = h.querySelector('span.flex svg, span > svg'); const spinning = icon && getComputedStyle(icon).animationName !== 'none'; return spinning && /\\d+ failed/.test(h.textContent); })()`,
         { timeoutMs: 15_000, label: 'Group header still spinning (a member genuinely in flight) while meta already shows a failed count' },
@@ -283,10 +253,8 @@ async function main() {
       if (!groupColoursSettled.detailText) failures.push('Settled failed group header: no Error line (aria-describedby target) found while collapsed -- decision 9 requires the latest failed member\'s line.');
       else {
         findings.push(`Settled group header Error line (collapsed): "${groupColoursSettled.detailText}".`);
-        // Gate round 1 (code-reviewer/G909Arch High): the ORIGINAL cut showed OMP's own
-        // "(no output)" placeholder here and threw away the exit code. Assert the fix, not just
-        // log it: the failing call in turn (a) is a silent `exit 9`, so the line must now read
-        // the exit-code fallback, never the placeholder and never a bare "Failed.".
+        // The failing call is a silent `exit 9`: the line must show the exit-code fallback, not OMP's
+        // "(no output)" placeholder or a bare "Failed.".
         if (groupColoursSettled.detailText === '(no output)') failures.push('Settled group header Error line still reads OMP\'s own "(no output)" placeholder -- the gate round 1 exit-code fallback fix did not take effect.');
         else if (groupColoursSettled.detailText === 'Failed.') failures.push('Settled group header Error line reads the generic "Failed." fallback -- the call\'s own exit code (9) was known and should have been shown instead.');
         else if (!/exited with code 9/i.test(groupColoursSettled.detailText)) failures.push(`Settled group header Error line reads "${groupColoursSettled.detailText}", expected it to contain "exited with code 9" (the exit 9 call's own exit status, gate round 1 fix).`);
@@ -297,9 +265,7 @@ async function main() {
         else findings.push('Header trigger\'s aria-describedby correctly names the Error line\'s id (decision 15).');
       }
     }
-    // Gate round 1 (accessibility-auditor Low): measure the REAL accessible name via the AX
-    // tree, not just worked out from the DOM, to confirm the new meta separator actually reads
-    // as distinct words rather than a joined "1 failed2 interrupted".
+    // Read the real accessible name from the AX tree to confirm the meta separator reads as distinct words.
     const groupHeaderAx = await getAccessibleNameAndRole(cdp, `(${BASH_HEADER_FINDER})[0]`);
     if (groupHeaderAx.name && /\d failed\d/.test(groupHeaderAx.name.replace(/\s+/g, ''))) {
       failures.push(`Group header accessible name "${groupHeaderAx.name}" still joins two counts with no separating word boundary.`);
@@ -308,9 +274,7 @@ async function main() {
     } else {
       notExercised.push('Could not read the group header\'s accessible name via the AX tree.');
     }
-    // Gate round 2 (Main): a doubled space before the comma separator ("...+ 2 others , 1
-    // failed") was measured in round 1 -- an accname-algorithm artifact from the separator
-    // sitting as its own sibling node. Assert the fix, not just eyeball the name above.
+    // A separator sibling node once produced a doubled space before the comma in the accname.
     if (groupHeaderAx.name && groupHeaderAx.name.includes(' , ')) {
       failures.push(`Group header accessible name "${groupHeaderAx.name}" still has a doubled space before the comma separator (gate round 2 fix did not take effect).`);
     } else if (groupHeaderAx.name) {
@@ -318,11 +282,8 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-collapsed-failed-group.png'));
 
-    // ---- Expand: header's own Error line must disappear; each member shows its own ----
-    // Gate round 2 (G909A11y/G909Arch N6): mark the header's own Error line <p> BEFORE
-    // collapsing/expanding, so a later check can prove it is the SAME DOM node throughout (kept
-    // mounted, only `hidden` toggled) rather than unmounted and remounted on each toggle -- the
-    // exact re-announce-on-collapse bug this round fixed.
+    // Mark the header's Error line <p> first, to prove later it stays the same mounted node (only
+    // `hidden` toggles), so it is not re-announced on collapse.
     const detailMarker = await cdp.evaluate(`(() => {
       const header = (${BASH_HEADER_FINDER})[0];
       const id = header ? header.getAttribute('aria-describedby') : null;
@@ -388,7 +349,6 @@ async function main() {
       else findings.push('Gate round 2 (N6): the SAME marked Error line <p> (not a fresh node) reappears, visible, after re-collapsing -- the re-announce-on-collapse fix holds across a full expand/collapse cycle.');
     }
 
-    // ---- Turn (b): solo failing bash call ----
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(
@@ -404,7 +364,7 @@ async function main() {
     const FOOTER_LEAK_PATTERN = /^(?:Wall time: |\(no output\)$)/;
     if (!soloCollapsed?.detailText) failures.push('Solo failed call: no Error line found while collapsed (decision 6).');
     else if (FOOTER_LEAK_PATTERN.test(soloCollapsed.detailText)) failures.push(`Solo failed call Error line reads "${soloCollapsed.detailText}" -- OMP's own wrapper footer/placeholder leaked through (decision 7).`);
-    // Gate round 2 (same class Main ruled on for #632's hostile check): real stderr vs OMP's exit-code fallback is this machine's OMP line-order choice, #650, not a regression.
+    // Real stderr vs OMP's exit-code fallback depends on this machine's OMP line order, not a regression (#650).
     else findings.push(`Solo failed call Error line (collapsed) reads: "${soloCollapsed.detailText}" -- ${soloCollapsed.detailText.includes('cannot access') ? 'the real stderr line' : "OMP's own exit-code fallback, not the real stderr line (errorLine()/OMP line-order gap, #650)"}.`);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-dark-solo-failed-collapsed.png'));
 
@@ -425,7 +385,6 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '04-dark-solo-failed-expanded.png'));
     await setBashHeaderExpanded(cdp, soloIndex, false);
 
-    // ---- Themes: Obsidian, Dark high contrast (real Profile-menu Theme submenu) ----
     await setBashHeaderExpanded(cdp, 0, true);
     let themeChecksOk = true;
     try {
@@ -441,15 +400,12 @@ async function main() {
       failures.push(`Could not drive the real Profile-menu Theme submenu (${err.message}).`);
     }
 
-    // ---- Narrow width (360px chat): no horizontal overflow, Error line still present+clamped ----
+    // The group is still expanded, so its failed member carries the Error line (the header's is hidden while open).
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     const narrowOverflow = await cdp.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth + 2`);
     if (narrowOverflow) failures.push('A horizontal scrollbar appeared at 360px width.');
     else findings.push('No horizontal scroll at 360px width (decision 18).');
-    // Gate round 1 (test-reviewer Low): the comment claimed this but the check never measured
-    // the Error line itself at 360px -- the group is still expanded here, so its own failed
-    // MEMBER carries the line (the header's own is hidden while open, decision 9).
     const narrowDetailCheck = await cdp.evaluate(`(() => {
       const ol = document.querySelector('[aria-label="Transcript"] ol.border-l');
       const members = ol ? Array.from(ol.querySelectorAll('li')) : [];
@@ -469,9 +425,7 @@ async function main() {
     await cdp.send('Emulation.clearDeviceMetricsOverride', {});
 
     try {
-      // Escape first: the previous Theme-submenu interaction can leave the profile dropdown
-      // open (gate round 1's own first rerun hit exactly this -- the menu never closed, which
-      // then made every later click target the menu overlay instead of the page underneath).
+      // Escape first: the Theme submenu can leave the profile dropdown open, so later clicks hit its overlay.
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
       await sleep(300);
@@ -480,7 +434,6 @@ async function main() {
       notExercised.push(`Could not confirm reset to Dark theme before reduced-motion check (${err.message}).`);
     }
 
-    // ---- Reduced motion: decision 13, "no motion and no colour transition: instant" ----
     try {
       await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
       const labelTransition = await cdp.evaluate(`(() => {
@@ -501,22 +454,14 @@ async function main() {
       notExercised.push(`Could not collapse the group back down before turn (c) (${err.message}) -- harmless, turn (c) does not depend on this group's own open state.`);
     }
 
-    // ---- Turn (c), run LAST, PURELY DIAGNOSTIC (gate round 1, G909Arch M3): stop a bash call
-    // mid-flight and RECORD whatever status it settles to -- no assertion of a specific value.
-    // `model.ts`'s own doc comment on `'interrupted'` ties that status to
-    // `detectUnexpectedTermination` on a Conversation whose PROCESS has actually died, not to an
-    // ordinary graceful Stop, so asserting "must reach interrupted" here would test the wrong
-    // thing. Moved to the very end: stopping a mid-flight call can leave the Session in a
-    // recovering/stopped state, which must never block the earlier, load-bearing assertions
-    // (colour/Error line/theme/width/motion) above.
+    // Diagnostic only, run last: a graceful Stop does not yield 'interrupted' (that needs a died
+    // process), and stopping can leave the Session recovering, which must not block earlier assertions.
     try {
       await cdp.typeIntoByLabel('Message', TURN_C_PROMPT);
       await cdp.clickByLabel('Send message');
       await cdp.waitFor(`(${BASH_HEADER_FINDER}).length > ${headerCountAfterB}`, { timeoutMs: 20_000, label: 'Turn (c) bash header appears' });
       await sleep(500);
       await cdp.clickByLabel('Stop');
-      // Give the stop + any settle time to land, then record whatever the row actually shows --
-      // not a specific expected value -- so M3's open question gets a real, observed answer.
       await sleep(3000);
       const stoppedRowInfo = await cdp.evaluate(`(() => {
         const h = (${BASH_HEADER_FINDER}).at(-1);
@@ -541,10 +486,7 @@ async function main() {
         findings.push(`Turn (c), 3s after clicking Stop mid-flight (M3, diagnostic only, no specific value asserted): status word "${stoppedRowInfo.srStatusWord}", label colour ${stoppedRowInfo.labelColor}, summary colour ${stoppedRowInfo.summaryColor}, Error line ${stoppedRowInfo.hasErrorLine ? `present ("${stoppedRowInfo.detailText}")` : 'absent'}.`);
         const stoppedColoured = stoppedRowInfo.labelColor === errorColor || stoppedRowInfo.summaryColor === errorColor;
         if (stoppedColoured) {
-          // Informational, NOT a script failure: #570's own code (toolStatus.tsx's
-          // 'interrupted'/'exited' branches) is unmodified here, and the gate explicitly scoped
-          // M3 as "no code change in this PR" -- a pre-existing #510/#490 question, surfaced for
-          // the record, never a #570 regression this script should fail on.
+          // Informational: the 'interrupted'/'exited' branches are pre-existing (#510/#490), not a #570 regression.
           findings.push(`Turn (c), M3 CONFIRMED (not merely [INFERENCE]): a user-initiated Stop produced the FULL error-colour treatment (label ${stoppedRowInfo.labelColor}, summary ${stoppedRowInfo.summaryColor}, status word "${stoppedRowInfo.srStatusWord}") -- decision 5's reasoning ("nothing is known to have gone wrong") argues this should stay neutral. PRE-EXISTING #510 behaviour, unmodified by #570; a gap for #510/#490 to resolve, not scored as a #570 failure.`);
         } else {
           findings.push(`Turn (c): a user-initiated Stop did NOT produce the error colour (label stayed ${stoppedRowInfo.labelColor}, summary ${stoppedRowInfo.summaryColor}) -- M3's [INFERENCE] does not reproduce in this run.`);

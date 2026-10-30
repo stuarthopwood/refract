@@ -1,8 +1,5 @@
-// Helper functions for verify-891-delete-leftovers.mjs, split out to keep that file under the
-// repo's 600-line soft cap (scripts/check-file-size.mjs). Content-generation (junctions, long
-// paths, read-only files, bulk file counts), spawning/driving the exact holder processes the
-// live check needs, reading registry.json directly, and driving the real Delete dialog over CDP
-// (no existing helper covers this dialog -- #891 is the first live check of it).
+// Helpers for verify-891-delete-leftovers.mjs (split for the file-size cap): fixture generation,
+// holder processes, registry reads, and driving the real Delete dialog over CDP.
 
 import { mkdirSync, writeFileSync, chmodSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -16,10 +13,7 @@ export function readRegistry(dataDir) {
   return JSON.parse(readFileSync(path.join(dataDir, 'registry.json'), 'utf8'));
 }
 
-/** Counts every real file under `dir` recursively (plain synchronous Node `fs` -- the worktree
- * trees scenarios (c)/(d) use for this are tiny). Issue #891 gate round (T2): the live check's
- * own before/after snapshot proving a refused Delete changed nothing on disk. Never follows a
- * symlink, matching the production remover's own rule. */
+/** Counts every real file under `dir` recursively; never follows a symlink, matching the production remover. */
 export function countFilesRecursive(dir) {
   let count = 0;
   let entries;
@@ -44,11 +38,8 @@ export function sessionByName(dataDir, name) {
   return session;
 }
 
-/** Mirrors `git/worktrees.rs`'s own `add_worktree_with_generated_name`: the worktree folder's
- * own basename is always used as the git admin entry's directory name too, so the admin dir is
- * `<repo>/.git/worktrees/<basename(worktreePath)>`. Used to simulate a leftover UNREGISTERED
- * worktree (scenario b): git already "forgot" the worktree, but the folder and its content are
- * still on disk. */
+/** Mirrors `git/worktrees.rs`: git's admin dir is `<repo>/.git/worktrees/<basename(worktreePath)>`.
+ * Dropping it simulates a leftover UNREGISTERED worktree (scenario b). */
 export function dropAdminEntry(repoDir, worktreePath) {
   const name = path.basename(worktreePath);
   assert(name && name.length > 3, `a real worktree folder name, got ${JSON.stringify(name)}`);
@@ -58,14 +49,8 @@ export function dropAdminEntry(repoDir, worktreePath) {
   return adminDir;
 }
 
-/** Confirms git itself no longer lists `worktreePath` (the post-delete porcelain check the
- * production code itself runs). Issue #891 gate round (T1): exact, normalized per-line
- * comparison against each distinct `worktree <path>` porcelain entry -- the previous
- * `stdout.includes(worktreePath)` substring check could both false-positive (a worktree path
- * that happens to be a substring of an unrelated sibling's longer path, the exact "lookalike
- * sibling" class of bug this whole issue's safety tests already guard against in Rust) and
- * false-negative (a different case or alias of the same real path). Mirrors
- * `worktree_validity.rs`'s own `parse_porcelain_worktree_paths`/`comparable_path` shape. */
+/** Confirms git no longer lists `worktreePath`. Compares normalised per-line porcelain entries, not substrings,
+ * so a lookalike sibling path cannot false-positive and a case/alias difference cannot false-negative. */
 export function isRegisteredWorktree(repoDir, worktreePath) {
   const result = spawnSync('git', ['-C', repoDir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', windowsHide: true });
   const normalize = (p) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
@@ -77,17 +62,13 @@ export function isRegisteredWorktree(repoDir, worktreePath) {
   return registered.includes(wanted);
 }
 
-/** Scenario (a): a full, real-world-shaped worktree -- a few thousand files under a generated
- * `node_modules`-named folder, a path over 260 characters, read-only files, and a junction
- * pointing OUTSIDE the worktree to `canaryDir` (the safety property under test: the canary's own
- * files must survive this worktree's deletion completely untouched). */
+/** Scenario (a): a real-world-shaped worktree (thousands of files under `node_modules`, a >260-char path, read-only files)
+ * with a junction OUTSIDE the worktree to `canaryDir`; the canary's files must survive deletion untouched. */
 export function populateFullWorktree(worktreePath, canaryDir) {
   mkdirSync(canaryDir, { recursive: true });
   const canaryFile = path.join(canaryDir, 'canary.txt');
   writeFileSync(canaryFile, 'do not touch -- outside the worktree');
-  // Issue #891 gate round (T4): read-only, so a bug that somehow reached past the containment
-  // refusal would ALSO have to clear this attribute before deleting it -- the strongest signal
-  // available (short of a real ACL) that nothing on the removal path ever touched it.
+  // Read-only: a removal that escaped containment would also have to clear this attribute.
   chmodSync(canaryFile, 0o444);
 
   const nodeModules = path.join(worktreePath, 'patient', 'client', 'node_modules');
@@ -102,13 +83,12 @@ export function populateFullWorktree(worktreePath, canaryDir) {
     }
   }
 
-  // A junction INSIDE the worktree whose real target is OUTSIDE it entirely -- never followed,
-  // never deleted through.
+  // Junction whose target is outside the worktree: must never be followed or deleted through.
   const junction = path.join(nodeModules, 'linked-store');
   const result = spawnSync('cmd', ['/C', 'mklink', '/J', junction, canaryDir], { encoding: 'utf8', windowsHide: true });
   assert(result.status === 0, `mklink /J created the junction: ${result.stderr || result.stdout}`);
 
-  // A path comfortably over the 260-character MAX_PATH threshold.
+  // Over the 260-character MAX_PATH limit.
   let deep = path.join(worktreePath, 'deep');
   const longName = 'a'.repeat(60);
   for (let i = 0; i < 4; i++) deep = path.join(deep, longName);
@@ -118,7 +98,6 @@ export function populateFullWorktree(worktreePath, canaryDir) {
   assert(longFile.length > 260, `the deep file path is over 260 characters (${longFile.length})`);
   fileCount++;
 
-  // Read-only files.
   const readonlyDir = path.join(worktreePath, 'dist');
   mkdirSync(readonlyDir, { recursive: true });
   for (let f = 0; f < 5; f++) {
@@ -131,9 +110,7 @@ export function populateFullWorktree(worktreePath, canaryDir) {
   return { canaryFile, fileCount };
 }
 
-/** Scenario (b): a plain, unregistered leftover folder full of generated files -- no junctions
- * or long paths needed (the registered path already proves those; this proves the ORPHAN path
- * removes a full folder instead of refusing `NotEmpty`). */
+/** Scenario (b): a plain unregistered leftover folder; proves the ORPHAN path removes it instead of refusing `NotEmpty`. */
 export function populateOrphanWorktree(worktreePath) {
   const nodeModules = path.join(worktreePath, 'node_modules');
   mkdirSync(nodeModules, { recursive: true });
@@ -146,17 +123,9 @@ export function populateOrphanWorktree(worktreePath) {
   }
 }
 
-/** Scenario (f): a deliberately large generated-folder tree so the leftover-summary walk's own
- * per-bucket file count (`fs::leftover_summary::count_files`) takes long enough that clicking
- * Delete immediately after the dialog's `deleteCheck` resolves reliably lands WHILE "Checking
- * files…" is still running -- proving issue #891 gate round item 5 (the walk is cancelled and
- * awaited before the holder preflight, never a false refusal over Refract's own open handles).
- * Issue #891 gate round 2 (H4): widened from 50,000 to 400,000 -- a live run at 50,000 found
- * the walk finishing about 4 SECONDS BEFORE the click (`clickDeleteButton`'s own wait gates
- * only on the separate, much-faster `deleteCheck`, which never opens this folder at all), so
- * that run never actually overlapped; `main()`'s own scenario (f) now asserts the status line
- * right before the click to catch this for real rather than silently reporting a pass that
- * proved nothing. */
+/** Scenario (f): a large generated tree so the leftover-summary walk is still running ("Checking files…") when Delete is
+ * clicked. 400,000 files: at 50,000 the walk finished ~4s before the click and never overlapped, so `main()` also asserts
+ * the status line right before the click. */
 export function populateLargeGeneratedTree(worktreePath, fileCount = 400_000) {
   const nodeModules = path.join(worktreePath, 'node_modules');
   mkdirSync(nodeModules, { recursive: true });
@@ -174,25 +143,15 @@ export function populateLargeGeneratedTree(worktreePath, fileCount = 400_000) {
   return { fileCount: written };
 }
 
-/** Spawns a bare, idle `cmd.exe` with its CURRENT DIRECTORY inside `cwd` -- holds no file
- * handle Restart Manager can see, only the directory-as-cwd handle the rename probe exists for.
- * Never passes a `/C <command>`: that would spawn a grandchild process that inherits the SAME
- * cwd and keeps holding it even after this script kills the `cmd.exe` parent it actually spawned
- * (the bug this live check's own unit-test sibling hit and fixed). stdin is an open PIPE, never
- * written to or closed (not `'ignore'`, a NUL device): a bare interactive `cmd.exe` reading EOF
- * immediately off a NUL stdin exits almost at once instead of staying alive as a cwd holder --
- * confirmed live (this exact test went from reliably catching the holder to silently never
- * catching it once an unrelated fix added a few extra seconds before the rename probe actually
- * ran, giving the already-exiting process time to finish first). An open, never-EOF'd pipe
- * leaves it genuinely blocked waiting for input, the same as a real idle terminal window. */
+/** Spawns a bare idle `cmd.exe` whose CURRENT DIRECTORY is inside `cwd` (a handle Restart Manager cannot see).
+ * No `/C <command>`: a grandchild would inherit the cwd and outlive the kill. stdin must be an open, never-EOF'd pipe
+ * (not 'ignore'/NUL): EOF makes the interactive cmd.exe exit almost at once, so the holder would vanish before the probe. */
 export function spawnCwdHolder(cwd) {
   const child = spawn('cmd.exe', [], { cwd, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
   return child;
 }
 
-/** Spawns a PowerShell process that opens and holds one specific FILE open inside the worktree
- * (never just a cwd) -- the shape Restart Manager's own file-handle scan is meant to catch and
- * name. */
+/** Spawns a PowerShell process holding one FILE open inside the worktree (the shape Restart Manager's file scan catches). */
 export function spawnFileHolder(filePath) {
   const script = `$f = [System.IO.File]::Open('${filePath}', 'Open', 'Read', 'None'); Start-Sleep -Seconds 600`;
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { stdio: 'ignore', windowsHide: true });
@@ -211,15 +170,13 @@ export async function killSpawned(child) {
   });
 }
 
-// ---- Delete dialog driving (new: no existing verify-tauri-*.mjs script touches this dialog) ----
 
 function rowActionsFinderByName(name) {
   return `Array.from(document.querySelectorAll('[data-repository-id] li')).find((li) => li.querySelector('[data-session-open]')?.getAttribute('aria-label')?.startsWith(${JSON.stringify(name)}))?.querySelector('button[aria-label$=" actions"]')`;
 }
 
-/** Opens a named Session row's own "..." menu and clicks "Delete", waiting for the real
- * AlertDialog to mount. Mirrors `openRowActionsMenu`'s hover-then-click pattern (the trigger is
- * revealed by `group-hover`, a bare click can race the reveal). */
+/** Opens a named Session row's "..." menu and clicks "Delete", waiting for the AlertDialog to mount.
+ * Hovers first: the trigger is revealed by `group-hover`, so a bare click can race the reveal. */
 export async function openDeleteDialogFor(cdp, name, shotDir) {
   const triggerFinder = rowActionsFinderByName(name);
   const rowFinder = `(${triggerFinder})?.closest('li')`;
@@ -250,15 +207,9 @@ export async function openDeleteDialogFor(cdp, name, shotDir) {
   }
 }
 
-/** Waits for BOTH the leftover-summary walk AND `deleteCheck` to settle (`waitForDialogSettled`)
- * and returns the leftover list's own rendered text (the generated-folder/other-file list, or
- * '' if nothing was found). Gate round 2: a real bug found live -- the unified status line
- * (gate round 2, M5) shows only ONE "Checking…" message at a time, `deleteCheck`'s own text
- * taking priority, so a narrower wait checking only for the literal "Checking files…" string
- * resolved PREMATURELY whenever `deleteCheck` was still pending while the walk itself was also
- * still running (the status text read "Checking for uncommitted or unpushed work…" instead,
- * masking the still-running walk) -- scenario (a)'s own node_modules-bucket assertion then read
- * an empty, not-yet-populated list. `waitForDialogSettled` checks both signals correctly. */
+/** Waits for BOTH the leftover-summary walk and `deleteCheck` to settle and returns the leftover list text ('' if none).
+ * The status line shows only one "Checking…" at a time (`deleteCheck` first), so waiting on the walk's text alone
+ * resolved prematurely with an empty list. */
 export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
   await waitForDialogSettled(cdp, { timeoutMs });
   return cdp.evaluate(
@@ -266,26 +217,10 @@ export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
   );
 }
 
-/** `cdp.clickByText(text, { inDialog: true })` scopes to `[role="dialog"]`, which a Radix
- * AlertDialog never carries (it is `[role="alertdialog"]`) -- clicks the AlertDialog's own
- * "Delete"/"Retry"/"Deleting…" button directly instead of going through that shared helper.
- * Matches "Delete" OR "Retry" (issue #891 gate round 1 item 2: the button relabels to Retry
- * after any refusal -- a bug this exact helper hit live the first time scenario (c) retried
- * after its cwd-holder refusal, hardcoded to "Delete" only and timing out forever once the
- * button had already relabelled). Waits for the button's own `aria-disabled` to clear first: it
- * stays `true` (Tailwind's own `aria-disabled:pointer-events-none`, `DeleteDialog.tsx`'s
- * `aria-disabled={loading || deleting}`) until the SEPARATE `sessions.deleteCheck` git-status
- * call resolves, which is not the same wait as `waitForLeftoverSummary`'s own leftover-walk
- * completion -- against a real, large worktree the git-status scan can still be in flight after
- * the (much cheaper) leftover-walk has already finished. A real OS-level click dispatched at the
- * button's own coordinates while `pointer-events: none` is still set is silently swallowed: no
- * exception, no renderer console output, nothing -- `handleDelete` is simply never called,
- * which is exactly the "dialog hangs forever" symptom this fixes (confirmed live: an
- * `aria-disabled` read at the exact moment of a premature click came back `"true"`). Issue
- * #891 gate round 2 (H4): accepts an optional `onReadyToClick` callback, invoked AFTER the
- * enabled-wait resolves but immediately before the actual click -- the one point a caller can
- * read dialog state that is genuinely "right before the click", not some earlier moment that
- * may no longer hold once this function's own wait finishes resolving. */
+/** Clicks the AlertDialog's "Delete"/"Retry" button directly: `clickByText({ inDialog })` scopes to `[role="dialog"]`,
+ * which a Radix AlertDialog lacks. Waits for `aria-disabled` to clear first: it stays `true` (pointer-events: none)
+ * until `deleteCheck` resolves, and a click on it is silently swallowed so the dialog hangs forever.
+ * `onReadyToClick` runs after that wait, immediately before the click. */
 export async function clickDeleteButton(cdp, { onReadyToClick } = {}) {
   const findButton = `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete' || el.textContent.trim() === 'Retry')`;
   await cdp.waitFor(`(() => { const b = ${findButton}; return !!b && b.getAttribute('aria-disabled') !== 'true'; })()`, {
@@ -296,22 +231,14 @@ export async function clickDeleteButton(cdp, { onReadyToClick } = {}) {
   await cdp.click(findButton);
 }
 
-/** The dialog's own unified `role="status"` line (`DeleteDialog.tsx`'s `leftoverStatusText`,
- * issue #891 gate round 2 M5) -- '' if the element is somehow missing. Distinct from
- * `waitForLeftoverSummary`'s own wait condition (which only proves the WALK is no longer
- * "Checking files…"): this reads whatever text currently actually occupies that one line,
- * which can still be `deleteCheck`'s own "Checking for uncommitted or unpushed work…" if that
- * has not yet resolved. */
+/** The dialog's unified `role="status"` line text ('' if missing). Unlike `waitForLeftoverSummary`, this can still be
+ * `deleteCheck`'s "Checking for uncommitted or unpushed work…". */
 export async function readLeftoverStatusText(cdp) {
   return cdp.evaluate(`document.querySelector('[role="alertdialog"] [role="status"]')?.textContent || ''`);
 }
 
-/** Waits until BOTH independent checks the Delete dialog runs on open have settled: the
- * leftover-summary walk (no longer "Checking files…") AND `deleteCheck`'s own git-status read
- * (the Delete/Retry button's `aria-disabled` clears). Issue #891 gate round 2 (M5) folded both
- * into ONE status line that shows only whichever is still pending, `deleteCheck`'s own text
- * taking priority -- a caller that needs to read the FINAL leftover-summary/unavailable text
- * reliably (issue #891 gate round 2, H2) must wait for both, not just the walk alone. */
+/** Waits until BOTH on-open checks settle: the leftover-summary walk and `deleteCheck`'s git-status read (button
+ * `aria-disabled` clears). The single status line shows only whichever is pending, so both must be awaited. */
 export async function waitForDialogSettled(cdp, { timeoutMs = 30_000 } = {}) {
   const findButton = `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete' || el.textContent.trim() === 'Retry')`;
   await cdp.waitFor(
@@ -332,13 +259,8 @@ export async function readDialogError(cdp, { timeoutMs = 15_000 } = {}) {
   return cdp.waitFor(`document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent || null`, { timeoutMs, label: 'dialog error text' });
 }
 
-/** Polls until `sessions.list()` reports anything other than `'stopped'` (or `null`, not
- * listed) for the Session named `name` -- Rust's own `SessionAgent::status()`, not a DOM/CSS
- * guess (a `StateIcon` glyph is `aria-hidden`, and its colour class is an implementation
- * detail this test should not depend on). Issue #891, Stuart's decision 2
- * (issuecomment-6273442096): a refused Delete must leave (or put back) the Session's agent
- * running, confirmed here by its REAL status, not merely that the Session row still exists.
- * Resolves to the actual status string once it is anything but `'stopped'`. */
+/** Polls until `sessions.list()` reports the Session `name` as anything but `'stopped'`/`null`, resolving to that status.
+ * Uses Rust's `SessionAgent::status()`, not a DOM/CSS guess: a refused Delete must leave the agent running. */
 
 export async function waitForSessionAgentRunning(cdp, name, { timeoutMs = 20_000 } = {}) {
   return cdp.waitFor(
@@ -347,13 +269,9 @@ export async function waitForSessionAgentRunning(cdp, name, { timeoutMs = 20_000
   );
 }
 
-/** Polls for EITHER the dialog closing (success) OR a non-empty error appearing in its own
- * `role="alert"` paragraph (a backend refusal, e.g. `worktree-held`, or any other delete
- * failure) -- a bare "wait for closed" would otherwise spin for the full timeout on every
- * failure, since a failed delete leaves the dialog open showing the error by design
- * (`DeleteDialog.tsx`'s own `handleDelete`: `setError(...); return` never closes it). Returns
- * `{ closed: true }` or `{ closed: false, error: string }`; throws only if NEITHER happens
- * within `timeoutMs`. */
+/** Polls for the dialog closing (success) or a non-empty `role="alert"` error (a failed delete leaves the dialog open
+ * by design, so waiting only for "closed" would spin to timeout). Returns `{ closed: true }` or
+ * `{ closed: false, error }`; throws only if neither happens within `timeoutMs`. */
 export async function waitForDeleteOutcome(cdp, { timeoutMs = 60_000 } = {}) {
   return cdp.waitFor(
     `(() => { if (!document.querySelector('[role="alertdialog"]')) return { closed: true }; const err = document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent; return err ? { closed: false, error: err } : false; })()`,

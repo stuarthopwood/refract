@@ -1,41 +1,6 @@
 #!/usr/bin/env node
-// Session list search live check (issue #559) against the scratch Tauri debug build. Reuses the
-// shared CDP primitives (verify-tauri-cdp.mjs) and session-list driving helpers
-// (verify-tauri-session-list-helpers.mjs) the #735/#567 scripts already established; adds only
-// what is new here -- driving the search field itself and reading its own announcement region.
-//
-// Proves, against the real rendered DOM (CDP Accessibility domain for accessible names, never
-// textContent):
-//   - Typing a query that matches nothing hides every Project group and Archived, and shows the
-//     "No sessions match" empty state with a working Clear filter button.
-//   - Typing a query matching one Session's name shows only that Session's own Project group
-//     (its OTHER sibling Project hidden entirely), forced OPEN even though it was manually
-//     collapsed before the search started -- and that collapse returns once the query clears.
-//   - Typing a Project's own name shows that whole Project's group (every row), since every
-//     Session in it matches on Project name.
-//   - Esc and the in-field Clear button both restore the full list and the exact pre-search
-//     collapsed/expanded state, asserted via settings.json on disk (byte-identical), not just
-//     the DOM.
-//   - Tab order: Pull requests -> search field -> (Clear filter, only while there is text) ->
-//     Collapse all groups -- and Shift+Tab reverses the same path back to the field.
-//   - The result count announcement (debounced while typing; immediate "Filter cleared").
-//   - The query (and the filtering) survive a Settings round trip (App.tsx remounts the list)
-//     AND switching to a different open Session (not just a view swap).
-//   - Ctrl+N's own fallback, when the search hides every Project, focuses the search field
-//     instead of the (now-absent) quick-create button.
-//   - Branch matching and case-insensitivity: renaming a Session decouples its name from its
-//     (unchanged) branch, and a query for the branch -- including upper-cased -- still matches.
-//   - Renaming a Session out of the active filter (a second rename matching neither its new
-//     name, its branch, nor either Project's own name) moves focus to the search field instead
-//     of <body> once the row (and its own now-matchless Project) actually unmounts -- the #900
-//     pattern.
-//   - Archived is searched the same way, against each archived row's own Project name (run
-//     LAST: this is the only block that needs an archived Session at all, per Main's
-//     2026-10-16 review -- every other check above runs first so one flaky archive step cannot
-//     block them); a query matching an active Session but no archived row hides Archived too
-//     (the reverse case), and so does a totally non-matching query, now that Archived exists.
-//
-// Isolation (refract-tauri-live-check-isolation skill): same pattern as verify-tauri-735.mjs.
+// Session list search live check (#559) against the scratch Tauri debug build: filtering, forced-open groups,
+// collapse-state restore, tab order, announcements, rename/branch matching and Archived, via the real DOM.
 
 import { mkdtempSync, mkdirSync, copyFileSync, existsSync, createWriteStream, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -101,19 +66,13 @@ function buildOmpShim(dir) {
   return out;
 }
 
-// Issue #559 live-check hazard, confirmed live (2026-10-16): the shared `CARGO_TARGET_DIR` is
-// rebuilt by whichever lane's own build runs next, overwriting `debug/refract-tauri.exe` out
-// from under a script that re-reads it on every retry -- a second run here picked up a
-// DIFFERENT exe hash than the first with no code change of its own and failed for an unrelated
-// reason. `REFRACT_559_FROZEN_EXE`, when set, is copied from directly instead of the shared
-// target dir: build once, freeze a copy immediately, then every retry reuses that exact exe.
+// The shared target dir can be rebuilt by another lane mid-run, so `REFRACT_559_FROZEN_EXE` copies a frozen exe instead.
 function copyBuiltExe(destDir) {
   mkdirSync(destDir, { recursive: true });
   const dest = path.join(destDir, 'refract-tauri.exe');
   const src = process.env.REFRACT_559_FROZEN_EXE || path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
   if (!existsSync(src)) throw new Error(`copyBuiltExe: built exe not found at ${src} -- build it first (pnpm exec tauri build --debug --no-bundle)`);
-  // Gate round 2 fix (Medium): the SOURCE file's own mtime -- when cargo actually produced this
-  // exe -- not the copy's (which would just read "now", telling a reviewer nothing).
+  // The source file's mtime (when cargo produced the exe), not the copy's.
   const buildTime = statSync(src).mtime.toISOString();
   copyFileSync(src, dest);
   const hash = createHash('sha256').update(readFileSync(dest)).digest('hex');
@@ -146,11 +105,7 @@ async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourc
 
 function worktreesDirFor(repoDir) { return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir)); }
 
-// Both announcement checks below wait for the EXACT (or matching) text to appear, rather than
-// reading "whatever is there now" -- a region that already holds a PREVIOUS announcement (for
-// example this same search field's own earlier "Filter cleared") reads as non-empty the instant
-// a poll runs, before the real, newly-debounced update has landed; waiting for the specific
-// expected value removes that race instead of needing a hand-tuned sleep before every read.
+// Wait for the exact expected text: a region holding a previous announcement reads non-empty before the debounced update lands.
 async function waitForAnnouncementText(cdp, regionExpr, expected, { timeoutMs = 10_000 } = {}) {
   await cdp.waitFor(`((${regionExpr})?.textContent?.trim() || '') === ${JSON.stringify(expected)}`, {
     timeoutMs,
@@ -164,12 +119,7 @@ async function waitForAnnouncementMatch(cdp, regionExpr, regexSource, { timeoutM
   );
 }
 
-/** Ctrl+N's own fallback text (`announceQuickCreateFallback`, `lib/quickCreateFallback.ts`)
- *  goes through the APP-LEVEL `useChatAreaAnnouncer` (App.tsx's single global
- *  `aria-live="polite"` region, shared with #735's Collapse/Expand announcements) -- a
- *  DIFFERENT region from the search field's own local one, so it needs its own finder: the
- *  first `aria-live="polite"` region that is NOT nested inside the search field's own
- *  `data-session-search-region` wrapper. */
+/** Finds the app-level `aria-live="polite"` region (Ctrl+N fallback text), i.e. the one outside `data-session-search-region`. */
 const CHAT_AREA_ANNOUNCE_REGION = `Array.from(document.querySelectorAll('[aria-live="polite"]')).find((el) => !el.closest('[data-session-search-region]'))`;
 
 async function connectCdp(port, targetPid) {
@@ -181,10 +131,7 @@ async function connectCdp(port, targetPid) {
   return cdp;
 }
 
-/** Wraps the shared `addRepository` helper with failure diagnostics (a screenshot plus the
- *  dialog's own DOM state at the moment the wait timed out) -- added after this exact step
- *  intermittently timed out on its second call with no app-side error logged, so the root
- *  cause needed more than a bare stack trace to isolate. */
+/** Wraps the shared `addRepository` helper with failure diagnostics (screenshot plus dialog DOM) for an intermittent timeout. */
 async function addRepositoryDiag(cdp, dir, evidenceDir, log, label) {
   try {
     await addRepository(cdp, dir);
@@ -209,19 +156,10 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await addRepositoryDiag(cdp, repoB, evidenceDir, log, 'B');
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository B group rendered' });
   log('STEP PASS: both scratch Projects added.');
-  // Gate round 5 (Main's finding 10): the search field's own `role="search"` landmark
-  // (`SessionList.tsx` decision 3) is a real, rendered attribute, not just claimed in prose.
   assert((await cdp.evaluate(`!!document.querySelector('[role="search"][aria-label="Sessions"]')`)) === true, 'the session search field must sit inside a role="search" landmark');
   log('STEP PASS: the search field sits inside a role="search" landmark.');
 
-  // ---- Ctrl+N fallback (run HERE, before any Session exists): App.tsx's own fallback target
-  // resolution (no focused pane, 2+ Projects) only falls into the "no repository resolved"
-  // branch this story changed when NO pane is already focused -- once a Session is created and
-  // open later in this script, Ctrl+N instead targets that Session's own Project directly,
-  // regardless of search, so this is the one point in the run where the fallback genuinely
-  // applies. Without a search query, it would simply focus Project A's own "+" (both groups
-  // render; decision 26 is untouched); with every Project hidden by search, "+" cannot be
-  // found, and the new fallback text must fire instead. ----
+  // Ctrl+N fallback must run before any Session exists: once a Session is open, Ctrl+N targets its Project directly.
   await typeSearch(cdp, 'zzz-no-such-session-zzz');
   await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: 'empty state shown before the Ctrl+N fallback check' });
   await cdp.evaluate(`document.activeElement?.blur()`);
@@ -232,9 +170,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.click(CLEAR_BUTTON);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the Ctrl+N check' });
 
-  // One Session per Project, enough for every check except Archived's own (that needs a second,
-  // archived Session in Project A -- created and archived LAST, per Main's 2026-10-16 review,
-  // so one flaky archive step can never block the checks above it).
+  // Archived's second Session is created and archived last so a flaky archive step can't block earlier checks.
   await createSessionViaQuickCreate(cdp, repoAName);
   const sessionA1Name = await cdp.evaluate(
     `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoAName)})); const btn = group?.querySelector('li [data-session-open]'); return btn ? btn.getAttribute('aria-label').split(',')[0] : null; })()`
@@ -243,8 +179,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   assert(sessionA1Name, `Project A's own Session name must be captured (got ${JSON.stringify(sessionA1Name)})`);
   log(`STEP PASS: Session "${sessionA1Name}" created in Project A; a Session created in Project B.`);
 
-  // Manually collapse Project A -- the state the search's own override must respect once the
-  // query clears, and must NOT respect (forces it open) while a query matches it.
   await cdp.click(groupTriggerFinder(repoAName));
   await cdp.waitFor(`${groupTriggerFinder(repoAName)}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Project A collapsed by its own header click' });
   await sleep(400); // let the 300ms debounced persist land before reading settings.json below
@@ -253,7 +187,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   const settingsBeforeSearchHash = sha256OfFile(path.join(dataDirForSettings, 'settings.json'));
   log(`STEP PASS: Project A collapsed before any search; settings.json: ${JSON.stringify(settingsBeforeSearch.sessionListCollapse)} (sha256 ${settingsBeforeSearchHash})`);
 
-  // ---- Zero matches: "No sessions match" empty state, both groups and Archived gone ----
   await typeSearch(cdp, 'zzz-no-such-session-zzz');
   await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: '"No sessions match" empty state shown' });
   assert((await cdp.evaluate(groupTriggerFinder(repoAName) + ' === undefined')) === true, 'Project A group must be gone from the DOM on zero matches');
@@ -262,8 +195,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   log('STEP PASS: a non-matching query shows the empty state, hides every group, and announces "No sessions match".');
   await cdp.screenshot(path.join(evidenceDir, '01-dark-no-matches.png'));
 
-  // ---- Clear filter button inside the empty state restores everything, incl. Project A's own
-  // pre-search collapsed state ----
   await cdp.click(CLEAR_FILTER_BUTTON);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A group back after Clear filter' });
   assert((await cdp.evaluate(SEARCH_INPUT + '.value')) === '', 'the field must be empty after the empty-state Clear filter button');
@@ -271,8 +202,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   assert((await groupState(cdp, groupTriggerFinder(repoBName))) === 'open', 'Project B must return to open');
   log('STEP PASS: the empty state\'s own Clear filter button restores the full list and Project A\'s exact pre-search collapsed state.');
 
-  // ---- A query matching one Session's name: only that Project renders, forced OPEN despite
-  // being manually collapsed; the sibling Project is hidden entirely ----
   await typeSearch(cdp, sessionA1Name);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' === undefined', { timeoutMs: 10_000, label: 'Project B hidden (no match)' });
   assert((await groupState(cdp, groupTriggerFinder(repoAName))) === 'open', 'Project A must show OPEN while a query matches it, overriding its own saved collapsed state');
@@ -283,8 +212,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   log(`STEP PASS: a name query shows only the matching Session, forces its Project open, hides the sibling Project; announced ${JSON.stringify(matchAnnouncement)}.`);
   await cdp.screenshot(path.join(evidenceDir, '02-dark-one-match-forced-open.png'));
 
-  // ---- The Collapse all / Expand all toolbar stays interactive during a search (never a no-op
-  // from a hard "force everything open") ----
   const collapseDisabled = await cdp.evaluate(`document.querySelector('[aria-label="Collapse all groups"]').getAttribute('aria-disabled')`);
   assert(collapseDisabled !== 'true', 'Collapse all must NOT be aria-disabled while a search is showing an open group (the toolbar must stay live during a search)');
   await cdp.clickByLabel('Collapse all groups');
@@ -293,9 +220,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(`${groupTriggerFinder(repoAName)}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Expand all reopens Project A during the search' });
   log('STEP PASS: Collapse all / Expand all stay live and actually toggle the visible group while a search is active (not a dead no-op).');
 
-  // ---- Esc clears the field and restores Project A's saved CLOSED state (never written to by
-  // the toggle above, which only touched the search's own ephemeral override), proved by a
-  // byte-identical settings.json, not only the DOM ----
+  // Compare settings.json byte-for-byte: the toggle above only touched the search's ephemeral override.
   await cdp.click(SEARCH_INPUT);
   await pressEscape(cdp);
   await cdp.waitFor(SEARCH_INPUT + `.value === ''`, { timeoutMs: 5_000, label: 'Esc clears the field' });
@@ -309,16 +234,12 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
     JSON.stringify(settingsAfterSearch.sessionListCollapse) === JSON.stringify(settingsBeforeSearch.sessionListCollapse),
     `settings.json's sessionListCollapse must be byte-identical before and after the whole search (got before=${JSON.stringify(settingsBeforeSearch.sessionListCollapse)}, after=${JSON.stringify(settingsAfterSearch.sessionListCollapse)})`
   );
-  // Gate round 2 fix (Medium): the stronger, whole-FILE claim -- not merely the one field this
-  // story touches, but every byte of settings.json, proving nothing else moved either.
   assert(
     settingsAfterSearchHash === settingsBeforeSearchHash,
     `settings.json must be byte-identical (sha256) before and after the whole search (got before=${settingsBeforeSearchHash}, after=${settingsAfterSearchHash})`
   );
   log(`STEP PASS: Esc clears the field, announces "Filter cleared", restores Project A's saved closed state, and settings.json is byte-identical to before the search (sha256 ${settingsAfterSearchHash} both times, the override never persisted).`);
 
-  // ---- A Project-name query shows the WHOLE Project (every Session in it matches on Project
-  // name) ----
   await typeSearch(cdp, repoBName);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' === undefined', { timeoutMs: 10_000, label: 'Project A hidden (its name does not match Project B\'s name)' });
   assert((await groupState(cdp, groupTriggerFinder(repoBName))) === 'open', 'Project B must show, forced open, for its own Project-name query');
@@ -327,8 +248,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the in-field Clear button' });
   log('STEP PASS: the in-field Clear (x) button restores the full list.');
 
-  // ---- Tab order: Pull requests -> search field -> Clear filter (only while there is text) ->
-  // Collapse all groups ----
   await cdp.evaluate(`document.querySelector('[aria-label="Pull requests"]').focus()`);
   await pressTab(cdp);
   let active = await getActiveElementAccessibleName(cdp);
@@ -342,8 +261,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   active = await getActiveElementAccessibleName(cdp);
   assert(active.name === 'Collapse all groups', `Tab from Clear filter must land on Collapse all groups (got ${JSON.stringify(active)})`);
   log('STEP PASS: Tab order confirmed via real accessible names -- Pull requests -> search field -> Clear filter -> Collapse all groups.');
-  // ---- Shift+Tab reverses the same path, back from the list to the field (gate round 2,
-  // ui-architect-v3 High: only the forward direction had ever been driven). ----
   await pressKey(cdp, 9, 'Tab', 'Tab', 8); // Shift+Tab (modifiers bitmask: Shift = 8)
   active = await getActiveElementAccessibleName(cdp);
   assert(active.name === 'Clear filter', `Shift+Tab from Collapse all groups must land back on Clear filter (got ${JSON.stringify(active)})`);
@@ -351,14 +268,10 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   active = await getActiveElementAccessibleName(cdp);
   assert(active.role === 'searchbox' || /Filter sessions/.test(active.name ?? ''), `Shift+Tab from Clear filter must land back on the search field (got ${JSON.stringify(active)})`);
   log('STEP PASS: Shift+Tab reverses the same path from the list back to the search field.');
-  // Cleanup: the in-field Clear button works regardless of what currently has focus (focus is
-  // back on the search field itself now, after the Shift+Tab reversal above).
   await cdp.click(CLEAR_BUTTON);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Clear (Tab-order check cleanup)' });
   await cdp.evaluate(`document.activeElement?.blur()`);
-  // ---- Gate round 5 (Main's finding 10): a real keyboard Escape while focus is ON the Clear
-  // (x) button itself, not just the input -- the wrapper's own handler (gate round 3 finding 9)
-  // is meant to catch Esc from either child, but only the input had ever been driven. ----
+  // Escape from the Clear button itself must also clear (the wrapper handles Esc from either child).
   await typeSearch(cdp, sessionA1Name);
   await cdp.waitFor(CLEAR_BUTTON + ' !== null', { timeoutMs: 5_000, label: 'Clear button appears for the Esc-on-button check' });
   await cdp.click(SEARCH_INPUT);
@@ -370,8 +283,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Esc-on-Clear-button' });
   log('STEP PASS: a real keyboard Escape while focus is on the Clear (x) button itself (not just the input) also clears the filter.');
 
-  // ---- Settings round trip: the query (and its filtering) survive opening Settings and
-  // returning, since it lives in session-list-store.ts, not local component state ----
   await typeSearch(cdp, sessionA1Name);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' === undefined', { timeoutMs: 10_000, label: 'Project B hidden before the Settings round trip' });
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
@@ -383,13 +294,9 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   assert((await cdp.evaluate(groupTriggerFinder(repoBName) + ' === undefined')) === true, 'Project B must still be hidden after the Settings round trip (filtering survives too)');
   log('STEP PASS: the search query and its filtering survive a Settings round trip (App.tsx remounts the whole session list on this view swap).');
 
-  // ---- High-contrast screenshot of a filtered, forced-open group ----
   await typeSearch(cdp, sessionA1Name);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' === undefined', { timeoutMs: 10_000, label: 'filtered for the high-contrast screenshot' });
-  // Gate round 2 fix (ui-architect-v3 High): assert the MATCHING Project is actually open with
-  // its row shown before shooting -- the earlier cut shot an empty state here once `typeSearch`
-  // appended onto leftover text from the Settings-round-trip block above instead of replacing
-  // it, which a bare "Project B hidden" wait never caught.
+  // Assert the matching Project is open before shooting: `typeSearch` once appended to leftover text and shot an empty state.
   assert((await groupState(cdp, groupTriggerFinder(repoAName))) === 'open', 'Project A must show OPEN for the high-contrast screenshot');
   const hcRows = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-repository-id] li')).map((el) => el.textContent).join('|')`);
   assert(hcRows.includes(sessionA1Name), `the matching Session row must render for the high-contrast screenshot (got ${JSON.stringify(hcRows)})`);
@@ -400,14 +307,10 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
     `(() => { const el = ${SEARCH_INPUT}; el.focus(); const cs = getComputedStyle(el); return { outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth }; })()`
   );
   log(`verify-tauri-559: search field's own computed focus outline under Dark high contrast: ${JSON.stringify(focusOutline)} (forced-colors itself is not emulatable live in this harness, same finding as #567's own hover:none note -- this measures the real Dark-high-contrast theme's own focus ring, not a forced-colors mode).`);
-  // Gate round 2 fix: move the real pointer off whatever it last hovered (the Settings cog's
-  // own tooltip could still be open from the round-trip block above) -- the same `mouseMoved`
-  // to a dead corner `proveTrailingSlotSwapAndHoverNone` already uses to clear hover.
+  // Move the pointer to a dead corner so the Settings cog's tooltip isn't open in the shot.
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
   await cdp.evaluate(`document.activeElement?.blur()`);
-  // Gate round 3 fix (ui-architect-v3 Low, finding 7): the Settings cog's own tooltip (opened
-  // by the Settings-round-trip block above) can still be fading out at this point -- wait for
-  // it to actually leave the DOM, not just move the pointer away, before shooting.
+  // The cog's tooltip can still be fading out; wait for it to leave the DOM before shooting.
   await cdp.waitFor(`!document.querySelector('[data-slot="tooltip-content"]')`, { timeoutMs: 5_000, label: 'no tooltip showing before the high-contrast screenshot' });
   await cdp.screenshot(path.join(evidenceDir, '03-high-contrast-filtered.png'));
   await cdp.evaluate(`window.refract.theme.set('dark')`);
@@ -415,9 +318,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.click(CLEAR_BUTTON);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after the high-contrast check' });
 
-  // ---- LAST: Archived, the only check that needs a second, archived Session. Create Session
-  // A2, archive it via a real hover+click (openRowActionsMenu, fixed per Main's diagnosis), then
-  // confirm Archived is searched the same way, against each row's own Project name. ----
+  // Archived goes last: it is the only check needing a second, archived Session.
   await createSessionViaQuickCreate(cdp, repoAName);
   const sessionA2Name = await cdp.evaluate(
     `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoAName)})); const names = Array.from(group.querySelectorAll('li [data-session-open]')).map((b) => b.getAttribute('aria-label').split(',')[0]); return names.find((n) => n !== ${JSON.stringify(sessionA1Name)}); })()`
@@ -428,17 +329,10 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 15_000, label: 'Archived group appears after archiving Session A2' });
   log(`STEP PASS: Session "${sessionA2Name}" archived via a real hover-then-click on its own row menu (Project A now has one active Session, "${sessionA1Name}", plus one archived).`);
 
-  // ---- Rename, branch matching, case-insensitivity, the #900 focus-redirect, and surviving a
-  // Session switch, all from one setup (gate round 2, ui-architect-v3/a11y-auditor High/Medium;
-  // #806 file-size split: the proof itself lives in `verify-tauri-session-list-helpers.mjs` so
-  // a future session-list story can reuse it). ----
+  // Proof lives in `verify-tauri-session-list-helpers.mjs` (#806 file-size split).
   const { renamedTwiceName } = await proveRenameMatchingAndSessionSwitch(cdp, log, { repoAName, repoBName, sessionA1Name, CLEAR_BUTTON });
-  // Gate round 3 (ui-architect-v3 finding 1): the Project half of the same #900 fix --
-  // `RepositoryGroup.tsx`'s own `useFocusSearchOnStrandedUnmount` call.
   await proveProjectRenameFocusRedirect(cdp, log, { repoBName });
-  // Gate round 3 (ui-architect-v3 finding 5): the hidden-create announcement, live -- query
-  // matches only session A1 (`renamedTwiceName`), never Project A's own name, so a fresh
-  // Session the "+" creates is Project-resolvable but still a non-match.
+  // The query matches only A1, so the fresh Session "+" creates is Project-resolvable but a non-match.
   await proveCreatedSessionHiddenAnnouncement(cdp, log, { repoAName, query: renamedTwiceName, chatAreaAnnounceRegionFinder: CHAT_AREA_ANNOUNCE_REGION });
 
   await typeSearch(cdp, repoAName);
@@ -448,16 +342,11 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   log('STEP PASS: Archived is searched the same way, against each row\'s own Project name.');
   await cdp.click(CLEAR_BUTTON);
 
-  // ---- Archived reverse (gate round 2, Medium): a query matching an ACTIVE Session but no
-  // archived row must still hide Archived specifically -- distinct from the totally-empty case
-  // below, which ran before any archived Session existed and never actually exercised this. ----
   await typeSearch(cdp, renamedTwiceName);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: "Project A matches its own twice-renamed Session for the Archived-reverse check" });
   assert((await cdp.evaluate(ARCHIVED_TRIGGER_FINDER + ' === null')) === true, 'Archived must be hidden when the query matches an active Session but no archived row');
   log('STEP PASS: Archived reverse -- a query matching an active Session but no archived row hides Archived.');
 
-  // ---- Zero matches hides Archived too (gate round 2, High): the original zero-match check
-  // ran before Session A2 was archived, so Archived did not exist yet to actually hide. ----
   await typeSearch(cdp, 'zzz-no-such-session-zzz');
   await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: '"No sessions match" empty state shown with Archived present' });
   assert((await cdp.evaluate(ARCHIVED_TRIGGER_FINDER + ' === null')) === true, 'Archived must also be hidden on zero matches now that an archived Session actually exists');
@@ -468,10 +357,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
 }
 
 async function main() {
-  // Gate round 4 fix (Main's safety finding, MUST): `SHOT_DIR` can be redirected anywhere via
-  // `REFRACT_559_SHOT_DIR` -- recursively deleting it was building a delete target from a
-  // variable, exactly what the safe-deletion rule bans. Clears only this script's own known
-  // output files by literal name instead (see `clearKnownOutputFiles`'s own guard).
+  // `SHOT_DIR` is redirectable, so clear only known output files by literal name, never a variable-built delete target.
   clearKnownOutputFiles(SHOT_DIR, 'refract-559-', [
     '01-dark-no-matches.png', '02-dark-one-match-forced-open.png', '03-high-contrast-filtered.png',
     '99-diag-row-actions-menu-failure.png', '99-diag-add-repository-A-failure.png', '99-diag-add-repository-B-failure.png',
@@ -523,7 +409,6 @@ async function main() {
     await runChecks(cdp, SHOT_DIR, log, { repoA: repoADir, repoB: repoBDir, repoAName, repoBName });
 
     log(`verify-tauri-559: ALL PASS. Evidence and screenshots: ${SHOT_DIR}`);
-    // Gate round 3 fix (ui-architect-v3 Low, finding 7): cite each screenshot by sha256 too.
     const screenshots = citeScreenshots(SHOT_DIR, ['01-dark-no-matches.png', '02-dark-one-match-forced-open.png', '03-high-contrast-filtered.png']);
     writeFileSync(
       path.join(SHOT_DIR, 'report.json'),
@@ -560,8 +445,7 @@ async function main() {
     await safeRmSync(repoADir);
     await safeRmSync(repoBDir);
     await safeRmSync(exeDir);
-    // Deliberately NOT removing SHOT_DIR: its STEP-PASS report and screenshots are this run's
-    // own audit trail (same convention as verify-tauri-735.mjs).
+    // SHOT_DIR is kept: its report and screenshots are the run's audit trail.
     process.exitCode = exitCode;
   }
 }

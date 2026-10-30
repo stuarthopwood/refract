@@ -1,29 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for issue #941 part 2 (Subagent panel Stage grouping + green state, and the
-// per-turn "Up next" Todo-phase list) -- FR-079's own deferred note from part 1 (PR #979/#979):
-// "the Subagent panel's own green state and Stage grouping, and the Up next list's own UI, are
-// not yet built here -- only the Rust/TS wire data (context, todoPhases) is in place,
-// unconsumed." This proves both now are.
+// Live CDP check for #941 part 2: Subagent panel Stage grouping + green state, and the per-turn "Up next"
+// Todo-phase list. Reuses part 1's fake `omp` harness and fixture (stages-941.jsonl,
+// `REFRACT_FAKE_OMP_SCENARIO=stages-941`); never spawns a real `omp`.
 //
-// Reuses PART 1's own recorded-frame fake `omp` harness and fixture
-// (`scripts/fixtures/omp-frames/stages-941.jsonl`, `REFRACT_FAKE_OMP_SCENARIO=stages-941`) --
-// the SAME ten-Stage turn, extended (additively, never touching anything part 1's own
-// assertions read) with a `todoPhases` field on the ONE `get_state` response the tape already
-// scripts, so the Session attaches with two real pending Todo phases from the very start
-// (`readout.rs`'s own `on_sync_from_state` reads `todoPhases` off THAT SAME response every
-// other field it already reads comes from, and schedules a readout update -- no second
-// `get_state` round trip needed). PATH-prepends the SAME fake-`omp` PATH shim part 1's own
-// `launchBuiltExeWithEnv` call does (`buildOmpShim`/`pathPrepend: shimDir`) -- this NEVER spawns
-// or waits on a real `omp` process.
-//
-// Scope boundary (documented, not an oversight): `SubagentSummary` (the panel's own data,
-// `src/shared/model.ts`) carries no `context` field and `nameOrTask` is the agent's own NAME
-// whenever one was given (every task in this fixture has one) -- the fixture's own real
-// `agent://` references all live in each Stage's `context` argument, which the panel never sees,
-// so no Stage's own panel header has anything to resolve a "Uses:" line from. This positively
-// proves the GROUPING/GREEN-STATE half of FR-079's deferred note; the panel's own "Uses:"
-// rendering path is exercised only as a NEGATIVE (no stray/wrong text), its positive case
-// recorded honestly in `report.json`'s own `notExercised`.
+// Scope: `SubagentSummary` carries no `context`, so no Stage header can resolve a "Uses:" line. This proves
+// grouping/green state positively; "Uses:" is checked only negatively, its positive case in `notExercised`.
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -64,14 +45,10 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// Gate round 1 fix (issue #941 part 2, item 3 decision, item 10, HIGH): the panel's own Stage
-// header never shows "Stage N" (ui-architect-v3 ruling, research.md decision 17) -- the shared
-// name prefix when one exists, else a bare "N agents" -- so "Stage 3" and "Stage 5" both become
-// the ambiguous "2 agents" (no shared prefix either way), and "Story559" appears under BOTH
-// Stage 2 and Stage 5. Title-text lookups can no longer disambiguate rows at all; the panel's
-// own tree is instead walked IN ORDER (scoped to `[role="tree"][aria-label="Subagents"]`) and
-// compared against this exact expected shape -- the only thing that still tells two same-label
-// rows apart is their real POSITION in the fixture's own task() call order.
+// The panel's Stage header never shows "Stage N" (research.md decision 17): it shows the shared name
+// prefix or a bare "N agents", so Stage 3 and 5 are both "2 agents" and "Story559" appears under two
+// Stages. Titles can't disambiguate rows, so the tree (`[role="tree"][aria-label="Subagents"]`) is
+// walked in order against this expected shape, keyed by position in the fixture's task() call order.
 const EXPECTED_PANEL_ROWS = [
   { level: '1', isStage: true, label: 'G923', green: true }, // Stage 1 header
   { level: '2', isStage: false, label: 'G923Code', green: true },
@@ -85,13 +62,9 @@ const EXPECTED_PANEL_ROWS = [
   { level: '1', isStage: true, label: 'Label', green: true }, // Stage 4 header
   { level: '2', isStage: false, label: 'LabelA', green: true },
   { level: '2', isStage: false, label: 'LabelB', green: true },
-  // Gate round 4 fix (issue #941 part 2, item 3, LOW): `exactAriaLabel` -- the ONE row whose own
-  // accessible name is asserted character-for-character, not just substring/regex-matched like
-  // every other row below: label "2 agents" (no shared prefix, same as Stage 3's), rollup "1
-  // done, 1 failed" (`stageRollupText`, not running), aggregateStatus "failed" (`overallStatus`:
-  // `counts.failed > 0` wins over `finished`) so the chain-matching ", Failed" suffix applies
-  // (`SubagentChainRow.tsx`'s own `status !== 'finished'` rule) -- proves item 2's status-word
-  // append on the one row in this fixture where it is NOT a no-op.
+  // `exactAriaLabel`: the one row whose accessible name is asserted exactly. Label "2 agents", rollup
+  // "1 done, 1 failed", aggregate "failed" (`counts.failed > 0` wins), so the ", Failed" suffix applies
+  // (`status !== 'finished'`): the one row where the status-word append is not a no-op.
   { level: '1', isStage: true, label: '2 agents', green: false, exactAriaLabel: '2 agents, 1 done, 1 failed, Failed' }, // Stage 5 header (mixed finished/failed)
   { level: '2', isStage: false, label: 'Story559', green: true },
   { level: '2', isStage: false, label: 'FailAgent', green: false },
@@ -108,13 +81,8 @@ const EXPECTED_PANEL_ROWS = [
   { level: '2', isStage: false, label: 'BorderlineB', green: true }
 ];
 
-/** Issue #941 part 2: walks the panel's own tree in document order, comparing every row's real
- * `aria-level`/Stage-or-member kind/label text/green colour against `EXPECTED_PANEL_ROWS` at the
- * SAME index -- proves grouping (header -> nested members, solo calls stay flat), the dropped
- * "Stage N" naming (item 3), and green state (including Stage 5's own mixed negative case) all
- * in one pass, immune to the two same-labelled "2 agents" headers and the repeated "Story559"
- * name a title-based lookup could not tell apart. Also confirms `aria-expanded`/`aria-selected`
- * presence (item 5) and a Stage header's own accessible name states its roll-up too (item 6). */
+/** Walks the panel tree in document order and compares each row's `aria-level`, kind, label and green colour
+ * against `EXPECTED_PANEL_ROWS` at the same index (distinguishes the two "2 agents" headers and repeated "Story559"). */
 async function assertPanelStructure(cdp, findings, failures, themeName) {
   const failuresAtStart = failures.length;
   const expectedColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
@@ -185,19 +153,10 @@ async function assertPanelStructure(cdp, findings, failures, themeName) {
   }
 }
 
-/** Issue #941 (FR-079's "Up next"): the agent's own pending Todo phases, below the Subagent
- * chain, in the CHAT pane (not the panel) -- `stages-941.jsonl`'s own `get_state` response now
- * carries two, both still pending (its own raw `tasks[].status` shape, the one
- * `parse_todo_phases` actually reads -- gate round 1 fix, item 9, CRITICAL). Gate round 3 fix
- * (item 5, MEDIUM): the previous version matched a substring against the WHOLE transcript's own
- * `textContent` -- a check that could not actually FAIL (a coincidental match anywhere in
- * hundreds of chars of surrounding transcript text would still pass even if the real list were
- * broken, mis-ordered, or missing). Now reads the real `ul[aria-labelledby]`'s own `li` children
- * directly: the `<ul>` is located VIA its own `aria-labelledby` heading (proving the real
- * label/list relationship the a11y gate fix added, not just that "Up next" text exists
- * somewhere), each `<li>`'s exact `textContent` is compared, and the whole wrapper is checked to
- * come AFTER the chain row's own "Show subagents panel" button in document order (proving "below
- * the Subagent chain", not merely present anywhere in the transcript). */
+/** Checks the "Up next" Todo phases (FR-079) below the Subagent chain in the CHAT pane. Reads the real
+ * `ul[aria-labelledby]` `li` children (a whole-transcript substring match could never fail), locates the
+ * `<ul>` via its heading, compares each `li` exactly, and checks the wrapper follows the chain row's
+ * "Show subagents panel" button in document order. */
 async function assertUpNextList(cdp, findings, failures, themeName) {
   const failuresAtStart = failures.length;
   const result = await cdp.evaluate(`
@@ -244,7 +203,7 @@ async function assertUpNextList(cdp, findings, failures, themeName) {
   const expected = [
     ['Ship #941 part 2 follow-ups', 2],
     ['Write the verify-941-part2 live-check', 1]
-    // Gate round 1 fix (issue #941 part 2, item 8, LOW): singular "1 task", plural otherwise.
+    // Singular "1 task", plural otherwise.
   ].map(([name, count]) => `${name} \u00b7 ${count} task${count === 1 ? '' : 's'}`);
   if (result.items.length !== expected.length) {
     failures.push(`[${themeName}] "Up next" has ${result.items.length} <li> item(s), expected exactly ${expected.length}.`);
@@ -329,13 +288,8 @@ async function main() {
     );
     findings.push('Readiness screen green (fake omp, stages-941 scenario).');
 
-    // Gate round 1 fix (issue #941 part 2, item 11, HIGH): `REFRACT_FAKE_OMP_DEBUG_LOG` above was
-    // only ever WRITTEN by the fake shim and COPIED at teardown (`finally`, below) -- nothing
-    // upstream actually read it, so a silently-wrong fake-omp shim (a stale PATH entry shadowing
-    // it, or the shim crashing before its first `debugLog` call) still let the whole run "pass"
-    // on UI state alone. Same shim-confirmed check as verify-672: the log must exist, and its
-    // FIRST line must be the fake's own startup pid line (`verify-tauri-fake-omp.mjs`'s
-    // `pid=<pid> argv=[...] cwd=...`, written before anything else runs).
+    // Confirm the fake shim actually ran: the debug log must exist and its first line be the fake's
+    // startup pid line, else a stale PATH entry or crashing shim could let the run pass on UI state alone.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-941-part2: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check, item 11).`);
@@ -397,16 +351,9 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel opened' });
     findings.push('Subagents panel opened from the chain row\u2019s own "Show subagents panel" button.');
 
-    // Robustness fix (issue #1000 gate, round 2): a REPEAT `switchTheme` call could time out
-    // finding the already-open profile menu's own "Theme" submenu trigger before its root cause
-    // was fixed directly in `switchTheme` itself (`verify-tauri-scratch-helpers.mjs`). Dark is
-    // THEMES[0] and runs FIRST here with no prior pass to fall back on, so its own switch or
-    // assertion failure is a genuine, hard failure -- never a silent skip that would let this
-    // whole run report DONE/0 having proven nothing. Only a LATER theme (index > 0, reached only
-    // after Dark's own pass has already proven the real panel structure/Up-next shape at least
-    // once) can ever degrade to a recorded `notExercised` skip for that theme's own re-check
-    // (`assertPanelStructure` reads real CSS custom properties like `--severity-success` per
-    // theme, so a later theme's own pass is still a genuine, not merely redundant, re-check).
+    // Dark runs first with no prior pass, so its switch/assertion failure is a hard failure, never a skip
+    // that lets the run report DONE having proven nothing. Only later themes may degrade to `notExercised`
+    // (a repeat `switchTheme` could time out, #1000); `assertPanelStructure` reads per-theme CSS variables.
     for (const [themeIndex, theme] of THEMES.entries()) {
       try {
         await switchTheme(cdp, theme.id, theme.name);

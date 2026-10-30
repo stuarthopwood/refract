@@ -1,25 +1,9 @@
-// Win32 Job Object launcher (issue #795, R12a gate-fix round 2, security review HIGH): replaces
-// pid-walking process cleanup entirely. Spawns the target exe inside a kill-on-close Job Object,
-// so stopping this launcher (closing its stdin, or killing it directly) atomically kills the
-// whole process tree the target creates (WebView2, the fake-omp PATH shim and its own node
-// child) -- no Win32_Process snapshot, no taskkill of a computed pid, no creation-time
-// validation needed, because the OS itself scopes the kill to exactly this job's membership,
-// which can never include an unrelated process.
-//
-// Built the same way as verify-tauri-omp-shim.rs: a bare `rustc --edition 2021` compile, std
-// only, raw `extern "system"` declarations for the handful of Win32 Job Object APIs std does not
-// expose. Node spawns this launcher directly (scripts/verify-tauri.mjs's own `launchTracked`), so
-// the launcher's own pid is held open by Node's own ChildProcess handle for as long as the
-// harness cares about it -- it can never be silently reused out from under the harness the way a
-// pid discovered later via a process-table snapshot could.
+// Win32 Job Object launcher (#795): runs the target exe in a kill-on-close Job Object so closing this
+// launcher's stdin (or killing it) kills the whole process tree. The OS scopes the kill to job
+// membership, so unlike pid-walking it can never hit an unrelated process.
 //
 // Usage: verify-tauri-launcher.exe <pid-file> <target.exe> [args...]
-// Protocol: writes the target's own pid as plain text to `<pid-file>` once it is spawned and
-// assigned to the job (polled by the harness -- never multiplexed onto the target's own stdout,
-// which this launcher forwards unchanged so the app's own log file stays exactly what it would
-// be without this wrapper). Reads its OWN stdin for the shutdown signal: when Node closes it,
-// the whole job is terminated immediately. The target's own stdin is never connected to
-// anything (it does not need one), so there is no single pipe read by two processes.
+// The target's pid goes to `<pid-file>`, never onto stdout, which is forwarded unchanged so the app log stays exact.
 
 use std::env;
 use std::ffi::c_void;
@@ -33,7 +17,6 @@ type Bool = i32;
 type Dword = u32;
 
 const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: Dword = 0x00002000;
-// JOBOBJECTINFOCLASS::JobObjectExtendedLimitInformation
 const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: i32 = 9;
 
 #[repr(C)]
@@ -78,9 +61,7 @@ extern "system" {
     fn CloseHandle(h_object: Handle) -> Bool;
 }
 
-/// Wraps the raw job handle so it can cross the `std::thread::spawn` boundary: a `HANDLE` is a
-/// plain OS-owned integer-like value with no aliasing/lifetime hazard for the single read-only
-/// `TerminateJobObject` call the watcher thread makes with it.
+/// Lets the raw job handle cross `std::thread::spawn`; the watcher only makes one read-only `TerminateJobObject` call.
 struct SendableHandle(Handle);
 unsafe impl Send for SendableHandle {}
 
@@ -120,12 +101,7 @@ fn main() {
         fail("SetInformationJobObject failed");
     }
 
-    // The target's own stdin is never wired to anything: nothing this harness drives needs to
-    // send it input, and sharing this launcher's own stdin handle with it would mean two
-    // processes racing to read the same pipe (the launcher needs its OWN stdin exclusively, to
-    // detect the shutdown signal below). stdout/stderr ARE inherited, so the app's own log
-    // output reaches the harness's log file completely unchanged -- the pid protocol below goes
-    // through a file, never through this same stream.
+    // Null stdin: sharing ours would race two readers on one pipe; we need it exclusively for the shutdown signal.
     let mut child = Command::new(&target)
         .args(&rest)
         .stdin(Stdio::null())
@@ -134,12 +110,7 @@ fn main() {
         .spawn()
         .unwrap_or_else(|err| fail(&format!("failed to spawn {target}: {err}")));
 
-    // Gate-fix (security review HIGH, round 2): assigned immediately after spawn, before this
-    // process does anything else, so the window in which the target could spawn a grandchild not
-    // yet covered by the job is as small as physically possible. `std::process::Command::spawn`
-    // already does the moral equivalent of a suspended-create-then-resume safely internally; no
-    // manual `CREATE_SUSPENDED`/`CreateProcessW` plumbing is needed to get a handle
-    // `AssignProcessToJobObject` can use (`AsRawHandle::as_raw_handle()`).
+    // Assign immediately after spawn to minimise the window for a grandchild escaping the job.
     let child_handle = child.as_raw_handle() as Handle;
     let assigned = unsafe { AssignProcessToJobObject(job, child_handle) };
     if assigned == 0 {
@@ -147,17 +118,13 @@ fn main() {
         fail("AssignProcessToJobObject failed");
     }
 
-    // Written only now (after the job assignment the harness's own ownership check depends on
-    // has actually happened), to a dedicated file -- never multiplexed onto the inherited stdout
-    // stream above, which must stay exactly what the app itself would write.
+    // Written only after job assignment, which the harness's ownership check depends on.
     if fs::write(&pid_file, child.id().to_string()).is_err() {
         let _ = child.kill();
         fail(&format!("failed to write pid file {pid_file}"));
     }
 
-    // Reads this launcher's OWN stdin (a dedicated pipe Node holds, never shared with the
-    // target): closing it is the harness's shutdown signal, terminating the whole job tree
-    // immediately rather than waiting for the target to exit on its own.
+    // Our stdin closing is the harness's shutdown signal: terminate the whole job immediately.
     let job_for_watcher = SendableHandle(job);
     std::thread::spawn(move || {
         let job = job_for_watcher;

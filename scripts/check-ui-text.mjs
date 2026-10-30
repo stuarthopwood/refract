@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-// Scans built renderer bundles for leaked project terminology (requirement/task
-// numbers, user-story numbers, or phrases like "later task"/"wired up"/"not implemented") that
-// should never reach a user-visible string. Usage: node scripts/check-ui-text.mjs [rootDir]
-// (default: <repoRoot>/out). Exits 1 if any match is found, 2 if no bundle files were scanned,
-// 0 otherwise.
+// Scans built renderer bundles for leaked project terminology that must never reach user-visible strings.
+// Exits 1 on a match, 2 if no bundle files were scanned.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -14,19 +11,11 @@ const repoRoot = path.resolve(__dirname, '..');
 
 const LEAK_PATTERN = /\b(?:FR|SC)-\d{3}\b|\bT\d{3}\b|\bUS\d\b|later task|wired up|User Story|not implemented/g;
 
-// Exact matched substrings known to come from third-party bundled text, not Refract's own UI
-// copy. Add an entry here (never loosen the regex above) if a real false positive shows up.
-// 'not implemented' matches Mermaid's own bundled xychart error string ("Drawing of right axis
-// is not implemented", mermaid.core's xychartDiagram chunk) -- a real upstream library message,
-// not a Refract placeholder. This blanket-exempts the bare phrase everywhere; a future genuine
-// Refract-authored "not implemented" leak would also be missed by this guard. If that happens,
-// replace this entry with a more specific check (e.g. require the Mermaid-specific surrounding
-// text) rather than tightening the shared regex, which every other pattern here still needs.
+// Third-party bundled text, not Refract copy. 'not implemented' is Mermaid's own xychart error;
+// this exempts the phrase everywhere, so a genuine Refract leak of it would be missed.
 const ALLOWED = ['not implemented'];
 
 const root = path.resolve(process.cwd(), process.argv[2] ?? path.join(repoRoot, 'out'));
-// `tauri-web/assets` is the shared renderer as built by `pnpm build` (Tauri, the only build
-// since Electron was deleted at #796/R13).
 const SUBDIRS = [path.join('tauri-web', 'assets')];
 
 function* walk(dir) {

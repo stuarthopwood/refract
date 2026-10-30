@@ -1,25 +1,13 @@
-// Item 5 (T3, hover): real CDP hover-state verification for the composer's ghost triggers
-// (Approval pill, Model, Reasoning, Attach) -- split out of `verify-927-928-quiet-composer.mjs`
-// (file-size #806 ratchet) as its own concern, the same way `contrast-math.mjs`/
-// `verify-tauri-cdp.mjs` already separate colour math and CDP driving from that script's own
-// per-theme assertion flow.
+// Real CDP hover-state checks for the composer's ghost triggers, split out of the quiet-composer script.
 import { sleep } from './verify-tauri-cdp.mjs';
 
-/** Moves the real mouse to a neutral point (the window's own top-left corner, never any
- * composer trigger) BETWEEN hover reads -- without this, the previous trigger's own hover state
- * can still be active (CDP never auto-fires a `mouseleave`) when the next one is read, making a
- * stale hover background misread as the new trigger's own. */
+/** Moves the mouse to the window corner between reads: CDP never fires `mouseleave`, so a stale hover would leak into the next read. */
 export async function moveMouseAway(cdp) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 4, y: 4 });
   await sleep(30);
 }
 
-/** A REAL CDP `mouseMoved` to the trigger's own centre (verified against
- * `document.elementFromPoint` hitting the element or a descendant, never a scripted `:hover`
- * class toggle) -- settles animations first (M3), then reads `cursor` and `background-color`.
- * An ENABLED ghost trigger must show the pointer cursor and a background that differs from its
- * own resting value (a faint fill, decision 4a); an `aria-disabled` one must show `not-allowed`
- * and NO fill change. */
+/** Hovers the trigger with a real mouse move and reads its cursor and background; enabled must fill, `aria-disabled` must show `not-allowed` with no fill. */
 async function readGhostHoverStyle(cdp, finderExpr) {
   const rect = await cdp.evaluate(`(() => {
     const el = ${finderExpr};
@@ -41,11 +29,7 @@ async function readGhostHoverStyle(cdp, finderExpr) {
   })()`);
 }
 
-/** Hovers every `[name, finderExpr]` pair in `targets` (keyed identically to `ghostResting`'s
- * own keys, e.g. `readGhostControlRestingStyles`'s `approvalPill`/`modelPicker`/
- * `reasoningPicker`/`attachButton`) and pushes a `findings`/`failures` line per assertion.
- * Returns `true` if any trigger was genuinely `aria-disabled` during this call, so the caller
- * can fold that into its own run-wide "was this ever exercised" reasoning. */
+/** Hovers each ghost trigger in `targets` and records a finding or failure per assertion; returns true if any was `aria-disabled`. */
 export async function assertGhostHoverStates(cdp, themeName, targets, ghostResting, findings, failures) {
   let anyDisabled = false;
   for (const [name, finderExpr] of targets) {

@@ -1,39 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for issue #569 (profile menu account header/icons/callouts, plus the sidebar
-// Pull requests "N active" count). Reuses the shared scratch-isolation and CDP helpers the same
-// way #568's own driver does (`refract-tauri-live-check-isolation` skill: own
-// `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR`, never Stuart's real
-// `%APPDATA%/refract-tauri`).
-//
-// Gate round 1 rewrite. What this script actually proves:
-//   - A #569-only DOM/bundle marker is present before anything else is trusted.
-//   - The sidebar "N active" count against a real read-only clone of stuarthopwood/refract,
-//     cross-checked against an independent `gh search prs` run outside the app; proved to
-//     disappear (not flash a stale number) once the default repository changes to one with no
-//     GitHub remote -- this repo-switch test runs LAST so every screenshot above it is taken
-//     while the GitHub clone is still the default repository (count visible).
-//   - Keyboard-ONLY profile menu, driven with `Emulation.setFocusEmulationEnabled` and real
-//     `Input.dispatchKeyEvent`: focus the name button, Enter opens the menu, fixed item order,
-//     ArrowDown to Theme, ArrowRight into the submenu (asserting one checked `menuitemradio`), ArrowLeft
-//     back out, Esc closes the whole menu and returns focus to the name button.
-//   - The update entry's renderings (FR-021) forced via a scratch `updateState.json`. This is
-//     NOT a no-network check: Refract's own automatic startup update check makes a real `gh`
-//     release lookup on every launch (spec 006 FR-017), which is a no-op for phases
-//     `downloading`/`downloaded`/`installing` and for `failed` specifically on the automatic
-//     path (`checker.rs`'s own documented no-op rules) -- the seed is only guaranteed to survive
-//     for exactly those phases; `idle` (with or without `unavailableReason`) and `available` are
-//     NOT no-op targets and may be overwritten by the real check before this script reads them.
-//   - "Restart to update": selecting it shows the literal confirmation toast and the update
-//     phase is still `downloaded` afterward (never quits or installs).
-//   - An attempt (best-effort, explicitly reported either way) to catch the real automatic
-//     startup check's own transient "Checking for updates…" busy state.
-//
-// Every launched app instance (and its CDP connection) is registered in `openHandles` the
-// instant it is created and torn down in ONE top-level `finally`, regardless of which step
-// throws. Each launch gets its own exe copy in its own directory (`launchBuiltExe` derives
-// `webview2-data` from the exe's own directory; sharing one copy across sequential relaunches hit
-// a WebView2 user-data-folder handoff that made a later launch's CDP target resolve to the wrong
-// pid). A hard `process.exit(...)` at every exit path.
+// Live CDP check for #569: profile menu (keyboard-only, update entry renderings) and the sidebar "N active" PR count.
+// Runs in scratch data dirs, never the real %APPDATA%/refract-tauri. Every launched app is closed in one top-level
+// `finally`; each launch gets its own exe copy because sharing one made a later launch's CDP target resolve to the wrong pid.
+// The automatic startup update check makes a real `gh` lookup, so a seeded updateState.json survives only for
+// downloading/downloaded/installing/failed phases (checker.rs no-op rules).
 
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
@@ -55,9 +25,7 @@ import { addRepository, createSessionViaQuickCreate, pressEscape, pressKey, getA
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-// Gate round 1 fix (Tests): default from `os.tmpdir()`, never a hardcoded user path.
 const SHOTS_DIR = process.env.REFRACT_569_SHOTS_DIR || path.join(tmpdir(), 'refract-569-shots');
 const GITHUB_SCRATCH_CLONE_URL = 'https://github.com/stuarthopwood/refract.git';
 const NARROW_WIDTH = 360;
@@ -235,9 +203,7 @@ async function main() {
     exeHash = built.hash;
     log(`verify-tauri-569: exe sha256 ${exeHash} copied to ${exePath}`);
 
-    // ---------------------------------------------------------------------------------------
-    // Part A: sidebar count, keyboard-only menu, visual sanity -- one launch, real PR data.
-    // ---------------------------------------------------------------------------------------
+    // Part A: sidebar count, keyboard-only menu, visual sanity (one launch, real PR data).
     const cloneParent = mkdtempSync(path.join(tmpdir(), 'refract-569-repo-'));
     track(() => safeRmSync(cloneParent));
     const repoClone = makeGithubScratchClone(path.join(cloneParent, 'refract'));
@@ -293,10 +259,10 @@ async function main() {
       notExercised('Every real-PR-data sidebar count check', 'the GitHub scratch clone failed (see the hard failure above) -- code-verified only');
     }
 
-    // ---- Dark screenshot: refract clone is STILL the default repo here (count visible). ----
+    // The refract clone is still the default repo here, so the count is visible.
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-sidebar-pr-count.png'));
 
-    // ---- Keyboard-ONLY profile menu: focus emulation + real Input.dispatchKeyEvent. ----
+    // Real Input.dispatchKeyEvent with focus emulation.
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
     await cdp.evaluate(`document.querySelector('[data-profile-name-button]').focus()`);
@@ -317,9 +283,7 @@ async function main() {
       checkFail('Update entry sits between Keyboard shortcuts and Health check (FR-018 fixed order)', JSON.stringify({ keyboardIdx, updateIdx, healthIdx, itemOrder }));
     }
 
-    // ArrowDown x2 from the first item (Manage accounts) reaches Theme (Manage sessions, Theme).
-    // A short settle after the keyboard-open: Radix's own default-item focus on a keyboard open
-    // needs a frame to actually commit before arrow keys have anything real to move from.
+    // Settle briefly: Radix needs a frame to commit default-item focus after a keyboard open.
     await sleep(250);
     await pressArrow(cdp, 'Down');
     await sleep(150);
@@ -329,9 +293,7 @@ async function main() {
     await pressArrow(cdp, 'Right');
     await cdp.waitFor(`!!document.querySelector('[role="menu"] [role="menuitemradio"] span')`, { timeoutMs: 5_000, label: 'Theme submenu opened via ArrowRight' }).catch(() => {});
     await sleep(300);
-    // #1043: the Theme submenu is now a real DropdownMenuRadioGroup -- the active preset is the
-    // ONE checked `menuitemradio`, not a row whose textContent happens to include the word
-    // "Current" (that trailing marker is gone, per #1043's own fix).
+    // The active preset is the one checked `menuitemradio` (#1043).
     const currentMarkerPresent = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menuitemradio"]')).filter((el) => el.getAttribute('aria-checked') === 'true').length === 1`);
     const focusInSubmenu = await cdp.evaluate(`document.activeElement?.getAttribute('role') === 'menuitemradio' && document.activeElement?.getAttribute('aria-checked') === 'true'`);
     if (onThemeTrigger && currentMarkerPresent) {
@@ -384,10 +346,7 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '05-reduced-motion.png'));
     await cdp.send('Emulation.setEmulatedMedia', { features: [] });
 
-    // ---- Default-repository change (runs LAST in Part A, after every screenshot above): a
-    // second, plain scratch repo with NO GitHub remote, with its own new Session -- the sidebar
-    // count must disappear (no-github-remote -> count: null -> hidden), not keep a stale number.
-    // ---- (skipped entirely if the clone itself failed; nothing to switch away from.) ----
+    // Runs last in Part A: a scratch repo with no GitHub remote must hide the count, not leave a stale number.
     if (repoClone) {
       const plainRepoParent = mkdtempSync(path.join(tmpdir(), 'refract-569-plain-'));
       track(() => safeRmSync(plainRepoParent));
@@ -404,14 +363,8 @@ async function main() {
 
     await teardownMain();
 
-    // ---------------------------------------------------------------------------------------
-    // Part B: the update entry's renderings, forced via a scratch updateState.json -- each
-    // phase launch makes a REAL automatic startup update check (spec 006 FR-017, a real `gh`
-    // release lookup): per `checker.rs`'s own documented no-op rules this is a no-op for
-    // downloading/downloaded/installing, and for `failed` on the automatic path specifically --
-    // 'idle' (with or without unavailableReason) and 'available' are NOT no-op targets and may
-    // be overwritten before this script reads them.
-    // ---------------------------------------------------------------------------------------
+    // Part B: update entry renderings via a scratch updateState.json; the real startup check may overwrite
+    // idle/available seeds (checker.rs no-op rules cover downloading/downloaded/installing/failed only).
     const phases = [
       { label: 'idle', seed: { phase: 'idle' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true },
       { label: 'available', seed: { phase: 'available', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true },
@@ -429,8 +382,7 @@ async function main() {
       await addRepository(handleCdp, phaseRepoDir);
       await createSessionViaQuickCreate(handleCdp, 'refract-569-phase-repo');
 
-      // Best-effort attempt (every phase, cheap): catch the real automatic startup check's own
-      // transient busy text before it settles. Reported either way, never claimed as "no network".
+      // Best-effort: catch the startup check's transient busy text; never claimed as "no network".
       await handleCdp.click(`document.querySelector('[data-profile-name-button]')`);
       await handleCdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened' });
       const pollDeadline = Date.now() + 2500;
@@ -463,18 +415,13 @@ async function main() {
 
       if (phase.label === 'downloaded') {
         await handleCdp.screenshot(path.join(SHOTS_DIR, '07-profile-menu-downloaded.png'));
-        // Watch the toast region (sonner renders a `[data-sonner-toaster]` with `[data-title]`
-        // rows) and assert the literal confirmation text, then assert the phase is STILL
-        // 'downloaded' (never quits or installs).
+        // Assert the confirmation toast text, then that the phase is still 'downloaded' (never quits or installs).
         await handleCdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Restart to update'))`);
         const toastText = await handleCdp
           .waitFor(`(() => { const t = document.querySelector('[data-sonner-toast] [data-title]'); return t ? t.textContent.trim() : null; })()`, { timeoutMs: 5_000, label: 'confirmation toast appears' })
           .catch(() => null);
         const stillAlive = await handleCdp.evaluate('true').catch(() => false);
-        // `window.__refractStores` is DEV-only (`import.meta.env.DEV`); a `tauri build --debug`
-        // still runs `vite build` (production mode), so that global never exists here -- the
-        // real `window.refract.updates.getState()` IPC call is the only way to read the actual
-        // persisted phase from this build.
+        // `window.__refractStores` is DEV-only and absent in `tauri build --debug`; read the phase via the IPC call.
         const stillDownloadedResult = await handleCdp.evaluate(`(async () => { const r = await window.refract.updates.getState(); return r.ok ? r.value.phase : null; })()`).catch(() => null);
         if (toastText === 'Refract updates automatically the next time you quit.' && stillAlive && stillDownloadedResult === 'downloaded') {
           checkPass('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillDownloadedResult }));
@@ -485,9 +432,7 @@ async function main() {
 
       if (phase.label === 'failed') {
         await handleCdp.screenshot(path.join(SHOTS_DIR, '08-profile-menu-failed.png'));
-        // Gate round 2 fix (M1, architect): prove the "Check for updates" click's toast.loading
-        // placeholder is genuinely REPLACED IN PLACE by sonner's own `{ id }` mechanism (one
-        // toast throughout, never two stacked), not just that the loading toast appears.
+        // Prove the loading toast is replaced in place via sonner's `{ id }`, never stacked.
         await handleCdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Check for updates'))`);
         const loadingSeen = await handleCdp
           .waitFor(`(() => { const t = document.querySelector('[data-sonner-toast] [data-title]'); return t && t.textContent.trim() === 'Checking for updates\u2026'; })()`, { timeoutMs: 3_000, label: 'loading toast appears' })
@@ -509,11 +454,7 @@ async function main() {
         } else {
           checkFail('"Check for updates": toast.loading replaced in place (sonner {id}) by one outcome toast, never stacked', JSON.stringify({ loadingSeen, outcomeText, maxToastCount }));
         }
-        // Error path (toast.error on a rejected check, or phase settling to "failed"): forcing a
-        // genuine gh/network failure for one scratch launch, without a mock (AGENTS.md's
-        // no-mocks-while-prototyping rule), was judged unsafe/unreliable to script against a real
-        // signed-in gh install -- the handleCheckAgain catch()/phase-failed toast.error branches
-        // are code-reviewed only, not independently live-triggered.
+        // Error path (toast.error / phase "failed") is not live-triggered: forcing a real gh failure without a mock was unsafe to script.
         notExercised('"Check for updates" error path (toast.error on a rejected or failed real check)', 'forcing a genuine gh/network failure for one scratch launch without a mock was judged unsafe/unreliable to script against a real signed-in gh install; the catch()/phase-failed toast.error branches in handleCheckAgain are code-reviewed only');
       }
       await teardownPhase();

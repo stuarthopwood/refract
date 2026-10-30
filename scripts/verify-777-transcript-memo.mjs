@@ -1,14 +1,7 @@
-// scripts/verify-777-transcript-memo.mjs
-// Live check for #777 (memoised TranscriptRow/Markdown) and the #769 retest, against a scratch
-// debug Tauri build driving the FAKE omp (`session-two-turns-answered` tape, no model, no network).
-//
-// Needs a build that carries the TEMPORARY render-counter hook (`window.__refractRenderCounts`,
-// keyed by transcript row id, and `window.__refractMdCounts`, keyed by Markdown id); the hook is
-// never committed. Set REFRACT_777_EXE to an already-built exe to skip the rebuild.
-//
-// #777 PASS: after turn 1 settles, no row that existed then re-renders while turn 2 streams, and
-// the streaming row's own counter climbs. #769: pastes a real PNG while the turn is working and
-// records how long the chip takes to appear.
+// Live check for #777 (memoised TranscriptRow/Markdown) and the #769 retest, driving a scratch debug
+// Tauri build against the FAKE omp. Needs a build with the temporary render-counter hook
+// (`window.__refractRenderCounts`, `window.__refractMdCounts`; never committed).
+// Set REFRACT_777_EXE to skip the rebuild.
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -133,7 +126,6 @@ async function main() {
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Composer enabled' });
 
-    // Turn 1: tool call -> pending approval -> streamed reply.
     await cdp.typeIntoByLabel('Message', 'first question');
     await cdp.pressEnter();
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Approval card (turn 1 working)' });
@@ -158,7 +150,6 @@ async function main() {
     await cdp.waitFor(`${CHIP_COUNT} === 0`, { timeoutMs: 10_000, label: 'chip 2 removed' });
     await sleep(1500);
 
-    // #777: counters over turn 2.
     const before = await counts();
     const olderRowIds = Object.keys(before.rows);
     check(olderRowIds.length >= 3, '#777: several older rows exist and were counted before turn 2', { rows: olderRowIds.length, counts: before.rows });

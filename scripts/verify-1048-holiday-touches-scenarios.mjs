@@ -1,7 +1,5 @@
-// Secondary launch scenarios for scripts/verify-1048-holiday-touches.mjs, split out to keep the
-// main script under the 600-line soft cap (issue #806) after gate round 1's own additions. Each
-// scenario is a SEPARATE, fresh launch (never reusing the main run's own instance), appending to
-// the SAME shared `report`/`notExercised` arrays the caller passes in.
+// Secondary launch scenarios for verify-1048-holiday-touches.mjs. Each is a fresh launch that
+// appends to the caller's shared `report` array.
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,12 +14,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG = 'verify-1048';
 
 
-/** Off-season override baseline: a SEPARATE fresh launch, no date override matching today's
- * real date, so this is deterministic regardless of which day this script runs on. Past
- * Readiness and a repository added (REAL UI flow, same as the main run), so the sidebar and the
- * real empty chat pane are both genuinely mounted -- without this, the absence check would
- * trivially pass on the Readiness screen alone, which never mounts the chat area regardless of
- * the date override working or not. */
+/** Off-season baseline: with a repository added the real chat pane mounts, so the absence check
+ * cannot pass trivially on the Readiness screen, which never mounts it. */
 export async function runOffSeasonBaseline(ctx) {
   const { repoRoot, buildOutputDir, shotsDir, dateOverride, hallowenIconClass, emptyLine, report } = ctx;
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-data-'));
@@ -116,13 +110,8 @@ export async function runOffSeasonBaseline(ctx) {
   }
 }
 
-/** Gate round 1 fix (item 11, decided by Main: prove the date round-trip rejection live rather
- * than with a new Rust unit test, which the prototyping rule forbids): launches once with
- * `REFRACT_DATE_OVERRIDE=2026-02-30` (not a real calendar day) and asserts the override resolves
- * to `null`, the exact same `debug_get_overrides` -> `resolve_overrides_from` ->
- * `is_valid_calendar_date_string` path the real app uses -- no Readiness/repository/fake-omp
- * needed, since `window.refract.debug.getOverrides()` answers the moment the renderer's own
- * bridge initialises, well before Readiness resolves. */
+/** Proves live that an invalid date override (2026-02-30) resolves to null, via the app's own
+ * `debug_get_overrides` path, which answers before Readiness resolves. */
 export async function runInvalidDateOverrideCheck(ctx) {
   const { repoRoot, buildOutputDir, report } = ctx;
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-invaliddate-data-'));

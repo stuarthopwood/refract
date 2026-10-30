@@ -1,48 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for issue #568 (pull request restyle: list rows, header, tabs and the detail
-// layout). Gate round 1 rewrite (2026-10-16): the first version let "no repo"/"no rows" exit 0
-// as "not exercised" instead of failing, measured the wrong `[role=tab]` for the underline
-// border (the list's own filter tab, not the detail tabs), claimed checks in its header comment
-// it never ran (App-font metadata, RefreshButton spinner/disabled, Merge's filled variant), used
-// a 760px window and called it "360px-equivalent" with no real measurement, and sent Enter with
-// no `text`, so it never activated the row's native button -- none of that is repeated here.
-// Drives the real Tauri debug build, isolated per the `refract-tauri-live-check-isolation` skill
-// (own `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR`, never Stuart's
-// real `%APPDATA%/refract-tauri`).
-//
-// Pull requests needs real GitHub data: the scratch Project added here is a shallow clone of
-// `stuarthopwood/refract` itself (read-only -- this script never writes a comment, review, or
-// merge; `pullRequests.comment`/`submitReview`/`merge` are never called), so the list has real
-// rows to assert against. A failed clone, or a settled list with zero rows and no error banner,
-// is a hard FAILURE (`checkFail` + non-zero exit), never a silent "not exercised" pass.
-//
-// Rebuilds the exe fresh via `buildAndCopyExeFresh` (never trusts a possibly sibling-lane-
-// clobbered shared-target binary), then asserts a #568-only DOM/bundle marker before trusting
-// anything else (refract-ui-lane-gate-checklist: "assert a story-only DOM marker before judging
-// any check").
-//
-// Checks actually made below, against the real rendered DOM (never `window.refract.*` as a
-// shortcut for anything the UI itself should do -- `window.refract.theme.set` is the one
-// exception, used only to switch themes between screenshots):
-//   - List: divide-y rows (no box chrome), active-indicator bar on select, no transition class
-//     on the bar, the metadata line's segments carry no `font-code` class (App font, not mono).
-//   - Detail: larger title (`text-lg`/`line-clamp-2`); the branch line's two branch tokens (and
-//     ONLY those two) carry `font-code`; solid StatePill (`bg-pr-*` class); New session/Review
-//     are `data-variant="ghost"`, Merge is `data-variant="default"` (the one filled button);
-//     the DETAIL tablist's own active tab (found by its "Overview"/"Changes" text, never by a
-//     bare `[role=tab][data-state=active]` selector, which matches the list's filter tabs
-//     first) measures exactly `2px` on the bottom and `0px` on the other three sides;
-//     `Changes (N file(s))` label; reviewer-consensus line when reviews exist.
-//   - Panel header: no `border-b` left on `PullRequestsView.tsx`'s own top strip.
-//   - Keyboard-only: Tab reaches a row, `cdp.pressEnter()` (sends real `text: '\r'`, the shared
-//     helper's own implementation, not a bare keycode) actually SELECTS it -- proved by the
-//     active-indicator bar moving onto that row AND the detail `h2` picking up that row's title.
-//   - RefreshButton: clicking it sets `aria-disabled="true"` and the icon `animate-spin`
-//     immediately, and both clear once the request settles, at both call sites.
-//   - A real 360px-wide window: every one of New session/Review/Merge has its full bounding rect
-//     inside `[0, 360)` (the earlier `shrink-0` clipping bug would fail this).
-//   - Dark, Dark (high contrast) and Obsidian screenshots; reduced motion (no transition/animate
-//     class on the bar, asserted, not merely screenshotted).
+// Live CDP check for #568 (pull request restyle: list rows, header, tabs, detail layout), driving the real Tauri debug build
+// isolated per the `refract-tauri-live-check-isolation` skill (scratch data dirs, never the real `%APPDATA%/refract-tauri`).
+// Needs real GitHub data: the scratch Project is a read-only shallow clone of `stuarthopwood/refract`; no comment/review/merge is ever sent.
+// A failed clone or a settled list with zero rows is a hard failure, never a "not exercised" pass.
+// Rebuilds the exe fresh via `buildAndCopyExeFresh` (a shared-target binary may be clobbered by a sibling lane), then asserts a #568-only marker first.
 
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -99,11 +60,7 @@ async function pressTab(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
 }
 
-/** Clones `stuarthopwood/refract` itself, shallow and read-only, into `dir` -- real PR data
- * without ever writing to a real repository. `gh search prs`/`gh pr view` resolve owner/repo
- * from the git remote URL, not from clone depth, so `--depth 1` is sufficient. Returns `null`
- * (never throws) if the clone fails (offline, rate-limited) so the caller fails the run loudly
- * instead of faking a pass. */
+/** Shallow read-only clone of `stuarthopwood/refract` into `dir` for real PR data; `gh` resolves owner/repo from the remote, so `--depth 1` suffices. Returns `null` on failure so the caller fails loudly. */
 function makeGithubScratchClone(dir) {
   mkdirSync(path.dirname(dir), { recursive: true });
   const result = spawnSync_('git', ['clone', '--depth', '1', '--quiet', GITHUB_SCRATCH_CLONE_URL, dir], { timeout: 60_000 });
@@ -183,8 +140,7 @@ async function main() {
     log(`verify-tauri-568: GitHub scratch clone ${repoClone ?? '(FAILED -- see below)'}`);
 
     if (!repoClone) {
-      // Gate round 1 fix (Tests High): a failed clone used to end the run as "not exercised"
-      // with exit 0. Real PR data is this story's whole point -- no repo is a hard failure.
+      // No repo is a hard failure: real PR data is the point.
       checkFail('GitHub scratch clone of stuarthopwood/refract succeeded', 'git clone failed (offline, or the ambient gh/git credentials are not reachable from this sandboxed shell) -- cannot prove anything about real PR data without it');
     }
 
@@ -231,9 +187,7 @@ async function main() {
       })()`, { timeoutMs: 30_000, label: 'pull request list settles' });
 
       if (loaded !== 'rows') {
-        // Gate round 1 fix (Tests High): an error banner or a list that never settles to real
-        // rows is a hard failure, not "not exercised" -- it means this run proved nothing about
-        // the actual restyle.
+        // An error banner or a list that never settles to real rows proves nothing about the restyle: hard failure.
         const errorText = loaded === 'error' ? await cdp.evaluate(`document.querySelector('[role="alert"]').textContent`) : '(list never settled within 30s)';
         checkFail('Pull request list settles to real rows', errorText);
       } else {
@@ -254,8 +208,7 @@ async function main() {
       if (noBoxChrome && rowShape.lines >= 3) checkPass('Row is a zero-box divide-y row with 3 lines', `rowClass="${rowShape.rowClass}"`);
       else checkFail('Row is a zero-box divide-y row with 3 lines', `rowClass="${rowShape.rowClass}" lines=${rowShape.lines}`);
 
-      // Gate round 1 addition: the metadata line's own segments must not carry `font-code` --
-      // decision 2's rejection of the mock's literal mono instruction.
+      // Metadata segments must not be `font-code` (decision 2).
       const metaUsesAppFont = await cdp.evaluate(`(() => {
         const list = document.querySelector('.divide-y.divide-divider') ?? document.querySelector('.divide-y');
         const row = list && list.querySelector('button');
@@ -266,8 +219,7 @@ async function main() {
       if (metaUsesAppFont === true) checkPass('Row metadata line has no font-code class (App font, not mono)');
       else checkFail('Row metadata line has no font-code class (App font, not mono)', String(metaUsesAppFont));
 
-      // ---- Keyboard-only: Tab to the first row, record its title, press Enter, prove it
-      // actually selected (active-indicator bar moves onto it AND the detail h2 updates) ----
+      // ---- Keyboard-only: Tab to the first row, press Enter, prove it selected ----
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
       await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
       let reachedRow = false;
@@ -278,19 +230,13 @@ async function main() {
       if (!reachedRow) {
         checkFail('Keyboard-only: Tab reaches a row and Enter selects it (detail h2 updates)', 'Tab never reached a row within 40 presses');
       } else {
-        // Gate round 1 fix (self-caught): `.closest('.divide-y')` returns the LIST CONTAINER
-        // (the class lives on the wrapper div, not on an individual row), not the specific
-        // focused row -- the row button IS `document.activeElement` directly once Tab reaches
-        // it, so read its own title span and its own bar directly, never via `.closest`.
+        // `.closest('.divide-y')` returns the list container, not the row; the focused row is `document.activeElement`, so read it directly.
         const focusedRowTitle = await cdp.evaluate(`(() => {
           const titleSpan = document.activeElement ? document.activeElement.querySelector('span.truncate') : null;
           return titleSpan ? titleSpan.textContent.trim() : null;
         })()`);
         await cdp.pressEnter();
-        // Gate round 1 fix (self-caught): a fixed 400ms sleep isn't enough for the detail
-        // view's own real `pullRequests.detail()` GitHub round-trip (it shows "Loading..." with
-        // no `h2` at all until that resolves) -- poll for the real title to actually land,
-        // generously, since this is a genuine network call, not a local re-render.
+        // Poll generously: the detail view shows "Loading..." with no `h2` until a real GitHub round trip resolves.
         const detailTitleMatches = await cdp
           .waitFor(`(() => {
             const h2 = document.querySelector('h2.line-clamp-2');
@@ -315,8 +261,7 @@ async function main() {
       if (titleClass && /\btext-lg\b/.test(titleClass)) checkPass('Detail title is text-lg/line-clamp-2', titleClass);
       else checkFail('Detail title is text-lg/line-clamp-2', titleClass ?? 'not found');
 
-      // Gate round 1 addition: ONLY the two branch tokens are font-code, never the surrounding
-      // "into"/"by <author>" text (decision 2).
+      // Only the two branch tokens are font-code, not "into"/"by <author>" (decision 2).
       const branchLineShape = await cdp.evaluate(`(() => {
         const h2 = document.querySelector('h2.line-clamp-2');
         const branchLine = h2 ? h2.nextElementSibling : null;
@@ -331,14 +276,12 @@ async function main() {
       if (pillClass) checkPass('StatePill renders with a bg-pr-* class', pillClass);
       else checkFail('StatePill renders with a bg-pr-* class', 'not found');
 
-      // Gate round 2 fix (Code Low): scope every button probe below to the DETAIL HEADER
-      // specifically (the block containing the `h2.line-clamp-2` title), not the whole
-      // document -- a dialog or another panel could in principle contain a same-named button.
+      // Scope button probes to the detail header (the block with the `h2.line-clamp-2` title); another panel could hold a same-named button.
       const newSessionVariant = await cdp.evaluate(`(() => { const header = document.querySelector('h2.line-clamp-2')?.closest('.shrink-0'); const btn = header && Array.from(header.querySelectorAll('button')).find((el) => el.textContent.trim().startsWith('New session') || el.textContent.trim() === 'Starting\\u2026'); return btn ? btn.getAttribute('data-variant') : null; })()`);
       if (newSessionVariant === 'ghost') checkPass('New session button is data-variant="ghost"');
       else checkFail('New session button is data-variant="ghost"', `got "${newSessionVariant}"`);
 
-      // Gate round 1 addition: Merge must stay the one FILLED (default-variant) button.
+      // Merge must stay the one filled (default-variant) button.
       const mergeVariant = await cdp.evaluate(`(() => { const header = document.querySelector('h2.line-clamp-2')?.closest('.shrink-0'); const btn = header && Array.from(header.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Merge'); return btn ? btn.getAttribute('data-variant') : null; })()`);
       if (mergeVariant === 'default') checkPass('Merge button is data-variant="default" (the one filled button)');
       else checkFail('Merge button is data-variant="default" (the one filled button)', `got "${mergeVariant}"`);
@@ -347,10 +290,7 @@ async function main() {
       if (changesLabel) checkPass('Changes tab label includes file count', changesLabel);
       else checkFail('Changes tab label includes file count', 'not found');
 
-      // Gate round 1 fix (all 3 reviewers, High): scope strictly to the DETAIL tablist (found
-      // by its own "Overview" trigger text), never a bare `[role=tab][data-state=active]`
-      // selector, which matches the LIST's five filter tabs first (also `role=tab`). Assert the
-      // exact computed border shape: 2px bottom, 0px on every other side.
+      // Scope to the detail tablist (found by its "Overview" trigger): a bare `[role=tab][data-state=active]` matches the list's filter tabs first.
       const detailTabBorders = await cdp.evaluate(`(() => {
         const overviewTab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Overview');
         const tablist = overviewTab ? overviewTab.closest('[role="tablist"]') : null;
@@ -363,9 +303,7 @@ async function main() {
       if (isRealUnderline) checkPass('Detail Overview/Changes active tab is a real 2px underline (0px on other 3 sides)', JSON.stringify(detailTabBorders));
       else checkFail('Detail Overview/Changes active tab is a real 2px underline (0px on other 3 sides)', JSON.stringify(detailTabBorders));
 
-      // Gate round 2 fix (architect L1): scope to the Overview tab's OWN panel (found via the
-      // "Overview" trigger's `aria-controls`, the real Radix wiring from trigger to content),
-      // not any `<p>` anywhere in the document.
+      // Scope to the Overview panel via the trigger's `aria-controls`, not any `<p>` in the document.
       const consensusText = await cdp.evaluate(`(() => {
         const overviewTab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Overview');
         const panelId = overviewTab ? overviewTab.getAttribute('aria-controls') : null;
@@ -376,8 +314,7 @@ async function main() {
       if (consensusText) checkPass('Reviewer-consensus line renders when reviews exist', consensusText);
       else notExercised('Reviewer-consensus line with a non-zero verdict', 'the selected pull request happened to have no reviews yet; code-verified only (ReviewConsensus.tsx returns null on zero reviews, matching decision 10)');
 
-      // ---- RefreshButton: busy state at the detail call site (loading -> aria-disabled +
-      // animate-spin -> settles back) ----
+      // ---- RefreshButton busy state at the detail call site ----
       const refreshBefore = await cdp.evaluate(`(() => {
         const btn = document.querySelector('button[aria-label="Refresh this pull request"]');
         return btn ? { ariaDisabled: btn.getAttribute('aria-disabled'), spinning: btn.querySelector('svg').getAttribute('class').includes('animate-spin') } : null;
@@ -397,29 +334,15 @@ async function main() {
         checkFail('RefreshButton (detail): aria-disabled + spinner while loading, clears once settled', JSON.stringify({ refreshBefore, refreshDuring, refreshSettled }));
       }
 
-      // ---- A REAL narrow detail pane: the list column is a fixed, non-shrinking `w-80`
-      // (320px) plus the session-list sidebar beside it, so a 360px TOTAL window (the app's own
-      // `App.tsx` `minSize={360}` floor for this main-content panel) leaves the DETAIL PANE
-      // itself only a sliver -- that is the real floor a user can actually drag to, so it is
-      // tested as a whole-window resize, not a guessed "detail pane = 360px" number. The pane's
-      // own container (`PullRequestsView.tsx`'s literal `min-w-0 flex-1 overflow-hidden` div) is
-      // measured directly, and every action button's rect must land fully inside THAT pane's
-      // own bounds, not just "inside the OS window" (which the first build's 760px/"360px-
-      // equivalent" check never actually measured). Gate round 1 fix: previously set the WHOLE
-      // window to exactly ${NARROW_WIDTH}px, which starved the detail pane down to a few px past
-      // the fixed sidebar+list-column width and produced a meaningless result -- this instead
-      // sizes the window so the detail pane itself lands near ${NARROW_WIDTH}px, matching the
-      // decision record's own "360px pane width ... on the restyled ... detail header" intent.
+      // ---- Narrow detail pane: the fixed `w-80` list column plus the sidebar leave only a sliver at a 360px window (App.tsx `minSize={360}`),
+      // so size the window so the detail pane itself lands near ${NARROW_WIDTH}px and assert each action button sits inside that pane. ----
       const laidOutAtWideWindow = await cdp.evaluate(`(() => {
         const pane = Array.from(document.querySelectorAll('div')).find((el) => el.className === 'min-w-0 flex-1 overflow-hidden');
         return pane ? pane.getBoundingClientRect().left : null;
       })()`);
       let windowWidth = Math.round((laidOutAtWideWindow ?? 333) + NARROW_WIDTH);
       let paneRect = null;
-      // Gate round 1 fix (self-caught): the session-list sidebar beside this pane is itself
-      // resizable, not a second fixed offset -- a single offset-plus-target calculation landed
-      // 60px off target in practice. Converges by measuring the pane after each resize and
-      // correcting the window width by the residual error, up to 3 attempts.
+      // The sidebar is resizable, so one offset calculation missed by 60px; converge by re-measuring the pane (up to 3 attempts).
       for (let attempt = 0; attempt < 3; attempt++) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width: windowWidth, height: 900, deviceScaleFactor: 1, mobile: false });
         await sleep(500);
@@ -460,8 +383,7 @@ async function main() {
       notExercised('Every live PR-data check (list rows, detail header, tabs, StatePill, keyboard selection, narrow width, RefreshButton busy state)', 'real GitHub PR data was not reachable this run (see the hard failure above) -- code-verified only');
     }
 
-    // ---- Reduced motion: asserted above via the bar's own class list (not merely a
-    // screenshot) -- still captured for visual record. ----
+    // ---- Reduced motion: asserted above via the bar's class list; captured for the record. ----
     await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await sleep(300);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-reduced-motion.png'));

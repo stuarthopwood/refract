@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1233 (Halloween artwork visibility): on all five dark themes the
-// Halloween bats and watermark glyph read at about 3:1 against the theme background, and the bat
-// flight countdown survives idle pauses (it freezes while paused instead of restarting).
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
-// scripts/verify-1233-holiday-visibility.mjs (requires a prior `pnpm exec tauri build --debug
-// --no-bundle`). Runs a scratch instance with a scratch data dir and the recorded-frame fake omp.
+// Live CDP check (#1233): Halloween bats and glyph read ~3:1 on all dark themes; the bat flight countdown freezes across idle pauses.
+// Needs a prior `pnpm exec tauri build --debug --no-bundle`.
 
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,11 +38,10 @@ const SHORT_IDLE_MS = 3_000;
 const SHORT_FLIGHT_INTERVAL_MS = 5_000;
 const MIN_CONTRAST = 3;
 const MIN_FLIGHT_DISTANCE_PX = 15;
-// Fixed and independent of REFRACT_1233_SHOTS_DIR (#1256): the report always lands here.
+// Independent of REFRACT_1233_SHOTS_DIR so the report always lands here (#1256).
 const REPORT_DIR = path.join(tmpdir(), 'refract-1233-report');
 
-// Composites `color` at `opacity` over `--background` through a canvas (the same sRGB-gamma
-// blend the compositor uses) and returns the WCAG contrast of the result against the background.
+// Composites through a canvas so the sRGB-gamma blend matches the compositor's.
 const CONTRAST_PROBE = `(selector) => {
   const els = Array.from(document.querySelectorAll(selector));
   if (els.length === 0) return null;
@@ -142,7 +136,6 @@ async function main() {
     await cdp.clickByText('Add repository', { inDialog: true });
     await cdp.waitFor(`!!document.querySelector('[data-chat-empty-state]')`, { timeoutMs: 30_000, label: 'Empty chat state' });
 
-    // ---- 3:1 contrast, bats and glyph, every theme ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 400 });
@@ -155,15 +148,12 @@ async function main() {
     }
     await switchTheme(cdp, 'dark', 'Dark');
 
-    // ---- Flight countdown survives idle pauses ----
-    // Each awake window is 3.4s (idle pause at 3s) against a 5s delay: a countdown that restarts
-    // on resume never reaches 5s, so any flight here proves the remaining delay was kept.
+    // A countdown that restarts on resume never reaches the 5s delay, so any flight proves it was kept.
     const flightCount = () => cdp.evaluate(`Number(document.querySelector('.holiday-ambient-loop')?.getAttribute('data-flight-count') ?? 0)`);
     const pausedAttr = () => cdp.evaluate(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`, { timeoutMs: 15_000, label: 'Loop paused by idle' });
     const before = await flightCount();
-    // A flight must move a bat clear of its resting spot, not merely bump the counter. The idle
-    // pause lands about 1s into a flight (ease-in-out, ~25-30px by then), so the bar is 15px.
+    // Idle pause lands ~1s into a flight (~25-30px by then), so 15px is the bar.
     await cdp.evaluate(`(() => { window.__batRest = Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); })()`);
     const maxDisplacement = () => cdp.evaluate(`(() => { const rest = window.__batRest || []; let max = 0; Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).forEach((el, i) => { const r = el.getBoundingClientRect(); max = Math.max(max, Math.hypot(r.left - rest[i][0], r.top - rest[i][1])); }); return max; })()`);
     let pausedFlights = 0;

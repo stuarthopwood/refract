@@ -1,20 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #962 (follow-up from #950/#632): a collapsed multi-call tool group's
-// Error line attribution prefix used to run into the message with no visible gap ("$ exit 9:
-// Command exited with code 9") -- the space was the LAST character inside the prefix `bdi`'s own
-// `inline-block` line box, and CSS collapses/drops trailing whitespace at the end of an inline
-// formatting context, so the space never rendered even though it was in the markup. Also:
-// `commandRowText` did not strip control/bidi-override characters the way `errorLine`'s own
-// `sanitizeLines` already did.
-//
-// Modeled on `verify-917-advisor-command.mjs` (a REAL `omp`, ambient signed-in default profile,
-// scratch `REFRACT_DATA_DIR`/repo only). Two turns, one scratch Session:
-//   (a) two bash calls, the second `exit 9` (same shape as #632's own turn (a)) -- proves the
-//       collapsed group's Error line prefix and message have a real visual gap (measured via
-//       `getBoundingClientRect`, never just `textContent`, which would pass even with the bug:
-//       the space character was always IN the DOM, only its CSS rendering collapsed it away).
-//   (b) one bash call whose own command embeds a real U+202E (RIGHT-TO-LEFT OVERRIDE) byte --
-//       proves `commandRowText`'s rendered row text never contains it.
+// Live CDP check that a collapsed tool group's Error line keeps a visible gap after its prefix, and that
+// `commandRowText` strips bidi-override characters (real omp, scratch REFRACT_DATA_DIR/repo only).
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -36,17 +22,12 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
   process.env.REFRACT_962_SHOTS_DIR || path.join(tmpdir(), 'refract-962-error-prefix-space-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
-// Same finder `verify-632-grouped-calls.mjs` uses: every top-level tool-call group header button
-// (a multi-call group's own `[data-slot="collapsed-line-label"]` reads "Ran \u00d72"; a solo command-style row has
-// no label at all, recognised instead by its summary starting with the command grammar). Excludes
-// an expanded group's own member rows (inside `ol.border-l`), which match the same label-less
-// fallback.
+// Top-level tool-call group headers; excludes an expanded group's member rows (`ol.border-l`), which match the label-less fallback.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   if (el.closest('ol.border-l')) return false;
   const l = el.querySelector('[data-slot="collapsed-line-label"]');
@@ -59,17 +40,11 @@ const BASH_GROUP_LABEL = /^Ran\s*\u00d72$/;
 
 const TURN_A_PROMPT =
   "Make exactly TWO separate bash tool calls, strictly in this order, waiting for each one to finish before starting the next: first run exactly `sleep 1 && echo t962-one`, second run exactly `exit 9` (which deliberately fails with no output). After both finish, reply with exactly the single word 't962a' and nothing else.";
-// A REAL U+202E (RIGHT-TO-LEFT OVERRIDE) byte embedded directly in the prompt text -- the model
-// copies it through into its own bash tool call's command argument verbatim, no shell-side
-// escape interpretation (same technique #632's own `TURN_F_PROMPT` used for a real ESC byte).
+// A real U+202E byte in the prompt: the model copies it into the bash command verbatim.
 const TURN_B_PROMPT =
   "Make exactly ONE bash tool call that runs exactly this, byte for byte, with no retyping or reinterpreting: `echo t962BidiMarker\u202Eafter-override` (its own command text deliberately contains a real U+202E RIGHT-TO-LEFT OVERRIDE character). Then reply with exactly the single word 't962b' and nothing else.";
 
-// Reads the collapsed group header at `index`, its `aria-describedby` detail paragraph, the
-// prefix `bdi` inside it, and the gap between the `bdi`'s own right edge and the first
-// non-whitespace character that follows it -- the CSS symptom (collapsed trailing space inside
-// the `bdi`'s `inline-block`) only shows up as a GEOMETRIC gap of (near) zero; `textContent`
-// alone would pass even with the bug, since the space character was always present in the DOM.
+// Measures the gap geometrically: the collapsed trailing space is still in the DOM, so `textContent` passes even with the bug.
 function groupDetailGeometry(index) {
   return `(() => {
     const h = (${GROUP_HEADERS}).at(${index});
@@ -188,7 +163,7 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- Turn (a): 2 bash calls, #2 fails -- the collapsed group's Error line prefix gap ----
+    // ---- Turn (a): 2 bash calls, #2 fails ----
     await cdp.typeIntoByLabel('Message', TURN_A_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(
@@ -217,14 +192,8 @@ async function main() {
       }
     }
 
-    // ---- Turn (b): one bash call whose own command embeds a real U+202E override byte ----
-    // Gate round 0 (self-caught, first run of this script): a naive "marker text somewhere in
-    // the transcript" wait races the USER's OWN message bubble, which legitimately renders the
-    // marker (it is literally part of the prompt text) well before the tool call itself ever
-    // mounts -- `GROUP_HEADERS.at(-1)` then silently resolved back to turn (a)'s own "bash ×2"
-    // header (summary deliberately empty for a multi-call group), making the very next check
-    // vacuous. Captures the header count BEFORE sending, waits for a genuinely NEW header whose
-    // own summary span contains the marker.
+    // ---- Turn (b): one bash call embedding a U+202E byte ----
+    // Wait for a NEW header with the marker: the user's own bubble renders it first and would make `.at(-1)` resolve to turn (a).
     const headerCountBeforeB = await cdp.evaluate(`(${GROUP_HEADERS}).length`);
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
     await cdp.clickByLabel('Send message');
@@ -241,10 +210,7 @@ async function main() {
       })()`,
       { timeoutMs: 15_000, label: "Turn (b) new bash row's own summary shows the marker" }
     );
-    // Scoped to the command row's OWN summary span (never the whole transcript): the user's own
-    // typed prompt bubble legitimately renders the raw U+202E byte verbatim too (plain user text
-    // is never sanitized, nor should it be) -- the only thing #962 is about is `commandRowText`'s
-    // own rendering of the bash command, so only that span is checked.
+    // Check only the command row's summary span: the user's prompt bubble legitimately renders the raw byte.
     const bidiRowText = await cdp.evaluate(`(() => {
       const h = (${GROUP_HEADERS}).at(-1);
       if (!h) return null;

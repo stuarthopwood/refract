@@ -1,39 +1,11 @@
 #!/usr/bin/env node
-// Split out of `verify-941-part2.mjs` (#806 600-line file-size discipline, issue #1000's gate-B
-// fix pushed the main script over the 600-line cap): the #989 async-result Stage-scoping
-// assertion, self-contained (only needs `cdp` plus the shared Stage title/selector/expand
-// helpers), so it moves here unchanged apart from the added `export` keyword and the FR-087
-// renumbering (both already applied to its source before this extraction, not introduced by it).
+// Verifies async-result jobs are scoped to the Stage that produced them (#989).
 
 import { stageContentSelector, expandRow, STAGE2_TITLE, STAGE5_TITLE } from './verify-941-stage-naming-helpers.mjs';
 
-/** Issue #989: `apply_async_result_jobs` (`subagent_items.rs`) must scope an async-result job to
- * the Stage that actually produced it, never to any item sharing the same `job_id`/label string.
- * Stage 2 and Stage 5 both run a subagent named "Story559" (`stages-941.jsonl`'s own
- * `msg-ar2`/`msg-ar5`); the job's own wire `id` is just its `label` echoed back, not a
- * session-unique value, so before the fix Stage 5's LATER async-result (arriving after Stage
- * 2's own row had already settled) matched Stage 2's already-finished Story559 row too,
- * overwriting its `result`/`duration_ms` with Stage 5's own data (1800ms/"Implemented the fix
- * for #559." clobbered to 4300ms/"Polished Story559 follow-up items."). Stage 2 starts
- * collapsed regardless of Stage count (never auto-opens on running alone, issue #1000/FR-087);
- * Stage 5 starts EXPANDED by default (`StageGroupRow`'s own `isOpenByDefault` -- `total > 1 &&
- * (isMultiStageTurn ? hasBadMember : isRunning || hasBadMember)` -- evaluates true because
- * Stage 5 has a failed member, FailAgent, regardless of Stage count). `expandRow` is a safe
- * no-op when a row is already open (checks `aria-expanded` first), so the same call below
- * handles both cases; expanding either reveals its own Story559 member's one-line result
- * summary (`extractResultSummary`) and rendered duration (`formatElapsed`) with no need to
- * expand the member row itself (same mechanism `assertDetailsOnExpand` already uses for Stage 1).
- *
- * Gate round 1 fix (item 7, LOW): reads the Story559 MEMBER ROW's own `textContent` directly
- * (`[title="Story559"]` inside the Stage's content, `.closest('[data-slot="collapsible-
- * trigger"]')` to the row's whole trigger button -- the same `data-slot` `stageTriggerSelector`
- * already keys on, just scoped one level deeper), not the whole Stage's `textContent` -- Stage
- * 2's sibling member (Story560, 2000ms, also renders "2s") made the old whole-Stage duration
- * check weaker than it looked; row-scoping removes that collision entirely.
- *
- * Gate round 2 (issue #989): a custom `async-result` message's jobs are now applied exactly
- * ONCE, on `message_end` only (`transcript.rs`'s `apply_message_snapshot`), so there is no
- * second application of the same message left to observe at all -- see `notExercised` below. */
+/** Stage 2 and Stage 5 both run a subagent named "Story559" and an async-result's wire `id` is only its label,
+ * so a later result must not overwrite the earlier Stage's row. Reads the member row, not the whole Stage text,
+ * because sibling Story560 also renders "2s". `expandRow` is a no-op on an already-open row. */
 export async function assertAsyncResultStageScoping(cdp, findings, failures, notExercised) {
   const failuresAtStart = failures.length;
   const expectations = [
@@ -56,19 +28,8 @@ export async function assertAsyncResultStageScoping(cdp, findings, failures, not
   ];
   for (const exp of expectations) {
     const rowSelector = `${stageContentSelector(exp.stage)}?.querySelector('[title="Story559"]')?.closest('[data-slot="collapsible-trigger"]')`;
-    // Gate fix (issue #1000's own second additive fixture delay on Stage 2, research.md
-    // decision 22): that extra ~1.5s gives the Transcript's own virtualized list
-    // (`react-virtuoso`) genuinely more wall-clock time to scroll Stage 2's own row out of its
-    // rendered window before this check ever reaches it -- a standalone CDP probe confirmed
-    // `stageTriggerSelector` reads `null` immediately before `expandRow`'s own click and
-    // resolves correctly immediately after (the click's own `clickScrolled` scroll-into-view is
-    // what re-materializes the row), but is not always given enough time to settle before the
-    // content check below first polls. Retried up to 3 times: each attempt re-calls `expandRow`
-    // (a safe no-op once already open) before its own wait, so a transient virtualization miss
-    // on attempt 1 is recovered by attempt 2/3 without ever silently passing on a genuine
-    // content regression -- once `rowFound`, the real #989 claim-vs-text checks below run
-    // against that exact row; if the row never renders after all 3 honest attempts, a failure
-    // is recorded and the text checks are skipped (there is no row left to read).
+    // react-virtuoso can scroll the row out of the rendered window before this check reaches it; expandRow's
+    // scroll re-materializes it, so retry (expandRow is a no-op when already open).
     let rowFound = false;
     for (let attempt = 1; attempt <= 3 && !rowFound; attempt++) {
       await expandRow(cdp, exp.stage);
@@ -113,22 +74,8 @@ export async function assertAsyncResultStageScoping(cdp, findings, failures, not
       '[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration (row-scoped, not whole-Stage text) -- no cross-Stage async-result clobbering.'
     );
   }
-  // Gate round 4 fix (issue #989, `agent://Main` item 2): real omp always sets `display: true`
-  // on an async-result message -- `stages-941.jsonl` now carries it on every one of its ten
-  // (gate round 4, matching `async-job-delivery.ts`'s own builder). Before the gate-round-3
-  // short-circuit, a `message_start` frame (its own job application already skipped by gate
-  // round 2) fell through to the plain `display == true` Notice branch (`transcript.rs`),
-  // building a stray "Info:" notice for every one of this fixture's ten async-result messages
-  // -- `message_end`'s own job application only updates matching `subagent` items, so it never
-  // replaced or removed that earlier Notice item. Every one of this fixture's async-result
-  // messages carries an empty `content: ""`, so the only reliable signal a stray row leaves
-  // behind is its own existence (a blank-text "Info:" notice), not any particular substring;
-  // scanning the whole Transcript for `NoticeRow`'s own `sr-only` level marker ("Info:") catches
-  // it regardless of content. This fails against gate round 2's own code (head `53882ee`, with
-  // this fixture's new `display: true`): ten stray notices survive to the end of the turn
-  // (`message_end`'s own async-result application never removes them). It passes at HEAD: the
-  // gate-round-3 short-circuit returns `items` unchanged on `message_start`, so no Notice item
-  // is ever built for an async-result message at any frame.
+  // Real omp sets `display: true` on async-result messages; a message_start must not build a stray blank "Info:" notice.
+  // The content is empty, so the notice's existence (sr-only "Info:" marker) is the only signal.
   const strayNoticeCount = await cdp.evaluate(`
     Array.from(document.querySelectorAll('[aria-label="Transcript"] span.sr-only'))
       .filter((el) => el.textContent.trim() === 'Info:').length

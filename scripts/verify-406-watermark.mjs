@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for spec 012 / issue #406 (brand watermark): drives a debug exe built from
-// current main against the FAKE `omp` and FAKE `gh` shims (the real gh account never answers).
-// Proves: one mark in a single pane and one (right pane only) in a split, hidden on Settings
-// (only the small preview remains), the Settings switch toggles live and persists across a
-// restart, the mark is hidden under forced-colors and prefers-reduced-transparency, and a click
-// on the mark lands on real content (pointer-events none, not a Tab stop, aria-hidden).
+// Live CDP check of the brand watermark (#406) against the FAKE `omp` and `gh` shims: one mark per
+// view, hidden on Settings and under forced-colors/reduced-transparency, never intercepts clicks.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-406-watermark.mjs
 // (requires a prior `pnpm exec tauri build --debug --no-bundle`).
 
@@ -143,7 +139,6 @@ async function runLayoutChecks(cdp) {
   await cdp.evaluate(`(() => { const el = ${composerSel}; el.focus(); el.select(); document.execCommand('delete'); })()`);
   await sleep(300);
 
-  // Window resize.
   const sizes = [];
   for (const width of [1100, 800, 620]) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 700, deviceScaleFactor: 1, mobile: false });
@@ -217,7 +212,6 @@ async function runLayoutChecks(cdp) {
   if ((await cdp.evaluate(`document.querySelector('[data-rail-toggle]')?.getAttribute('aria-expanded')`)) === 'true') await cdp.click(`document.querySelector('[data-rail-toggle]')`);
   await sleep(500);
 
-  // Manage sessions: no live mark.
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menu"][data-state="open"]')).find((el) => el.textContent.includes('Manage sessions'))`, { timeoutMs: 10_000, label: 'Profile menu open' });
   await sleep(300);
@@ -269,7 +263,6 @@ async function main() {
     else check((await cdp.evaluate(`${LIVE}.length`)) === 0, 'Home view (full-screen, not a chat area): no live mark', null);
     await shot(cdp, '01-empty-state.png');
 
-    // Single pane.
     await createSession(cdp);
     const single = await cdp.evaluate(MARKS);
     const composerTop = await cdp.evaluate(`document.querySelector('[aria-label="Message"]').getBoundingClientRect().top`);
@@ -299,14 +292,12 @@ async function main() {
     check(split.length === 1 && inRight[0] === true && inLeft[0] === false, 'Split: exactly one mark, inside the right pane only', { split, inRight, inLeft });
     await shot(cdp, '03-split.png');
 
-    // Settings: no live mark, only the preview.
     await openAppearance(cdp);
     check((await cdp.evaluate(`${LIVE}.length`)) === 0, 'Settings: no live corner mark', null);
     check((await cdp.evaluate(PREVIEW_COUNT)) === 1, 'Settings: exactly one preview mark', null);
     check((await switchState(cdp)) === 'true', 'Settings: switch defaults to on', null);
     await shot(cdp, '04-settings-on.png');
 
-    // Toggle off, then on.
     await setSwitch(cdp, false);
     check((await cdp.evaluate(PREVIEW_COUNT)) === 0, 'Switch off: preview disappears immediately', null);
     await shot(cdp, '05-settings-off.png');

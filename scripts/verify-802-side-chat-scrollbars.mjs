@@ -1,68 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for issue #802 (bug: two vertical scrollbars at the right edge of the Side chat
-// panel when the answer is taller than the pane). Modelled directly on
-// `verify-439-history-truncate.mjs`/`verify-862-conversation-history.mjs`'s own guarded-tmpdir,
-// fresh-exe-copy, themed-screenshot pattern; drives the real UI (rail click, typed question,
-// Enter, the pane's own Min/Max width-preset buttons), never `window.refract.*` directly, so the
-// measurement below sees the exact DOM a real developer would.
-//
-// GATE ROUND 1 RESULT (build slot granted 2026-10-18): GREEN at commit `20cce39`/`592e431`
-// (fixed code, `SideChatPanel.tsx` root `min-h-0 flex-1`) passed clean. A RED probe (root
-// `className` reverted to the pre-fix `h-full` on a throwaway branch, rebuilt) STILL showed
-// exactly 1 scroll container with the SAME identity -- reverting the className alone did NOT
-// reproduce a second scroll container. This falsified the claim that `SideChatPanel.tsx`'s
-// `h-full`-vs-`flex-1` choice is, by itself, the cause of the reported bug (full writeup on
-// issue #802 and PR #1014).
-//
-// GATE ROUND 2 (Main, 2026-10-18): the round 1 fixture never actually matched the issue's own
-// reported content shape or the issue's own acceptance criteria, so the RED probe's failure to
-// reproduce proves the FIXTURE was insufficient, not that the bug is unconfirmable. Rebuilt here
-// to match the issue literally:
-//   - The fixture's own answer now carries a genuinely WIDE markdown table (4 columns of long
-//     unbroken tokens, ~265 characters per row -- far wider than `RIGHT_PANE_MAX_WIDTH_PX`, the
-//     pane's own 520px maximum, regardless of font metrics) and a long code block (45 lines,
-//     several deliberately unbroken ~130-character lines), alongside the existing 40-item
-//     bulleted list and prose -- exactly the issue's own "a wide table and a long code block"
-//     acceptance wording.
-//   - The scroll probe below is extended to scan EVERY element on the page (not only the right
-//     pane's own ancestor chain) for a genuinely RENDERED vertical scrollbar:
-//     `(offsetWidth - clientWidth) > 0 && scrollHeight > clientHeight`. This is a stricter, more
-//     direct test than "computed overflow-y is auto/scroll" (which can be true with nothing
-//     actually rendered): it only matches an element whose own scrollbar gutter is genuinely
-//     consuming layout space. Main's own hypothesis, read from `Markdown.tsx`: the table wrapper
-//     (~833, `overflow-x-auto rounded-md border`) and the code-block wrapper (~181,
-//     `scrollableClassName`, also `overflow-x-auto`) both set ONLY `overflow-x` -- per the CSS
-//     Overflow spec, when `overflow-x` is non-`visible` and `overflow-y` is left unset,
-//     `overflow-y`'s own COMPUTED value resolves to `auto` too (never `visible`). If subpixel
-//     rounding or the horizontal scrollbar's own height ever pushes either wrapper's
-//     `scrollHeight` past its `clientHeight`, the browser would draw a genuine SECOND vertical
-//     scrollbar right there, inside the Side chat panel's own already-scrolling answer region --
-//     at the SAME right edge Stuart described, not "a pair across the divider". This is a
-//     hypothesis, not yet a verdict: the RED/GREEN runs below are what will actually confirm or
-//     falsify it.
-//   - The script now drives the pane to both `RIGHT_PANE_MIN_WIDTH_PX` (240px, the "Min" preset
-//     button) and `RIGHT_PANE_MAX_WIDTH_PX` (520px, "Max") via `WidthPresetControl.tsx`'s own
-//     `[aria-label="Pane width"]` button group, and checks under both Dark and Dark (high
-//     contrast) -- the exact 2-width/2-theme matrix the issue's own Acceptance section names
-//     ("screenshots Dark and High contrast, 240 px and 520 px pane widths").
-//
-// WRITTEN, NOT RUN (this round): the build slot was handed back to #911 before this rebuild
-// could be verified live. `node --check` is the only command run against this revision; the
-// RED-then-GREEN run plan (RED first, root className reverted to `h-full` on a local-only probe
-// branch, expecting the probe to NAME a second scroller this time; then the real fix; then
-// GREEN) is queued for whenever Main grants the slot back.
-//
-// What this script does NOT prove (recorded in its own `notExercised`):
-//   - The main transcript and the Agents panel staying at exactly one scroll container under the
-//     same stress (the issue's own acceptance list includes them) -- out of scope for this
-//     script, which is scoped to the Side chat panel only; neither panel changed in this PR.
-//   - A streaming answer (deltas arriving over several `btw_delta` push frames while the panel is
-//     open) -- the fixture's own `btw` response already carries the full, complete answer in one
-//     frame; a streaming answer that grows the scroll container's own height frame-by-frame
-//     while still mid-turn is a different code path this run does not cover.
-//   - Whether a wide table or long code block elsewhere in the app (the main transcript, a tool
-//     call's Arguments/Output) can trigger the same CSS-spec overflow-y coupling -- this fixture
-//     and script are scoped to the Side chat panel only.
+// Live CDP check for #802 (two vertical scrollbars at the right edge of the Side chat panel when the answer
+// is taller than the pane). Drives the real UI, never `window.refract.*`; the probe scans every element for a
+// rendered vertical scrollbar (`offsetWidth - clientWidth > 0 && scrollHeight > clientHeight`).
+// Hypothesis: wide table/code wrappers set only `overflow-x`, so `overflow-y: auto` is computed too.
+// Not covered (see `notExercised`): main transcript, Agents panel, streaming answers.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -88,10 +29,8 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const SHOTS_DIR =
   process.env.REFRACT_802_SHOTS_DIR || path.join(tmpdir(), `refract-802-side-chat-scrollbars-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 
-// The issue's own Acceptance section names exactly these two themes and two pane widths
-// (RIGHT_PANE_MIN_WIDTH_PX/RIGHT_PANE_MAX_WIDTH_PX, right-pane-store.ts), reachable via
-// WidthPresetControl.tsx's own "Min"/"Max" buttons -- never a drag gesture, which CDP cannot
-// perform reliably.
+// The issue's acceptance names these two themes and two pane widths, reached via the Min/Max
+// buttons because CDP cannot drag reliably.
 const THEMES = [
   { id: 'dark', name: 'Dark' },
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
@@ -112,21 +51,11 @@ const QUESTION = 'Give me a long answer with a bulleted list, a wide table, and 
 const LAST_LINE_MARKER = 'ISSUE802-LAST-LINE-MARKER';
 const RIGHT_PANE_SELECTOR = '#right-pane-active-panel';
 
-/** Scans TWO candidate sets for a genuinely RENDERED vertical scrollbar
- * (`(offsetWidth - clientWidth) > 0 && scrollHeight > clientHeight` -- the scrollbar gutter is
- * actually consuming layout space, not merely a computed `overflow-y` value with nothing to
- * show): (a) `scopedCandidates`, the right pane's own `react-resizable-panels` `Panel` wrapper
- * (found by walking UP from `RIGHT_PANE_SELECTOR` via `.closest('[data-panel]')` -- an ANCESTOR
- * of that selector, never a descendant) plus its entire subtree (which includes the library's
- * own inner `overflow:auto` div, `RIGHT_PANE_SELECTOR` itself, and every Markdown-rendered
- * element inside the Side chat answer, including the wide table and code-block wrappers) and
- * every ancestor of that Panel wrapper up to `document.body`; (b) `pageCandidates`, literally
- * every element in the document, per Main's own instruction to list EVERY element on the page,
- * not only the panel's own ancestry (gate round 2). Each match's own `data-*` attributes,
- * computed `overflow-x`/`overflow-y`, bounding rect, and scroll/client/offset metrics are
- * included so a failure names exactly which element(s) collided. `horizontalOverflow` is
- * diagnostic only (never gates pass/fail): the issue's own acceptance explicitly ALLOWS the wide
- * table and long code block to scroll horizontally. */
+/** Scans two candidate sets for a rendered vertical scrollbar (gutter consuming layout space,
+ * not merely a computed `overflow-y`): the right pane's `[data-panel]` wrapper, its subtree and
+ * its ancestors; and every element in the document. Matches include data attributes, overflow,
+ * rect and scroll metrics to name the colliding element. `horizontalOverflow` is diagnostic only,
+ * since the wide table and code block are allowed to scroll horizontally. */
 const SCROLL_PROBE_EXPR = `(() => {
   const anchor = document.querySelector(${JSON.stringify(RIGHT_PANE_SELECTOR)});
   if (!anchor) return null;
@@ -172,12 +101,8 @@ async function measureScrollContainers(cdp) {
   return result;
 }
 
-/** Clicks the exact-text "Min"/"Max" button inside `WidthPresetControl.tsx`'s own
- * `[aria-label="Pane width"]` button group, then waits for the right pane's own `[data-panel]`
- * ancestor (the `react-resizable-panels` Panel wrapper, the pane's real rendered box) to settle
- * within 2px of the target width -- the resize is driven by a real click, never a programmatic
- * store mutation, so it exercises the exact same code path a developer dragging the pane (or
- * clicking Min/Max) would. */
+/** Clicks the "Min"/"Max" preset button, then waits for the `[data-panel]` wrapper to settle
+ * within 2px of the target width; a real click exercises the same path as a developer would. */
 async function resizePane(cdp, widthPx, label) {
   const finder = `Array.from(document.querySelectorAll('[aria-label="Pane width"] button')).find((el) => el.textContent.trim() === ${JSON.stringify(label)})`;
   await cdp.click(finder);
@@ -264,8 +189,7 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
 
-    // Shim-confirmed guard (same pattern as verify-439/862/941): without this, a silently-wrong
-    // fake-omp shim could still let the whole run "pass" on UI state alone.
+    // Shim-confirmed guard: a silently wrong fake-omp shim could otherwise pass on UI state alone.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-802: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
@@ -280,18 +204,13 @@ async function main() {
     await createSessionViaQuickCreate(cdp, repoName);
     findings.push('Session created in the scratch repo, agent attached (fake omp, side-chat-long-answer scenario).');
 
-    // Opens the Side chat panel through the real permanent icon rail (IconRail.tsx), never
-    // `window.refract.*` directly -- the panel is not a modal, so nothing needs to be closed
-    // first (unlike the Conversation history dialog verify-439 drives).
+    // Open through the real icon rail; the panel is not a modal, so nothing needs closing first.
     await cdp.clickByLabel('Side chat panel');
     await cdp.waitFor(`!!document.querySelector('[aria-label="Side chat question"]')`, { timeoutMs: 15_000, label: 'Side chat composer mounted' });
     findings.push('Side chat panel opened via the permanent icon rail (aria-label "Side chat panel").');
 
-    // `loadHistory` (get_btw_history) must resolve before `ask` will do anything (`send()` in
-    // SideChatPanel.tsx silently no-ops while `!loaded`); the composer textarea's own
-    // `aria-describedby` is set to the "still loading" hint's id ONLY while `!loaded`
-    // (SideChatPanel.tsx), so its absence is a real, code-grounded signal the question can now
-    // be sent, not a fixed sleep.
+    // `ask` no-ops while history is unloaded; the textarea's `aria-describedby` hint is set only
+    // while `!loaded`, so its absence is the signal the question can be sent.
     await cdp.waitFor(
       `!document.querySelector('[aria-label="Side chat question"]').hasAttribute('aria-describedby')`,
       { timeoutMs: 15_000, label: 'Side chat history loaded (composer no longer describes the loading hint)' }
@@ -306,9 +225,8 @@ async function main() {
     );
     findings.push('Long side-chat answer (40-item list, a wide 4-column table, a 45-line code block) rendered in the panel.');
 
-    // ---- Core acceptance: exactly one vertical scroll container, and it IS the Side chat
-    // answer region (data-side-chat-scroll-container). Horizontal overflow (expected on the
-    // wide table/code block) is reported as a diagnostic finding only, never a failure. ----
+    // Core acceptance: exactly one vertical scroll container, the answer region. Horizontal
+    // overflow is reported as a diagnostic only.
     async function assertOneScroller(label) {
       const measurement = await measureScrollContainers(cdp);
       if (measurement.scopedScrollers.length !== 1) {
@@ -331,9 +249,7 @@ async function main() {
 
     const firstMeasurement = await assertOneScroller('Dark (initial, default width)');
 
-    // ---- Header title and composer stay pinned (not inside the scrollable region): captured
-    // at scroll-top and again at scroll-bottom, each time asserting both are fully within the
-    // window's own viewport AND that neither rect moved between the two captures. ----
+    // Header and composer stay pinned: in the viewport and unmoved between scroll-top and bottom.
     async function capturePinnedRects() {
       return cdp.evaluate(`(() => {
         const title = document.querySelector('#right-pane-panel-title');
@@ -353,7 +269,7 @@ async function main() {
       findings.push('Header title (#right-pane-panel-title) and composer (Side chat question textarea) both within the viewport before scrolling.');
     }
 
-    // ---- Scroll the one container to the bottom; the answer's own last line must be visible ----
+    // Scroll to the bottom; the last line must be visible.
     if (firstMeasurement.scopedScrollers.length === 1) {
       const scrolledToBottomAndVisible = await cdp.evaluate(`(() => {
         const root = document.querySelector(${JSON.stringify(RIGHT_PANE_SELECTOR)});
@@ -400,9 +316,7 @@ async function main() {
       notExercised.push(`Scroll-to-bottom/last-line-visible check skipped: the scroller count above was not exactly 1 (${firstMeasurement.scopedScrollers.length}), so there is no single container to scroll.`);
     }
 
-    // ---- The issue's own 2-theme x 2-pane-width matrix (Dark/Dark high contrast, 240px/520px
-    // via the Min/Max preset buttons), re-confirming the one-scroller guarantee at each
-    // combination and screenshotting every one. ----
+    // 2-theme x 2-width matrix: re-confirm one scroller and screenshot each combination.
     for (const { theme, width, shot } of MATRIX) {
       await switchTheme(cdp, theme.id, theme.name);
       await resizePane(cdp, width.px, width.label);

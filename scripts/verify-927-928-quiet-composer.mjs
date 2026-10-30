@@ -1,36 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #927 (quiet composer: transparent fill, faint border, muted focus
-// outline, ghost pickers in Dark and Obsidian; Dark high contrast keeps its 3:1 edges and full
-// ring) and issue #928 (composer status line 13px text, 14px icons), shipped together per
-// `docs/PLAN.md`'s "v0.3.0 feedback" row.
-//
-// Drives a REAL `omp` (ambient signed-in profile, no `OMP_PROFILE` override), the same isolation
-// posture `verify-570-tool-colours.mjs`/`verify-565-spine.mjs` use: scratch cwd/worktree/
-// `REFRACT_DATA_DIR` never touch Stuart's real Session list. No prompt is ever sent -- every
-// assertion is a static `getComputedStyle()`/DOM read, so this spends no model tokens.
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node
-// scripts/verify-927-928-quiet-composer.mjs (requires a prior `pnpm tauri build --debug
-// --no-bundle`, the same convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs` script documents).
-//
-// Per theme (Dark, Obsidian, Dark high contrast):
-//   (a)/(b) the composer box's resting and focus-visible `background-color`/`border-color`/
-//       `box-shadow` (transparent fill, faint border, no glow in Dark/Obsidian; unchanged opaque
-//       fill/border/full ring in Dark high contrast);
-//   (c)/(d) the Approval pill, Model/Reasoning pickers and Attach button's resting styles (no
-//       fill anywhere; a visible resting border ONLY in Dark high contrast, item 6/U1) and their
-//       settled (`document.getAnimations().forEach((a) => a.finish())`, item 4/M3) outline-color
-//       once reached by a REAL keyboard Tab that must land on Send FIRST (item 3/T2, DOM order),
-//       asserted against the resolved `--composer-focus`/`--ring` values;
-//   (hover, item 5/T3) a real CDP `mouseMoved` over each ghost trigger: pointer cursor + a faint
-//       fill delta when enabled, not-allowed + no fill change when `aria-disabled`;
-//   (e) issue #928: every status-line chip's (`[data-slot="readout-chip"]`) computed font-size
-//       (13px) and icon RENDERED `getBoundingClientRect` size (14px) -- a real failure, never
-//       `notExercised`, if the status line mounted but no chip matched or any size differs.
-//
-// The exe under test is tied to the commit two ways: rebuilt immediately before this script runs
-// (never a reused, possibly sibling-lane-clobbered exe), and #927/#928-only markers
-// (`composer-border`, `text-readout`) asserted present in the built renderer bundle first.
+// Live CDP check for #927 (quiet composer: transparent fill, faint border, muted focus outline, ghost pickers in Dark and Obsidian;
+// Dark high contrast keeps its 3:1 edges and full ring) and #928 (status line 13px text, 14px icons).
+// Every assertion is a static computed-style/DOM read; no prompt is sent, so no model tokens are spent.
+// Needs a prior `pnpm tauri build --debug --no-bundle`; the exe is rebuilt first and checked for #927/#928 bundle markers.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -56,9 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
-// Overridable; defaults to a fresh, timestamped folder under the OS temp dir (never a hard-coded
-// user path -- the known gate finding every other `verify-5xx-*.mjs` script already fixed) so a
-// rerun never mixes its own screenshots with a stale prior run's.
+// Defaults to a fresh timestamped folder under the OS temp dir so a rerun never mixes in stale screenshots.
 const SHOTS_DIR =
   process.env.REFRACT_927_928_SHOTS_DIR || path.join(tmpdir(), 'refract-927-928-quiet-composer-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
@@ -68,15 +38,8 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// Bug found live (this script's own first two real runs): `.closest('.rounded-lg')` starting
-// FROM `[aria-label="Message"]` matches the `<textarea>` ELEMENT ITSELF first -- `Textarea`
-// (`components/ui/textarea.tsx`) carries its own, unrelated `rounded-lg` AND `bg-transparent`
-// in its base classes, so `.closest()` (which checks the starting element before any ancestor)
-// stopped there instead of reaching MessageInput.tsx's own outer box
-// (`rounded-lg border ... bg-composer-background`, one level up) -- every measurement below was
-// reading the textarea's own hardcoded, theme-independent `bg-transparent`/`ring-ring/50`, not
-// the #927 composer box at all. Targets the box's own, #927-unique `bg-composer-background`
-// class instead of the ambiguous shared `rounded-lg`, so this can never match the textarea.
+// `.closest('.rounded-lg')` from the message field matches the `<textarea>` itself first (it carries its own `rounded-lg` and
+// `bg-transparent`), not MessageInput's outer box, so target the box's unique `bg-composer-background` class instead.
 const COMPOSER_BOX_FINDER = `document.querySelector('[aria-label="Message"]')?.closest('.bg-composer-background')`;
 const APPROVAL_PILL_FINDER =
   `Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').endsWith(', approval mode'))`;
@@ -86,10 +49,7 @@ const MODEL_PICKER_FINDER =
   `Array.from(document.querySelectorAll('button')).find((el) => { const l = el.getAttribute('aria-label') || ''; return l.includes(', model') || /^model\b/i.test(l); })`;
 const REASONING_PICKER_FINDER =
   `Array.from(document.querySelectorAll('button')).find((el) => { const l = el.getAttribute('aria-label') || ''; return l.includes(', reasoning') || /^reasoning\b/i.test(l); })`;
-// Item 5 (T3, hover): the same four ghost triggers `readGhostControlRestingStyles` reads,
-// keyed identically (`approvalPill`/`modelPicker`/`reasoningPicker`/`attachButton`) so a
-// hover read can be compared directly against its own resting background without a second
-// name-mapping table.
+// Same keys as `readGhostControlRestingStyles` so a hover read compares directly against its resting background.
 const GHOST_HOVER_TARGETS = [
   ['approvalPill', APPROVAL_PILL_FINDER],
   ['modelPicker', MODEL_PICKER_FINDER],
@@ -97,10 +57,8 @@ const GHOST_HOVER_TARGETS = [
   ['attachButton', ATTACH_BUTTON_FINDER]
 ];
 
-/** (a)/(b) above: the composer box's own resting and focus-visible computed styles. Focuses the
- * textarea directly via `.focus()` -- a genuine `:focus-visible` test, since text fields always
- * qualify for it regardless of input modality (unlike a `<button>`, see the ghost-control check
- * below). */
+/** The composer box's resting and focus-visible computed styles. `.focus()` on the textarea is a genuine `:focus-visible` test
+ * since text fields always qualify (unlike a `<button>`). */
 async function readComposerBoxStyles(cdp) {
   const resting = await cdp.evaluate(`(() => {
     const box = ${COMPOSER_BOX_FINDER};
@@ -124,11 +82,8 @@ async function readComposerBoxStyles(cdp) {
   return { resting, focused };
 }
 
-/** (c) above: the Approval pill, Model/Reasoning pickers, and Attach button's resting computed
- * styles. Every one is `ghost` (no FILL at rest, in every theme -- decision 4a); the BORDER
- * itself differs by theme (item 6, U1 gate951UI/A11y High): Dark (high contrast) keeps a real,
- * enforced resting border (`--composer-control-border`, globals.css), the opposite of Dark/
- * Obsidian, which stay border-less ghosts -- the caller branches that assertion by theme. */
+/** Resting computed styles of the Approval pill, Model/Reasoning pickers and Attach button. Fill is absent in every theme, but
+ * Dark (high contrast) keeps a real resting border (`--composer-control-border`), so the caller branches by theme. */
 async function readGhostControlRestingStyles(cdp) {
   return cdp.evaluate(`(() => {
     const read = (el) => el ? { backgroundColor: getComputedStyle(el).backgroundColor, borderColor: getComputedStyle(el).borderColor, borderWidth: getComputedStyle(el).borderTopWidth } : null;
@@ -141,19 +96,10 @@ async function readGhostControlRestingStyles(cdp) {
   })()`);
 }
 
-/** (c)/(d) above: a REAL keyboard Tab chain from a REAL click on the message field (verified
- * against `document.elementFromPoint`, never a scripted `.focus()` call -- confirmed live, a
- * scripted start produced unreliable Tab landings).
- *
- * Item 3 (T2): Send sits in DOM order BEFORE the bottom row (MessageInput.tsx: the Send/Stop
- * div is a sibling of the Textarea; Approval/Model/Reasoning/Attach is the next sibling after
- * that), so the FIRST real Tab must land on Send -- landing elsewhere is `wrongPosition`, a real
- * failure. Walks the bottom row afterward with a step cap, recording each of Approval/Model/
- * Reasoning/Attach the first time reached (never a fixed step count, since an intervening
- * tabbable element can sit between any two); not reached within the cap is a real failure.
- *
- * Item 4 (M3): `document.getAnimations().forEach((a) => a.finish())` runs before every outline
- * read -- an outline-colour CSS transition can still be mid-flight the instant a Tab lands. */
+/** Real keyboard Tab chain from a real click on the message field (a scripted `.focus()` start gave unreliable Tab landings).
+ * Send precedes the bottom row in DOM order, so the first Tab must land on Send; the bottom row is then walked with a step cap
+ * since an intervening tabbable can sit between any two controls. Animations are finished before each outline read because
+ * the outline-colour transition can still be mid-flight when a Tab lands. */
 async function readFocusOutlineChain(cdp) {
   const fieldRect = await cdp.evaluate(`(() => {
     const field = document.querySelector('[aria-label="Message"]');
@@ -187,8 +133,6 @@ async function readFocusOutlineChain(cdp) {
     })()`);
   };
 
-  // Item 3 (T2): the very first Tab off the textarea must land on Send (DOM order), not the
-  // bottom row.
   await pressTab(cdp);
   await sleep(50);
   const sendRead = await readActiveOutline();
@@ -229,14 +173,9 @@ async function readFocusOutlineChain(cdp) {
   return steps;
 }
 
-/** (e) above: every status-line chip's computed font-size, plus its icon's RENDERED size (item
- * 2: `getBoundingClientRect`, not `getComputedStyle` -- the actual on-screen box, not merely the
- * CSS declaration, in case a transform/intrinsic-SVG-size quirk ever diverges from it). H1
- * (gate951Test/Code): finds chips by the structural `data-slot="readout-chip"` attribute
- * (`ReadoutItem.tsx`), NEVER by `.text-readout` -- that literal class is itself the thing issue
- * #928 changes, so a regression there (confirmed live: `cn`'s tailwind-merge stripped it,
- * rendering every chip at the browser default ~16px) would otherwise go undetected by a
- * selector built from the very class under test. */
+/** Every status-line chip's computed font-size plus its icon's rendered size (`getBoundingClientRect`, in case a transform or
+ * intrinsic SVG size diverges from the CSS). Chips are found by `data-slot="readout-chip"`, never `.text-readout`: that class is
+ * what #928 changes, and a regression there (`cn`'s tailwind-merge once stripped it) would hide from a selector built on it. */
 async function readStatusLineChipSizes(cdp) {
   return cdp.evaluate(`(() => {
     const chips = Array.from(document.querySelectorAll('[data-slot="readout-chip"]'));
@@ -252,13 +191,7 @@ async function readStatusLineChipSizes(cdp) {
   })()`);
 }
 
-// Ties the exe under test to the actual commit, not merely to a comment's own assertion --
-// `composer-border` (globals.css's new #927 token, consumed via Tailwind's `border-composer-
-// border` utility, itself literally present in MessageInput.tsx's `className` string) and
-// `text-readout` (globals.css's new #928 font-size utility, literally present in
-// `ReadoutItem.tsx`'s `className` string) exist only from this story's own commits onward --
-// grepping the just-built renderer bundle for both is a real, cheap proof that THIS build really
-// contains #927/#928's code, independent of git log reasoning about timing.
+// Grepping the just-built bundle for `composer-border` (#927) and `text-readout` (#928) proves this build contains their code.
 function assertBundleContainsStory927928Markers() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory927928Markers: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
@@ -364,14 +297,10 @@ async function main() {
       }
       await sleep(200);
 
-      // Item 4 (M3, settled outline colours): the EXPECTED outline colours for this theme,
-      // resolved through a REAL probe element reading the live `var(--composer-focus)`/
-      // `var(--ring)` cascade -- never a hardcoded literal, since several presets resolve these
-      // through `color-mix()`/`var()` chains only the browser itself can finish computing.
+      // Expected outline colours are resolved via a probe element: several presets use `color-mix()`/`var()` chains only the browser can compute.
       const resolvedComposerFocus = await resolveCssVarColor(cdp, '--composer-focus');
       const resolvedRing = await resolveCssVarColor(cdp, '--ring');
 
-      // ---- (a)/(b): composer box resting + focus-visible styles ----
       const boxStyles = await readComposerBoxStyles(cdp);
       if (!boxStyles?.resting || !boxStyles?.focused) {
         failures.push(`${theme.name}: composer box styles could not be read (target missing).`);
@@ -386,9 +315,7 @@ async function main() {
           else findings.push(`${theme.name}: composer background stayed opaque (${boxStyles.resting.backgroundColor}), unchanged by #927 as decided.`);
           if (!hasVisibleShadow(boxStyles.focused.boxShadow)) failures.push(`${theme.name}: composer focus box-shadow has no visible glow (${boxStyles.focused.boxShadow}) -- #927 keeps this theme's full ring (the old ring-ring/50 glow) unchanged.`);
           else findings.push(`${theme.name}: composer focus-visible box-shadow has a real, visible glow (${boxStyles.focused.boxShadow}), the unchanged full ring.`);
-          // Measured (not merely visual) >=3:1 edge contrast, Dark high contrast only (#927
-          // explicitly keeps this theme's 3:1 border and full ring): real `getComputedStyle()`
-          // reads, alpha-composited with the same math `check-theme-contrast.mjs` already uses.
+          // Measured >=3:1 edge contrast, Dark high contrast only, alpha-composited with `check-theme-contrast.mjs`'s math.
           const pageBackground = await cdp.evaluate(`getComputedStyle(document.body).backgroundColor`);
           const borderRatio = measuredContrastRatio(boxStyles.resting.borderColor, pageBackground);
           if (borderRatio === null) failures.push(`${theme.name}: could not parse composer border (${boxStyles.resting.borderColor}) or page background (${pageBackground}) for a measured contrast ratio.`);
@@ -411,10 +338,7 @@ async function main() {
       }
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-00-composer-rest.png`));
 
-      // ---- (c): ghost controls at rest -- fill is border-less in EVERY theme (ghost variant,
-      // decision 4a); the BORDER itself differs by theme (item 6, U1 decision 3): Dark (high
-      // contrast) keeps a real, enforced >=1px/alpha>0 resting border on these triggers, the
-      // OPPOSITE of Dark/Obsidian, which stay border-less ghosts like the fill.
+      // Ghost controls have no fill in any theme, but Dark (high contrast) keeps an enforced >=1px, alpha>0 resting border.
       const ghostResting = await readGhostControlRestingStyles(cdp);
       for (const [name, styles] of Object.entries(ghostResting ?? {})) {
         if (!styles) {
@@ -440,15 +364,11 @@ async function main() {
         }
       }
 
-      // ---- (hover, item 5/T3): real CDP mouseMoved over each ghost trigger (helper split into
-      // `verify-927-928-hover.mjs`, file-size #806 ratchet) -- pointer cursor + a faint fill
-      // delta for an enabled trigger, not-allowed + no fill change for an aria-disabled one. ----
+      // Hover helper lives in `verify-927-928-hover.mjs` (file-size #806 ratchet).
       if (await assertGhostHoverStates(cdp, theme.name, GHOST_HOVER_TARGETS, ghostResting, findings, failures)) {
         anyDisabledTriggerSeen = true;
       }
 
-      // ---- (c)/(d): real keyboard Tab chain -- T2 (Send precedes the bottom row in DOM order)
-      // plus the settled, resolved outline-colour split (item 4/M3) ----
       const chain = await readFocusOutlineChain(cdp);
       const sendStep = chain.find((s) => s.expectedLabel === 'Send');
       const ghostSteps = chain.filter((s) => s.expectedLabel !== 'Send');
@@ -497,35 +417,22 @@ async function main() {
           findings.push(`${theme.name}: --composer-focus (${resolvedComposerFocus}) is distinct from --ring (${resolvedRing}) -- confirms the #927 muted/opaque split took effect.`);
         }
       }
-      // Screenshot only once Attach is genuinely the live document.activeElement (item 4) --
-      // never blind to whether the chain above actually landed there (a failure above already
-      // covers Attach never being reached at all).
+      // Screenshot only once Attach is the live activeElement; a failure above already covers it never being reached.
       const activeIsAttach = await cdp.evaluate(`(() => { const el = document.activeElement; return !!el && typeof el.getAttribute === 'function' && (el.getAttribute('aria-label') || '').startsWith('Attach images'); })()`);
       if (activeIsAttach) {
         await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-01-attach-focus-ring.png`));
       }
       await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
 
-      // ---- (e), issue #928: status line chip text/icon sizes ----
-      // Issue #928: `on_launch`'s own unconditional first `schedule_readout_update` call (Rust
-      // `session/readout.rs`) runs `READOUT_COALESCE_MS` (100ms) after launch, computing a real
-      // `diff_stat` (git status) even with zero changes -- `ChangesReadout` renders once that
-      // `readout:update` event lands, with no turn needed. Confirmed live (this script's own
-      // screenshots): the chip DOES render, just not always inside a short post-launch window
-      // (readout-computation latency, the same pre-existing gap `verify-563-subagent-stage.mjs`
-      // already documents for the Subagents chip) -- polls generously here, per theme, rather
-      // than a single early timed-out wait that masked a real, measurable chip as "absent".
+      // The chip renders once the first `readout:update` lands (~100ms after launch, `session/readout.rs`) but readout latency can
+      // exceed a short window, so poll generously per theme rather than let an early timeout mask a real chip as absent.
       try {
         await cdp.waitFor(`document.querySelectorAll('[data-slot="readout-chip"]').length > 0`, { timeoutMs: 25_000, label: 'Status line chip rendered' });
       } catch {
         // fall through -- the presence/size checks below report the real failure, never a skip.
       }
-      // Item 2: the status line container itself (`data-slot="composer-status-line"`,
-      // ComposerStatusLine.tsx) is checked SEPARATELY from its chips -- "the status line
-      // rendered but no chip matched" and "the status line never mounted at all" are both real
-      // failures, never `notExercised`; the bundle-marker guard earlier in this script only
-      // proves this BUILD contains #928's code, never that it actually renders correctly --
-      // this live DOM/size check is the only real #928 proof.
+      // The status line container is checked separately from its chips: "mounted but no chip matched" and "never mounted" are both
+      // real failures, not notExercised; the bundle-marker guard only proves the build contains #928's code.
       const statusLinePresent = await cdp.evaluate(`!!document.querySelector('[data-slot="composer-status-line"]')`);
       const chipSizes = await readStatusLineChipSizes(cdp);
       if (!statusLinePresent) {

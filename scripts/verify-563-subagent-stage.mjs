@@ -1,22 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #563 (Stage group row + Subagent panel tree), gate requirement.
-//
-// Reuses the recorded-frame fake `omp` harness built for issue #795 (`verify-tauri.mjs`/
-// `verify-tauri-cdp.mjs`), selecting the pre-existing `scripts/fixtures/omp-frames/
-// subagents.jsonl` tape (`REFRACT_FAKE_OMP_SCENARIO=subagents`) instead of adding a new fixture
-// (AGENTS.md: no new fixtures). That tape is a single `task()` batch of two subagents (alpha,
-// beta) in ONE stage -- enough to exercise the Stage group row (header shown because it has 2
-// agents, decision 1), its `SpineList` member rows, the running/finished status icons, and the
-// Subagent panel's tree (two rows, roving tab stop, selection, keyboard). It is NOT two Stages,
-// so the Subagent chain row (which needs 2+ Stages, FR-065) and the chain's own opener-based
-// "pre-select from a chat entry" path cannot be exercised by this tape; see the report this
-// script prints at the end for exactly what that leaves untested.
-//
-// Reuses the already-built debug exe (`node scripts/ci-local.mjs` ran `tauri build --debug
-// --no-bundle` already this session) rather than rebuilding, since nothing under `src-tauri/`
-// changed since that build. Every scratch path below is a fresh `mkdtempSync` result (never an
-// externally supplied or concatenated path), cleaned up by that same literal variable in the
-// `finally` block, the same pattern `verify-tauri.mjs` already uses.
+// Live CDP check: Stage group row and Subagent panel tree, driven by the fake `omp` `subagents`
+// tape (one stage, two subagents). It cannot exercise the chain row (needs 2+ Stages) or the
+// chain's opener pre-select path; the printed report lists what stays untested.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync } from 'node:fs';
@@ -170,11 +155,9 @@ async function main() {
       throw new Error(`verify-563: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid})`);
     }
 
-    // Resolved data dir abort check (skill: refract-tauri-live-check-isolation).
     const bodyTextEarly = await cdp.waitFor(`document.body?.innerText ?? ''`, { timeoutMs: 30_000, label: 'page has rendered some text' });
     console.log('verify-563: early body text sample:', JSON.stringify(bodyTextEarly.slice(0, 120)));
 
-    // US1-style readiness.
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -183,7 +166,6 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01-readiness-green.png'));
     findings.push('Readiness screen green, Add repository enabled.');
 
-    // Add scratch repository.
     await cdp.click(`document.querySelector('[data-readiness-primary]')`);
     await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
@@ -195,7 +177,6 @@ async function main() {
     );
     findings.push('Scratch repository added.');
 
-    // Create session.
     await cdp.clickByLabel('New session from a branch in ', { prefix: true });
     await cdp.waitFor(
       `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
@@ -209,13 +190,9 @@ async function main() {
     });
     findings.push('Session created, agent attached (fake omp, subagents.jsonl scenario).');
 
-    // Send message, triggering the task() batch of two subagents (alpha, beta).
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
-    // Wait for the Stage group row header ("Stage 1") to appear -- decision 1: a stage with 2+
-    // agents gets a header even as the turn's only stage. Visible even while the group is
-    // collapsed (the header itself, not the member rows, which Radix Collapsible does not
-    // mount at all until expanded -- decision 6's default-collapsed-once-settled behaviour).
+    // The header shows for a 2+ agent stage; member rows are not mounted until expanded.
     try {
       await cdp.waitFor(
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && t.textContent.includes('Stage 1'); })()`,
@@ -233,13 +210,11 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '02-stage-group-collapsed.png'));
     findings.push('Stage group header ("Stage 1") rendered for the 2-agent batch (alpha, beta), confirming decision 1\'s "2+ agents gets a header even for the turn\'s only stage" rule.');
 
-    // Wait for both subagents to settle (both reach "finished").
     await cdp.waitFor(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && (t.textContent.match(/Finished/g) || []).length >= 1; })()`,
       { timeoutMs: 30_000, label: 'At least one subagent settled' },
     );
 
-    // Expand the Stage group row (click its own collapsed-line trigger).
     await cdp.click(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; return Array.from(t.querySelectorAll('button,[role="button"]')).find((el) => el.textContent.includes('Stage 1')); })()`,
     );
@@ -250,10 +225,7 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '03-stage-group-expanded.png'));
     findings.push('Stage group row expands to show its SpineList member rows (alpha, beta), each a plain SubagentRow with the shared status icon.');
 
-    // Open the Subagent panel. Prefer the existing Subagents chip (the readout chip row); when
-    // it is absent from the narrow scratch window (observed live: the chip row did not render
-    // at all at this window width/readout state), fall back to the permanent rail button
-    // (`IconRail.tsx`'s own `data-rail-button="subagents"`), which is always present regardless.
+    // The readout chip row may not render in the narrow scratch window; the rail button is always present.
     const chipFound = await cdp.evaluate(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('Open subagents panel'))`,
     );
@@ -268,18 +240,8 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '04-panel-tree-open.png'));
     findings.push('Subagent panel opened; role="tree" (aria-label="Subagents") mounted with both agent rows.');
 
-    // Issue #563 live-check follow-up: establish whether the Subagents readout chip not being
-    // present yet (why the rail-button fallback above was needed) is pre-existing readout-
-    // computation latency, unrelated to this story, or something #563 caused. `readout.rs`'s
-    // own `run_readout_update` (src-tauri/src/session/readout.rs:401-431) bundles `subagentCount`
-    // with a concurrent `diff_stat` (git) read and branch read into ONE combined readout value,
-    // debounced `READOUT_COALESCE_MS` (100ms, readout.rs:66) -- the WHOLE chip row (every kind,
-    // not just Subagents) waits on that one combined round trip, and this story's diff touches
-    // zero lines of `readout.rs` (confirmed: `git diff d6ef2ca -- src-tauri/src/session/
-    // readout.rs` is empty) and only changes `Readouts.tsx`'s wording, never its
-    // `if (subagentCount === null) return null` gate (`Readouts.tsx:189`, unchanged by this
-    // story's diff). Polling live now for how long the chip actually takes to appear, as direct
-    // evidence alongside that code citation.
+    // The chip row waits on one combined, debounced readout update (readout.rs); time how long
+    // the chip takes to appear to show the rail-button fallback was a timing gap, not a regression.
     const chipAppearStart = Date.now();
     try {
       await cdp.waitFor(
@@ -292,12 +254,7 @@ async function main() {
       findings.push('Readout-timing check: the Subagents chip still had not appeared after a further 10s poll -- could not confirm it resolves on its own within this run; see the readout.rs code citation above for why the gate itself is unchanged by this story regardless.');
     }
 
-    // Select the first row, then roving-tabindex Down to the second, verifying selection moves.
-    // Issue #1022: since #993 (Stage grouping) the first `[role="treeitem"]` in the tree is the
-    // Stage group row, which by design carries no `aria-selected` attribute at all (never even
-    // "false" -- SubagentPanel.tsx:356, `row.node.isStage ? undefined : ...`) because a Stage
-    // header has no single subagent id to select. Target the first treeitem that DOES carry an
-    // `aria-selected` attribute (a real, selectable agent row) instead of the first treeitem.
+    // The first treeitem is the Stage row, which has no `aria-selected`; target a selectable agent row.
     const firstRowId = await cdp.evaluate(
       `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected]')?.getAttribute('aria-posinset')`,
     );
@@ -320,14 +277,8 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '05-panel-tree-arrowdown-selection.png'));
     findings.push(`Keyboard ArrowDown moved the tree's roving tab stop and selection from "${selectedBefore}" to "${selectedAfter}" -- confirms the tree keyboard handler and the active-indicator bar (visible in the screenshot) both work. firstRowId=${firstRowId}.`);
 
-    // Gate round 3 (M7, real finding on two reviewers): `outline-hidden` alone, and then plain
-    // removal of any outline-* utility, were each tried and rejected before landing the final
-    // fix (`outline-hidden` + `focus-visible:outline-solid`, SubagentPanel.tsx). The row now
-    // focused by the real keyboard ArrowDown above is THIS exact tree row, with THIS exact
-    // real browser, under THIS exact Tailwind build -- not the isolated `tailwindcss.compile()`
-    // check used during development, which proves the utility classes generate the right CSS
-    // but not that the actual Chromium focus-visible heuristic fires and paints it. Asserts on
-    // the computed style, not just a screenshot, so this can fail loudly, not just look plausible.
+    // Assert on computed style in the real build: a compiled utility class does not prove
+    // Chromium's :focus-visible heuristic actually paints the outline.
     const focusedRowOutline = await cdp.evaluate(
       `(() => { const el = document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]'); if (!el) return null; const cs = getComputedStyle(el); return { isActiveElement: el === document.activeElement, outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth, outlineColor: cs.outlineColor }; })()`,
     );
@@ -339,14 +290,8 @@ async function main() {
     }
     findings.push(`M7 live confirmation: the keyboard-focused tree row's own computed style is outline-style=${focusedRowOutline.outlineStyle}, outline-width=${focusedRowOutline.outlineWidth}, outline-color=${focusedRowOutline.outlineColor} -- a real, painting focus ring on :focus-visible, not just a compiled utility that looks right in isolation.`);
 
-    // Close the panel via its own exact Close button (`PanelTabBar.tsx`'s `[data-panel-close]`,
-    // `aria-label="Close Subagents panel"` -- never a generic "aria-label contains close" guess,
-    // which can match an unrelated control). This panel was opened via the rail button fallback
-    // (no `opener` passed, since the Subagents chip never rendered this run -- see the readout-
-    // timing finding below), so `subagent-store.ts`'s own `closePanel` has no `openerEl` and no
-    // chip to fall back to either; `hosted-panel-actions.ts`'s `closeHostedPanel` is the ONE that
-    // then moves focus to the panel's own rail button (`[data-rail-button="subagents"]`) once it
-    // finds focus still stranded, a frame later -- the expected target here.
+    // Opened via the rail button (no opener), so `closeHostedPanel` moves stranded focus back to
+    // the rail button; target the exact Close button, not a generic aria-label match.
     const beforeCloseFocus = await cdp.evaluate(
       `({ role: document.activeElement?.getAttribute('role'), label: document.activeElement?.textContent?.trim() })`,
     );

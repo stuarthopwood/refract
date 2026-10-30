@@ -1,12 +1,5 @@
-// Split out of `verify-941-stage-naming-helpers.mjs` (gate round 2, #806 file-size discipline:
-// the main helpers file grew past the 600-line cap once items 9-12 landed). Both of this file's
-// assertions concern `StageContextBrief.tsx`'s own overflow/clipping and `ResizeObserver`
-// behaviour specifically (Stage 7's collapsed/expanded fold, Stage 10's narrow-viewport
-// overflow) -- a cohesive slice distinct from naming/dependencies/chain-row, so it is its own
-// module rather than an arbitrary line-count split. Re-grep-verified against
-// `StageContextBrief.tsx` in full (gate round 2, item 10): it no longer applies `inert` to its
-// own container -- only an overflowing FOCUSABLE descendant gets `tabindex="-1"` while
-// collapsed, restored on expand/no-longer-overflowing.
+// Overflow/clipping assertions for `StageContextBrief.tsx` (Stage 7 fold, Stage 10 narrow viewport), split out for the #806 size cap.
+// The brief no longer applies `inert`; only an overflowing focusable descendant gets `tabindex="-1"` while collapsed.
 import {
   expandRow,
   assertExpandCycleByFinder,
@@ -21,26 +14,11 @@ async function assertExpandCycle(cdp, titleText, findings, failures, themeName, 
   await assertExpandCycleByFinder(cdp, stageTriggerSelector(titleText), findings, failures, themeName, label, firstPassExpectedBefore);
 }
 
-// Gate round 2 fix (item 12): the narrow-viewport width, same value `verify-557-thought-runs.mjs`/
-// `verify-558-blocker-callout.mjs`/`verify-565-spine.mjs` already use for their own no-horizontal-
-// scroll checks (grep-verified precedent, not invented here).
 const NARROW_WIDTH = 360;
 
-/** Fixture item d / issue #941 grill item 4, gate round 2 rewrite (item 10): `StageContextBrief.
- * tsx` (re-read in full) no longer applies `inert` to its own container -- a screen reader must
- * read the full brief regardless of collapse state; only a focusable descendant whose own top
- * edge sits past the fold gets `tabindex="-1"` while collapsed, restored on expand. Stage 7's
- * context now places both its Markdown heading AND a focusable link near the END (several plain
- * bullet points first), so this asserts (collapsed): the brief is visually capped, a REAL
- * rendered heading element exists below the fold, and the link descendant carries
- * `tabindex="-1"`; then (expanded): the heading is within the grown container and the link's
- * `tabindex` attribute is removed (restored to the Tab order); then (re-collapsed): both revert.
- * Every check below is an INDEPENDENT `if` (gate round 2 fix, item 10) -- never an `if`/`else
- * if` chain that would silently skip a later assertion once an earlier one matches. */
+/** Stage 7 collapse/expand/re-collapse: the heading and link below the fold must be capped, then restored. Each check is an independent `if` so none is skipped. */
 export async function assertContextBriefOverflow(cdp, findings, failures, themeName, isFirstThemePass) {
-  // Issue #991 final-delta fix: Stage 7's own frames are unpaced (no fixture delay), so whether
-  // it was ever observably open before settling is not reliably reproducible -- accept either
-  // known boolean (see `assertExpandCycleByFinder`'s own doc comment for the full rationale).
+  // Stage 7's frames are unpaced, so whether it was ever observably open before settling is not reproducible: accept either (#991).
   await assertExpandCycle(cdp, STAGE7_TITLE, findings, failures, themeName, 'Stage 7', undefined);
   const briefButtonFinder = `Array.from((${stageContentSelector(STAGE7_TITLE)})?.querySelectorAll('button') ?? []).find((b) => /Show full brief|Show less/.test(b.textContent.trim()))`;
   const measure = () => cdp.evaluate(`(() => {
@@ -83,10 +61,7 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
   } else {
     findings.push(`[${themeName}] Stage 7's "Show full brief" button aria-expanded is the string "false" while collapsed.`);
   }
-  // Gate round 4 fix (issue #941, item 12, MEDIUM): the button's own text was captured by
-  // `measure()` but never actually asserted anywhere below -- only `aria-expanded` was. "Show
-  // less" (item 12's own wording) must genuinely exist as the button's real rendered text once
-  // expanded, not merely inferred from the ARIA state.
+  // The button's rendered text must read "Show less", not just have aria-expanded set.
   if (!collapsed.buttonText.startsWith('Show full brief (')) {
     failures.push(`[${themeName}] Stage 7's toggle button reads ${JSON.stringify(collapsed.buttonText)} while collapsed, expected it to start with "Show full brief (".`);
   } else {
@@ -135,10 +110,7 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     } else {
       findings.push(`[${themeName}] Stage 7's toggle button reads exactly "Show less" after expanding.`);
     }
-    // Gate round 4 fix (issue #941, item 12, MEDIUM): the click's own event target is this
-    // button, but React re-rendering its CHILDREN (the label text, the grown container) could
-    // still strand focus elsewhere if any of that re-render ever unmounted the button itself --
-    // asserted explicitly rather than assumed.
+    // A re-render could unmount the button and strand focus, so assert focus explicitly.
     if (!expanded.focusIsOnButton) {
       failures.push(`[${themeName}] Focus is no longer on Stage 7's own toggle button after expanding it (it should stay there -- the button itself never unmounts, only its label text and the container's height change).`);
     } else {
@@ -159,16 +131,8 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     if (!expanded.hasCode) {
       failures.push(`[${themeName}] Stage 7's own code-block region disappeared after expanding (expected it still present).`);
     } else if (expanded.codeTabIndexAttr !== '0') {
-      // Gate round 3 fix (item 2)'s own exact regression this guards: a code block's own
-      // ORIGINAL tabindex is "0" (Markdown.tsx's own `tabIndex={0}`), never "no attribute at
-      // all" -- a blind `removeAttribute('tabindex')` (the pre-gate-round-3 bug) would restore
-      // it to NO tabindex rather than its own true original value, silently demoting it from an
-      // explicit Tab stop to one that merely inherits default element focusability (or none, for
-      // a `<div>`). The ONLY fixture element that can prove this restores the ORIGINAL value
-      // (not merely "removed") rather than "any non -1 value" is one whose own original
-      // tabindex was never null to begin with -- the plain `<a href>` link above has no
-      // original tabindex attribute at all, so its own restore-to-null assertion cannot catch
-      // this; the code block can.
+      // The code block's original tabindex is "0", so a blind removeAttribute('tabindex') would demote it;
+      // the plain link (no original tabindex) cannot catch that regression.
       failures.push(`[${themeName}] Stage 7's own code-block region has tabindex=${JSON.stringify(expanded.codeTabIndexAttr)} after expanding, expected its own ORIGINAL value "0" restored (never a blind \`removeAttribute\`, which would leave no tabindex attribute at all).`);
     } else {
       findings.push(`[${themeName}] Stage 7's own code-block region has its ORIGINAL tabindex="0" restored after expanding (not merely removed), now within the grown container's visible area.`);
@@ -214,14 +178,7 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
   }
 }
 
-/** Gate round 2 fix (item 12, second check): Stage 10's own context is borderline-length --
- * chosen to fit the ~6-line/144px cap at a normal composer width but overflow it once the
- * window narrows, proving `StageContextBrief.tsx`'s own `ResizeObserver` genuinely re-measures
- * on a real layout change, not just once at component mount. Narrows via the same
- * `Emulation.setDeviceMetricsOverride` precedent `verify-tauri-569.mjs`/
- * `verify-557-thought-runs.mjs`/`verify-565-spine.mjs` already establish for this app (grep-
- * verified, not invented here), restoring via `Emulation.clearDeviceMetricsOverride` afterward
- * so later screenshots/assertions in this same theme pass are unaffected. */
+/** Stage 10's borderline-length context fits the cap at normal width but overflows when narrowed, proving the `ResizeObserver` re-measures on layout change; the override is cleared afterwards. */
 export async function assertNarrowViewportOverflow(cdp, findings, failures, themeName) {
   await expandRow(cdp, STAGE10_BORDERLINE_TITLE);
   const briefButtonFinder = `Array.from((${stageContentSelector(STAGE10_BORDERLINE_TITLE)})?.querySelectorAll('button') ?? []).find((b) => /Show full brief|Show less/.test(b.textContent.trim()))`;

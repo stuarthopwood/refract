@@ -1,60 +1,8 @@
 #!/usr/bin/env node
-// Issue #519 (re-scoped into #795 part 4, Epic #797, lane R12b): a full codegen of
-// `src/shared/frames.ts`/new Rust wire structs from OMP's own published RPC schema is out of
-// scope for this slice -- too risky against in-flight lanes editing those exact files (R3/#786
-// owns session/agent + ipc/mod.rs; `frames.ts`/`model.ts`/`ipc.ts` are the single most shared
-// files in the repo). This script is the safe subset: it proves "a schema change shows up as a
-// diff" against a pinned, vendored copy of OMP's published RPC wire schema, without writing to
-// any of those files.
+// Detects OMP RPC schema drift against a vendored copy of OMP's wire schema. Only the literal cross-reference check sets a
+// non-zero exit; the channel-name table is informational. Matching full schema text would false-pass typos in prose.
 //
-// IMPORTANT -- read before trusting this script's "unexpected registration" table: Refract's own
-// `IPC_REQUESTS`/`IPC_EVENTS` (src/shared/ipc.ts) are a COMPLETELY DIFFERENT namespace from OMP's
-// `IPC_REQUESTS`/`IPC_EVENTS` name Refract's own Tauri IPC channels
-// between its renderer and main/native process (e.g. `sessions.open`, `repositories.list`) -- they
-// are not, and were never meant to be, a 1:1 mirror of OMP's `negotiate_protocol`/`get_state`/
-// `prompt` RPC command set. The "channels with no same/similarly-named OMP command" table below is
-// PURELY INFORMATIONAL (most rows will not match, by design) and is NOT a parity gate: it never
-// affects this script's exit code. That table's extraction degrades to a printed warning (not a
-// crash) if `src/shared/ipc.ts`'s `IPC_REQUESTS`/`IPC_EVENTS` shape ever changes shape (e.g. a
-// `satisfies`-style refactor) -- only the real wire-literal drift check below ever sets a non-zero
-// exit code.
-//
-// The actually useful drift signal is the second check: every OMP wire command name or frame/part
-// "type" tag that Refract's own OMP transport/transcript/session code references BY STRING LITERAL
-// (see `scanTargets` below -- the TypeScript shared frames module and the Rust Tauri-side
-// modules that talk to the real `omp` process), cross-checked against the vendored schema's own
-// declared vocabulary: its `x-rpc.commands[].name` list plus every `const`/`enum` discriminant
-// value anywhere in its `$defs`. These are the only strings OMP's own schema actually declares as
-// wire-level identifiers; matching against the full schema TEXT (prose, descriptions, unrelated
-// English words) would both false-pass typos that happen to appear in a doc comment and false-pass
-// a genuinely removed command if any surviving sentence still mentions it. A literal referenced by
-// Refract's own code that is not in that declared vocabulary (and not in the small, explicitly
-// named `KNOWN_TRANSPORT_ONLY_LITERALS` allowlist below) is a real signal: either a typo in
-// Refract's code, or a schema that has gone stale relative to what Refract actually relies on.
-// THIS check does set the exit code.
-//
-// Usage:
-//   node scripts/check-omp-schema-drift.mjs               Run the drift checks (exit 1 on any
-//                                                           undeclared wire literal, 0 otherwise).
-//   node scripts/check-omp-schema-drift.mjs --check-pin    Also (non-fatally) compare the pinned
-//                                                           package version in PROVENANCE.md
-//                                                           against the current npm registry
-//                                                           version. Always exits 0 regardless of
-//                                                           the comparison result -- a newer (or
-//                                                           older) upstream package existing is
-//                                                           informational, not a failure.
-//   node scripts/check-omp-schema-drift.mjs --self-test    Gate infrastructure, not a product
-//                                                           check: seeds deliberately undeclared
-//                                                           literals and asserts this script's own
-//                                                           detection logic actually flags them
-//                                                           (proving the detector CAN fail, rather
-//                                                           than silently false-passing). Exits 1
-//                                                           if any self-test assertion fails, 0
-//                                                           otherwise; does not touch scanTargets.
-//
-// Regex-based scan, not a real TS/Rust parser -- "good enough" per this slice's own brief: it
-// recognises a small, deliberately curated set of syntactic shapes (see `extractReferencedWireLiterals`
-// below) rather than attempting full language-aware analysis.
+// Usage: `node scripts/check-omp-schema-drift.mjs [--check-pin | --self-test]`
 
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
@@ -73,10 +21,6 @@ function relPath(p) {
   return path.relative(repoRoot, p).replace(/\\/g, "/");
 }
 
-// ---------------------------------------------------------------------------
-// 1. Load the vendored schema and the command name list.
-// ---------------------------------------------------------------------------
-
 const schemaPath = path.join(schemaDir, "rpc-wire.schema.json");
 const provenancePath = path.join(schemaDir, "PROVENANCE.md");
 
@@ -92,14 +36,7 @@ if (!Array.isArray(commands)) {
 const commandNames = commands.map((c) => c.name);
 const schemaDefNames = Object.keys(schemaJson.$defs ?? {});
 
-// ---------------------------------------------------------------------------
-// 2. The known-literal vocabulary: every string OMP's own schema actually declares as a wire-level
-//    identifier -- x-rpc command names, plus every `const`/`enum` discriminant value anywhere in
-//    the schema's `$defs` (these are the frame/part "type" tags and other discriminated-union
-//    member names the generated TS types encode as literal unions). A literal counts as "known"
-//    only if it is one of these declared values, or is in the small allowlist below.
-// ---------------------------------------------------------------------------
-
+// Known vocabulary = x-rpc command names plus every `const`/`enum` discriminant in `$defs`.
 function collectDeclaredLiterals(defs) {
   const literals = new Set();
   function walk(node) {
@@ -121,18 +58,9 @@ function collectDeclaredLiterals(defs) {
 const declaredLiterals = collectDeclaredLiterals(schemaJson.$defs ?? {});
 for (const name of commandNames) declaredLiterals.add(name);
 
-// A handful of real transport-only literals exist by design outside the command/const/enum
-// vocabulary above: OMP's schema only ever mentions them in prose, because they name a protocol
-// detail the schema documents but does not model as a discriminated field. Each entry below is
-// named explicitly with a one-line reason -- this is NOT a general escape hatch.
+// Transport-only literals the schema mentions only in prose; not a general escape hatch.
 const KNOWN_TRANSPORT_ONLY_LITERALS = new Set([
-  // `rpc_chunk`: the pre-reassembly stdout chunk-framing tag (0xA0-delimited, correlated by
-  // `chunkId`) that `src-tauri/src/omp/process.rs`'s chunk reassembly and `OmpProcess.ts`'s
-  // mirror both switch on. It is consumed and reassembled into a real frame *before* that frame is
-  // decoded, so the schema's `ServerFrame` discriminated union (the thing `$defs` walk above
-  // extracts `const`/`enum` values from) never lists it as one of its own `type` values -- the
-  // schema's top-level description for that union says as much ("after reassembling `rpc_chunk`
-  // sequences"), prose only, never a declared discriminant.
+  // `rpc_chunk` is reassembled into a real frame before decoding, so ServerFrame never declares it.
   "rpc_chunk",
 ]);
 
@@ -142,13 +70,7 @@ function isKnownLiteral(literal) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// 3. Literal-reference extraction, shared by the real scan (section 5) and --self-test (below).
-// ---------------------------------------------------------------------------
-
-// Finds the index just past the closing bracket matching the opener at `openIndex` (which must
-// itself be one of `open`), counting nested `open`/`close` pairs. Used to carve out the body of a
-// `matches!( ... )` call or a `match ... { ... }` block without assuming no nested parens/braces.
+// Index of the bracket closing the opener at `openIndex`, counting nested pairs.
 function findMatchingClose(text, openIndex, open, close) {
   let depth = 0;
   for (let i = openIndex; i < text.length; i++) {
@@ -161,12 +83,8 @@ function findMatchingClose(text, openIndex, open, close) {
   return -1;
 }
 
-// Bracket-nesting depth of `text` at `index`, counting `{`/`(`/`[` pairs from the start of `text`.
-// Used to tell a top-level match arm (depth 0 within the carved-out match body) apart from an arm
-// belonging to some OTHER match/matches! block nested inside one of the outer arms (e.g. an
-// unrelated `match <severity>` nested inside a `match frame_type` arm) -- a regex scan over the
-// whole carved body with no depth check would wrongly attribute that nested match's own arms to
-// the outer "type" match.
+// Bracket depth at `index`; separates top-level arms from arms of a nested match, which would
+// otherwise be wrongly attributed to the outer "type" match.
 function topLevelDepthAt(text, index) {
   let depth = 0;
   for (let i = 0; i < index; i++) {
@@ -177,12 +95,9 @@ function topLevelDepthAt(text, index) {
   return depth;
 }
 
-// Regex-based, deliberately narrow extraction (see module header): recognises only syntactic
-// shapes actually used by this codebase's OMP transport/transcript/session code to name a wire
-// command or frame/part "type" tag. A variable name containing "type" (frame_type, part_type, ...)
-// is the heuristic that separates a real type-tag match/comparison from an unrelated string match
-// (e.g. `is_advisory_severity`'s `matches!(value, "nit" | "concern" | "blocker")` is skipped
-// because its discriminant is named `value`, not `*type*`).
+// Matches only the syntactic shapes this codebase uses to name a wire command or "type" tag.
+// A variable name containing "type" is the heuristic separating a type-tag match from an
+// unrelated string match (e.g. `is_advisory_severity` matches on `value`, so it is skipped).
 function extractReferencedWireLiterals(source) {
   const found = new Map(); // literal -> Set of match-kind labels (for the report)
 
@@ -230,10 +145,8 @@ function extractReferencedWireLiterals(source) {
     }
   }
 
-  // (e) Rust `match <ident containing "type"> { "a" => ..., "b" | "c" => ... }`. Captures EVERY
-  // alternative of a `|`-joined arm pattern (not just the one immediately before `=>`), and only
-  // arms at the match body's own top level (see `topLevelDepthAt`) -- a nested match/matches!
-  // block inside one of this match's arms does not leak its own arms into this scan.
+  // (e) Rust `match <ident containing "type"> { ... }`. Captures every `|` alternative, but only
+  // top-level arms (`topLevelDepthAt`) so a nested match doesn't leak its arms into this scan.
   {
     const headerRe = /match\s+(\w*[Tt]ype\w*)\s*\{/g;
     let m;
@@ -256,14 +169,6 @@ function extractReferencedWireLiterals(source) {
 
   return found;
 }
-
-// ---------------------------------------------------------------------------
-// --self-test: gate infrastructure, not a product check (see module header usage note). Seeds
-// literals this script has never declared anywhere and asserts its own detection logic actually
-// catches them, so a future refactor that accidentally makes `isKnownLiteral`/
-// `extractReferencedWireLiterals` false-pass everything fails loudly here first. Runs before any
-// repo file other than the vendored schema is touched, and exits immediately.
-// ---------------------------------------------------------------------------
 
 function selfTest() {
   const failures = [];
@@ -319,12 +224,6 @@ if (process.argv.includes("--self-test")) {
   process.exit(1);
 }
 
-// ---------------------------------------------------------------------------
-// 4. Informational table: Refract's own IPC_REQUESTS/IPC_EVENTS channels with no same/similarly
-//    named OMP command. See header comment -- this never affects the exit code. Degrades to a
-//    printed warning (not a throw) if src/shared/ipc.ts's IPC_REQUESTS/IPC_EVENTS shape changes.
-// ---------------------------------------------------------------------------
-
 function extractConstObject(source, constName) {
   const match = source.match(
     new RegExp(`export const ${constName} = \\{([\\s\\S]*?)\\n\\} as const;`),
@@ -369,11 +268,6 @@ try {
   ipcParseWarning = err.message;
 }
 
-// ---------------------------------------------------------------------------
-// 5. The real drift signal: OMP wire literals Refract's own transport/transcript/session code
-//    reads or writes by string, that are not in the schema's declared vocabulary (section 2).
-// ---------------------------------------------------------------------------
-
 const sessionAgentDir = path.join(
   repoRoot,
   "src-tauri",
@@ -383,13 +277,10 @@ const sessionAgentDir = path.join(
 );
 const scanTargets = [
   path.join(repoRoot, "src", "shared", "frames.ts"),
-  // src/main/omp/OmpProcess.ts, SessionAgent.ts and dialogs.ts were deleted at #796/R13
-  // (Electron cutover); their wire-literal references are already covered by the Rust files
-  // below (process.rs, transcript.rs, and every file in sessionAgentDir).
+  // Electron-era OmpProcess.ts/SessionAgent.ts/dialogs.ts are gone; the Rust files below cover them.
   path.join(repoRoot, "src-tauri", "src", "omp", "process.rs"),
   path.join(repoRoot, "src-tauri", "src", "omp", "transcript.rs"),
-  // R3/#786 (PR #827) owns every file in this directory -- read-only here, grep-scanned for its
-  // wire-literal references only, never edited.
+  // Read-only here: scanned for wire literals, never edited.
   ...readdirSync(sessionAgentDir)
     .filter((f) => f.endsWith(".rs"))
     .sort()
@@ -410,10 +301,6 @@ for (const file of scanTargets) {
     }
   }
 }
-
-// ---------------------------------------------------------------------------
-// 6. Print.
-// ---------------------------------------------------------------------------
 
 function printTable(rows, columns) {
   const widths = columns.map((c) =>
@@ -491,10 +378,6 @@ if (undeclared.length === 0) {
 }
 console.log();
 
-// ---------------------------------------------------------------------------
-// 7. --check-pin: informational-only, never affects exit code.
-// ---------------------------------------------------------------------------
-
 if (process.argv.includes("--check-pin")) {
   const provenance = readFile(provenancePath);
   const pinnedMatch = provenance.match(/@oh-my-pi\/pi-coding-agent@([0-9.]+)/);
@@ -506,15 +389,8 @@ if (process.argv.includes("--check-pin")) {
   } else {
     let registryVersion;
     try {
-      // Windows cannot spawn a `.cmd` shim directly without a shell since Node's
-      // CVE-2024-27980 fix (`.bat`/`.cmd` execution now requires `{ shell: true }` or an
-      // explicit interpreter) -- but `shell: true` builds one shell-parsed command-line string,
-      // which is the real injection surface a security reviewer already flagged here. The safe
-      // middle ground `cross-spawn` and Node's own advisory both point to: invoke `cmd.exe`
-      // itself (a real, directly-executable .exe) as the file, with the actual command and its
-      // args passed through as separate, un-concatenated argv elements -- same effect as a
-      // shell, with none of the single-string quoting/injection risk, and it works with the
-      // fully-static args below (no untrusted input ever reaches this call).
+      // CVE-2024-27980: Windows can't spawn `.cmd` without a shell, and `shell: true` builds one
+      // injectable command string. Run `cmd.exe` with separate argv elements instead (args are static).
       const [bin, args] =
         process.platform === "win32"
           ? [
@@ -530,12 +406,7 @@ if (process.argv.includes("--check-pin")) {
               ],
             ]
           : ["npm", ["view", "@oh-my-pi/pi-coding-agent", "version"]];
-      // Gate-round-2 fix (MEDIUM #5): without a timeout, a stalled registry (network partition,
-      // hung proxy, ...) blocks this call until npm's own internal retry/backoff gives up on its
-      // own schedule -- inside a 45-minute CI job that is an expensive way to find out. 30s is
-      // generous for a single `npm view` round trip; the catch block below already treats ANY
-      // failure non-fatally (including the `ETIMEDOUT` this triggers), so a slow registry just
-      // degrades this informational check to "unknown", exactly like today's network-error path.
+      // Timeout so a stalled registry degrades this informational check to "unknown" instead of hanging CI.
       registryVersion = execFileSync(bin, args, { encoding: "utf8", timeout: 30_000 }).trim();
     } catch (err) {
       console.log(
