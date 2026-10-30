@@ -8,19 +8,20 @@ import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
 import { useWorktreeActions } from './useWorktreeActions'
-import { canResumeSession, resumeSession, stillEligibleAfterResume } from '@/features/chat/resume'
-import { describeStopReason } from '@/features/chat/ChatPane'
+import { useSessionResume } from './useSessionResume'
 import { focusSessionPane, focusSessionRow, focusSessionsNav } from '@/lib/focus'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { createdSessionAnnouncement } from './createdSessionAnnouncement'
 import { useHideSession } from './useHideSession'
+import { useSurfaceArchiveActions } from './sessionRowSurface'
+import type { SessionRowSurface } from './sessionRowSurface'
 import { setSessionPaused } from '@/features/chat/pauseActions'
 
 // Issue #811 (SessionList.tsx split): this is SessionRow's own body, moved unchanged -- archive,
 // restore, delete, resume and rename state and handlers, plus the focus-after-removal fallback
 // chain. SessionRow.tsx calls this hook and renders; every binding the JSX reads or calls is
 // returned below, unchanged in name and behaviour.
-export function useSessionRowActions(session: SessionSummary, repository: Repository) {
+export function useSessionRowActions(session: SessionSummary, repository: Repository | undefined, surface?: SessionRowSurface) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
   // reading, extended to this row's own marker); which pane specifically only matters to the
   // click handler in `SessionRow.tsx`, not this visual marker.
@@ -45,7 +46,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   const createSession = useSessionsStore((state) => state.create)
   // Code-review fix (gate round 1): subscribes to a derived boolean, not the whole Set, so a
   // create for one repository does not re-render every row in every OTHER repository too.
-  const creatingThisRepository = useSessionsStore((state) => state.creatingRepositoryIds.has(repository.id))
+  const creatingThisRepository = useSessionsStore((state) => (repository ? state.creatingRepositoryIds.has(repository.id) : false))
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -53,13 +54,6 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [resuming, setResuming] = useState(false)
-  const resumingRef = useRef(false)
-  const resumeButtonRef = useRef<HTMLButtonElement>(null)
-  // Issue #509 quality-gate fix: a successful resume flips `canResume` false on this row's
-  // next render (its own button then disappears) -- without this, focus that was on the
-  // button at click time would silently fall back to <body> (WCAG 2.1 AA focus-visibility).
-  const resumeFocusPendingRef = useRef(false)
   const { copyPath, reveal } = useWorktreeActions(session)
   const worktreeMissing = session.stopReason === 'worktree-missing'
   const rowRef = useRef<HTMLLIElement>(null)
@@ -122,15 +116,16 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   // tell a deliberate user move apart from focus simply still sitting where this branch left it.
   const restoreRequestedRef = useRef(false)
   const restoreParkedRef = useRef<HTMLElement | null>(null)
-  const focusFallbackRef = useRef<() => void>(focusSessionsNav)
+  const fallbackFocus = surface?.fallbackFocus ?? focusSessionsNav
+  const focusFallbackRef = useRef<() => void>(fallbackFocus)
 
   // Captures the next still-connected place for focus to land after this row unmounts.
   function captureFocusFallback(): void {
     const li = rowRef.current
     const nextButton =
-      (li?.nextElementSibling as HTMLElement | null)?.querySelector<HTMLButtonElement>('.session-open-button') ?? null
+      (li?.nextElementSibling as HTMLElement | null)?.querySelector<HTMLButtonElement>('.session-open-button, .manage-session-open-button') ?? null
     const prevButton =
-      (li?.previousElementSibling as HTMLElement | null)?.querySelector<HTMLButtonElement>('.session-open-button') ??
+      (li?.previousElementSibling as HTMLElement | null)?.querySelector<HTMLButtonElement>('.session-open-button, .manage-session-open-button') ??
       null
     const groupRoot = li?.closest<HTMLElement>('[data-repository-id], [data-archived-group]') ?? null
     const trigger = groupRoot?.querySelector<HTMLButtonElement>('[data-slot="collapsible-trigger"]') ?? null
@@ -138,7 +133,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       if (nextButton?.isConnected) nextButton.focus()
       else if (prevButton?.isConnected) prevButton.focus()
       else if (trigger?.isConnected) trigger.focus()
-      else focusSessionsNav()
+      else fallbackFocus()
     }
   }
 
@@ -153,90 +148,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     setRenaming(true)
   }
 
-  // Issue #509 (PLAN.md row A2g): icon-only, row-level Resume -- recovers the agent and sends the
-  // default resume instruction as a real turn (`resumeSession`, shared with ChatPane's own Resume
-  // button in the stop banner; `sessions.resume` itself holds the server-side single-flight
-  // lock, so this ref only ever blocks this one button's own double click). aria-disabled, not
-  // `disabled`, so keyboard focus stays on the button through the call (matches the
-  // Quick-create button above).
-  // Gate-fixes a11y Low finding (cycle 5): a Session mid-start after a Recover of an
-  // `agent-exited` Session kept this true, showing an enabled Resume button next to this row's
-  // own "Starting agent… N s" text -- ChatPane's banner already hides its own Resume for this
-  // same state (`showBanner` requires `!startProgress`); this row disagreed.
-  const canResume = !session.startProgress && canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly, !!session.archivedAt)
-
-  // Quality-gate fix (cycle 2, 2026-10-08): only moves focus when it is actually stranded
-  // (<body>, null, or disconnected) -- previously this ran unconditionally the instant
-  // `canResume` flipped false, which could yank focus back to this row even if the user had
-  // since tabbed away (or clicked elsewhere) during the call, matching `ChatPane.tsx`'s own
-  // `maybeRestoreFocus` "stranded" test for its Recover/Retry buttons.
-  useEffect(() => {
-    if (canResume || !resumeFocusPendingRef.current) return
-    resumeFocusPendingRef.current = false
-    const active = document.activeElement
-    const stranded = !active || active === document.body || !active.isConnected
-    if (!stranded) return
-    if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
-    else focusListContainer()
-  }, [canResume])
-
-  async function handleResume(): Promise<void> {
-    if (resumingRef.current) return
-    resumingRef.current = true
-    if (document.activeElement === resumeButtonRef.current) resumeFocusPendingRef.current = true
-    setResuming(true)
-    // Issue #603 quality-gate follow-up (Low, availability): wraps the call in try/finally --
-    // an unhandled rejection from `resumeSession` (the preload bridge call itself, not an
-    // `{ ok: false }` result) used to leave `resumingRef`/`setResuming` stuck true forever,
-    // locking this row's Resume button for the rest of the session.
-    try {
-      const result = await resumeSession(session.id)
-      // Quality-gate fix (cycle 5, 2026-10-08): `sessions.resume` can return `ok: true` with a
-      // STILL-stopped snapshot when the restart itself failed (e.g. start-failed) --
-      // `resumeSession.ts`'s own doc comment. Previously only `!result.ok` counted as a failure
-      // here, so this case announced nothing: the row's "Resuming X…" status text just went
-      // blank, `canResume` flipped false, the button disappeared, and focus returned to the open
-      // button with no indication anything had gone wrong (WCAG 4.1.3, 3.3.1). The banner's own
-      // `role="alert"` title change already announces this from the pane; the row had no
-      // equivalent.
-      const restartFailed = result.ok && result.value.runtime.status === 'stopped'
-      if (!result.ok || restartFailed) {
-        // Quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): only clear the pending
-        // flag when the Session is STILL resumable after this call -- a restart failure (ok:true,
-        // still stopped, now e.g. stopReason:'start-failed') flips `canResume` to false exactly
-        // like a genuine success does, so the effect above still needs to run and move focus onto
-        // the open button once the Resume button disappears. Clearing it unconditionally here (as
-        // cycle 5 did, back when a restart failure was not yet counted as this same kind of
-        // failure) left focus stranded on `<body>` instead.
-        const stillEligible = stillEligibleAfterResume(result, !!session.archivedAt)
-        if (stillEligible) resumeFocusPendingRef.current = false
-        notify(
-          result.ok
-            ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
-            : result.error
-        )
-      }
-    } catch (err) {
-      // Issue #603 quality-gate follow-up (Low, a11y): the try/finally above releases the lock
-      // on an unhandled rejection (the bridge call itself throwing, not an `{ ok: false }`
-      // result), but previously announced nothing. Round 2 (Low, a11y): clearing
-      // `resumeFocusPendingRef` unconditionally here (as round 1 did) was wrong whenever the
-      // rejection landed AFTER the restart actually succeeded server-side (the bridge call
-      // itself threw on the way back, not the restart) -- `canResume` would then flip false
-      // for this Session exactly like a normal success, and the effect above needs the flag
-      // still armed to rescue focus once the button unmounts. Reads the freshest store state
-      // (never the `session` prop this closure captured, now possibly stale) and only clears
-      // when the Session is STILL resumable -- otherwise leaves it armed.
-      const latest = useSessionsStore.getState().sessions.find((s) => s.id === session.id)
-      if (latest && canResumeSession(latest.status, latest.stopReason, latest.terminatedUnexpectedly, !!latest.archivedAt)) {
-        resumeFocusPendingRef.current = false
-      }
-      notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) })
-    } finally {
-      resumingRef.current = false
-      setResuming(false)
-    }
-  }
+  const { resuming, resumeButtonRef, canResume, handleResume } = useSessionResume(session, openButtonRef, focusListContainer)
 
   async function commitRename(): Promise<void> {
     const name = draftName.trim()
@@ -293,7 +205,20 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   // rename, not a second, row-only copy. `restoreRequestedRef` (gate round 5, Main's finding 4)
   // lets this skip its own generic redirect while a restore for THIS row is in flight, since
   // `onRestore` below already has its own, more specific focus fallback.
-  useFocusSearchOnStrandedUnmount(rowRef, restoreRequestedRef)
+  useFocusSearchOnStrandedUnmount(rowRef, restoreRequestedRef, !surface)
+
+  // A row on another screen (`surface`) has no sidebar search to fall back to: when this
+  // instance is torn down (archive, restore and delete only sometimes unmount it) with focus
+  // stranded, send it to the fallback captured while the row was still mounted (WCAG 2.4.3).
+  useEffect(() => {
+    if (!surface) return
+    return () => {
+      requestAnimationFrame(() => {
+        if (!document.activeElement || document.activeElement === document.body) focusFallbackRef.current()
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Issue #620, UX consult item 2 decisions 3, 8, 9: creates instantly in this row's own
   // repository and default branch (no dialog, no base-branch picker), announces immediately
@@ -304,6 +229,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   // x2: a plain `toast.error` auto-dismisses, and had no keyboard-reachable close control)
   // always shows regardless, including for a rejected IPC call.
   function handleNewSession(): void {
+    if (!repository) return
     createRequestedRef.current = true
     pendingCreateAnnouncementRef.current = `Creating session from ${repository.defaultBranch}`
     const row = rowRef.current
@@ -340,7 +266,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
           restoreAfterCreateFailure(result.error.message)
           return
         }
-        const finish = () => {
+        const finish = surface ? () => surface.created(result.value, { isStillHere, focusOrigin }) : () => {
           requestAnimationFrame(() => {
             // Gate round 3 (code-review Medium): `focusSessionPane` can genuinely find no pane
             // (the view switched away, or the split closed) -- announce instead of silently
@@ -366,7 +292,12 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   // (labels/order/archived-or-not/stopped-or-not) is shared with ManageSessionRow.tsx via
   // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
   // this row's own rename/delete-dialog state) stay local, since they differ per screen.
-  const hideSession = useHideSession(session, { captureFocusFallback, focusRow: () => menuTriggerRef.current?.focus() })
+  const hideSession = useHideSession(session, {
+    captureFocusFallback,
+    focusRow: () => menuTriggerRef.current?.focus(),
+    ...(surface ? { onAnnounce: surface.announce, focusAfterUnhide: () => openButtonRef.current?.focus() } : {})
+  })
+  const surfaceArchive = useSurfaceArchiveActions(session, surface, captureFocusFallback)
   const actions: SessionRowAction[] = buildSessionRowActions(
     session,
     {
@@ -375,7 +306,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
         renameRequestedRef.current = true
         startRenaming()
       },
-      onOpenInSplit: () => openInSplit(session.id),
+      onOpenInSplit: surface ? () => surface.open({ ctrlKey: true }) : () => openInSplit(session.id),
       onCopyPath: () => void copyPath(),
       onReveal: () => void reveal(),
       // Issue #603 quality-gate follow-up (Low then Medium, a11y): archive can now be refused (a
@@ -391,7 +322,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       // textarea). Captures this row's own `<li>` before the call and only moves focus
       // afterward when it is stranded (body/disconnected/none) or still somewhere inside THIS
       // row -- never when the user has deliberately focused something else meanwhile.
-      onArchive: () => {
+      onArchive: surface ? surfaceArchive.onArchive : () => {
         captureFocusFallback()
         const row = rowRef.current
         void archive(session.id)
@@ -407,7 +338,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       // the generic nearby fallback `captureFocusFallback` captured -- but only while the user
       // has not moved on in the meantime (still on this row, or on whatever the menu's own
       // close-autofocus parked focus on while the call was in flight).
-      onRestore: () => {
+      onRestore: surface ? surfaceArchive.onRestore : () => {
         restoreRequestedRef.current = true
         // Verif round 3 fix (Low): clears a stale value from an earlier action on this same
         // row before this restore's own parking (if any) sets it fresh -- `isStillHere` below
@@ -500,13 +431,14 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     // A11y-review fix (gate round 1, Low): a repository whose git read failed carries no
     // default branch -- leave the item out entirely (`null`), the same as the Manage screen's
     // unresolved-repository case, rather than reading "New session from " and creating on "".
-    repository.defaultBranch ? { branch: repository.defaultBranch, disabled: creatingThisRepository } : null
+    repository?.defaultBranch ? { branch: repository.defaultBranch, disabled: creatingThisRepository } : null
   )
 
   // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's open
   // button (the only normally-focusable element in the row), so its own close-autofocus prefers
   // sending focus straight back there instead of the "..." trigger the user never started from.
   function handleMenuCloseAutoFocus(event: Event, isContextMenu = false): void {
+    surfaceArchive.flushPendingAnnouncement()
     if (renameRequestedRef.current) {
       event.preventDefault()
       renameRequestedRef.current = false
@@ -552,7 +484,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       settledCreateRef.current = null
       if (settled) {
         settled()
-      } else if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) {
+      } else if (repository && useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) {
         const origin = isContextMenu ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
         if (origin?.isConnected) origin.focus()
         else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
@@ -588,6 +520,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     settledCreateRef, settledRestoreRef, restoreRequestedRef,
     focusListContainer, startRenaming, canResume, handleResume,
     commitRename, handleNameKeyDown, handleOpenButtonKeyDown,
-    actions, handleMenuCloseAutoFocus
+    actions, handleMenuCloseAutoFocus,
+    quickActionPending: surfaceArchive.quickActionPending, runQuickAction: surfaceArchive.runQuickAction
   }
 }
