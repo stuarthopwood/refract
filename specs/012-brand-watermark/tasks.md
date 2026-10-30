@@ -210,8 +210,8 @@ session-list/Subagent-panel/split state, and consistently absent from every full
   never shown on the Settings screen, the Readiness screen, or (once spec 008 builds it) the
   Manage sessions screen (depends on T010, T012). (#423)
   Partial evidence 2026-10-30 (`verify-406-watermark.mjs`, one mark in the right pane only, none
-  in the left; none on Readiness or Settings). Completed 2026-10-30: dragging the session list, chat
-  panes dividers (-700, +700, -300px) always leaves one mark above the composer with the chat panel
+  in the left; none on Readiness or Settings). Completed 2026-10-30: dragging the session-list and chat-pane
+  dividers (-700, +700, -300px) always leaves one mark above the composer with the chat panel
   at 750 to 1230px; one right pane divider drag (-700px) leaves the chat panel at 490px with one
   mark above the composer; none on Manage sessions or Home. At a 620px window the chat panel
   is 354px, below the 360px floor because the window itself is too narrow (not a watermark effect).
