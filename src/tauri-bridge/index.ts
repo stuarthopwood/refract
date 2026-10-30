@@ -198,6 +198,11 @@ const refract: RefractApi = {
     readText: () => request<string>(IPC_REQUESTS.CLIPBOARD_READ_TEXT)
   },
 
+  spellcheck: {
+    suggest: (word, language) => request<string[]>(IPC_REQUESTS.SPELLCHECK_SUGGEST, word, language),
+    add: (word, language) => request<void>(IPC_REQUESTS.SPELLCHECK_ADD, word, language)
+  },
+
   conversations: {
     list: (sessionId) => request<ConversationInfo[]>(IPC_REQUESTS.CONVERSATIONS_LIST, sessionId),
     startNew: (sessionId) => request<SessionSnapshot>(IPC_REQUESTS.CONVERSATIONS_START_NEW, sessionId),

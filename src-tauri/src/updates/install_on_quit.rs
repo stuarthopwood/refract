@@ -76,19 +76,22 @@ pub async fn schedule_install_on_quit(
 ) -> Result<(), String> {
     let pwsh = resolve_powershell();
     let pwsh_str = pwsh.to_string_lossy();
+    let log_path = install_log_path(installer_path);
+    // A fresh header means a stale result from an earlier attempt is never read as this one's.
+    let header = format!(
+        "{} scheduled: installer={} pid={refract_pid}\n",
+        unix_seconds(),
+        installer_path.display()
+    );
+    if let Err(err) = tokio::fs::write(&log_path, header).await {
+        log::warn!("could not write {}: {err}", log_path.display());
+    }
 
-    // `$env:` names stay unexpanded so the installer path is never spliced into the script.
-    let inner_command = if relaunch_path.is_some() {
-        format!(
-            "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE' -Wait; Start-Process -FilePath $env:REFRACT_RELAUNCH_PATH"
-        )
-    } else {
-        format!(
-            "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE'"
-        )
-    };
-    let inner_command_line =
-        format!("\"{pwsh_str}\" -NoProfile -NonInteractive -WindowStyle Hidden -Command \"{inner_command}\"");
+    // The script is fixed text passed as -EncodedCommand; every path reaches it through `$env:` only.
+    let encoded = encode_powershell_command(INSTALL_HELPER_SCRIPT);
+    let inner_command_line = format!(
+        "\"{pwsh_str}\" -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand {encoded}"
+    );
     let outer_script = [
         format!("$inner = '{}'", escape_single_quoted(&inner_command_line)),
         // WMI replaces the child's env rather than extending it, so forward `SystemRoot`/`PATH` too.
@@ -111,7 +114,9 @@ pub async fn schedule_install_on_quit(
         ])
         .creation_flags(CREATE_NO_WINDOW)
         .kill_on_drop(true)
-        .env("REFRACT_INSTALLER_PATH", installer_path);
+        .env("REFRACT_INSTALLER_PATH", installer_path)
+        .env("REFRACT_INSTALL_LOG", &log_path)
+        .env("REFRACT_WAIT_PID", refract_pid.to_string());
     if let Some(relaunch_path) = relaunch_path {
         command.env("REFRACT_RELAUNCH_PATH", relaunch_path);
     }
@@ -128,12 +133,111 @@ pub async fn schedule_install_on_quit(
         .code()
         .map(|c| c.to_string())
         .unwrap_or_else(|| "unknown".to_string());
+    append_log(
+        &log_path,
+        &format!(
+            "{} hand-off failed: exit={code} stdout={:?} stderr={:?}\n",
+            unix_seconds(),
+            String::from_utf8_lossy(&output.stdout).trim(),
+            detail
+        ),
+    )
+    .await;
     if detail.is_empty() {
         Err(format!("install-on-quit hand-off failed (exit {code})."))
     } else {
         Err(format!(
             "install-on-quit hand-off failed (exit {code}). {detail}"
         ))
+    }
+}
+
+/// Fixed helper text; the PID, installer, relaunch target and log path arrive only as env vars.
+/// The installer's exit code decides success; the old build is relaunched on failure, the new one on success.
+const INSTALL_HELPER_SCRIPT: &str = r#"
+$log = $env:REFRACT_INSTALL_LOG
+function Log($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format o) + ' ' + $m) -Encoding UTF8 }
+$code = -1
+try {
+  Wait-Process -Id ([int]$env:REFRACT_WAIT_PID) -ErrorAction SilentlyContinue
+  Log 'installer starting'
+  $out = $log + '.out'; $err = $log + '.err'
+  $p = Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE' -Wait -PassThru -ErrorAction Stop -RedirectStandardOutput $out -RedirectStandardError $err
+  $code = $p.ExitCode
+  foreach ($f in @($out, $err)) { if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f | ForEach-Object { Log ('installer output: ' + $_) }; Remove-Item -LiteralPath $f -ErrorAction SilentlyContinue } }
+} catch { Log ('error: ' + $_.Exception.Message) }
+Log ('result: exit=' + $code)
+if ($env:REFRACT_RELAUNCH_PATH) {
+  try { Start-Process -FilePath $env:REFRACT_RELAUNCH_PATH -ErrorAction Stop; Log 'relaunched' } catch { Log ('relaunch error: ' + $_.Exception.Message) }
+}
+"#;
+
+/// `install.log` beside the installer, written by Rust and by the helper.
+fn install_log_path(installer_path: &Path) -> PathBuf {
+    installer_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("install.log")
+}
+
+fn unix_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// `-EncodedCommand` takes base64 of UTF-16LE, so no quoting of the script is ever needed.
+fn encode_powershell_command(script: &str) -> String {
+    use base64::Engine;
+    let bytes: Vec<u8> = script
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+async fn append_log(log_path: &Path, line: &str) {
+    use tokio::io::AsyncWriteExt;
+    let opened = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .await;
+    if let Ok(mut file) = opened {
+        let _ = file.write_all(line.as_bytes()).await;
+    }
+}
+
+/// The last `result: exit=N` the helper logged, if any.
+fn parse_helper_exit_code(log: &str) -> Option<i64> {
+    log.lines()
+        .rev()
+        .find_map(|line| line.split_once("result: exit=")?.1.trim().parse().ok())
+}
+
+/// Cause-bearing `lastError` for an update that never took effect, read from the helper's log.
+async fn install_failure_message(log_path: Option<&Path>) -> String {
+    let suffix = "The previous version is still running.";
+    let Some(log_path) = log_path else {
+        return format!("The update did not finish installing. {suffix}");
+    };
+    let log = tokio::fs::read_to_string(log_path).await.ok();
+    let location = format!("Details: {}", log_path.display());
+    match log.as_deref().and_then(parse_helper_exit_code) {
+        Some(0) => format!(
+            "The installer reported success (exit code 0) but the version did not change. {suffix} {location}"
+        ),
+        Some(-1) => format!(
+            "The update installer could not be started. {suffix} {location}"
+        ),
+        Some(code) => format!(
+            "The update failed to install (installer exit code {code}). {suffix} {location}"
+        ),
+        None if log.is_some() => format!(
+            "The update did not finish installing and the install helper recorded no result; it may not have run. {suffix} {location}"
+        ),
+        None => format!("The update did not finish installing. {suffix}"),
     }
 }
 
@@ -166,13 +270,15 @@ pub async fn resolve_startup_state(
                     .await;
             }
 
+            let log_path = state
+                .installer_path
+                .as_deref()
+                .map(|p| install_log_path(Path::new(p)));
+            let message = install_failure_message(log_path.as_deref()).await;
             store
                 .update(|s| {
                     s.phase = UpdatePhase::Failed;
-                    s.last_error = Some(
-                        "The update did not finish installing. The previous version is still running."
-                            .to_string(),
-                    );
+                    s.last_error = Some(message);
                 })
                 .await
         }
