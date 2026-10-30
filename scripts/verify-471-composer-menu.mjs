@@ -103,10 +103,11 @@ async function main() {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk, modifiers });
     };
     const menuOpen = () => cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'menu open' });
-    const menuItems = () => cdp.evaluate(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).map((i) => ({ t: i.textContent.trim(), disabled: i.hasAttribute('data-disabled') }))`);
+    const LABEL = `((i) => { const s = i.querySelector('[data-slot="context-menu-shortcut"]'); return i.textContent.slice(0, i.textContent.length - (s ? s.textContent.length : 0)).trim(); })`;
+    const menuItems = () => cdp.evaluate(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).map((i) => ({ t: ${LABEL}(i), disabled: i.hasAttribute('data-disabled') }))`);
     const names = (items) => items.map((i) => i.t);
     const isDisabled = (items, t) => items.find((i) => i.t === t)?.disabled;
-    const clickItem = async (t) => click(await centre(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).find((i) => i.textContent.trim() === ${JSON.stringify(t)})`));
+    const clickItem = async (t) => click(await centre(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).find((i) => ${LABEL}(i) === ${JSON.stringify(t)})`));
     const select = (a, b) => cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(${a}, ${b}); return true; })()`);
     const value = () => cdp.evaluate(`${FIELD}.value`);
     const sel = () => cdp.evaluate(`[${FIELD}.selectionStart, ${FIELD}.selectionEnd]`);
