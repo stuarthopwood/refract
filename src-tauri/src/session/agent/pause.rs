@@ -245,7 +245,7 @@ impl SessionAgent {
         images: &Option<Vec<Value>>,
     ) -> Result<Option<Value>, AgentError> {
         self.ensure_pause_loaded().await;
-        let held = {
+        {
             let mut state = self.state.lock().await;
             let Some(held) = state.pause.held.as_mut() else {
                 return Ok(None);
@@ -274,7 +274,7 @@ impl SessionAgent {
     /// `remove_queued` gate: a chip for a held message is removed from the held list.
     pub(super) async fn remove_held(&self, text: &str) -> bool {
         self.ensure_pause_loaded().await;
-        let held = {
+        {
             let mut state = self.state.lock().await;
             let Some(held) = state.pause.held.as_mut() else {
                 return false;
