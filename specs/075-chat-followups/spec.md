@@ -11,7 +11,7 @@ Review leftovers from specs 072 and 073 plus one flaky Rust test. No new IPC com
 - Q: Fired-alarm visibility? [Decided, #1457] While the popover is open, a row that flips from armed to Fired is highlighted (`ListCardButton` `highlighted` prop) and scrolled into view; the highlight clears when the popover closes.
 - Q: Form heading and count? [Decided] The section title reads "Add alarm" or "Edit alarm" while the form is open; the header count is the armed count so it matches the bell.
 - Q: Shared limits? [Decided] `MAX_ALARMS` and `MAX_ALARM_LABEL_CHARS` live in `src/shared/model.ts`, mirroring `store/alarms.rs`.
-- Q: Chain card edge? [Decided, #1459] `ring-1 ring-divider` replaces the 1 px border so padding stays on the 4 px step. Border-only versus `bg-card` stays parked for Stuart.
+- Q: Chain card edge? [Decided, #1459] `ring-1 ring-divider` replaces the 1 px border so padding stays on the 4 px step. Stuart then decided border-only: `bg-card` is dropped from the card (user-directed, 2026-10-30).
 - Q: Stage status cue? [Decided] A status glyph precedes each Stage label, so status is not colour-only.
 - Q: Skipped? [Decided] The `items().to_vec()` snapshot is a shared pattern at five call sites; out of scope. Header chevron alignment is not changed without a visual ruling; filed as a follow-up.
 

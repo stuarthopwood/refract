@@ -67,7 +67,7 @@ async function main() {
     if (state.turnDone) failures.push('turn already ended; the settle-before-turn-end condition was not exercised');
     if (/running/i.test(state.label) || /running/i.test(state.text)) failures.push(`#1437: chain row still shows running while agents finished: ${state.label}`);
     if (!/Finished/.test(state.text)) failures.push(`#1437: chain row text does not read Finished: ${state.text}`);
-    if (!/\bring-divider\b/.test(state.cls) || !/\bbg-card\b/.test(state.cls) || !/\brounded-lg\b/.test(state.cls)) failures.push(`#1436: chain row card classes missing: ${state.cls}`);
+    if (!/\bring-divider\b/.test(state.cls) || /\bbg-card\b/.test(state.cls) || !/\brounded-lg\b/.test(state.cls)) failures.push(`#1436: chain row card classes missing: ${state.cls}`);
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '1437-chain-settled-dark.png'));
     await switchTheme(cdp, 'obsidian', 'Obsidian');

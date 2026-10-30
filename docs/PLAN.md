@@ -909,7 +909,7 @@ Also filed 2026-10-30: **#1424** (`p1`), Settings > Appearance: remove the Save 
 
 Also filed 2026-10-30: **#1426** (`feature`, `p1`), Composer clock: clicking the clock opens a popover for one-shot alarms with create, edit and delete; alarms fire an OS notification plus an in-app toast when focused, and persist in `settings.json`; placed as an index line after #1424's line. Status: built in spec 072 (`advisor-todo-alarms`, branch `advisor-parked-todo-alarms`), awaiting merge.
 
-Also filed 2026-10-30: **#1333**, **#1457**, **#1459** (follow-ups to #1426 and #1436/#1437): flaky watch test fix, alarm clock review leftovers, subagents chain card follow-ups; the border-only versus `bg-card` product call in #1459 stays parked for Stuart. Status: built in spec 075 (`chat-followups`), awaiting merge.
+Also filed 2026-10-30: **#1333**, **#1457**, **#1459** (follow-ups to #1426 and #1436/#1437): flaky watch test fix, alarm clock review leftovers, subagents chain card follow-ups; the border-only versus `bg-card` call in #1459 was decided by Stuart on 2026-10-30 (border-only, no fill; he may revisit after seeing it). Status: built in spec 075 (`chat-followups`), awaiting merge.
 
 Also filed 2026-10-30: **#1428** (`p1`, `right-pane`), Right rail: Agents count badge uses the accent colour (`bg-primary text-primary-foreground`) instead of the `working` state tone; placed as an index line after #1426's line. Status: built in spec 068 (`session-list-settings-polish`), awaiting merge.
 
