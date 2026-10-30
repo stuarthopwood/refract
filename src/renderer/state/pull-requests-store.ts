@@ -135,13 +135,18 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       result = await window.refract.pullRequests.listAcross(tab, state, ids, query.trim(), limit)
     } catch {
       if (sequence !== refreshSequence) return
-      set({ loading: false, error: { code: 'gh-failed', message: 'Could not list pull requests.' }, items: [], skipped: [], hasMore: false })
+      const error = { code: 'gh-failed' as const, message: 'Could not list pull requests.' }
+      set(more ? { loading: false, error } : { loading: false, error, items: [], skipped: [], hasMore: false })
       return
     }
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
     if (sequence !== refreshSequence) return
     if (!result.ok) {
-      set({ loading: false, error: result.error, items: [], skipped: [], hasMore: false })
+      set(
+        more
+          ? { loading: false, error: result.error }
+          : { loading: false, error: result.error, items: [], skipped: [], hasMore: false }
+      )
       return
     }
     set({

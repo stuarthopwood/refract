@@ -85,10 +85,11 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   // "Show more" keeps its focus while loading (aria-disabled). When the button then vanishes
   // (cap reached or list exhausted), move focus to the footer note or the list so it is not lost.
   useEffect(() => {
-    if (loading || !askedForMore.current) return
-    if (paging?.hasMore) return
+    if (loading) return
+    const asked = askedForMore.current
     askedForMore.current = false
-    ;(capNoteRef.current ?? listRef.current)?.focus()
+    if (!asked || paging?.hasMore) return
+    ;(capNoteRef.current ?? listRef.current)?.focus({ preventScroll: true })
   }, [loading, paging?.hasMore, showCapNote])
 
   const activeFilterCount =
@@ -101,7 +102,9 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
 
   // The whole list is replaced by an error only when every skipped Project is down for gh-wide reasons.
   const ghWideCode = ['gh-unavailable', 'rate-limited'].find((code) => skipped.every((project) => project.code === code))
-  const friendlyError = error
+  // A failed "Show more" keeps the rows already on screen and shows the error under them.
+  const failedLoadMore = Boolean(error) && itemCount > 0
+  const friendlyError = error && !failedLoadMore
     ? (ERROR_MESSAGES[error.code] ?? error.message)
     : itemCount === 0 && skipped.length > 0 && ghWideCode
       ? ERROR_MESSAGES[ghWideCode]
@@ -240,9 +243,18 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           )
         ) : (
           <>
-            <div ref={listRef} tabIndex={-1} className="flex flex-col divide-y divide-divider outline-none">
+            <div
+              ref={listRef}
+              tabIndex={-1}
+              className="flex flex-col divide-y divide-divider outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+            >
               {props.children}
             </div>
+            {failedLoadMore && error && (
+              <div role="alert" className="p-2 text-center text-xs text-destructive">
+                {ERROR_MESSAGES[error.code] ?? error.message} Try Show more again.
+              </div>
+            )}
             {paging?.hasMore && (
               <div className="flex justify-center p-2">
                 <Button
@@ -251,6 +263,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
                   variant="outline"
                   size="sm"
                   aria-disabled={loading}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
                   onClick={() => {
                     if (loading) return
                     askedForMore.current = true
