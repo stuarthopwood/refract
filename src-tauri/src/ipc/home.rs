@@ -42,7 +42,9 @@ fn home_last_messages(state: super::AppState, args: Vec<Value>) -> HandlerFuture
     Box::pin(async move {
         let ids = string_array(&args, "home.lastMessages expects (sessionIds)")?;
         if ids.len() > MAX_SESSIONS {
-            return Err(invalid_argument(format!("Ask for at most {MAX_SESSIONS} sessions.")));
+            return Err(invalid_argument(format!(
+                "Ask for at most {MAX_SESSIONS} sessions."
+            )));
         }
         let mut result = Map::new();
         for id in ids {
@@ -97,7 +99,9 @@ fn home_closed_branches(state: super::AppState, args: Vec<Value>) -> HandlerFutu
     Box::pin(async move {
         let ids = string_array(&args, "home.closedBranches expects (repositoryIds)")?;
         if ids.len() > MAX_PROJECTS {
-            return Err(invalid_argument(format!("Choose at most {MAX_PROJECTS} projects.")));
+            return Err(invalid_argument(format!(
+                "Choose at most {MAX_PROJECTS} projects."
+            )));
         }
         let mut skipped: Vec<Skipped> = Vec::new();
         let mut resolved: Vec<(String, String, std::path::PathBuf)> = Vec::new();

@@ -68,7 +68,11 @@ pub async fn read_last_user_line(path: &Path) -> Option<String> {
         let start = len.saturating_sub(window);
         file.seek(std::io::SeekFrom::Start(start)).await.ok()?;
         let mut buffer = Vec::with_capacity((len - start) as usize);
-        (&mut file).take(len - start).read_to_end(&mut buffer).await.ok()?;
+        (&mut file)
+            .take(len - start)
+            .read_to_end(&mut buffer)
+            .await
+            .ok()?;
         let text = String::from_utf8_lossy(&buffer);
         let mut lines: Vec<&str> = text.lines().collect();
         // A window that starts mid-file begins with a fragment of an earlier line; if it started
