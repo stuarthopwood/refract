@@ -4,18 +4,9 @@
 // this menu only announces that the shake started. Thinking and images are not recoverable, so
 // they confirm first; elide keeps `artifact://` references and does not.
 import { Fragment, useRef, useState } from 'react'
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { BrainIcon, ExternalLinkIcon, ImageIcon, ScissorsIcon } from 'lucide-react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -58,7 +49,13 @@ const IDLE_REASON_ID = 'context-shake-idle-reason'
 export function ContextShakeMenu({ sessionId, figure, notice, children }: { sessionId: string; figure: string | null; notice?: string; children: ReactNode }) {
   const idle = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'idle')
   const [confirming, setConfirming] = useState<ShakeAction | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  // Right-click, Shift+F10 and the Menu key open the same menu as a left click.
+  const openOnContextMenu = (event: ReactMouseEvent): void => {
+    event.preventDefault()
+    setMenuOpen(true)
+  }
 
   function run(action: ShakeAction): void {
     // Re-read the live status: the Session can turn busy while the confirmation is open.
@@ -86,16 +83,16 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
 
   return (
     <>
-      <DropdownMenu modal={false}>
+      <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
         {notice ? (
           <Tooltip>
             <TooltipTrigger asChild aria-describedby={undefined}>
-              <DropdownMenuTrigger asChild ref={triggerRef}>{children}</DropdownMenuTrigger>
+              <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
             </TooltipTrigger>
             <TooltipContent className="max-w-80">{notice}</TooltipContent>
           </Tooltip>
         ) : (
-          <DropdownMenuTrigger asChild ref={triggerRef}>{children}</DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
         )}
         <DropdownMenuContent align="start" side="top">
           {figure && <DropdownMenuLabel className="text-foreground">{figure}</DropdownMenuLabel>}
@@ -132,25 +129,22 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <AlertDialogContent
-          onCloseAutoFocus={(event) => {
-            event.preventDefault()
-            triggerRef.current?.focus()
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>{confirming?.label}?</AlertDialogTitle>
-            <AlertDialogDescription>{confirming?.loss}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => confirming && run(confirming)}>
-              {confirming?.label}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmAlertDialog
+        open={confirming !== null}
+        busy={false}
+        tone="destructive"
+        title={`${confirming?.label ?? 'Shake'}?`}
+        description={confirming?.loss}
+        confirmLabel={confirming?.label ?? 'Shake'}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          if (confirming) run(confirming)
+          setConfirming(null)
+        }}
+        onCloseAutoFocus={() => {
+          triggerRef.current?.focus()
+        }}
+      />
     </>
   )
 }
