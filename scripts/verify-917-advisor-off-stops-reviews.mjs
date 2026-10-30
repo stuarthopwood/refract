@@ -1,37 +1,10 @@
 #!/usr/bin/env node
-// Falsification probe for #917 (gate round 2, Main/architect/G923Tests): "the two /advisor
-// status replies differ" is not proof that `/advisor off` actually stops the advisor's reviews
-// -- omp's own docs (omp://advisor-watchdog.md "Enabling the advisor"/"Slash commands" table)
-// say `/advisor off` "Disable the advisor subsystem for this session and stop its runtimes", yet
-// a live run's status reply right after `/advisor off` read `Advisor "default" is running.`,
-// which reads as a direct contradiction unless "running" means something narrower than
-// "actively reviewing". A first version of this probe measured one phase (ON) with a warm-up
-// plus a second turn but the other phase (OFF) with only ONE turn, which also happened to be
-// the Session's very first turn ever -- G923Tests correctly called this lopsided: a brand-new
-// Session's first turn could itself be skipped for reasons that have nothing to do with on/off
-// (whatever actually causes the warm-up skip), so "no file after one off turn" proved nothing.
-//
-// This version is symmetric: EVERY phase (on, off, on again) gets the identical warm-up-turn
-// plus a second real turn before being measured, so the only variable that differs between
-// phases is the on/off state itself:
-//   1. `/advisor on`, warm-up turn, second turn -- record size/lines (should exist and grow).
-//   2. `/advisor off` -> literal reply recorded; `/advisor status` -> literal reply recorded
-//      (nothing in between); warm-up turn, second turn -- record size/lines again. Off is
-//      proven ONLY if the file does NOT grow across these two turns, compared to the end of
-//      phase 1.
-//   3. `/advisor on` again, warm-up turn, second turn -- record size/lines again (optional
-//      confirmation that growth resumes).
-// Ground truth, not wording: every finalized advisor review is appended to the owning Session's
-// own `__advisor*.jsonl` file (omp://advisor-watchdog.md "Transcript persistence and
-// observability"), REGARDLESS of whether the emission guard lets any note surface to the user.
-// The conclusion is written in plain language at the end, from the measured deltas only -- the
-// meaning of `Advisor "default" is running.` stays explicitly "not established" unless the
-// evidence actually shows it; this probe does not guess at it as fact.
-//
-// Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
-// override, same isolation posture as verify-917-advisor-command.mjs/verify-558). Reuses the
-// already-built exe (`CARGO_TARGET_DIR`/debug) without rebuilding when the caller has already
-// confirmed `git diff --stat <evidence-head> HEAD -- src src-tauri` is empty.
+// Falsification probe for #917: proves whether `/advisor off` actually stops advisor reviews, since differing
+// status replies are not proof (a live reply after off still read `Advisor "default" is running.`).
+// Every phase (on, off, on again) gets the same warm-up turn plus a second turn, so only the on/off state varies.
+// Ground truth is the Session's `__advisor*.jsonl` growth, written for every finalized review whether or not a note surfaces.
+// The meaning of "is running" stays "not established" unless the measured deltas show it.
+// Drives a REAL `omp` on the ambient signed-in profile and reuses the already-built exe without rebuilding.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -42,7 +15,7 @@ import { gitHead, buildLauncher, makeScratchRepo, launchBuiltExe, safeRmSync, sh
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+// Requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target (#946).
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
   process.env.REFRACT_917B_SHOTS_DIR || path.join(tmpdir(), 'refract-917-advisor-off-probe', new Date().toISOString().replace(/[:.]/g, '-'));
@@ -101,11 +74,7 @@ async function sendRealTurn(cdp, sentinel) {
   );
 }
 
-/** `window.refract.sessions.list()`'s own `sessionDir` field (populated from `get_state`'s own
- * `sessionFile` as soon as it is first learned -- unlike `currentConversation`, which the Rust
- * side (`sync_from_state.rs`) only persists once `messageCount > 0`, `sessionDir` has no such
- * gate, so it is already populated by the time the composer is enabled, well before any slash
- * command or real turn has been sent). */
+/** `sessions.list()`'s `sessionDir`: set as soon as `get_state` reports `sessionFile`, unlike `currentConversation`, which Rust persists only once `messageCount > 0`. */
 async function getSessionDir(cdp) {
   return cdp.waitFor(
     `(async () => { const result = await window.refract.sessions.list(); if (!result.ok) return null; const s = result.value[0]; return s?.sessionDir ?? null; })()`,
@@ -113,17 +82,10 @@ async function getSessionDir(cdp) {
   );
 }
 
-/** Total size (bytes) and line count across every `__advisor*.jsonl` belonging to THIS Session
- * right now -- `folderExists: false`, 0/0 when the advisor has not produced a single finalized
- * review yet (confirmed live: right after an off-phase turn with no review run, `sessionDir`
- * holds ONLY the Conversation's own `.jsonl` file -- no sibling artifacts folder exists at all
- * yet). The folder appears LAZILY, created only once the advisor actually writes to it: it
- * shares the current Conversation file's own basename (no `.jsonl`), inside `sessionDir`, NOT
- * beside the `.jsonl` file the way `omp://advisor-watchdog.md`'s own "<session>/__advisor.jsonl"
- * wording reads at a glance. Re-derives the folder name fresh on every call (never cached), so a
- * caller polling this across a real turn self-heals the instant the folder is created. Reads the
- * REAL host filesystem directly (Node `fs`, not the renderer): this lives under OMP's own
- * session store, not Refract's own scratch data dir, so it survives this probe's own cleanup. */
+/** Bytes and lines across this Session's `__advisor*.jsonl`; 0/0 until the advisor writes.
+ * The artifacts folder is created lazily and shares the Conversation file's basename inside `sessionDir`
+ * (not beside the `.jsonl`), so it is re-derived on every call. Reads the host filesystem directly, since
+ * it lives in OMP's session store and survives this probe's cleanup. */
 function measureAdvisorFiles(sessionDir) {
   let conversationFile;
   try {
@@ -147,11 +109,7 @@ function measureAdvisorFiles(sessionDir) {
   return { folderExists: true, files, totalBytes, totalLines };
 }
 
-/** Polls `measureAdvisorFiles(dir)` until it shows growth past `baseline` (bytes or lines) or
- * `timeoutMs` elapses -- a finalized review is written asynchronously after the primary turn
- * settles (omp://advisor-watchdog.md "Advisor review is async after the turn settles"), so a
- * single immediate measurement right after the turn would under-count a real but still-pending
- * review. Returns the LAST measurement either way (growth or none), never throws. */
+/** Polls until the advisor files grow past `baseline` or `timeoutMs` elapses (reviews are written async after the turn settles); returns the last measurement, never throws. */
 async function pollForGrowth(dir, baseline, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let latest = measureAdvisorFiles(dir);
@@ -228,8 +186,6 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- Phase 1: /advisor on (explicit, even though the ambient profile may already default
-    // to it), warm-up turn, second turn -- establishes the file exists and grows at all ----
     const onReply1 = await sendSlashCommand(cdp, '/advisor on');
     findings.push(`Phase 1 "/advisor on" literal reply: ${JSON.stringify(onReply1)}`);
     const sessionDir = await getSessionDir(cdp);
@@ -247,9 +203,7 @@ async function main() {
     );
     const grewInPhase1 = afterPhase1.totalBytes > beforePhase1.totalBytes || afterPhase1.totalLines > beforePhase1.totalLines;
 
-    // ---- Phase 2: /advisor off, literal /advisor status reply (nothing in between), then the
-    // IDENTICAL warm-up turn + second turn treatment -- off is proven only if this does NOT
-    // grow past where Phase 1 left off ----
+    // Off is proven only if the file does not grow past where phase 1 left off.
     const offReply = await sendSlashCommand(cdp, '/advisor off');
     findings.push(`Phase 2 "/advisor off" literal reply: ${JSON.stringify(offReply)}`);
     const statusAfterOff = await sendSlashCommand(cdp, '/advisor status');
@@ -264,9 +218,7 @@ async function main() {
     );
     const grewInPhase2 = afterPhase2.totalBytes > beforePhase2.totalBytes || afterPhase2.totalLines > beforePhase2.totalLines;
 
-    // ---- Phase 3 (optional confirmation): /advisor on again, warm-up turn, second turn --
-    // growth should resume if off in Phase 2 genuinely paused it rather than something else
-    // having silently stopped the advisor for good ----
+    // Growth resuming shows off paused the advisor rather than something stopping it for good.
     const onReply2 = await sendSlashCommand(cdp, '/advisor on');
     findings.push(`Phase 3 "/advisor on" (again) literal reply: ${JSON.stringify(onReply2)}`);
     const beforePhase3 = afterPhase2;
@@ -279,8 +231,6 @@ async function main() {
     );
     const grewInPhase3 = afterPhase3.totalBytes > beforePhase3.totalBytes || afterPhase3.totalLines > beforePhase3.totalLines;
 
-    // ---- Conclusion, from the measured deltas only -- "is running" stays unexplained unless
-    // the evidence actually shows what it means ----
     let conclusion;
     if (!grewInPhase1) {
       failures.push(

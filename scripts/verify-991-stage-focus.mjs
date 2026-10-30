@@ -1,88 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #991 (gate follow-ups from the #941 lane's final gate, PR #979):
-// Stage row auto-close dropping keyboard focus, toggle memory lost on remount, and the
-// `verify-941-stage-naming-helpers.mjs` selector-scoping fix.
-//
-// Reuses the recorded-frame fake `omp` harness, the SAME `stages-941.jsonl` fixture and the
-// SAME `verify-941-stage-naming-helpers.mjs` STAGE*_TITLE/titleSelector/stageContentSelector/
-// stageTriggerSelector exports every `verify-941-*` script already shares (AGENTS.md: no new
-// fixtures). The fixture gained one additive `{"__delay__": 1500}` (issue #991, 2026-10-18,
-// see its own header note) right after Stage 1's assistant-message echo, so Stage 1 is
-// genuinely observable as a running, open, two-member Stage for about 1.5s before it settles.
-// Final-delta fix (test-reviewer): combined with the upward-only disclosure redesign below,
-// Stage 1 is now deterministically OPEN by the time any `verify-941-stage-naming.mjs` assertion
-// ever runs against it (not closed) -- its own expand-cycle assertion was updated to expect
-// `'true'`, and Stage 7 (no fixture delay of its own, so whether it was ever observably open
-// first is not reliably reproducible) accepts either known boolean. Gate round 1 fix (issue
-// #1000, item 9): Stage 2 is no longer "no delay" either -- it gained its own additive
-// `{"__delay__": 1500}` (issue #1000, `scripts/verify-1000-stage-defer.mjs`), and under
-// FR-087's multi-Stage defer rule it is now deterministically CLOSED while running, not open;
-// its own expand-cycle call site here is unaffected by that fix (still accepts either boolean).
-//
-// ui-architect-v3 ruling (posted on #991, recorded in research.md decision 19): item 4 (a mouse
-// user reading a Stage row while it auto-closes on an all-success finish) is fixed by making
-// `StageGroupRow` sync its own disclosure upward only (never auto-close), matching the per-turn
-// Subagent chain row's existing rule -- this also resolves the AUTO-CLOSE-driven slice of item 1
-// (the a11y defect) as a side effect: with no more automatic close, there is no more such
-// transition left that could silently drop a keyboard user's focus to `<body>`. A SEPARATE,
-// pre-existing focus-loss path is NOT fixed here (gate round 1, Main is filing it separately): a
-// solo Stage's own body (`SubagentBody`) swaps for a `SpineList` the instant a second agent
-// streams into the same Stage, unmounting whatever was focused inside it. This script's own
-// "focus survives settling" check (phase 1) proves the narrower, now-actual guarantee: a Stage
-// opened while running stays open and never disturbs focus once it settles, via the auto-close
-// path specifically.
-//
-// Four things proved, in this order (each needs the state the previous one left, so they run
-// once, not per theme -- a theme pass takes a screenshot only, at the very end):
-//   1. Keyboard focus placed inside Stage 1's content while it is genuinely still running
-//      survives it settling all-success, and the row itself stays open (not collapsed) --
-//      `document.activeElement` is still the member row's own trigger, never `document.body`
-//      (WCAG 2.4.3). MUST fail on `origin/main`: the old bidirectional sync effect auto-closes
-//      Stage 1 the instant it settles, which unmounts its `CollapsibleContent` (Radix) and drops
-//      focus to `<body>`.
-//   2. `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` is scoped to a real
-//      per-position Stage row (`[data-slot="message-scroller-item"]` ancestor). Gate round 1
-//      correction (test-reviewer): with Stage rows always rendering BEFORE the per-turn chain
-//      row in this app's own DOM order (`Transcript.tsx`), even the OLD unscoped selector would
-//      already resolve correctly in this exact fixture -- this phase cannot fail against
-//      `origin/main`'s own helper file in this DOM shape, so it is order-independent HARDENING,
-//      proved by the count check (Stage 1's own title genuinely exists twice while the chain row
-//      is open) plus the ancestor-based disambiguation, not a red/green regression demonstration.
-//      Recorded honestly in `notExercised`, not claimed as a pass against a real former failure.
-//   3. A user's own manual toggle on a Stage row (Stage 6, a solo Stage manually expanded) and
-//      on the Subagent chain row (manually collapsed) both survive a real session switch away
-//      and back -- a genuine React unmount/remount of every Stage/chain row keyed to Session A's
-//      own transcript items (ordinary keyed-list reconciliation: a session switch changes which
-//      rows a Session's own Transcript renders; neither `<Transcript>` nor `<ChatPane>` itself
-//      carries a `key`). MUST fail on `origin/main`: `userToggledRef`/`open` live in a plain
-//      `useRef`/`useState` pair there, reset to whatever the row's own
-//      `isOpenByDefault`/`isUnsettled` recomputes on remount -- Stage 6 (solo) always recomputes
-//      `false` (never auto-expands), and the chain row always recomputes `true` (Stage 5's
-//      failure keeps `isUnsettled` permanently true), so both would read the OPPOSITE of the
-//      user's own choice after switching back.
-//   4. Stage 1 itself (never manually touched, opened only by auto-open while running) is OPEN
-//      throughout its own continuous mount (point 1 above) but comes back CLOSED after the
-//      session-switch-and-back REMOUNT (the auto-open latch is local-only and recomputes fresh
-//      from Stage 1's own current, settled state; with no manual override on record, `open`
-//      resolves to `false`) -- proves the store holds ONLY a user's own manual choice, never the
-//      ephemeral auto-open latch itself (issue #991 gate round 1, item 2/4 redesign). Gate round
-//      3 correction (test-reviewer): this point CANNOT fail against `origin/main` on its own --
-//      there, the OLD bidirectional sync already auto-closes Stage 1 the moment it settles
-//      (long before this phase ever reaches the switch), so `origin/main` ALSO reads "false"
-//      here, coincidentally, for a completely different reason (it was never open after settling
-//      at all, not "open, then correctly forgotten on remount"). Point 1's own earlier "still
-//      open while mounted" check is what makes this redesign real and provable; point 4 alone
-//      is order-independent hardening against the auto-open latch leaking into the store, same
-//      as point 2's selector-scoping hardening, recorded the same honest way in `notExercised`.
-//      The genuine `origin/main`-failing red comes from point 1's own two checks above (stays
-//      open; focus preserved) and point 3's own Stage 6/chain-row manual-toggle persistence --
-//      points 2 and 4 are both hardening only, neither one a red/green regression demonstration.
-//
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
-// plus a real `import()` load-check are the only commands that have actually been run against
-// this file. Every DOM/class-name selector reused here was already grep-verified by the
-// `verify-941-*` scripts that share them; the two new finder expressions (the G923Code member
-// trigger, the chain row's own "Subagents" trigger) are built the same, already-proven way.
+// Live CDP check for #991: Stage focus survives settling, manual toggles survive a session-switch remount.
+// Reuses the stages-941 fixture and verify-941 selector helpers; phases 2 and 4 are hardening, not red/green.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -117,10 +35,7 @@ import { latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PROMPT_MESSAGE = 'Run the full ten-stage batch (issue #991 live check: focus and toggle persistence).';
-// Gate round 2 fix (issue #991, item 4, LOW, test-reviewer): the default includes a timestamp
-// suffix IN the same path segment (not a nested subdirectory), so a fresh unique folder is
-// still `clearKnownOutputFiles`'s own required direct-child-of-`tmpdir()` shape; an override
-// (`REFRACT_991_SHOTS_DIR`) may point at a fixed, reused name for the same reason.
+// A timestamp suffix keeps the default a direct child of tmpdir(), as clearKnownOutputFiles requires.
 const SHOTS_DIR = process.env.REFRACT_991_SHOTS_DIR || path.join(tmpdir(), `refract-991-stage-focus-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 const SHOT_NAMES = [
   '01-stage1-running-focus-inside.png',
@@ -142,10 +57,7 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// The chain row's own label is always the literal string "Subagents" (`SubagentChainRow.tsx`),
-// never duplicated elsewhere -- unlike a Stage's own title, it needs no `message-scroller-item`
-// ancestor scoping (the chain row itself has no such ancestor by design, so `titleSelector`
-// would never match it at all).
+// The chain row label is always the literal "Subagents" and has no message-scroller-item ancestor, so titleSelector would never match it.
 const CHAIN_TRIGGER = `document.querySelector('[title="Subagents"]')?.closest('[data-slot="collapsible-trigger"]')`;
 
 function g923CodeTriggerExpr() {
@@ -165,11 +77,7 @@ async function main() {
   let dirty = 'unknown';
   let BUILD_OUTPUT_DIR = null;
   try {
-    // Gate round 1 fix (issue #991, LOW, test-reviewer): a caller overriding
-    // `REFRACT_991_SHOTS_DIR` to a FIXED, reused path across runs could otherwise see a later
-    // failed run's report sitting next to an earlier run's stale screenshots -- clears only
-    // this script's own KNOWN output files by literal name (never the folder itself; matches
-    // `verify-tauri-559.mjs`/`-560.mjs`'s own convention), then recreates the directory.
+    // A reused fixed shots dir could hold stale screenshots; clear only known output files by literal name.
     clearKnownOutputFiles(SHOTS_DIR, 'refract-991-stage-focus-shots', SHOT_NAMES);
     BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
     gitHeadSha = gitHead(REPO_ROOT);
@@ -225,10 +133,7 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
 
-    // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): shim-confirmed check, same pattern
-    // as `verify-941-part2.mjs` -- without this, a silently-wrong fake-omp shim (a stale PATH
-    // entry shadowing it, or the shim crashing before its first `debugLog` call) could still let
-    // the whole run "pass" on UI state alone.
+    // A silently-wrong fake-omp shim could still pass on UI state alone, so confirm from its log.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-991: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
@@ -247,8 +152,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
 
-    // ---- Phase 1: focus placed inside a genuinely running Stage 1 survives it settling, and
-    // the row itself stays open (issue #991 items 1 and 4) ----
+    // Phase 1: focus inside a running Stage 1 survives it settling, and the row stays open.
     let phase1Exercised = true;
     try {
       await cdp.waitFor(
@@ -256,11 +160,7 @@ async function main() {
         { timeoutMs: 15_000, label: 'Stage 1 genuinely running (additive fixture delay window)' }
       );
     } catch (err) {
-      // Gate round 2 fix (issue #991, item 3, LOW, test-reviewer): a genuinely missed window
-      // (the additive delay already elapsed by the time this ever polled, a slow CI host, ...)
-      // used to abort the WHOLE run via `waitFor`'s own throw -- phases 2/3/4 below are
-      // independent of this one and can still run and mean something on their own, so this is
-      // recorded honestly in `notExercised` instead.
+      // A missed delay window must not abort the run; phases 2-4 are independent, so record it in notExercised.
       phase1Exercised = false;
       notExercised.push(`Stage 1 never showed as genuinely running within the 15s window -- the additive fixture delay may have already elapsed, or the turn settled unusually fast; the focus-survives-settling proof (items 1/4) could not run as designed this pass (${err.message}).`);
     }
@@ -273,11 +173,7 @@ async function main() {
       }
       await cdp.evaluate(`(${g923CodeTriggerExpr()})?.focus()`);
       const focusedBeforeSettle = await cdp.evaluate(`document.activeElement === (${g923CodeTriggerExpr()})`);
-      // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): re-checks the precondition AFTER
-      // the focus round trip, not just at the earlier `waitFor` poll -- the ~1.5s delay window
-      // can close between that poll and this evaluate's own round trip. If Stage 1 already
-      // settled by now, this phase did not genuinely exercise "focus while running" and must say
-      // so honestly instead of treating whatever `focusedBeforeSettle` read as a pass.
+      // The ~1.5s delay window can close after the earlier poll; if Stage 1 already settled, say so instead of passing.
       const stillRunningAfterFocus = await cdp.evaluate(
         `(() => { const c = (${stageContentSelector(STAGE1_TITLE)}); return !!c && c.textContent.includes('Running'); })()`
       );
@@ -320,9 +216,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '03-stage1-open-focus-preserved-after-settle.png'));
 
-    // ---- Phase 2: titleSelector's scoping, hardened against the chain row's own live
-    // duplicate (issue #991 item 3) -- see the header note: order-independent hardening, not a
-    // red/green regression demonstration in this exact DOM shape ----
+    // Phase 2: order-independent hardening of titleSelector scoping, not a red/green regression.
     const scoping = await cdp.evaluate(`(() => {
       const matches = Array.from(document.querySelectorAll(${JSON.stringify(`[title="${STAGE1_TITLE}"]`)}));
       const withAncestor = matches.filter((el) => !!el.closest('[data-slot="message-scroller-item"]'));
@@ -347,17 +241,8 @@ async function main() {
     }
     notExercised.push('No red/green discrimination is possible for the selector-scoping fix with this fixture: Stage rows always render BEFORE the per-turn chain row in Transcript.tsx\'s own DOM order, so even the OLD unscoped titleSelector would already resolve correctly here -- this phase is order-independent hardening (proved by the count + ancestor checks above), not a regression this fixture can make fail against origin/main\'s own helper file.');
 
-    // ---- Phase 3: a manual toggle on a Stage row and on the chain row both survive a real
-    // session switch away and back (issue #991 item 2). Stage 1 itself (never manually touched)
-    // is the proof that the store holds ONLY a manual choice, never the ephemeral auto-open
-    // latch (item 2/4 redesign): it stays open for as long as this mount lives (already proved
-    // above), but comes back CLOSED after the session-switch remount, since the latch is
-    // local-only and recomputes fresh from Stage 1's own current (settled) state. Gate round 2
-    // fix (item 1/2, test-reviewer): the original design used a separate Stage 2 for this proof,
-    // expecting it to still read "open" pre-switch -- but Stage 2's own frames arrive unpaced
-    // (no `__delay__`), so it can already mount fully settled before this script ever observes
-    // it mid-run, landing that check in `notExercised` unreliably; dropped in favour of Stage 1,
-    // which this script already drives with precise timing control.
+    // Phase 3: manual toggles survive a session-switch remount; Stage 1 (auto-opened only) comes back closed,
+    // proving the store holds only manual choices. Stage 1 is used because Stage 2 can mount already settled.
     await clickScrolled(cdp, CHAIN_TRIGGER);
     const chainExpandedBeforeSwitch = await cdp.evaluate(`(${CHAIN_TRIGGER})?.getAttribute('aria-expanded') ?? null`);
     if (chainExpandedBeforeSwitch !== 'false') {
@@ -377,10 +262,7 @@ async function main() {
     await createSessionViaQuickCreate(cdp, repoName);
     findings.push(`Switched away to a second Session (created in the same scratch repo), unmounting "${sessionA.name}"'s own Transcript rows.`);
     const sessionAOpenButtonExpr = sessionOpenButtonFinder(sessionA.name);
-    // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): a fixed sleep replaced with a real
-    // condition -- Session A's own Stage 1/chain rows must have actually unmounted, and Session
-    // A's own row must no longer read as the active one, before this phase's own checks below
-    // can mean anything.
+    // Wait for Session A's rows to actually unmount before checking, instead of a fixed sleep.
     await cdp.waitFor(
       `(() => {
         const stage1Gone = !${titleSelector(STAGE1_TITLE)};
@@ -460,9 +342,7 @@ async function main() {
     if (cdp) cdp.close();
     if (child) {
       await stopLauncher(child).catch(() => {});
-      // Gate round 1 fix (issue #991, LOW, test-reviewer): confirms the launched process
-      // actually exited instead of silently leaving an orphaned exe running (best-effort
-      // diagnostic only -- cleanup already proceeds regardless either way).
+      // Confirm the process exited rather than leaving an orphan (diagnostic only).
       if (targetPid != null) {
         const stillRunningExePath = getProcessExecutablePath(targetPid);
         if (stillRunningExePath) {

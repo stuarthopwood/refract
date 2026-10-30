@@ -1,26 +1,8 @@
-// #880 ("Tauri build's taskbar button shows a generic blank icon, not the Refract logo") live-check
-// helper, split out of `verify-880-taskbar-icon.mjs` (AGENTS.md: an over-cap file must never grow;
-// a baseline raise is not an acceptable fix) into its own sibling module, the same pattern
-// `verify-926-launch-helpers.mjs` already uses.
-//
-// Everything here runs ONE native Win32 inspection via a PowerShell `Add-Type` C# snippet (never a
-// shell tool a CDP page script could reach): finds the launched pid's own visible top-level window
-// (never by image name -- `EnumWindows` + `GetWindowThreadProcessId`, matching this repo's own
-// never-by-name process rule), reads `WM_GETICON` (`ICON_BIG`/`ICON_SMALL`) and
-// `GetClassLongPtr(GCLP_HICON/GCLP_HICONSM)` (the two places Windows' own taskbar/Alt-Tab icon
-// resolution reads from), reads the window's `System.AppUserModel.ID` property via
-// `SHGetPropertyStoreForWindow` + `PKEY_AppUserModel_ID` (the exact property
-// `shell::app_identity`'s own doc comment cites Tauri's NSIS installer as writing onto the
-// Start Menu/Desktop shortcut), and `PrintWindow` (`PW_RENDERFULLCONTENT`, needed for a
-// GPU-composited WebView2 window) a screenshot of the window's own native chrome (title bar icon
-// included) to a PNG file.
+// Native Win32 inspection of the launched pid's window icon state (WM_GETICON, class icons, AppUserModel.ID, PrintWindow screenshot),
+// run via a PowerShell Add-Type snippet. Windows are found by pid, never by image name.
 import { spawnSync } from 'node:child_process';
 
-// `PKEY_AppUserModel_ID = {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, pid 5` and
-// `IID_IPropertyStore = {886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}` -- both confirmed against this
-// machine's cached `windows-0.62.2` crate source (`Win32::Storage::EnhancedStorage::
-// PKEY_AppUserModel_ID`, `Win32::UI::Shell::IPropertyStore`'s own `define_interface!` GUID), the
-// same source `shell::app_identity.rs`'s own doc comment cites.
+// PKEY_AppUserModel_ID and IID_IPropertyStore GUIDs below match the windows-0.62.2 crate sources.
 const PS_SCRIPT = `
 # Gate round 2 (live-run finding): \`-ReferencedAssemblies 'System.Drawing.dll'\` on the
 # \`Add-Type -TypeDefinition\` call itself -- a separate, earlier \`Add-Type -AssemblyName
@@ -188,23 +170,16 @@ $aumid = [Refract880]::GetWindowAppUserModelId($hwnd)
 } | ConvertTo-Json -Compress
 `.trim();
 
-/** Runs the Win32 inspection above against `pid`'s own visible top-level window, writing a
- * native (title-bar-included) screenshot to `screenshotPath`. Throws if PowerShell itself failed
- * or returned no window; otherwise returns `{ hwnd, wmGetIconBig, wmGetIconSmall,
- * classLongHicon, classLongHiconSm, aumid }` (every icon handle as a `number`, `0` meaning null/
- * unset; `aumid` the real `System.AppUserModel.ID` string, or `null` if the window carries none).
- * `classLongHicon`/`classLongHiconSm` are informational only (gate round 1 finding: tao always
- * registers the window CLASS icons null, see `shell::app_identity::set_window_icons`'s own doc
- * comment) -- the caller asserts on `wmGetIconBig`/`wmGetIconSmall` and `aumid` only. */
+/** Runs the Win32 inspection against `pid`'s window and writes a native screenshot. Returns
+ * `{ hwnd, wmGetIconBig, wmGetIconSmall, classLongHicon, classLongHiconSm, aumid }`; class icons
+ * are informational only because tao registers them null. Throws if PowerShell fails or finds no window. */
 export function readWindowIconState(pid, screenshotPath) {
   const script = PS_SCRIPT.replace('__TARGET_PID__', String(pid));
   const result = spawnSync('powershell', ['-NoProfile', '-Command', script], {
     encoding: 'utf8',
     windowsHide: true,
     maxBuffer: 10 * 1024 * 1024,
-    // Gate round 1 (LOW finding): the screenshot path travels as an env var, never interpolated
-    // into the PowerShell script text itself -- a path containing a quote/backtick/dollar sign
-    // would otherwise need its own escaping pass against PowerShell's own quoting rules.
+    // The path travels as an env var so quotes/backticks/dollars need no PowerShell escaping.
     env: { ...process.env, REFRACT_880_SCREENSHOT_PATH: screenshotPath }
   });
   if (result.status !== 0) {
@@ -226,25 +201,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Polls `readWindowIconState` until it finds the window, instead of a single fixed-timing call
- * (gate round 3 fix, live-run finding): CDP's own `Runtime.evaluate` can observe the renderer's
- * DOM (so `cdp.waitFor('[data-readiness-primary]')` resolves) over WebView2's remote-debugging
- * port independent of whether the HOST window has actually been marked visible at the OS level
- * yet -- there is no ordering guarantee between "the renderer painted" and "EnumWindows/
- * IsWindowVisible can see the native window" across the two separate OS message-pump/process
- * boundaries involved, so the very first check can race a real, already-correct window that
- * just has not been observed yet. Re-throws immediately on any error OTHER than "no visible
- * top-level window found for pid" (a real failure must never be swallowed behind a retry loop).
- *
- * `timeoutMs` default raised to 60s (live-run finding, round 2): every manually reproduced
- * variant of this exact launch (Job Object launcher, remote-debugging port, copied exe at the
- * matching path, Node's own `windowsHide` spawn) found the window within single-digit seconds
- * when re-launching an ALREADY-RUN-BEFORE binary -- the one difference a real pipeline run has
- * that no manual repro did is launching a binary `cargo build`/`pnpm tauri build` just produced
- * FRESH (never executed before), which Windows Defender's own first-run behavioural scan can
- * delay noticeably before the process gets far enough to create its window, especially right
- * after a heavy build. Matches this same script's own `waitForCdpTarget(port, { timeoutMs:
- * 60_000 })` precedent rather than inventing a shorter budget. */
+/** Polls `readWindowIconState` until the window exists: the renderer can paint (CDP sees the DOM)
+ * before the native window is visible. 60s default because a freshly built exe gets a slow
+ * Defender first-run scan. Non-"no window" errors rethrow immediately. */
 export async function waitForWindowIconState(pid, screenshotPath, { timeoutMs = 60_000, intervalMs = 500 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let lastErr;

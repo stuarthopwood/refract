@@ -1,49 +1,15 @@
 #!/usr/bin/env node
-// Recorded-frame fake `omp`: a drop-in stand-in for the real `omp --mode rpc-ui` child process
-// Refract spawns (issue #795 part 2, R12a). Spawned by the Rust build (`omp::process::OmpProcess`)
-// exactly like the real binary -- same argv, same stdin/stdout JSONL wire -- but answers from a
-// pre-recorded, hand-sanitised script (scripts/fixtures/omp-frames/*.jsonl) instead of a live
-// model, so UI flows can be exercised with no model cost and no network.
+// Recorded-frame fake `omp`: stands in for the real `omp --mode rpc-ui` child (same argv, same stdin/stdout
+// JSONL wire) and answers from a hand-sanitised tape (scripts/fixtures/omp-frames/*.jsonl), so UI flows
+// run with no model cost or network. It is the payload of the `omp.exe` shim (verify-tauri.mjs `buildOmpShim`)
+// placed first on PATH, so its stdio are the real pipes `OmpProcess::connect` set up.
 //
-// This file is never invoked directly by a developer: it is the payload a tiny native shim
-// (built by scripts/verify-tauri.mjs's own `buildOmpShim`, named `omp.exe`, placed first on PATH
-// for the spawned instance) execs via `node <this file> <args forwarded verbatim>`, inheriting
-// the shim's own stdio -- which are the real pipes `OmpProcess::connect` set up, so this
-// script's stdout/stdin ARE the wire the Rust backend reads and writes.
-//
-// Script format: see scripts/fixtures/omp-frames/README.md. In short, a `.jsonl` fixture is a
-// strict LINEAR tape: plain lines are frames to emit verbatim (after substituting the
-// `$lastId`/`$turnId`/`$lastMessage`/`$conversationFile` sentinels described there); a
-// `{"__wait__": [...types]}`
-// line pauses the tape until a command of one of those types arrives on stdin, then resumes;
-// `{"__delay__": ms}` pauses the tape for `ms` milliseconds before continuing (used to make a
-// streamed reply's own incremental `message_update` deltas land as genuinely separate renders,
-// not one instantaneous final paint); `{"__exit__": {"code": n}}` exits the process immediately
-// (simulates OMP crashing/exiting unexpectedly); `{"__stderr__": "text"}` writes `text` to this
-// process's own real stderr (not an OMP wire frame) and continues (issue #556: the only way a
-// tape can make `build_start_failure`'s stderr tail non-empty for a fixture that deliberately
-// never emits `ready` at all). `REFRACT_FAKE_OMP_READY_DELAY_MS` (env var, Session-shaped
-// processes only -- same `--no-session` guard as `REFRACT_FAKE_OMP_SCENARIO` below, so the
-// readiness probe is never slowed by a delay meant for a Session's own start) pauses this process
-// BEFORE its very first frame (normally `ready`) goes out at all, without needing a dedicated
-// fixture -- a live check that needs a genuinely slow start (issue #672: real `waiting`/`prompt`/
-// `extended` `startProgress.kind` timing, past `READY_PROMPT_AFTER_MS`) sets this once per launch
-// instead of adding a new `.jsonl` tape (AGENTS.md: no new fixtures) whose only difference from an
-// existing one would be a hand-picked delay number.
-// Scenario selection: `--no-session` on argv ALWAYS selects `readiness` (the Rust readiness
-// probe's own scratch, non-Session OmpProcess) -- a real app launches that probe and a real
-// Session's own `OmpProcess` as two separate child processes sharing this script's whole
-// environment, so a per-launch `REFRACT_FAKE_OMP_SCENARIO` override meant for the Session must
-// never also redirect the unrelated readiness probe onto a tape it was never scripted against
-// (issue #856 live-check gate-fix: this used to let the env var win regardless of `--no-session`,
-// hanging the readiness probe on a `session`-shaped tape's own command expectations). Without
-// `--no-session`, `REFRACT_FAKE_OMP_SCENARIO` names a fixture (without `.jsonl`) under
-// `scripts/fixtures/omp-frames/` for the Session's own `OmpProcess`; unset, that defaults to
-// `session` (a real Session's lifecycle: attach, fetch history, one streamed chat turn with a
-// tool call and an approval). `scripts/verify-tauri.mjs` itself never sets this env var, so only
-// `readiness` and plain `session` are ever driven by `pnpm verify:tauri`; `side-chat`/
-// `subagents`/`failure`/`exit` are fixtures for a future lane to drive directly once it ports
-// the matching channel.
+// Tape format: see scripts/fixtures/omp-frames/README.md. `REFRACT_FAKE_OMP_READY_DELAY_MS` delays the
+// first frame (Session-shaped processes only, so the readiness probe isn't slowed) for slow-start checks (#672)
+// without a new fixture.
+// `--no-session` always selects `readiness`: the probe and the Session's `OmpProcess` share this environment,
+// so a per-launch `REFRACT_FAKE_OMP_SCENARIO` must not redirect the probe onto a tape it wasn't scripted for (#856).
+// Otherwise `REFRACT_FAKE_OMP_SCENARIO` names a fixture under omp-frames/, defaulting to `session`.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -73,9 +39,7 @@ function loadScenario(name) {
     .map((l) => JSON.parse(l));
 }
 
-/** Replaces the id/message sentinels anywhere they appear as a bare string value (never inside a
- * larger string), recursively, so a fixture's `response`/`prompt_result`/echoed-user-message
- * frames can reference whichever real command this fake process was actually sent. */
+/** Replaces id/message sentinels that appear as a whole string value (never inside a larger string), recursively. */
 function substitute(value, vars) {
   if (typeof value === 'string') {
     if (value === '$lastId') return vars.lastId;
@@ -86,8 +50,7 @@ function substitute(value, vars) {
     if (value === '$histYesterdayAt') return vars.histYesterdayAt;
     if (value === '$histThisYearAt') return vars.histThisYearAt;
     if (value === '$histPastYearAt') return vars.histPastYearAt;
-    // `$env:NAME` (whole value only, REFRACT_FAKE_OMP_* names): a run-time payload the script
-    // generates, such as image base64 too large to hand-write in a fixture.
+    // `$env:NAME` (whole value only, REFRACT_FAKE_OMP_* names): run-time payloads too large to hand-write, e.g. image base64.
     const envMatch = /^\$env:(REFRACT_FAKE_OMP_[A-Z0-9_]+)$/.exec(value);
     if (envMatch) {
       const envValue = process.env[envMatch[1]];
@@ -120,18 +83,10 @@ async function main() {
     process.exit(0);
   }
 
-  // Issue #1069: one-shot CLI commands this fake never answered before -- `omp config get/set
-  // <key> --json` and `omp models --kind <kind> --json` (`ipc::model_roles`'s own `run_omp`/
-  // `run_json_with`, a plain spawn-wait-collect-stdout call with `stdin: null`, never part of
-  // the `--mode rpc-ui` wire tape below). `REFRACT_FAKE_OMP_CONFIG_STORE` (a scratch JSON file a
-  // live check seeds/reads) backs `config get/set`, read-merge-write across separate process
-  // spawns the same way OMP's own global `config.yml` persists; `REFRACT_FAKE_OMP_MODEL_CATALOG`
-  // (a path to a fixture JSON, `{ [kind]: ModelCatalogEntry[] }`) backs `models --kind <kind>`,
-  // read-only. Neither env var set answers emptily (`value: null` / `[]`) rather than falling
-  // through to the tape logic below, which would otherwise misinterpret the call as an RPC
-  // session: `stdin: null` on a one-shot call closes this process's readline loop immediately,
-  // so the old fallthrough exited 0 having written whatever leading tape frames came before the
-  // first `__wait__` -- never valid JSON for the caller to parse.
+  // One-shot CLI calls (`omp config get/set`, `omp models --kind`; #1069) run with `stdin: null`, not the
+  // rpc-ui wire. `REFRACT_FAKE_OMP_CONFIG_STORE` (scratch JSON) backs config get/set across spawns;
+  // `REFRACT_FAKE_OMP_MODEL_CATALOG` backs `models`. With neither set they answer emptily: falling through
+  // to the tape would exit 0 on leading frames, never valid JSON for the caller.
   const rawArgs = process.argv.slice(2);
   if (rawArgs[0] === 'config' && (rawArgs[1] === 'get' || rawArgs[1] === 'set')) {
     const key = rawArgs[2];
@@ -151,10 +106,8 @@ async function main() {
       process.exit(0);
     }
     // `config set <key> --json -- <value>`: the value is the argv entry right after the `--`.
-    // Issue #1069 gate round 2 (#1114, N1 regression evidence): `REFRACT_FAKE_OMP_CONFIG_SET_DELAY_MS`
-    // (opt-in, unset by default -- every other scenario/script is unaffected) delays only the
-    // REPLY to a `set` call, never `get`, so a live check can create a real window where a
-    // Select's own model save is still in flight when a radio pick is made against it.
+    // Opt-in `REFRACT_FAKE_OMP_CONFIG_SET_DELAY_MS` delays only the reply to `set`, so a check can hold a
+    // model save in flight while a radio pick is made (#1114).
     const sepIndex = rawArgs.indexOf('--');
     const valueArg = sepIndex >= 0 ? rawArgs[sepIndex + 1] : undefined;
     const value = valueArg !== undefined ? JSON.parse(valueArg) : null;
@@ -168,11 +121,8 @@ async function main() {
   }
   if (rawArgs[0] === 'models' && rawArgs[1] === '--kind') {
     const kind = rawArgs[2];
-    // Issue #1069 gate round 2 (#1114, Medium #6 evidence): `REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND`
-    // (opt-in, unset by default) simulates a real `omp models --kind <kind> --json` failure for
-    // ONE named kind -- a non-zero exit with no JSON on stdout, exactly what `run_json_with`
-    // (`model_roles.rs`) already treats as an `OmpConfigError`, surfaced to the renderer as
-    // `catalogErrors[kind]`.
+    // Opt-in `REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND` simulates a failing `omp models --kind` for one kind
+    // (non-zero exit, no JSON), which `run_json_with` surfaces as `catalogErrors[kind]` (#1114).
     if (process.env.REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND === kind) {
       process.stderr.write(`verify-tauri-fake-omp: simulated catalog failure for kind "${kind}"\n`);
       process.exit(1);
@@ -194,17 +144,10 @@ async function main() {
   const tape = loadScenario(scenarioName);
   debugLog(`pid=${process.pid} scenario=${scenarioName} tapeLength=${tape.length}`);
 
-  // `conversationFile` and the four `hist*At` fields are all seeded once from env vars below
-  // (never updated by a wait, unlike the first three sentinels): real values the caller computes
-  // and passes in, needed only by a fixture exercising a real reattach/reopen round trip (issue
-  // #555's own live check). `conversationFile` is a literal absolute path the caller pre-creates
-  // on disk, so a scripted `get_state`/`switch_session` can report a `sessionFile` that
-  // `assert_conversation_file_exists` (launch_support.rs) genuinely finds. The four `hist*At`
-  // epoch-ms numbers (parsed from their own env vars, `null` when unset or non-numeric) let a
-  // canned `get_messages_page` history response embed timestamps computed AT RUN TIME relative
-  // to the real "now" -- the day-aware format rule (`UserMessageRow.tsx`'s `formatMessageTime`)
-  // genuinely depends on which calendar day/year the run happens on, which a hardcoded fixture
-  // value could never express correctly on every future run.
+  // `conversationFile` and the four `hist*At` fields are seeded once from env vars (#555 reattach/reopen).
+  // `conversationFile` is a pre-created absolute path so `assert_conversation_file_exists` finds it; the
+  // `hist*At` epoch-ms values are computed at run time because the day-aware `formatMessageTime` depends
+  // on the real calendar day, which a hardcoded fixture value can't express.
   const parseEnvMs = (name) => {
     const raw = process.env[name];
     if (!raw) return null;
@@ -222,9 +165,7 @@ async function main() {
     histPastYearAt: parseEnvMs('REFRACT_FAKE_OMP_HIST_PAST_YEAR_AT'),
   };
   let cursor = 0;
-  // Commands whose type the tape is not currently waiting for are logged and dropped (never
-  // silently hung forever): a real `omp` would of course handle any command, but this is a
-  // fixed-script replay, not a model.
+  // Commands the tape isn't waiting for are logged and dropped, never hung on: this is a fixed-script replay, not a model.
   let waitingFor = null;
 
   function emit(frame) {
@@ -251,11 +192,8 @@ async function main() {
         await new Promise((resolve) => setTimeout(resolve, line.__delay__));
         continue;
       }
-      // `__stderr__`: writes `text` to this process's own real stderr (not an OMP wire frame)
-      // and continues -- the one way a tape can make `OmpProcess`'s own `stderr_tail`
-      // non-empty, for a fixture whose whole point is a start failure with no `ready` frame
-      // ever emitted (issue #556 live check): `build_start_failure`'s stderr tail only has
-      // something to show if the child process actually wrote to stderr itself.
+      // `__stderr__`: writes to this process's real stderr (not a wire frame), the only way a tape can
+      // fill `OmpProcess`'s `stderr_tail` for a start-failure fixture that never emits `ready` (#556).
       if (line && typeof line === 'object' && typeof line.__stderr__ === 'string') {
         cursor++;
         process.stderr.write(line.__stderr__ + '\n');
@@ -269,18 +207,9 @@ async function main() {
 
   async function handleCommand(cmd) {
     debugLog(`pid=${process.pid} RECV ${JSON.stringify(cmd)} (waitingFor=${JSON.stringify(waitingFor)})`);
-    // Issue #572's `set_ask_dialog{enabled:true}` probe (`launch_support.rs`'s
-    // `send_set_ask_dialog`) is sent once per process right after launch. Most fixtures predate
-    // that probe and never list it in a `__wait__` entry, so it used to be silently dropped here
-    // and Refract blocked for its own full 60s request timeout waiting for a reply that never
-    // came, stalling every later tape step (including the ones the tape WAS waiting for) behind
-    // that timeout. A11y spot check (gate round 3): five tapes (session.jsonl, ask.jsonl,
-    // session-settle-before-start.jsonl, session-two-turns-answered.jsonl, session-two-turns-
-    // withheld.jsonl) DO script their own `set_ask_dialog` `__wait__`/response pair -- answering
-    // it out-of-band here too meant THEIR OWN scripted reply never got sent (this handler
-    // returned first), so their cursor never advanced and `get_messages_page` was dropped the
-    // same way. Fixed: only intercept when the tape is NOT currently waiting for it; a tape that
-    // IS waiting for it keeps answering it itself, exactly as before.
+    // The `set_ask_dialog{enabled:true}` probe (#572) is sent once per process, but most tapes never list it
+    // in a `__wait__`; unanswered, Refract blocks for its 60s request timeout and stalls later steps. Only
+    // intercept when the tape isn't waiting for it, or tapes that script their own reply would never advance.
     if (cmd.type === 'set_ask_dialog' && !waitingFor?.includes('set_ask_dialog')) {
       emit({ id: cmd.id, type: 'response', command: 'set_ask_dialog', success: true, data: { enabled: true } });
       return;
@@ -297,9 +226,7 @@ async function main() {
     await advance();
   }
 
-  // `REFRACT_FAKE_OMP_READY_DELAY_MS`: see the file-header comment above. Applied before the
-  // very first `advance()` (not inside the tape itself), so every existing fixture's own frame
-  // sequence is untouched -- this only shifts WHEN that sequence starts emitting.
+  // `REFRACT_FAKE_OMP_READY_DELAY_MS`: applied before the first `advance()` so fixture frame sequences are untouched, only shifted in time.
   const readyDelayMs = argv.noSession ? null : parseEnvMs('REFRACT_FAKE_OMP_READY_DELAY_MS');
   if (readyDelayMs && readyDelayMs > 0) {
     debugLog(`pid=${process.pid} ready-delay ${readyDelayMs}ms before the first frame`);

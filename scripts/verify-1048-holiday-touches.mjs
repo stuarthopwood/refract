@@ -1,29 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1048 (Holiday touches): the framework (pure calendar, the Settings
-// control, the debug-only date/idle overrides) plus Halloween across all five placements (chat
-// watermark, start messages, sidebar logo, both empty states, the agent-working spinner) and its
-// ambient loop (drifting bats).
-//
-// Drives a scratch Tauri debug instance via a REAL `omp` stand-in (the recorded-frame fake omp,
-// `session.jsonl` scenario -- a real approval + a streamed reply, used ONLY to get the Session
-// into a genuine 'working' status long enough to screenshot the agent-working spinner's holiday
-// glyph and read its AX tree; every other assertion here is a static DOM/computed-style read).
-// `REFRACT_DATE_OVERRIDE=2026-10-27` (inside the Halloween window) and a short
-// `REFRACT_HOLIDAY_IDLE_MS` (so the idle-pause path does not need a real 60s wait) are both
-// debug-only env vars (`src-tauri/src/ipc/debug.rs`), inert in a release build -- see the PR body
-// for how that inertness was confirmed.
-//
-// Gate round 1 (#1053) additions: elementFromPoint stacking-order proof (item 2), BOTH real
-// empty states (`App.tsx`'s `[data-chat-empty-state]` and Manage sessions' "No sessions yet",
-// item 3), a CPU measurement with real Shift taps that sums the exe's whole process tree (item
-// 4), blur/hidden pause checks proving the pause is not just the idle timer firing (item 5), a
-// Settings > Appearance screenshot, and screenshot hygiene before every shot.
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
-// scripts/verify-1048-holiday-touches.mjs (requires a prior `pnpm tauri build --debug
-// --no-bundle`, the same convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs` script
-// documents). NOT run until the build slot is granted -- syntax-checked only (`node --check`)
-// before that.
+// Live CDP check for #1048 (Holiday touches): Halloween's five placements, the Settings control
+// and the ambient bat loop, via a scratch debug build and the recorded-frame fake omp (used only to
+// reach a 'working' status for the spinner). Needs a prior `pnpm tauri build --debug --no-bundle`
+// and the shared CARGO_TARGET_DIR. REFRACT_DATE_OVERRIDE and REFRACT_HOLIDAY_IDLE_MS are debug-only.
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -64,22 +43,14 @@ const THEMES = [
 
 // Inside the Halloween window (24-31 Oct) by a comfortable margin on both sides.
 const HALLOWEEN_DATE_OVERRIDE = '2026-10-27';
-// Outside every window (decision 4's six windows are all in Oct/Nov/Dec/Jan/Mar/May) -- the
-// no-override baseline run uses this instead of the real system date, so the baseline is
-// deterministic regardless of what day this script happens to run on.
+// Outside every holiday window; keeps the baseline independent of the real system date.
 const OFF_SEASON_DATE_OVERRIDE = '2026-07-15';
 const SHORT_IDLE_MS = 3_000;
-// Gate round 1 fix (High, item 5): well under SHORT_IDLE_MS, so a pause observed within this
-// window can only be the blur/hidden handler, never a coincidental idle-timer firing.
+// Well under SHORT_IDLE_MS, so a pause within this window is the blur/hidden handler, not the idle timer.
 const SHORT_PAUSE_PROOF_MS = 300;
-// Gate round 3 fix (High, item 1): the real flight gap is randomised 90-180s, so a 60s
-// CPU-budget sample window almost never lands inside one -- a short fixed gap here (plus each
-// flight's own fixed 4s duration) gives every 60s Full sample several flights to measure.
+// The real flight gap is 90-180s, so a short gap gives each 60s CPU sample several flights.
 const SHORT_FLIGHT_INTERVAL_MS = 5_000;
-// The one DOM probe for "did holiday artwork render anywhere": the watermark/sidebar/spinner
-// all carry a lucide icon whose own class name is `lucide-<kebab-icon-name>`; Halloween's own
-// icon is `Ghost` -> `lucide-ghost`. Module scope (used by both `main()` and
-// `runOffSeasonBaseline()`).
+// Holiday artwork carries a lucide icon class `lucide-<kebab-name>`; Halloween's is `Ghost`.
 const HALLOWEEN_ICON_CLASS = 'lucide-ghost';
 const HALLOWEEN_EMPTY_LINE = 'Boo! Nothing here but ghosts';
 
@@ -104,10 +75,7 @@ async function main() {
     'ambient-loop-blurred.png',
     'spinner-working.png',
     'baseline-off-season.png',
-    // Gate round 3 fix (Low): one-time cleanup of the stale pre-rename file left behind by
-    // earlier runs (the round 2 rename to `baseline-off-season.png` above never touched it) --
-    // listing it here puts its deletion through the SAME guarded known-file-name clear every
-    // other screenshot already goes through, never an ad hoc delete.
+    // Cleared through the guarded known-file clear: removes the stale pre-rename screenshot.
     'baseline-no-override.png',
     'report.json'
   ]);
@@ -200,7 +168,6 @@ async function main() {
     assertEqual(overridesResult.value.idleTimeoutMs, SHORT_IDLE_MS, 'debug.getOverrides() reports the REFRACT_HOLIDAY_IDLE_MS env var verbatim');
     assertEqual(overridesResult.value.flightIntervalMs, SHORT_FLIGHT_INTERVAL_MS, 'debug.getOverrides() reports the REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS env var verbatim');
 
-    // ---- Real UI flow: readiness, Add repository (no Session created yet) ----
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -216,16 +183,13 @@ async function main() {
       { timeoutMs: 30_000, label: 'Scratch repository added' }
     );
 
-    // ---- Gate round 1 fix (High, item 3a): the REAL empty chat pane (App.tsx's own
-    // `[data-chat-empty-state]`, shown whenever no pane is open at all -- the common case, unlike
-    // ChatPane.tsx's own rare `!session` branch) ----
+    // The real empty chat pane (App.tsx `[data-chat-empty-state]`), not ChatPane's rare `!session` branch.
     await cdp.waitFor(`!!document.querySelector('[data-chat-empty-state]')`, { timeoutMs: 15_000, label: 'Real empty chat pane (data-chat-empty-state) mounted' });
     const emptyPaneText = await cdp.evaluate(`document.querySelector('[data-chat-empty-state]').textContent`);
     assertTrue(emptyPaneText.includes(HALLOWEEN_EMPTY_LINE), 'Real empty chat pane shows the Halloween decorative line', { emptyPaneText });
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, 'empty-chat-pane.png'));
 
-    // ---- Gate round 1 fix (High, item 3b): Manage sessions' own "No sessions yet" empty state ----
     await cdp.click(`document.querySelector('[data-profile-name-button]')`);
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menu"][data-state="open"]')).find((el) => el.textContent.includes('Manage sessions'))`, {
       timeoutMs: 10_000,
@@ -243,7 +207,6 @@ async function main() {
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
     await cdp.waitFor(`!!document.querySelector('[data-chat-empty-state]')`, { timeoutMs: 15_000, label: 'Back to chat: real empty pane mounted again' });
 
-    // ---- New session ----
     await cdp.clickByLabel('New session from a branch in ', { prefix: true });
     await cdp.waitFor(
       `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
@@ -257,7 +220,6 @@ async function main() {
     });
     assertTrue(await cdp.evaluate(`!!document.querySelector('[aria-label="Message"]')`), 'Session pane marker present before judging anything');
 
-    // ---- Five placements, five presets ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
       await settleForScreenshot(cdp);
@@ -269,14 +231,9 @@ async function main() {
     await switchTheme(cdp, 'dark', 'Dark');
     await settleForScreenshot(cdp);
 
-    // ---- Gate round 2 fix (Medium, item 6): the round 1 `elementFromPoint` proof can never
-    // fail -- `pointer-events: none` already makes every browser hit-test skip the bat itself by
-    // spec, so "never resolves to the bat" was tautological, not a real proof of paint order.
-    // Asserting the COMPUTED `z-index` and the positioned ancestor's COMPUTED `isolation`
-    // instead proves the actual mechanism this relies on: `-10` alone is a no-op without an
-    // `isolate` ancestor creating the stacking context it paints BEHIND (without one, a
-    // negative z-index can still paint above a sibling with no z-index of its own, depending on
-    // DOM order). ----
+    // `elementFromPoint` can't prove paint order (`pointer-events: none` skips the bat), so assert
+    // computed `z-index` and the ancestor's `isolation`: a negative z-index needs an `isolate`
+    // ancestor to paint behind a sibling.
     const batStackingCheck = await cdp.evaluate(`(() => {
       const loop = document.querySelector('.holiday-ambient-loop');
       const bats = Array.from(document.querySelectorAll('.holiday-ambient-loop-bat'));
@@ -293,12 +250,8 @@ async function main() {
     assertEqual(batStackingCheck.loopZIndex, '-10', 'Ambient loop layer computed z-index is -10');
     assertEqual(batStackingCheck.parentIsolation, 'isolate', "Ambient loop layer's positioned ancestor computed isolation is isolate (the -10 z-index genuinely creates a BEHIND stacking context, not a no-op)");
 
-    // ---- Gate round 3 fix (High, item 2, FR-008 regression): a full draft typed into the
-    // composer (so its own box reflects a realistic, possibly taller, expanded state) must
-    // never have any bat's resting rect, OR its own flight-end rect (resting rect offset by the
-    // flight's own max `translate(120px, 6px)`), intersect the composer's rect -- the loop is
-    // scoped to the transcript container ONLY (item 2's fix), a separate sibling above the
-    // composer, so this must hold regardless of whether a flight is actually running right now. ----
+    // With a full draft in the composer, no bat's resting or flight-end rect (offset
+    // `translate(120px, 6px)`) may intersect the composer rect (FR-008).
     await cdp.typeIntoByLabel('Message', 'A full draft of several lines of text, long enough to grow the composer box taller than its single-line resting height, so the geometry check below exercises its real expanded size.\nA second line.\nA third line.');
     await settleForScreenshot(cdp);
     const composerFlightSafety = await cdp.evaluate(`(() => {
@@ -325,20 +278,17 @@ async function main() {
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 8, key: 'Backspace', code: 'Backspace' });
     await cdp.waitFor(`document.querySelector('[aria-label="Message"]')?.value === ''`, { timeoutMs: 5_000, label: 'Composer draft cleared before continuing' });
 
-    // ---- Ambient loop: Full (default) ----
     let loopState = await readAmbientLoopState(cdp);
     assertTrue(loopState.present, 'Ambient loop layer mounted with Full (default)', loopState);
     assertTrue(loopState.ariaHidden, 'Ambient loop layer is aria-hidden', loopState);
     await cdp.screenshot(path.join(SHOTS_DIR, 'ambient-loop-full.png'));
 
-    // ---- Artwork only: static artwork stays, loop disappears ----
     await cdp.evaluate(`window.refract.settings.setHolidayTouches('artwork')`);
     await cdp.waitFor(`!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Ambient loop unmounts under Artwork only' });
     const presenceArtworkOnly = await readArtworkPresence(cdp);
     assertTrue(presenceArtworkOnly.watermarkIsHoliday, 'Artwork only: watermark still shows holiday artwork', presenceArtworkOnly);
     await cdp.screenshot(path.join(SHOTS_DIR, 'ambient-loop-artwork-only.png'));
 
-    // ---- Off: nothing holiday-related anywhere ----
     await cdp.evaluate(`window.refract.settings.setHolidayTouches('off')`);
     await cdp.waitFor(`!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Ambient loop stays unmounted under Off' });
     const presenceOff = await cdp.evaluate(`(() => {
@@ -350,11 +300,10 @@ async function main() {
     assertTrue(!presenceOff.sidebarAccessoryPresent, 'Off: sidebar accessory no longer present', presenceOff);
     await cdp.screenshot(path.join(SHOTS_DIR, 'ambient-loop-off.png'));
 
-    // ---- Back to Full for the pause-rule checks ----
     await cdp.evaluate(`window.refract.settings.setHolidayTouches('full')`);
     await cdp.waitFor(`!!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Ambient loop remounts under Full' });
 
-    // ---- Reduced motion: the loop layer itself is hidden outright (CSS, no JS needed) ----
+    // Reduced motion hides the loop layer in CSS alone.
     await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await sleep(300);
     const reducedMotionState = await readAmbientLoopState(cdp);
@@ -363,12 +312,8 @@ async function main() {
     await cdp.send('Emulation.setEmulatedMedia', { features: [] });
     await cdp.waitFor(`!getComputedStyle(document.querySelector('.holiday-ambient-loop')).display.includes('none')`, { timeoutMs: 5_000, label: 'Ambient loop layer visible again after reduced-motion emulation clears' });
 
-    // ---- Gate round 1 fix (High, item 5): a REAL pointerdown resets the idle timer first, so
-    // the SHORT (300ms, well under the 3000ms idle timeout) wait that follows can only be
-    // explained by the blur/hidden handler itself -- never the idle timer coincidentally firing
-    // inside the old 5s wait. Window blur (a real DOM 'blur' dispatch -- the pause effect's own
-    // listener target is `window`, so this exercises the real code path; not a real OS minimise,
-    // noted here explicitly). ----
+    // A real pointerdown resets the idle timer first, so the short wait that follows can only be
+    // the blur handler. A DOM 'blur' on `window` (the pause listener's target), not an OS minimise.
     await dispatchNeutralPointerdown(cdp);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') !== 'true'`, { timeoutMs: 2_000, label: 'Loop confirmed NOT paused right before the blur proof' });
     await cdp.evaluate(`window.dispatchEvent(new Event('blur'))`);
@@ -376,16 +321,13 @@ async function main() {
       timeoutMs: SHORT_PAUSE_PROOF_MS,
       label: `Ambient loop pauses on window blur within ${SHORT_PAUSE_PROOF_MS}ms (proves the blur handler, not a coincidental idle-timer fire)`
     });
-    // Gate round 2 fix (Medium, item 9): this proof only ever lived in `cdp.waitFor`'s own
-    // label, never in `report.json` -- added here so the evidence file carries it as a step.
     report.push({ step: `Ambient loop pauses on window blur within ${SHORT_PAUSE_PROOF_MS}ms (proves the blur handler, not a coincidental idle-timer fire)`, ok: true });
     await cdp.screenshot(path.join(SHOTS_DIR, 'ambient-loop-blurred.png'));
     await cdp.evaluate(`window.dispatchEvent(new Event('focus'))`);
     await dispatchNeutralPointerdown(cdp);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') !== 'true'`, { timeoutMs: SHORT_PAUSE_PROOF_MS, label: 'Ambient loop resumes on window focus plus a real input' });
 
-    // ---- Hidden document (Page Visibility API, overridden since `document.hidden` is a
-    // read-only getter): same real-pointerdown-first proof as blur above. ----
+    // `document.hidden` is a read-only getter, so it is overridden; same pointerdown-first proof as blur.
     await dispatchNeutralPointerdown(cdp);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') !== 'true'`, { timeoutMs: 2_000, label: 'Loop confirmed NOT paused right before the hidden proof' });
     await cdp.evaluate(`Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange'))`);
@@ -393,21 +335,18 @@ async function main() {
       timeoutMs: SHORT_PAUSE_PROOF_MS,
       label: `Ambient loop pauses when document.hidden becomes true within ${SHORT_PAUSE_PROOF_MS}ms (proves the visibility handler)`
     });
-    // Gate round 2 fix (Medium, item 9): same as the blur proof above -- now a report.json step.
     report.push({ step: `Ambient loop pauses when document.hidden becomes true within ${SHORT_PAUSE_PROOF_MS}ms (proves the visibility handler)`, ok: true });
     await cdp.evaluate(`Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange'))`);
     await dispatchNeutralPointerdown(cdp);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') !== 'true'`, { timeoutMs: SHORT_PAUSE_PROOF_MS, label: 'Ambient loop resumes once visible again plus a real input' });
 
-    // ---- No input at all for just past SHORT_IDLE_MS pauses it; one real input resumes it. ----
     await sleep(SHORT_IDLE_MS + 1_000);
     assertTrue((await readAmbientLoopState(cdp)).paused, `Ambient loop pauses after ${SHORT_IDLE_MS}ms idle (debug-shortened from the real 60s)`);
     await dispatchNeutralPointerdown(cdp);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') !== 'true'`, { timeoutMs: 5_000, label: 'Ambient loop resumes on the next real input after an idle pause' });
 
-    // ---- Spinner: send the one real message this fixture's tape waits on (`session.jsonl`'s
-    // own `__wait__: ["prompt"]`), approve its one tool call, then read the spinner DURING the
-    // streaming delay that follows (the one real "working" window this scenario holds open). ----
+    // Send the message `session.jsonl` waits on, approve its tool call, then read the spinner
+    // during the streaming delay (the only 'working' window the scenario holds open).
     await cdp.typeIntoByLabel('Message', 'trigger the scripted turn');
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Approval card rendered' });
@@ -442,17 +381,12 @@ async function main() {
 
     await cdp.waitFor(`document.querySelectorAll('[aria-label="Message"]').length > 0 && !document.querySelector('[aria-label="Message"]').disabled`, { timeoutMs: 30_000, label: 'Fixture turn settles' });
 
-    // ---- Settings > Appearance screenshot (the Holiday touches control itself) ----
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: 'Settings screen opened' });
     await cdp.clickByText('Appearance', { tag: 'button' });
     await cdp.waitFor(`!!document.querySelector('#holiday-touches-select')`, { timeoutMs: 10_000, label: 'Appearance section shows the Holiday touches control' });
     await cdp.evaluate(`document.querySelector('#holiday-touches-select').scrollIntoView({ block: 'center' })`);
-    // ---- Gate round 2 fix (Medium, item 9) + round 3 fix (Low, "take the Settings shot after
-    // the Select is used"): exercises the REAL Settings control (not only the debug
-    // `window.refract.settings.setHolidayTouches` shortcut every other mode switch in this
-    // script uses) BEFORE the screenshot, so the shot reflects the control's real post-use state
-    // (closed, back on Full, no stray open-menu artefact), not merely its first-render state. ----
+    // Use the real Settings control before the screenshot, so it shows the post-use state (closed menu).
     await cdp.click(`document.querySelector('#holiday-touches-select')`);
     await cdp.waitFor(`!!document.querySelector('[data-slot="select-item"]')`, { timeoutMs: 5_000, label: 'Holiday touches select options open' });
     await cdp.clickByText('Artwork only', { tag: '[data-slot="select-item"]' });
@@ -466,10 +400,8 @@ async function main() {
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 10_000, label: 'Back to chat from Settings' });
 
-    // ---- Gate round 2 fix (High, items 1-2): the FAILING CPU budget check, replacing the
-    // round 1 informational-only Full-vs-Off single sample -- median of 3 alternating
-    // Full/Artwork-only 60s samples, plus a paused-state budget, both asserted against a hard
-    // ceiling (see `measureAmbientLoopCpuBudget`'s own doc comment). ----
+    // Failing CPU budget: median of 3 alternating Full/Artwork-only 60s samples plus a paused budget
+    // (see `measureAmbientLoopCpuBudget`).
     await measureAmbientLoopCpuBudget(cdp, launched.targetPid, report, assertTrue, assertEqual, { log: LOG, shortIdleMs: SHORT_IDLE_MS, shortFlightIntervalMs: SHORT_FLIGHT_INTERVAL_MS, dispatchShiftKeyTap });
 
     report.push({
@@ -512,10 +444,8 @@ async function main() {
   await safeRmSync(launcherDir, LOG);
   await safeRmSync(shimDir, LOG);
 
-  // ---- Off-season override baseline, and the invalid-date-round-trip proof (item 11, decided
-  // by Main: live, not a new Rust test) -- both SEPARATE fresh launches. Gate round 1 fix
-  // (Medium, item 8): report.json is now written ONCE, after both complete, not before (the
-  // baseline's own results used to be silently dropped since the file was already closed). ----
+  // Off-season baseline and invalid-date round trip run in separate fresh launches; report.json
+  // is written once, after both finish.
   await runOffSeasonBaseline({ repoRoot: REPO_ROOT, buildOutputDir: BUILD_OUTPUT_DIR, shotsDir: SHOTS_DIR, dateOverride: OFF_SEASON_DATE_OVERRIDE, hallowenIconClass: HALLOWEEN_ICON_CLASS, emptyLine: HALLOWEEN_EMPTY_LINE, report });
   await runInvalidDateOverrideCheck({ repoRoot: REPO_ROOT, buildOutputDir: BUILD_OUTPUT_DIR, report });
 

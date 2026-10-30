@@ -1,95 +1,27 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1001 (Bug, a11y): focus drops to `<body>` when a one-agent Stage
-// gains a second agent while focus is inside it. `src/renderer/features/chat/SubagentChainRow.tsx`'s
-// `StageGroupRow` swaps its own content from a bare `SubagentBody` (`total === 1`) to a
-// `SpineList` of `SubagentRow`s (`total > 1`) the instant a second agent streams into the same
-// Stage -- unmounting whatever was focused inside the first member's own Prompt/Result code
-// block along with it. Removing a focused DOM node blurs it to `<body>` synchronously in every
-// real browser, so there is no later point at which the old focus target can be asked whether
-// it held focus; the fix (`StageGroupRow`'s own `focusWasInsideRef`/`triggerRef` pair) instead
-// tracks focus continuously via a `focusin`/`focusout` listener and, the instant the 1-to-2
-// transition is observed with focus known to have been inside, moves it to the Stage's OWN
-// trigger -- the one element guaranteed to survive every member-count transition (the same
-// remedy `Transcript.tsx`'s own "Scroll to end" button/viewport pair already uses for an
-// analogous removed-while-focused control).
+// Live CDP check for #1001 (a11y): focus dropped to `<body>` when a one-agent Stage gained a
+// second agent while focus was inside it. `StageGroupRow` swaps a bare `SubagentBody` for a
+// `SpineList`, unmounting the focused node, and a removed node cannot be asked whether it held
+// focus. The fix tracks focus via `focusin`/`focusout` and, on the 1-to-2 transition, moves it to
+// the Stage's own trigger, the one element that survives every member-count change. Pre-wrapping
+// the solo body in `SpineList` instead was rejected (permanent visual regression for solo Stages).
 //
-// Decided (Skippy, delegated by Stuart 2026-10-19), recorded on #1001: the structural
-// alternative (pre-wrapping the solo body in the same `SpineList`/`SpineItem` shape a joining
-// second member would need, keeping `SubagentBody` itself mounted with no redirect needed at
-// all) was rejected -- it either draws the Spine's own rail/indent for every solo Stage (a
-// permanent, unrelated visual regression) or leaves the FIRST member looking different from
-// every later one forever (no `SubagentRow` chrome, unlike #563's own "never switch element
-// type between solo and multi members" rule intends). The fallback the issue itself names --
-// "move focus to the Stage trigger when focused content is removed" -- is what is implemented
-// and proven here.
+// Uses `scripts/fixtures/omp-frames/stages-1001.jsonl`: one Stage whose two members arrive as
+// separate `task()` calls under the same assistant message id, so it grows in place. The shared
+// `stages-941.jsonl` declares every member upfront and never grows.
 //
-// Uses a NEW fixture (`scripts/fixtures/omp-frames/stages-1001.jsonl`, its own header has the
-// full provenance note): ONE Stage whose two members arrive as two SEPARATE `task()` tool calls
-// sharing the same owning assistant message id ("msg-a1") -- the documented mechanism
-// (`transcript.rs`/`subagent_items.rs`, read in full while authoring the fixture) by which a
-// Stage genuinely GROWS from one member to two in place, rather than ever starting a new Stage.
-// The existing `stages-941.jsonl` fixture (shared by every `verify-941-*`/`verify-991-*`/
-// `verify-1000-*` script) cannot exercise this: every one of its ten Stages declares its full
-// member count upfront in a single `task()` call's own `tasks[]` array, so none of them ever
-// grows after its first render -- a genuinely new fixture was required (per this sub-task's own
-// brief), not a reuse of the existing one.
+// Proves, in order:
+//   1. The Stage renders solo first (no `SpineList`; `JoinsLater` absent).
+//   2. A real keyboard Tab places focus in the solo member's Prompt code block, confirmed by a
+//      marker attribute (a DOM reference does not survive the re-render).
+//   3. `document.activeElement` sampled on every animation frame (in-page, so no CDP jitter)
+//      across the whole join is never `document.body`. This is the RED/GREEN discriminator.
+//   4. Once `JoinsLater` mounts, focus is on the Stage's own trigger, not merely not-body.
+//   5. A per-theme screenshot pass (structural check, not colour-dependent).
 //
-// Five things proved, in this order:
-//   1. The Stage genuinely renders solo first (`total === 1`, a bare `SubagentBody`, no
-//      `SpineList`) -- `JoinsLater`'s own title is absent from the DOM at this point.
-//   2. Keyboard focus is placed inside the solo member's own Prompt code block
-//      (`ToolRow.tsx`'s `CodeBlock`, the `[role="region"]` `SubagentBody` renders), confirmed via
-//      a marker attribute set on it right before focusing (`document.activeElement` reference
-//      equality survives the eventual re-render of other, unrelated parts of the tree; a marker
-//      attribute does not).
-//   3. `document.activeElement` is sampled on every animation frame (`requestAnimationFrame`,
-//      not Node-side polling, so no CDP round-trip jitter can widen or narrow the window) across
-//      the ENTIRE join -- from before the second `task()` call starts, through the live
-//      `message_start`/`message_end` re-snapshot that actually grows `group.items` from 1 to 2,
-//      to well after it settles. THE ONE RED/GREEN DISCRIMINATOR: zero of those sampled frames
-//      may ever read `document.activeElement === document.body`. MUST fail on `origin/main`:
-//      there, nothing redirects focus on this transition, so the frame immediately following the
-//      unmount reads `document.activeElement === document.body` and stays there (nothing else in
-//      this fixture ever moves focus again).
-//   4. Once `JoinsLater` has genuinely mounted (`SpineList`/`SubagentRow`, proving the Stage is
-//      now `total > 1` and the OLD solo content is gone), focus is confirmed to have landed on
-//      the Stage's own trigger specifically (`triggerRef`), not merely "somewhere other than
-//      body" -- the fix's own stated remedy, not a weaker nearby proof.
-//   5. A cheap, non-exclusive per-theme screenshot pass (no re-assertion: this check is
-//      structural -- `document.activeElement`, DOM ancestry, animation-frame sampling -- never
-//      colour-dependent, matching `verify-991-stage-focus.mjs`'s own identical theme-loop
-//      rationale).
-//
-// First build-slot run (head `3941250`): GENUINELY FAILED -- `document.activeElement` was
-// `<body>` in 208 of 390 sampled frames, never redirected (last sample `isTrigger: false`).
-// Root cause: the focus-tracking listener was attached via a plain `useRef` + `useEffect(() =>
-// {...}, [])`, which runs exactly once at `StageGroupRow`'s own initial mount -- but a solo
-// Stage starts collapsed (Radix never renders `CollapsibleContent` while closed), so the ref
-// was still `null` at that one run and the listener was never attached once the row was later
-// expanded. Fixed with a callback ref (head `28b26e1`, re-fires on every real mount/unmount of
-// the node); re-ran clean (0 failures, 0 notExercised, verdict DONE).
-//
-// Gate round 1 (Main, 2026-10-19): five findings, all fixed in this one round --
-//   1. (A11y/UI Medium) A window blur fires `focusout` with `relatedTarget` null while
-//      `document.activeElement` stays the SAME element (never reassigned by a blur) --
-//      `StageGroupRow`'s own handler now returns early (keeping the flag) when
-//      `event.target === document.activeElement`, the window-blur signature.
-//   2. (Code/Test/A11y Medium) A click onto a non-focusable spot used to leave the flag stuck
-//      true forever (indistinguishable from a real removal using `relatedTarget`/
-//      `activeElement` alone) -- now uses the repo's own `ProfileAlertRows.tsx`/
-//      `FileExplorerPanel.tsx` rAF-plus-`isConnected` pattern to tell the two apart.
-//   3. (Code Medium) A missed join (or a missed pre-join precondition) is now a hard FAILURE,
-//      not a silent `notExercised`; the LAST pre-join frame (not merely "any" frame) must
-//      confirm focus; `joinedMemberExpr` below is now scoped to this Stage's own content.
-//   4. (Test/A11y Medium, Visual) Focus is now placed with a REAL keyboard Tab (not `.focus()`),
-//      arming `:focus-visible` for the rest of the run; the Dark-theme screenshot (taken BEFORE
-//      any theme switch moves focus onto the theme picker) is backed by a hard
-//      `:focus-visible` match, not eyeballing alone -- the later per-theme shots are honestly
-//      labelled as non-proofs (`switchTheme` itself steals focus via a mouse click).
-//   5. (Test Medium) A simulated window blur (`Emulation.setFocusEmulationEnabled`) is spliced
-//      in before the join, re-using the existing assertions rather than a separate check; a
-//      dedicated click-away negative proof needs its own second 1-to-2 transition and is
-//      recorded in `notExercised` instead.
+// Window blur fires `focusout` with `activeElement` unchanged, so the handler ignores that
+// signature; a simulated blur is spliced in before the join. A click-away negative proof needs
+// its own second 1-to-2 transition and is recorded in `notExercised`.
 
 import { mkdtempSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -140,26 +72,20 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// `stages-1001.jsonl`'s own Stage keeps ONE stable header label across the whole 1-to-2
-// transition (its header note explains why: `solo-task`'s own shared batch `context` is the
-// only one either member ever carries, so `computeStageLabel`'s tier-1 rule never changes once
-// `join-task` -- which carries no context of its own -- joins).
+// The Stage keeps one stable header label across the 1-to-2 transition: only `solo-task` carries
+// a context, so `computeStageLabel`'s tier-1 rule never changes when `join-task` joins.
 const STAGE_TITLE = 'Stage 1 \u00b7 Verify focus survives a mid-flight join (issue #1001).';
 const FOCUS_MARKER_ATTR = 'data-refract-1001-focus';
 
 function promptCodeBlockExpr() {
-  // First `[role="region"]` inside this Stage's own expanded content, in DOM order -- the solo
-  // member's own Prompt block (`ToolRow.tsx`'s `SubagentBody`, `Markdown.tsx`'s `CodeBlock`);
-  // its Result block (same `aria-label`, rendered second) is not reached by `querySelector`
-  // picking the first match, so no extra scoping is needed to disambiguate the two.
+  // First `[role="region"]` in this Stage's expanded content is the solo member's Prompt block;
+  // the Result block renders second, so no extra scoping is needed.
   return `(${stageContentSelector(STAGE_TITLE)})?.querySelector('[role="region"]')`;
 }
 
 function joinedMemberExpr() {
-  // Gate round 1 fix (item 3, Code Medium): scoped to THIS Stage's own content, the same
-  // ancestor-scoping convention `promptCodeBlockExpr` above already uses -- an unscoped global
-  // `[title="JoinsLater"]` lookup could in principle match an unrelated row elsewhere in the
-  // DOM (a different Stage or turn reusing the same agent name).
+  // Scoped to this Stage's content: an unscoped `[title="JoinsLater"]` could match another row
+  // reusing the agent name.
   return `(${stageContentSelector(STAGE_TITLE)})?.querySelector('[title="JoinsLater"]')`;
 }
 
@@ -249,8 +175,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
 
-    // ---- Setup: the Stage renders solo (total === 1) and settles before `join-task` ever
-    // starts (the fixture's own ~400ms delay before `solo-task`'s own `tool_execution_end`) ----
+    // Setup: the Stage renders solo and settles before `join-task` starts (~400ms fixture delay).
     await cdp.waitFor(`!!${titleSelector(STAGE_TITLE)}`, { timeoutMs: 15_000, label: 'Solo Stage row mounted' });
     const joinedBeforeSetup = await cdp.evaluate(`!!(${joinedMemberExpr()})`);
     if (joinedBeforeSetup) {
@@ -265,26 +190,12 @@ async function main() {
     }
     await cdp.waitFor(`!!(${promptCodeBlockExpr()})`, { timeoutMs: 10_000, label: "Solo member's own Prompt code block mounted" });
 
-    // Marker attribute (not a live DOM reference, which cannot cross a CDP round trip): lets the
-    // in-page animation-frame sampler below ask "is THIS specific element still focused" without
-    // re-querying by role/aria-label, which could otherwise match the Result block too once it
-    // mounts, or match nothing once this exact node is removed (the very transition under test).
+    // Marker attribute (a DOM reference cannot cross CDP): lets the sampler ask whether this exact
+    // element is still focused without re-querying, which could match the Result block or nothing.
     await cdp.evaluate(`(${promptCodeBlockExpr()})?.setAttribute(${JSON.stringify(FOCUS_MARKER_ATTR)}, 'target')`);
-    // Gate round 1 fix (item 4, Test/A11y Medium, Visual): a REAL keyboard Tab, not a bare
-    // `.focus()` call -- `expandRow` above already left focus on the Stage's own trigger via a
-    // real mouse click, so Tab from there is the same path a real keyboard user takes into the
-    // expanded content. This also arms the browser's own `:focus-visible` "last interaction was
-    // keyboard" state for the REST of this run, including the fix's own later PROGRAMMATIC
-    // redirect call (`triggerRef.current.focus(...)`) -- a screenshot taken after a bare
-    // `.focus()` call here would prove nothing about whether a real keyboard user ever sees a
-    // visible ring.
-    // Falsified live (first gate round 1 verification run): a single `pressTab` left focus one
-    // stop short -- `CodeBlockHeader`'s own Copy button (`Markdown.tsx`, "every block's header
-    // carries a Copy button") renders BEFORE the `[role="region"]` content in DOM order, so Tab
-    // from the trigger lands there FIRST, not on the Prompt region directly. A bounded loop
-    // (same established pattern as `verify-tauri-568.mjs`'s own `reachedRow` loop) presses Tab
-    // until the marker matches, tolerant of exactly how many intervening stops exist, rather
-    // than hard-coding a guessed count.
+    // A real keyboard Tab, not `.focus()`: it arms `:focus-visible` for the rest of the run, so
+    // later screenshots show whether a keyboard user sees a ring. A bounded loop presses Tab until
+    // the marker matches, because `CodeBlockHeader`'s Copy button precedes the region in DOM order.
     let focusedBefore = false;
     let tabsUsed = 0;
     for (let i = 0; i < 10 && !focusedBefore; i++) {
@@ -299,21 +210,11 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-solo-focus-placed.png'));
 
-    // Gate round 1 fix (item 5, Test Medium; condition added on Main's own grant, 2026-10-19):
-    // a simulated window blur (CDP's `Emulation.setFocusEmulationEnabled`, the standard
-    // headless-testing way to exercise this without actually losing real OS focus), spliced in
-    // BEFORE the join, re-using the SAME assertions below rather than a separate negative check
-    // -- IF it genuinely produces a real signal. `document.activeElement` is never reassigned
-    // by a real window blur, so it cannot confirm anything on its own; a TEMPORARY, test-only
-    // listener (never product code) on the Prompt code block itself records whether a
-    // `focusout` with `event.target === document.activeElement` (the exact signature
-    // `SubagentChainRow.tsx`'s own handler checks) actually fired, and whether
-    // `document.hasFocus()` went `false`. If `Emulation.setFocusEmulationEnabled` produces
-    // neither signal on this WebView2 renderer, a real `window` `blur` event is dispatched as a
-    // second, still-cheap attempt before giving up. If NEITHER attempt ever produces either
-    // signal, this is recorded honestly as `notExercised` -- never silently claimed as a pass
-    // just because the later join still happens to redirect correctly (that proves the
-    // POSITIVE path, not that the window-blur code path was ever actually exercised).
+    // Simulated window blur (`Emulation.setFocusEmulationEnabled`) before the join. A real blur
+    // never reassigns `document.activeElement`, so a temporary test-only listener records whether
+    // a `focusout` with `target === activeElement` fired or `document.hasFocus()` went false. If
+    // neither signal appears, a `window` `blur` event is tried; if that fails too it is recorded
+    // as `notExercised`, since the later redirect only proves the positive path.
     await cdp.evaluate(`(() => {
       window.__r1001Blur = { focusoutSeen: false };
       const target = (${promptCodeBlockExpr()});
@@ -327,8 +228,7 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 200));
     let blurDiag = await cdp.evaluate(`({ focusoutSeen: window.__r1001Blur.focusoutSeen, hasFocusNow: document.hasFocus() })`);
     if (!blurDiag.focusoutSeen && blurDiag.hasFocusNow !== false) {
-      // First attempt produced no observable signal -- try the real `window` `blur` event
-      // dispatch Main's own grant names as the cheap fallback, before concluding this is a gap.
+      // No signal yet: fall back to dispatching a real `window` `blur` event.
       await cdp.evaluate(`window.dispatchEvent(new Event('blur'))`);
       await new Promise((resolve) => setTimeout(resolve, 100));
       blurDiag = await cdp.evaluate(`({ focusoutSeen: window.__r1001Blur.focusoutSeen, hasFocusNow: document.hasFocus() })`);
@@ -345,11 +245,9 @@ async function main() {
       );
     }
 
-    // ---- Phase: sample document.activeElement on every animation frame across the WHOLE join
-    // (issue #1001's own red/green discriminator) -- in-page, not Node-side polling, so no CDP
-    // round-trip jitter can ever widen or narrow the sampled window. Budget: 6.5s comfortably
-    // covers the fixture's own 3000ms pre-join delay + 1500ms post-join settle delay either side
-    // of the actual transition, with margin for a slow CI host. ----
+    // Sample document.activeElement on every animation frame across the whole join, in-page so
+    // CDP jitter cannot skew the window. 6.5s covers the fixture's 3000ms pre-join and 1500ms
+    // post-join delays with margin for a slow host.
     const triggerExprText = stageTriggerSelector(STAGE_TITLE);
     const sampleBudgetMs = 6500;
     await cdp.evaluate(`(() => {
@@ -392,14 +290,10 @@ async function main() {
       const preJoinSamples = samples.filter((s) => !s.joined);
       const joinedSamples = samples.filter((s) => s.joined);
       if (joinedSamples.length === 0) {
-        // Gate round 1 fix (item 3, Code Medium): a missed join is a hard FAILURE, not a
-        // silent skip -- this script exists specifically to exercise the join; silently
-        // passing without ever observing it would hide a real gap, not record one honestly.
+        // A missed join is a hard failure: silently passing would hide the gap this script exists to catch.
         failures.push('JoinsLater never mounted within the sampled window -- the join could not be observed as genuinely happening; the before/after focus-redirect proof did not run.');
       } else {
-        // Gate round 1 fix (item 3): the LAST pre-join frame specifically, not merely "any"
-        // frame -- the precondition this whole proof rests on is that focus was STILL inside
-        // the solo content at the moment it was removed, not merely at some earlier point.
+        // The last pre-join frame must show focus still inside the solo content when it was removed.
         const lastPreJoinSample = preJoinSamples[preJoinSamples.length - 1];
         if (!lastPreJoinSample || !lastPreJoinSample.isTarget) {
           failures.push("The LAST sample before the join did not confirm focus on the solo member's own Prompt code block -- the 'focus was genuinely inside the removed content at the moment of the join' precondition could not be confirmed.");
@@ -411,12 +305,7 @@ async function main() {
           failures.push(`Once settled after the join, document.activeElement was not the Stage's own trigger (last sample: isBody=${lastSample.isBody}, isNull=${lastSample.isNull}, isTrigger=${lastSample.isTrigger}) -- expected the fix's own stated remedy (focus moved to the Stage trigger), not merely "somewhere other than body".`);
         } else {
           findings.push("Once settled after the join, document.activeElement is the Stage's own trigger -- the fix's own stated remedy confirmed, not merely a weaker 'somewhere other than body' proof.");
-          // Gate round 1 fix (item 4, Test/A11y Medium, Visual): a hard `:focus-visible` match,
-          // not eyeballing a screenshot alone -- confirms a real keyboard user (the real Tab
-          // placement above armed this) would actually SEE the ring, not merely that the DOM
-          // won an invisible focus race. Read fresh here (not from the sampled frames), in the
-          // Dark theme, BEFORE the per-theme loop below ever runs `switchTheme` (which itself
-          // moves focus onto the theme picker's own control via a mouse click).
+          // Hard `:focus-visible` match, read in Dark before `switchTheme` moves focus away.
           const triggerFocusVisible = await cdp.evaluate(`(() => {
             const el = document.activeElement;
             return { tag: el?.tagName ?? null, matches: !!el && typeof el.matches === 'function' && el.matches(':focus-visible') };

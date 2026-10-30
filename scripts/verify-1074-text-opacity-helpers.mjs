@@ -1,8 +1,4 @@
-// Shared CDP-interaction helpers for verify-1074-text-opacity.mjs, split out to stay under the
-// #806 file-size ratchet's own 600-line soft cap (same "pure-logic, behaviour-preserving
-// extraction" pattern `theme-contrast-pairs.mjs`/`mermaidThemeData.ts`/`verify-551-helpers.mjs`
-// already use for exactly this situation -- a baseline entry may never be RAISED, so legitimate
-// growth moves out into its own module instead).
+// CDP-interaction helpers for verify-1074-text-opacity.mjs, split out to stay under the #806 file-size cap.
 import { waitTwoFrames } from './verify-700-todo-pin-helpers.mjs';
 
 export const SEND_BUTTON_FINDER = `document.querySelector('button[aria-label="Send message"]')`;
@@ -10,9 +6,7 @@ export const HEADER_FINDER = `document.querySelector('header .truncate.text-sm.f
 export const CHAT_PROSE_FINDER = `document.querySelector('.text-chat-foreground')`;
 export const BADGE_FINDER = `document.querySelector('[data-slot="badge"][data-variant="secondary"]')`;
 
-/** Reads every REAL, currently-rendered element this check needs in one round trip (never a
- * hidden probe alone -- see verify-1074-text-opacity.mjs's own header comment for which
- * component each belongs to). */
+/** Reads every currently-rendered element this check needs in one round trip. */
 export async function readRealColours(cdp) {
   return cdp.evaluate(`(() => {
     const header = ${HEADER_FINDER};
@@ -29,9 +23,7 @@ export async function readRealColours(cdp) {
   })()`);
 }
 
-/** Session count badge on the Manage sessions screen (`ManageSessionsScreen.tsx`,
- * `data-slot="badge" data-variant="secondary"`) -- only mounted while that screen is open, so
- * read separately from `readRealColours` above (the chat-view elements). */
+/** Session count badge on the Manage sessions screen; only mounted while that screen is open, so read separately. */
 export async function readBadgeColour(cdp) {
   return cdp.evaluate(`(() => { const b = ${BADGE_FINDER}; return b ? getComputedStyle(b).color : null; })()`);
 }
@@ -48,21 +40,13 @@ export async function closeSettingsBackToChat(cdp) {
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: 'Settings closed, back in chat' });
 }
 
-/** Captures a real `Page.captureScreenshot` PNG (base64) with no rect baked in yet -- split out
- * from the old single `samplePixelRegion` (gate-fix, Code/Test Medium: the caller now measures
- * the chat-prose element's own `getBoundingClientRect()` AFTER this capture completes, not
- * before, so the rect it samples against reflects the exact moment the pixels were actually
- * painted, never a stale pre-capture measurement a theme-switch repaint could have shifted). */
+/** Captures a screenshot PNG (base64) without a rect; the caller measures the element after capture so the rect matches the painted pixels. */
 export async function capturePngBase64(cdp) {
   const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
   return data;
 }
 
-/** Decodes an already-captured screenshot (see `capturePngBase64` above) entirely inside the
- * page via an offscreen `<canvas>` (`drawImage` + `getImageData`), so no Node-side PNG decoder
- * dependency is needed -- the same technique `verify-1050-command-pill-helpers.mjs`'s own
- * (module-private) `capturePixelRegion` uses. Returns a flat RGBA byte array for the given
- * CSS-pixel rect. */
+/** Decodes a captured screenshot in-page via an offscreen `<canvas>` (no Node PNG decoder needed); returns flat RGBA bytes for the CSS-pixel rect. */
 export async function decodePixelRegion(cdp, pngBase64, rect) {
   const x = Math.max(0, Math.round(rect.x));
   const y = Math.max(0, Math.round(rect.y));
@@ -84,9 +68,7 @@ export async function decodePixelRegion(cdp, pngBase64, rect) {
   })`);
 }
 
-/** The single brightest (most fully-inked, least anti-aliased) pixel in a sampled RGBA region --
- * every theme here is dark-toned, so the chat text is always lighter than its own background,
- * making "brightest" a reliable proxy for "a glyph's own solid interior", not a blended edge. */
+/** Brightest pixel in an RGBA region; themes are dark, so it is a reliable proxy for a glyph's solid interior rather than a blended edge. */
 export function brightestPixel(rgba) {
   let best = null;
   for (let i = 0; i + 3 < rgba.length; i += 4) {
@@ -99,20 +81,10 @@ export function brightestPixel(rgba) {
   return best;
 }
 
-/** The transcript's vendored message-scroller (`Transcript.tsx`) sticks to the bottom and
- * silently re-snaps any plain `scrollTop`/`scrollIntoView` write straight back to the end --
- * its own `handleViewportScroll` only disengages follow-bottom when it sees the scroll move up
- * AND `useScrollGestureTracking().isRecentGesture()` is true, which ONLY a real `wheel`/
- * pointer/touch/key DOM event sets (confirmed live: a `scrollIntoView` call measurably moved
- * `scrollTop` to its OWN requested value for one frame, then the vendored scroller snapped it
- * straight back to `scrollHeight - clientHeight` by the time this script's own two-frame
- * settle read it back). CDP's `Input.dispatchMouseEvent` `mouseWheel` type dispatches a
- * trusted wheel event the real `onWheel` listener sees, so the resulting scroll-up genuinely
- * sticks instead of being fought. Returns false (caller fails loudly) if no scrollable
- * ancestor is found at all even after retrying (the scrollable transcript container's own
- * `scrollHeight`/`clientHeight` can transiently read equal for a frame or two right after the
- * Manage-sessions-closed navigation settles -- `Transcript.tsx`'s own "landing" effect comment
- * describes the same still-settling `content-visibility:auto` window). */
+/** Scrolls the transcript up with a trusted CDP `mouseWheel` event: the vendored scroller re-snaps plain
+ * `scrollTop`/`scrollIntoView` writes to the bottom unless a real wheel/pointer/key gesture precedes them.
+ * Retries because scrollHeight/clientHeight can read equal for a frame or two while content-visibility settles;
+ * returns false if no scrollable ancestor is ever found. */
 export async function scrollTranscriptToShow(cdp, finderExpr) {
   let viewportCentre = null;
   for (let attempt = 0; attempt < 10 && !viewportCentre; attempt++) {
@@ -140,14 +112,8 @@ export async function scrollTranscriptToShow(cdp, finderExpr) {
   return true;
 }
 
-// `taskTextColor` per theme (`src/shared/mermaidThemeData.ts`) -- Journey/Gantt's own "solid on
-// a coloured task-bar fill" FR-023 exception token. Hardcoded here, not imported, the same way
-// verify-1039-amber-retune.mjs's own `MERMAID_NODE_TEXT` is (no cross-file TS import from a
-// plain .mjs script). Gate round 3 fix (Main, #1074 follow-up, item 1): Mermaid's own per-mount
-// stylesheet scoping re-serializes every colour value in our custom `themeCSS` string to
-// `rgb(r, g, b)` notation before embedding it (confirmed live: a real decoded Journey SVG), so
-// the real check below converts this hex literal to that form first, rather than searching for
-// the hex text verbatim (which never matches post-scoping).
+// `taskTextColor` per theme (`src/shared/mermaidThemeData.ts`), hardcoded since a .mjs script cannot import TS.
+// Mermaid's per-mount scoping re-serializes colours in `themeCSS` to `rgb(r, g, b)`, so the check converts the hex first.
 export const JOURNEY_TASK_TEXT_COLOUR = {
   dark: '#fafafa',
   'dark-high-contrast': '#ffffff',
@@ -164,42 +130,10 @@ export function hexToRgbString(hex) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-// ---- Journey diagram labels stay solid (gate round 3 fix, Main's follow-up, item 1):
-// the fixture's second mermaid fence (`997-notice-severity.jsonl`, extended this round)
-// renders a Journey diagram; its task/section labels render via Mermaid's own default
-// foreignObject path (confirmed by reading node_modules/mermaid's own journeyDiagram
-// source directly -- see mermaidTheme.ts's own comment on the fix), so the embedded
-// `<style>` block this file's getMermaidThemeCSS generates is what actually governs
-// them. Journey's own task/section fills (`fillType0`-`fillType7`) are fixed literal
-// hex values (NOT derived from `primaryColor`/`secondaryColor` -- see that interface
-// comment's own correction), so the expected colour below is this theme's own solid
-// `taskTextColor` literal, not a computed one.
-// Narrowed (gate round 3, Test review: evidence-honesty HIGH) to match the actual CSS
-// RULE TEXT this file's own sibling-selector override emits -- not merely "this rgb string
-// appears somewhere in the SVG", which could coincidentally match an unrelated element.
-// Gate-fix (live debug, this run): the previous narrowing assumed the bare selector
-// `.task~switch .label{color:rgb(...)`, with no scoping prefix -- wrong; a real decoded SVG
-// showed Mermaid's per-mount scoping prepends EVERY selector in the comma group with its own
-// `#mermaid-<reactId> ` descendant-combinator prefix (a React `useId()`-shaped token, e.g.
-// `_r_6q_`, different every render -- confirmed live, cannot be hardcoded): the real rule is
-// `#mermaid-_r_6q_ .task~switch .label,#mermaid-_r_6q_ .journey-section~switch
-// .label{color:rgb(250, 250, 250)!important;}` for Dark's `#fafafa` -- the SECOND selector's
-// `.label`, not the first, sits directly against `{color:`, since the comma-joined pair
-// shares one declaration block. Matched here via a regex covering the full two-selector
-// sequence (any scoping id accepted, everything else literal), so this stays a rule-text
-// match, not a bare substring search.
-// Dark (high contrast) CANNOT be discriminated by this assertion: FR-023's "stays
-// solid" exception means its own `textColor` and `taskTextColor` are both the
-// identical literal `#ffffff`, so the expected rule text is present whether the
-// sibling-selector override fired or Mermaid's unmodified default `.label` rule simply
-// matched by coincidence -- handled explicitly below, not claimed as proof there.
-// Timeline shares the identical renderer code path (its own `textPlacement` also
-// defaults to `'fo'`, and its svgDraw source emits the identical `task`/
-// `journey-section` class names -- confirmed by reading node_modules/mermaid's own
-// timeline-definition source directly), so this selector likely reaches it too -- NOT
-// separately verified: this fixture has no Timeline fence, and #1108's scope stays
-// Gantt-only, so Timeline coverage here is an inferred likelihood, not a proven fact.
-// ----
+// Journey labels must stay solid: match the sibling-selector rule text rather than a bare rgb substring.
+// Mermaid's scoping prefixes every selector with a per-render `#mermaid-<reactId> `, so the regex accepts any id.
+// Dark (high contrast) cannot be discriminated: its textColor and taskTextColor are both #ffffff, so the rule text
+// matches even if the override never fired. Timeline likely shares this path but is not verified (no fixture fence).
 export async function assertJourneyLabelsSolid(cdp, theme, findings, failures) {
   const mermaidImgs = await cdp.evaluate(`Array.from(document.querySelectorAll('img[role="img"]')).map((el) => el.getAttribute('src'))`);
   if (!Array.isArray(mermaidImgs) || mermaidImgs.length < 2 || !mermaidImgs[1]) {
@@ -214,8 +148,7 @@ export async function assertJourneyLabelsSolid(cdp, theme, findings, failures) {
   const journeySvgText = decodeURIComponent(journeySrc.slice(journeySrc.indexOf(',') + 1));
   const expectedTaskRgb = hexToRgbString(JOURNEY_TASK_TEXT_COLOUR[theme.id]);
   const escapedRgb = expectedTaskRgb.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Both comma-joined selectors share ONE declaration block (confirmed live): `{color:...}`
-  // follows only the SECOND (`.journey-section~switch .label`) selector, not the first.
+  // Both comma-joined selectors share one declaration block, so `{color:...}` follows only the second.
   const rulePattern = new RegExp(`#mermaid-\\S+ \\.task~switch \\.label,#mermaid-\\S+ \\.journey-section~switch \\.label\\{color:${escapedRgb}`);
   const expectedRuleDescription = `#mermaid-<id> .task~switch .label,#mermaid-<id> .journey-section~switch .label{color:${expectedTaskRgb}`;
   if (!rulePattern.test(journeySvgText)) {

@@ -1,19 +1,7 @@
 #!/usr/bin/env node
-// Static guard for issue #1252 (8px spacing grid with a 4px half-step): every padding, margin,
-// gap and space-x/y utility in src/renderer must use an allowed step, so spacing cannot drift
-// back to 6px, 10px, 2px and friends.
-//
-// Allowed steps: 0, 4, 8, 16, 24, 32, 40, 48 px (Tailwind 0, 1, 2, 4, 6, 8, 10, 12), plus any
-// multiple of 8px above 48 for large reserved offsets (for example space for a trailing button).
-// Sizing utilities (size-*, w-*, h-*) are not gated. Arbitrary values such as p-[6px] are checked when
-// they are a plain px or rem length; var()/calc() values are left alone.
-//
-// Exceptions live in scripts/spacing-allowlist.json as { file, text, reason, count? } entries
-// (file is repo-relative with forward slashes, text is the exact offending token). An entry that
-// no longer matches anything is a failure, so exceptions cannot rot.
-//
-// Usage: node scripts/check-spacing.mjs
-// Exits 1 on any violation or stale allowlist entry, 0 otherwise.
+// Static guard (#1252): padding, margin, gap and space-x/y utilities in src/renderer must stay on
+// the 8px grid with a 4px half-step (multiples of 8px above 48). Sizing utilities are not gated.
+// Exceptions live in spacing-allowlist.json; a stale entry fails so exceptions cannot rot.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';

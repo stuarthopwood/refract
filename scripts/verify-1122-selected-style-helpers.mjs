@@ -1,31 +1,16 @@
-// Helper functions for verify-1122-selected-style.mjs, split out solely to keep that script
-// under the repo's 600-line soft cap (scripts/check-file-size.mjs) -- the same pattern
-// verify-tauri-560-helpers.mjs/verify-1074-text-opacity-helpers.mjs already use. No behaviour of
-// its own beyond the assertions/reads issue #1122/#1119's live check needs.
+// Helpers for verify-1122-selected-style.mjs, split out to keep it under the 600-line cap.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
 
-// The EXACT compiled className `src/renderer/components/ActiveIndicatorBar.tsx` renders --
-// asserting a rendered bar's className equals this literal string (not a loose substring match)
-// proves the shared component mounted, not a hand-copied span that merely happens to share one
-// or two of the same utility classes (the five-plus pre-#1122 copies: some `inset-y-1
-// rounded-full`, one missing the forced-colours fallback entirely).
+// Exact compiled className of `ActiveIndicatorBar.tsx`: an exact match proves the shared component mounted, not a hand-copied span.
 export const ACTIVE_INDICATOR_BAR_CLASS =
   'absolute inset-y-0 left-0 z-10 w-0.5 bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]';
 
-/** Reads a site's own selected row/button: real computed `border-radius` (square-corner proof),
- * whether a child span's className is the exact shared bar, that child's own real computed
- * `background-color`/`width`/vertical inset (flush-full-height proof -- `inset-y-0` alone is a
- * class name; this confirms the rendered box actually touches the row's own top and bottom
- * edges, not merely carries the class), the bar's own real `background-color`, and the real
- * fill `background-color` -- read off `fillFinder` when the fill paints on a DIFFERENT element
- * than the one the square-choice selector governs (e.g. `SessionRow.tsx`: `data-choice-item`
- * sits on the outer `<li>`, but `bg-sidebar-accent` paints on its inner content `<div>`;
- * defaults to `rowFinder` everywhere the fill and the shape share one element). `rowFinder` must
- * evaluate to the OUTER element whose `border-radius` is the one the square-choice selector
- * governs. */
+/** Reads a selected site: computed `border-radius`, whether a child span is the exact shared bar, its colour/width,
+ * whether it touches the row's top and bottom edges, and the fill colour. `rowFinder` must be the outer element
+ * governed by the square-choice selector; `fillFinder` is for fills painted on a different element (e.g. `SessionRow.tsx`'s inner `<div>`). */
 export async function readSelectedSite(cdp, rowFinder, fillFinder = rowFinder) {
   return cdp.evaluate(`(() => {
     const row = ${rowFinder};
@@ -54,14 +39,8 @@ export async function readSelectedSite(cdp, rowFinder, fillFinder = rowFinder) {
   })()`);
 }
 
-/** Issue #1119: a tree row's name span and its leading folder/file glyph, real computed `color`
- * (never the raw `className` string -- Tailwind's arbitrary/token classes only PROVE intent,
- * the computed value proves the browser actually painted it). Gate round 1 fix (two reviewers):
- * the chevron WRAPPER span (\`span[aria-hidden].flex\`) is empty on a FILE row (the chevron only
- * renders for folders, \`TreeNodeRow\`'s own JSX) -- reading its own computed colour measured the
- * wrapper's class, never the actual glyph a user sees. The folder/file icon itself
- * (\`FolderIcon\`/\`FileIcon\`/etc.) is a direct \`<svg>\` CHILD of the row, a sibling of that
- * wrapper, never nested inside it -- \`:scope > svg\` selects it directly. */
+/** #1119: a tree row's name span and leading glyph, by computed `color` (class names only prove intent).
+ * The glyph is a direct `<svg>` child of the row (`:scope > svg`); the chevron wrapper is empty on file rows. */
 export async function readExplorerRowTone(cdp, rowFinder) {
   return cdp.evaluate(`(() => {
     const row = ${rowFinder};
@@ -75,20 +54,14 @@ export async function readExplorerRowTone(cdp, rowFinder) {
   })()`);
 }
 
-/** Real resolved colour for a token, via the shared `resolveCssVarColor` (reads the token off
- * `document.documentElement`, the same cascade point every component inherits from). */
+/** Resolved colour for a token via the shared `resolveCssVarColor`, read off `document.documentElement`. */
 export async function tokenColor(cdp, varName, property = 'color') {
   return resolveCssVarColor(cdp, varName, property);
 }
 
-/** Generalised, parameterised version of `verify-1043-theme-radio-helpers.mjs`'s own
- * `forcedColorsRuleCompiled` (that copy is hardcoded to ONE selector) -- reads the real built
- * `out/tauri-web/assets/*.css` straight off disk (never `document.styleSheets` over CDP, which
- * scans 0 rules for a Tauri-served stylesheet, a WebView2/CSSOM cross-origin-style restriction
- * unrelated to whether the CSS genuinely works, per that module's own comment) and confirms
- * `targetSelector` exists, sits inside a real `@media (forced-colors: ...)` block (brace-depth
- * counted from the nearest preceding `@media`), and its own declaration body matches
- * `declarationRe`. */
+/** Parameterised `forcedColorsRuleCompiled` from `verify-1043-theme-radio-helpers.mjs`. Reads the built
+ * `out/tauri-web/assets/*.css` from disk (`document.styleSheets` scans 0 rules for a Tauri-served stylesheet) and confirms
+ * `targetSelector` sits inside a `@media (forced-colors: ...)` block (brace-depth counted) with a body matching `declarationRe`. */
 export function forcedColorsRuleCompiledFor(repoRoot, targetSelector, declarationRe) {
   const assetsDir = path.join(repoRoot, 'out', 'tauri-web', 'assets');
   let cssFiles;
@@ -123,12 +96,8 @@ export function forcedColorsRuleCompiledFor(repoRoot, targetSelector, declaratio
   return { cssFile: file, selectorFound: true, mediaHeader, insideForcedColorsMedia, body, declarationMatches };
 }
 
-/** Gate round 2 fix: a click leaves the pointer resting on the row, so its own `hover:bg-*`
- * (often the SAME token as the selected fill) would paint whether or not selection did -- a fill
- * check measured there cannot fail. Moves the pointer to a neutral point (the same
- * `Input.dispatchMouseEvent` mechanism `settleForScreenshot` uses: `width - 20, 450` first, then
- * the bottom-centre edge as a fallback), REQUIRES `!el.matches(':hover')`, then waits for every
- * running transition on the element to finish before the caller measures. */
+/** Moves the pointer off the row and requires `!:hover`, because a resting hover paints the same token as the selected fill and
+ * would mask it. Then waits for running transitions to finish before the caller measures. */
 export async function movePointerOffAndSettle(cdp, finder, label) {
   const { width, height } = await cdp.evaluate(`({ width: window.innerWidth, height: window.innerHeight })`);
   for (const [x, y] of [[width - 20, 450], [Math.round(width / 2), height - 4]]) {
@@ -146,14 +115,11 @@ export async function movePointerOffAndSettle(cdp, finder, label) {
   throw new Error(`${label}: the pointer still hovers the row after moving to two neutral points -- a hover fill would mask the selected fill.`);
 }
 
-// `RepositoryGroup.tsx`'s collapsed header trigger for the group holding the open Session. Tagged
-// with a scratch-only `data-verify-1122-group` attribute (set by this script in the live DOM, not
-// product markup) so it can be found again once collapsing removes the Session row it was found by.
+// Collapsed header trigger of the open Session's group, tagged with a scratch-only `data-verify-1122-group` so it can be re-found after collapsing.
 const GROUP_TRIGGER = `document.querySelector('[data-verify-1122-group]')`;
 
-/** Issue #1122 / #735 decision 22: collapses the open Session's own group and reads its header
- * trigger -- square (`data-choice-item`), the exact shared bar, the bar's real colour, and NO
- * selected fill (bar only). Re-expands afterwards: later checks click the Session row inside. */
+/** Collapses the open Session's group and reads its header trigger (#735 decision 22): square, exact shared bar, bar colour, no selected fill.
+ * Re-expands afterwards because later checks click the Session row inside. */
 export async function checkCollapsedGroupHeader(cdp, themeName, { barBg, screenshot }) {
   const tagged = await cdp.evaluate(`(() => {
     const trigger = Array.from(document.querySelectorAll('nav[aria-label="Sessions"] button[aria-expanded="true"][aria-controls]'))

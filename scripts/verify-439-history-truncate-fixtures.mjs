@@ -1,10 +1,5 @@
-// Shared module for `verify-439-history-truncate.mjs` (issue #1012 gate follow-ups), split out
-// to keep the main script under the #806 600-line soft cap as each gate round added more live
-// checks: fixture constants, DOM-finder expression builders, CDP-driving data-reading helpers
-// (these DO make live calls against the running app through `cdp`, not pure functions in the FP
-// sense), and the per-theme assertion helpers moved verbatim out of `main()` (parameterised on
-// `cdp`/`findings`/`failures` instead of closures). No behaviour change from any one move;
-// `node --check` clean on both files (same pattern as `scripts/verify-551-helpers.mjs`).
+// Shared helpers for `verify-439-history-truncate.mjs`: fixtures, DOM finders, CDP readers and per-theme assertions.
+// Split out to keep the main script under the 600-line cap (#806).
 
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -29,33 +24,24 @@ export const NORMAL_TITLE = 'Normal conversation (#439 check)';
 export const NORMAL_PREVIEW = 'Short first message, fits comfortably inside the dialog.';
 export const LONG_TITLE =
   'This deliberately very long Conversation title exists only to prove the history dialog truncates it to one line with an ellipsis instead of overflowing (issue #439)';
-// Padded to EXACTLY 120 characters (`PREVIEW_MAX_LENGTH`, `conversations.rs`) so this is the
-// widest preview the real app can ever produce, not an arbitrarily longer string.
+// Exactly 120 chars (`PREVIEW_MAX_LENGTH`, conversations.rs): the widest preview the app can produce.
 const LONG_PREVIEW_PREFIX =
   'ISSUE439-LONG-PREVIEW-CHECK: first user message, deliberately sized to the full PREVIEW_MAX_LENGTH cap for the history-dialog truncation check ';
 export const LONG_PREVIEW = (LONG_PREVIEW_PREFIX + '#'.repeat(120)).slice(0, 120);
 export const PREVIEW_MAX_LENGTH = 120; // conversations.rs
-// Issue #1012 item 5: one real prompt sent through the composer to settle a turn (reusing
-// `user-message-time.jsonl`'s own already-scripted tool call -- AGENTS.md: no new fixtures), so
-// `sync_from_state.rs`'s `if message_count > 0` guard marks the long Conversation current.
+// Settles a turn through the composer so `sync_from_state.rs`'s `message_count > 0` guard marks the long Conversation current.
 export const PROMPT_TEXT = 'Issue #1012 check: exercise the Current badge next to a long truncating title.';
 
-// Issue #1012 item 5: scopes every dialog-presence/content read to the KNOWN Conversation
-// history dialog specifically (its own `DialogTitle` text), never any element that merely has
-// `role="dialog"` -- the post-theme-switch reopen wait used to accept any such element.
+// Scoped to the Conversation history dialog by title, never any `role="dialog"` element.
 export const HISTORY_DIALOG_FINDER =
   `Array.from(document.querySelectorAll('[role="dialog"]')).find((d) => d.querySelector('[data-slot="dialog-title"]')?.textContent.trim() === 'Conversation history')`;
 
-/** Finder expression for one history row's own button by its exact title-span text, scoped to
- * the known history dialog (never any `[role="dialog"]`). Evaluates to `null` when the dialog
- * or the row is not present. */
+/** Finder for one history row's button by exact title text; `null` when the dialog or row is absent. */
 export function rowButtonFinder(titleText) {
   return `(() => { const dialog = ${HISTORY_DIALOG_FINDER}; if (!dialog) return null; return Array.from(dialog.querySelectorAll('ul li button[data-choice-item]')).find((b) => (b.children[0]?.querySelector('span')?.textContent ?? '') === ${JSON.stringify(titleText)}) ?? null; })()`;
 }
 
-/** `conversations.rs`'s own `parse_file_name` doc comment: a file is named
- * `<timestamp with ':'/'.' replaced by '-'>_<id>.jsonl`, the timestamp prefix always exactly 25
- * characters (`YYYY-MM-DDTHH-mm-ss-mmmZ_`). */
+/** Mirrors `parse_file_name` in conversations.rs: `<timestamp with ':'/'.' as '-'>_<id>.jsonl`, 25-char timestamp prefix. */
 export function conversationFileName(isoTimestamp, id) {
   const prefix = isoTimestamp.replace(/[:.]/g, '-');
   if (prefix.length !== 24) throw new Error(`conversationFileName: expected a 24-char dash-replaced prefix, got ${prefix.length} ("${prefix}")`);
@@ -68,10 +54,7 @@ export function writeConversationFile(dir, isoTimestamp, id, lines) {
   return filePath;
 }
 
-/** Reads one Conversation history row's own structural truncation evidence: the title span
- * (inside `btn.children[0]`, alongside the Current badge) and the preview span
- * (`btn.children[2]`, only present when `conversation.preview` is non-empty). Returns `null` for
- * either span if the row does not have it (e.g. no preview). */
+/** Reads a row's title span and preview span (`btn.children[2]`); either is `null` when absent. */
 export async function readRowTruncationEvidence(cdp, titleText) {
   return cdp.evaluate(`(() => {
     const btn = ${rowButtonFinder(titleText)};
@@ -100,10 +83,7 @@ export async function readRowTruncationEvidence(cdp, titleText) {
   })()`);
 }
 
-/** Real keyboard Tab presses (never a scripted `.focus()`, which does not reliably set
- * Chromium's `:focus-visible`) until `document.activeElement` is the row button matching
- * `titleText`, bounded to `maxPresses` so a DOM-order change fails loudly instead of hanging.
- * Returns whether the row was reached. */
+/** Real Tab presses until the row is focused (a scripted `.focus()` does not reliably set `:focus-visible`); bounded so a DOM-order change fails loudly. */
 export async function reachRowViaRealTab(cdp, titleText, maxPresses) {
   for (let i = 0; i < maxPresses; i++) {
     await pressTab(cdp);
@@ -113,9 +93,7 @@ export async function reachRowViaRealTab(cdp, titleText, maxPresses) {
   return false;
 }
 
-/** Whether the row button matching `titleText` currently matches `:focus-visible`, and its
- * computed `box-shadow` (expected non-`"none"` when a focus-visible ring is actually
- * rendering). `null` if the row is not present. */
+/** Whether the row matches `:focus-visible` and its computed `box-shadow`; `null` if the row is absent. */
 export async function readRowFocusStyle(cdp, titleText) {
   return cdp.evaluate(`(() => {
     const el = ${rowButtonFinder(titleText)};
@@ -124,18 +102,12 @@ export async function readRowFocusStyle(cdp, titleText) {
   })()`);
 }
 
-/** Finder expression for the KNOWN Tooltip -- the one whose text content includes `titleText`,
- * or (before its content settles) one whose `data-state` shows it is genuinely open
- * (`delayed-open`/`instant-open`) -- never a bare `[role="tooltip"]`, which could match an
- * unrelated tooltip elsewhere in the app (gate round 2, Main). */
+/** Finder for the known Tooltip (text includes `titleText`, or open `data-state`), never a bare `[role="tooltip"]` that could match another one. */
 export function tooltipFinder(titleText) {
   return `Array.from(document.querySelectorAll('[role="tooltip"]')).find((t) => t.textContent.includes(${JSON.stringify(titleText)}) || t.getAttribute('data-state') === 'delayed-open' || t.getAttribute('data-state') === 'instant-open')`;
 }
 
-/** Waits until the known Tooltip (matched by `tooltipFinder`) has no running Web Animations
- * (`Element.getAnimations()`), so its entrance transform has genuinely settled before its rect
- * is read -- a read mid-transition could pass or fail a position assertion by accident (gate
- * round 2, Main). */
+/** Waits for the Tooltip's animations to finish; a mid-transition rect read could pass or fail a position check by accident. */
 export async function waitForTooltipAnimationsSettled(cdp, titleText) {
   await cdp.waitFor(`(() => { const t = ${tooltipFinder(titleText)}; return !!t && t.getAnimations().length === 0; })()`, {
     timeoutMs: 3_000,
@@ -143,10 +115,7 @@ export async function waitForTooltipAnimationsSettled(cdp, titleText) {
   });
 }
 
-/** Geometry evidence for the row/Tooltip position check: the row's right edge, the open
- * Tooltip's left AND right edges, and each of its `<p>` lines' own top/bottom (to confirm they
- * stack vertically rather than laying out side by side in `TooltipContent`'s default row
- * direction). `null` if the row or the known Tooltip (`tooltipFinder`) is not present. */
+/** Row/Tooltip geometry: row right edge, Tooltip left/right edges, and each `<p>` line's top/bottom (to confirm vertical stacking); `null` if either is absent. */
 export async function readTooltipPositionEvidence(cdp, titleText) {
   return cdp.evaluate(`(() => {
     const row = ${rowButtonFinder(titleText)};
@@ -165,18 +134,14 @@ export async function readTooltipPositionEvidence(cdp, titleText) {
   })()`);
 }
 
-/** Overrides the rendered viewport size via CDP device-metrics emulation (same technique
- * `verify-554-chat-width.mjs`'s own `setWindowWidth` uses against this exact Tauri app), so a
- * narrow-window pass can be driven without resizing the real native window. */
+/** Overrides the viewport via CDP device-metrics emulation, so a narrow pass needs no native window resize. */
 export async function setWindowWidth(cdp, width) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(400);
 }
 
 
-/** Dialog-level: no horizontal overflow at the current theme. `findings`/`failures` are the
- * caller's own arrays (mutated in place, same pattern `main()` itself used before this
- * extraction). */
+/** Dialog-level: no horizontal overflow at the current theme. `findings`/`failures` are mutated in place. */
 export async function assertDialogNeverScrollsHorizontally(cdp, findings, failures, themeName) {
   const dialogGeometry = await cdp.evaluate(`(() => {
     const dialog = ${HISTORY_DIALOG_FINDER};
@@ -207,10 +172,7 @@ export function assertTruncateCss(findings, failures, label, span) {
   }
 }
 
-/** Row-level: ellipsis CSS in effect, long row genuinely clips, title attribute carries the
- * full text, normal row does NOT need to clip (control case), Current badge beside the long
- * row -- re-run in every theme (issue #1012 item 5: geometry is no longer assumed constant
- * across themes). */
+/** Row-level: ellipsis CSS, long row clips, title attribute carries full text, normal row does not clip, Current badge beside the long row. Re-run per theme (#1012). */
 export async function assertRowTruncation(cdp, findings, failures, themeName) {
   const normalEvidence = await readRowTruncationEvidence(cdp, NORMAL_TITLE);
   const longEvidence = await readRowTruncationEvidence(cdp, LONG_TITLE);

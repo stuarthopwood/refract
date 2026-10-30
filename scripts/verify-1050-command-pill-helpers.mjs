@@ -1,7 +1,4 @@
-// Shared helpers for verify-1050-command-pill.mjs (gate round 1 HIGH remediation, file-size
-// split: the main script grew past its own 600-line cap once the caret-visibility, selection-
-// highlight, slash-menu-completion and wrapping-token checks were added on top of the original
-// pill/spellcheck/geometry/theme checks).
+// Shared helpers for verify-1050-command-pill.mjs, split out to keep each file under the 600-line cap.
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseComputedColorToEntry, resolvedLinear, srgbGammaEncode } from './contrast-math.mjs';
@@ -10,8 +7,7 @@ export const TEXTAREA = `document.querySelector('[aria-label="Message"]')`;
 export const PILL = `document.querySelector('[data-command-pill-token]')`;
 export const OVERLAY = `document.querySelector('[data-command-pill-overlay]')`;
 
-// All five built-in theme presets (`src/shared/themes.ts`); decision 3's contrast fix and the
-// pill's own accent/fill both genuinely differ per preset, so every one is checked and shot.
+// All five built-in theme presets (`src/shared/themes.ts`); the pill's accent/fill differ per preset.
 export const THEMES = [
   { id: 'dark', name: 'Dark' },
   { id: 'obsidian', name: 'Obsidian' },
@@ -28,9 +24,7 @@ export async function clearAndType(cdp, pressKey, text) {
   await cdp.send('Input.insertText', { text });
 }
 
-/** The pill's own rect against the textarea's REAL `getComputedStyle()` padding -- never a
- * guessed offset -- so this proves the pill lands exactly over the token's own glyphs in the
- * real control the user types into, not merely inside the inert mirror's own copied box model. */
+/** The pill's rect against the real textarea's computed padding, not the inert mirror's box model. */
 export async function measurePillGeometry(cdp) {
   return cdp.evaluate(`(() => {
     const ta = ${TEXTAREA};
@@ -50,11 +44,7 @@ export async function measurePillGeometry(cdp) {
   })()`);
 }
 
-/** Gate round 1 HIGH remediation (item 2): the overlay now renders the WHOLE draft (highlight-
- * within-textarea), not just invisible gap spans around the pill -- so "arguments stay plain" is
- * proven structurally by confirming the overlay's own text content matches the draft exactly
- * (nothing swallowed or duplicated) and that exactly ONE element child exists (the pill span);
- * every other character is a bare text node, never re-wrapped or re-coloured. */
+/** Proves "arguments stay plain": the overlay text equals the draft and exactly one element child (the pill span) exists. */
 export async function overlayStructure(cdp) {
   return cdp.evaluate(`(() => {
     const overlay = ${OVERLAY};
@@ -67,18 +57,7 @@ export async function overlayStructure(cdp) {
   })()`);
 }
 
-/** Finds the real client rect of the range `[startOffset, endOffset)` against
- * `CommandPillOverlay`'s own REAL rendered mirror DOM -- not a separate offscreen `<canvas>`
- * measurement. A canvas re-implementing text metrics in isolation can legitimately disagree
- * with the browser's own real text layout (font loading timing, kerning, ligatures, subpixel
- * rounding), which is exactly what caused this check's own first draft to fail: the canvas-
- * measured x for a mid-token offset landed on a glyph stroke instead of the real caret column --
- * a script bug, not a product bug, confirmed by this fix reusing the SAME mirror the real
- * textarea is already proven (by the geometry checks above) to align with pixel-for-pixel.
- * Works for any visual line (wrapped or not) and any scroll position: `Range.getClientRects()`
- * returns real viewport-relative coordinates that already account for both, unlike the original
- * canvas measurement (which only ever handled the first, unwrapped, unscrolled line). The
- * mirror must be mounted (a recognised token showing) for this to find anything. */
+/** Client rect of `[startOffset, endOffset)` in the real mirror DOM; a canvas measurement drifts from real text layout (kerning, subpixel) and missed the caret column. The mirror must be mounted. */
 async function findMirrorOffsetRect(cdp, startOffset, endOffset) {
   return cdp.evaluate(`(() => {
     const overlay = ${OVERLAY};
@@ -117,28 +96,14 @@ async function findMirrorOffsetRect(cdp, startOffset, endOffset) {
   })()`);
 }
 
-/** The real pixel position of a zero-width character BOUNDARY at `charOffset` (`startOffset ===
- * endOffset`) -- used both for the native caret's own position (`assertCaretVisible` below) and,
- * reused gate round 4, for a genuinely ink-free sample point for the selection-highlight check
- * (a letter-to-letter boundary inside plain argument text, comfortably far from the pill and its
- * own box-shadow bleed). See `findMirrorOffsetRect` above for the full reasoning. */
+/** Pixel position of a zero-width boundary at `charOffset`: the caret position and an ink-free sample point for the selection check. */
 export async function measureCaretPixel(cdp, charOffset) {
   const rect = await findMirrorOffsetRect(cdp, charOffset, charOffset);
   if (!rect) return null;
   return { x: Math.round(rect.left), y: Math.round(rect.top + rect.height / 2) };
 }
 
-/** Reads back a small region's RGBA pixels from a REAL `Page.captureScreenshot` -- decoded
- * entirely inside the page via an offscreen `<canvas>` (`drawImage` + `getImageData`), so no
- * Node-side PNG decoder dependency is needed. A REGION, not a single pixel (gate round 3 fix):
- * the native caret is only 1-2 real screen px wide, and two independent geometric estimates of
- * its own x position (a canvas text-metrics measurement, then a mirror `Range`) each landed
- * within a pixel or two of it but not exactly ON it -- real browser caret placement and a
- * same-font-same-classes-but-separate-element geometric estimate can legitimately differ by a
- * sub-pixel amount from independent font rasterisation, even with identical CSS. Sampling a
- * small window around the estimate (not the whole pill, so a quiet, unchanging fill still
- * correctly reads "no difference" everywhere outside the caret's own column) absorbs that
- * estimation slack while staying a genuine, local, blink-timed pixel comparison. */
+/** RGBA pixels of a small region from a real screenshot, decoded in-page via canvas (no Node PNG dependency); a region, because the caret is 1-2px wide and estimates land within a pixel or two of it. */
 async function capturePixelRegion(cdp, x, y, halfWidth = 3, halfHeight = 2) {
   const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
   const left = Math.max(0, x - halfWidth);
@@ -161,15 +126,7 @@ async function capturePixelRegion(cdp, x, y, halfWidth = 3, halfHeight = 2) {
   })`);
 }
 
-/** Gate round 1 HIGH remediation (item 5), widened gate round 3: pixel-proof the native caret is
- * actually visible at `charOffset`, blink-safe -- two REAL screenshots ~600ms apart (Chromium/
- * Windows' own caret-blink interval), decoded to a small region around the caret's own
- * estimated position. A permanently-hidden caret (the original bug: an opaque pill painted over
- * it) reads the SAME region in both samples regardless of timing; a genuinely blinking, visible
- * caret reads differently SOMEWHERE in that region in at least one of the two (on vs off).
- * Supplemented by a deterministic, non-timing-based fact: `caret-color` itself is a real,
- * non-transparent colour (the style half of "the caret can render at all", independent of
- * exactly where this script's own estimate landed within a couple of pixels). */
+/** Pixel-proves the caret is visible at `charOffset`: two screenshots ~600ms apart (blink interval) must differ near it, since a permanently hidden caret reads the same in both; `caret-color` must also be non-transparent. */
 export async function assertCaretVisible(cdp, sleep, charOffset, label, report) {
   await cdp.evaluate(`${TEXTAREA}.focus(); ${TEXTAREA}.setSelectionRange(${charOffset}, ${charOffset})`);
   const caretColor = await cdp.evaluate(`getComputedStyle(${TEXTAREA}).caretColor`);
@@ -187,27 +144,7 @@ export async function assertCaretVisible(cdp, sleep, charOffset, label, report) 
   console.log(`verify-1050: PASS ${label}`);
 }
 
-/** Gate round 4 fix: `resolveCssVarColor` had only ever been fed through `outline-color`/
- * `background-color` call sites that Chromium happened to serialize as `rgb()` before -- a
- * `background-color` resolving through an INDIRECT `var()` chain (`--composer-selection-bg` ->
- * `var(--accent)` -> `oklch(0.269 0 0)`) comes back as the LITERAL `oklch(...)` string instead
- * (confirmed live: `expectedBgRaw` read `'oklch(0.269 0 0)'`, which a plain `rgba?\(...\)` regex
- * never matches, so the comparison silently always failed). Reuses `contrast-math.mjs`'s own
- * `parseComputedColorToEntry` (already handles `rgb()`/`oklch()`/`oklab()`, the same parser
- * `check-theme-contrast.mjs` relies on) instead of a second, narrower regex here.
- *
- * Gate round 5 fix (test review): `--composer-selection-bg` is now TRANSLUCENT (34% alpha,
- * `color-mix`) -- parsing its raw `background-color` string and converting straight to bytes (as
- * this function used to) treats it as if fully OPAQUE, which is the WRONG expected pixel: the
- * real on-screen result is that translucent colour COMPOSITED over whatever is actually behind
- * it (confirmed live: expected `oklab(0.62... / 0.34)` converted directly read nowhere near the
- * real captured `[46,47,89,255]`, which is in fact an almost-exact match for the colour
- * COMPOSITED over `--background`). Resolves `--composer-background` first (the textarea's own
- * immediate backdrop) and falls back to `--background` if that reads fully transparent (alpha 0
- * -- true in every preset except Dark high contrast, `globals.css`'s own `#927` comment has the
- * reasoning), then composites via the SAME gamma-space math `check-theme-contrast.mjs`/
- * `composerSelectionContrastRows` already share (`resolvedLinear`, `contrast-math.mjs`), instead
- * of a second, independently-maintained compositing formula living only here. */
+/** Expected selection pixel: resolve the translucent `--composer-selection-bg` (oklch/oklab via `parseComputedColorToEntry`) and composite it over `--composer-background`, or `--background` when that is transparent (#927), with the shared `resolvedLinear` math; an opaque conversion gives the wrong pixel. */
 async function expectedSelectionPixelBytes(cdp, resolveCssVarColor) {
   const selectionBgRaw = await resolveCssVarColor(cdp, '--composer-selection-bg', 'background-color');
   const selectionEntry = parseComputedColorToEntry(selectionBgRaw);
@@ -223,23 +160,8 @@ async function expectedSelectionPixelBytes(cdp, resolveCssVarColor) {
   return composited.map((c) => Math.round(srgbGammaEncode(c) * 255));
 }
 
-/** Gate round 3 HIGH fix, remediated gate round 4: round 1's version sampled the PILL's own
- * measured centre -- real ink (the mirror's own coloured glyphs), so a "differs" reading there
- * is confounded by ordinary glyph-rendering/anti-aliasing noise and proves nothing specific
- * about a selection background actually painting (confirmed live: it read `differs: true` even
- * with `::selection` having NO authored `background-color` at all, i.e. a false pass). Round
- * 3's fix (the space between `/btw` and `hi`) turned out to ALSO be wrong, for a different
- * reason: the pill's own 2px `box-shadow` padding illusion bleeds into that narrow space cell,
- * reading as the pill's own fill in BOTH samples regardless of selection state (confirmed live:
- * identical `[48,48,48,255]`, exactly Dark's `--command-pill-bg`). Fixed by sampling the
- * zero-width glyph BOUNDARY between 'h' and 'i' (offset 6 of "/btw hi") instead -- genuinely
- * plain argument text, several character-widths clear of the pill and its 2px shadow bleed, the
- * same zero-width-boundary technique already proven reliable for every caret check above -- and
- * asserting the selected reading matches the LIVE-resolved, properly COMPOSITED `--composer-
- * selection-bg` (gate round 5 fix above), not merely "differs by some threshold" (a specific,
- * false-positive-resistant assertion). Takes a resting (unselected) shot first, matching
- * `02-pill-btw.png` taken by the caller just before this runs, then its own post-selection shot
- * (`02b-selection-highlight.png`) as separate visual evidence. */
+/** Proves the selection background paints: samples the zero-width h/i boundary of "/btw hi" (plain text clear of the pill's 2px shadow bleed, which fooled the space-cell sample)
+ * and asserts it matches the composited `--composer-selection-bg`. Glyph ink is no use here: anti-aliasing noise gave a false pass. Shots `02b-selection-highlight.png`. */
 export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssVarColor, report, shotsDir) {
   const point = await measureCaretPixel(cdp, 6); // "/btw hi": the h/i boundary, plain argument text
   if (!point) throw new Error('FAIL: Ctrl+A selection highlight (measureCaretPixel found no mirror text node at the h/i boundary, offset 6)');
@@ -257,22 +179,8 @@ export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssV
   console.log('verify-1050: PASS Ctrl+A: selection highlight paints a real background over plain argument text');
 }
 
-/** Gate round 5 fix (#1050, test review): the h/i-boundary sample above proves the BACKGROUND
- * paints a real fill during selection, but proves nothing about whether the GLYPHS themselves
- * stay visible on top of it -- the exact HIGH-severity risk this round's selection redesign
- * exists to address (a translucent `--composer-selection-bg` specifically so real ink shows
- * through even if `-webkit-text-fill-color: currentColor` is not honoured inside `::selection`
- * by every engine). Samples a WIDE region covering most of one glyph's own bounding box (not a
- * single pixel, and not a zero-width boundary) for a PLAIN-text character and a PILLED-token
- * character, counts "bright" pixels (RGB average > 140 -- comfortably between every theme's own
- * near-black backgrounds/composited selection fills, all measured <100, and its near-white/
- * bright text colours, all measured >200) before and after Ctrl+A, and asserts the selected
- * count is still close to the resting count (allowing a couple of pixels either way for edge
- * anti-aliasing blending differently against a different background colour) rather than merely
- * ">0", a stricter, false-positive-resistant bar. This is the one check that would have FAILED
- * against the pre-round-5 build if `-webkit-text-fill-color: currentColor` were silently
- * ignored inside `::selection` on an opaque `--composer-selection-bg`: the glyph would have
- * stayed fully masked, reading 0 bright pixels after Ctrl+A regardless of the resting count. */
+/** Proves glyphs stay visible under selection: counts bright pixels (avg > 140; backgrounds measure <100, text >200) in one plain and one pilled glyph before and after Ctrl+A,
+ * which would read 0 if `-webkit-text-fill-color: currentColor` were ignored inside `::selection`. Allows a couple of pixels of anti-aliasing drift. */
 export async function assertSelectedGlyphsInkVisible(cdp, pressKey, report) {
   async function glyphBrightPixelCount(charOffset) {
     const rect = await findMirrorOffsetRect(cdp, charOffset, charOffset + 1);
@@ -289,8 +197,7 @@ export async function assertSelectedGlyphsInkVisible(cdp, pressKey, report) {
     return bright;
   }
 
-  // The preceding highlight check leaves the whole draft selected; collapse it first so the
-  // "resting" ink is genuinely unselected.
+  // Collapse the prior highlight check's selection so the resting ink is unselected.
   await cdp.evaluate(`${TEXTAREA}.focus(); ${TEXTAREA}.setSelectionRange(0, 0)`);
   const collapsed = await cdp.evaluate(`${TEXTAREA}.selectionStart === ${TEXTAREA}.selectionEnd`);
   if (!collapsed) throw new Error('FAIL: selected-glyph ink visibility (selection did not collapse before sampling resting ink)');

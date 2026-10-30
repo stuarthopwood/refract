@@ -1,12 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #504 (Issues page and GitHub tools block, spec 051). Drives the real
-// Tauri debug build, isolated per the `refract-tauri-live-check-isolation` skill (own
-// REFRACT_DATA_DIR, WebView2 profile and import dir; never %APPDATA%/refract-tauri). A fake `gh`
-// (verify-tauri-504-fake-gh.rs) is put first on PATH and serves issues for two repositories, so
-// nothing here can reach GitHub. Aborts if the managed gh at %LOCALAPPDATA%\refract\tools\gh\gh.exe
-// exists, because resolve_gh() would prefer it over PATH (#1343).
-// Checks: the GitHub nav block, the Issues page listing both repositories, each tab, the State,
-// Project and Label filters, search, clearing, and the detail pane.
+// Live CDP check of the Issues page and GitHub tools block (#504), isolated from real app data.
+// A fake `gh` on PATH keeps it off GitHub; aborts if the managed gh.exe exists, since resolve_gh() prefers it (#1343).
 
 import { mkdtempSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -89,7 +83,7 @@ async function main() {
         return false;
       }
     };
-    // The tab strip scrolls horizontally in the narrow list pane, so bring the tab into view first.
+    // The tab strip scrolls horizontally in the narrow list pane; scroll the tab into view first.
     const clickTab = async (name) => {
       const find = `Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(name)})`;
       await cdp.waitFor(`!!(${find})`, { timeoutMs: 10_000, label: `tab ${name}` });
@@ -106,20 +100,17 @@ async function main() {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
     };
 
-    // 1. GitHub tools block
     await cdp.waitFor(`!!document.querySelector('[role="group"][aria-label="Views"]')`, { timeoutMs: 20_000, label: 'GitHub nav group' });
     const group = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="group"][aria-label="Views"] button')).map((el) => el.textContent.trim().replace(/\\s+/g, ' '))`);
     await shot(cdp, '01-github-nav-block.png');
     check(group.some((t) => t.startsWith('Pull requests')) && group.includes('Issues') && !!(await cdp.evaluate(`!!document.querySelector('[aria-label="Sessions"] [role="group"][aria-label="Views"]')`)), 'GitHub tools block shows Pull requests and Issues inside the Sessions nav', JSON.stringify(group));
 
-    // 2. Issues page lists issues from two repositories
     await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="Views"] button')).find((el) => el.textContent.trim() === 'Issues')`);
     await cdp.waitFor(`!!document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Issues'`, { timeoutMs: 10_000, label: 'Issues heading' });
     check(await rowsAre(['hello-world#12', 'hello-world#20', 'spoon-knife#3', 'spoon-knife#5'], 'open issues from both repos'), 'Issues page lists open issues from two repositories', 'hello-world#12, #20; spoon-knife#3, #5');
     check(await cdp.evaluate(`document.querySelector('[role="group"][aria-label="Views"] button[aria-current="page"]')?.textContent.trim() === 'Issues'`), 'Issues nav item is aria-current="page"');
     await shot(cdp, '02-issues-two-repos.png');
 
-    // 3. Tabs
     await clickTab('Assigned to me');
     check(await rowsAre(['hello-world#12', 'spoon-knife#5'], 'assigned'), 'Tab "Assigned to me"', 'hello-world#12, spoon-knife#5');
     await shot(cdp, '03-tab-assigned.png');
@@ -130,7 +121,6 @@ async function main() {
     await clickTab('All');
     await rowsAre(['hello-world#12', 'hello-world#20', 'spoon-knife#3', 'spoon-knife#5'], 'back to all');
 
-    // 4. Filters
     await cdp.click(`document.querySelector('button[aria-label^="Filters"]')`);
     await cdp.waitFor(`!!document.querySelector('#issue-filters-panel')`, { timeoutMs: 5_000, label: 'filters panel' });
     await pickSelect('State', 'Any state');
@@ -158,14 +148,13 @@ async function main() {
     await pickSelect('Label', 'Any label');
     await rowsAre(['hello-world#12', 'hello-world#20', 'spoon-knife#3', 'spoon-knife#5'], 'label cleared');
 
-    // 5. Search (applies on Enter)
+    // Search applies on Enter
     await cdp.click(`document.querySelector('input[aria-label="Search issues"]')`);
     await cdp.send('Input.insertText', { text: 'spoon' });
     await cdp.pressEnter();
     check(await rowsAre(['spoon-knife#3'], 'search'), 'Search "spoon" applied on Enter', 'spoon-knife#3 only');
     await shot(cdp, '07-search.png');
 
-    // 6. No-match state and Clear filters
     await cdp.evaluate(`void 0`);
     await cdp.click(`document.querySelector('input[aria-label="Search issues"]')`);
     await cdp.send('Input.insertText', { text: ' zzz-no-match' });
@@ -175,14 +164,12 @@ async function main() {
     await cdp.clickByText('Clear filters');
     check(await rowsAre(['hello-world#12', 'hello-world#20', 'spoon-knife#3', 'spoon-knife#5'], 'cleared'), 'Clear filters restores the full list', 'four open issues');
 
-    // 7. Detail pane
     await cdp.click(`document.querySelector('[data-issue-row][data-issue-repo="octocat/hello-world"][data-issue-number="12"]')`);
     await cdp.waitFor(`document.body.textContent.includes('Body of issue 12')`, { timeoutMs: 15_000, label: 'detail body' });
     const detail = await cdp.evaluate(`(() => { const a = document.querySelector('[data-open-on-github]'); return { href: a && a.href, rel: a && a.rel, strong: !!Array.from(document.querySelectorAll('strong')).find((el) => el.textContent === 'markdown'), rawB: !!Array.from(document.querySelectorAll('b')).find((el) => el.textContent === 'raw html') }; })()`);
     check(detail.href === 'https://github.com/octocat/hello-world/issues/12' && detail.rel.includes('noopener') && detail.strong && !detail.rawB, 'Detail pane renders Markdown, drops raw HTML, and links Open on GitHub safely', JSON.stringify(detail));
     await shot(cdp, '09-detail.png');
 
-    // 8. What gh was actually asked
     const calls = readFileSync(ghLog, 'utf8');
     const listCalls = calls.split('\n').filter((line) => line.includes('"issue", "list"'));
     check(

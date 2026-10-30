@@ -1,7 +1,4 @@
-// Shared helpers for `verify-464-git-changes.mjs` (issue #464, spec 018 slice 1), SECOND split
-// file -- `verify-464-git-changes-helpers.mjs` itself crossed `check-file-size.mjs`'s 600-line
-// soft cap (#806) once gate round 2's own new live-check functions landed; these three move here
-// unchanged (behaviour-preserving split, not a rewrite) to bring both files back under the cap.
+// Shared helpers for `verify-464-git-changes.mjs` (second split file).
 
 import { writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -26,47 +23,17 @@ import {
   readCommitAnnouncementText
 } from './verify-464-git-changes-helpers.mjs';
 
-/** Check (item 2, gate round 2): an external write to a DIFFERENT, unrelated file while a diff
- * is open must not tear the open diff down or steal focus -- `GitChangesDiffPane`'s own
- * background-refetch (gate round 2 item 2 fix) only shows `'loading'` for a genuinely NEW diff
- * (a different path or staged side); an unrelated snapshot refresh keeps the current patch
- * mounted (so scroll/focus survive) and swaps it only if the new text actually differs. Opens
- * README.md's own real unstaged diff, writes an entirely unrelated new untracked file, and
- * polls for `.diff-view` to confirm it never once disappears (the `'loading'`/error swap)
- * across that window -- then returns to the list and confirms the unrelated file really was
- * picked up, proving the refresh genuinely happened rather than merely having nothing to
- * observe. Assumes the panel is currently showing the groups list (not already in a diff).
+/** Check: an external write to an unrelated file while a diff is open must not tear the diff
+ * down or steal focus (a background refetch only shows 'loading' for a genuinely new diff).
+ * Polls that `.diff-view` never disappears, then confirms the unrelated file was picked up.
+ * Runs as Check 7b: README.md is committed by Check 12, so later it has no row to click.
+ * `untrackedBaseline` is whatever Untracked holds at the call site.
  *
- * Runs as Check 7b, between Check 7 (bulk Unstage all) and Check 8 -- NOT after Check 14 as
- * gate round 2 first placed it: README.md is staged and committed for real by Check 12's
- * Ctrl+Enter commit, so by Check 14 it has dropped out of every group entirely and
- * `fileRowOpenButtonFinder(FIXTURE.readme)` has no row left to click (a real bug in this
- * check's own placement, not a product bug -- falsified against the exact Check 7-14 state
- * trace before moving it). `untrackedBaseline` is whatever Untracked already holds at the
- * call site (Check 7 leaves it as `[FIXTURE.stagedNew, FIXTURE.untracked]`), so the expected
- * post-write array is computed rather than hardcoded to a later check's own fixture state.
- *
- * Gate round 3 fix (#1076 MEDIUM, Gate1076Test3): the Untracked-array assertion used to run
- * only AFTER clicking Back, so a refresh that landed late -- even one Back itself re-triggered
- * -- still passed vacuously; nothing proved the refresh happened WHILE the diff was open at
- * all. Two false starts, both falsified live before being reported rather than after: (1)
- * `window.__refractStores` -- absent from this build (`import.meta.env.DEV` is false; a `tauri
- * build --debug` still runs `vite build` in PRODUCTION mode per `tauri.conf.json`'s own
- * `beforeBuildCommand`, the same fact `verify-tauri-569.mjs`/`verify-tauri-560-gate2.mjs`/
- * `verify-672-start-message.mjs` already each independently document); (2) `#panel-tab-git-
- * changes`'s own additions badge -- `PanelTabBar.tsx` only renders a count in its MULTI-panel
- * branch, and this script only ever opens the one `git-changes` panel, so the single-panel
- * title-row branch renders instead, with no count at all (a "null to null" vacuous pass caught
- * before reporting, not after).
- *
- * Proven for real with two independent, genuinely external checks: (a) a direct
- * `gitChanges.list` IPC call (bypassing BOTH the DOM and the renderer's own store entirely)
- * confirms the BACKEND already sees the unrelated file while the diff pane is still open; (b)
- * `onBack` (`GitChangesPanel.tsx`) is a PURE local-state toggle (`setSelected(null)`) -- it
- * fires no `load()` of its own, confirmed against every effect in that file -- so the single,
- * un-retried `readGroupFileTitles` read immediately after Back can only be correct if the
- * RENDERER's own store already held the unrelated file beforehand, i.e. no later than while the
- * diff pane was still the active view. */
+ * The refresh is proven to land while the diff is open by two independent checks: a direct
+ * `gitChanges.list` IPC call, and a single un-retried read right after Back (`onBack` is a pure
+ * local-state toggle that fires no load). `window.__refractStores` and the tab badge cannot be
+ * used: the build runs vite in production mode and the badge only renders in multi-panel mode.
+ * Assumes the panel is showing the groups list. */
 export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, sessionId, untrackedBaseline, shot, findings, failures) {
   const unrelatedFileName = 'an-unrelated-external-change-for-verify-464.txt';
   await cdp.click(fileRowOpenButtonFinder(FIXTURE.readme));
@@ -89,9 +56,7 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
     }
   }
   assertEqual(diffViewDisappeared, false, 'Item 2: the open README.md diff never disappeared (no "Loading diff…"/error swap) while an unrelated external file changed', findings, failures);
-  // Gate round 3 fix (#1076 MEDIUM, Gate1076Test3): a direct IPC call, bypassing the DOM and the
-  // renderer's own store entirely -- proves the BACKEND genuinely already sees the unrelated
-  // file, while the diff pane is still open.
+  // Direct IPC call bypassing the DOM and store: the backend already sees the file.
   const backendResult = await cdp.evaluate(`window.refract.gitChanges.list(${JSON.stringify(sessionId)})`);
   const backendSeesItWhileOpen =
     backendResult.ok && backendResult.value.snapshot
@@ -105,9 +70,7 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
 
   await cdp.click(BACK_TO_CHANGES_FINDER);
   await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the item-2 stability check' });
-  // Back fires no fetch of its own (a pure `setSelected(null)`, see the doc comment) -- a single,
-  // un-retried read here can only be correct if the renderer's own store already held this
-  // before Back was clicked, i.e. no later than while the diff pane was still showing.
+  // Back fires no fetch, so a single un-retried read is correct only if the store already held it.
   assertArrayEqual(
     await readGroupFileTitles(cdp, 'Untracked'),
     [...untrackedBaseline, unrelatedFileName].sort(),
@@ -117,8 +80,7 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   );
   await shot('07b-diff-stability-external-write.png');
 
-  // Fully torn down before returning, same posture as Checks 15/16 -- this fixture must never
-  // perturb any later check's own fixed Untracked expectations (Check 14's, Check 18's).
+  // Fully torn down so it cannot perturb later checks' Untracked expectations.
   rmSync(path.join(worktreePath, unrelatedFileName));
   await cdp.waitFor(
     `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); if (!ul) return false; return !Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(unrelatedFileName)}); })()`,
@@ -126,11 +88,8 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   );
 }
 
-/** Check (item 5): a literal bracket filename stages ONLY itself -- proves `--literal-pathspecs`
- * (gate round 1 items 9/10) protects it end-to-end, not merely that the Rust code compiles. Two
- * untracked siblings differing only by a bracket vs. a plain `-other` suffix; staging the
- * bracketed one via its OWN kebab "Stage" item must never touch the other. Builds, asserts, and
- * FULLY TEARS DOWN its own fixture before returning. */
+/** Check: a literal bracket filename stages only itself, proving `--literal-pathspecs` works
+ * end-to-end. Tears down its own fixture. */
 export async function runBracketLiteralPathCheck(cdp, worktreePath, shot, findings, failures) {
   writeFileSync(path.join(worktreePath, FIXTURE.bracketFile), FIXTURE.bracketFileContent);
   writeFileSync(path.join(worktreePath, FIXTURE.bracketSibling), FIXTURE.bracketSiblingContent);
@@ -169,12 +128,9 @@ export async function runBracketLiteralPathCheck(cdp, worktreePath, shot, findin
   );
 }
 
-/** Check (pre-existing, moved here purely for the 600-line soft cap, #806): containment refusal,
- * via the real IPC bridge directly (no UI path exists -- `window.refract.gitChanges.*` is called
- * directly, the same real-IPC-bridge-bypassing-the-UI precedent `verify-926-attach-any-file.mjs`
- * already established). A Rust-side `validate_pathspec` gate (`src-tauri/src/git/pathspec.rs`)
- * refuses an absolute/outside-worktree path before it ever reaches a `git` subprocess, wire code
- * `outside-worktree`. `outsideMarkerFile` must already exist on disk with `markerContent`. */
+/** Check: containment refusal via the IPC bridge directly (no UI path exists). Rust's
+ * `validate_pathspec` refuses an outside-worktree path with wire code `outside-worktree`.
+ * `outsideMarkerFile` must already exist on disk with `markerContent`. */
 export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFile, markerContent, findings, failures) {
   const diffAttempt = await cdp.evaluate(
     `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(outsideMarkerFile)}, false).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
@@ -182,19 +138,9 @@ export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFi
   if (diffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
   else if (diffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff refused the outside-worktree path, but with code "${diffAttempt.code}" (expected "outside-worktree", the Rust-side validate_pathspec gate) -- message: ${diffAttempt.message}`);
   else findings.push(`Containment refusal (gitChanges.diff): refused with code "outside-worktree" (${diffAttempt.message}).`);
-  // #1111 item 6 correction: this call's `path` is an ABSOLUTE, outside-worktree path, which
-  // `diff_text`'s own unconditional `validate_pathspec(worktree_path, path)?` refuses BEFORE
-  // `untracked`/`confirm_untracked`/`untracked_file_patch` are ever consulted -- this probe
-  // only proves CALL ORDER (the tracked-path backstop runs first regardless of the flag), never
-  // `untracked_file_patch`'s OWN `resolve_in_worktree` containment proof (that function's actual
-  // containment, including its symlink/junction-walking and post-resolution `.git` check, is
-  // proven live by `verify-1101-git-polish.mjs`'s Check 4b and `verify-1111-git-readpath.mjs`'s
-  // own junction/8.3-alias checks, both of which use an untracked path that genuinely reaches
-  // `untracked_file_patch` instead of being refused earlier by this lexical gate). Asserted
-  // directly below: the refusal message must be `validate_pathspec`'s own exact wording
-  // (`pathspec.rs`'s `refused unsafe path: ...`), never `fs::resolve::resolve_reason_message`'s
-  // differently-worded text -- if that ever flips, this probe's own "proves call order" claim
-  // would itself be falsified, not silently kept passing.
+  // The absolute path is refused by the lexical `validate_pathspec` gate before
+  // `untracked_file_patch` is consulted, so this only proves call order. The refusal message must
+  // be `validate_pathspec`'s wording (`refused unsafe path: ...`); if it flips, that claim is false.
   const untrackedDiffAttempt = await cdp.evaluate(
     `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(outsideMarkerFile)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
   );
@@ -213,15 +159,9 @@ export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFi
   assertEqual(outsideMarkerUnchanged, true, 'Outside-worktree marker file untouched after both refused attempts', findings, failures);
 }
 
-/** Check (#1076 MEDIUM 4, gate round 3): a half-typed commit draft survives switching to a
- * DIFFERENT hosted panel tab and back -- `RightPaneShell.tsx` renders only the active
- * `activePanelId`'s panel (`FileExplorerPanel.tsx`'s own doc comment: "switching to a different
- * tab... genuinely unmounts it"), so `GitChangesPanel`/`GitCommitBox` fully unmount the instant
- * the tab changes. Gate round 2 item 6 claimed the draft survives exactly this, but
- * `forgetSession` dropped it right along with the rest of that Session's `bySession` entry on
- * every such switch (Gate1076Test3, MEDIUM) -- gate round 3 moved it into its own
- * `commitDraftsBySession` map, untouched by `forgetSession`. Proves it through the real tab-
- * switch UI path, not just a store read. Fully clears the draft before returning. */
+/** Check: a half-typed commit draft survives switching to another panel tab and back. The panel
+ * fully unmounts on tab change, so the draft must live in `commitDraftsBySession`, which
+ * `forgetSession` leaves alone. Goes through the real tab-switch UI; clears the draft after. */
 export async function runDraftPersistsAcrossTabSwitchCheck(cdp, shot, findings, failures) {
   const draftSubject = 'A half-typed draft for verify-464';
   const draftBody = 'Switching tabs must not discard this.';
@@ -238,15 +178,9 @@ export async function runDraftPersistsAcrossTabSwitchCheck(cdp, shot, findings, 
   await clearField(cdp, BODY_FINDER);
 }
 
-/** Check (#1076 HIGH 1 proof, gate round 3): a commit's own success feedback (the subject
- * clearing, the announcement, Commit re-enabling) must land the instant the commit IPC itself
- * succeeds -- never wait on however many more watcher-triggered refreshes pile up while files
- * keep changing underneath it (Gate1076Test3's own falsification: the pre-fix design awaited the
- * WHOLE coalesced `load()` drain loop, with no upper bound while an agent's own continuous
- * worktree churn kept re-queuing another pass). Starts a real commit, then keeps writing a new
- * external file every 150ms for the FULL 2-second assertion window that follows -- sustained
- * churn throughout, not one write -- and asserts the subject field genuinely empties well inside
- * that window regardless. Builds and fully tears down its own fixture. */
+/** Check: commit success feedback (subject clears, Commit re-enables) must land as soon as the
+ * commit IPC succeeds, not wait on watcher-triggered refreshes that keep re-queuing. Writes a new
+ * external file every 150ms through the 2-second window and asserts the subject empties anyway. */
 export async function runCommitClearsDuringExternalChurnCheck(cdp, worktreePath, shot, findings, failures) {
   const churnPrefix = 'mid-commit-churn-for-verify-464';
   writeFileSync(path.join(worktreePath, `${churnPrefix}-seed.txt`), 'seed\n');

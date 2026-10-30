@@ -1,12 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1236 (mid-turn assistant prose reads like thinking). Drives a REAL
-// built Tauri debug exe over CDP against the FAKE `omp` shim (`mid-turn-prose-1236` scenario),
-// never a real `omp`. Proves: an assistant text followed by a tool call becomes a closed "Note"
-// row, a long Note clamps at 8 lines behind Show more / Show less, and the turn's final reply
-// stays a full message.
-//
-// Usage (after `pnpm exec tauri build --debug --no-bundle` on this head, shared target dir set):
-// CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1236-mid-turn-prose.mjs
+// Live CDP check (#1236): mid-turn assistant prose becomes a closed, clamped "Note" row; the final reply stays a message.
+// Needs a prior `pnpm exec tauri build --debug --no-bundle`; uses the fake `omp` shim, never a real one.
 
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -104,14 +98,12 @@ async function main() {
     await cdp.send('Input.insertText', { text: 'do the multi-tool turn' });
     await cdp.clickByLabel('Send message');
 
-    // While the turn is still running, the first prose is the (last) item: a normal message.
     await cdp.waitFor(
       `Array.from(document.querySelectorAll('[data-slot="message"]')).some((m) => m.textContent.includes('NOTE-ONE-1236'))`,
       { timeoutMs: 30_000, label: 'First prose shown as a full message before a tool follows' }
     );
     await cdp.screenshot(path.join(SHOTS_DIR, '1-before-tool.png'));
 
-    // Once the tool and later items arrive, it collapses to a Note row and the message is gone.
     try {
       await cdp.waitFor(`${NOTE_ROWS}.length === 2`, { timeoutMs: 40_000, label: 'Two Note rows after the turn' });
     } catch (err) {
@@ -143,7 +135,6 @@ async function main() {
     check(state.finalIsMessage && !state.finalInNote, 'Final reply stays a full message, not a Note', state);
     await cdp.screenshot(path.join(SHOTS_DIR, '2-collapsed.png'));
 
-    // Open the long Note: it clamps at 8 lines behind Show more, then Show less restores it.
     await cdp.click(`${NOTE_ROWS}[0]`);
     await cdp.waitFor(
       `Array.from(document.querySelectorAll('button[aria-expanded]')).some((b) => b.textContent.trim() === 'Show more')`,

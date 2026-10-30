@@ -1,43 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #980 (toasts covering the composer's Send button). `<Toaster />`
-// (`src/renderer/components/ui/sonner.tsx`) ships `position="bottom-center"` with a bottom
-// offset tracking the tallest mounted composer's own measured CLEARANCE to the viewport bottom
-// (`src/renderer/features/chat/composerHeightVar.ts`, a `ResizeObserver` per `MessageInput`
-// instance plus a window-resize listener), decided (Skippy, delegated by Stuart 2026-10-18,
-// ui-architect-v3 ruling) over `top-right`/`bottom-right` because both of those sit adjacent to
-// the permanent full-height right rail (`IconRail.tsx`) and, for `bottom-right`, directly over
-// the Send button itself. Gate round 1 fix (High): the offset is DYNAMIC, not a fixed guess --
-// this script proves that across a resting composer, a composer grown to its max height,
-// split-pane mode (two independently-sized composers, two Send buttons), and Sonner's own
-// `@media (max-width:600px)` mobile breakpoint (`mobileOffset`). Gate round 2 fix (Medium):
-// clearance, not height alone -- `StatusBar.tsx` (36px) renders BELOW the whole chat workspace,
-// so a composer's own bottom edge never touches the window's bottom edge; also fixed the
-// ≤600px case overlapping the right rail (Sonner's own mobile CSS makes the toast viewport-wide
-// minus `2 * mobileOffset.left`, so `mobileOffset` now also carries `left`/`right` insets).
-//
-// Modelled on `verify-926-attach-any-file.mjs`'s own session-setup flow (readiness -> Add
-// repository -> New session -> composer enabled) and its own D1 toast trigger: typing the
-// literal `[[refract-attachments]]` marker is a purely client-side refusal (`MessageInput.tsx`)
-// with no agent round trip needed, calling a plain `toast.error(...)` with no `duration`
-// override -- gate round 2 correction (Low): this toast DOES auto-dismiss on Sonner's own
-// default ~4s lifetime (confirmed in `node_modules/sonner`'s own source: only SOME other
-// `toast.error` call sites in this codebase pass `{duration: Infinity}`, this one does not), so
-// each check below tags every toast already on screen, triggers a fresh one, and identifies it
-// as the one UNTAGGED toast that is genuinely mounted, visible and not mid-removal (Sonner
-// PREPENDS new toasts, `dist/index.mjs`: `return [toast, ...toasts]`, so DOM order places the
-// newest FIRST, not last -- a plain count or `.pop()` could silently check a stale toast once
-// more than one is mounted at once) -- never assuming the FIRST trigger's own toast is still
-// the one on screen moments later. This is the EXACT toast `verify-926-attach-any-file.mjs`
-// itself flagged in a DIAG comment as covering Send under the OLD `bottom-right` default
-// (predating #926, filed from that finding as #980, `docs/PLAN.md` "Toast covers Send" row).
-//
-// STATED LIMITATION (lane gate checklist: "never claim a test that did not happen"): no built-in
-// light theme exists in this app (`sonner.tsx`'s own doc comment: "every built-in Refract theme
-// is dark-toned ... none is planned") -- the two-theme screenshot requirement is satisfied with
-// Dark and Obsidian (the two visually distinct built-in presets), not a literal "light" theme,
-// which this product does not have. The narrow-window check uses CDP's own
-// `Emulation.setDeviceMetricsOverride` (the standard way to drive a different viewport through
-// CDP) rather than an OS-level window resize, which this harness exposes no control for.
+// Live CDP check for #980: toasts must not cover the composer's Send button, so the Toaster offset
+// tracks the live composer clearance (resting, tall, split-pane, <=600px). No built-in light theme exists; Dark and Obsidian stand in.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -65,48 +28,26 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
   process.env.REFRACT_980_SHOTS_DIR || path.join(tmpdir(), 'refract-980-toast-send-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// Dark is the app's own default theme; Obsidian is the second built-in preset -- see this
-// script's own header for why neither is a literal "light" theme (none exists).
 const THEMES = [
   { id: 'dark', name: 'Dark' },
   { id: 'obsidian', name: 'Obsidian' }
 ];
 
 const MARKER = '[[refract-attachments]]';
-// Padded with enough blank lines to push a textarea past its `max-h-48` (192px) cap --
-// `handleSend`'s own refusal is a plain `message.includes(FILE_ATTACHMENTS_MARKER)` substring
-// check (`anyFileAttachments.ts`), so the marker still trips it regardless of surrounding text.
+// Padding pushes the textarea past its max-h-48 cap; the marker still trips the substring check.
 const TALL_MARKER_TEXT = `${'line\n'.repeat(25)}${MARKER}`;
-// Marks a toast as "already accounted for" before each fresh trigger (gate round 2 fix, High):
-// Sonner PREPENDS new toasts (`node_modules/sonner`'s own `dist/index.mjs`: `return [toast,
-// ...toasts]`), so the newest one is FIRST in DOM order, not last -- this attribute, not a count
-// or `.pop()`, is what identifies which exact toast each check below is about.
+// Sonner prepends new toasts, so DOM order can't identify the fresh one; tag old toasts instead.
 const TOAST_SEEN_ATTR = 'data-980-seen';
-// The OUTER composer wrapper `composerClearanceRef` (MessageInput.tsx) is actually attached to --
-// NOT the inner `.border-composer-border` box nested inside it, which gate round 2 (High, Test)
-// found this script was wrongly measuring/overlap-checking instead. No stable attribute exists
-// on this div today; matched by its own distinctive Tailwind class combination.
+// The outer wrapper `composerClearanceRef` measures, not the inner border box; it has no stable attribute, so match its Tailwind classes.
 const COMPOSER_ROOT_SELECTOR = '.flex.shrink-0.flex-col.gap-2.border-t.border-divider.px-4.py-3';
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
-// One evaluate call computing every geometry fact this script needs, across however many
-// composers/Send buttons are currently mounted (1 in single-pane, 2 in split mode): the ONE
-// toast this run just triggered (identified by `TOAST_SEEN_ATTR`'s absence, genuinely mounted,
-// visible and not mid-removal -- never a stale toast from an earlier check, see this script's
-// own header for why Sonner's prepend order rules out a plain count or `.pop()`), its own rect
-// against the title-bar window-controls corner (`App.tsx`'s top `drag-region` strip's own
-// `no-drag-region` child), the permanent right rail (`IconRail.tsx`, selected via its own
-// `role="toolbar"` toolbar's parent so the rail's full height counts, not just its button
-// column), every composer's own OUTER root (`COMPOSER_ROOT_SELECTOR`, the actual element
-// `composerClearanceRef` measures -- gate round 2 fix, not the inner `.border-composer-border`
-// box), and the Session list's own merged top header row. Also re-proves every Send button's
-// own hit-test (`document.elementFromPoint` at its centre resolves to itself, never an
-// intercepting toast) and that Sonner's own live region (the `<section aria-live="polite">`
-// ancestor Sonner itself renders around the toast list, never the inner
-// `<ol data-sonner-toaster>`, which carries no aria-live attribute of its own) is intact.
+// One evaluate call gathering all geometry: the freshly triggered (untagged) toast against the window-controls corner,
+// right rail, composer roots and session header, plus each Send button's hit-test and Sonner's live region
+// (the `<section aria-live>` ancestor, not the `<ol>`, which has no aria-live).
 const CHROME_CHECK_EXPR = `(() => {
   const rectOf = (el) => {
     if (!el) return null;
@@ -142,15 +83,7 @@ const CHROME_CHECK_EXPR = `(() => {
   };
 })()`;
 
-// Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2, bracketed by a real
-// `Input.dispatchKeyEvent` Control keydown/keyup -- the more explicit, robust CDP technique for a
-// modified click, not just the mouse event's own `modifiers` bit) on a Session row's own open
-// button (`data-session-open`, `SessionRow.tsx`) -- the exact DOM node and modifier combination
-// `onClick`'s own `event.ctrlKey` branch checks, calling the real `openInSplit(session.id)`, not
-// a direct store call. `scrollIntoView` first in case the session list has scrolled since the
-// row was last visible. A local copy of the same real technique the (unmerged)
-// `feat/672-start-message` branch's own `verify-672-start-message-helpers.mjs` uses -- that
-// branch is not yet on `origin/main`, so its file cannot be imported from here.
+// Real Ctrl+click (modifiers bit 2, bracketed by Control key events) on a session row's open button, so the genuine `openInSplit` path runs.
 async function ctrlClickSessionRow(cdp, sessionId) {
   const info = await cdp.evaluate(`(() => {
     const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
@@ -185,15 +118,7 @@ async function main() {
     console.log(`${LOG}: PASS ${label}`);
   }
 
-  // Types `extraText` (defaults to the bare marker) into the FIRST `[aria-label="Message"]`
-  // found in DOM order (pane 0 in split mode) and clicks the FIRST `[aria-label="Send message"]`
-  // -- both belong to the same pane, since each ChatPane renders its own header/transcript/
-  // composer fully before the next one starts. Gate round 2 fix (High): tags every toast
-  // already on screen with `TOAST_SEEN_ATTR` BEFORE triggering (never a count comparison --
-  // Sonner prepends new toasts, so a stale one could sit at any index once more than one is
-  // mounted), then waits for the one UNTAGGED toast that is genuinely mounted, visible, not
-  // mid-removal, and carries this run's own marker-refusal text, then ~400ms more for the CSS
-  // slide-in transition to settle before any hit-test runs.
+  // Uses the first Message/Send pair (same pane). Tags existing toasts before triggering, waits for the untagged one, then ~400ms for the slide-in to settle.
   async function triggerMarkerToast(cdp, { extraText = MARKER } = {}) {
     await cdp.evaluate(
       `Array.from(document.querySelectorAll('[data-sonner-toast]')).forEach((el) => el.setAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}, 'true'))`
@@ -228,9 +153,7 @@ async function main() {
   const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-980-import-'));
   const repoDirBase = mkdtempSync(path.join(tmpdir(), 'refract-980-repo-'));
   const repoDir = makeScratchRepo(repoDirBase, 'verify-980-toast-send');
-  // See verify-926-attach-any-file.mjs's own comment (#885): "New session from a branch" creates
-  // a SEPARATE worktree, a sibling of `repoDirBase` under `pinion-worktrees/<repoName>`, never
-  // nested inside it -- cleaned up explicitly in `finally`, never a wildcard delete.
+  // "New session from a branch" makes a sibling worktree (#885), cleaned up explicitly in `finally`.
   const worktreesRootForCleanup = path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
   const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-980-exe-'));
   const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-980-launcher-'));
@@ -253,7 +176,7 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log')
-        // REFRACT_FAKE_OMP_SCENARIO left unset -> defaults to 'session'.
+        // Unset REFRACT_FAKE_OMP_SCENARIO defaults to 'session'.
       }
     });
     child = launched.child;
@@ -263,8 +186,6 @@ async function main() {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
 
-    // Real UI flow (mirrors verify-926-attach-any-file.mjs): readiness, Add repository, New
-    // session (Session A), wait for the composer to enable against the fake omp's scripted tape.
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -295,12 +216,10 @@ async function main() {
     assertEqual(sessionsList.value.length, 1, 'exactly one Session exists so far');
     const sessionAId = sessionsList.value[0].id;
 
-    // Initial trigger: also proves the refusal genuinely sent nothing (D1, verify-926's own check).
     await triggerMarkerToast(cdp);
     const d1NothingSent = await cdp.evaluate(`document.querySelectorAll('[data-slot="message"]').length === 0`);
     assertEqual(d1NothingSent, true, 'nothing was sent (this is a genuine refusal toast, not a send-success one)');
 
-    // Dark (the app's own default) first, then Obsidian -- resting composer height each time.
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
       await triggerMarkerToast(cdp);
@@ -309,12 +228,7 @@ async function main() {
       report.push({ step: `${theme.name} theme: toast clear of every fixed chrome element`, ok: true, geometry: r });
     }
 
-    // Tall composer (gate round 1 fix, High): the textarea padded past its own `max-h-48` cap
-    // (handleSend's refusal leaves the draft untouched, so the tall text survives the trigger),
-    // proving the offset is read from the LIVE measured clearance, not the old fixed guess --
-    // compares against a RESTING measurement taken just before (gate round 2 fix: a fixed
-    // numeric threshold doesn't generalise across whatever sits below the composer), and that
-    // the published `--refract-composer-clearance` CSS var matches what was actually measured.
+    // The refusal leaves the draft intact, so the tall text survives; the offset must follow the live clearance, not a fixed threshold.
     const clearanceExpr = `(() => {
       const send = document.querySelector('[aria-label^="Send"]');
       const composer = send ? send.closest('${COMPOSER_ROOT_SELECTOR}') : null;
@@ -339,12 +253,8 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'toast-tall-composer.png'));
     report.push({ step: 'tall composer: toast clear, offset tracks the live measured clearance', ok: true, geometry: tallResult, restingClearance, tallClearance });
 
-    // Narrow (<=600px) window: CDP viewport override (see this script's own header for why not
-    // an OS-level resize) crossing Sonner's own `@media (max-width:600px)` breakpoint, which
-    // switches `bottom` positioning onto `--mobile-offset-bottom` -- proving `mobileOffset`
-    // carries the same live clearance, not Sonner's bare 16px mobile floor, AND (gate round 2
-    // fix, High) that its own `left`/`right` insets keep the now-full-width toast off the right
-    // rail too (`assertChromeClear`'s `overlapsRail` check, already run for every pass).
+    // Narrow window via CDP viewport override (no OS resize control): Sonner's <=600px breakpoint must carry the live clearance
+    // and keep the full-width toast off the right rail via left/right insets.
 
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 560, height: 700, deviceScaleFactor: 1, mobile: false });
     await triggerMarkerToast(cdp);
@@ -353,14 +263,8 @@ async function main() {
     report.push({ step: 'narrow (<=600px) window: toast clear, mobileOffset applied', ok: true, geometry: narrowResult });
     await cdp.send('Emulation.clearDeviceMetricsOverride', {});
 
-    // Split pane: Session B created via the SAME proven "New session from a branch" dialog flow
-    // Session A itself used (gate: build-slot run falsification -- the quick-create "+" button
-    // click SUCCEEDED but `sessions.list()` right after still showed only ONE session: this
-    // harness's quick-create path does not create a second session, for reasons out of this
-    // issue's scope to chase further; the dialog flow is independently proven, used twice here).
-    // Then a real Ctrl+click on Session A's own row reopens it alongside B (`openInSplit`, the
-    // same production path a user's own Ctrl+click takes) -- two independently-sized composers,
-    // two Send buttons.
+    // Session B uses the dialog flow: this harness's quick-create "+" does not create a second session.
+    // Ctrl+click on Session A then reopens it beside B via the production `openInSplit` path.
     await cdp.clickByLabel('New session from a branch in ', { prefix: true });
     await cdp.waitFor(
       `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
@@ -410,10 +314,7 @@ async function main() {
     await safeRmSync(importSourceDir, LOG);
     await safeRmSync(repoDirBase, LOG);
     await safeRmSync(worktreesRootForCleanup, LOG);
-    // Only this exact, already-computed literal path -- never a wildcard or derived default --
-    // same guard verify-926-attach-any-file.mjs uses for the shared `%TEMP%\pinion-worktrees`
-    // parent (#885): `rmdirSync` fails outright on a non-empty directory, so a concurrent or
-    // crashed sibling run's own leftover subdirectory is never touched.
+    // Remove only this exact path, never a wildcard: `rmdirSync` fails on a non-empty dir, so a concurrent run's leftovers survive (#885).
     try {
       const sharedWorktreesParent = path.dirname(worktreesRootForCleanup);
       if (readdirSync(sharedWorktreesParent).length === 0) rmdirSync(sharedWorktreesParent);

@@ -1,10 +1,7 @@
-// Gate round 2 live-check (#564): proves the Default-persistence fix across a settle AND a
-// relaunch, the fresh-Session "Reasoning not reported" state, the keyboard-active row highlight,
-// and the Model picker genuinely open in a screenshot (round 1's own screenshot was taken AFTER
-// closing the popover with Escape). Isolated REFRACT_DATA_DIR/WEBVIEW2_USER_DATA_FOLDER/
-// REFRACT_IMPORT_SOURCE_DIR/OMP_PROFILE and a scratch git repo; the seeded provider is
-// unreachable (`http://127.0.0.1:1`), so no real credentials or network calls are ever made.
-// Usage: CARGO_TARGET_DIR=<shared dir> node scripts/verify-564-gate2-live-check.mjs (requires a
+// Live check (#564): Default reasoning persists across a settle and a relaunch, fresh Sessions show
+// "Reasoning not reported", and the Model picker is screenshotted while open. Uses isolated data
+// dirs and an unreachable provider (`http://127.0.0.1:1`), so no credentials or network are used.
+// Usage: CARGO_TARGET_DIR=<shared dir> node scripts/verify-564-gate2-live-check.mjs (needs a
 // prior `pnpm tauri build --debug --no-bundle`).
 
 import { mkdirSync, existsSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
@@ -20,9 +17,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const CONFIG_DIR_NAME = process.env.PI_CONFIG_DIR || '.omp';
-// Gate round 3 fix (LOW, code-reviewer): the previous hard-coded `C:/Users/shopwood/...` default
-// tied the harness to one machine (the same fix `verify-tauri.mjs` already made); falls back to
-// the OS temp dir, with an env override for a caller who wants a specific location.
+// Hard-coded machine paths are avoided: falls back to the OS temp dir, overridable by env.
 const SHOTS_DIR = process.env.REFRACT_564_GATE2_SHOTS_DIR || path.join(tmpdir(), 'refract-564-gate2-shots');
 
 function nowStamp() {
@@ -50,9 +45,7 @@ function makeScratchRepo(dir) {
   return dir;
 }
 
-// Non-reporting fake model (same pattern as the round 1 fixture): its own `get_state` never
-// carries `thinkingLevel` back, which is exactly the condition both the Default-persistence fix
-// and the "Reasoning not reported" state are for.
+// Non-reporting fake model: `get_state` never returns `thinkingLevel`, the condition under test.
 function ensureFakeModel(profile) {
   const agentDir = path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile, 'agent');
   mkdirSync(agentDir, { recursive: true });
@@ -133,15 +126,12 @@ async function main() {
   let second;
   let sessionId;
   try {
-    // --- Launch 1: add repository, create/open a Session, exercise the Model picker and the
-    // Default-persistence fix across a settle. ---
+    // Launch 1: Model picker and Default persistence across a settle.
     first = await launchAndConnect(9391, 'target1.pid');
     record('bridge ready (launch 1)', true);
 
-    // Drives the real UI (readiness screen -> Add repository dialog -> New session dialog) --
-    // never raw `window.refract.*` calls for this part, since those update the backend without
-    // the renderer's own stores necessarily reacting fast enough for the composer to actually be
-    // in the DOM yet (round 1's own live check hit this exact timing bug).
+    // Drive the real UI, not raw `window.refract.*` calls: those update the backend before the
+    // renderer stores react, so the composer may not be in the DOM yet.
     await first.cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 60_000, label: 'readiness green, Add repository enabled' },
@@ -171,16 +161,14 @@ async function main() {
     );
     record('session created and opened via the UI, composer mounted', true);
 
-    // Fresh Session, nothing ever requested: must show "Reasoning not reported", NOT "Default"
-    // (Stuart's correction -- the opposite of an earlier, wrong version of this same fix).
+    // Fresh Session with nothing requested must show "Reasoning not reported", not "Default".
     const freshLabel = await first.cdp.evaluate(
       `Array.from(document.querySelectorAll('button')).find(e => (e.getAttribute('aria-label')||'').startsWith('Reasoning:'))?.textContent.trim()`,
     );
     record('A fresh Session (nothing ever requested) shows "Reasoning not reported", not "Default"', freshLabel === 'Reasoning not reported', { freshLabel });
     await first.cdp.screenshot(path.join(SHOTS_DIR, '1-composer-idle-fresh-not-reported.png'));
 
-    // Model picker: open it and screenshot WHILE STILL OPEN (round 1's own screenshot was taken
-    // after Escape had already closed it).
+    // Screenshot the Model picker while still open.
     await first.cdp.clickByLabel('Model: probe-fake/Probe Fake Model', { prefix: true });
     await first.cdp.waitFor(`!!document.querySelector('input[aria-label="Filter models"]')`, { timeoutMs: 5000, label: 'model popover open' });
     const popoverLabelled = await first.cdp.evaluate(
@@ -211,7 +199,7 @@ async function main() {
     record('The keyboard-active option has a real, non-transparent left border (gate round 2 contrast fix)', activeRowBorder && activeRowBorder.borderLeftColor !== 'rgba(0, 0, 0, 0)', activeRowBorder);
     await first.cdp.screenshot(path.join(SHOTS_DIR, '3-model-picker-active-row.png'));
 
-    // Right-click guard still holds with the onMouseDown->onClick move (gate round 2 fix 4).
+    // Right-click guard still holds with the onMouseDown->onClick move.
     const optionRect = await first.cdp.waitFor(
       `(() => { const el = document.querySelector('[role="option"][data-active="true"]'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width/2, y: r.y + r.height/2 }; })()`,
       { timeoutMs: 5000, label: 'active model option rect' },
@@ -224,9 +212,8 @@ async function main() {
     );
     record('A right-click on the active option still applies nothing (onClick, not onMouseDown)', afterRightClick === 'probe-fake-model', { afterRightClick });
 
-    // No-match Enter (gate round 3 fix, MEDIUM): a filter matching zero catalog models (roles
-    // are never filtered) must leave no active option at all -- never fall through to the last,
-    // unrelated ROLE -- so `aria-activedescendant` is absent and Enter applies nothing.
+    // A filter matching no catalog model must leave no active option (never fall through to the
+    // last ROLE), so `aria-activedescendant` is absent and Enter applies nothing.
     for (let i = 0; i < 'robe'.length; i++) {
       await first.cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 8, key: 'Backspace' });
       await first.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 8, key: 'Backspace' });
@@ -274,9 +261,8 @@ async function main() {
     const toastsAfterDefault = await first.cdp.evaluate(`document.querySelectorAll('[data-sonner-toast]').length`);
     record('Selecting Default applies with no new toast', toastsAfterDefault === toastsBefore, { toastsBefore, toastsAfterDefault });
 
-    // Force a settle (a real turn against the unreachable provider, which will fail, but the
-    // settle/sync_from_state path still runs) and confirm Default SURVIVES it (gate round 2's
-    // central High fix).
+    // Force a settle (the turn fails against the unreachable provider, but sync_from_state still
+    // runs) and confirm Default survives it.
     void first.cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, 'hello')`);
     await first.cdp
       .waitFor(
@@ -295,7 +281,7 @@ async function main() {
     if (first?.child) await stopLauncher(first.child).catch(() => {});
   }
 
-  // --- Relaunch (same REFRACT_DATA_DIR/profile): confirm Default survives an app restart too. ---
+  // Relaunch with the same data dir/profile: Default must survive an app restart.
   try {
     second = await launchAndConnect(9392, 'target2.pid');
     record('bridge ready (relaunch)', true);
@@ -313,9 +299,7 @@ async function main() {
       await second.cdp.screenshot(path.join(SHOTS_DIR, '5-default-survives-relaunch.png'));
       await sleep(300);
 
-      // After a relaunch, the agent for this Session has not been (re)started in the new process
-      // yet, so the Reasoning (and Model) pickers must refuse accessibly -- same contract as the
-      // "not-idle" guard, just the other edge of it (decision 3, 2026-10-15, issue #564).
+      // The agent is not restarted after a relaunch, so the pickers must refuse accessibly.
       const triggerState = await second.cdp.evaluate(`(() => {
         const btn = Array.from(document.querySelectorAll('button')).find(e => (e.getAttribute('aria-label')||'').startsWith('Reasoning:'));
         return btn ? { label: btn.getAttribute('aria-label'), disabled: btn.getAttribute('aria-disabled') } : null;
@@ -335,12 +319,9 @@ async function main() {
     if (second?.child) await stopLauncher(second.child).catch(() => {});
   }
 
-  // --- Third launch: proves the round-3 `sync_from_state` fix. Our harness's only model
-  // (`probe-fake-model`) never reports `thinkingLevel` back, so OMP can never be made to CONFIRM
-  // a concrete level through real use -- the one piece of state this isolated, credential-free
-  // harness cannot produce through the real UI. Seeded directly into `registry.json` instead,
-  // with no instance running (the file is only ever read at `RegistryStore::open`, process
-  // startup, so editing it while an instance is live would never be picked up). ---
+  // Third launch: proves the sync_from_state fix. The harness model never reports `thinkingLevel`,
+  // so a concrete level is seeded into registry.json with no instance running (the file is only
+  // read at startup).
   let third;
   try {
     const registryPath = path.join(dataDir, 'registry.json');
@@ -364,16 +345,8 @@ async function main() {
     );
     record('Session state before restart (diagnostic)', true, sessionStateBeforeRestart);
 
-    // Restart the agent via `sessions.recover` (issue #786): unlike `sessions.resume` (gated
-    // server-side to `stopReason === 'agent-exited'` or `terminatedUnexpectedly`, which our
-    // harness's clean Job-Object kill never produces -- confirmed above, `sessions.resume`
-    // refused with "Session is not eligible to resume") or a real composer send (which
-    // `MessageInput.tsx`'s own `disabled` flag refuses here too, since this Session's fresh
-    // in-memory runtime in this new process carries no `stopReason` at all, so `notStarted`
-    // -- `stopReason === 'not-started'` -- is false), `sessions.recover` always restarts
-    // regardless of reason (`attach_snapshot_core(&state, &id, true)`, no eligibility gate).
-    // This IS a real, renderer-reachable IPC (the ChatPane banner's own "Recover" action), just
-    // reached directly rather than via that banner's specific visibility conditions.
+    // Restart via `sessions.recover` (#786): `resume` is gated to agent-exited sessions and the
+    // composer is disabled here, but `recover` has no eligibility gate (the banner's Recover action).
     const recoverResult = await third.cdp.evaluate(`window.refract.sessions.recover(${JSON.stringify(sessionId)})`);
     record('sessions.recover started the agent', recoverResult?.ok === true, recoverResult);
     await third.cdp

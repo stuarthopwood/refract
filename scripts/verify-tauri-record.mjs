@@ -1,27 +1,11 @@
 #!/usr/bin/env node
-// Records real `omp --mode rpc-ui` frames into a raw JSONL capture, so the recorded-frame fake
-// `omp` (scripts/verify-tauri-fake-omp.mjs) can be built from genuine wire shapes instead of
-// guessed ones. Issue #795 part 2: "Record the frames from a real omp once; check them in as
-// fixtures (counts and field names only, no chat text from real sessions)."
-//
-// This script is the "once" step: it talks to a REAL omp.exe (resolved from PATH, exactly how
-// Refract itself resolves it) in a scratch cwd, sends a short scripted sequence of commands, and
-// writes every line it saw (both directions) to --out as raw JSONL, each entry tagged with its
-// direction so a human can sanitise it afterwards. It does not write to any fixture used by the
-// harness directly: scripts/fixtures/omp-frames/*.jsonl are hand-sanitised from this output
-// (real chat text replaced with placeholders, field names and counts kept) and checked in
-// separately. Re-run this whenever the wire protocol changes (a new omp version, a new frame
-// type Refract starts depending on) to re-verify the fixtures still match reality.
+// Records real `omp --mode rpc-ui` frames to a raw JSONL capture (both directions, tagged) that is
+// hand-sanitised into the fixtures the fake `omp` replays (#795). Re-run when the wire protocol changes.
+// The raw output can hold real chat text and must never be checked in.
 //
 // Usage: node scripts/verify-tauri-record.mjs --out <path> [--timeout-ms 120000] [--readiness]
-//
-// `--readiness` records the scratch, non-session probe `ipc/readiness.rs`'s `check_omp_signed_in`
-// runs (`--no-session`, `get_state`/`get_available_models`/`get_login_providers`, no model turn,
-// no prompt) instead of the default chat-turn capture -- this backs `readiness.jsonl`.
-//
-// Keep the scripted prompt tiny: this spends real model tokens against the ambient signed-in
-// `omp` install (no --profile override, same as Refract itself never passing one -- see
-// docs/spike/FINDINGS.md's "Production argv note"). `--readiness` spends none (read-only RPC).
+// `--readiness` records the read-only `ipc/readiness.rs` probe (no model turn); the default
+// capture spends real model tokens, so keep the scripted prompt tiny.
 
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs';
@@ -39,13 +23,8 @@ function parseArgs(argv) {
     else if (argv[i] === '--readiness') out.readiness = true;
   }
   if (!out.out) throw new Error('verify-tauri-record: --out <path> is required');
-  // Gate-fix (security review LOW, round 2 refinement): the raw capture can carry real chat
-  // text and real `omp` stderr -- refuse a destination inside this repository so it can never
-  // land in a commit by accident (fixtures are hand-sanitised separately; the raw file itself
-  // must never be checked in, per this file's own header). Checks the PARENT directory's own
-  // realpath (the file itself may not exist yet, so it has no realpath of its own), against the
-  // repo root's realpath, so a symlink/junction on either side (common under a Windows TEMP
-  // dir) cannot fool a plain string-prefix comparison.
+  // Refuse an --out inside the repo so raw chat text cannot be committed. Compare realpaths of the
+  // parent dir (the file may not exist yet) so symlinks/junctions, common under Windows TEMP, cannot fool it.
   const resolvedOut = path.resolve(out.out);
   const parentDir = path.dirname(resolvedOut);
   let realParent;
@@ -78,9 +57,7 @@ async function main() {
   console.log(`verify-tauri-record: scratch cwd ${scratchCwd}`);
   console.log(`verify-tauri-record: writing raw capture to ${out}`);
 
-  // No --profile, no --session-dir: ambient environment, exactly how Refract's own
-  // OmpProcess.ts / omp::process spawn omp (contracts/omp-usage.md "Launch"). `--readiness`
-  // adds `--no-session`, matching `ipc/readiness.rs`'s own scratch, non-Session `OmpProcess`.
+  // Ambient environment with no --profile, as Refract spawns omp; `--readiness` adds `--no-session`.
   const spawnArgs = ['--mode', 'rpc-ui', '--approval-mode=always-ask'];
   if (readiness) spawnArgs.push('--no-session');
   const child = spawn('omp', spawnArgs, {
@@ -92,9 +69,7 @@ async function main() {
   let stdoutBuf = '';
   const frameWaiters = [];
   const seenFrames = [];
-  // Advances past every frame a `waitForFrame` call has ever matched (whether found already
-  // cached or newly arrived), so a later wait can never re-match a frame an earlier wait already
-  // consumed (see `waitForFrame`'s own comment for the bug this closes).
+  // Frames at or after this index are unmatched; a later wait must not re-match a consumed frame.
   let consumedIndex = 0;
 
   child.stdout.on('data', (chunk) => {
@@ -124,12 +99,8 @@ async function main() {
   child.stderr.on('data', (chunk) => log('stderr', chunk.toString('utf8')));
   child.on('exit', (code, signal) => log('exit', { code, signal }));
 
-  // Gate-fix (code review MEDIUM): matches only a frame at or after `consumedIndex` -- never a
-  // frame an EARLIER wait already consumed. A plain `seenFrames.find(predicate)` fast path here
-  // used to make the second `session_settled` wait resolve instantly against the FIRST turn's
-  // already-seen settle frame instead of waiting for the second turn's own one; this still lets
-  // the very first wait (for `ready`) match a frame that beat its own `await` to arrive, since
-  // nothing has consumed it yet.
+  // Match only frames at or after `consumedIndex`, so the second `session_settled` wait does not
+  // resolve on the first turn's frame; the first wait can still match a frame that arrived early.
   function waitForFrame(predicate, timeout = 60_000) {
     const alreadyIndex = seenFrames.slice(consumedIndex).findIndex(predicate);
     if (alreadyIndex >= 0) {
@@ -172,8 +143,6 @@ async function main() {
     await waitForFrame((f) => f.type === 'response' && f.id === 'r2', remaining());
 
     if (readiness) {
-      // Matches `ipc/readiness.rs`'s own `probe_signed_in`/`signed_in_failure_hint` sequence
-      // exactly: no model turn, no `prompt`, read-only RPC only.
       send({ type: 'get_available_models', id: 'r3' });
       await waitForFrame((f) => f.type === 'response' && f.id === 'r3', remaining());
 
@@ -182,37 +151,31 @@ async function main() {
 
       console.log('verify-tauri-record: readiness sequence complete, shutting down');
     } else {
-      // Tiny scripted turn: one tool call (write), one approval, one short reply. Keep the
-      // instruction short and deterministic -- this is a fixture capture, not a real task.
+      // Tiny deterministic turn: one tool call, one approval, one short reply.
       send({
         type: 'prompt',
         id: 'p1',
         message: 'Use your write tool to create a file named note.txt containing just the word hi, then reply with the single word done.',
       });
 
-      // Queue a second message while the first is still working, to capture queue_update.
+      // Queued while the first is working, to capture queue_update.
       send({ type: 'prompt', id: 'p2', message: 'ping', streamingBehavior: 'followUp' });
 
-      // Approve the write-tool approval dialog as soon as it appears.
       const approval = await waitForFrame((f) => f.type === 'extension_ui_request' && f.method === 'select' && String(f.title ?? '').startsWith('Allow tool:'), remaining());
       send({ type: 'extension_ui_response', id: approval.id, value: 'Approve' });
 
-      // First turn settles.
       await waitForFrame((f) => f.type === 'prompt_result' && f.id === 'p1', remaining());
       await waitForFrame((f) => f.type === 'session_settled', remaining());
 
-      // Second (queued) turn settles.
       await waitForFrame((f) => f.type === 'prompt_result' && f.id === 'p2', remaining());
       await waitForFrame((f) => f.type === 'session_settled', remaining());
 
-      // A local slash command (agentInvoked:false, no model turn): command_output.
+      // A local slash command: command_output, no model turn.
       send({ type: 'prompt', id: 'p3', message: '/tools' });
       await waitForFrame((f) => f.type === 'command_output', remaining()).catch(() => {});
       await waitForFrame((f) => f.type === 'response' && f.id === 'p3', remaining()).catch(() => {});
 
-      // `get_messages_page` is what `session::agent::fetch_all_messages` actually calls
-      // (`MESSAGES_PAGE_SIZE`, 200); `get_messages` is the fallback it uses only if the first
-      // page fails, captured too since earlier fixture drafts used it directly.
+      // `get_messages_page` is what fetch_all_messages calls; `get_messages` is its fallback.
       send({ type: 'get_messages_page', id: 'r5', limit: 200 });
       await waitForFrame((f) => f.type === 'response' && f.id === 'r5', remaining());
 
@@ -223,8 +186,7 @@ async function main() {
     }
   } catch (err) {
     console.error('verify-tauri-record: scripted sequence failed:', err.message);
-    // Gate-fix (code review MEDIUM): a failed capture used to still exit 0, leaving a partial
-    // raw file that looks complete to anything checking only the process's own exit code.
+    // A failed capture must not exit 0 and leave a partial file that looks complete.
     process.exitCode = 1;
   } finally {
     child.stdin.end();

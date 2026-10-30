@@ -1,8 +1,4 @@
-// Shared selector/driving helpers for `scripts/verify-1077-agent-goal.mjs` (issue #1077: agent
-// rows show only the goal, Prompt/Result behind a "See input & output" toggle), split out once
-// Stage D's own failure-reason phase (gate round 1 fix, item 6) pushed the main script over the
-// #806 600-line file-size cap -- the same precedent `verify-941-stage-naming-helpers.mjs`'s own
-// header already sets for this repo.
+// Helpers split from `verify-1077-agent-goal.mjs` to keep it under the file-size cap (#806).
 import path from 'node:path';
 import { stageContentSelector } from './verify-941-stage-naming-helpers.mjs';
 
@@ -18,17 +14,8 @@ export function goalParagraphSelector(stageTitle) {
   return `(${stageContentSelector(stageTitle)})?.querySelector('p.line-clamp-3')`;
 }
 
-/** `clickScrolled`'s own `scrollIntoView({ block: 'center' })` clamps at `scrollTop: 0` when a
- * row sits close enough to the top of a SHORT conversation that true centring would need a
- * negative scroll -- Stage A, right after this phase's own toggle reopen grows its row tall,
- * is exactly that row. The clamp lands it a few px UNDER the chat pane's own `<header>` (always
- * the first `<header>` in document order, `ChatHeader.tsx`), which sits in normal flow ABOVE
- * the scrollable transcript, not fixed/overlaid -- `clickScrolled`'s generic helper (shared by
- * many other passing scripts, whose own fixtures never park a row this close to the top right
- * after it grows) has no reason to know about that header, so this nudges the SAME scrollable
- * viewport (`[data-slot="message-scroller-viewport"]`) by exactly the delta needed to clear it,
- * computed fresh from the live DOM rather than guessed, then clicks directly (bypassing
- * `clickScrolled`'s own `block:'center'` entirely for this one call). */
+/** Scrolls the row clear of the chat `<header>` before clicking: `scrollIntoView` centring clamps
+ * at scrollTop 0 near the top of a short conversation and leaves the row under the header. */
 export async function clickClearOfHeader(cdp, finderExpr) {
   await cdp.waitFor(`!!(${finderExpr})`, { timeoutMs: 15_000, label: `clickClearOfHeader: waiting for ${finderExpr}` });
   await cdp.evaluate(`(() => {
@@ -49,12 +36,8 @@ export async function clickClearOfHeader(cdp, finderExpr) {
   await cdp.click(finderExpr);
 }
 
-/** Phase 10 (gate round 1 fix, item 6's own required live step): a failed SOLO Stage's own
- * one-line failure reason shows next to its goal, reachable without opening the toggle -- Stage
- * A (the main script's other solo Stage) only ever succeeds, so it alone never exercises this
- * path. `deps` carries everything this needs from the caller rather than re-importing (keeps
- * this one function's own dependency surface explicit): `titleSelector`/`expandRow` (driving),
- * `settleForScreenshot` (pre-shot stray-tooltip guard), `SHOTS_DIR` (screenshot destination). */
+/** A failed solo Stage shows its one-line failure reason beside the goal without opening the
+ * toggle; Stage A only succeeds, so only Stage D exercises this. */
 export async function assertStageDFailureReason(cdp, findings, failures, stageDTitle, deps) {
   const { titleSelector, expandRow, settleForScreenshot, SHOTS_DIR } = deps;
   await cdp.waitFor(`!!${titleSelector(stageDTitle)}`, { timeoutMs: 15_000, label: 'Stage D row mounted' });

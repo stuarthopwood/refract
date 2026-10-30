@@ -1,7 +1,4 @@
-// Session-list-specific CDP driving helpers shared by `verify-tauri-735.mjs` (and any future
-// session-list live-check script) -- extracted from that file to keep it under the #806 600-line
-// file-size cap (`scripts/check-file-size.mjs`). Depends only on a `CdpSession`-shaped `cdp`
-// (see `verify-tauri-cdp.mjs`), never on anything specific to the #735 story itself.
+// Session-list CDP driving helpers shared by `verify-tauri-735.mjs` and other session-list live checks; depends only on a `CdpSession`-shaped `cdp`.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -10,19 +7,9 @@ function assertTrue(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
-/** Isolated proof of the trailing slot's opacity swap (time at rest, the row's "..." trigger on
- * hover) -- gate round 2 fix, High, N1 (three independent reviewers plus the facilitator's own
- * disclosed spot-check): round 1's fix scoped every reveal rule, even the base visibility,
- * inside `[@media(hover:hover)]`, so a touch-only pointer could never reveal or tap the "..."
- * trigger at all, regressing decision 12's "Under hover:none, both show". Also statically
- * verifies the fix's own `@media(hover:none)` CSS rule exists (a live touch-emulation proof was
- * attempted and found not possible in this harness -- see the function body's own comment).
- * Extracted from `verify-tauri-567.mjs` to keep it under the #806 600-line file-size cap. */
+/** Proves the trailing slot's opacity swap (time at rest, "..." trigger on hover) and statically that a `@media(hover:none)` rule keeps the trigger tappable. */
 export async function proveTrailingSlotSwapAndHoverNone(cdp, evidenceDir, log, { rowFinder, ellipsisFinder }) {
-  // Clears any lingering keyboard focus too, not just the pointer: `group-focus-within` (the
-  // same reveal rule Tab/Shift+Tab focus on the open button legitimately uses) would otherwise
-  // still show the "..." here, since the Focus ring check just before this one leaves the open
-  // button focused via real Shift+Tab.
+  // Also clears keyboard focus: `group-focus-within` would otherwise keep the "..." visible after the preceding Shift+Tab check.
   await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
   const trailingCellFinder = `${ellipsisFinder}.closest('span.relative')`;
@@ -44,18 +31,8 @@ export async function proveTrailingSlotSwapAndHoverNone(cdp, evidenceDir, log, {
   await cdp.screenshot(path.join(evidenceDir, '03-row-hover-trailing-slot.png'));
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
 
-  // `Emulation.setEmulatedMedia`'s `features` parameter (the documented way to emulate
-  // `(hover: none)`/`(pointer: coarse)`) is accepted without error by WebView2's own CDP
-  // endpoint (confirmed live: the command returns `{}`, no CDP error) but has no observable
-  // effect here -- `window.matchMedia('(hover: none)').matches` stayed `false` even 500ms after
-  // the call, so a live behavioural proof under an emulated touch pointer is not possible with
-  // this harness. Falls back to a static proof instead: finds the actual `@media` rule the
-  // running page's own bundled CSS generated for this exact button (by class-selector match,
-  // independent of which media condition currently applies), and asserts it is scoped to a
-  // `hover: none` condition and sets `pointer-events: auto` (decision 12's "both show" requires
-  // the button be tappable, not merely visible) -- proving the rule exists and is correctly
-  // wired, even though the live rendered behaviour under a real touch pointer could not be
-  // driven end-to-end in this environment.
+  // `Emulation.setEmulatedMedia` is accepted by WebView2 but has no effect (`matchMedia('(hover: none)')` stays false), so a live touch
+  // proof is impossible; instead assert the bundled CSS has a `hover: none` rule setting `pointer-events: auto` on this button.
   const hoverNoneRule = await cdp.evaluate(
     `(() => { const el = ${ellipsisFinder}; function walk(rules) { for (const rule of rules || []) { if (rule.media && /hover\\s*:\\s*none/.test(rule.media.mediaText)) { for (const inner of rule.cssRules || []) { try { if (inner.selectorText && el.matches(inner.selectorText) && /pointer-events\\s*:\\s*auto/.test(inner.style.cssText)) return { media: rule.media.mediaText, selector: inner.selectorText, css: inner.style.cssText }; } catch {} } } if (rule.cssRules) { const found = walk(rule.cssRules); if (found) return found; } } return null; } for (const sheet of document.styleSheets) { try { const found = walk(sheet.cssRules); if (found) return found; } catch {} } return null; })()`
   );
@@ -74,10 +51,7 @@ export function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-/** Computed accessible name of the FIRST element matching `finderExpr`, via CDP Accessibility
- * domain -- never textContent, which is not what a screen reader announces and would not
- * distinguish the combined aria-label this story builds (label + marker + "contains open
- * session"). `null` when nothing matches or it carries no AX node. */
+/** Computed accessible name (CDP Accessibility domain, not textContent) of the first element matching `finderExpr`; `null` when none or no AX node. */
 export async function getAccessibleName(cdp, finderExpr) {
   await cdp.send('Accessibility.enable');
   const evalResult = await cdp.send('Runtime.evaluate', { expression: finderExpr, returnByValue: false });
@@ -107,10 +81,7 @@ export async function pressEscape(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
 }
 
-/** Moves a real pointer over the centre of the element matched by `finderExpr`, without
- * clicking -- the only reliable way to trigger a `:hover`/`group-hover` CSS reveal over CDP
- * (`Input.dispatchMouseEvent` with no press). Extracted from `verify-tauri-567.mjs` to keep it
- * under the #806 600-line file-size cap. */
+/** Moves a real pointer over the element's centre without clicking, the only way to trigger a `:hover`/`group-hover` reveal over CDP. */
 export async function hoverRow(cdp, finderExpr) {
   const rect = await cdp.waitFor(
     `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
@@ -119,16 +90,13 @@ export async function hoverRow(cdp, finderExpr) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
 }
 
-/** A single real keydown/keyup pair with an explicit DOM `key`/`code` (Chromium only moves
- * focus, or fires the right synthetic key, when both are set -- a bare `windowsVirtualKeyCode`
- * is not enough). `modifiers` is CDP's own bitmask (Shift=8). */
+/** Real keydown/keyup pair; Chromium needs both `key` and `code` set, not just `windowsVirtualKeyCode`. `modifiers` is CDP's bitmask (Shift=8). */
 export async function pressKey(cdp, windowsVirtualKeyCode, key, code, modifiers = 0) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode, key, code, modifiers });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode, key, code, modifiers });
 }
 
-/** A real right-click (press then release the right button) at the centre of the element
- * matched by `finderExpr`, the one way to trigger a native `contextmenu` event over CDP. */
+/** Real right-click at the element's centre, the way to fire a native `contextmenu` event over CDP. */
 export async function rightClick(cdp, finderExpr) {
   const rect = await cdp.waitFor(
     `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
@@ -139,12 +107,7 @@ export async function rightClick(cdp, finderExpr) {
 }
 
 export function groupTriggerFinder(repoName) {
-  // Repository headers are wrapped in a Tooltip (`asChild`), whose own `data-slot`/`data-state`
-  // overwrite the inner CollapsibleTrigger's (GroupHeader.tsx's own documented reason for keying
-  // off `aria-expanded` instead, never `data-state`, once a trigger is a Tooltip's child too) --
-  // so finding by `aria-label` (always starts with the repo name) and reading `aria-expanded`
-  // is the only selector immune to that override. Archived carries no tooltip, so its own
-  // `data-slot="collapsible-trigger"` is untouched and still the more specific match.
+  // A Tooltip (`asChild`) overwrites the trigger's `data-slot`/`data-state`, so key off `aria-label` and `aria-expanded`. Archived has no tooltip, so its `data-slot` is intact.
   return `Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(repoName)}))`;
 }
 export const ARCHIVED_TRIGGER_FINDER = `document.querySelector('[data-archived-group] [data-slot="collapsible-trigger"]')`;
@@ -153,9 +116,7 @@ export async function groupState(cdp, finderExpr) {
   return cdp.evaluate(`(() => { const el = ${finderExpr}; if (!el) return null; return el.getAttribute('aria-expanded') === 'true' ? 'open' : 'closed'; })()`);
 }
 
-/** Whether the Repository group's (or Archived's) own 2px `bg-active-indicator` header bar is
- * present in the DOM right now -- the gate round 1 regression target: an archived Session must
- * never leave this bar on its OLD Repository's header. */
+/** Whether the group's 2px `bg-active-indicator` header bar is in the DOM; an archived Session must never leave it on its old Repository's header. */
 export async function hasActiveBar(cdp, repoName) {
   return cdp.evaluate(
     `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)})); return !!group?.querySelector('[class*="bg-active-indicator"]'); })()`
@@ -166,17 +127,12 @@ export async function archivedHasActiveBar(cdp) {
 }
 
 export async function clickQuickCreate(cdp, repoName) {
-  // The header "+" quick-create button stays rendered (and clickable) even while the group is
-  // collapsed -- only CollapsibleContent (the row list) is conditionally mounted by Radix.
+  // The "+" stays rendered while the group is collapsed; only the row list is conditionally mounted.
   const finder = `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('[data-quick-create-session]')`;
   await cdp.click(finder);
 }
 
-/** Clicks the header "+" quick-create button and waits for BOTH a new row to actually appear in
- * that Repository's own list AND the composer to be enabled. The composer-only wait alone
- * passes even when the click was silently dropped (e.g. by the in-flight `creatingRepositoryIds`
- * guard), because an earlier Session's own composer already satisfies it -- gate round 2 fix,
- * test-reviewer Medium: a dropped second create went undetected exactly this way in round 1. */
+/** Clicks the header "+" and waits for both a new row and the enabled composer; the composer alone passes even if the click was dropped (e.g. by the in-flight `creatingRepositoryIds` guard). */
 export async function createSessionViaQuickCreate(cdp, repoName) {
   const rowSelector = `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelectorAll('li').length ?? 0`;
   const before = await cdp.evaluate(rowSelector);
@@ -187,22 +143,12 @@ export async function createSessionViaQuickCreate(cdp, repoName) {
   );
 }
 
-/** Finder for the FIRST (most-recently-active) Session row's own "... actions" trigger inside
- * the named Project's group. */
+/** Finder for the first (most recent) Session row's "..." trigger in the named Project's group. */
 export function firstRowActionsFinder(repoName) {
   return `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`;
 }
 
-/** Opens a Session row's own "..." actions menu like a real user, fixing the flake Main
- * diagnosed (2026-10-16): the trigger is revealed by `group-hover`/`group-focus-within`
- * opacity (#567), so a bare synthetic click at a freshly-mounted row's own bounding rect can
- * land before the browser has actually run the hover style recalculation the trigger's own
- * interactivity depends on. Hovers the row first (a real `mouseMoved`, the only way to trigger
- * a `:hover`/`group-hover` CSS reveal over CDP), waits for the trigger to actually report
- * revealed (`opacity > 0.5`) AND closed (`aria-expanded="false"`), THEN clicks it (recomputing
- * the bounding rect at click time, since hovering can itself shift the row's own layout as
- * hidden actions reserve their column) and waits for the real `[role="menu"]` to mount -- never
- * a fixed sleep. On a timeout, captures a screenshot and the row's own DOM for diagnosis. */
+/** Opens a row's "..." menu like a real user: the trigger is revealed by `group-hover`/`group-focus-within`, so a bare click can land before the hover style recalculates. Hovers first, waits for the trigger to be revealed and closed, clicks at a freshly computed rect (hover can shift layout), then waits for the menu; screenshots on timeout. */
 export async function openRowActionsMenu(cdp, repoName, evidenceDir, log) {
   const triggerFinder = firstRowActionsFinder(repoName);
   const rowFinder = `${triggerFinder}?.closest('li')`;
@@ -234,8 +180,7 @@ export async function clickMenuItem(cdp, text) {
   await cdp.click(finder);
 }
 
-/** Archives the FIRST (most-recently-active, so the just-created one) Session row inside the
- * named Repository group's own `<li>` list, via its row menu. */
+/** Archives the first (most recent) Session row in the Repository group's list via its row menu. */
 export async function archiveFirstRowIn(cdp, repoName) {
   await cdp.click(
     `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`
@@ -244,8 +189,7 @@ export async function archiveFirstRowIn(cdp, repoName) {
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`);
 }
 
-/** Restores the ONLY Session row currently inside Archived, via its row menu. Opens Archived
- * first if it is closed. */
+/** Restores the only Session row in Archived via its row menu, opening Archived first if closed. */
 export async function restoreOnlyArchivedRow(cdp) {
   if ((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'closed') {
     await cdp.click(ARCHIVED_TRIGGER_FINDER);
@@ -256,9 +200,7 @@ export async function restoreOnlyArchivedRow(cdp) {
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`);
 }
 
-/** Adds a scratch repository through the Add repository dialog -- the Readiness screen's own
- * primary button on an empty profile, or the session list footer's "Add repository" control
- * once at least one Repository already exists. */
+/** Adds a scratch repository via the Readiness screen's primary button (empty profile) or the list footer's "Add repository" control. */
 export async function addRepository(cdp, dir) {
   await cdp.click(
     `document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project')`
@@ -272,9 +214,7 @@ export async function addRepository(cdp, dir) {
   await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add repository dialog closed' });
 }
 
-/** Removes a Repository (which must already own zero Sessions) via its header's "..." menu and
- * the confirmation dialog's "Remove" action -- decision 29's prune check: proves a removed
- * Repository's id actually leaves `settings.json`, not just that the renderer forgets it. */
+/** Removes an empty Repository via its header menu and the confirmation dialog; the prune check proves its id leaves `settings.json`, not just the renderer. */
 export async function removeRepository(cdp, repoName) {
   await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`Project actions for ${repoName}`)}]')`);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove project…')`, {
@@ -287,10 +227,7 @@ export async function removeRepository(cdp, repoName) {
   await cdp.waitFor(`!document.querySelector('[data-slot="alert-dialog-content"]')`, { timeoutMs: 15_000, label: 'Remove project dialog closed' });
 }
 
-/** Opens the Settings screen via the profile item's own cog, then returns via its "Back to
- * chat" button -- decision 29's Settings round trip: `App.tsx` remounts the whole session list
- * on this view swap, so this proves the collapse state survives that remount, not just a plain
- * re-render. */
+/** Opens Settings via the profile cog and returns via "Back to chat"; `App.tsx` remounts the session list on the swap, so collapse state must survive a remount. */
 export async function openSettingsAndReturn(cdp) {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings screen opened' });
@@ -298,13 +235,7 @@ export async function openSettingsAndReturn(cdp) {
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
 }
 
-/** Builds the genuinely mixed, non-default collapse state (gate round 1's own fix for "a build
- * that saves nothing would pass too") AND runs decision 29's two remaining live checks on top of
- * it: the Settings round trip and the prune. Repository A ends closed, Repository B stays open
- * (the default), Archived ends open holding the one Session (A2) archived here. Repository C
- * (empty, already collapsed by `runChecks`) is removed as the prune target. Returns
- * `{ repoARecord }` (from registry.json) so the caller's own final pre-quit settings.json
- * assertion does not need to re-derive it. */
+/** Builds a mixed, non-default collapse state (so a build that saves nothing fails), then runs the Settings round trip and the prune. A closed, B open, Archived open with A2; C is removed. Returns `{ repoARecord }` from registry.json. */
 export async function buildMixedStateAndCheckDecision29(cdp, log, { repoAName, repoBName, repoCName, repoADir, repoCDir, dataDir }) {
   await archiveFirstRowIn(cdp, repoAName);
   await cdp.waitFor(`${groupTriggerFinder(repoAName)} !== undefined`, { timeoutMs: 15_000, label: 'Repository A still rendered after archiving Session A2' });
@@ -322,8 +253,7 @@ export async function buildMixedStateAndCheckDecision29(cdp, log, { repoAName, r
   assertTrue(archivedRowCount === 1, `Archived must list exactly the one Session (A2) kept archived (got: ${archivedRowCount})`);
   log('STEP PASS: built the mixed collapse state (Repository A closed, Repository B open, Archived open with one Session archived, Repository C still closed).');
 
-  // Decision 29, check 1: the Settings round trip -- `App.tsx` remounts the whole session list
-  // on this view swap.
+  // Settings round trip: `App.tsx` remounts the whole session list on the view swap.
   await openSettingsAndReturn(cdp);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 30_000, label: 'Repository A group re-rendered after the Settings round trip' });
   assertTrue((await groupState(cdp, groupTriggerFinder(repoAName))) === 'closed', 'Repository A must still be closed after the Settings round trip (nothing re-expanded)');
@@ -332,7 +262,7 @@ export async function buildMixedStateAndCheckDecision29(cdp, log, { repoAName, r
   assertTrue((await groupState(cdp, groupTriggerFinder(repoCName))) === 'closed', 'Repository C must still be closed after the Settings round trip');
   log('STEP PASS: decision 29 Settings round trip -- the mixed collapse state survived opening Settings and returning to chat (a full list remount).');
 
-  // Decision 29, check 2: the prune -- Repository C owns zero Sessions and is already collapsed.
+  // Prune: Repository C owns zero Sessions and is already collapsed.
   const registryBeforeRemove = readJson(path.join(dataDir, 'registry.json'));
   const repoARecord = registryBeforeRemove.repositories.find((r) => r.path === repoADir || path.basename(r.path) === repoAName);
   const repoCRecord = registryBeforeRemove.repositories.find((r) => r.path === repoCDir || path.basename(r.path) === repoCName);
@@ -356,20 +286,9 @@ export async function buildMixedStateAndCheckDecision29(cdp, log, { repoAName, r
   return { repoARecord };
 }
 
-/** Gate round 3 fixes, live (four independent reviewers): the "..." trigger's vertical centring
- * on line 1 (`top-1/2 -translate-y-1/2`, was `inset-y-0`), and decision 25's 220px narrow-width
- * minimum -- a flat `pr-28` on line 1 had starved the title to about five characters there; now
- * sized to the real content (`pr-10`/`pr-16`, wider under `[@media(hover:none)]`). Measures the
- * session-list panel dragged to its own `minSize={220}` floor (`App.tsx`), asserting the title
- * never overlaps the absolutely-positioned trailing group. The "with Resume" case (`pr-16`/
- * `pr-24`) is checked statically instead of live: `canResumeSession` (`shared/
- * canResumeSession.ts`) requires `stopReason: 'agent-exited'` or `terminatedUnexpectedly`,
- * never a deliberate Stop agent action (confirmed by reading that source and then by a live
- * attempt: Stop agent leaves `canResume` false, so no Resume button ever mounts) -- a genuinely
- * resumable Session needs an actual crash, which this harness's real-`omp` driver has no safe
- * way to simulate (the fake-omp engine's own `__exit__`/`exit.jsonl` crash directive exists for
- * exactly this, but is wired only into fake-omp-driven scripts, not this real-`omp` one).
- * Extracted from `verify-tauri-567.mjs` to keep it under the #806 600-line file-size cap. */
+/** Live check at the panel's 220px `minSize` floor that the "..." trigger is vertically centred on line 1 and the title never overlaps the trailing group.
+ * The "with Resume" sizing (`pr-16`/`pr-24`) is checked statically: a resumable Session needs `stopReason: 'agent-exited'` or
+ * `terminatedUnexpectedly` (`canResumeSession.ts`), and this real-`omp` harness has no safe way to simulate a crash. */
 export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFinder }) {
   const resizeHandleFinder = `document.querySelector('[aria-label="Resize session list"]')`;
   async function dragResizeHandleBy(deltaX) {
@@ -392,10 +311,7 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
   }
   await createSessionViaQuickCreate(cdp, repoName);
   const baselineWidth = await cdp.evaluate(`${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width`);
-  // Drag by exactly the measured amount needed to reach just above the 220px `minSize` floor --
-  // a large, imprecise drag (for example -400px) overshoots the floor and triggers the panel's
-  // own `collapsible`/`collapsedSize={0}` snap instead of clamping at 220px (gate round 3 fix,
-  // live harness bug found while adding this check).
+  // A large drag overshoots the 220px floor and triggers the `collapsedSize={0}` snap, so drag the exact amount.
   await dragResizeHandleBy(-(baselineWidth - 230));
   await cdp.waitFor(
     `(() => { const w = ${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width; return w > 150 && w < 250; })()`,
@@ -407,9 +323,7 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
   assertTrue(narrowNoResume.titleWidth > 40, `the title must keep meaningfully more than decision 25's old ~36px floor without Resume, got ${narrowNoResume.titleWidth}px`);
   log('STEP PASS: line 1 never overlaps the trailing group at the 220px minimum (no Resume, live-measured).');
 
-  // Static check for the "with Resume" sizing (see the function's own doc comment for why this
-  // is not live): confirms `pr-16`/`pr-24` actually compiled into the running bundle's CSS at
-  // the expected pixel values, rather than merely trusting the source literal.
+  // Static check: confirms `pr-16`/`pr-24` compiled into the running bundle's CSS.
   const resumePaddingRules = await cdp.evaluate(
     `(() => { const out = []; function walk(rules) { for (const rule of rules || []) { if (!rule.media && rule.selectorText === '.pr-16') out.push({ selector: rule.selectorText, media: null, css: rule.style.cssText }); if (rule.media && /hover\\s*:\\s*none/.test(rule.media.mediaText)) { for (const inner of rule.cssRules || []) { if (inner.selectorText && inner.selectorText.endsWith('pr-24')) out.push({ selector: inner.selectorText, media: rule.media.mediaText, css: inner.style.cssText }); } } if (rule.cssRules) walk(rule.cssRules); } } for (const sheet of document.styleSheets) { try { walk(sheet.cssRules); } catch {} } return out; })()`
   );
@@ -420,10 +334,7 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
   assertTrue(pr24 && /calc\(var\(--spacing\)\s*\*\s*24\)/.test(pr24.css), `the (hover:none) "with Resume" reservation must compile to 24 spacing units (96px), got ${JSON.stringify(pr24)}`);
   log('STEP PASS (code-verified, not live-driven -- see the function\'s own comment above): the "with Resume" pr-16/pr-24 reservations compiled to the expected 64px/96px.');
 
-  // Vertical centring (gate round 3 fix, Low): the "..." trigger used to hang about 4px below
-  // line 1's own centre (`inset-y-0` stretching a `size-6` button inside a shorter `min-h-4`
-  // cell, top-anchored); now `top-1/2 -translate-y-1/2`, measured against line 1's own icon/
-  // title span (always visible, unlike the time it replaces on hover).
+  // Vertical centring is measured against line 1's icon/title span, which is always visible (unlike the time it replaces on hover).
   const rowRect = await cdp.waitFor(
     `(() => { const el = ${rowFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
     { timeoutMs: 10_000, label: `hover target: ${rowFinder}` }
@@ -443,20 +354,10 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
   await cdp.waitFor(`${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width > 250`, { timeoutMs: 10_000, label: 'session list restored to normal width' });
 }
 
-// Issue #559's own session search field -- generic markers any future session-list live check
-// can reuse without re-deriving the selector (#806 file-size split: moved out of
-// `verify-tauri-559.mjs` once it grew past the cap, gate round 2). Gate round 3 fix (finding
-// 11): the SAME `data-session-search-input` attribute the real app's own `SessionList.tsx`
-// (`inputProps`) and `quickCreateFallback.ts`/`useFocusSearchOnStrandedUnmount.ts`
-// (`sessionSearchSelector.ts`'s `SESSION_SEARCH_INPUT_SELECTOR`) already use, not a
-// descendant-structure lookup through the region wrapper that could drift from the app's own
-// selector unnoticed.
+// Matches the app's own `data-session-search-input` attribute (`SESSION_SEARCH_INPUT_SELECTOR`) so the selector cannot drift unnoticed.
 export const SEARCH_INPUT_FINDER = `document.querySelector('[data-session-search-input]')`;
 
-/** Types into the search field via a real click plus `Input.insertText`. Clears any EXISTING
- *  text first via real key events (Ctrl+A then Backspace) -- `Input.insertText` only ever
- *  INSERTS at the caret, so two calls in a row would otherwise silently concatenate onto
- *  whatever a previous step left behind, not replace it. */
+/** Types into the search field via a real click plus `Input.insertText`; clears first because `insertText` only inserts at the caret. */
 export async function typeIntoSessionSearch(cdp, text) {
   await cdp.click(SEARCH_INPUT_FINDER);
   await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select all existing text
@@ -465,15 +366,12 @@ export async function typeIntoSessionSearch(cdp, text) {
   await cdp.send('Input.insertText', { text });
 }
 
-/** Finds a Session row's own open button by the START of its accessible name (the display name,
- *  before the first comma -- see `SessionRow.tsx`'s own `aria-label` convention). */
+/** Finds a Session row's open button by the start of its accessible name (the display name before the first comma). */
 export function sessionOpenButtonFinder(name) {
   return `Array.from(document.querySelectorAll('[data-repository-id] li [data-session-open]')).find((el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(name)}))`;
 }
 
-/** Renames a Session via F2 (real key events throughout): focuses `currentFinder` (an
- *  open-button finder expression, e.g. from `sessionOpenButtonFinder`), presses F2, clears the
- *  rename input (Ctrl+A, Backspace), types `newName`, and commits with Enter. */
+/** Renames a Session via F2 with real key events: focuses `currentFinder`, clears the input, types `newName`, commits with Enter. */
 export async function renameSessionViaF2(cdp, currentFinder, newName) {
   await cdp.evaluate(`(${currentFinder})?.focus()`);
   await cdp.waitFor(`document.activeElement === (${currentFinder})`, { timeoutMs: 5_000, label: `open button focused before renaming to ${JSON.stringify(newName)}` });
@@ -486,19 +384,7 @@ export async function renameSessionViaF2(cdp, currentFinder, newName) {
   await pressKey(cdp, 13, 'Enter', 'Enter'); // commits
 }
 
-/** Issue #559 gate round 2 (ui-architect-v3/a11y-auditor High/Medium), all from one setup. A1's
- *  own branch still equals `sessionA1Name` (spec 001 Assumptions: "the same generated name is
- *  used for the session's branch and as its initial display name"; renaming never changes it).
- *  Renaming A1 ONCE decouples name from branch, so searching the ORIGINAL value afterward can
- *  only match via BRANCH -- real proof of decision 12's "name OR branch OR Project name" rule,
- *  not a coincidence of the two being identical, and the same query upper-cased proves case-
- *  insensitivity. A SECOND rename, to something matching neither the new name, the unchanged
- *  branch, nor either Project's own name, makes the row (and Project A, its own only remaining
- *  match) actually unmount -- proving the #900 focus-redirect fix (`useSessionRowActions.ts`'s
- *  `useLayoutEffect` cleanup) moves focus to the search field, never `<body>`. Finally proves
- *  the query survives switching to Project B's own open Session, not just a Settings round
- *  trip. Returns the Session's final name, reused by the caller for an Archived-reverse check
- *  afterward. */
+/** Rename matching: after one rename the old value matches only via branch (proving name OR branch OR Project name, case-insensitively); a second non-matching rename unmounts the row and focus must move to the search field (#900), never `<body>`. The query must also survive switching Sessions. Returns the final name. */
 export async function proveRenameMatchingAndSessionSwitch(cdp, log, { repoAName, repoBName, sessionA1Name, CLEAR_BUTTON }) {
   await renameSessionViaF2(cdp, sessionOpenButtonFinder(sessionA1Name), 'alpha-renamed-once');
   const renamedOnceFinder = sessionOpenButtonFinder('alpha-renamed-once');
@@ -542,14 +428,7 @@ export async function proveRenameMatchingAndSessionSwitch(cdp, log, { repoAName,
   return { renamedTwiceName };
 }
 
-/** Issue #559 gate round 3 (ui-architect-v3 finding 1): the Project half of the #900 focus-
- *  redirect fix -- a rename that makes a WHOLE Project group stop matching an active
- *  Project-NAME query (the only way renaming can make a group, not just one row, its own sole
- *  match) unmounts the group on a later render; proves `RepositoryGroup.tsx`'s own
- *  `useFocusSearchOnStrandedUnmount(groupRootRef)` call moves focus to the search field, the
- *  same as the Session row's own half already proved by `proveRenameMatchingAndSessionSwitch`
- *  above. Renames `repoBName`'s own Project permanently (nothing after this call in
- *  `verify-tauri-559.mjs` depends on that name any more). */
+/** Project half of the #900 focus fix: a rename that makes a whole Project group stop matching the query must move focus to the search field. Renames `repoBName`'s Project permanently. */
 export async function proveProjectRenameFocusRedirect(cdp, log, { repoBName }) {
   await typeIntoSessionSearch(cdp, repoBName);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B matches its own Project-name query before the Project-rename check' });
@@ -572,14 +451,7 @@ export async function proveProjectRenameFocusRedirect(cdp, log, { repoBName }) {
   await typeIntoSessionSearch(cdp, '');
 }
 
-/** Issue #559 gate round 3 (ui-architect-v3 finding 5): proves the hidden-create announcement
- *  live -- creates a Session from a VISIBLE Project's own quick-create "+" while a query
- *  matching only an existing row (never the Project's own name) is active, so the new Session's
- *  own generated name matches neither the query, its branch, nor the Project name, and must be
- *  announced as hidden rather than silently dropped. Uses the bare `clickQuickCreate` (not
- *  `createSessionViaQuickCreate`), which waits for a new ROW to appear -- it never would here,
- *  by design -- confirming success via the composer enabling and the announcement text itself
- *  instead. */
+/** Hidden-create announcement: a new Session that matches no active query must be announced as hidden. Uses bare `clickQuickCreate` because no new row ever appears here; confirms via the composer and the announcement text. */
 export async function proveCreatedSessionHiddenAnnouncement(cdp, log, { repoAName, query, chatAreaAnnounceRegionFinder }) {
   await typeIntoSessionSearch(cdp, query);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A visible for the hidden-create announcement check' });

@@ -1,8 +1,4 @@
-// Helper functions for verify-tauri-560.mjs, split out solely to keep that script under the
-// repo's 600-line soft cap (scripts/check-file-size.mjs) -- no behaviour change from the
-// original single-file version. See verify-tauri-560.mjs's own header comment for what this
-// live check proves; this module holds the process/CDP/AX plumbing it drives through, not any
-// of the actual assertions.
+// Process/CDP/AX plumbing for verify-tauri-560.mjs, split out for the repo's 600-line cap.
 
 import { mkdirSync, existsSync, copyFileSync, createWriteStream, statSync } from 'node:fs';
 import path from 'node:path';
@@ -14,14 +10,8 @@ import { gitHead, sha256OfFile, buildAndCopyExeFresh } from './verify-tauri-scra
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// This story's own frozen copy (recorded at freeze time, round 1: built from HEAD
-// f3014aeb89ee74ddeab90fd08e3823c8675a4d4a). No frozen exe is currently trustworthy: TWO more
-// commits of real, app-behaviour-changing fixes (f3014ae's own round-1 remediation was the
-// commit that exe was frozen from, plus round-2's 96b662f on top of it, plus the current
-// uncommitted round-2 remediation) have landed since that freeze, none of them exercised by any
-// frozen copy -- `FROZEN_EXE_EXPECTED_GIT_HEAD` is deliberately an impossible value so
-// `resolveExe` below always falls through to a fresh `buildAndCopyExeFresh` rebuild rather than
-// silently reusing a stale binary that predates these fixes.
+// No frozen exe is trustworthy (fixes landed since it was frozen), so the expected head/hash are
+// impossible values that force `resolveExe` to rebuild rather than reuse a stale binary.
 const FROZEN_EXE_DEFAULT = 'C:/Users/shopwood/AppData/Local/Temp/refract-560-scratch/refract-tauri-560.exe';
 const FROZEN_EXE_EXPECTED_GIT_HEAD = 'NO-TRUSTWORTHY-FROZEN-EXE-REBUILD-REQUIRED';
 const FROZEN_EXE_EXPECTED_HASH = 'NO-TRUSTWORTHY-FROZEN-EXE-REBUILD-REQUIRED';
@@ -42,11 +32,8 @@ export function buildOmpShim(dir) {
   return out;
 }
 
-/** Same freeze-and-reuse posture as verify-tauri-559.mjs's own `copyBuiltExe`, but refuses (and
- * tells the caller to rebuild) rather than silently falling back to a shared `BUILD_OUTPUT_DIR`
- * exe that a DIFFERENT, concurrently-running lane may be mid-rebuild of -- confirmed live in
- * this exact run (`cargo`/`rustc`/`link` processes observed running, not started by this
- * script) that the shared target dir is not a safe fallback source right now. */
+/** Like verify-tauri-559's `copyBuiltExe`, but refuses rather than falling back to the shared
+ * `BUILD_OUTPUT_DIR` exe, which a concurrent lane may be mid-rebuild of. */
 export function resolveExe(destDir, repoRoot, buildOutputDir) {
   const gitHeadValue = gitHead(repoRoot);
   const frozenSrc = process.env.REFRACT_560_FROZEN_EXE || FROZEN_EXE_DEFAULT;
@@ -114,29 +101,15 @@ export async function addRepositoryDiag(cdp, dir, evidenceDir, log) {
   }
 }
 
-/** Combines `CdpSession.pressEnter()`'s own `text`/`unmodifiedText` fields (needed for a native
- * default button-activation action to fire) with `pressKey`'s explicit `key`/`code` (needed for
- * Chromium to treat it as the real key per that helper's own doc comment) -- round 1 of this
- * script used `pressKey` alone (no text fields) and Enter moved focus nowhere, confirmed live:
- * the HealthCheckDialog never opened. */
+/** Enter needs both `text`/`unmodifiedText` (native button activation) and `key`/`code` (Chromium treats it as the real key); `pressKey` alone moved focus nowhere. */
 export async function pressRealEnter(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
 }
 
-/** `getAccessibleNameAndRole` reads `nodes[0]`'s own `name`, which is reliable for a WIDGET
- * (a button with an `aria-label`) but not for a plain text-content `<span>`: Chromium's AX tree
- * computes "name" on the role the text is naturally exposed through, often nested leaves under
- * the requested node rather than on the node itself. Round 1 used `fetchRelatives: true` and
- * scanned every returned node for the first non-null name, which actually made things WORSE,
- * confirmed live: that also pulls in ANCESTORS (up to the document root), so the first hit was
- * the document title ("Refract"), not the span. Round 2 fixed that by fetching only the exact
- * node's own DIRECT children via `Accessibility.getChildAXNodes`, but then returned just the
- * FIRST child's name -- still wrong, confirmed live again: `Low memory ({warning.liveAgents}
- * agents)` is JSX with an interpolated expression between two string literals, which React
- * renders as THREE separate sibling text nodes (`"Low memory ("`, the number, `" agents)"`),
- * each its own leaf AX node -- the first child alone is a truncated fragment. Concatenates
- * every direct child's own name in DOM order instead of stopping at the first. */
+/** Concatenates every direct child's AX name in DOM order. `nodes[0]` is unreliable for plain text,
+ * `fetchRelatives` pulls in ancestors (document title), and JSX like `Low memory ({n} agents)`
+ * renders as three sibling text nodes, so the first child alone is a truncated fragment. */
 export async function axText(cdp, selectorExpr) {
   await cdp.send('Accessibility.enable');
   const evalResult = await cdp.send('Runtime.evaluate', { expression: selectorExpr, returnByValue: false });
@@ -152,20 +125,9 @@ export async function axText(cdp, selectorExpr) {
   return names.length > 0 ? names.join('') : null;
 }
 
-/** Polls `textExpr` every `intervalMs` while `aliveExpr` stays true, collecting EVERY sampled
- * value -- not just the first or the last -- so a title/description that goes blank partway
- * through a Radix exit animation (the DOM node stays mounted for the animation's duration
- * before unmounting) is caught even though both endpoints look fine. Round 1 sampled text
- * unconditionally then checked `aliveExpr` after, so the loop's own final iteration -- taken
- * the instant the container had already unmounted -- always recorded a trailing `null`,
- * confirmed live. Round 2 checked `aliveExpr` and read `textExpr` as TWO SEPARATE `evaluate`
- * round trips, which fixed that but opened a narrower version of the exact same race, also
- * confirmed live: the container can unmount in the real wall-clock gap BETWEEN those two
- * round trips (aliveExpr still true, then gone by the time textExpr runs), still producing a
- * trailing `null`. Reads both in a SINGLE `evaluate` call -- one atomic snapshot, no gap for
- * the container to unmount in between -- so a `null` in the returned samples can only mean
- * the title itself actually went blank while still mounted, never this helper racing its own
- * two queries against the container's own teardown. */
+/** Collects every sampled value while `aliveExpr` holds, so a title that blanks mid Radix exit
+ * animation is caught. Both expressions run in ONE `evaluate` so the container can't unmount
+ * between the check and the read; a `null` sample therefore means the title really went blank. */
 export async function sampleWhileAlive(cdp, textExpr, aliveExpr, { intervalMs = 20, timeoutMs = 5_000 } = {}) {
   const samples = [];
   const deadline = Date.now() + timeoutMs;
@@ -185,13 +147,8 @@ export async function waitForSessionStatus(cdp, sessionId, status, { timeoutMs =
   );
 }
 
-/** The open button's own `data-session-open` attribute holds `session.id` directly
- * (SessionRow.tsx) -- reads it straight off the DOM instead of needing a second IPC round trip
- * just to learn which Session a quick-create click just produced. `excludeIds` (already-known
- * Session ids in this same Project) matters once a second Session exists alongside a first,
- * STOPPED one that never leaves the DOM (stopping never archives it) -- a positional "first
- * match" would silently keep re-returning the first Session instead of the new one, regardless
- * of render order. */
+/** Reads `session.id` from `data-session-open`. `excludeIds` is needed because a STOPPED session
+ * stays in the DOM, so a positional "first match" would keep returning the old one. */
 export async function latestSessionIdAndName(cdp, repoName, excludeIds = []) {
   const result = await cdp.evaluate(
     `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)})); if (!group) return null; const exclude = new Set(${JSON.stringify(excludeIds)}); const btn = Array.from(group.querySelectorAll('li [data-session-open]')).find((el) => !exclude.has(el.getAttribute('data-session-open'))); if (!btn) return null; return { id: btn.getAttribute('data-session-open'), name: btn.getAttribute('aria-label').split(',')[0] }; })()`

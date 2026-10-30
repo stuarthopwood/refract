@@ -1,33 +1,11 @@
 #!/usr/bin/env node
-// Live CDP check for issue #672 (follow-up to #618, shipped and closed): one centred Session start
-// notice for every Session, larger and in the normal foreground colour, the transcript dimmed
-// behind it for a Session that already has history. Modelled on `verify-947-938-slash-menu.mjs`'s
-// own structure; the fake-omp launch (PATH shim + env vars, `buildOmpShim`/`pathPrepend`) follows
-// `verify-555-user-message-time.mjs`'s own exact pattern.
-//
-// Drives every `startProgress.kind` through REAL production paths, never
-// `window.__refractStores` (a dev-only seam absent from a production `tauri build --debug`
-// exe): `waiting`/`prompt`/`extended` via the Rust start-queue's OWN real timers
-// (`READY_PROMPT_AFTER_MS`=60s, `src-tauri/src/omp/process.rs`), made observable on a human
-// timescale via `REFRACT_FAKE_OMP_READY_DELAY_MS`; Session id/name/`currentConversation` via
-// `window.refract.sessions.list()`, `startProgress` itself read from the DOM instead
-// (`readVisibleStartKind`, never included in that IPC response); a fresh start on an
-// already-ready Session via a real `stopAgent` + `recover` round trip; split pane via a real
-// Ctrl+click on the OTHER Session's own row; `queued`/`memory-deferred`/`prompt`/`extended`
-// (issue #512, pre-existing) all exercised for real (launch 2) -- a 2nd Session defers behind
-// a 1st still-spawned one (`REFRACT_FORCE_LOW_MEMORY=1`), a 3rd then queues behind both
-// (`MAX_CONCURRENT_STARTS=2`, a pure semaphore check, no omp timing involved).
-//
-// Costs real wall-clock time (~5-6 minutes): the real 60s/180s timers are waited out, not a
-// guessed sleep. Opacity reads poll with a timeout; split-pane/short-window are FORCED via
-// `Emulation.setDeviceMetricsOverride`; a failed `theme.set` is a failure, not `notExercised`.
-//
-// Root cause (2026-10-18): this script never built/PATH-prepended the recorded-frame omp shim, so
-// every run before this fix silently launched the REAL omp (ready in 1-2s, no real
-// `prompt`/`extended`, 0s elapsedMs). Fixed: shim builds once in `main()`, passed as `pathPrepend`
-// to both launches; `setupLaunch` refuses unless the fake-omp's own persisted debug log proves it
-// ran; a real turn also clicks the tape's own Approve card (fake always replays the recorded
-// `extension_ui_request` regardless of `--approval-mode`, which only a REAL binary would honour).
+// Live CDP check (#672): one centred Session start notice per Session, in the foreground colour, with the transcript dimmed behind it when history exists.
+// Every `startProgress.kind` is driven through real production paths, never `window.__refractStores` (absent from a production exe):
+// the Rust start-queue's real timers (`READY_PROMPT_AFTER_MS`=60s, process.rs) made observable via `REFRACT_FAKE_OMP_READY_DELAY_MS`,
+// and `startProgress` read from the DOM (`readVisibleStartKind`) because the sessions IPC omits it.
+// Costs ~5-6 minutes of wall-clock: the real 60s/180s timers are waited out. A failed `theme.set` is a failure, not `notExercised`.
+// The recorded-frame omp shim must be PATH-prepended, or a real omp launches (ready in 1-2s, no `prompt`/`extended`); `setupLaunch` checks the fake's debug log.
+// The fake always replays the recorded `extension_ui_request` regardless of `--approval-mode`, so a real turn clicks the Approve card.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -50,11 +28,8 @@ const LOG = 'verify-672';
 const SHOTS_DIR =
   process.env.REFRACT_672_SHOTS_DIR || path.join(tmpdir(), 'refract-672-start-message-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// `READY_PROMPT_AFTER_MS` (src-tauri/src/omp/process.rs) is 60_000; "brief" clears enough real
-// headroom for restart-to-composer-ready checks while staying well below 60s (nothing on this
-// launch reaches `prompt`, unlike `READY_DELAY_LONG_MS` below); "long" must clear 60s with headroom
-// but stay under `READY_CEILING_MS` (180_000). Back to its original 15s (2026-10-18): the two races
-// this margin briefly compensated for were the missing omp shim, not an undersized delay.
+// `READY_PROMPT_AFTER_MS` (process.rs) is 60_000. "brief" leaves headroom for restart-to-composer-ready checks
+// while staying well below 60s; "long" must clear 60s with headroom but stay under `READY_CEILING_MS` (180_000).
 const READY_DELAY_BRIEF_MS = 15_000;
 const READY_DELAY_LONG_MS = 150_000;
 
@@ -63,10 +38,7 @@ async function main() {
   let launch2 = null;
   const findings = [];
   const failures = [];
-  // Dynamically populated: each stage this script can legitimately not observe live pushes its
-  // own reason here at the point it happens, never a pre-written assumption -- #672's own
-  // `prompt`/`extended`/`queued` are asserted for real below (issue #985's root cause, the
-  // missing omp shim, is fixed), so this stays empty on a clean run.
+  // Each stage this script cannot observe live pushes its own reason here; empty on a clean run.
   const notExercised = [];
   let exeHash = null;
   let gitHeadSha = null;
@@ -89,34 +61,28 @@ async function main() {
     console.log(`${LOG}: git HEAD ${gitHeadSha}${dirtyLines && dirtyLines.length ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
     console.log(`${LOG}: shots dir ${SHOTS_DIR}`);
 
-    // Built ONCE, reused on both launches (a static passthrough binary): puts a real `omp.exe`
-    // shim first on PATH so `which::which_global("omp")` resolves to it instead of a real
-    // installed omp -- the root cause of every #985 symptom tonight.
+    // Built once and reused on both launches; the shim goes first on PATH so `which::which_global("omp")` resolves to it, not a real omp (#985).
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-672-shim-'));
     const shimSrc = path.join(__dirname, 'verify-tauri-omp-shim.rs');
     const shimOut = path.join(shimDir, 'omp.exe');
     const shimResult = spawnSync('rustc', ['--edition', '2021', '-O', shimSrc, '-o', shimOut], { encoding: 'utf8', windowsHide: true });
     if (shimResult.status !== 0) throw new Error(`buildOmpShim: rustc failed (exit ${shimResult.status}):\n${shimResult.stderr}`);
 
-    // Built ONCE, launched twice; `resolveExePath` honours `REFRACT_672_REUSE_EXE` to skip rebuilding.
     const built = resolveExePath(exeDir, buildOutputDir, REPO_ROOT, LOG);
     const exePath = built.dest;
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
 
-    // ---- Launch 1 ("brief", 15s ready-delay): brand-new sizing/colour, clear-on-ready, announcement rules, real history, with-history dimmed/wheel/focus, split pane, reduced motion. ----
     launch1 = await setupLaunch(exePath, launcherExe, 'brief', { REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_BRIEF_MS), REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-brief.log') }, shimDir);
 
     const cdp1 = launch1.cdp;
     const fg = await resolveCssVarColor(cdp1, '--foreground', 'color');
     const muted = await resolveCssVarColor(cdp1, '--muted-foreground', 'color');
 
-    // Gate-fix: a blocking composer-enabled wait here would return only once A reaches `ready`
-    // -- `quickCreateSessionId` (non-blocking) lets this section observe 'waiting' WHILE it happens.
+    // A blocking composer-enabled wait would return only once A is `ready`; `quickCreateSessionId` lets us observe 'waiting'.
     const sessionA = await quickCreateSessionId(cdp1, 'brief/A (1st start)');
     findings.push(`Session A created (id ${sessionA.id}, name "${sessionA.name}"), brand-new (no history yet).`);
 
-    // ---- (1) Brand-new Session, real 'waiting' kind: centred, not dimmed, large sizing ----
     await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 10_000);
     await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'brand-new: notice mounted (real waiting kind)' });
     const brandNewOpacity = await waitForRegionOpacity(cdp1, (v) => v > 0.95);
@@ -133,7 +99,6 @@ async function main() {
     jokeMessageText = await cdp1.evaluate(`document.querySelector('[data-start-message]')?.textContent ?? null`);
     await cdp1.screenshot(path.join(SHOTS_DIR, '01-brand-new-waiting.png'));
 
-    // ---- (4) Reduced motion: the emoji's bob collapses to (near-)zero duration ----
     const beforeMotionState = await readNoticeState(cdp1);
     const normalDurationMs = animationDurationMs(beforeMotionState.emoji?.animationDuration);
     await cdp1.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
@@ -146,15 +111,13 @@ async function main() {
     await cdp1.screenshot(path.join(SHOTS_DIR, '02-reduced-motion.png'));
     await cdp1.send('Emulation.setEmulatedMedia', { features: [] });
 
-    // ---- Clear: notice unmounts, "Ready..." reappears (brand-new Session reaches ready) ----
     await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 30_000, label: 'notice unmounted once the real start reaches ready (brand-new)' });
     const readyShown = await cdp1.evaluate(`Array.from(${REGIONS}).some((r) => r.textContent.includes('Ready. Type a message to get started.'))`);
     if (!readyShown) failures.push('After the real start reached ready on a brand-new Session, "Ready. Type a message to get started." did not reappear.');
     else findings.push('The notice cleared and "Ready. Type a message to get started." reappeared once the real start reached ready (brand-new Session).');
     await cdp1.screenshot(path.join(SHOTS_DIR, '03-brand-new-cleared-ready.png'));
 
-    // ---- (5) Announcement: a real undefined->waiting restart reads exactly, never the joke, and a
-    // same-kind re-render produces zero DOM mutations (waits out useClearedAnnouncement's own 6s auto-clear first). ----
+    // Wait out useClearedAnnouncement's 6s auto-clear first; a same-kind re-render must produce zero DOM mutations.
     await sleep(6_500);
     const staleAnnouncement = await cdp1.evaluate(`${ANNOUNCE}?.textContent || ''`);
     if (staleAnnouncement !== '') notExercised.push(`Announcement region still read "${staleAnnouncement}" after waiting 6.5s to auto-clear -- the fresh-start text assertion below may not be measuring a clean first announcement.`);
@@ -168,7 +131,7 @@ async function main() {
     if (jokeMessageText && freshText.includes(jokeMessageText)) failures.push(`Announcement text ("${freshText}") includes the joke message ("${jokeMessageText}") -- the joke must never be announced.`);
     else findings.push('Announcement text does not include the joke message, as specified.');
 
-    // Defensive margin check (cheap, harmless if it never fires): needs SOME slack against `ready` legitimately arriving mid-check (15s) -- skip to notExercised rather than assert a false failure on an unruled-out race.
+    // Needs slack against `ready` arriving mid-check (15s); skip to notExercised rather than assert a false failure.
     const marginMsBeforeReady = READY_DELAY_BRIEF_MS - (Date.now() - restartDispatchedAt) - 2_500;
     if (marginMsBeforeReady < 3_000) {
       notExercised.push(`Announcement mutation window: skipped -- only ${marginMsBeforeReady}ms of margin remained before this launch's own real ${READY_DELAY_BRIEF_MS}ms ready delay (restart-to-announcement polling above took longer than usual, likely real resource pressure), too tight to run a genuine same-kind re-tick window without racing a legitimate 'ready' transition.`);
@@ -196,12 +159,11 @@ async function main() {
       else findings.push('Announcement region recorded zero DOM mutations (MutationObserver) across real same-kind elapsed-ms ticks -- no re-announcement.');
     }
 
-    // ---- Build real history on Session A (a real send through the fake-omp session tape) ----
     await cdp1.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 30_000, label: 'Session A ready again after the announcement restart' });
     await cdp1.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp1.send('Input.insertText', { text: 'Reply with exactly the single word t672turn and nothing else.' });
     await cdp1.clickByLabel('Send message');
-    // session.jsonl's own tool call needs a real Approve click (the fake always replays it, Auto mode is a CLI flag it never checks).
+    // The tape's tool call needs a real Approve click (the fake always replays it; Auto mode is a CLI flag it ignores).
     await cdp1.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Session A: tool-call approval card rendered' });
     await cdp1.clickByText('Approve');
     await cdp1.waitFor(`Array.from(${REGIONS}).some((r) => /t672turn/.test(r.textContent))`, { timeoutMs: 60_000, label: 'Real turn settled (fake-omp reply contains sentinel)' });
@@ -211,15 +173,14 @@ async function main() {
     });
     findings.push(`Session A sent and settled one real turn through the fake-omp session tape -- currentConversation settled: ${sessionAHasHistory}.`);
 
-    // ---- Session B: a second real Session (front pane), the split-pane partner (`quickCreateSessionId` polls for B's own id; B never needs `ready`). ----
+    // B is the split-pane partner; it never needs `ready`.
     const sessionB = await quickCreateSessionId(cdp1, 'brief/B (split partner)');
     findings.push(`Session B created (id ${sessionB.id}) as the split-pane partner.`);
 
-    // Re-focus Session A (a real plain click, not Ctrl): creating B left B focused instead, and every check below needs A's own notice mounted again.
+    // Creating B left B focused; re-focus A with a plain click so its notice mounts again.
     await clickSessionRow(cdp1, sessionA.id);
     await cdp1.waitFor(`${REGIONS}.length >= 1`, { timeoutMs: 10_000, label: 'Session A refocused after creating Session B' });
 
-    // ---- (2) Session with history, real restart: centred, dimmed ~40%, stays interactive ----
     await restartAgent(cdp1, sessionA.id);
     await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 10_000);
     await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice mounted over Session-with-history (real restart)' });
@@ -235,7 +196,6 @@ async function main() {
       try {
         await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted after short-viewport override' });
       } catch (err) {
-        // Gate-fix: real failure with evidence, not an uncaught crash (this restart's own `waiting` was just confirmed moments earlier, well inside the delay).
         const { classifierRead, composerEnabledNow } = await classifyPossibleAbsence(cdp1);
         failures.push(`history/wheel (short viewport): the notice was not mounted after the device-metrics override (${err.message}); classifier read ${JSON.stringify(classifierRead)}, composer enabled: ${composerEnabledNow}.`);
         return;
@@ -277,15 +237,13 @@ async function main() {
       await cdp1.evaluate(`document.activeElement?.blur()`);
     });
 
-    // ---- History-with-start clears: once this restart reaches ready, the dimmed transcript returns to full opacity (single pane, before split-pane below). ----
     await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 30_000, label: 'history/waiting restart reached ready, notice cleared' });
     const historyCleared = await waitForRegionOpacity(cdp1, (v) => v > 0.95);
     if (!historyCleared.ok) failures.push(`history/cleared: transcript region opacity settled at ${historyCleared.value}, expected ~1 after startProgress cleared.`);
     else findings.push(`history/cleared: transcript region opacity returned to ${historyCleared.value} once startProgress cleared.`);
     await cdp1.screenshot(path.join(SHOTS_DIR, '04b-history-cleared.png'));
 
-    // ---- (3) Split pane: a real Ctrl+click on Session B's OWN row (not A's) brings B in as the 2nd
-    // pane alongside the currently-focused A (the ALREADY-shown Session's own row is a deliberate no-op). ----
+    // Ctrl+click on B's row: the already-shown Session's own row is a deliberate no-op.
     await restartAgent(cdp1, sessionA.id);
     await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 10_000);
     await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice mounted again for the split-pane test' });
@@ -315,8 +273,6 @@ async function main() {
     await teardownLaunch(launch1);
     launch1 = null;
 
-    // ---- Launch 2 ("long", 150s ready-delay): the REAL `prompt`/`extended` stages on a with-history
-    // Session -- Keep waiting/Cancel reachability, overlay-hide-on-focus, theme contrast, the 600px window; also real `queued`/`memory-deferred`. ----
     launch2 = await setupLaunch(exePath, launcherExe, 'long', {
       REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_LONG_MS),
       REFRACT_FORCE_LOW_MEMORY: '1',
@@ -324,8 +280,7 @@ async function main() {
     }, shimDir);
     const cdp2 = launch2.cdp;
 
-    // ---- Real `memory-deferred`: Session C1 grabs the Rust start-queue's 1st real slot and spawns
-    // (MAX_CONCURRENT_STARTS, start_queue.rs:36); Session D grabs the 2nd but defers (REFRACT_FORCE_LOW_MEMORY=1, start_queue.rs:387). ----
+    // C1 takes the start-queue's 1st slot (MAX_CONCURRENT_STARTS, start_queue.rs:36); D takes the 2nd but defers (REFRACT_FORCE_LOW_MEMORY=1, start_queue.rs:387).
     const sessionC1 = await quickCreateSessionId(cdp2, 'long/C1 (1st start, 1st of 2 real slots)');
     const c1Progress = await waitForStartProgressKind(cdp2, sessionC1.id, 'waiting', 10_000);
     findings.push(`Session C1 created (id ${sessionC1.id}), brand-new, real startProgress ${JSON.stringify(c1Progress)}, holding one of the 2 real start-queue slots.`);
@@ -338,7 +293,7 @@ async function main() {
         muted, failures, findings, screenshotPath: path.join(SHOTS_DIR, '05a-memory-deferred.png')
       });
     } catch (err) {
-      // Defensive classification: downgrade ONLY the exact known absence shape.
+      // Downgrade only the exact known absence shape.
       const { isKnownAbsence, lastRead } = parseWaitTimeoutAbsence(err);
       if (isKnownAbsence) {
         notExercised.push(`memory-deferred startProgress.kind did not become observable live this run: ${err.message} -- last read had no kind at all, despite Session C1 confirmed reaching 'waiting' moments earlier on the identical mechanism.`);
@@ -347,8 +302,7 @@ async function main() {
       }
     }
 
-    // ---- `queued`: a 3rd concurrent start while both real slots (C1, D) are held -- `acquire_slot`
-    // sets `Queued` the instant the semaphore (MAX_CONCURRENT_STARTS=2) would block, never reachable before tonight's shim fix. ----
+    // `acquire_slot` sets `Queued` the instant the semaphore (MAX_CONCURRENT_STARTS=2) would block.
     const sessionE = await quickCreateSessionId(cdp2, 'long/E (3rd concurrent start, both slots held)');
     try {
       const queuedProgress = await waitForStartProgressKind(cdp2, sessionE.id, 'queued', 15_000);
@@ -372,10 +326,8 @@ async function main() {
     const cancelD = await cdp2.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionD.id)})`);
     if (!cancelD?.ok) failures.push(`memory-deferred: cancelStart(D) did not return ok (${JSON.stringify(cancelD)}) -- Session D may still hold its real slot.`);
     else findings.push("memory-deferred: Session D's start cancelled (real cancelStart) after asserting, freeing its slot.");
-    // Gate-fix (confirmed live, bg_843/bg_844): re-opening Session C1 after Session D's own
-    // creation permanently lost its observable startProgress (not recoverable even with a real
-    // 150s wait). Cancelling C1's start too frees BOTH real slots, so the genuinely fresh
-    // Session below gets a clean, undeferred 'waiting' start instead.
+    // Re-opening C1 after D's creation permanently loses its observable startProgress, so cancel C1's start too;
+    // that frees both slots and the fresh Session below gets an undeferred 'waiting' start.
     const cancelC1 = await cdp2.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionC1.id)})`);
     if (!cancelC1?.ok) failures.push(`memory-deferred setup: cancelStart(C1) did not return ok (${JSON.stringify(cancelC1)}) -- may still hold a real slot.`);
     else findings.push("memory-deferred setup: Session C1's start cancelled too, freeing both real slots for a genuinely fresh Session below.");
@@ -385,8 +337,7 @@ async function main() {
     const cWaitingProgress = await waitForStartProgressKind(cdp2, sessionC.id, 'waiting', 15_000);
     findings.push(`Session C's own real start reached 'waiting' (${JSON.stringify(cWaitingProgress)}) after C1/D/E were cancelled.`);
 
-    // ---- Build real history on Session C (1st start reaches ready); its own brand-new prompt/extended
-    // exercise is dropped on purpose (restart below needs Keep waiting/Cancel reachability anyway). Gate-fix (confirmed live): the shim's OWN ready-delay is also `READY_DELAY_LONG_MS` (a literal tie, no margin) -- add slack past it, staying under the Rust-side `READY_CEILING_MS` (180_000) ceiling. ----
+    // The shim's ready-delay equals `READY_DELAY_LONG_MS` with no margin, so add slack past it but stay under the Rust-side `READY_CEILING_MS` (180_000).
     await cdp2.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: READY_DELAY_LONG_MS + 20_000, label: 'Session C ready (1st start reaches ready)' });
     await cdp2.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp2.send('Input.insertText', { text: 'Reply with exactly the single word t672turnC and nothing else.' });
@@ -418,7 +369,7 @@ async function main() {
       if (!dimBefore.buttonTexts.includes('Cancel')) failures.push(`history/prompt: no "Cancel" button found (group buttons: ${JSON.stringify(dimBefore.buttonTexts)}).`);
       await cdp2.screenshot(path.join(SHOTS_DIR, '06-history-prompt.png'));
 
-      // Focus-hide (WCAG 2.4.11): real focus inside the dimmed history hides the overlay, and one real Tab from there reaches "Keep waiting" and reveals it again.
+      // WCAG 2.4.11: focus inside the dimmed history hides the overlay; one Tab reaches "Keep waiting" and reveals it again.
       await focusLastTabbableOrSelf(cdp2, REGION0);
       const hiddenOpacityPoll = await waitForComputedOpacity(cdp2, OVERLAY, (v) => v <= 0.05, 2_000);
       const hidden = await cdp2.evaluate(`(() => {
@@ -459,7 +410,7 @@ async function main() {
       await cdp2.evaluate(`document.activeElement?.blur()`);
     });
 
-    // ---- Themes: a failed theme.set is a FAILURE. Driven at the real `prompt` stage; contrast measured against the panel's own WORST-CASE effective background (a self-check confirms this catches a regression). ----
+    // Contrast is measured against the panel's worst-case effective background.
     for (const theme of THEMES) {
       if (theme.id !== 'dark') {
         const result = await cdp2.evaluate(`window.refract.theme.set(${JSON.stringify(theme.id)}).then((r) => r.ok)`);
@@ -508,7 +459,7 @@ async function main() {
     }
     await cdp2.evaluate(`window.refract.theme.set('dark')`);
 
-    // ---- A genuinely short window, height sized off this run's own notice/overlay measurements (not a fixed guess), guaranteeing it overflows: Keep waiting/Cancel reachable via a real wheel scroll + elementFromPoint. `groupHeight` (notice's OWN unclamped box) is the real signal -- `overlay.scrollHeight` only reveals it once already overflowing. ----
+    // `groupHeight` (the notice's unclamped box) is the real overflow signal; `overlay.scrollHeight` only reveals it once overflowing.
     const preSize = await cdp2.evaluate(`(() => { const el = ${OVERLAY}, grp = ${GROUP}; return el && grp ? { groupHeight: grp.getBoundingClientRect().height, clientHeight: el.clientHeight, winHeight: document.documentElement.clientHeight } : null; })()`);
     if (!preSize) failures.push('short-window: no overlay/notice element found to measure for dynamic sizing.');
     const forcedWindowHeight = preSize ? Math.max(300, preSize.winHeight - preSize.clientHeight + Math.round(preSize.groupHeight * 0.7)) : 600;
@@ -551,7 +502,6 @@ async function main() {
       }
     });
 
-    // ---- Extended: a real "Keep waiting" click (not a synthetic kind write) ----
     await cdp2.clickByText('Keep waiting');
     await waitForStartProgressKind(cdp2, sessionC.id, 'extended', 5_000);
     const extendedState = await readNoticeState(cdp2);

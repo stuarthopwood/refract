@@ -1,61 +1,14 @@
 #!/usr/bin/env node
-// Live CDP check for issue #862 (bug: the Conversation history list hides a Conversation whose
-// first user message starts after the Rust build's old fixed 8 KB preview-scan window).
+// Live CDP check: the Conversation history list shows a Conversation whose first user message
+// starts after the old fixed 8 KB preview-scan window (the long-prelude file); it must list both
+// seeded Conversations, not just the control one.
 //
-// Reuses the recorded-frame fake `omp` harness exactly as `verify-555-user-message-time.mjs`
-// does: `user-message-time.jsonl` already scripts a fresh Session's own startup sequence
-// (`negotiate_protocol`, `get_state` reporting `sessionFile: $conversationFile`, `set_ask_dialog`,
-// an empty `get_messages_page`) with no further command needed, so this check never has to send
-// a chat prompt at all (AGENTS.md: no new fixtures). What is new here is what `conversations.list`
-// actually scans: `$conversationFile`'s own directory (`session_dir = dirname(sessionFile)`,
-// `session/agent/sync_from_state.rs`), which this script pre-populates with TWO real, hand-built
-// `.jsonl` Conversation files before the app ever launches (`conversations.rs`'s own
-// `parse_file_name` doc comment gives the exact required name shape: a 25-character
-// `YYYY-MM-DDTHH-mm-ss-mmmZ_` prefix plus any non-empty id, `.jsonl`):
-//   - "normal": title line, session header, one `role: 'user'` message near the top (passes on
-//     `origin/main` too -- the control case).
-//   - "long-prelude": title line, session header, `model_change`, `thinking_level_change`,
-//     `service_tier_change`, then one `custom`/`memory_recall` entry whose filler text alone runs
-//     past 8 KB (matching issue #862's own observed ~8.6 KB `memory_recall` entry), then two
-//     `custom_message` prelude entries (`eager-todo-prelude`/`eager-task-prelude`, matching the
-//     issue's own finding), and only THEN its real `role: 'user'` message -- the same shape issue
-//     #862 reports from a live OMP session, scaled down from ~11 KB to about 9-10 KB (measured at
-//     runtime; asserted to sit strictly between the old 8 KiB window and the new 64 KiB cap) so
-//     the assertion below is exact rather than approximate.
+// Seeds two hand-built `.jsonl` Conversation files in the fake-omp session dir before launch;
+// the `user-message-time` tape scripts startup, so no chat prompt is sent. A file name needs a
+// 25-character `YYYY-MM-DDTHH-mm-ss-mmmZ_` prefix (`conversations.rs` `parse_file_name`).
 //
-// MUST fail on `origin/main` for this exact reason: `conversations.rs`'s `read_preview_window`
-// there reads a single fixed `PREVIEW_SCAN_BYTES = 8 * 1024` byte buffer and never looks past it;
-// the long-prelude file's own first `role: 'user'` message starts after that buffer ends, so
-// `read_conversation_file` returns `None`, `list_conversations` silently `continue`s past the
-// file (never pushes a `ConversationInfo` for it), and the Conversation-history dialog renders
-// only ONE row instead of two. This script's own row-count assertion below (`rows.length === 2`)
-// is the one that catches it; explained from the code above, not reproduced by actually running
-// this script against `origin/main` itself (that comparison run has not been made; only the
-// fixed path, below, has been run and confirmed green).
-//
-// What this script does NOT prove (recorded in its own `notExercised`):
-//   - A Conversation whose 64 KiB cap (`PREVIEW_SCAN_HARD_CAP_BYTES`, enforced by reading through
-//     an `AsyncReadExt::take(...)`-limited handle, not merely a byte count checked between lines)
-//     is hit before a user message is found is still listed, with its title and an empty preview.
-//   - A Conversation that reaches real end-of-file within the cap with genuinely no user message
-//     anywhere is skipped, unchanged from the existing rule.
-//   - A Conversation whose first `role: 'user'` message is image-only (or otherwise has an empty
-//     or missing `content`) is still listed with an empty preview rather than hidden.
-//   - That a genuinely multi-megabyte Conversation file stays cheap to list: the early `break`
-//     the instant a user message is found, and the hard `take()` cap itself, are read, not
-//     independently measured here -- a live CDP check driving a real multi-MB fixture file would
-//     need to actually create one on disk for every run, which is disproportionate to what this
-//     assertion needs to prove (that the Conversation is listed at all, whatever the first
-//     message's offset). The two files here are a few KB each, deliberately matching the issue's
-//     own real-world byte offsets rather than its real-world total file size.
-//
-// RUN END-TO-END (2026-10-18, build slot granted, PR #1006): green against the fixed build --
-// `report.json` records `failures: []`, `exitCode: 0`; the saved screenshot shows the
-// Conversation-history dialog with both rows, the long-prelude Conversation's own title and its
-// real preview text rendered in full. `ci-local.mjs`'s full chain (typecheck, vitest, indent,
-// theme-contrast, drag-regions, IPC parity, file-size, versions, OMP schema drift, `cargo fmt
-// --check`, `cargo test`, `cargo clippy -D warnings`, `tauri build --debug --no-bundle`, UI text)
-// also ran clean on the same commit beforehand.
+// Not proven here (see `notExercised`): the 64 KiB hard cap listing an empty preview, no-user-
+// message files being skipped, image-only first messages, and cheap listing of multi-MB files.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -85,15 +38,12 @@ const SHOT_NAMES = ['01-conversation-history-open.png', 'report.json', 'app.log'
 const NORMAL_TITLE = 'Normal conversation (#862 check)';
 const NORMAL_PREVIEW = "Short first message, well inside the old 8 KB window.";
 const LONG_TITLE = 'Long-prelude conversation (#862 check)';
-// Kept under PREVIEW_MAX_LENGTH (120 chars, conversations.rs) so the dialog's own preview text is
-// an exact match, not a truncated prefix.
+// Under PREVIEW_MAX_LENGTH (120 chars) so the preview text matches exactly, not truncated.
 const LONG_PREVIEW = 'ISSUE862-LONG-PREVIEW-CHECK: real first user message, found past the old 8 KB window.';
 const OLD_FIXED_WINDOW_BYTES = 8 * 1024; // conversations.rs `PREVIEW_SCAN_BYTES` on origin/main
 const NEW_HARD_CAP_BYTES = 64 * 1024; // conversations.rs `PREVIEW_SCAN_HARD_CAP_BYTES`, this fix
 
-/** `conversations.rs`'s own `parse_file_name` doc comment: a file is named
- * `<timestamp with ':'/'.' replaced by '-'>_<id>.jsonl`, the timestamp prefix always exactly 25
- * characters (`YYYY-MM-DDTHH-mm-ss-mmmZ_`). */
+/** File name shape: `<timestamp with ':'/'.' replaced by '-'>_<id>.jsonl`, 25-char prefix. */
 function conversationFileName(isoTimestamp, id) {
   const prefix = isoTimestamp.replace(/[:.]/g, '-');
   if (prefix.length !== 24) throw new Error(`conversationFileName: expected a 24-char dash-replaced prefix, got ${prefix.length} ("${prefix}")`);
@@ -137,10 +87,6 @@ async function main() {
   let BUILD_OUTPUT_DIR = null;
   try {
     clearKnownOutputFiles(SHOTS_DIR, 'refract-862-conversation-history-shots', SHOT_NAMES);
-    // Belt-and-braces (gate round 1, test-reviewer): `clearKnownOutputFiles` already creates
-    // `SHOTS_DIR` itself (its own trailing `mkdirSync`), but every other verify-*.mjs script in
-    // this repo also calls `mkdirSync` explicitly at this point, so this does too -- a no-op
-    // (`recursive: true` on an already-existing directory) rather than a second source of truth.
     mkdirSync(SHOTS_DIR, { recursive: true });
     BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
     gitHeadSha = gitHead(REPO_ROOT);
@@ -240,11 +186,7 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_SCENARIO: 'user-message-time',
-        // `user-message-time.jsonl`'s own get_state responses use the `$conversationFile`
-        // sentinel for `sessionFile` -- pointing it at the "normal" file makes
-        // `session_dir = dirname(sessionFile)` (sync_from_state.rs) resolve to
-        // `conversationFileDir`, the real directory `conversations.list` scans, which also holds
-        // the "long-prelude" file seeded above.
+        // Pointing `sessionFile` at the "normal" file makes the scanned session dir hold both seeded files.
         REFRACT_FAKE_OMP_CONVERSATION_FILE: normalFile,
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log')
       }
@@ -264,12 +206,8 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
 
-    // Shim-confirmed guard (same pattern as verify-941-part2.mjs/verify-991-stage-focus.mjs):
-    // without this, a silently-wrong fake-omp shim (a stale PATH entry shadowing it, or the shim
-    // crashing before its first `debugLog` call) could still let the whole run "pass" on UI state
-    // alone. Fresh-log guard: `exeDir` is a brand-new `mkdtempSync` directory every run, so this
-    // log can never be a leftover from an earlier run satisfying the check without this run's
-    // shim ever having written anything.
+    // Fails if the fake-omp shim was shadowed or crashed; `exeDir` is fresh per run, so the log
+    // cannot be a leftover.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-862: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
@@ -300,8 +238,7 @@ async function main() {
     `);
     console.log('verify-862: conversation history rows', JSON.stringify(rows));
 
-    // The one assertion that MUST fail on origin/main (see the header comment): there, the
-    // long-prelude file is silently skipped by `list_conversations`, so this reads 1, not 2.
+    // Must fail when the old 8 KB scan window skips the long-prelude file (reads 1, not 2).
     if (rows.length !== 2) {
       failures.push(
         `Conversation history dialog shows ${rows.length} row(s), expected 2 -- the long-prelude Conversation (first user message ${prefixBytes} bytes in, past the old fixed 8 KB window) was hidden instead of listed.`

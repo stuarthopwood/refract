@@ -1,47 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1101 (spec 018, Convergence Phase 7: Git changes panel UI polish --
-// Stuart's 2026-10-20 screenshot feedback on the shipped #464 slice 1 panel, PR #1076). Reuses
-// `verify-464-git-changes.mjs`'s own scratch-repo/launch infrastructure and panel-specific
-// finders/helpers (`verify-tauri-scratch-helpers.mjs`, `verify-tauri-session-list-helpers.mjs`,
-// `verify-464-git-changes-helpers.mjs`) rather than re-deriving them -- a NEW file, not an
-// extension of `verify-464-git-changes.mjs` itself, which already sits at `check-file-size.mjs`'s
-// 600-line soft cap (#806).
-//
-// Isolation posture: its own scratch `REFRACT_DATA_DIR`/worktree/repo/exe, same as every
-// `verify-tauri-5xx+`/`verify-464` script -- never touches Stuart's real Session list.
-//
-// AGENTS.md destructive-ops rule, honoured throughout (also followed by every helper this script
-// calls): every deleted path is either a literal, freshly-`mkdtempSync`'d directory under the OS
-// temp dir, or routed through `safeRmSync`'s own guard (realpath-checked against the temp dir).
-// Never a bare drive letter, `.`, `..`, `~`, or a path built from an unset/default-valued variable.
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node
-// scripts/verify-1101-git-polish.mjs (requires a prior `pnpm tauri build --debug --no-bundle`).
-//
-// Checks (the issue's own six items):
-//   1. Subject counter (item 1): hidden at 0 chars, `n/72` once typing starts, muted -> warning
-//      (>50) -> error (>72) colour tiers, each measured via a REAL computed-style comparison
-//      against a freshly-created reference element carrying only that one utility class (never
-//      just a className-string match) -- plus the `sr-only` "Subject length" accessible prefix.
-//   2. Composer-style inputs (item 2): the commit Subject/Body fields' resting AND real
-//      `:focus-visible` computed border-colour/background-colour/box-shadow(ring) measured
-//      against the real composer wrapper's own computed styles in the SAME two states.
-//   3. Stage/unstage in-progress state (item 3): a large (100 MB) untracked file's real `git add`
-//      round trip is slow enough to observe `aria-busy="true"` + a spinner + a disabled kebab
-//      trigger mid-flight (per-row), and the same for a bulk "Stage all" (per-group), each caught
-//      via a tight `waitFor` poll, not a fixed sleep.
-//   4. Untracked file diff content (item 4): a multi-line untracked file's diff shows every line
-//      verbatim as a real `.diff-code-insert` row, zero `.diff-code-delete` rows, never "No
-//      changes".
-//   5. Back button (item 5) + sticky (item 6): the icon-only Back button's `aria-label` names the
-//      real file; after a real wheel-scroll of a long diff, its own bounding rect is unchanged
-//      (still pinned at the scroll region's own top) and nothing else covers it.
-//
-// Honestly-flagged gaps: the composer's own `:focus-visible` CSS heuristic for a real pointer
-// click on a text field is trusted per documented Chromium behaviour (unlike a button, a text
-// field shows its focus ring on a mouse click too) -- if that assumption is ever wrong on the
-// exact Chromium build this app ships, the explicit `matches(':focus-visible')` assertion below
-// fails loudly rather than silently comparing a meaningless unfocused style.
+// Live CDP check for #1101: Git changes panel polish (subject counter, composer-style inputs,
+// stage busy state, untracked diff, sticky Back button). Usage: node scripts/verify-1101-git-polish.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -86,8 +45,6 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
   process.env.REFRACT_1101_SHOTS_DIR || path.join(tmpdir(), 'refract-1101-git-polish-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// This story's own fixture -- deliberately separate from `verify-464-git-changes-helpers.mjs`'s
-// own `FIXTURE` (different scope: no conflicts/staged-new fixture needed here at all).
 const FIXTURE = {
   multiline: 'untracked-multiline.txt',
   multilineLines: ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot'],
@@ -98,9 +55,7 @@ const FIXTURE = {
 const MULTILINE_CONTENT = `${FIXTURE.multilineLines.join('\n')}\n`;
 const LONG_TRACKED_LINE_COUNT = 150;
 const LONG_TRACKED_EDITED = `${Array.from({ length: LONG_TRACKED_LINE_COUNT }, (_, i) => `line ${i + 1} of long-tracked.txt for verify-1101`).join('\n')}\n`;
-// 100 MB: large enough that a real `git add` (hash + zlib-deflate + object write) reliably takes
-// long enough (hundreds of ms on any real disk/CPU) for a tight CDP poll to observe the busy
-// window mid-flight -- never a fixed sleep standing in for the real timing.
+// 100 MB: a real `git add` must take long enough for a CDP poll to observe the busy window.
 const BIG_UNTRACKED_BYTES = 100 * 1024 * 1024;
 
 /** A real computed-style reading for one element's resting (unfocused) box appearance. */
@@ -110,18 +65,8 @@ async function readSurfaceStyle(cdp, finderExpr) {
   );
 }
 
-/** Focuses `clickExpr` with a real CDP click (never a DOM `.focus()` call -- a genuine pointer
- * interaction, matching how a developer actually reaches these fields), asserts the resulting
- * `:focus-visible` state is genuinely true on that same element (Chromium shows a focus ring on
- * a pointer click for a text field, unlike a button), then reads `measureExpr`'s own computed
- * box-shadow/border colour -- a SEPARATE element for the composer, whose visual border/ring
- * lives on the wrapping `has-[textarea:focus-visible]:` div, never on the textarea itself (which
- * is never the thing `document.activeElement` can equal is a plain, unfocusable `<div>`).
- * Settles 300ms before measuring: the shared `Input`/`Textarea` primitives carry their own
- * `transition-colors` (the composer's own wrapper div has none), so an immediate read races a
- * real in-flight border/background colour transition and catches an interpolated mid-transition
- * frame (confirmed live: an `oklab(...)` value strictly between the resting and focused literal
- * `oklch(...)` tokens) -- a script timing bug, not a product one. */
+/** Clicks `clickExpr` (real CDP click), asserts `:focus-visible`, then reads `measureExpr`'s computed styles
+ * (the composer's ring lives on a wrapper div). Settles 300ms: `transition-colors` otherwise yields mid-transition values. */
 async function readFocusVisibleStyle(cdp, clickExpr, measureExpr, label, findings, failures) {
   await cdp.click(clickExpr);
   const isFocusVisible = await cdp.evaluate(`(() => { const el = ${clickExpr}; return document.activeElement === el && el.matches(':focus-visible'); })()`);
@@ -132,10 +77,7 @@ async function readFocusVisibleStyle(cdp, clickExpr, measureExpr, label, finding
   );
 }
 
-/** Reads one of the subject counter's three colour tiers via a REAL computed-style comparison:
- * a throwaway reference `<span>` carrying ONLY the expected utility class, appended/measured/
- * removed in the same call, so this proves the counter's OWN resolved colour genuinely equals
- * what that one class resolves to right now -- never just a `classList.contains` string check. */
+/** Compares a counter colour tier against a throwaway reference span carrying only the expected class. */
 async function counterMatchesClass(cdp, expectedClass) {
   return cdp.evaluate(`(() => {
     const counter = document.querySelector('input[placeholder="Commit subject"]').nextElementSibling;
@@ -150,10 +92,7 @@ async function counterMatchesClass(cdp, expectedClass) {
   })()`);
 }
 
-/** The counter's own VISIBLE text only ("10/72"), excluding the `sr-only` "Subject length "
- * prefix span that shares the same parent (`GitCommitBox.tsx`: the prefix is a sibling element,
- * the count itself is plain text node children) -- `textContent` on the whole parent would
- * otherwise read "Subject length 10/72". */
+/** The counter's visible text only ("10/72"), excluding the sibling `sr-only` prefix. */
 async function readCounterVisibleText(cdp) {
   return cdp.evaluate(`(() => {
     const counter = document.querySelector('input[placeholder="Commit subject"]').nextElementSibling;
@@ -162,10 +101,7 @@ async function readCounterVisibleText(cdp) {
   })()`);
 }
 
-/** Gate round 1 (Main E7, `verify-700-todo-pin-helpers.mjs` precedent): moves the pointer INSIDE
- * the viewport (two distinct real moves, a corner then an interior point, so Chromium genuinely
- * fires `pointerleave` on whatever was last hovered), blurs, presses Escape, then FAILS loudly
- * (never just a silent `waitFor` timeout) if a tooltip or hover card is still open. */
+/** Moves the pointer in two steps (so Chromium fires `pointerleave`), blurs, presses Escape, and fails if a tooltip stays open. */
 async function settleForScreenshot(cdp, findings, failures) {
   const { width, height } = await cdp.evaluate(`({ width: window.innerWidth, height: window.innerHeight })`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
@@ -201,9 +137,7 @@ async function main() {
     screenshotNames.push(name);
   }
 
-  // #1111 gate round 2 LOW: `dirty` is computed FRESH at each report site (the console log
-  // below, and each `report.json` write) rather than cached once here before the run starts --
-  // a run takes minutes, long enough for the repo's own dirty state to genuinely change.
+  // `dirty` is computed at each report site: a run takes minutes and the repo state can change.
 
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1101-data-'));
@@ -218,9 +152,7 @@ async function main() {
     console.log(`verify-1101: shots dir ${SHOTS_DIR}`);
 
     commitRepoBaseline(repoDir);
-    // This story's own extra baseline file (the "long diff to scroll" fixture, item 6/sticky
-    // back) -- committed into the REPO before the Session's worktree is created, so it inherits
-    // real tracked history, then edited (unstaged) once the worktree exists below.
+    // Committed before the worktree exists so it inherits tracked history; edited later.
     writeFileSync(path.join(repoDir, FIXTURE.longTracked), FIXTURE.longTrackedBaseline);
     commitPaths(repoDir, [FIXTURE.longTracked], 'Add long-tracked.txt baseline');
 
@@ -239,7 +171,6 @@ async function main() {
     }
     assertExeUnchanged(exePath, exeHash, 'post-launch', 'verify-1101');
 
-    // ---- Add the scratch repo, create a Session, read its real worktreePath. ----
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -265,13 +196,11 @@ async function main() {
     const { id: sessionId, worktreePath } = sessionInfo;
     findings.push(`Session created: id=${sessionId}, worktreePath=${worktreePath}.`);
 
-    // ---- Build this story's own fixture directly in the Session's worktree. ----
     writeFileSync(path.join(worktreePath, FIXTURE.multiline), MULTILINE_CONTENT);
     writeFileSync(path.join(worktreePath, FIXTURE.longTracked), LONG_TRACKED_EDITED);
     writeFileSync(path.join(worktreePath, FIXTURE.bigUntracked), Buffer.alloc(BIG_UNTRACKED_BYTES, 'A'));
     findings.push(`Fixture built: ${FIXTURE.multiline} (${FIXTURE.multilineLines.length} lines, untracked), ${FIXTURE.longTracked} (${LONG_TRACKED_LINE_COUNT} lines, unstaged edit of a tracked file), ${FIXTURE.bigUntracked} (${BIG_UNTRACKED_BYTES} bytes, untracked).`);
 
-    // ---- Open the Git changes panel. ----
     await cdp.click(`document.querySelector('[data-rail-button="git-changes"]')`);
     await cdp.waitFor(`!!(${SUBJECT_FINDER})`, { timeoutMs: 20_000, label: 'Git changes panel loaded (commit box rendered)' });
     await cdp.waitFor(
@@ -280,9 +209,6 @@ async function main() {
     );
     await shot('01-initial-panel.png');
 
-    // =========================================================================================
-    // Check 1 (item 1): subject counter.
-    // =========================================================================================
     const counterHiddenAtZero = await cdp.evaluate(`!document.querySelector('input[placeholder="Commit subject"]').nextElementSibling`);
     assertEqual(counterHiddenAtZero, true, 'Counter hidden on an empty subject field (no bare "0")', findings, failures);
 
@@ -314,14 +240,7 @@ async function main() {
     const counterGoneAgain = await cdp.evaluate(`!document.querySelector('input[placeholder="Commit subject"]').nextElementSibling`);
     assertEqual(counterGoneAgain, true, 'Counter hides again once the subject is cleared back to empty', findings, failures);
 
-    // =========================================================================================
-    // Check 2 (item 2): commit inputs reuse the composer's own surface/border/focus classes.
-    // =========================================================================================
-    // The previous check's own final `clearField` left the Subject input focused -- blur
-    // everything first so these "resting" reads are genuinely unfocused, not a stray leftover
-    // focus state from Check 1. Settles 300ms: blurring itself re-triggers the `Input`
-    // primitive's own `transition-colors` fading BACK to its resting border/background, so an
-    // immediate read races that same transition (see `readFocusVisibleStyle`'s own doc comment).
+    // Check 1 left the Subject input focused; blur and settle 300ms so resting reads aren't mid-transition.
     await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
     await sleep(300);
     const COMPOSER_WRAPPER = `document.querySelector('[aria-label="Message"]')?.closest('.border-composer-border')`;
@@ -343,17 +262,10 @@ async function main() {
     assertEqual(bodyFocused?.boxShadow, composerFocused?.boxShadow, "Body field's own :focus-visible ring (box-shadow) matches the composer's", findings, failures);
     await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
 
-    // =========================================================================================
-    // Check 3 (item 3): stage/unstage in-progress state -- per-row, then per-group bulk.
-    // =========================================================================================
     const rowBusyFinder = `document.querySelector('span[title=${JSON.stringify(FIXTURE.bigUntracked)}]')?.closest('[aria-busy]')`;
     const bigFileKebabFinder = fileRowActionsFinder(FIXTURE.bigUntracked);
 
-    // #1111 gate round 2 HIGH 5, CONTROL (falsified-and-fixed): BEFORE staging starts (kebab
-    // not busy yet), a keyboard Enter on this SAME trigger genuinely opens its menu -- proves
-    // the dispatch-then-settle-then-query technique below can actually detect a real open, so
-    // the busy-case assertion that follows is genuinely falsifiable, not a check that passes
-    // either way regardless of whether the product fix is present.
+    // Control: Enter on a non-busy trigger opens the menu, so the busy-case assertion below is falsifiable.
     await cdp.evaluate(`(() => { const kebab = (${bigFileKebabFinder}); kebab.focus(); kebab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); })()`);
     await sleep(150);
     const controlMenuOpened = await cdp.evaluate(`!!document.querySelector('[role="menu"][data-state="open"]')`);
@@ -368,28 +280,12 @@ async function main() {
     );
     assertEqual(rowBusySnapshot?.spinner, true, 'Row shows a spinner icon while its own stage is in flight', findings, failures);
     assertEqual(rowBusySnapshot?.kebabAriaDisabled, true, "Row's own kebab trigger is aria-disabled while its stage is in flight", findings, failures);
-    // #1111 item 2 fix (round-2 gate on PR #1109): a NATIVE `disabled` forces a browser blur
-    // the instant React applies it, which left the round-1 build unable to restore focus to a
-    // just-closed menu's own trigger (WCAG 2.4.3 regression) -- the trigger now stays natively
-    // ENABLED throughout.
+    // The trigger stays natively enabled: native `disabled` forces a blur and breaks focus restore (WCAG 2.4.3).
     assertEqual(rowBusySnapshot?.kebabNativeDisabled, false, "Row's own kebab trigger stays natively enabled (never `disabled`) while its stage is in flight", findings, failures);
     await shot('04-busy-staging-big-file.png');
 
-    // #1111 gate round 2 HIGH 5 (falsified-and-fixed): the round-1 version of this check queried
-    // `[role="menu"]` SYNCHRONOUSLY right after `dispatchEvent`, before React's own (possibly
-    // batched) commit had painted anything -- an assertion that could never fail regardless of
-    // whether the product fix was present, and it treated `dispatchEvent`'s own return value as
-    // proof of "our guard fired", which it is NOT: Radix's `DropdownMenuTrigger` already calls
-    // `preventDefault()` unconditionally on a keyboard Enter as part of its normal activation
-    // handling, busy or not, so that boolean alone can never distinguish "our `actionPending`
-    // guard blocked it" from "Radix's own always-on Enter handling did". Fixed: a real settle
-    // delay before the menu-open query (the only assertion that CAN tell the two apart, proven
-    // capable of it by the CONTROL case above); a capturing `keydown` listener attached directly
-    // on the trigger (native capture phase, which -- because React's own root-delegated
-    // dispatch for a plain `onKeyDown` only runs during the BUBBLE leg once the event reaches
-    // the root -- fires strictly before either our component's or Radix's own handler ever runs)
-    // confirms the event reaches the busy trigger with `defaultPrevented` still false at that
-    // point, i.e. nothing pre-empted it earlier in the capture phase.
+    // Radix always calls `preventDefault()` on Enter, so only the settled menu-open query can tell our guard
+    // from Radix; the capture-phase listener confirms nothing pre-empted the event.
     const busyKebabDispatch = await cdp.evaluate(`(() => {
       const row = (${rowBusyFinder});
       const kebab = row ? row.querySelector('[aria-label^="More actions for"]') : null;
@@ -412,8 +308,6 @@ async function main() {
     });
     assertArrayEqual(await readGroupFileTitles(cdp, 'Staged'), [FIXTURE.bigUntracked], 'big-untracked-for-busy.bin reaches Staged once its own in-flight stage settles', findings, failures);
 
-    // Bulk "Stage all" (per-group control): unstage the big file back to Untracked (alongside
-    // the already-untracked multiline fixture), then stage BOTH via the group's own bulk button.
     await clickRowMenuItem(cdp, FIXTURE.bigUntracked, `Unstage ${FIXTURE.bigUntracked}`);
     await cdp.waitFor(
       `(() => { const b = Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label')||'').startsWith('Untracked, ')); return !!b && b.getAttribute('aria-label') === 'Untracked, 2'; })()`,
@@ -438,16 +332,12 @@ async function main() {
       findings,
       failures
     );
-    // Reset: unstage both so the multiline file is back in Untracked for Check 4 below.
     await clickBulkAction(cdp, 'Unstage all in Staged');
     await cdp.waitFor(
       `(() => { const b = Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label')||'').startsWith('Untracked, ')); return !!b && b.getAttribute('aria-label') === 'Untracked, 2'; })()`,
       { timeoutMs: 15_000, label: 'Both fixture files back in Untracked after the reset' }
     );
 
-    // =========================================================================================
-    // Check 4 (item 4): an untracked file's diff shows its whole content as additions.
-    // =========================================================================================
     await cdp.click(fileRowOpenButtonFinder(FIXTURE.multiline));
     await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for the untracked multiline file' });
     const multilineDiffText = await diffViewText(cdp);
@@ -465,14 +355,8 @@ async function main() {
     await cdp.click(BACK_TO_CHANGES_FINDER);
     await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the untracked-diff check' });
 
-    // =========================================================================================
-    // Check 4b (gate round 1 HIGH 1 proof, #1101): an untracked SYMLINK whose target escapes
-    // the worktree is refused outright by `resolve_in_worktree`'s own symlink-following walk
-    // (`changes_diff.rs::untracked_file_patch` step (a)) -- the secret content on the OTHER side
-    // of that link is never read, let alone rendered. Bypasses the UI (same real-IPC-bridge
-    // precedent `runContainmentRefusalCheck` already uses) since the product-level contract
-    // under test is "the Rust side never touches that file's bytes", not any particular render.
-    // =========================================================================================
+    // An untracked symlink escaping the worktree must be refused by `resolve_in_worktree`; checked over the
+    // IPC bridge since the contract is that Rust never reads the target's bytes.
     const outsideSecretDir = mkdtempSync(path.join(tmpdir(), 'refract-1101-outside-secret-'));
     const outsideSecretFile = path.join(outsideSecretDir, 'secret.txt');
     const secretMarker = 'OUTSIDE-WORKTREE-SECRET-MUST-NEVER-LEAK-1101';
@@ -491,9 +375,6 @@ async function main() {
     else if (escapingDiffAttempt.code !== 'outside-worktree') failures.push(`Untracked escaping symlink: refused, but with code "${escapingDiffAttempt.code}" (expected "outside-worktree") -- message: ${escapingDiffAttempt.message}`);
     else findings.push(`Untracked escaping symlink: refused with code "outside-worktree" (${escapingDiffAttempt.message}), the secret content on the other side of the link was never read.`);
     const leakedInMessage = Boolean(escapingDiffAttempt.message && escapingDiffAttempt.message.includes(secretMarker)) || Boolean(escapingDiffAttempt.patch && escapingDiffAttempt.patch.includes(secretMarker));
-    // Low item (#1111): `assertEqual(leakedInMessage, false, ...)` would print a passing line
-    // ending in a bare "`: false`", reading like a hidden failure on a quick skim -- phrased as
-    // an explicit pass/fail pair instead, so the passing case names what was actually confirmed.
     if (leakedInMessage) failures.push('Outside-worktree secret content LEAKED into the diff response (patch or error message) -- must never happen.');
     else findings.push('Outside-worktree secret content never appears in the diff response (patch OR error message): confirmed absent.');
     rmSync(escapingSymlinkPath, { force: true });
@@ -503,29 +384,16 @@ async function main() {
       { timeoutMs: 15_000, label: 'Escaping symlink fixture torn down, gone from Untracked' }
     );
 
-    // =========================================================================================
-    // Check 5 (items 5/6): Back button accessible name, and sticky while the diff scrolls.
-    // =========================================================================================
     await cdp.click(fileRowOpenButtonFinder(FIXTURE.longTracked));
     await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for long-tracked.txt' });
     const backAriaLabel = await activeElementAriaLabel(cdp);
     assertEqual(backAriaLabel, `Back to changes from ${FIXTURE.longTracked}`, "Back button's aria-label names the real open file", findings, failures);
 
-    // Settles 300ms before the first scroll: the diff's own content (syntax highlighting, font
-    // metrics) can still be reflowing immediately after `.diff-view` first mounts.
+    // Settle 300ms: highlighting/font metrics can still reflow after `.diff-view` mounts.
     await sleep(300);
     const scrollRegionFinder = `document.querySelector('.diff-view')?.closest('.overflow-auto')`;
     const scrollPoint = await cdp.evaluate(`(() => { const r = (${scrollRegionFinder}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-    // Live-check fix (verify-1101, 2026-10-20): `rectBefore` used to be captured at `scrollTop`
-    // 0 (unscrolled) -- a real, harmless CSS characteristic of `position: sticky` under a padded
-    // parent (`GitChangesDiffPane`'s own `p-1` root) makes the element's NORMAL-FLOW resting
-    // position (inset by that 4px padding) differ from its STUCK position (flush with the
-    // scrollport's own padding edge, which carries no padding of its own) by exactly that one
-    // discrete jump the INSTANT scrolling starts -- a one-time, imperceptible transition, never
-    // a continuous drift. The real acceptance criterion is "stays in place WHILE scrolling", so
-    // the baseline is captured AFTER a small scroll has already engaged sticky mode, compared
-    // against the position after scrolling much further -- genuinely testing "stays stuck",
-    // not "identical to the unscrolled start".
+    // Baseline is taken after a small scroll: under the padded parent, sticky jumps 4px once when it engages.
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: scrollPoint.x, y: scrollPoint.y, deltaX: 0, deltaY: 60 });
     await sleep(150);
     const rectBefore = await cdp.evaluate(`(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); return { top: r.top, left: r.left }; })()`);
@@ -542,7 +410,6 @@ async function main() {
     const coveredByOther = await cdp.evaluate(
       `(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!hit && !btn.contains(hit) && hit !== btn; })()`
     );
-    // Low item (#1111): same relabel as `leakedInMessage` above.
     if (coveredByOther) failures.push('Back button is covered by another element after scrolling (no longer genuinely hit-testable at its own position).');
     else findings.push('Back button is still genuinely hit-testable at its own position after scrolling (nothing scrolled over it): confirmed, no covering element.');
     await cdp.click(BACK_TO_CHANGES_FINDER);

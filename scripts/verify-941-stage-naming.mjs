@@ -1,44 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #941 part 1 (Stage naming, the one green exception for a finished
-// Subagent/Stage, the Stage's own batch context on expansion, real "Uses:" dependencies, the
-// per-turn Subagent chain row, and the now-UNIFIED solo-vs-multi-agent Stage header).
-//
-// Reuses the recorded-frame fake `omp` harness (`verify-tauri.mjs`/`verify-tauri-cdp.mjs`),
-// driving the fixture (`scripts/fixtures/omp-frames/stages-941.jsonl`,
-// `REFRACT_FAKE_OMP_SCENARIO=stages-941`) via a local `launchBuiltExeWithEnv` (the shared
-// `verify-tauri-scratch-helpers.mjs`'s own `launchBuiltExe` has no `pathPrepend`/`extraEnv`
-// params -- every OTHER `verify-9xx-*.mjs` drives a REAL `omp`, never this fake-frame harness),
-// the same approach `verify-563-subagent-stage.mjs` already uses. That tape scripts ONE user
-// prompt, ONE agent turn, SEVEN serial `task()` batches (Stages) plus one plain, non-Stage
-// `read` tool call -- deliberately never several separate prompt turns: `groupSubagentStages.ts`
-// runs once PER TURN (`Transcript.tsx`'s own `splitIntoTurns`, keyed on `kind: 'user'` items), so
-// a later Stage's own "Uses:" dependency can only resolve against an earlier Stage inside the
-// SAME turn's own `stages` array.
-//
-// Gate round 1 rewrite: reworked against the NEW DOM contract (every Stage, solo or not, gets
-// the same unified header) and a seven-Stage fixture covering every item in the gate round 1
-// fix list (bare-label Stage, over-60-char truncation, a mixed finished+failed Stage, a solo
-// Stage with a real dependency, a context-brief overflow/toggle, a same-Stage self-reference
-// drop, a cross-Stage repeated-name "latest occurrence wins" resolution, and a plain non-Stage
-// tool row for the "tool rows stay neutral" regression guard). Item 13 (CRITICAL, previously a
-// missing-at-runtime import of `resolveCssVarColor` from the WRONG module in the helpers file)
-// is proven fixed by loading both this script and its helpers with a real `import()`, not just
-// `node --check`'s syntax-only pass:
-//
-//   $ node -e "import('./scripts/verify-941-stage-naming-helpers.mjs').then(() => console.log('helpers OK'))"
-//   helpers OK
-//   $ node -e "import('./scripts/verify-941-stage-naming.mjs')"
-//   (module loads; execution then proceeds into main(), which requires a build slot to finish --
-//   see the main script's own report for the actual run)
-//
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
-// plus the real `import()` load-check above are the only commands that have actually been run
-// against these two files. Every DOM/class-name selector they use was grep-verified against the
-// real source it claims to match; see `verify-941-stage-naming-helpers.mjs`'s own header comment
-// for the selector strategy.
-//
-// PR2 scope (the Subagent panel's own Stage grouping, and the "Up next" todo-phase list) is NOT
-// built yet and is not exercised here (recorded in `report.json`'s own `notExercised`).
+// Live CDP check for #941 part 1: Stage naming, finished-Stage green, batch context, "Uses:"
+// dependencies and the unified Stage header, driven by the recorded-frame fake `omp` fixture
+// `stages-941.jsonl`. The fixture is one prompt/turn because Stage grouping runs once per turn,
+// so a "Uses:" dependency can only resolve against an earlier Stage in the same turn.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -104,19 +68,8 @@ async function main() {
   let exeHash = null;
   let gitHeadSha = null;
   let dirty = 'unknown';
-  // Gate round 1 fix (item 17): `SHOTS_DIR` is established and created, `requireSharedCargoTarget`
-  // is called, and `gitHead`/`dirty` are read all at the very TOP of this try block, before
-  // anything else that could throw (the scratch-dir creation below, the build itself, the
-  // launch) -- so if ANY of that later throws, the `catch` below still has a real, EXISTING
-  // `SHOTS_DIR` plus real `gitHead`/`dirty` values to write `report.json` into, instead of an
-  // uncaught module-scope throw leaving no report at all (the bug this item names: the previous
-  // version called `requireSharedCargoTarget` at MODULE scope, entirely outside any try/catch,
-  // and before `SHOTS_DIR` even existed on disk). `SHOTS_DIR` is established and `mkdirSync`'d
-  // FIRST, ahead of `requireSharedCargoTarget` itself (a deliberate, more robust reordering of
-  // the three steps named in item 17: a throw from `requireSharedCargoTarget` must land on a
-  // `SHOTS_DIR` that already exists, or the `catch`'s own `writeFileSync` would itself fail with
-  // ENOENT and still leave no report at all -- the exact failure mode this fix exists to close).
-  // `let`, not `const`, and declared OUTSIDE the try body itself: both are read again in `catch`.
+  // SHOTS_DIR must exist before anything that can throw so the catch can still write report.json;
+  // both `let`s are read again in the catch.
   let SHOTS_DIR = path.join(tmpdir(), 'refract-941-stage-naming-shots', new Date().toISOString().replace(/[:.]/g, '-'));
   let BUILD_OUTPUT_DIR = null;
   try {
@@ -178,9 +131,6 @@ async function main() {
     );
     findings.push('Readiness screen green (fake omp, stages-941 scenario).');
 
-    // Gate round 5 fix (issue #941, item 9, MEDIUM): every real click below scrolls its own
-    // target into view first (`clickScrolled`/`clickByLabelScrolled`/`clickByTextScrolled`,
-    // `verify-tauri-cdp.mjs`'s own `click()` never does) -- a no-op when already in view.
     await clickScrolled(cdp, `document.querySelector('[data-readiness-primary]')`);
     await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
     await clickScrolled(cdp, `document.querySelector('[role="dialog"] input')`);
@@ -206,8 +156,6 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await clickByLabelScrolled(cdp, 'Send message');
 
-    // Wait for all ten Stage rows, the solo Stages, and the plain non-Stage tool row to settle:
-    // every one of their own `title`-bearing label spans present in the transcript.
     for (const titleText of [
       STAGE1_TITLE,
       STAGE2_TITLE,
@@ -228,9 +176,6 @@ async function main() {
           throw err;
         });
     }
-    // Every Stage/tool row settled (no running word anywhere left in the transcript). Stage 5's
-    // own FailAgent settles to "failed", not "running", so this still holds with a genuine
-    // failure present.
     await cdp.waitFor(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && !t.textContent.includes('Running'); })()`,
       { timeoutMs: 30_000, label: 'All ten Stages and the plain tool row settled' }
@@ -239,26 +184,15 @@ async function main() {
     findings.push('All ten Stages, the solo Stages, and the plain non-Stage tool row rendered and settled.');
 
     for (const [themeIndex, theme] of THEMES.entries()) {
-      // Gate round 3 fix (item 11): only the FIRST pass through this loop can assert a row's
-      // own REAL `defaultOpen` starting value exactly -- `switchTheme` never reloads the app,
-      // so a row a later pass already expanded stays expanded across every subsequent theme.
+      // Only the first pass can assert the real `defaultOpen` value: switchTheme never reloads, so
+      // rows expanded earlier stay open.
       const isFirstThemePass = themeIndex === 0;
       await switchTheme(cdp, theme.id, theme.name);
       await assertStageNaming(cdp, findings, failures, theme.name);
       await assertSoloAgentName(cdp, findings, failures, theme.name, notExercised);
       await assertStageMetaRollup(cdp, findings, failures, theme.name);
-      // Gate round 5 fix (items 6/7, HIGH): both expand-cycle "starts collapsed" first-pass
-      // checks now run BEFORE anything else ever expands that same row -- `assertGreenFinished`
-      // below expands Stage 1 (and Stage 5) for its own member-colour check, and
-      // `assertDependencies` expands Stage 7 for its own self-reference check; either one
-      // running FIRST made the later "starts collapsed" assertion a false failure (the row was
-      // already open by the time it ran). `assertDetailsOnExpand`'s own re-expand is a no-op
-      // once `assertGreenFinished` later re-touches the same row (`expandByFinder` only clicks
-      // when not already open); `assertContextBriefOverflow` leaves Stage 7's own BRIEF
-      // (the "Show full brief"/"Show less" toggle content nested inside it) re-collapsed at
-      // the end of its own cycle -- the Stage 7 ROW itself stays EXPANDED throughout, opened
-      // once at that function's own start and never closed again -- so `assertDependencies`'s
-      // later plain `expandRow` call for Stage 7 is unaffected either way (already open).
+      // Order matters: assertGreenFinished and assertDependencies expand Stage 1/5/7, which would
+      // falsify the "starts collapsed" first-pass checks if they ran first.
       await assertDetailsOnExpand(cdp, findings, failures, theme.name, isFirstThemePass);
       await assertContextBriefOverflow(cdp, findings, failures, theme.name, isFirstThemePass);
       await assertGreenFinished(cdp, findings, failures, theme.name);
@@ -303,7 +237,6 @@ async function main() {
         JSON.stringify({ gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2)
       );
     } catch {
-      // best-effort only
     }
     console.error('verify-941: FAILED:', err?.stack ?? err);
     process.exitCode = 1;

@@ -1,23 +1,11 @@
 #!/usr/bin/env node
-// Issue #784 (Phase R, docs/PLAN.md R1): generated parity report for the renderer-facing IPC
-// contract (`src/shared/ipc.ts`'s `IPC_REQUESTS`, `IPC_EVENTS`, `THEME_BOOTSTRAP_CHANNEL`)
-// against the Rust (Tauri, `src-tauri/src`) backend, alongside the Phase R lane that owns it.
-// Replaces the hand-kept `specs/016-tauri-rust-build/parity.md` table, which could silently
-// drift from the real channel list -- this script re-derives everything from source on every
-// run, so a channel added to `ipc.ts` later shows up as missing automatically, with no table to
-// remember to update.
-//
-// The Electron source-file column this report used to carry (`src/main`'s own
-// `ipcMain.handle`/`ipcMain.on` call sites) was removed at #796/R13: Electron was deleted, so
-// there is no longer an Electron side to cite. Rust implementation state is now the only thing
-// this script checks.
+// Generated parity report: renderer IPC contract (`src/shared/ipc.ts`) vs the Rust backend (`src-tauri/src`),
+// re-derived from source each run so a new channel shows up as missing automatically.
 //
 // Usage:
 //   node scripts/check-parity.mjs              print a plain-text table + totals
 //   node scripts/check-parity.mjs --markdown    print a GitHub-flavoured markdown table instead
-//   node scripts/check-parity.mjs --gate        exit 1 if any channel is not implemented (the
-//                                                parity gate, switched on in CI at #796/R13)
-// Exits 0 otherwise, even when channels are missing (report-only without `--gate`).
+//   node scripts/check-parity.mjs --gate        exit 1 if any channel is not implemented
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -48,10 +36,6 @@ function relPath(p) {
   return path.relative(repoRoot, p).replace(/\\/g, '/');
 }
 
-// ---------------------------------------------------------------------------
-// 1. The contract: IPC_REQUESTS / IPC_EVENTS / THEME_BOOTSTRAP_CHANNEL from ipc.ts. Read, not
-// copied, so this never drifts from the real channel list (FR-008 in spec 016).
-// ---------------------------------------------------------------------------
 
 function extractConstObject(source, constName) {
   const match = source.match(new RegExp(`export const ${constName} = \\{([\\s\\S]*?)\\n\\} as const;?`));
@@ -60,8 +44,7 @@ function extractConstObject(source, constName) {
   const entryRe = /^\s*([A-Z0-9_]+):\s*'([^']+)',?\s*$/gm;
   let m;
   while ((m = entryRe.exec(match[1]))) entries.push({ key: m[1], value: m[2] });
-  // Guards against a line the regex above silently failed to parse (a trailing `// comment`, a
-  // different quote style, ...) instead of quietly undercounting the real channel list.
+  // Guards against a line the regex silently failed to parse instead of undercounting channels.
   const bodyLineCount = match[1]
     .split('\n')
     .filter((line) => line.trim().length > 0 && !line.trim().startsWith('//')).length;
@@ -74,7 +57,7 @@ function extractConstObject(source, constName) {
 }
 
 const ipcSource = readFile(ipcTsPath);
-// Spec 060: `ipc.ts` is at its cap, so the Usage channels live in `ipc-usage.ts`.
+// `ipc.ts` is at its line cap, so the Usage channels live in `ipc-usage.ts`.
 const ipcUsageSource = readFile(path.join(repoRoot, 'src/shared/ipc-usage.ts'));
 const requests = [
   ...extractConstObject(ipcSource, 'IPC_REQUESTS'),
@@ -88,21 +71,13 @@ const bootstrapMatch = ipcSource.match(/export const THEME_BOOTSTRAP_CHANNEL = '
 if (!bootstrapMatch) throw new Error(`check-parity: could not find THEME_BOOTSTRAP_CHANNEL in ${relPath(ipcTsPath)}`);
 const themeBootstrapChannel = bootstrapMatch[1];
 
-// ---------------------------------------------------------------------------
-// 2. Rust implementation state, scanned recursively under `src-tauri/src` so it never depends on
-// which file a `register(...)` call currently lives in (lanes are splitting `ipc/mod.rs` and
-// `session/agent.rs` into per-lane modules while this runs).
-// ---------------------------------------------------------------------------
 
 function formatSources(set) {
   if (!set || set.size === 0) return 'unknown';
   return [...set].sort().join('; ');
 }
 
-/** Strips a trailing `//` line comment from each line before scanning for `.register(...)` calls
- * (this codebase's `.register("...")` calls never put a `//` inside the string argument, so a
- * naive per-line split on the first `//` is sufficient to keep a commented-out call from being
- * counted as a real registration). */
+// A naive split on the first `//` suffices: no `.register("...")` argument contains `//`.
 function stripLineComments(content) {
   return content
     .split('\n')
@@ -113,13 +88,8 @@ function stripLineComments(content) {
     .join('\n');
 }
 
-/** Blanks out every `#[cfg(test)] mod ... { ... }` span (brace-depth matched from the `{` that
- * follows `mod`) so a test-only registration never inflates the count. Blanking rather than
- * slicing keeps every other line's offset -- and the rest of this scan -- unaffected. Only
- * treats a `#[cfg(test)]` attribute as gating a module if `mod \w+ {` is the next real token
- * after it (only whitespace and `//` line comments may sit between); an attribute annotating
- * anything else (`fn`, `use`, ...) is left untouched so a later, unrelated real module is never
- * walked past and blanked out by mistake. */
+// Blanks (not slices) `#[cfg(test)] mod` spans to keep offsets stable. Only gates a module when `mod \w+ {` follows
+// the attribute, so an attribute on `fn`/`use` never blanks a later real module.
 function stripCfgTestModules(content) {
   const attrRe = /#\[cfg\(test\)\]/g;
   let result = content;
@@ -146,10 +116,7 @@ function stripCfgTestModules(content) {
   return result;
 }
 
-/** Every string literal passed as the first argument to a `.register(...)` call, anywhere under
- * `src-tauri/src` -- the Rust `Dispatcher`'s channel registration. Comments and `#[cfg(test)]`
- * modules are stripped first so neither a commented-out call nor a test-only registration
- * counts. */
+// Comments and `#[cfg(test)]` modules are stripped first so neither inflates the registration count.
 function findRustRegisteredRequests() {
   const registered = new Set();
   const registeredSources = new Map(); // registered string -> Set<relative file path>
@@ -169,11 +136,7 @@ function findRustRegisteredRequests() {
   return { registered, registeredSources, rawCount };
 }
 
-/** `events.rs` declares one `pub const NAME: &str = "value"` per `IPC_EVENTS` entry (FR-008
- * comment at the top of that file) but only wires some of them to a working emit path. Returns
- * the constant -> string-value map plus the constant -> emit-method-name map for constants whose
- * `emit_*` wrapper in this file sends them via `self.send(NAME, ...)` (used by
- * `isEmitMethodCalledElsewhere` below for the pre-split scaffold's own call path). */
+// `events.rs` declares a const per `IPC_EVENTS` entry but wires only some to a working emit path.
 function findRustEventConstants() {
   const eventsRsPath = path.join(tauriSrcDir, 'events.rs');
   const content = readFile(eventsRsPath);
@@ -192,10 +155,7 @@ function findRustEventConstants() {
   return { constants, emitMethodByConst };
 }
 
-/** An `emit_*` wrapper that exists but is never called anywhere is the Rust equivalent of a
- * declared-but-unsent event: `self.send(...)` would run, but nothing ever reaches it. Checked
- * against every `.rs` file except `events.rs` itself (which only ever defines these methods, not
- * calls them). */
+// An `emit_*` wrapper nothing calls is a declared-but-unsent event; `events.rs` is excluded since it only defines them.
 function isEmitMethodCalledElsewhere(methodName) {
   const callRe = new RegExp(`\\.${methodName}\\(`);
   for (const file of walk(tauriSrcDir)) {
@@ -205,15 +165,8 @@ function isEmitMethodCalledElsewhere(methodName) {
   return false;
 }
 
-/** A lane calling its own event directly -- `.send(NAME, ...)`/`.emit(NAME, ...)` with the named
- * constant (optionally path-qualified, e.g. `crate::events::NAME` or `events::emit(&app, NAME,
- * ...)`'s free-function form, which takes the constant as its *second* argument rather than
- * calling it as a method), or `.send("value", ...)`/`.emit("value", ...)` with the constant's own
- * string literal -- now that `EventSink::send` is `pub(crate)` (issue #784: no `events.rs` edit
- * required to add a new emit call). Line comments are stripped first so a commented-out call is
- * never counted. Checked against every `.rs` file except `events.rs` itself, which only defines
- * the constants, the `emit_*` wrappers, and the free `emit()` function, never calls them
- * directly. */
+// Lanes may call `.send`/`.emit` directly with the constant (optionally path-qualified) or its literal; the free
+// `events::emit(&app, NAME, ...)` form takes the constant as its second argument.
 function isEventSentDirectlyFromLaneFile(constName, value) {
   const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const methodCallRe = new RegExp(`\\.(?:send|emit)\\(\\s*(?:(?:[\\w:]+::)?${constName}\\b|"${escapedValue}")`);
@@ -226,8 +179,7 @@ function isEventSentDirectlyFromLaneFile(constName, value) {
   return false;
 }
 
-/** FR-010/FR-011 (spec 016): the one non-`IPC_EVENTS`/non-`IPC_REQUESTS` channel. Implemented
- * once `lib.rs` injects `window.__REFRACT_THEME_BOOTSTRAP__` via a Tauri `initialization_script`. */
+// The one channel outside `IPC_EVENTS`/`IPC_REQUESTS`: implemented once `lib.rs` injects `window.__REFRACT_THEME_BOOTSTRAP__`.
 function isThemeBootstrapImplemented() {
   for (const file of walk(tauriSrcDir)) {
     if (!file.endsWith('.rs')) continue;
@@ -269,14 +221,7 @@ function rustEventConstNameForValue(value) {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// 3. Lane ownership, derived from docs/PLAN.md "Phase R: Rust promotion" (the `#`/`Issue`/`Files
-// touched` columns, read 2026-10-13). Each lane's own `.rs` file(s) and work description decide
-// which channels it owns; channels already implemented in the pre-split scaffold with no later
-// lane claiming their file (clipboard, conversations, readiness, the core session list/create)
-// stay attributed to R1 (#784, this issue). Update this map when a Phase R row's Files column
-// changes.
-// ---------------------------------------------------------------------------
+// Lane ownership per docs/PLAN.md "Phase R"; scaffold channels no later lane claims stay with R1. Update when a lane's Files column changes.
 
 const REQUEST_LANES = {
   READINESS_CHECK: 'R1', // #784, scaffold; no later lane claims readiness.rs
@@ -435,9 +380,6 @@ const EVENT_LANES = {
 
 const THEME_BOOTSTRAP_LANE = 'R8'; // #791, theme.rs
 
-// ---------------------------------------------------------------------------
-// 4. Build the report rows.
-// ---------------------------------------------------------------------------
 
 const rows = [];
 
@@ -470,10 +412,6 @@ rows.push({
 const requestRows = rows.filter((r) => r.kind === 'request');
 const eventRows = rows.filter((r) => r.kind === 'event');
 const bootstrapRow = rows.find((r) => r.kind === 'bootstrap');
-
-// ---------------------------------------------------------------------------
-// 5. Print.
-// ---------------------------------------------------------------------------
 
 function printMarkdownTable(tableRows) {
   console.log('| Channel | Kind | Lane | Implemented |');

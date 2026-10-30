@@ -1,11 +1,6 @@
-// Spec 041 FR-006 (T12): contrast for the Chat navigation tokens -- Chat Find's match fills
-// (`--find-match-bg`, `--find-match-current-bg`) and the scrollbar map's marks, track and
-// viewport window (`--scrollbar-map-*`). The tokens live in `:root` with a `.theme-dark-high-
-// contrast` override, so check-theme-contrast.mjs's per-theme parse never sees them; this module
-// reads them from globals.css itself and resolves each one (`var(--x)` or `color-mix(in oklab,
-// var(--x) N%, transparent)`) against every theme's own tokens. The `forced-colors` overrides
-// are system colours (Highlight/HighlightText, CanvasText/Canvas), paired by the user agent, so
-// they are not measurable here. Kept in its own module for the #806 file-size ratchet.
+// Contrast for Chat Find and scrollbar-map tokens. They live in `:root` with an override that
+// check-theme-contrast.mjs's per-theme parse never sees, so this reads globals.css itself.
+// forced-colors overrides are system colours paired by the user agent, so they are skipped.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

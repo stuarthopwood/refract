@@ -1,33 +1,8 @@
 #!/usr/bin/env node
-// Side chat (`/btw`) + word prediction live check for lane R6 (issue #789), against #789's own
-// acceptance list. Driven directly through `window.refract.*` (never DOM clicks through the
-// composer/side-chat panel -- faster and more robust than guessing selectors, and exercises the
-// exact same Tauri IPC bridge the real UI calls). Reuses `scripts/verify-tauri-cdp.mjs`'s CDP
-// primitives (issue #795, R12a) and duplicates the small build/copy/launch glue
-// `scripts/verify-tauri.mjs` already has (never imported: that file is issue #795's own, and
-// R6 selecting `side-chat-live.jsonl`/`side-chat-restart.jsonl` directly, instead of through
-// `pnpm verify:tauri`, is exactly what `scripts/fixtures/omp-frames/README.md`'s own
-// "Scenario selection" section calls for).
-//
-// Two launches against the recorded-frame fake `omp` (scripts/verify-tauri-fake-omp.mjs):
-//   Run 1 (side-chat-live.jsonl): two scratch repositories, two Sessions (`live`, `peer`) plus a
-//     third Session created but never opened (`stopped`). Proves: a side question streams during
-//     a main turn and finishes; a second side question is cancelled and the cancelled record
-//     carries no leftover text; the peer Session's own side-chat:patch listener sees nothing the
-//     whole run (cross-session isolation); ghost text (`predict_word`) is gated off by default
-//     (no RPC at all) until the switch is flipped, then works; the off switch's own gate never
-//     reaches a never-opened Session's process; a Conversation switch raises
-//     `side-chat:conversation-changed`.
-//   Run 2 (side-chat-restart.jsonl): a fresh launch against the SAME `REFRACT_DATA_DIR`, a brand
-//     new fake `omp` process reattaching to the `live` Session, proving `sideChat.getHistory`
-//     survives a restart (see that fixture's own provenance note for what this does and does not
-//     prove with no real `omp` in the loop).
-//
-// Not covered here (left "not exercised" per the lane's own verification instructions): a real,
-// signed-in `omp`'s actual on-disk `btw` history persistence (no live model turn was spent on
-// this lane; `side-chat-restart.jsonl` simulates the reattach shape only), and real WebView2
-// ghost-text UI interaction (MessageInput.tsx's own debounce/caret math) -- `predict_word` is
-// called directly here, the same contract the composer itself calls.
+// Live check (#789, lane R6) of side chat (`/btw`) and word prediction against the recorded-frame fake `omp`.
+// Driven through `window.refract.*` rather than DOM clicks (same IPC bridge as the real UI). Run 1 uses
+// side-chat-live.jsonl; run 2 (side-chat-restart.jsonl, same data dir) checks `sideChat.getHistory` survives a restart.
+// Not exercised: a real `omp`'s on-disk `btw` persistence, and WebView2 ghost-text UI (`predict_word` is called directly).
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, readFileSync } from 'node:fs';
@@ -174,9 +149,7 @@ function assert(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
-/** Creates a repository + Session, opens it (attaches the fake `omp` process), and returns the
- * new Session's own id. `open: false` creates it without ever attaching -- the "never starts a
- * stopped Session's process" check needs exactly that. */
+/** Creates a repository + Session and returns its id; `open: false` skips attaching the fake `omp` process. */
 async function createSession(cdp, repoDir, { open }) {
   const repo = await cdp.evaluate(`window.refract.repositories.add(${JSON.stringify(repoDir)}).then((r) => r.ok ? r.value : Promise.reject(new Error(JSON.stringify(r.error))))`);
   const session = await cdp.evaluate(
@@ -188,8 +161,7 @@ async function createSession(cdp, repoDir, { open }) {
   return session.id;
 }
 
-/** Installs a global side-chat event collector on `window` so assertions below can inspect every
- * payload any Session's listener received during the whole run, not just the most recent one. */
+/** Installs a global side-chat event collector on `window` so assertions can inspect every payload of the run. */
 async function installEventCollectors(cdp) {
   await cdp.evaluate(`
     window.__r6Events = { patch: [], interrupted: [], conversationChanged: [] };
@@ -204,11 +176,7 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   await installEventCollectors(cdp);
 
   const liveId = await createSession(cdp, repoLiveDir, { open: true });
-  // Isolation verification (refract-tauri-live-check-isolation skill, gate-fix round 2 LOW):
-  // `registry.json` is only ever WRITTEN on the first mutating call (`RegistryStore::open` only
-  // reads, with an empty-registry fallback, so it does not exist on a truly fresh scratch dir
-  // until now) -- checked right after the FIRST repository/session is created, the earliest
-  // point this is a meaningful check, and before any further session is trusted.
+  // `registry.json` is only written on the first mutating call, so check it right after the first repo/session is created.
   if (!existsSync(path.join(dataDir, 'registry.json'))) {
     throw new Error(`verify-tauri-side-chat: registry.json never appeared under the scratch data dir ${dataDir} -- REFRACT_DATA_DIR override was not honoured, aborting`);
   }
@@ -217,10 +185,7 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   console.log(`verify-tauri-side-chat: live=${liveId} peer=${peerId} stopped=${stoppedId}`);
 
   // --- Acceptance 1: a side question streams during a main turn and finishes. ---
-  // Gate-fix (2026-10-14 gate review HIGH): `btw_delta` is gated on visibility
-  // (`should_forward_side_chat_patch`) -- mark the live Session visible BEFORE asking, so the
-  // streaming assertion below can require a real delta patch, not just the always-forwarded
-  // terminal record.
+  // `btw_delta` is only forwarded to visible Sessions, so mark live visible first to require a real delta patch.
   const setVisibleResult = await cdp.evaluate(`window.refract.sessions.setVisible([${JSON.stringify(liveId)}])`);
   assert(setVisibleResult.ok, `sessions.setVisible failed: ${JSON.stringify(setVisibleResult)}`);
   const sendResult = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(liveId)}, 'Please respond now, r6.')`);
@@ -307,20 +272,10 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   assert(switchEvent.sessionId === liveId, `conversation-changed should name the live Session: ${JSON.stringify(switchEvent)}`);
   console.log('PASS: starting a new Conversation raised side-chat:conversation-changed for the live Session.');
 
-  // --- Acceptance 8, MEDIUM (2026-10-14 gate review round 3 HIGH: the round-1/2 before/after
-  // patch-COUNT check could never fail -- side-chat-live.jsonl's own late, unsolicited topic-2
-  // `btw_delta`/`btw_record` push frames land synchronously right after `startNew`'s own
-  // `get_state` response, before any "before" snapshot taken afterward could ever run without
-  // them already counted). The real content assertion -- that the exact fixture strings these
-  // late frames carry never appear in any patch for `liveId` -- runs at the very end of this
-  // function instead, after every later check has had the maximum chance to let them land.
+  // --- Acceptance 8: late topic-2 `btw` push frames must never leak into liveId's patches (asserted at the end). ---
 
-  // --- Acceptance 9, HIGH (2026-10-14 gate review): the stopped-Session Conversation-switch
-  // path (`start_with_conversation` -> `reset_after_start_with_conversation`) also raises
-  // side-chat:conversation-changed -- the gap the gate review found (this path used to never
-  // reset side chat at all). `stoppedId` was never opened, so `conversations.startNew` routes
-  // through `start_with_conversation`, spawning its own fresh fake-omp process that reattaches
-  // through this tape's own preamble.
+  // --- Acceptance 9: the stopped-Session Conversation-switch path (`start_with_conversation`) also raises
+  // side-chat:conversation-changed; `stoppedId` was never opened, so this spawns a fresh fake-omp process.
   const beforeStoppedSwitch = await cdp.evaluate(`window.__r6Events.conversationChanged.length`);
   const stoppedSwitchResult = await cdp.evaluate(`window.refract.conversations.startNew(${JSON.stringify(stoppedId)})`);
   assert(stoppedSwitchResult.ok, `conversations.startNew on the stopped Session failed: ${JSON.stringify(stoppedSwitchResult)}`);
@@ -331,11 +286,7 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   assert(stoppedSwitchEvent.sessionId === stoppedId, `conversation-changed should name the stopped Session: ${JSON.stringify(stoppedSwitchEvent)}`);
   console.log('PASS: starting a stopped Session with a Conversation (start_with_conversation) also raised side-chat:conversation-changed.');
 
-  // --- Acceptance 8 (continued from above): the actual content assertion, run last so the
-  // late, unsolicited topic-2 push frames (emitted synchronously right after acceptance 7's own
-  // startNew/get_state exchange) have had the maximum possible time to land before this checks
-  // the FULL set of patches collected over the whole run -- a before/after count can never prove
-  // this; only checking for the fixture's own exact leaked strings can.
+  // --- Acceptance 8 (cont.): run last so the late push frames have had maximum time to land; a count check can't prove this. ---
   const leakedDelta = await cdp.evaluate(
     `window.__r6Events.patch.find((p) => p.sessionId === ${JSON.stringify(liveId)} && p.delta === 'late leaked text')`,
   );
@@ -381,10 +332,7 @@ async function main() {
   try {
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-r6-shim-'));
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-r6-data-'));
-    // Isolation (refract-tauri-live-check-isolation skill): an EMPTY scratch import source, so a
-    // debug build's one-time Electron-registry import (`lib.rs::electron_source_dir`) never
-    // reads Stuart's real `%APPDATA%\pinion`, even though `REFRACT_DATA_DIR` alone already makes
-    // it skip the import with no override set at all.
+    // An empty scratch import source keeps a debug build's one-time Electron-registry import off the real `%APPDATA%\pinion`.
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-r6-import-src-'));
     repoLiveDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-r6-repo-live-')));
     repoPeerDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-r6-repo-peer-')));

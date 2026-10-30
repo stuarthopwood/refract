@@ -1,28 +1,10 @@
 #!/usr/bin/env node
-// Live check for issue #880 ("Bug: Tauri build's taskbar button shows a generic blank icon, not
-// the Refract logo (window icon never set)"). Builds and launches a REAL Tauri debug exe (never
-// a mock), then inspects its own real OS-level window state via native Win32 calls (never a DOM
-// read): `WM_GETICON` (the lookup Windows' own taskbar/Alt-Tab icon resolution reads an icon
-// from first) and the window's `System.AppUserModel.ID` property via
-// `SHGetPropertyStoreForWindow` (the same property `shell::app_identity.rs`'s own doc comment
-// cites Tauri's NSIS installer as writing onto the Start Menu/Desktop shortcut it creates,
-// confirmed there against `tauri-bundler`'s own source). Also captures a native (title-bar
-// included) screenshot of the window via `PrintWindow`.
+// Live check for #880 (Tauri taskbar button shows a blank icon): launches a REAL Tauri debug exe and inspects its OS window via Win32 (not the DOM):
+// `WM_GETICON` (what taskbar/Alt-Tab read first) and `System.AppUserModel.ID` via `SHGetPropertyStoreForWindow`, plus a native `PrintWindow` screenshot.
 //
-// STATED LIMITATIONS (lane gate checklist: "never claim a test that did not happen"):
-//   - The taskbar BUTTON's own glyph is judged by eye from the screenshot/report, not asserted
-//     programmatically -- this script proves the window itself carries a real, non-null icon at
-//     `WM_GETICON(ICON_BIG)`/`WM_GETICON(ICON_SMALL)` (what actually controls the glyph), and
-//     that the running identity is exactly the expected dev AUMID; it does not additionally
-//     screenshot the live Windows taskbar strip itself. `GetClassLongPtr(GCLP_HICON/
-//     GCLP_HICONSM)` is read and reported but never asserted: tao's own window class is always
-//     registered with null class icons by design (`shell::app_identity::set_window_icons`'s own
-//     doc comment), regardless of whether this fix is present.
-//   - The PACKAGED id's shortcut grouping (`APP_USER_MODEL_ID_PACKAGED` matching the real NSIS
-//     installer's own shortcut `PKEY_AppUserModel_ID`) needs an installed build to verify end to
-//     end; this script runs a debug (unpackaged) build, which `shell::app_identity::
-//     current_app_user_model_id` deliberately routes to `APP_USER_MODEL_ID_DEV` instead (see that
-//     module's own doc comment) -- asserted here as the one its own build run must carry.
+// Limits: the taskbar glyph is judged by eye from the screenshot, not asserted; `GetClassLongPtr(GCLP_HICON/GCLP_HICONSM)` is reported only,
+// because tao always registers null class icons (`shell::app_identity::set_window_icons`). The PACKAGED AUMID needs an installed build;
+// a debug build deliberately uses `APP_USER_MODEL_ID_DEV`, which is what is asserted.
 //
 // Usage (after `pnpm install` on this exact head): CARGO_TARGET_DIR=<shared target dir>
 // CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node scripts/verify-880-taskbar-icon.mjs
@@ -42,9 +24,7 @@ const LOG = 'verify-880';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_880_SHOTS_DIR || path.join(tmpdir(), 'refract-880-taskbar-icon-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// Mirrors `src-tauri/src/shell/app_identity.rs`'s own `APP_USER_MODEL_ID_DEV` constant (that
-// module's own doc comment: `cfg!(debug_assertions)` picks this id for any non-`--release` build,
-// and `buildAndCopyExeFresh` below always runs `pnpm tauri build --debug --no-bundle`).
+// Mirrors `APP_USER_MODEL_ID_DEV` in `src-tauri/src/shell/app_identity.rs`: any non-`--release` build picks it, and `buildAndCopyExeFresh` always builds `--debug`.
 const EXPECTED_DEV_AUMID = 'com.stuarthopwood.refract.rust-preview.dev';
 
 function spawnSync_(cmd, args) {
@@ -78,9 +58,7 @@ async function main() {
   }
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-880-data-'));
-  // Gate-pattern from #926 round 2 (Code2 Low): an explicit, empty, per-run scratch folder --
-  // never the caller's own ambient `%APPDATA%\pinion` -- so a real import attempt has nothing
-  // real to copy from (this script never touches the data a real import would produce anyway).
+  // An empty per-run folder, never the ambient `%APPDATA%\pinion`, so a real import has nothing real to copy.
   const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-880-import-'));
   const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-880-exe-'));
   const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-880-launcher-'));
@@ -104,11 +82,7 @@ async function main() {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
 
-    // Real UI flow: just enough to prove the window has actually painted real content before the
-    // native inspection/screenshot below runs (mirrors `verify-926-attach-any-file.mjs`'s own
-    // readiness-mount wait) -- no fake omp shim, no session creation: this issue is about the
-    // native window/taskbar identity, not anything the renderer itself renders, so the readiness
-    // screen mounting (regardless of whether a real omp happens to be on PATH) is sufficient.
+    // Waiting for the readiness screen is enough to prove the window painted; no fake omp or session is needed for a native-identity check.
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted (window has painted real content)' });
 
     const screenshotPath = path.join(SHOTS_DIR, 'window.png');
@@ -118,18 +92,13 @@ async function main() {
     assertTruthy(windowState.hwnd, 'a visible top-level window exists for the launched pid');
     assertTruthy(windowState.wmGetIconBig, 'WM_GETICON(ICON_BIG) returns a non-null HICON');
     assertTruthy(windowState.wmGetIconSmall, 'WM_GETICON(ICON_SMALL) returns a non-null HICON');
-    // Gate round 1 (CRITICAL finding): GetClassLongPtr(GCLP_HICON/GCLP_HICONSM) is read for the
-    // report only, never asserted -- tao's own RegisterClassExW call always registers the
-    // window CLASS icons null (`shell::app_identity::set_window_icons`'s own doc comment cites
-    // tao-0.37.1's window.rs:1434-1441), so asserting non-null here would fail even on a
-    // correctly-fixed build.
+    // GCLP_HICON/GCLP_HICONSM are reported only: tao's RegisterClassExW always registers null class icons (tao-0.37.1 window.rs:1434-1441), even on a fixed build.
     report.push({ step: 'GetClassLongPtr(GCLP_HICON/GCLP_HICONSM) read (informational, expected null)', ok: true, classLongHicon: windowState.classLongHicon, classLongHiconSm: windowState.classLongHiconSm });
     assertEqual(windowState.aumid, EXPECTED_DEV_AUMID, 'window AppUserModelID (SHGetPropertyStoreForWindow + PKEY_AppUserModel_ID) equals the expected dev id');
 
     report.push({ step: 'native window screenshot (title bar icon included)', ok: true, screenshots: citeScreenshots(SHOTS_DIR, ['window.png']) });
   } catch (err) {
-    // Gate-pattern (#926 round 4, Test4 Medium): one explicit `ok: false` crash entry, always, so
-    // `report.json` alone can never misread a genuinely crashed run as a clean partial pass.
+    // Always one explicit `ok: false` crash entry, so `report.json` can't read a crashed run as a clean partial pass.
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     throw err;
   } finally {

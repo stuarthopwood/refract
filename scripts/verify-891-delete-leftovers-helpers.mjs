@@ -1,8 +1,5 @@
-// Helper functions for verify-891-delete-leftovers.mjs, split out to keep that file under the
-// repo's 600-line soft cap (scripts/check-file-size.mjs). Content-generation (junctions, long
-// paths, read-only files, bulk file counts), spawning/driving the exact holder processes the
-// live check needs, reading registry.json directly, and driving the real Delete dialog over CDP
-// (no existing helper covers this dialog -- #891 is the first live check of it).
+// Helpers for verify-891-delete-leftovers.mjs (split for the file-size cap): fixture generation,
+// holder processes, registry reads, and driving the real Delete dialog over CDP.
 
 import { mkdirSync, writeFileSync, chmodSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -85,9 +82,7 @@ export function populateFullWorktree(worktreePath, canaryDir) {
   mkdirSync(canaryDir, { recursive: true });
   const canaryFile = path.join(canaryDir, 'canary.txt');
   writeFileSync(canaryFile, 'do not touch -- outside the worktree');
-  // Issue #891 gate round (T4): read-only, so a bug that somehow reached past the containment
-  // refusal would ALSO have to clear this attribute before deleting it -- the strongest signal
-  // available (short of a real ACL) that nothing on the removal path ever touched it.
+  // Read-only: a removal that escaped containment would also have to clear this attribute.
   chmodSync(canaryFile, 0o444);
 
   const nodeModules = path.join(worktreePath, 'patient', 'client', 'node_modules');
@@ -102,13 +97,12 @@ export function populateFullWorktree(worktreePath, canaryDir) {
     }
   }
 
-  // A junction INSIDE the worktree whose real target is OUTSIDE it entirely -- never followed,
-  // never deleted through.
+  // Junction whose target is outside the worktree: must never be followed or deleted through.
   const junction = path.join(nodeModules, 'linked-store');
   const result = spawnSync('cmd', ['/C', 'mklink', '/J', junction, canaryDir], { encoding: 'utf8', windowsHide: true });
   assert(result.status === 0, `mklink /J created the junction: ${result.stderr || result.stdout}`);
 
-  // A path comfortably over the 260-character MAX_PATH threshold.
+  // Over the 260-character MAX_PATH limit.
   let deep = path.join(worktreePath, 'deep');
   const longName = 'a'.repeat(60);
   for (let i = 0; i < 4; i++) deep = path.join(deep, longName);
@@ -118,7 +112,6 @@ export function populateFullWorktree(worktreePath, canaryDir) {
   assert(longFile.length > 260, `the deep file path is over 260 characters (${longFile.length})`);
   fileCount++;
 
-  // Read-only files.
   const readonlyDir = path.join(worktreePath, 'dist');
   mkdirSync(readonlyDir, { recursive: true });
   for (let f = 0; f < 5; f++) {
@@ -211,7 +204,6 @@ export async function killSpawned(child) {
   });
 }
 
-// ---- Delete dialog driving (new: no existing verify-tauri-*.mjs script touches this dialog) ----
 
 function rowActionsFinderByName(name) {
   return `Array.from(document.querySelectorAll('[data-repository-id] li')).find((li) => li.querySelector('[data-session-open]')?.getAttribute('aria-label')?.startsWith(${JSON.stringify(name)}))?.querySelector('button[aria-label$=" actions"]')`;

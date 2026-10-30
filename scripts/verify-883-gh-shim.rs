@@ -1,9 +1,6 @@
-// PATH shim for a fake `gh` (issue #883 live check, scripts/verify-883-updates.mjs). Compiled on
-// demand with `rustc --edition 2021 -O` and placed first on PATH, so the updater's `gh` calls
-// (`auth status`, `release list`, `release view`, `release download`) hit this instead of the
-// network. It must be an .exe: `std::process::Command` does not run a `.cmd` by bare name.
-//
-// Env (set by the harness):
+// Fake `gh` PATH shim for the #883 updater live check. It must be an .exe: `std::process::Command`
+// does not run a `.cmd` by bare name.
+// Env set by the harness:
 //   REFRACT_883_CALL_LOG   every invocation's argv is appended here (proof the calls happened)
 //   REFRACT_883_FLAG_FILE  when this file exists, the newer release is listed
 //   REFRACT_883_CURRENT    the running app's version, always listed (for example 0.8.0)

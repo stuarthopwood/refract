@@ -1,10 +1,4 @@
-// Shared WCAG contrast / sRGB alpha-compositing primitives, extracted out of
-// check-theme-contrast.mjs (gate round 5 follow-up, Main's finding 1): theme-contrast-pairs.mjs
-// had grown its own byte-for-byte DUPLICATE copy of this exact math (to dodge
-// check-theme-contrast.mjs's own lower-only #806 file-size ratchet), and a transcription slip in
-// that duplicate silently regressed the gamma-space compositing fix below back to a naive
-// linear-space blend before it was caught. One copy, imported by both, so there is only ever one
-// place this math can drift.
+// Shared WCAG contrast / sRGB alpha-compositing primitives; one copy so the contrast checks can't drift apart.
 
 export function clamp01(x) {
   return Math.min(1, Math.max(0, x))
@@ -14,21 +8,14 @@ export function srgbGammaDecode(c) {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
 }
 
-// Linear sRGB -> gamma sRGB, for the hex debug column only (display, never fed back into the
-// WCAG luminance formula, which operates on linear values directly).
+// Linear -> gamma sRGB, for display only; the WCAG luminance formula takes linear values.
 export function srgbGammaEncode(c) {
   const clamped = Math.min(1, Math.max(0, c))
   return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
 }
 
-// Quality-gate remediation (HIGH, corroborated by code-reviewer/test-reviewer/accessibility-
-// auditor): browsers alpha-composite in gamma-encoded sRGB space, not linear light -- blending
-// in linear space (the old behaviour here) understated how much a semi-transparent token lets
-// the backdrop show through. A reviewer independently confirmed with node that `.theme-dark`'s
-// `--border` (16% alpha) was reported 4.01:1 by the old linear blend but is actually only
-// 1.53:1 as really rendered. Fix: gamma-encode both operands, blend in that gamma space (what
-// the compositor does), then gamma-decode the blended result back to linear before computing
-// WCAG relative luminance.
+// Browsers alpha-composite in gamma-encoded sRGB, not linear light; a linear blend overstated contrast
+// (`.theme-dark` `--border` read 4.01:1 but renders 1.53:1). Blend in gamma space, then decode to linear.
 export function compositeOverLinear(fg, bg) {
   return fg.linear.map((c, i) => {
     const fgGamma = srgbGammaEncode(clamp01(c))
@@ -71,13 +58,8 @@ export function oklabToLinearSrgb(L, a, b) {
   ].map(clamp01)
 }
 
-// Parses a `getComputedStyle()` colour string (rgb()/rgba()/oklch()/oklab()/'transparent') into
-// `{ raw, alpha, linear }`, the shape every function above already works with. Extracted from
-// `verify-927-928-quiet-composer.mjs` (file-size #806 ratchet: a live-check script that defined
-// this colour math locally grew past the 600-line soft cap) -- WebView2/Chromium reports
-// `@theme`/`color-mix()` tokens as `oklch()`/`oklab()`, not `rgb()`, so both are parsed via the
-// same OKLab->linear-sRGB matrices every modern browser uses internally (which already yield
-// LINEAR values -- only `rgb()`/`rgba()` bytes still need `srgbGammaDecode`).
+// Parses a computed colour string into `{ raw, alpha, linear }`. WebView2 reports `@theme`/`color-mix()`
+// tokens as oklch()/oklab(), which convert straight to linear; only rgb()/rgba() bytes need `srgbGammaDecode`.
 export function parseComputedColorToEntry(raw) {
   const str = (raw ?? '').trim()
   if (str === 'transparent') return { raw, alpha: 0, linear: [0, 0, 0] }
@@ -124,12 +106,8 @@ export function measuredContrastRatio(fgRaw, bgRaw) {
   return contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear))
 }
 
-// Tailwind v4's `ring-*` utilities always compose `box-shadow` from five comma-separated layers
-// even when every one is a transparent/zero-geometry no-op -- `getComputedStyle()` never
-// collapses that back to the literal string `'none'`. The only way to tell a genuine glow from
-// Tailwind's own always-present zero-geometry layers is to measure each layer's real blur/spread
-// radius and its colour's alpha: a layer paints visible pixels beyond the element's own border
-// box only when (blur>0 or spread>0) AND alpha>0.
+// Tailwind v4 `ring-*` always composes five box-shadow layers, never collapsing to 'none', so measure each:
+// a layer paints beyond the border box only when (blur>0 or spread>0) AND alpha>0.
 export function hasVisibleShadow(boxShadowRaw) {
   const str = (boxShadowRaw ?? '').trim()
   if (!str || str === 'none') return false

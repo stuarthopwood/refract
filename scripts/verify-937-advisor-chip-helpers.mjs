@@ -1,21 +1,12 @@
-// Shared helpers for `scripts/verify-937-advisor-chip.mjs` (issue #937), split out to stay under
-// the #806 600-line soft cap (`scripts/check-file-size.mjs`) once both the mouse-driven and
-// keyboard-driven toggle cycles, the geometry comparison, and the live-region polling were all
-// written out in full. Nothing here is specific to one run (mouse vs keyboard) -- the caller
-// picks the activation method, everything else (notice detection, AX reads, geometry, the live
-// region, the final `/advisor status` log) is identical either way.
+// Shared helpers for verify-937-advisor-chip.mjs (split for the file-size cap): notice detection,
+// AX reads, geometry, live-region polling and the final `/advisor status` log, for either activation method.
 import path from 'node:path';
 
 const MESSAGE_FINDER = `document.querySelector('[aria-label="Message"]')`;
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 
-// Same `NoticeRow` structural finder `verify-917-advisor-command.mjs` already established and
-// proved live (see that file's own header comment for why: survives `react-virtuoso`
-// windowing, and climbing from the sr-only "Info:" label's icon-slot span to its row container
-// works whether the row is a plain `<div>` or a `<CollapsibleTrigger>` button). Duplicated here
-// rather than imported: it is a small, self-contained DOM-shape fact about `CollapsedLine`, the
-// same precedent every other `verify-9xx-*.mjs` script's own inline copy already sets, not a
-// piece of shared infrastructure like `CdpSession`/`getAccessibleNameAndRole`.
+// Same `NoticeRow` finder as verify-917-advisor-command.mjs: survives `react-virtuoso` windowing and
+// works whether the row is a plain `<div>` or a `<CollapsibleTrigger>` button. Duplicated, not imported.
 const NOTICE_FINDER =
   `Array.from(document.querySelectorAll('span.sr-only')).filter((el) => (el.textContent ?? '').trim() === 'Info:').map((el) => el.parentElement?.parentElement).filter(Boolean)`;
 
@@ -37,10 +28,7 @@ async function allNoticeTexts(cdp) {
  * that honestly rather than reporting a pass this script cannot actually back up. */
 export async function assertNoProbeLeak(cdp, findings, failures, notExercised, label) {
   const texts = await allNoticeTexts(cdp);
-  // Gate round 4 fix (Medium, decided): `Spend` scoped to lines that already start "Advisor "
-  // -- the bare, unscoped alternative below used to flag ANY notice anywhere in the
-  // transcript that merely happens to mention "Spend" (an unrelated cost/budget notice has
-  // nothing to do with a leaked advisor status reply) as if it were this specific leak.
+  // `Spend` is scoped to lines starting "Advisor ", so an unrelated cost notice is not flagged as a leak.
   const leaked = texts.filter((t) => /^Advisor (is |")/.test(t) || (/^Advisor /.test(t) && /Spend/.test(t)));
   if (leaked.length > 0) {
     failures.push(
@@ -207,10 +195,7 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnt
   await sendSlashCommand(cdp, '/advisor on', /Advisor enabled\./);
   findings.push(`${tag} "/advisor on" produced the authoritative enable reply.`);
 
-  // Gate round 1 fix (Medium, item 15): `cdp.waitFor`, not a single immediate `evaluate` -- the
-  // notice above renders straight from the `command_output` frame, while the chip's own
-  // `advisor:update` IPC event (store update, then a re-render) can trail it by a tick or two;
-  // an immediate check can spuriously fail on a real, working chip that just hasn't painted yet.
+  // `waitFor`: the chip's `advisor:update` IPC can trail the notice by a tick or two.
   try {
     await cdp.waitFor(`!!(${ADVISOR_CHIP_FINDER})`, { timeoutMs: 5_000, label: `${tag} Advisor chip appeared after "/advisor on"` });
   } catch (err) {
@@ -218,10 +203,7 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnt
     return;
   }
 
-  // Gate round 1 fix (High, item 13): both scoped to what THIS activation produces, never what
-  // an earlier cycle (mouse, then keyboard) already left behind -- a bare "does any notice/any
-  // live-region text ever say this" check would pass on the OTHER cycle's own leftovers even if
-  // THIS cycle's own toggle silently did nothing.
+  // Scoped to this activation, so the other cycle's leftovers cannot satisfy the check.
   const noticeCountBeforeActivate = (await allNoticeTexts(cdp)).length;
   await markLiveRegionSeen(cdp);
 
@@ -238,19 +220,14 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnt
     await pressEnterKey(cdp);
   }
 
-  // Busy window: accessible name reads "Turning off…", and a second activation is a no-op
-  // (the component's own `if (turningOff) return` guard -- asserted indirectly, by confirming
-  // the name is still the busy wording immediately after the repeat activation, never reverted
-  // or advanced early).
+  // Busy window: the name reads "Turning off…" and a repeat activation is a no-op (`if (turningOff) return`).
   await new Promise((resolve) => setTimeout(resolve, 50));
   const busyLabelBefore = await cdp.evaluate(`document.querySelector('[aria-label^="Advisor on. Turning off"]') ? 'busy' : 'not-busy'`);
   if (busyLabelBefore === 'busy') {
     findings.push(`${tag} busy accessible name "Advisor on. Turning off…" observed.`);
     if (mode === 'mouse') await cdp.click(ADVISOR_CHIP_FINDER).catch(() => {});
     else await pressEnterKey(cdp);
-    // Gate round 2 fix (Medium, item 15): "the chip is already gone" is INCONCLUSIVE on its
-    // own (the first toggle may have simply finished in the meantime) -- the exactly-one "Advisor
-    // disabled." notice count below is the real proof a duplicate send did not happen, not this.
+    // "Chip already gone" is inconclusive (the first toggle may have finished); the single-notice count is the real proof.
     const chipGoneAfterRepeat = await cdp.evaluate(`!(${ADVISOR_CHIP_FINDER})`);
     if (chipGoneAfterRepeat) {
       findings.push(`${tag} the chip was already gone by the time the repeat activation's own effect could be checked -- inconclusive here; see the exactly-one "Advisor disabled." count below for the real proof.`);
@@ -270,16 +247,9 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnt
     failures.push(`${tag} ${err.message}`);
   }
 
-  // Gate round 3 fix (Medium, item 11): re-counted at the very END of the cycle instead of
-  // right here -- a QUEUED duplicate `/advisor off` (the chip's own bug class this exact count
-  // exists to catch) could settle its own "Advisor disabled." reply anywhere up to and even
-  // after the supplementary `/advisor status` call below; counting too early could miss one
-  // that simply had not arrived yet. See the end of this function for the actual assertion.
+  // Counted at the end: a queued duplicate `/advisor off` can settle its reply after the status call below.
 
-  // Gate round 1 fix (Critical, item 12): BOTH checked here, straight after the chip leaves the
-  // AX tree -- BEFORE the supplementary `/advisor status` probe below, which itself clicks the
-  // message box to type. Checking focus/the live region AFTER that probe could never fail
-  // regardless of whether the real focus handoff worked at all.
+  // Checked before the status probe below, which clicks the message box and would make focus checks vacuous.
   const focusOk = await activeElementIsMessageBox(cdp);
   if (focusOk) findings.push(`${tag} focus landed on the message textarea after the chip's own toggle-off.`);
   else failures.push(`${tag} focus did NOT land on the message textarea after the chip's own toggle-off.`);
@@ -288,20 +258,13 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnt
   if (announced) findings.push(`${tag} a NEW "Advisor off" announcement was observed in the composer's shared attachment live region.`);
   else failures.push(`${tag} no NEW "Advisor off" announcement was observed in the composer's shared attachment live region within the timeout.`);
 
-  // Supplementary only (per `session::advisor`'s own documented ambiguity): logs the real
-  // literal wording, never asserts it says "disabled" -- the authoritative check above already
-  // covers the real pass/fail. Runs LAST (see the comment above): it clicks the message box
-  // itself, so it must never run before the focus/live-region checks above.
+  // Supplementary: logs the real wording (ambiguous per `session::advisor`), never asserts it. Runs
+  // last because it clicks the message box.
   const statusReply = await sendSlashCommand(cdp, '/advisor status', /advisor/i).catch((err) => `<no reply: ${err.message}>`);
   findings.push(`${tag} supplementary "/advisor status" reply (wording not asserted, see this file's own header): ${JSON.stringify(statusReply)}`);
 
-  // Gate round 1 fix (High, item 13), moved gate round 3 (Medium, item 11): sliced from
-  // `noticeCountBeforeActivate`, counted HERE (after the supplementary status reply above, not
-  // right after the chip left the AX tree) so a queued duplicate's own, later-settling
-  // "Advisor disabled." has had every chance this cycle gives it to show up. A REAL leftover
-  // from an earlier cycle can never count (the slice starts after this cycle's own
-  // activation); exactly one (not merely "at least one") is required -- more than one means a
-  // duplicate send or an unexpected extra reply, neither the expected shape.
+  // Sliced from `noticeCountBeforeActivate` so earlier cycles' leftovers never count; exactly one
+  // is required, since more means a duplicate send or an extra reply.
   const noticesSinceActivate = (await allNoticeTexts(cdp)).slice(noticeCountBeforeActivate);
   const newDisabledNotices = noticesSinceActivate.filter((t) => /Advisor disabled\./.test(t));
   if (newDisabledNotices.length === 1) {

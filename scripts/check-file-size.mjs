@@ -1,22 +1,13 @@
 #!/usr/bin/env node
-// Static guard for issue #806 ("No god files"): files keep growing with nobody noticing until a
-// review or an agent chokes on them. This enforces a 600-line soft cap on source files while
-// tolerating the backlog of existing offenders via a baseline -- a file already in the baseline
-// may stay over the cap, but it may never grow past its recorded size, and it is free to shrink
-// (or drop out of the baseline entirely) at any time. Any file NOT already in the baseline that
-// is over the cap is a hard failure: new god files don't get grandfathered in.
+// Static guard for #806 ("No god files"): a 600-line soft cap on source files. Baselined offenders may stay over the cap but never grow;
+// a file not in the baseline that is over the cap is a hard failure.
 //
 // Usage: node scripts/check-file-size.mjs [--update]
-//   --update  Rewrite scripts/file-size-baseline.json, but only to record shrinkage: existing
-//             entries are lowered to the file's current line count (never raised), and entries
-//             for files that no longer exist or have shrunk to <= 600 lines are dropped. It
-//             never adds a new entry, so a genuinely new over-cap file still fails even with
-//             --update passed -- this flag is for recording progress, not laundering violations.
+//   --update  Rewrite scripts/file-size-baseline.json to record shrinkage only: entries are lowered
+//             (never raised) and dropped when the file is gone or <= 600 lines. It never adds an entry.
 //
-// Scans .ts/.tsx/.mjs files under src/ and scripts/, and .rs files under src-tauri/src/ (skipped
-// entirely if that directory doesn't exist). Excludes test/spec files (*.test.*, *.spec.*),
-// vendored shadcn components (src/renderer/components/ui/), and generated files (anything under
-// a gen/ directory, or carrying an `AUTO-GENERATED`/`@generated` marker in its first 5 lines).
+// Scans .ts/.tsx/.mjs under src/ and scripts/, and .rs under src-tauri/src/ (skipped if absent). Excludes test/spec files,
+// vendored shadcn components (src/renderer/components/ui/) and generated files (a gen/ directory, or `AUTO-GENERATED`/`@generated` in the first 5 lines).
 //
 // Exits 1 if any new-file-over-cap or baseline-growth violation is found, 2 if no matching files
 // were scanned at all, 0 otherwise.
@@ -69,8 +60,7 @@ function* walk(dir, exts) {
   }
 }
 
-// Path-shape exclusions only (no file content involved): test/spec files, vendored shadcn UI
-// components, and anything under a `gen/` directory segment.
+// Path-shape exclusions: test/spec files, vendored shadcn UI components, and any `gen/` directory segment.
 export function isExcludedPath(relative) {
   if (TEST_FILE_RE.test(relative)) return true;
   if (VENDORED_UI_RE.test(relative)) return true;
@@ -78,23 +68,19 @@ export function isExcludedPath(relative) {
   return false;
 }
 
-// A file is treated as generated (and excluded) if either of the known markers appears in its
-// first 5 lines. Checked separately from isExcludedPath because it needs file content, not just
-// the path.
+// Generated if a known marker appears in the first 5 lines; needs file content, so it is separate from isExcludedPath.
 function isGeneratedContent(lines) {
   return lines.slice(0, 5).some((line) => GENERATED_MARKER_RE.test(line));
 }
 
-// split() on a trailing-newline-terminated file produces one extra empty element; drop it so the
-// count matches a plain line count (e.g. `wc -l`) rather than always being one too high.
+// split() on a newline-terminated file yields an extra empty element; drop it to match `wc -l`.
 function countLines(content) {
   const lines = content.split(/\r\n|\n/);
   if (lines.length > 0 && lines[lines.length - 1] === '') return lines.length - 1;
   return lines.length;
 }
 
-// Walks the configured roots under baseDir and returns [{ relative, lineCount }] for every file
-// that matches an extension and isn't excluded by path or content.
+// Walks the roots under baseDir and returns [{ relative, lineCount }] for files that match an extension and aren't excluded.
 export function scanFiles(baseDir = repoRoot, roots = DEFAULT_SCAN_ROOTS) {
   const results = [];
   for (const { subdir, exts } of roots) {
@@ -111,11 +97,8 @@ export function scanFiles(baseDir = repoRoot, roots = DEFAULT_SCAN_ROOTS) {
   return results;
 }
 
-// Checks scanned files against the baseline. A file over SOFT_CAP fails if it isn't in the
-// baseline at all (a new god file) or if its current line count exceeds its baseline value
-// (growth); it passes -- even if still over the cap -- if it's baselined and at or below that
-// recorded value. Files at or under SOFT_CAP never appear here regardless of baseline status.
-// Returns both the full offender table (for display) and the failing subset.
+// Over SOFT_CAP fails if absent from the baseline (a new god file) or above its baseline value (growth); baselined files at or below it pass.
+// Returns the full offender table (for display) and the failing subset.
 export function checkAgainstBaseline(files, baseline) {
   const offenders = [];
   const failures = [];
@@ -131,8 +114,7 @@ export function checkAgainstBaseline(files, baseline) {
   return { offenders, failures };
 }
 
-// Baseline entries whose file either no longer exists or has shrunk to <= SOFT_CAP: still
-// tracked, but no longer earning their keep. Reported, not failed.
+// Baseline entries whose file is gone or now <= SOFT_CAP: reported, not failed.
 export function findRemovableBaselineEntries(files, baseline) {
   const current = new Map(files.map((f) => [f.relative, f.lineCount]));
   const removable = [];
@@ -143,8 +125,7 @@ export function findRemovableBaselineEntries(files, baseline) {
   return removable;
 }
 
-// The --update rewrite: lower-only, remove stale/shrunk entries, never add. A file that is over
-// cap and not already in the baseline is a violation to fix, not a value for --update to invent.
+// The --update rewrite is lower-only and never adds: an over-cap file outside the baseline is a violation to fix.
 export function computeUpdatedBaseline(files, baseline) {
   const current = new Map(files.map((f) => [f.relative, f.lineCount]));
   const updated = {};
@@ -166,9 +147,7 @@ if (isMain) {
   const updateMode = process.argv.includes('--update');
   const files = scanFiles();
 
-  // A missing baseline file (first run) is an empty baseline; a baseline file that exists but
-  // fails to parse is corrupt and must fail loudly, never silently reset to `{}` -- that would
-  // make every current offender look like a brand-new violation and silently drop the ratchet.
+  // A missing baseline is empty; an unparseable one must fail loudly, since resetting to `{}` would silently drop the ratchet.
   let baseline = {};
   if (existsSync(BASELINE_PATH)) {
     try {

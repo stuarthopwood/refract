@@ -1,49 +1,14 @@
-// Real-rendered-DOM contrast measurement, used by scripts/check-mermaid-contrast.mjs's Electron
-// harness (loaded as an ES module from inside the renderer, never from Node).
+// Real-rendered-DOM contrast measurement, loaded as an ES module inside the renderer by
+// scripts/check-mermaid-contrast.mjs's Electron harness (never from Node).
 //
-// Quality-gate remediation (round 5): this REPLACED check-mermaid-contrast.mjs's round-4
-// methodology, which extracted `fill:`/`stroke:` values by regex-matching Mermaid's generated
-// `<style>` block TEXT, one diagram-specific pattern per check. That approach can only read a
-// CSS rule's DECLARED value -- it never asks which rule actually WINS the cascade for a given
-// element (specificity, `!important`, source order) or what shape is actually underneath a piece
-// of text, which is exactly why it reported 182/182 PASS while two independent reviewers, each
-// building their OWN from-scratch harness against the real rendered DOM, found 3 real failures.
+// Text contrast is measured from real pixels, not computed style: computed style missed what
+// else can paint behind a label (e.g. a stroked branch line). Each diagram is rendered twice,
+// glyphs visible and glyphs hidden (`opacity: 0` changes paint, not layout); the hidden capture
+// is the real background and the visible one the real foreground. `capturePage()` only exists
+// in the Electron main process, so this module only prepares diagrams and hides glyphs; the
+// caller takes the screenshots and does the ratio math.
 //
-// Quality-gate remediation (round 6): round 5's own replacement methodology -- computed style
-// (`getComputedStyle`) for foreground, `document.elementsFromPoint` hit-testing + alpha-
-// compositing for background -- had a real gap of the SAME class it was meant to fix: it only
-// ever composited a hit-tested element's `fill` (SVG shapes) or `background-color` (HTML), never
-// a painted STROKE (a `<path>` with `fill:none` but a visible `stroke`, e.g. a gitGraph branch
-// line, or a bare `<line>`). A text label sitting on top of a stroked line was treated as if
-// nothing were painted there at all, falling through to the wrapper's own opaque backdrop colour
-// -- which is exactly how a gitGraph commit-id label sitting on its own bright branch line passed
-// this harness at a reported 7.59:1 while measuring 1.73-2.87:1 in the real rendered pixels (two
-// independent reviewers, each building their own from-scratch screenshot-pixel-diff harness,
-// converged on the same real failure this script's computed-style approach could not see).
-//
-// Rather than enumerate yet another special case for "what else can paint a background" (stroke
-// today; the next gap could just as easily be a `<pattern>`/`<linearGradient>` fill, a `mix-blend-
-// mode`, or a CSS mask), this round replaces TEXT background/foreground resolution with the same
-// general technique both reviewers' own harnesses already used and proved catches what computed-
-// style modelling misses: render the diagram twice -- once with every text glyph visible, once
-// with every glyph hidden (`opacity: 0 !important`, which changes paint but never layout, so every
-// OTHER pixel on the page is pixel-identical between the two captures) -- and diff the two real
-// screenshots. Wherever a leaf's own bounding rect differs between the two captures is real glyph
-// ink; the "hidden" capture's colour at that exact pixel is DIRECTLY the real painted background
-// (whatever combination of fill, stroke, gradient, filter, or opacity produced it, with zero
-// enumeration needed), and the "visible" capture's colour at that same pixel is the real rendered
-// foreground. `webContents.capturePage()` is only callable from the Electron MAIN process, not
-// from inside the renderer this module runs in, so this module only PREPARES each diagram (render
-// + collect every text leaf's bounding rect) and hides/restores glyphs on request; the actual two
-// screenshots, the diff, and the contrast-ratio math over real pixels are performed by the caller
-// (scripts/check-mermaid-contrast.mjs's generated Electron main script).
-//
-// Shape-vs-background and pie-slice checks are UNCHANGED from round 5 (computed style +
-// `elementsFromPoint`, see `resolveBackground`/`measureShapes` below): the stroke-as-background gap
-// above is specific to text sitting on top of another element's stroke, which none of this app's
-// own shape/pie checks do (`BACKGROUND_FILL_TAGS` already deliberately excludes stroke-only `line`
-// elements from contributing a phantom FILL layer to a SHAPE sitting on one, a different, already-
-// correct concern -- see that set's own comment).
+// Shape-vs-background and pie-slice checks still use computed style + `elementsFromPoint`.
 
 function srgbToLinear(c) {
   c /= 255
@@ -79,9 +44,7 @@ function parseColor(raw) {
     const n = parseInt(hex, 16)
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 }
   }
-  // Any other CSS colour syntax (named colours, `hsl()`, etc.) -- resolve it the same way the
-  // browser itself would, via a throwaway element's own computed style, rather than hand-rolling
-  // a parser for every CSS colour grammar.
+  // Named colours, `hsl()` etc.: let the browser resolve them via a throwaway element.
   if (!namedColourProbe) namedColourProbe = document.createElement('div')
   if (!namedColourProbe.isConnected) document.body.appendChild(namedColourProbe)
   namedColourProbe.style.color = ''
@@ -129,22 +92,14 @@ function effectiveAlpha(el, colorAlpha) {
 }
 
 const SHAPE_TAGS = new Set(['rect', 'path', 'circle', 'ellipse', 'polygon', 'polyline', 'line'])
-// Subset of SHAPE_TAGS that can contribute a FILL-based background layer when resolving what is
-// visually behind another element: excludes 'line', which is stroke-only -- its computed `fill`
-// (default/inherited, often opaque black per the SVG initial value) is never actually painted as
-// a background area, so including it would inject a phantom dark layer under anything sitting on
-// top of a line (e.g. a gitGraph commit dot drawn on its own branch line).
+// Shape tags that can paint a FILL background layer. Excludes 'line': it is stroke-only, and its
+// default opaque-black `fill` would inject a phantom dark layer under anything drawn on it.
 const BACKGROUND_FILL_TAGS = new Set(['rect', 'path', 'circle', 'ellipse', 'polygon', 'polyline'])
 
-// Resolves the real, composited background colour actually visible beneath `el` at viewport point
-// (x, y): walks every element the browser's own `elementsFromPoint` hit-test reports there, in
-// paint order, skipping `el` itself and any of its ancestors, and alpha-composites every painted
-// layer found (shape fill, or HTML background-color), applying each layer's own accumulated
-// `brightness()` filter first, bottom-up. The wrapper this script renders every diagram into
-// always has an opaque, real CSS `background-color` (the theme's own `--card` value), so this is
-// guaranteed to bottom out at a known-opaque base even when no Mermaid shape is underneath (e.g. a
-// label drawn directly on the diagram's own backdrop). Still used for shape-vs-background and pie
-// checks (see this file's own header comment, round 6, for why TEXT no longer uses this).
+// Resolves the composited background beneath `el` at viewport point (x, y): alpha-composites
+// every painted layer from `elementsFromPoint` (skipping `el` and its ancestors) bottom-up,
+// applying accumulated `brightness()` filters. The wrapper has an opaque `--card` background, so
+// this always bottoms out at a known base. Used for shape and pie checks, not text.
 function resolveBackground(el, x, y) {
   const stack = document.elementsFromPoint(x, y)
   const layers = []
@@ -182,10 +137,8 @@ function classesOf(el) {
   return el.getAttribute('class') || ''
 }
 
-// Every leaf text node Mermaid actually renders, regardless of diagram type: SVG `<text>` (or its
-// `<tspan>` children, when it has any -- multi-line labels are drawn as several positioned
-// `<tspan>`s, not a single `<text>` with a flat `textContent`) and foreignObject HTML text leaves
-// (Journey's `<div class="label">`).
+// Every leaf text node Mermaid renders: SVG `<text>`/`<tspan>` (multi-line labels use several
+// positioned `<tspan>`s) and foreignObject HTML leaves (Journey's `<div class="label">`).
 function collectTextLeaves(root) {
   const leaves = []
   root.querySelectorAll('text').forEach((t) => {
@@ -204,16 +157,11 @@ function collectTextLeaves(root) {
   return leaves
 }
 
-// Known graphical-object (non-text, WCAG 1.4.11, >=3:1) elements this app's own fixtures render,
-// per diagram type. These selectors only pick WHICH real elements to inspect -- the colour read
-// off each is always `getComputedStyle`, resolved to whatever rule actually won the cascade for
-// that element, never a value assumed or pattern-matched out of the stylesheet text.
+// Graphical-object (non-text, WCAG 1.4.11, >=3:1) selectors per diagram type. They only choose
+// which elements to inspect; colours always come from `getComputedStyle`.
 const SHAPE_SELECTORS = {
-  // Pie slices are excluded here deliberately: a wedge's bounding-box CENTRE is frequently
-  // outside its own wedge (or inside a DIFFERENT slice), so centroid-point sampling against
-  // "whatever's behind this element" is geometrically unreliable for them -- see the dedicated
-  // pie-vs-`cardColor` check below instead, which every slice is guaranteed to need regardless
-  // of its own shape (nothing but the page itself is ever behind a pie slice).
+  // Pie slices are excluded: a wedge's bounding-box centre often lies outside the wedge, so
+  // centroid sampling is unreliable; the dedicated pie-vs-`cardColor` check covers them.
   xychart: ['rect:not(.background)'],
   gantt: ['.exclude-range', '.today', '.crit0, .crit1, .crit2, .crit3'],
   gitGraph: ['.commit0, .commit1, .commit2, .commit3, .commit4, .commit5, .commit6, .commit7'],
@@ -221,8 +169,7 @@ const SHAPE_SELECTORS = {
   mindmap: ['[class*="section-"] > rect']
 }
 
-// Shape-vs-background and pie-slice checks: UNCHANGED from round 5 -- see this file's own header
-// comment (round 6) for why text no longer shares this computed-style/elementsFromPoint path.
+// Shape-vs-background and pie-slice checks use computed style + `elementsFromPoint`.
 function measureShapes(wrapper, diagramType, cardColor) {
   const checks = []
 
@@ -245,9 +192,8 @@ function measureShapes(wrapper, diagramType, cardColor) {
     })
   }
 
-  // Pie slices: fill vs the known page/card colour (not a hit-tested background -- see
-  // SHAPE_SELECTORS's own comment on why centroid sampling is unreliable for wedges), plus the
-  // separator stroke vs the slice's own fill, both read directly off the same element.
+  // Pie slices: fill vs the known card colour (centroid sampling is unreliable for wedges),
+  // plus the separator stroke vs the slice's own fill.
   if (diagramType === 'pie') {
     const card = parseColor(cardColor)
     wrapper.querySelectorAll('.pieCircle').forEach((slice, i) => {
@@ -269,10 +215,8 @@ function measureShapes(wrapper, diagramType, cardColor) {
   return checks
 }
 
-// Collects every text leaf's bounding rect (clipped to the viewport), its minimum required ratio,
-// and a stable label -- WITHOUT resolving a foreground or background colour itself. Both colours
-// are instead read from real rendered screenshot pixels by the caller (see this file's own header
-// comment, round 6).
+// Collects every text leaf's viewport-clipped rect, minimum ratio and stable label without
+// resolving any colour; the caller reads both colours from real screenshot pixels.
 function collectTextItems(wrapper) {
   const items = []
   collectTextLeaves(wrapper).forEach((leaf) => {
@@ -296,31 +240,23 @@ function collectTextItems(wrapper) {
   return items
 }
 
-// Threaded between prepare()/hideGlyphs()/cleanup(): the caller (check-mermaid-contrast.mjs's
-// generated Electron main script) always finishes one diagram/theme pair -- prepare, screenshot,
-// hide, screenshot, cleanup -- before starting the next, so only one diagram is ever in flight.
+// Shared between prepare()/hideGlyphs()/cleanup(); the caller finishes one diagram/theme pair
+// before starting the next, so only one is ever in flight.
 let activeWrapper = null
 let activeLeaves = []
 
-// Quality-gate remediation (round 6): a hidden (`show: false`) `BrowserWindow` does not paint on
-// every DOM mutation the way a visible one does -- `webContents.capturePage()` called right after
-// a layout-forcing `offsetHeight` read can still return the PREVIOUS (sometimes entirely blank)
-// frame, because layout and paint/composite are separate pipeline stages and nothing before this
-// forced either of the two real compositor frames below to actually run. Verified against a real
-// capture: without this wait, a `capturePage()` immediately after rendering a diagram came back
-// pure white (confirmed via `toBitmap()`/`toPNG()` inspection); two consecutive
-// `requestAnimationFrame` callbacks (the first callback runs the queued layout/paint the mutation
-// produced; the second only runs after THAT frame has actually been submitted) reliably fixed it.
+// A hidden (`show: false`) BrowserWindow does not paint on every DOM mutation, so an immediate
+// `capturePage()` can return the previous (sometimes blank) frame. Two consecutive
+// `requestAnimationFrame` callbacks guarantee the layout/paint has actually been submitted.
 function waitForPaint() {
   return new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve))
   })
 }
 
-// Renders `code` with the given theme, synchronously resolves every shape/pie check (unaffected by
-// the stroke-as-background gap this round fixes -- see measureShapes's own comment), and collects
-// every text leaf's bounding rect for the caller to measure from real screenshots. Leaves the
-// rendered SVG, with every glyph still visible, in the DOM until cleanup() is called.
+// Renders `code` with the given theme, resolves the shape/pie checks synchronously, and collects
+// every text leaf's rect for the caller to measure from screenshots. Leaves the SVG, glyphs
+// visible, in the DOM until cleanup().
 export async function prepare({ themeVariables, themeCSS, code, cardColor, diagramType }) {
   const mermaid = window.__mermaid
   mermaid.initialize({
@@ -348,20 +284,9 @@ export async function prepare({ themeVariables, themeCSS, code, cardColor, diagr
   wrapper.style.padding = '0'
   wrapper.style.background = cardColor
   wrapper.innerHTML = svg
-  // Quality-gate remediation (round 6): Mermaid's generated `<svg>` ships `width="100%"` plus a
-  // `max-width: <viewBoxWidth>px` style -- sized correctly in the real app, where `MermaidBlock`'s
-  // own container establishes a real containing-block width for that percentage to resolve
-  // against. This bare wrapper (`position: absolute` with no declared width) gives the percentage
-  // no real basis to resolve against, which verified against a real capture does NOT fall back to
-  // the viewBox size -- it falls back to the CSS spec's classic 300x150 default replaced-element
-  // size, silently rendering every diagram at a FRACTION of its real size (a gantt chart's
-  // `viewBox="0 0 2968 292"` measured rendering at only ~300px wide, not 2968). Round 5's
-  // computed-style/`elementsFromPoint` methodology never noticed because resolved COLOUR is
-  // scale-invariant; round 6's real-pixel measurement is NOT -- text rendered at under 1/9th its
-  // intended size loses enough anti-aliasing fidelity to make fill/background bleed together,
-  // corrupting exactly the per-pixel sampling this round's methodology depends on. Explicitly
-  // sizing the SVG to its own `viewBox` dimensions removes the percentage entirely, so it always
-  // renders at native scale regardless of this wrapper's own (deliberately unconstrained) width.
+  // Mermaid's `<svg>` has `width="100%"`, which resolves against nothing in this unconstrained
+  // absolute wrapper and falls back to the 300x150 replaced-element default (a 2968px gantt
+  // rendered ~300px wide), corrupting per-pixel sampling. Size it to its viewBox instead.
   const svgEl = wrapper.querySelector('svg')
   const viewBox = svgEl && svgEl.getAttribute('viewBox')
   const viewBoxParts = viewBox ? viewBox.trim().split(/\s+/).map(Number) : null
@@ -380,13 +305,9 @@ export async function prepare({ themeVariables, themeCSS, code, cardColor, diagr
   return { ok: true, shapeChecks, textItems }
 }
 
-// Hides every collected text leaf via `opacity: 0 !important` -- opacity changes paint only, never
-// layout, so every OTHER pixel on the page (including any shape a label sits on top of) stays
-// pixel-identical to the "visible" capture the caller already took; the only real difference
-// between the two screenshots is the glyph ink itself. Does not restore -- the diagram is
-// discarded by cleanup() right after the caller's second screenshot. Awaits the same real-paint
-// guarantee prepare() does (see waitForPaint's own comment) before the caller's second
-// `capturePage()` call.
+// Hides every text leaf via `opacity: 0 !important` (paint only, so all other pixels match the
+// visible capture). Not restored; cleanup() discards the diagram after the second screenshot.
+// Awaits the same paint guarantee as prepare().
 export async function hideGlyphs() {
   for (const leaf of activeLeaves) {
     leaf.style.setProperty('opacity', '0', 'important')

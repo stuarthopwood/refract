@@ -1,29 +1,7 @@
 #!/usr/bin/env node
-// Live check for issue #926 ("attach any file type, inlining text files up to 256 KB and sending
-// other files as a path"), gate round 1 rewrite. Drives a REAL built Tauri debug exe over CDP
-// against the FAKE `omp` shim (`verify-tauri-fake-omp.mjs`, `session` scenario) -- never a real
-// `omp`, no model cost, no network -- the same isolation posture `verify-tauri-ask.mjs`/
-// `verify-947-938-slash-menu.mjs` already use.
-//
-// STATED LIMITATION (lane gate checklist: "never claim a test that did not happen"): CDP cannot
-// drive the native Win32 Open-File dialog (`attachments.pickFiles` opens a real OS modal) at all.
-// Native OS drag-drop IS now driven, genuinely: wry's own native drag-drop handler consumes the
-// event at the OS level before it ever reaches the DOM (`tauri-bridge/index.ts`'s own
-// `onFileDrop` comment), so CDP cannot synthesize the native event itself -- but `onFileDrop`'s
-// OWN registered JS callback is captured via a `Page.addScriptToEvaluateOnNewDocument` trap on
-// `entry.ts`'s plain `window.refract = refract` assignment (injected and reloaded into effect at
-// the very start of this run, see `main()` below), then invoked directly with a synthetic
-// `{paths, position}` payload. This exercises the REAL downstream pipeline
-// (`useTauriFileDrop.ts`'s `handleDrop` -> `recordDroppedPaths` -> `attachResolvedPaths` ->
-// `buildAnyPathAttachment` -> the real `attachments.readFile` IPC) end to end, including the
-// real `buildFileAttachmentText`/`appendFileAttachmentText` marker builder on send -- never a
-// hand-reconstructed marker. Only wry's own native OS-level event production itself remains
-// unexercised (logged in `notExercised`). A PENDING (not-yet-sent) file chip's keyboard Remove
-// IS exercised (via a synthetic clipboard paste populating the strip first).
-//
-// Usage (after a `pnpm tauri build --debug --no-bundle` on this exact head, shared target dir
-// set): CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
-// scripts/verify-926-attach-any-file.mjs
+// Live check for #926 (attach any file type): drives a built Tauri debug exe over CDP against the fake omp shim.
+// CDP cannot drive the native Open-File dialog or OS drag-drop (wry consumes it before the DOM), so the captured onFileDrop callback is invoked directly.
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-926-attach-any-file.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -42,13 +20,10 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
   process.env.REFRACT_926_SHOTS_DIR || path.join(tmpdir(), 'refract-926-attach-any-file-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// #926 grill decision 3: matches `file_attachments.rs`'s own `MAX_INLINE_FILE_BYTES`.
+// Matches `file_attachments.rs`'s MAX_INLINE_FILE_BYTES.
 const MAX_INLINE_FILE_BYTES = 262_144;
 
-// Gate round 1 (Test1 Medium): `name` is the exact Profile-menu Theme submenu item text
-// `switchTheme` below clicks -- `window.refract.theme.preview(id)` only moves the title-bar
-// overlay colour, never the renderer's own `<html>` class the CSS tokens key off (its own doc
-// comment), so a real menu-driven switch is required to prove each theme's screenshot is real.
+// `name` is the Profile-menu Theme item text; theme.preview() only recolours the title bar, so a real menu switch is needed.
 const THEMES = [
   { id: 'dark', name: 'Dark' },
   { id: 'obsidian', name: 'Obsidian' },
@@ -75,12 +50,6 @@ async function main() {
   mkdirSync(SHOTS_DIR, { recursive: true });
 
   const report = [];
-  // Gate round 2 (Test2 HIGH): native OS drag-drop is now genuinely attempted (the captured
-  // `onFileDrop` callback, invoked directly with a synthetic payload -- see `main()`'s own
-  // `Page.addScriptToEvaluateOnNewDocument` trap), exercising the real pipeline end to end
-  // including the real marker builder, corrected from the round-1 claim that neither could be
-  // exercised. A PENDING file chip's keyboard Remove IS also now exercised (a synthetic
-  // multi-file paste populates the composer strip first).
   const notExercised = [
     'Native Win32 Open-File dialog (attachments.pickFiles): CDP cannot drive a native OS dialog.',
     "Native OS drag-drop's own OS-level event PRODUCTION: wry's native handler consumes the real event before it ever reaches JS, so CDP cannot synthesize it directly -- this script instead invokes the app's own registered `onFileDrop` callback directly with a synthetic payload (captured via a `window.refract` assignment trap), exercising every line of code downstream of that native event, but not wry's own OS-level drag-drop recognition itself.",
@@ -96,18 +65,11 @@ async function main() {
   }
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-926-data-'));
-  // Gate round 2 (Code2 Low): an explicit, empty, per-run scratch folder -- never the caller's
-  // own ambient `%APPDATA%\pinion` -- so a real import attempt has nothing real to copy from.
+  // Empty per-run folder so an import attempt never touches the caller's real %APPDATA%\pinion.
   const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-926-import-'));
   const repoDirBase = mkdtempSync(path.join(tmpdir(), 'refract-926-repo-'));
   const repoDir = makeScratchRepo(repoDirBase, 'verify-926-attach-any-file');
-  // Gate round 2 fix (Test2/Code2 HIGH, real leak found by re-audit, see #885): `makeScratchRepo`
-  // returns `repoDirBase` itself (same directory, just `git init`-ed in place) -- "New session
-  // from a branch" then calls Rust's own `add_worktree_with_generated_name`, which creates the
-  // actual new worktree under `worktrees_root(repo) = <repo>/../pinion-worktrees/<repoName>`
-  // (`git/worktrees.rs`'s own doc comment) -- a SIBLING of `repoDirBase`, under `tmpdir()`
-  // directly, never nested inside it. `safeRmSync(repoDirBase, ...)` alone would silently leave
-  // this behind every run; cleaned up explicitly in `finally` below.
+  // The new worktree lands in a SIBLING `pinion-worktrees/<repoName>` dir (#885), so removing repoDirBase alone would leak it; cleaned in `finally`.
   const worktreesRootForCleanup = path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
   const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-926-exe-'));
   const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-926-launcher-'));
@@ -140,18 +102,9 @@ async function main() {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
 
-    // Native OS drag-drop capture (Test2 HIGH 5c, genuinely attempted): extracted into
-    // `verify-926-drag-drop-trap.mjs` (#806 "no god files", keeps this script under its own
-    // 600-line cap) -- traps `entry.ts`'s own plain `window.refract = refract` assignment and
-    // wraps `attachments.onFileDrop` so the REAL registered callback
-    // `useTauriFileDrop.ts`'s `ensureSubscribed()` installs is captured on
-    // `window.__capturedFileDropHandler` for direct invocation later. Bypasses only wry's own
-    // native-event production (CDP cannot synthesize an OS-level drag-drop), never any of this
-    // app's own code.
+    // Captures the real onFileDrop callback on window.__capturedFileDropHandler; only wry's OS-level event production is bypassed.
     await injectDragDropCaptureTrap(cdp);
 
-    // Real UI flow (mirrors `verify-947-938-slash-menu.mjs`): readiness, Add repository, New
-    // session, wait for the composer to enable against the fake omp's own scripted `session` tape.
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -178,20 +131,11 @@ async function main() {
       label: 'Composer enabled'
     });
 
-    // Gate round 2 (Test2 HIGH): the Session id read back through the real
-    // `window.refract.sessions.list()` IPC (not a DOM attribute read) -- asserted to be this
-    // run's ONE AND ONLY Session, never just "the first of however many".
     const sessionsList = await cdp.evaluate(`window.refract.sessions.list()`);
     assertEqual(sessionsList?.ok, true, 'sessions.list() ok');
     assertEqual(sessionsList.value.length, 1, 'exactly one Session exists in this scratch data dir');
     const sessionId = sessionsList.value[0].id;
-    // Gate round 2 fix (Code2/Test2 HIGH, real bug found by re-audit): `resolve_in_worktree`
-    // resolves a RELATIVE token against the Session's own `worktree_path` -- NOT `repoDir`
-    // itself, which is only the repository `git worktree add` was invoked FROM. "New session
-    // from a branch" calls `add_worktree_with_generated_name`, creating a SEPARATE new worktree
-    // directory; a fixture written into `repoDir` would never be visible there at all. Every
-    // fixture below is instead written into the real `worktreePath` this run's own Session
-    // reports, read back through the same `sessions.list()` IPC used above.
+    // `resolve_in_worktree` resolves relative tokens against the Session's own worktree, not repoDir, so fixtures go there.
     const sessionWorktreePath = await cdp.evaluate(
       `window.refract.sessions.list().then((r) => r.ok && r.value[0] ? r.value[0].worktreePath : null)`
     );
@@ -209,30 +153,12 @@ async function main() {
     writeFileSync(binaryPath, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00]));
     const folderPath = path.join(sessionWorktreePath, 'a-folder');
     mkdirSync(folderPath, { recursive: true });
-    // D1-rev (Test3 HIGH, item 5d): an inlined file whose own CONTENT contains the literal
-    // `[[refract-attachments]]` marker line -- proves `find_marker_at_line_start`'s own FIRST-
-    // occurrence design: the real marker section Refract itself appends always precedes every
-    // block's content, so this coincidental SECOND occurrence (inside this file's own inlined
-    // text, attached LAST below) must never be mistaken for the real one. Gate round 4 (Test4
-    // HIGH): the marker string must sit on its OWN line (line-start, matching
-    // `find_marker_at_line_start`'s own line-start requirement) -- mid-line, as round 3 had it,
-    // `find_marker_at_line_start` skips it entirely regardless of FIRST-vs-LAST search order, so
-    // a LAST-occurrence regression would still pass this test with nothing to catch it.
+    // Content holds a marker line on its OWN line (find_marker_at_line_start ignores mid-line hits) so a LAST-occurrence regression would be caught.
     const markerMentionPath = path.join(sessionWorktreePath, 'mentions-marker.txt');
     const markerMentionContent = 'Docs for this feature.\n[[refract-attachments]]\nmore text\n';
     writeFileSync(markerMentionPath, markerMentionContent, 'utf8');
 
-    // --- Rust IPC classification, called directly (the real round trip the picker/drop path
-    // would otherwise make; see this script's own header for why the picker/drop UI itself is
-    // not driven) -------------------------------------------------------------------------
-    // Gate round 2 fix (Code2/Test2 HIGH, real bug found by re-audit): `path.join(repoDir, ...)`
-    // produces an ABSOLUTE path (`repoDir` itself is absolute) -- passing that as `readFile`'s
-    // own `token` would hit D2's absolute-path allow-list and be REFUSED (never recorded via
-    // pickFiles/recordDroppedPaths), not a relative, worktree-contained token as the comment
-    // above claimed. Fixed: the bare basename (relative to `worktree_root`) is the token these
-    // classification calls actually need; the absolute `*Path` variables stay reserved for
-    // `writeFileSync`, the D2 test below, and the native-drag-drop simulation further down
-    // (both of which genuinely need a real absolute path).
+    // Tokens are bare basenames: an absolute path would hit the absolute-path allow-list and be refused.
     const smallResult = await cdp.evaluate(`window.refract.attachments.readFile(${JSON.stringify(sessionId)}, "small-note.txt")`);
     assertEqual(smallResult?.ok, true, 'small text file: readFile ok');
     assertEqual(smallResult.value.kind, 'inline', 'small text file classified inline');
@@ -255,11 +181,7 @@ async function main() {
     assertEqual(folderResult.value.kind, 'path', 'folder classified as path');
     assertEqual(folderResult.value.isDirectory, true, 'folder isDirectory true');
 
-    // --- D2: the absolute-path allow-list -- an ABSOLUTE token readFile was never told about
-    // (via pickFiles/recordDroppedPaths) is refused outright; recording it first then makes the
-    // identical call succeed. Every RELATIVE token used above (plain basenames) is unaffected by
-    // D2 at all, so this probes a fresh ABSOLUTE path instead, outside the worktree.
-    // -------------------------------------------------------------------------------------
+    // Absolute-path allow-list: an unrecorded absolute token is refused until recorded.
     const neverRecordedAbsolutePath = path.join(importSourceDir, 'never-recorded.txt');
     writeFileSync(neverRecordedAbsolutePath, 'x', 'utf8');
     const refusedResult = await cdp.evaluate(`window.refract.attachments.readFile(${JSON.stringify(sessionId)}, ${JSON.stringify(neverRecordedAbsolutePath)})`);
@@ -270,9 +192,7 @@ async function main() {
     assertEqual(recordResult?.ok, true, 'D2: recordDroppedPaths ok');
     const nowAllowedResult = await cdp.evaluate(`window.refract.attachments.readFile(${JSON.stringify(sessionId)}, ${JSON.stringify(neverRecordedAbsolutePath)})`);
     assertEqual(nowAllowedResult?.ok, true, 'D2: the SAME absolute path now succeeds once recorded');
-    // D2-rev (Sec2 Medium): recordDroppedPaths validates the Session exists FIRST -- an unknown
-    // sessionId (never created by this run) is refused, not silently recorded against a key
-    // that was never real.
+    // recordDroppedPaths must refuse an unknown sessionId rather than record against a nonexistent key.
     const unknownSessionResult = await cdp.evaluate(
       `window.refract.attachments.recordDroppedPaths('not-a-real-session-id', [${JSON.stringify(neverRecordedAbsolutePath)}])`
     );
@@ -287,10 +207,7 @@ async function main() {
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, '[[refract-attachments]]'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
     await cdp.clickByLabel('Send message');
-    // Gate round 5 (Test5 HIGH, flake fix): a fixed sleep(500) before a single evaluate raced
-    // the toast's own mount/paint under machine load (this exact check passed in isolation one
-    // run, then timed out in the next) -- `cdp.waitFor` polls until the toast actually renders
-    // or a generous timeout elapses, matching every other DOM-dependent wait in this script.
+    // Poll for the toast: a fixed sleep raced its mount under load.
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes('reserved') && el.textContent.includes('marker'))`,
       { timeoutMs: 10_000, label: 'D1: a named toast refuses a typed message containing the literal marker' }
@@ -304,13 +221,8 @@ async function main() {
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, ''); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
 
-    // --- Synthetic clipboard paste carrying a real `File` (Test2 HIGH, item 5c): dispatched
-    // entirely in the PAGE's own context, no native OS interaction needed -- `handlePaste` reads
-    // `event.clipboardData.files` off whatever `ClipboardEvent` the page itself receives, so a
-    // page-constructed one is indistinguishable from a real OS paste to that code. Pastes 11
-    // small text files at once: proves both the inline-file paste path AND the shared 10-cap
-    // (FR-039) in one synthetic event, and leaves a REAL pending chip in the strip for the
-    // keyboard-Remove check below (round 1 wrongly claimed this could not be exercised). -----
+    // Pasted in the page's own context: handlePaste can't tell a page-built ClipboardEvent from an OS paste.
+    // 11 files exercise the shared 10-cap (FR-039) and leave pending chips for the Remove check.
     const pasteFileNames = Array.from({ length: 11 }, (_, i) => `pasted-${i}.txt`);
     await cdp.evaluate(
       `(() => {
@@ -333,14 +245,11 @@ async function main() {
     );
     assertEqual(overflowToastShown, true, 'the cap overflow shows a VISIBLE toast, not only the sr-only region (gate round 2 Test2 HIGH)');
 
-    // --- A PENDING file chip's keyboard Remove (corrected notExercised claim, item 5e) ------
     const removeButtonLabel = await cdp.evaluate(
       `document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')?.getAttribute('aria-label')`
     );
     assertEqual(!!removeButtonLabel, true, 'pending chip Remove button has a real accessible name');
-    // Gate round 3 (Test3 HIGH): a real KEYBOARD interaction (focus the button, dispatch a real
-    // Enter keydown/keyup via CDP's own Input domain), never a `cdp.click` mouse event -- the
-    // round-2 claim of "keyboard-reachable" was never actually proven by a mouse click.
+    // A real keyboard Enter, not a mouse click, so keyboard activation is actually proven.
     await cdp.evaluate(
       `document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]').focus()`
     );
@@ -353,7 +262,6 @@ async function main() {
       `document.querySelectorAll('[role="group"][aria-label="Pending attachments"] [data-slot="badge"]').length === 9`,
       { timeoutMs: 10_000, label: 'keyboard Enter on the focused Remove button removes exactly one pending chip' }
     );
-    // Clears the remaining 9 pending files before D4/the real send below.
     for (let i = 0; i < 9; i++) {
       await cdp.click(`document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')`);
     }
@@ -378,8 +286,6 @@ async function main() {
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, '/compact'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
     await cdp.clickByLabel('Send message');
-    // Gate round 5 (Test5 HIGH, flake fix): same sleep(500)-before-single-evaluate race as D1
-    // above, replaced with the same cdp.waitFor polling pattern.
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes("Slash commands") && el.textContent.includes("attached files"))`,
       { timeoutMs: 10_000, label: 'D4: a slash command with a pending file attachment is refused with a named toast' }
@@ -393,14 +299,7 @@ async function main() {
     await cdp.click(`document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')`);
     await cdp.waitFor(`!document.querySelector('[role="group"][aria-label="Pending attachments"]')`, { timeoutMs: 10_000, label: 'strip empty again after D4' });
 
-    // --- Full pipeline: a REAL synthetic native drag-drop (Test2 HIGH 5c, genuinely attempted
-    // -- see the `__capturedFileDropHandler` trap near the top of this function) attaches all
-    // five files/folders through the ACTUAL `handleDrop` -> `recordDroppedPaths` -> `attachResolvedPaths`
-    // -> `buildAnyPathAttachment` pipeline (the same real IPC `readFile` round trip the direct
-    // calls above already proved classify correctly, now driven by the real drop code path
-    // instead of called directly); the outgoing `[[refract-attachments]]` marker is then built by
-    // the REAL `buildFileAttachmentText`/`appendFileAttachmentText` (`anyFileAttachments.ts`),
-    // never reconstructed by this script. -----------------------------------------------------
+    // Drives the real handleDrop pipeline with the captured callback; the outgoing marker is built by the app's own builder, never by this script.
     const dropHandlerCaptured = await cdp.evaluate(`typeof window.__capturedFileDropHandler === 'function'`);
     assertEqual(dropHandlerCaptured, true, 'onFileDrop callback captured via the window.refract assignment trap');
     const dropTargetRect = await cdp.evaluate(
@@ -416,46 +315,18 @@ async function main() {
     );
     report.push({ step: 'native OS drag-drop (simulated via the captured real onFileDrop callback) attached 5 real files/folders', ok: true });
 
-    // Gate round 5 (Test5 HIGH, real bug this live check caught): the 5 badges above can render
-    // as soon as `recordDroppedPaths` queues them, WHILE each file's own `attachments.readFile`
-    // IPC round trip is still in flight -- `MessageInput.tsx`'s own `handleSend` SILENTLY refuses
-    // (no toast at all, draft left untouched) while `pendingAttachmentReads > 0` (its own doc
-    // comment: "otherwise Enter mid-read sent the message WITHOUT the image"). Clicking Send
-    // right after the 5-badge wait above hit exactly that guard for 5 REAL files crossing into
-    // Rust, reproducing a genuine silent-no-op this script's own earlier diagnostics (toast-
-    // baseline fix) finally made visible instead of a bare 30s timeout. Waits for the visible
-    // "Attaching…" line (`pendingAttachmentReads > 0`'s own JSX) to clear before proceeding.
+    // Badges render once recordDroppedPaths queues them, while readFile is still in flight; handleSend silently refuses while pendingAttachmentReads > 0.
     await cdp.waitFor(
       `!Array.from(document.querySelectorAll('p')).some((p) => p.textContent.trim() === 'Attaching…')`,
       { timeoutMs: 15_000, label: 'all 5 background attachment reads settled (pendingAttachmentReads back to 0)' }
     );
 
-    // Gate round 3 (Test3 HIGH): #744 blocks an attachment-only send (no typed text) -- Send was
-    // a silent no-op here with nothing in the draft, so this never actually proved the full
-    // send -> transcript-parse -> bubble pipeline at all. Real text first.
+    // #744 blocks an attachment-only send, so type real text first.
     await cdp.evaluate(
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, 'Here are five files.'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
-    // Gate round 5 (Test5 HIGH, real bug this live check caught, NOT caused by #926): `cdp.click`/
-    // `clickByLabel` dispatch a TRUSTED `Input.dispatchMouseEvent` at the Send button's own
-    // screen coordinates (`verify-tauri-cdp.mjs`'s own doc comment). Sonner's `<Toaster />`
-    // (`main.tsx`, `components/ui/sonner.tsx`) sets no `position` prop, so it defaults to
-    // `bottom-right` -- the SAME corner the Send button occupies -- and neither file differs
-    // from `origin/main` (`git diff origin/main -- src/renderer/main.tsx
-    // src/renderer/components/ui/sonner.tsx` is empty): this positioning, and therefore the
-    // overlap itself, predates #926 entirely. Any `toast.error()` anywhere in the app (dozens of
-    // call sites already on main, e.g. `RemoveRepositoryDialog.tsx`/`useSessionRowActions.ts`)
-    // can cover Send for its ~4s default lifetime -- confirmed here via `elementFromPoint`
-    // reporting "INTERCEPTING TOAST" when a toast from an earlier step (D1/D4/FR-039, all new
-    // in #926 but reusing the SAME pre-existing Toaster) is still on screen. This is a real,
-    // pre-existing, reachable product issue (a user cannot click Send while any toast is up) --
-    // flagged to Main to file, not fixed here (fixing toast placement app-wide is out of scope
-    // for this feature PR). The PROOF this script owes is a REAL click succeeding once nothing
-    // covers the button: waits for every `[data-sonner-toast]` (the precise selector; a prior
-    // version of this wait also matched permanently-mounted sr-only `role="status"` announcer
-    // regions -- e.g. `attachmentsStatusId` just above -- which never go away and made the wait
-    // time out even after the real toast had long since faded) to clear, confirms via
-    // `elementFromPoint` that Send itself is now on top, then clicks for real.
+    // The default bottom-right Sonner toast can cover Send (a pre-existing issue), so a real click needs every [data-sonner-toast] gone first.
+    // Don't match role="status": permanently-mounted sr-only announcers never clear.
     const preClickToastCheck = await cdp.evaluate(
       `(() => { const b = document.querySelector('[aria-label^="Send"]'); if (!b) return { notFound: true }; const r = b.getBoundingClientRect(); const cx = r.x + r.width / 2; const cy = r.y + r.height / 2; const top = document.elementFromPoint(cx, cy); return { ariaDisabled: b.getAttribute('aria-disabled'), topElementAtClickPoint: top ? (top.closest('[data-sonner-toast]') ? 'INTERCEPTING TOAST' : (top === b || b.contains(top) ? 'Send button itself' : top.tagName)) : 'none' }; })()`
     );
@@ -471,14 +342,7 @@ async function main() {
     assertEqual(postClearToastCheck.topElementAtClickPoint, 'Send button itself', 'nothing covers Send once every toast has faded -- the real click below lands on the real button');
     await cdp.clickByLabel('Send message');
 
-    // Gate round 5 (Test5 HIGH, diagnostic): waits for EITHER a message row (chat.send round
-    // trip succeeded) OR a genuinely NEW toast (an unexpected send-side refusal, e.g. a guard
-    // mis-firing on one of these 5 real attached files) -- sonner toasts from D1/D4/FR-039
-    // earlier in this same run are still mounted (they fade on their own timer, not on the next
-    // assertion), so a naive "any toast present" check fires instantly on THEIR stale text and
-    // never actually waits for this send's own outcome. `toastBaseline` snapshots exactly what
-    // was already on screen right before this click; only text absent from that baseline counts
-    // as new.
+    // Earlier toasts (D1/D4/FR-039) are still mounted, so snapshot them and count only text absent from the baseline as new.
     const toastBaseline = await cdp.evaluate(
       `Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).map((el) => el.textContent.trim())`
     );
@@ -514,9 +378,7 @@ async function main() {
       `(() => { const row = ${userRowFinder}; const group = row?.querySelector('[role="group"][aria-label="Attached files"]'); return !!group && group.children.length === 5; })()`,
       { label: 'sent bubble shows exactly 5 file/folder chips, not raw inlined text', timeoutMs: 20_000 }
     );
-    // Gate round 2 (A11y2/Test2 Medium): asserts each chip's own VISIBLE text (name, size,
-    // "· sent as path" when applicable), not merely a chip count -- `FileAttachmentChip.tsx`'s
-    // whole gate round 2 fix was making this text visible at all, not screen-reader-only.
+    // Assert each chip's visible text (name, size, "· sent as path"), not just a count.
     const chipTexts = await cdp.evaluate(
       `Array.from((${userRowFinder}).querySelector('[role="group"][aria-label="Attached files"]').children).map((chip) => chip.textContent.trim())`
     );
@@ -552,11 +414,7 @@ async function main() {
     assertEqual(bubbleText.includes(smallContent.trim()), false, 'bubble never shows the raw inlined text');
     assertEqual(bubbleText.includes(overBoundaryResult.value.path), false, "bubble never shows a path-only attachment's raw path line");
 
-    // Gate round 3 (Test3 HIGH, item 5b): asserts the ACTUAL prompt text the fake omp received
-    // (`fake-omp-invocations.log`'s own `RECV` line for the `prompt` command), not just what the
-    // bubble hides -- proves the real `buildFileAttachmentText`/`appendFileAttachmentText`
-    // marker builder produced the documented D3 lead-in wording, a real fence, and the
-    // absolute-path lines, never a guess at what `chat.send` was actually called with.
+    // Assert the prompt the fake omp actually received (its RECV log line), not just what the bubble hides.
     const fakeOmpLog = readFileSync(path.join(exeDir, 'fake-omp-invocations.log'), 'utf8');
     const promptLine = fakeOmpLog.split('\n').find((line) => line.includes('"type":"prompt"'));
     assertEqual(!!promptLine, true, 'fake-omp-invocations.log contains the one real prompt RECV line');
@@ -593,17 +451,11 @@ async function main() {
     }
     report.push({ step: 'bubble chips screenshot, 3 themes', ok: true, screenshots: citeScreenshots(SHOTS_DIR, THEMES.map((t) => `bubble-${t.id}.png`)) });
   } catch (err) {
-    // Gate round 4 (Test4 Medium): a `waitFor` timeout or any other non-`assertEqual` throw used
-    // to leave `report` holding only whatever PASSED before the crash -- every entry in it reads
-    // `ok: true`, so report.json alone could misread a genuinely crashed run as a clean partial
-    // pass. One explicit `ok: false` crash entry, always, however the run actually failed.
+    // Always record one explicit ok:false entry so report.json can't read a crashed run as a clean partial pass.
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     throw err;
   } finally {
-    // Gate round 3 (Test3 HIGH, item 5g): written FIRST in `finally`, not after the try/finally
-    // entirely -- a thrown `assertEqual` used to skip this write completely, losing every
-    // partial result a failed run had already collected (exactly the run a reviewer most needs
-    // to see). Wrapped so a write failure itself can never mask the real thrown error.
+    // Written first so a thrown assertion still saves partial results; a write failure must not mask the real error.
     try {
       writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ head, dirty, results: report, notExercised }, null, 2));
     } catch (writeErr) {
@@ -615,17 +467,12 @@ async function main() {
     await safeRmSync(importSourceDir, LOG);
     await safeRmSync(repoDirBase, LOG);
     await safeRmSync(worktreesRootForCleanup, LOG);
-    // Gate round 3 (Code3 Low): `worktreesRootForCleanup`'s own PARENT (the shared
-    // `%TEMP%\pinion-worktrees` folder every run's scratch repo uses) is never itself removed
-    // recursively -- only `rmdirSync`, which fails outright on a non-empty directory, so a
-    // concurrent or crashed sibling run's own leftover subdirectory is never touched. This exact
-    // literal, already-computed path only; never a wildcard or a derived/default-value pattern.
+    // rmdirSync only, never recursive: the shared parent may hold another run's leftovers.
     try {
       const sharedWorktreesParent = path.dirname(worktreesRootForCleanup);
       if (readdirSync(sharedWorktreesParent).length === 0) rmdirSync(sharedWorktreesParent);
     } catch {
-      // Already gone, never existed, or genuinely non-empty (another run's own subdirectory) --
-      // skip silently either way, never a recursive delete here.
+      // Gone or non-empty (another run's subdirectory): skip silently.
     }
     await safeRmSync(exeDir, LOG);
     await safeRmSync(launcherDir, LOG);

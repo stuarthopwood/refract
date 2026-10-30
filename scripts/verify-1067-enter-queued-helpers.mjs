@@ -1,6 +1,4 @@
-// Shared process/CDP helpers for verify-1067-enter-queued.mjs (issue #1067 live check), split
-// out to stay under the #806 600-line soft cap (same pattern `verify-700-todo-pin-helpers.mjs`
-// and `verify-1077-agent-goal-helpers.mjs` use for their own main scripts).
+// Shared CDP helpers for verify-1067-enter-queued.mjs (split out for the #806 file-size cap).
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
@@ -8,9 +6,7 @@ export function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
-/** Screenshot hygiene: move the pointer to a neutral point inside the viewport, blur, press
- * Escape, then fail loudly if a tooltip or hover card is still open -- same pattern every other
- * verify-*.mjs script in this repo follows (e.g. `verify-700-todo-pin-helpers.mjs`). */
+/** Moves the pointer away, blurs, presses Escape, and fails if a tooltip/hover card is still open. */
 export async function settleForScreenshot(cdp) {
   const { width } = await cdp.evaluate(`({ width: window.innerWidth })`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width - 20, y: 450 });
@@ -24,18 +20,13 @@ export async function settleForScreenshot(cdp) {
 }
 
 export async function pressShiftEnter(cdp) {
-  // `text`/`unmodifiedText` (same fields `CdpSession.pressEnter` sets) are what makes Chromium
-  // treat this as a real keystroke that inserts a character -- a bare keyDown/keyUp pair with
-  // no `text` reaches the textarea's own `onKeyDown` but inserts nothing, since the component
-  // deliberately never calls `preventDefault` for Shift+Enter (it relies on the browser's own
-  // native "Enter inserts a newline in a textarea" behaviour, same as a real keystroke would).
+  // `text` is what makes Chromium insert a newline: the component never calls preventDefault for
+  // Shift+Enter and relies on the textarea's native behaviour.
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', modifiers: 8, windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 8, windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
 }
 
-/** Reads the composer's own queued-message chips in render order: display text, which queue it
- * belongs to (a follow-up chip always renders a "Send now" button; a steering chip renders the
- * quiet "Sending at the next step" label instead, never both). */
+/** Reads the queued-message chips in render order; a follow-up chip has "Send now", a steering chip a label. */
 export function readChips(cdp) {
   return cdp.evaluate(`(() => {
     const items = Array.from(document.querySelectorAll('section[data-slot="queued-panel"] ul[aria-label="Queued message list"] > li'));
@@ -52,12 +43,7 @@ export function readChips(cdp) {
   })()`);
 }
 
-/** The composer's own hint while blank: a genuinely VISIBLE span whose exact trimmed text
- * matches `expectedText` (not inside any `.sr-only` ancestor, which carries the same text for
- * screen readers via a separate element -- `closest` tells the two apart without depending on
- * the hint overlay's own class list, which could drift independently of this check), plus every
- * id the textarea's `aria-describedby` names and each one's own sr-only text -- the real
- * screen-reader-reachable path issue #533 established. */
+/** Reads the visible blank-composer hint; `closest('.sr-only')` separates it from the screen-reader copy (#533). */
 export function readHint(cdp, expectedText) {
   return cdp.evaluate(`(() => {
     const textarea = document.querySelector('[aria-label="Message"]');

@@ -1,22 +1,5 @@
 #!/usr/bin/env node
-// Live CDP check for the Lane D PR (#838 agent-to-agent lines, #762 `/models`, #1055 delete wait).
-//
-// Drives a private copy of the debug exe against the fake omp's `997-notice-severity` tape, which
-// (extended for #838) ends its one scripted turn with three `irc:incoming` custom messages (one
-// per direction), a `read`, a `write agent://R1_Worker` steer, a second `read`, and a failed
-// `write agent://Nobody`. Asserts, failing whenever a target is missing:
-//   1. Story marker first: `[data-agent-message-direction]` glyphs exist (this PR's own DOM).
-//   2. One glyph per direction (`to-main` reply bubble, `from-main` share bubble, `peer` two
-//      bubbles, by lucide class), and the accessible name of each row (CDP Accessibility tree)
-//      starts with "Agent message from X to Y" with "Main agent" as the parent's label.
-//   3. The steer renders as an agent-to-agent line, not a tool row, and splits the two `read`
-//      calls into two separate rows; the failed steer shows the error glyph and "failed" in the
-//      error colour, never `text-agent-message`.
-//   4. In Dark, Obsidian and Dark (high contrast): every glyph and label resolves to
-//      `--agent-message`, the preview stays `--muted-foreground`; one screenshot per theme.
-//   5. `/models` is listed in the slash menu ("Open model role settings"); sending it opens
-//      Settings at Model roles, clears the draft, and sends no `chat.send` (fetch hook on the IPC
-//      path, itself proven live by capturing the earlier real send). Back returns to the chat.
+// Live CDP check (#838 agent-to-agent lines, #762 `/models`) against the fake omp's `997-notice-severity` tape.
 // #1055's delete-wait timeout needs a genuinely hung git child to provoke; not driven here.
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -119,8 +102,7 @@ async function main() {
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Composer enabled' });
 
-    // IPC hook: records every fetch whose URL or body mentions `chat.send`. Proven live below by
-    // capturing the real first send before it is trusted to show `/models` sent nothing.
+    // Hook is trusted only because the real first send is captured by it below.
     const hook = await cdp.evaluate(`(() => {
       window.__p1amChatSends = [];
       const original = window.fetch;
@@ -144,11 +126,9 @@ async function main() {
     const realSends = await cdp.waitFor(`window.__p1amChatSends.length`, { timeoutMs: 10_000, label: 'the real send was captured by the hook' });
     check(realSends >= 1, 'hook proven live: the real chat.send was captured', { realSends });
 
-    // 1. Story-only marker first.
     await cdp.waitFor(`document.querySelectorAll('[data-agent-message-direction]').length >= 4`, { timeoutMs: 30_000, label: 'agent-message direction glyphs rendered' });
     check(true, 'story marker: [data-agent-message-direction] glyphs present');
 
-    // 2. Glyph and accessible name per row.
     await cdp.send('Accessibility.enable');
     async function axName(expr) {
       const evalResult = await cdp.send('Runtime.evaluate', { expression: expr, returnByValue: false });
@@ -172,7 +152,6 @@ async function main() {
       check(ax?.role === 'button' && ax.name.startsWith(row.name) && pairCount === 1, `${row.key}: accessible name starts with "${row.name}" and states the pair once`, { ...ax, pairCount });
     }
 
-    // 3. Steer is a line, splits the reads; failed steer shows the error state.
     const layout = await cdp.evaluate(`(() => {
       const steer = ${rowByLabelExpr('Agent message from Main agent to R1_Worker')};
       const readRows = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent ?? '').includes('README.md') && !(b.textContent ?? '').includes('Agent message'));
@@ -191,7 +170,6 @@ async function main() {
     check(failed !== null, 'failed steer row found ("... to Nobody failed")');
     check(failed.labelColor === errorColor && !failed.labelClass.includes('text-agent-message') && !failed.directionGlyph, 'failed steer: error colour label, no violet, status glyph instead of a bubble', { ...failed, errorColor });
 
-    // 4. Colours per theme + screenshots.
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
       const agentColor = await resolveCssVarColor(cdp, '--agent-message', 'color');
@@ -214,13 +192,11 @@ async function main() {
     }
     await switchTheme(cdp, 'dark', 'Dark');
 
-    // 5. `/models`.
     const sendsBefore = await cdp.evaluate('window.__p1amChatSends.length');
     await cdp.typeIntoByLabel('Message', '/models');
     const menuOption = await cdp.waitFor(`(() => { const o = Array.from(document.querySelectorAll('[role="option"]')).find((el) => (el.textContent ?? '').includes('Open model role settings')); return o ? o.textContent : null; })()`, { timeoutMs: 10_000, label: '/models listed in the slash menu' });
     check(typeof menuOption === 'string' && menuOption.includes('models'), '/models listed in the slash menu as "Open model role settings"', { menuOption });
-    // Enter on a top-level row completes to "/models " (the menu's existing rule for every
-    // command); the next Enter sends it.
+    // Enter on a top-level row only completes to "/models "; the next Enter sends it.
     await cdp.pressEnter();
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && el.value === '/models '; })()`, { timeoutMs: 5_000, label: 'Enter completed the draft to "/models "' });
     await cdp.pressEnter();

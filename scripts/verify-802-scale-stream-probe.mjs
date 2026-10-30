@@ -1,30 +1,8 @@
 #!/usr/bin/env node
-// Investigation script (issue #802, gate round 3 -- Main, 2026-10-18, time-boxed ~30min): probes
-// two hypotheses the round-2 RED run could not test, against the SAME pre-#1011-fix `h-full`
-// code the RED probe used (this script is meant to be run with the `probe/802-h-full-revert`
-// branch checked out, not the fix branch):
-//
-//   1. Display scaling: Stuart's monitor is likely 125%/150%. A real WebView2 launch with
-//      `--force-device-scale-factor=1.25`/`1.5` (via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`,
-//      chosen over CDP `Emulation.setDeviceMetricsOverride` per Main's own preference -- this
-//      produces REAL layout rounding inside WebView2's own renderer, not a DevTools-only
-//      override) re-runs the exact same 2-theme x 2-width matrix `verify-802-side-chat-
-//      scrollbars.mjs` already ran at 100% scale, recording `scrollHeight` vs `clientHeight` for
-//      the table/code wrappers at each scale.
-//   2. Streaming: `side-chat-streaming-answer.jsonl` (new fixture) delivers the SAME long answer
-//      as `side-chat-long-answer.jsonl` but via 20 `btw_delta` push frames (each 300ms apart,
-//      `verify-tauri-fake-omp.mjs`'s own `__delay__` primitic) instead of one already-complete
-//      `btw` response -- the scroll container's own `scrollHeight` genuinely grows frame-by-frame
-//      while this script samples it every 200ms, which an already-complete-answer fixture can
-//      never exercise (flagged `notExercised` on gate rounds 1-2).
-//
-// Reuses ONE exe copy across every launch below (the code under test, the probe branch's own
-// `h-full` revert, does not change between launches) -- only the scratch data/import/repo dirs
-// and the WebView2 user-data folder are fresh per launch. Never runs `ci-local`; never touches
-// product code. DOES NOT gate pass/fail like `verify-802-side-chat-scrollbars.mjs` does -- this
-// is a one-off investigation script, kept only as a historical record of this gate round's
-// findings (not wired into any `pnpm` script), so `report.json`'s `findings` are the whole
-// deliverable.
+// Probes display scaling (125%/150%) and streaming for #802 against the pre-fix `h-full` code
+// (run on probe/802-h-full-revert). One-off investigation: it records findings, never gates.
+// Scaling uses --force-device-scale-factor via WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS for real
+// renderer layout rounding, unlike a DevTools-only override.
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -64,8 +42,7 @@ const QUESTION = 'Give me a long answer with a bulleted list, a wide table, and 
 const LAST_LINE_MARKER = 'ISSUE802-LAST-LINE-MARKER';
 const RIGHT_PANE_SELECTOR = '#right-pane-active-panel';
 
-// Verbatim copy of verify-802-side-chat-scrollbars.mjs's own SCROLL_PROBE_EXPR (gate round 2),
-// so this investigation's numbers are directly comparable to the RED/GREEN run's own.
+// Same probe expression as verify-802-side-chat-scrollbars.mjs so numbers are comparable.
 const SCROLL_PROBE_EXPR = `(() => {
   const anchor = document.querySelector(${JSON.stringify(RIGHT_PANE_SELECTOR)});
   if (!anchor) return null;
@@ -149,10 +126,8 @@ async function main() {
     const exePath = built.dest;
     console.log(`verify-802-scale-stream: built exe copied to ${exePath} (reused across every launch below)`);
 
-    // One real-app launch per combination below. `scenario` selects the fake-omp fixture;
-    // `extraBrowserArgs` (if set) is appended to WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS alongside
-    // the mandatory `--remote-debugging-port` (overriding `launchBuiltExeWithEnv`'s own default
-    // would lose CDP entirely, so it is reconstructed here, never just appended via extraEnv).
+    // `extraBrowserArgs` is appended after the mandatory --remote-debugging-port, which must be
+    // rebuilt here because overriding the launcher's default would lose CDP.
     async function launchOnce(label, scenario, extraBrowserArgs) {
       const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-802ss-data-'));
       const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-802ss-import-'));
@@ -214,7 +189,7 @@ async function main() {
       }
     }
 
-    // ---- Part 1: display-scaling matrix (real WebView2 --force-device-scale-factor) ----
+    // Part 1: display-scaling matrix.
     for (const scale of SCALES) {
       const scaleLabel = `scale${scale}`;
       const launch = await launchOnce(scaleLabel, 'side-chat-long-answer', `--force-device-scale-factor=${scale}`);
@@ -245,7 +220,7 @@ async function main() {
       await closeLaunch(launch);
     }
 
-    // ---- Part 2: streaming answer, sampled every 200ms while btw_delta frames arrive ----
+    // Part 2: streaming answer, sampled while btw_delta frames arrive.
     {
       const launch = await launchOnce('stream', 'side-chat-streaming-answer', null);
       const { cdp } = launch;
@@ -264,8 +239,7 @@ async function main() {
             secondScrollerEverFound = true;
             streamFindings.push(`[stream t=${t}ms] ${measurement.pageWideScrollers.length} page-wide scroll containers (SECOND SCROLLER): ${JSON.stringify(measurement.pageWideScrollers)}`);
           } else if (sampleCount % 5 === 0) {
-            // Log every 5th in-bounds sample (every ~1s) to keep report.json a readable size;
-            // any >1 sample above is ALWAYS logged regardless of this throttle.
+            // Throttled to keep report.json small; any >1 sample is always logged above.
             streamFindings.push(`[stream t=${t}ms] ${measurement.pageWideScrollers.length} page-wide scroll container(s), scrollHeight=${measurement.pageWideScrollers[0]?.scrollHeight ?? 'n/a'} clientHeight=${measurement.pageWideScrollers[0]?.clientHeight ?? 'n/a'}`);
           }
         } catch (err) {
@@ -276,7 +250,7 @@ async function main() {
       findings.push(`Streaming sample window: ${sampleCount} samples taken over ${STREAM_SAMPLE_WINDOW_MS}ms (every 200ms); max page-wide scroll containers seen at any instant: ${maxPageWideScrollers}.`);
       findings.push(...streamFindings);
 
-      // After streaming settles (terminal btw_record applied), one final measurement.
+      // Final measurement once the terminal btw_record is applied.
       await cdp.waitFor(
         `document.querySelector(${JSON.stringify(RIGHT_PANE_SELECTOR)})?.textContent.includes(${JSON.stringify(LAST_LINE_MARKER)}) ?? false`,
         { timeoutMs: 20_000, label: '[stream] Streamed answer settled (last-line marker present)' }

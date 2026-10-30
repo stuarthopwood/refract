@@ -1,19 +1,6 @@
-// Reusable CDP driver for the Tauri/WebView2 build (issue #795 part 1, R12a). Ported pattern
-// from the Electron skill (verify-refract-ui-via-cdp): trusted `Input.dispatchMouseEvent`
-// clicks at an element's own `getBoundingClientRect` centre, `Input.insertText` for typing,
-// polling for every DOM condition (never a fixed sleep), `Page.captureScreenshot` for evidence.
-//
-// WebView2's own remote-debugging route (the only documented one, spec 016 part 1's own
-// research note): `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` set on
-// the spawned dev process (not the launcher), discovered over the DevTools `/json/list` HTTP
-// endpoint exactly like Chrome/Electron.
-//
-// Process lifecycle (gate-fix, security review HIGH, round 2): the built exe is never spawned
-// directly. It runs inside `scripts/verify-tauri-launcher.rs`'s own kill-on-close Win32 Job
-// Object, so tearing down the whole tree (WebView2, the fake-omp PATH shim, its own node child)
-// is a single OS-level job termination, never a Win32_Process snapshot or a `taskkill` of a
-// computed pid -- there is no pid-reuse window to reason about at all, because the kill is scoped
-// by actual job membership, not by a guessed ancestry chain.
+// CDP driver for the Tauri/WebView2 build: trusted input events, polled DOM conditions, screenshots.
+// WebView2 is reached via WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>.
+// The exe runs inside a kill-on-close Job Object, so teardown never computes a pid to kill.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync, appendFileSync, readFileSync, existsSync } from 'node:fs';
@@ -21,10 +8,7 @@ import { createServer } from 'node:net';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-/** Asks the OS for a free TCP port (binds to port 0, reads back the one actually assigned, then
- * releases it) instead of a fixed guess: a fixed port can already be held by another lane's own
- * `verify:tauri` run, a stale instance left by a killed run, or anything else on the machine, and
- * `waitForCdpTarget` would then silently attach to that OTHER instance instead of failing. */
+/** Asks the OS for a free port; a fixed one could attach `waitForCdpTarget` to another instance. */
 export async function getFreePort() {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -37,8 +21,7 @@ export async function getFreePort() {
   });
 }
 
-/** Polls `http://127.0.0.1:<port>/json/list` until a `page` target's `webSocketDebuggerUrl`
- * appears (WebView2 does not expose one on every target, e.g. a devtools-internal page). */
+/** Polls `/json/list` for a `page` target's `webSocketDebuggerUrl`; not every target exposes one. */
 export async function waitForCdpTarget(port, { timeoutMs = 60_000, intervalMs = 300 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let lastErr;
@@ -62,17 +45,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Thin wrapper over one CDP WebSocket connection: request/response correlation by id, plus the
- * handful of domain calls this harness needs. Node's global `WebSocket` (Node 24+, per
- * README.md's own prerequisite) -- no extra dependency.
- *
- * Fails closed on a dropped connection (gate-fix, code review HIGH): if the app or WebView2
- * crashes mid-run, the socket's own `close`/`error` event rejects every request still pending
- * AND every request sent afterwards, instead of leaving them to hang forever past `waitFor`'s own
- * timeout (the timeout never fires because the underlying `send()` promise itself never
- * resolves or rejects without this). Each individual `send()` also carries its own timeout, so a
- * CDP command that the browser process never answers (not a close, just silence) fails the same
- * way. */
+/** One CDP WebSocket connection (Node's global `WebSocket`, Node 24+).
+ * Fails closed: a dropped socket rejects pending and later requests, and each `send()` has its own
+ * timeout, otherwise `waitFor`'s timeout never fires on a silent browser. */
 export class CdpSession {
   constructor(ws, { requestTimeoutMs = 20_000 } = {}) {
     this.ws = ws;
@@ -144,7 +119,6 @@ export class CdpSession {
     this.ws.close();
   }
 
-  /** Evaluates `expression` in the page, returning the plain JS value (must be JSON-safe). */
   async evaluate(expression) {
     const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) {
@@ -153,7 +127,6 @@ export class CdpSession {
     return result.result.value;
   }
 
-  /** Polls `expression` (must return a JSON-safe value) until it is truthy, no fixed sleeps. */
   async waitFor(expression, { timeoutMs = 30_000, intervalMs = 250, label = expression } = {}) {
     const deadline = Date.now() + timeoutMs;
     let lastValue;
@@ -165,8 +138,6 @@ export class CdpSession {
     throw new Error(`waitFor timed out after ${timeoutMs}ms: ${label} (last value: ${JSON.stringify(lastValue)})`);
   }
 
-  /** Clicks the centre of the first element matching `finderExpr` (a JS expression evaluating to
-   * an Element or null/undefined). Throws if nothing matched within `timeoutMs`. */
   async click(finderExpr, { timeoutMs = 15_000 } = {}) {
     const rect = await this.waitFor(
       `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
@@ -176,8 +147,6 @@ export class CdpSession {
     await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
   }
 
-  /** Matches an exact `aria-label` anywhere, optionally scoped to the open dialog (used for
-   * "New session from a branch in ..." and the composer's Send/Stop buttons). */
   clickByLabel(label, { inDialog = false, prefix = false } = {}) {
     const scope = inDialog ? `document.querySelector('[role="dialog"]')` : 'document.body';
     const finder = prefix
@@ -186,9 +155,7 @@ export class CdpSession {
     return this.click(finder);
   }
 
-  /** Matches a button/element by its exact trimmed visible text, optionally scoped to the open
-   * dialog (used for "Add repository" / "Create session", whose accessible name is their text
-   * content, not an `aria-label`). */
+  /** Text match, for buttons whose accessible name is their text content rather than an `aria-label`. */
   clickByText(text, { inDialog = false, tag = 'button' } = {}) {
     const scope = inDialog ? `document.querySelector('[role="dialog"]')` : 'document.body';
     const finder = `(() => { const root = ${scope}; if (!root) return null; return Array.from(root.querySelectorAll('${tag}')).find((el) => el.textContent.trim() === ${JSON.stringify(text)}); })()`;
@@ -214,12 +181,7 @@ export class CdpSession {
   }
 }
 
-/** Spawns `scripts/verify-tauri-launcher.exe` (already built by the caller), which creates a
- * kill-on-close Job Object, spawns `targetExe` inside it, and writes the target's own pid to
- * `pidFile` once assigned. Returns `{ child, targetPid }`: `child` is the LAUNCHER's own
- * `ChildProcess` (Node's own handle on it, so its pid can never be silently reused while this
- * harness holds it), `targetPid` is the real app's pid (for `isTargetOwningPort` only -- never
- * used to construct a kill target). */
+/** Spawns the Job Object launcher around `targetExe`; `targetPid` is for `isTargetOwningPort` only, never a kill target. */
 export async function launchViaJobObject(launcherExe, pidFile, targetExe, targetArgs, { cwd, env } = {}) {
   const child = spawn(launcherExe, [pidFile, targetExe, ...targetArgs], { windowsHide: true, cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
 
@@ -244,12 +206,7 @@ export async function launchViaJobObject(launcherExe, pidFile, targetExe, target
   return { child, targetPid };
 }
 
-/** Stops the launcher (gate-fix, security review HIGH, round 2): closes its stdin, the shutdown
- * signal `verify-tauri-launcher.rs` watches for, which terminates its Job Object (and so the
- * whole tree inside it) immediately. If the launcher itself does not exit within `graceMs` (it
- * should exit almost immediately once its own job is torn down), it is force-killed directly by
- * Node's own `ChildProcess.kill()` -- always safe: Node holds this exact process handle itself,
- * so there is no pid to compute and no reuse window to reason about. */
+/** Closing stdin tells the launcher to end its Job Object (and the whole tree); falls back to Node's own handle kill. */
 export async function stopLauncher(child, { graceMs = 5000 } = {}) {
   if (!child || child.killed || child.exitCode !== null) return;
   try {
@@ -267,12 +224,8 @@ export async function stopLauncher(child, { graceMs = 5000 } = {}) {
   }
 }
 
-/** Confirms the process actually listening on `port` is the app this harness launched, or one of
- * its own direct children (WebView2's own browser process is typically one hop below the Tauri
- * exe) -- a pid-based check (`Get-NetTCPConnection`'s own `OwningProcess`), never a command-line
- * substring match (gate-fix, security review round 2). This is read-only verification, never a
- * kill decision, so a shallow one-hop parent check is sufficient: the worst case of a wrong
- * answer here is an aborted run, not a touched process. */
+/** Checks by pid (not command-line match) that the port owner is the app or its direct child
+ * (WebView2's browser process). Read-only, so a one-hop check suffices. */
 export function isTargetOwningPort(port, targetPid) {
   const script = `
 $conn = Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -293,11 +246,7 @@ $parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction
   return parsed.owner === targetPid || parsed.parent === targetPid;
 }
 
-/** The real OS-level executable path backing `pid`, via `Win32_Process.ExecutablePath` -- proves
- * the process a CDP session is actually driving is the exact scratch copy a caller just built
- * and hashed, not a stale instance or a substituted binary (gate round 2 fix, test-reviewer
- * Medium: the exe hash used to be logged but never actually checked against anything). `null`
- * if the process cannot be queried (already exited, insufficient permissions, etc). */
+/** Real exe path of `pid`, to prove the driven process is the scratch copy just built; `null` if unqueryable. */
 export function getProcessExecutablePath(pid) {
   const script = `
 $p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue
@@ -313,9 +262,7 @@ if (-not $p) { Write-Output '{}'; exit }
   }
 }
 
-/** Combines `getProcessExecutablePath` with a fresh sha256 read of the file at that path, and
- * throws if either has drifted from what the caller expects -- the actual check round 1's PR
- * claimed but never ran (it only logged the hash once, at copy time). */
+/** Throws if the process's exe path or a fresh sha256 of it differs from what the caller built. */
 export function assertExeMatchesProcess(pid, expectedExePath, expectedHash) {
   const actualPath = getProcessExecutablePath(pid);
   if (!actualPath || path.resolve(actualPath) !== path.resolve(expectedExePath)) {
@@ -327,9 +274,7 @@ export function assertExeMatchesProcess(pid, expectedExePath, expectedHash) {
   }
 }
 
-/** A tiny logger that both `console.log`s a line and appends it to `filePath`, so a run's own
- * STEP PASS/FAIL trail survives on disk next to its screenshots -- not only as stdout a caller
- * might not have captured (gate round 2 fix, test-reviewer Medium: no run record was kept). */
+/** Logs to stdout and appends to `filePath` so the STEP trail survives next to the screenshots. */
 export function createReportLogger(filePath) {
   writeFileSync(filePath, `# verify run started ${new Date().toISOString()}\n`);
   return function log(line) {
@@ -338,19 +283,8 @@ export function createReportLogger(filePath) {
   };
 }
 
-/** Item 4 (M3, settled/resolved outline colours, `verify-927-928-quiet-composer.mjs`): the
- * EXPECTED outline colour for a token like `--composer-focus`/`--ring` is resolved through a
- * REAL probe element's own `getComputedStyle()` -- several theme presets resolve these through
- * `color-mix()`/`var()` chains only the browser's own cascade can finish computing, so string-
- * comparing the token's CSS text would be wrong.
- *
- * Gate round 3 fix (Low, Main): used to unconditionally read back `.outlineColor` regardless of
- * `property`, relying on `outline-color`'s own `currentColor` default to coincidentally pick up
- * whatever `property` (e.g. `color`) had actually been set -- a trick that only works for
- * properties CSS itself happens to resolve through `currentColor`, silently wrong for anything
- * else a future caller might pass (e.g. `background-color`, whose own initial value is
- * `transparent`, never `currentColor`). Reads back the SAME property that was set, converted to
- * its camelCase `CSSStyleDeclaration` key. */
+/** Resolves a CSS var through a real probe element: theme tokens use `color-mix()`/`var()` chains
+ * only the browser can compute. Reads back the same `property` that was set (not `currentColor`). */
 export async function resolveCssVarColor(cdp, varName, property = 'outline-color') {
   return cdp.evaluate(`(() => {
     const probe = document.createElement('div');

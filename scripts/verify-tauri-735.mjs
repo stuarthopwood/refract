@@ -1,42 +1,8 @@
 #!/usr/bin/env node
-// Session list collapse/expand live check (issue #735) against the scratch Tauri debug build.
-// Standalone script (same precedent as verify-tauri-ask.mjs/verify-tauri-side-chat.mjs:
-// duplicates the small build/copy/launch glue, reuses verify-tauri-cdp.mjs's CDP primitives).
-//
-// Proves, against the real rendered DOM (never window.refract.* as a shortcut for anything the
-// UI itself should do -- window.refract.theme.set is the one exception, used only to switch
-// themes between screenshots, exactly the real IPC call the Appearance section itself makes):
-//   - The Collapse all / Expand all toolbar closes/opens every Repository group plus Archived
-//     together, is keyboard-reachable right after Pull requests, its focus outline actually
-//     renders at decision 23's exact 2px solid value (computed style after the transition
-//     settles, never a bare truthy check), and a REAL second click on an already-disabled
-//     button changes nothing (not just that the attribute reads aria-disabled).
-//   - A closed group holding a Session with a pending approval (status needs-you) shows a single
-//     Waiting marker, readable in the group header's own computed accessible name (CDP
-//     Accessibility domain, never textContent).
-//   - An archived Session, still the focused/visible pane at the moment it is archived, does NOT
-//     leak its "contains open session" bar or Waiting marker onto its OLD Repository's header
-//     once that header is collapsed -- only Archived's own header may carry that cue for it.
-//   - A closed group re-opens (and that open persists) when a create (the header "+") or a
-//     restore from Archived actually moves a Session into it.
-//   - Decision 29's Settings round trip: a collapsed group stays collapsed (and nothing
-//     re-expands) after opening Settings and returning to chat, which remounts the whole list.
-//   - Decision 29's prune: removing a Repository (zero Sessions, collapsed) actually drops its
-//     id from `settings.json`, not just from the renderer's own in-memory Set.
-//   - A genuinely MIXED collapse state (one Repository closed, one open, Archived open with a
-//     Session still actually archived in it -- never the all-default "freshly started" shape)
-//     survives a real app restart (quit, relaunch on the SAME scratch data dir, no wipe),
-//     verified both by reading `sessionListCollapse` straight out of `settings.json` on disk
-//     before the quit, and by the rendered DOM after the relaunch.
-//   - The exe actually driving every CDP session is the exact scratch copy this run built and
-//     hashed (`assertExeMatchesProcess`), not merely logged as a coincidence.
-//
-// Isolation (refract-tauri-live-check-isolation skill): REFRACT_DATA_DIR/WEBVIEW2_USER_DATA_FOLDER
-// are fresh scratch dirs; REFRACT_IMPORT_SOURCE_DIR is an empty scratch dir so the one-time
-// Electron-registry import never reads Stuart's real %APPDATA%\pinion. The built exe is copied to
-// its own scratch dir and run from there (never from the shared CARGO_TARGET_DIR). Every launch
-// asserts the CDP target is actually owned by the pid this run started (isTargetOwningPort) AND
-// that pid's own exe path/hash match the scratch copy (assertExeMatchesProcess) before driving it.
+// Live check of Session list collapse/expand (#735) against the scratch Tauri debug build, driven through real DOM
+// (only `window.refract.theme.set` is used directly, to switch themes between screenshots).
+// Isolation: scratch REFRACT_DATA_DIR/WEBVIEW2 folders and an empty REFRACT_IMPORT_SOURCE_DIR so the real %APPDATA%\pinion is never read.
+// Every launch asserts the CDP target is owned by this run's pid and that its exe path/hash match the scratch copy.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync, writeFileSync } from 'node:fs';
@@ -77,11 +43,6 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 
-// Gate round 2 fix (architect/test-reviewer Low): this is now where screenshots ACTUALLY land
-// (round 1 logged this path but wrote every screenshot to a separate `evidenceDir` instead) --
-// the run's STEP-PASS report, app logs and settings.json dumps live here too, and NONE of it is
-// deleted in the `finally` block below (round 1 did not delete it either, but a later manual
-// cleanup pass did -- this round's run is kept deliberately as the gate's own audit trail).
 const SHOT_DIR = process.env.REFRACT_735_SHOT_DIR || path.join(tmpdir(), 'refract-735-gate2-shots');
 
 const PROMPT_MESSAGE = 'Please respond now.';
@@ -212,16 +173,12 @@ function assert(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
-/** Reads and parses a JSON file straight off the scratch data dir -- used ONLY for the
- * persistence proof (reading what actually landed on disk), never as a shortcut for anything
- * the UI itself should be driven to do. */
+// Reads what actually landed on disk, for the persistence proof only.
 function readJsonFile(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
 async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName, repoBName, repoCName }) {
-  // ---- US1-equivalent: readiness, add all three scratch repositories (C stays empty: it is
-  // decision 29's prune check's own target, collapsed once and removed later in main()) ----
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
     `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -244,22 +201,18 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   await cdp.waitFor(groupTriggerFinder(repoCName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository C group rendered' });
   log('STEP PASS: all three scratch repositories added, three Repository groups rendered.');
 
-  // Every group must start OPEN (decision 16's default: absent from the saved set = open).
+  // Repository C stays empty and collapsed: main() removes it later for the prune check.
   assert((await groupState(cdp, groupTriggerFinder(repoAName))) === 'open', 'Repository A group must start open');
   assert((await groupState(cdp, groupTriggerFinder(repoBName))) === 'open', 'Repository B group must start open');
   assert((await groupState(cdp, groupTriggerFinder(repoCName))) === 'open', 'Repository C group must start open');
 
-  // Repository C owns zero Sessions throughout and is collapsed now -- decision 29's prune
-  // check (main()) removes it later while it is in this state.
   await cdp.click(groupTriggerFinder(repoCName));
   await cdp.waitFor(`${groupTriggerFinder(repoCName)}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Repository C collapsed' });
 
-  // ---- Create a Session in each repository via the header "+" quick-create ----
   await createSessionViaQuickCreate(cdp, repoAName);
   await cdp.screenshot(path.join(evidenceDir, '01-session-a1-created.png'));
   log('STEP PASS: Session A1 created via the header + quick-create button.');
 
-  // ---- Trigger an approval (needs-you) on Session A1, leave it PENDING ----
   await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
   await cdp.clickByLabel('Send message');
   await cdp.waitFor(
@@ -269,40 +222,30 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   await cdp.screenshot(path.join(evidenceDir, '02-session-a1-needs-you-pending-approval.png'));
   log('STEP PASS: Session A1 has a pending approval (status needs-you).');
 
-  // ---- Session B1 (an ordinary active Session that stays in Repository B throughout), then
-  // Session B2 (becomes the focused/visible pane -- `create()` calls `replaceFocused`). Both
-  // waits now assert the row count itself increased, not only that a composer is enabled
-  // (gate round 2 fix: a dropped second create used to pass silently here). ----
+  // B2 becomes the focused pane (`create()` calls `replaceFocused`); assert the row count grew, since a dropped create passed silently.
   await createSessionViaQuickCreate(cdp, repoBName);
   log('STEP PASS: Session B1 created via the header + quick-create button (row count proven).');
   await createSessionViaQuickCreate(cdp, repoBName);
   log('STEP PASS: Session B2 created via the header + quick-create button (row count proven, now the focused pane).');
 
-  // ---- Archive Session B2 WHILE it is still the focused/visible pane -- the exact regression
-  // shape gate round 1 found: archiving does not clear `paneSessionIds` (only a delete does,
-  // FR-016), so B2's id stays in the Split store's pane list even once it is archived. ----
+  // Archive B2 while focused: archiving does not clear `paneSessionIds` (only delete does), so its id stays in the pane list.
   await archiveFirstRowIn(cdp, repoBName);
   await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 15_000, label: 'Archived group appears after archiving Session B2' });
   log('STEP PASS: Session B2 archived while still the focused pane; Archived group now shown.');
 
-  // Archived starts closed by default; archiving never opens it (decision 20's own scope).
   assert((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'closed', 'Archived group must stay closed after archiving (archiving never opens Archived)');
 
-  // ---- Collapse Repository A (now holding the needs-you Session) and Repository B ----
   await cdp.click(groupTriggerFinder(repoAName));
   await cdp.waitFor(`${groupTriggerFinder(repoAName)}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Repository A group collapsed by its own header click' });
   await cdp.click(groupTriggerFinder(repoBName));
   await cdp.waitFor(`${groupTriggerFinder(repoBName)}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Repository B group collapsed by its own header click' });
   log('STEP PASS: Repository A and Repository B groups collapsed by clicking their own headers.');
 
-  // ---- Waiting marker: Repository A's collapsed header names "Needs you" in its real AX name ----
   const repoAName_ax = await getAccessibleName(cdp, groupTriggerFinder(repoAName));
   assert(repoAName_ax && /Needs you/.test(repoAName_ax), `Repository A's collapsed header accessible name must include "Needs you" (got: ${JSON.stringify(repoAName_ax)})`);
   log(`STEP PASS: Repository A collapsed header's real accessible name includes the Waiting marker: ${JSON.stringify(repoAName_ax)}`);
 
-  // ---- Gate round 1 regression proof: Repository B's collapsed header must show NEITHER the
-  // active-session bar NOR any waiting marker for the now-archived B2, even though B2 is still
-  // the Split store's own focused pane -- only Archived's own header may carry that cue. ----
+  // B's collapsed header must show neither the active bar nor a waiting marker for archived B2, though it is still the focused pane.
   const repoBName_ax = await getAccessibleName(cdp, groupTriggerFinder(repoBName));
   assert(repoBName_ax && !/contains open session/.test(repoBName_ax), `Repository B's header must NOT claim "contains open session" for an archived former-focused Session (got: ${JSON.stringify(repoBName_ax)})`);
   assert(!(await hasActiveBar(cdp, repoBName)), 'Repository B\'s collapsed header must not render the active-indicator bar for an archived Session');
@@ -312,20 +255,13 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   log('STEP PASS: the archived-Session active bar and marker show on Archived\'s own header, never leaked back onto Repository B\'s former header.');
   await cdp.screenshot(path.join(evidenceDir, '03-dark-collapsed-with-marker.png'));
 
-  // ---- Toolbar: keyboard reach, right after Pull requests ----
-  // Focused programmatically (never clicked): a real click activates the button, which swaps
-  // the centre region to the Pull Requests view, whose own repository combobox then steals
-  // focus on mount.
+  // Focused programmatically, not clicked: a click opens Pull Requests, whose combobox steals focus on mount.
   await cdp.evaluate(`document.querySelector('[aria-label="Pull requests"]').focus()`);
   await pressTab(cdp);
   let active = await getActiveElementAccessibleName(cdp);
   assert(active.name === 'Collapse all groups', `Tab after Pull requests must land on Collapse all groups (got: ${JSON.stringify(active)})`);
 
-  // ---- Gate round 2 fix (Medium, test/code-reviewer): the toolbar's focus outline must render
-  // at decision 23's EXACT 2px solid value, not just a nonzero width. Button's base
-  // `outline-width` starts at the CSS initial `medium` (3px) and `outline-2` animates it down
-  // over `transition-all`'s ~150ms, so reading immediately after Tab catches the animation's
-  // start value (round 1's "solid, 3px" claim) -- waiting for it to settle first fixes that. ----
+  // Wait for the outline to settle: `outline-2` animates down from the initial 3px over ~150ms, so an immediate read sees 3px.
   await new Promise((resolve) => setTimeout(resolve, 250));
   const focusOutline = await cdp.evaluate(
     `(() => { const el = document.activeElement; const cs = getComputedStyle(el); return { outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth, outlineOffset: cs.outlineOffset }; })()`
@@ -341,7 +277,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   assert(active.name === 'Expand all groups', `Tab after Collapse all groups must land on Expand all groups (got: ${JSON.stringify(active)})`);
   log('STEP PASS: toolbar keyboard reach confirmed (Pull requests -> Collapse all groups -> Expand all groups), via real accessible names.');
 
-  // ---- Toolbar: Expand all opens every group (A, B, Archived; C stays closed, untouched) ----
   await pressEscape(cdp);
   await cdp.evaluate(`document.activeElement?.blur()`);
   await new Promise((resolve) => setTimeout(resolve, 200));
@@ -352,8 +287,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   assert((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'open', 'Expand all must open Archived (shown, since Session B2 is archived)');
   log('STEP PASS: Expand all opened every Repository group plus Archived.');
 
-  // ---- Gate round 2 fix (Medium, test-reviewer): Expand all's own no-op state, and a REAL
-  // second click that changes nothing -- round 1 only ever read the `aria-disabled` attribute. ----
   const expandAllDisabled = await cdp.evaluate(`document.querySelector('[aria-label="Expand all groups"]').getAttribute('aria-disabled')`);
   assert(expandAllDisabled === 'true', `Expand all must be aria-disabled once everything is already expanded (got: ${expandAllDisabled})`);
   await cdp.clickByLabel('Expand all groups');
@@ -363,8 +296,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   assert((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'open', 'A real second click on the disabled Expand all must change nothing (Archived)');
   log('STEP PASS: a real second click on the already-disabled Expand all changed nothing (genuine no-op).');
 
-  // ---- Toolbar: Collapse all closes every group, is a no-op the second time, AND a real
-  // second click changes nothing ----
   await cdp.clickByLabel('Collapse all groups');
   await cdp.waitFor(`${groupTriggerFinder(repoAName)}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Collapse all closed Repository A' });
   assert((await groupState(cdp, groupTriggerFinder(repoBName))) === 'closed', 'Collapse all must close Repository B');
@@ -389,7 +320,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   assert((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'closed', 'A real second click on the disabled Collapse all must change nothing (Archived)');
   log('STEP PASS: a real second click on the already-disabled Collapse all changed nothing (genuine no-op).');
 
-  // ---- High-contrast screenshot of the same collapsed+marker state ----
   const themeResult = await cdp.evaluate(`window.refract.theme.set('dark-high-contrast').then((r) => r.ok)`);
   assert(themeResult === true, 'theme.set(dark-high-contrast) must succeed');
   await cdp.waitFor(`document.documentElement.className.includes('dark-high-contrast')`, { timeoutMs: 10_000, label: 'High-contrast theme class applied' });
@@ -398,14 +328,12 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   await cdp.evaluate(`window.refract.theme.set('dark')`);
   await cdp.waitFor(`document.documentElement.className.includes('theme-dark') && !document.documentElement.className.includes('high-contrast')`, { timeoutMs: 10_000, label: 'Back to Dark theme' });
 
-  // ---- Open-on-create: Repository A is closed; the header + quick-create reopens it. The new
-  // Session created here (A2) is the one kept archived through the restart proof below. ----
+  // A2, created here, is the Session kept archived through the restart proof.
   assert((await groupState(cdp, groupTriggerFinder(repoAName))) === 'closed', 'Repository A must still be closed before the open-on-create proof');
   await createSessionViaQuickCreate(cdp, repoAName);
   await cdp.waitFor(`${groupTriggerFinder(repoAName)}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 30_000, label: 'Repository A reopened by a successful create' });
   log('STEP PASS: a successful create via the header + button reopened Repository A\'s closed group (open-on-create), creating Session A2.');
 
-  // ---- Open-on-restore: Archived is closed; restoring Session B2 reopens Repository B ----
   assert((await groupState(cdp, groupTriggerFinder(repoBName))) === 'closed', 'Repository B must still be closed before the open-on-restore proof');
   await restoreOnlyArchivedRow(cdp);
   await cdp.waitFor(`${groupTriggerFinder(repoBName)}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 30_000, label: 'Repository B reopened by a successful restore' });
@@ -461,16 +389,11 @@ async function main() {
     child = launched.child;
     const targetPid1 = launched.targetPid;
     cdp = await connectCdp(port, targetPid1);
-    // Gate round 2 fix (High in effect, test-reviewer Medium): actually assert the exe's own
-    // sha256 against the launched process's own exe path -- round 1 only ever logged the hash.
     assertExeMatchesProcess(targetPid1, exePath, exeHash);
     log(`verify-tauri-735: run 1 launched, pid ${targetPid1}, exe sha256 ${exeHash} (asserted against the process's own exe path)`);
 
     await runChecks(cdp, evidenceDir, log, { repoA: repoADir, repoB: repoBDir, repoC: repoCDir, repoAName, repoBName, repoCName });
 
-    // ---- Build the mixed collapse state and run decision 29's two remaining checks (the
-    // Settings round trip and the prune) -- extracted to the shared helpers module to keep this
-    // file under the #806 line cap; see its own doc comment for the full sequence. ----
     const { repoARecord } = await buildMixedStateAndCheckDecision29(cdp, log, {
       repoAName,
       repoBName,
@@ -480,7 +403,6 @@ async function main() {
       dataDir
     });
 
-    // ---- Read the FINAL on-disk settings.json before quitting (decision 17's debounced write) ----
     await new Promise((resolve) => setTimeout(resolve, 700));
     const settingsBeforeQuit = readJsonFile(path.join(dataDir, 'settings.json'));
     const collapseBeforeQuit = settingsBeforeQuit.sessionListCollapse;
@@ -493,10 +415,7 @@ async function main() {
     log(`STEP PASS: settings.json on disk, BEFORE quitting, shows the final mixed state: ${JSON.stringify(collapseBeforeQuit)} (dumped to settings-before-quit.json).`);
     await cdp.screenshot(path.join(evidenceDir, '05-mixed-state-before-restart.png'));
 
-    // `stopLauncher` below force-kills the Job Object, which never fires
-    // `beforeunload`/`pagehide` -- unlike a real user closing the window, so the renderer's own
-    // flush-on-quit handler never runs here. This wait is a second, independent safety margin on
-    // top of the on-disk read just above, which already proves the debounced write landed.
+    // `stopLauncher` force-kills the Job Object, so the renderer's flush-on-quit handler never runs; this wait is a safety margin.
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     cdp.close();
@@ -505,7 +424,6 @@ async function main() {
     child = null;
     log('verify-tauri-735: run 1 stopped (a forceful Job-Object kill, not a real beforeunload/pagehide quit). Relaunching the SAME exe on the SAME data dir...');
 
-    // ---- Relaunch on the SAME dataDir (no wipe) to prove the collapse state survives a restart ----
     const port2 = await getFreePort();
     const launched2 = await launchBuiltExe(launcherExe, exePath, {
       port: port2,
@@ -542,8 +460,7 @@ async function main() {
     );
     log(`verify-tauri-735: collapse state after restart: ${JSON.stringify(afterRestart)}, Archived row count: ${archivedRowCountAfterRestart}, Repository C still gone: ${repoCGoneAfterRestart}`);
 
-    // A NON-default combination (Repository A closed is the opposite of every group's own
-    // fresh-start default) that only a working persistence layer reproduces.
+    // A non-default combination (A closed), which only working persistence reproduces.
     assert(afterRestart.repoA === 'closed', `Repository A's CLOSED state must survive a restart (got: ${afterRestart.repoA})`);
     assert(afterRestart.repoB === 'open', `Repository B's open state must survive a restart (got: ${afterRestart.repoB})`);
     assert(afterRestart.archived === 'open', `Archived's OPEN state must survive a restart (got: ${afterRestart.archived})`);
@@ -565,8 +482,7 @@ async function main() {
     await safeRmSync(repoBDir);
     await safeRmSync(repoCDir);
     await safeRmSync(exeDir);
-    // Deliberately NOT removing `evidenceDir` (== SHOT_DIR): this run's STEP-PASS report, app
-    // logs, settings.json dumps and screenshots are the gate's own audit trail and must survive.
+    // Keep `evidenceDir` (== SHOT_DIR): it is the audit trail.
   }
 }
 

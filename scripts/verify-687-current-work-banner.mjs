@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #687: the current-work banner above the composer. Driven by the
-// `current-work-687` fake-omp tape (`scripts/fixtures/omp-frames/current-work-687.jsonl`), one
-// turn that walks the banner through its priority states: intent -> plain verb (no intent) ->
-// retrying -> compacting -> current todo task (then pinned: the todo line drops, intent stays)
-// -> Setting off hides it -> needs you (a pending question) -> idle (hidden). Every check
-// asserts the story-only marker `data-testid="current-work-banner"` first, so a missing banner
-// fails loudly rather than passing on an absent element.
+// Live CDP check for #687: the current-work banner above the composer, driven by the
+// `current-work-687` fake-omp tape. Asserts the banner marker first so a missing banner fails loudly.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

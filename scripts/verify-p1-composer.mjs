@@ -1,33 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for Lane C (issues #744, #1082, #724) on a scratch Refract instance. Pattern from
-// `verify-1122-selected-style.mjs` (private exe copy + sha256, own REFRACT_DATA_DIR and CDP port,
-// Job-Object launcher, real computed styles, CDP Accessibility tree for accessible names).
-//
-// Real `omp`, not the fake one: no `scripts/fixtures/omp-frames` tape reports `contextUsage` (the
-// #1082 chip never renders without it) or lists a queued image-only follow-up as `[Image]` (the
-// #744 queue chip), and the prototyping rule forbids new fixtures. AGENTS.md allows a real `omp`
-// for a flow the fixtures do not cover. Prompts are short; the one long-ish turn exists only so
-// an image-only follow-up genuinely queues. The scratch instance reaches the real `omp` through
-// the existing PATH shim (`verify-tauri-omp-shim.rs`) and a pass-through script written at run
-// time that adds `--no-tools --no-extensions --no-skills --no-rules --model haiku`: without it the
-// real profile's own agent rules start tool calls that wait on approval, and no turn runs plainly.
-//
-// Checks (each fails when its target is missing):
-// - #724: the story-only marker `[data-composer-branch]` exists, sits after the Reasoning picker,
-//   shows the worktree's real branch, has the accessible name "Branch: <name>. Open Git changes
-//   panel", opens the Git changes panel; a `git switch -c` made outside a turn shows within 2 s
-//   (HEAD watch); a 60-character name truncates in a narrow window without wrapping or pushing
-//   the Reasoning picker; a detached HEAD reads "Detached at <sha>".
-// - #744: an image-only draft enables Send and sends on Enter; the bubble reads "Image attached";
-//   while working an image-only follow-up queues with the chip "Image (<filename>)"; a second is
-//   refused with a visible toast and the draft image stays.
-// - #1082: the figures carry an OKLCH `color-mix`, meet 4.5:1 live, the 2px bar is `aria-hidden`
-//   and filled in the same colour, the Settings > Chat switch hides and restores it; the
-//   renderer's blend at every 10% step matches `scripts/context-usage-contrast.mjs` and passes
-//   4.5:1 in Dark, Obsidian and Dark (high contrast), with screenshots of the strip and chip.
-//
+// Live CDP check of the composer branch marker, image-only sends and context-usage chip.
+// Uses a real `omp`: no fixture tape reports `contextUsage` or lists a queued image-only follow-up.
+// The PATH shim adds `--no-tools --no-rules ...` so the real profile's rules cannot start approval-gated tool calls.
 // Usage: REFRACT_P1_EXE=<prebuilt debug exe> REFRACT_P1_SCRATCH=<scratch root outside the repo>
-//        node scripts/verify-p1-composer.mjs
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { deflateSync } from 'node:zlib';
@@ -124,7 +99,7 @@ async function shot(cdp, shots, name, clipFinder) {
 }
 
 async function closeTooltips(cdp) {
-  // Radix hover tooltips need two pointer moves away to close.
+  // Hover tooltips need two pointer moves away to close.
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 300 });
   await sleep(150);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 6, y: 310 });

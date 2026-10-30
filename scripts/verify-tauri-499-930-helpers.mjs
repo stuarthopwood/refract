@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Split out of verify-tauri-499-930.mjs (#806 file-size cap, caught live 2026-10-18 during gate
-// round 1 on PR #953 -- the main script crossed 600 lines adding the round's own live checks).
-// Kept alongside (not folded into) verify-tauri-scratch-helpers.mjs/verify-tauri-cdp.mjs: these
-// are specific to THIS story's own live check, not generic across every verify-tauri-*.mjs --
-// the bundle marker string, the scratch clone URL, and the resize handle's own drag simulation
-// all name #499/#930 directly.
+// Helpers split out of verify-tauri-499-930.mjs (#806 file-size cap); specific to #499/#930, so not folded into the generic verify-tauri-* helpers.
 import { mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -29,9 +24,7 @@ export async function connectCdp(port, targetPid) {
   return cdp;
 }
 
-/** Clones `stuarthopwood/refract` itself, shallow and read-only, into `dir` -- real PR data
- * without ever writing to a real repository. Returns `null` (never throws) if the clone fails
- * (offline, rate-limited) so the caller fails the run loudly instead of faking a pass. */
+/** Shallow read-only clone of `stuarthopwood/refract` into `dir` for real PR data; returns `null` on failure so the caller fails loudly. */
 export function makeGithubScratchClone(dir) {
   mkdirSync(path.dirname(dir), { recursive: true });
   const result = spawnSync_('git', ['clone', '--depth', '1', '--quiet', GITHUB_SCRATCH_CLONE_URL, dir], { timeout: 60_000 });
@@ -42,11 +35,7 @@ export function makeGithubScratchClone(dir) {
   return dir;
 }
 
-/** Asserts a #499/#930-only marker exists in the built renderer bundle, per
- * `refract-ui-lane-gate-checklist`'s own rule, before trusting anything else. Two independent,
- * story-only literals (never introduced by any other issue): the Filters disclosure's own
- * fixed element id, and the resize handle's own accessible name. `repoRoot` is the caller's own
- * `REPO_ROOT` -- this file has no `import.meta.url` of its own worth resolving a bundle path from. */
+/** Asserts two #499/#930-only literals (the Filters disclosure id and the resize handle's accessible name) exist in the built bundle; `repoRoot` locates it. */
 export function assertBundleContainsStory499930Marker(repoRoot) {
   const bundleRoot = path.join(repoRoot, 'out', 'tauri-web');
   if (!existsSync(bundleRoot)) {
@@ -72,17 +61,8 @@ export function assertBundleContainsStory499930Marker(repoRoot) {
   assert(grep.stdout.includes('FOUND'), '#499/#930-only marker (Filters panel id + resize handle aria-label) not found in the built renderer bundle -- the exe under test may not actually contain this story\'s code');
 }
 
-/** Real pointer drag of the resize handle (CDP `Input.dispatchMouseEvent` press/move/release --
- * no library drag helper exists in this harness; a bare click/release pair never engages
- * `react-resizable-panels`' own pointer-drag state machine the way a real OS drag does). Moves
- * in several small steps, matching how a real user's pointer is sampled, not one large jump.
- * Mirrors `verify-tauri-session-list-helpers.mjs`'s own `dragResizeHandleBy`: an initial hover
- * `mouseMoved` (no button) before the press, then each drag-step `mouseMoved` carries `buttons:
- * 1` (the bitmask of currently-held buttons CDP uses to synthesize a real `pointermove` with
- * the button still down) -- NOT `button: 'left'` (CDP's singular `button` field only names
- * which button triggered a press/release/click event; passing it on `mouseMoved` leaves no
- * button recorded as held, so `react-resizable-panels`' `pointermove` listener sees an
- * unpressed hover and ignores it for resizing, the bug that shipped here first). */
+/** Real pointer drag of the resize handle via CDP: a hover `mouseMoved` first, then small steps carrying `buttons: 1`.
+ * `button: 'left'` on `mouseMoved` records no held button, so `react-resizable-panels` ignores the move as a hover. */
 export async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
   const rect = await cdp.evaluate(`(() => { const el = ${handleFinderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   assert(rect, `resize handle not found for drag: ${handleFinderExpr}`);
@@ -97,28 +77,14 @@ export async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x + deltaX, y: rect.y, button: 'left', clickCount: 1 });
 }
 
-/** Clicks tab `tabLabel`, optionally opens the State select and picks `optionLabel`, then waits
- * until loading has finished AND the rendered rows genuinely reflect it -- no stale Open/Draft
- * row survives, at least one Closed/Merged row does, and the Filters label counts it. Gate-fix
- * (C1, test-reviewer Critical, round 2): `setStateFilter` updates the label SYNCHRONOUSLY while
- * `refresh()` keeps the OLD (stale, still-Open) rows mounted until the fetch resolves -- waiting
- * on `rows.length > 0` alone (the previous version of this check) passed on those stale rows
- * every time. Reads each row's exact state via `data-pr-state` (`PullRequestRow.tsx`, round 3
- * gate-fix -- a class-based inner-span text scrape matched the row's own PARENT container too,
- * since CSS class selectors only require the listed classes to be a SUBSET, and being the parent
- * it then sorted FIRST in `querySelectorAll`'s document order; a real data attribute removes the
- * ambiguity entirely). `requireSingleAuthor` (round 3, Code Medium): a relation tab (Authored by
- * me) settling to the SAME shape (no Open/Draft, some Closed/Merged) the previous `All` tab call
- * already satisfied is not proof the tab switch itself took effect -- also requires every row's
- * `data-pr-author` to be the one, same login, which `All` (typically multi-author) would not be.
+/** Clicks tab `tabLabel`, optionally picks `optionLabel` in the State select, then waits until rows genuinely reflect it (no stale Open/Draft row, some Closed/Merged, label counts it).
+ * `setStateFilter` updates the label synchronously while `refresh()` keeps stale rows mounted, so `rows.length > 0` alone passed on stale rows.
+ * Reads state via `data-pr-state` (a class-based scrape also matched the parent container). `requireSingleAuthor` also requires one shared `data-pr-author`, since a relation tab can settle to the same shape as `All`.
  * Returns the settled `{ rows, label, authors }` or `null` on timeout. */
 export async function driveStateFilter(cdp, tabLabel, optionLabel, { requireSingleAuthor = false } = {}) {
   await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(tabLabel)})`);
   if (optionLabel) {
-    // Gate-fix (round 3, caught live): a caller may run with the Filters section already
-    // closed (an earlier check in the same run can leave it either way) -- the State select
-    // only exists in the DOM while open, so a bare click used to hang on a null target and
-    // crash the whole run with an uncaught timeout, not a graceful checkFail.
+    // The State select exists only while Filters is open, and an earlier check may leave it closed.
     const panelOpen = await cdp.evaluate(`!!document.getElementById('pull-request-filters-panel')`);
     if (!panelOpen) {
       await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))`);
@@ -143,9 +109,7 @@ export async function driveStateFilter(cdp, tabLabel, optionLabel, { requireSing
   })()`, { timeoutMs: 15_000, label: `State on ${tabLabel} tab settles to real, non-stale rows` }).catch(() => null);
 }
 
-/** Diagnostic snapshot for a `driveStateFilter` timeout -- a never-settling wait (no Closed/
- * Merged row ever appears) is a real product/data gap, not a script bug, surfaced here rather
- * than silently passed on stale rows. */
+/** Diagnostic snapshot for a `driveStateFilter` timeout: a never-settling wait is a real product/data gap, not a script bug. */
 export async function stateFilterDiagnostic(cdp) {
   return cdp.evaluate(`(() => {
     const rows = Array.from(document.querySelectorAll('[data-pr-row]'));
@@ -153,25 +117,10 @@ export async function stateFilterDiagnostic(cdp) {
   })()`);
 }
 
-/** Gate-fix (round 3, item 8, Code Medium -- see `PullRequestsView.tsx`'s own M3/item-2 fix): a
- * double-click on the SESSION-LIST's own handle (a sibling Group entirely, not a descendant of
- * the Pull Requests view) used to persist 320px for the PR column too -- the library's dblclick
- * hit-testing is shared across every Group on the page, so it can set `defaultPrevented` on the
- * bubbling event for an UNRELATED Group's own reset.
- * Gate-fix (round 4, caught live): the PR column's own width CAN legitimately drift by a few px
- * here -- the session-list panel resizing is a genuine "preserve-relative-size" reflow that
- * ripples through every sibling Group, not a bug -- so asserting it stays byte-identical to its
- * pre-click value was too strict. The real invariant is that whatever the REAL post-click width
- * is, the persisted `settings.json` value matches it (never a stale/unrelated value, e.g. the
- * session-list's own 320px default) -- compares `persisted` against `after`, not `before`.
- * Gate-fix (round 4, Main's own review): `persisted ~= after` alone is not independent enough --
- * a racy DOM read could in principle land on ~320 right alongside a genuinely-wrong ~320
- * persist, passing for the wrong reason. Adds an explicit, independent guard: `persisted` may
- * never be ~`defaultWidthPx` unless the width was ALREADY ~`defaultWidthPx` BEFORE the click
- * (the exact signature of the original bug -- a prior, clearly-different width silently
- * replaced by the session-list's own default). `defaultWidthPx` is the caller's own
- * `PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX` (320), passed in rather than duplicated here.
- * Returns `{ pass, detail }`. */
+/** A double-click on the session-list handle (a sibling Group) must not persist 320px for the PR column: the library's dblclick hit-testing is shared across Groups.
+ * The PR width may drift a few px from a preserve-relative-size reflow, so compare `persisted` against `after`, not `before`,
+ * and require `persisted` is never ~`defaultWidthPx` unless the width already was before the click (the original bug's signature).
+ * `defaultWidthPx` is the caller's `PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX`. Returns `{ pass, detail }`. */
 export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFinder, defaultWidthPx) {
   const before = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
   const rect = await cdp.evaluate(`(() => { const el = document.querySelector('[aria-label="Resize session list"]'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
@@ -188,34 +137,22 @@ export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFi
   return { pass, detail };
 }
 
-/** Shared by both relaunch checks (reset-to-default and dragged-non-default,
- * verify-tauri-499-930.mjs): closes `cdp`, stops `child`, relaunches (same scratch data dir),
- * navigates back to Pull requests, and reads the list column's own real DOM width. Returns the
- * caller's new `{ child, cdp, widthAfterRelaunch }` -- the old `cdp`/`child` are no longer valid
- * once this relaunches. */
+/** Shared by both relaunch checks: closes `cdp`, stops `child`, relaunches on the same scratch data dir, reopens Pull requests and reads the list column's DOM width.
+ * Returns the new `{ child, cdp, widthAfterRelaunch }`; the old handles are invalid. */
 async function relaunchAndReadListWidth(cdp, child, launch, stopLauncherFn, listPanelFinder) {
   cdp.close();
   await stopLauncherFn(child);
   const relaunched = await launch();
   await relaunched.cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!document.querySelector('.drag-region')`, { timeoutMs: 45_000, label: 'app ready after relaunch' });
-  // Same gate-fix as the first navigation: prefix-matched aria-label, not exact text (the
-  // active-count badge has reliably already loaded by relaunch time).
+  // Prefix-match the aria-label: the active-count badge has loaded by relaunch time.
   await relaunched.cdp.clickByLabel('Pull requests', { prefix: true });
   await sleep(500);
   const widthAfterRelaunch = await relaunched.cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
   return { child: relaunched.child, cdp: relaunched.cdp, widthAfterRelaunch };
 }
 
-/** Gate-fix (mount-restore race, caught via code review of the #930 onResize-persists
- * redesign): the main script's OWN double-click-reset relaunch check could never have caught a
- * bug where the Panel's own initial `onResize(defaultSize)` clobbers the live `widthPx` (and,
- * now that every `onResize` persists, schedules a write of the default) BEFORE
- * `PullRequestsView.tsx`'s own mount-restore effect gets a chance to read + re-apply the real
- * persisted value -- that check resets to the DEFAULT width first, which happens to equal
- * whatever a fresh settings.json already holds, so the bug's own symptom (silently clobbered
- * back to the default) is indistinguishable from the correct answer in that specific scenario.
- * Drags to a width distinctly away from the default FIRST, relaunches, and confirms it survives
- * un-clobbered. Returns the caller's new `{ child, cdp }` alongside `{ pass, detail }`. */
+/** Mount-restore race check: drags to a width away from the default, relaunches, and confirms it survives. The reset-to-default check can't catch the Panel's initial `onResize(defaultSize)` clobbering the restored value, because the default equals a fresh settings.json.
+ * Returns the new `{ child, cdp }` with `{ pass, detail }`. */
 export async function checkDraggedWidthSurvivesRelaunch(cdp, child, launch, stopLauncherFn, handleFinder, listPanelFinder, defaultWidthPx) {
   await dragHandleBy(cdp, handleFinder, 80);
   await sleep(400);
@@ -229,9 +166,7 @@ export async function checkDraggedWidthSurvivesRelaunch(cdp, child, launch, stop
   return { pass, detail: { widthAfterDrag, persistedAfterDrag, widthAfterRelaunch: r.widthAfterRelaunch }, child: r.child, cdp: r.cdp };
 }
 
-/** Gate-fix (H1, caught live 2026-10-18): drags away, double-clicks to reset, relaunches the SAME
- * scratch data dir, confirms the column renders at the DEFAULT width again. Returns the caller's
- * new `{ child, cdp }` alongside `{ pass, detail }`. */
+/** Drags away, double-clicks to reset, relaunches the same scratch data dir and confirms the DEFAULT width returns. Returns the new `{ child, cdp }` with `{ pass, detail }`. */
 export async function checkResetToDefaultSurvivesRelaunch(cdp, child, launch, stopLauncherFn, handleFinder, listPanelFinder, defaultWidthPx) {
   await dragHandleBy(cdp, handleFinder, 120);
   await sleep(400);

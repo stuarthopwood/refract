@@ -1,12 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #869 (the Home view, spec 059). Drives the real Tauri debug build,
-// isolated per the `refract-tauri-live-check-isolation` skill (own REFRACT_DATA_DIR, WebView2
-// profile and import dir; never %APPDATA%/refract-tauri). A fake `gh` (verify-tauri-869-fake-gh.rs)
-// and the fake `omp` shim (scenario `ask`) are put first on PATH, so nothing here can reach GitHub
-// or a model. Aborts if the managed gh exists (#1343). Three Projects: two with GitHub remotes and
-// one with none. Checks: Home on a launch with no panes, the nav item and badge, every section,
-// Refresh plus the error line, Tidy up (Archive, Archive all clean), keyboard focus, and the
-// recorded gh calls (always scoped with --repo).
+// Live CDP check of the Home view against the real Tauri debug build, isolated per `refract-tauri-live-check-isolation`.
+// A fake `gh` and fake `omp` come first on PATH so nothing reaches GitHub or a model; aborts if the managed gh exists (#1343).
 
 import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';

@@ -1,21 +1,11 @@
-// Shared helpers for `verify-551-presets.mjs` (#806 file-size ratchet: the gate-round-2 fixes
-// pushed the main script past its own 600-line soft cap; this is a pure-logic, behaviour-
-// preserving extraction, the same pattern this story already used for `mermaidThemeData.ts` and
-// `src-tauri/src/store/theme_id.rs`). Covers issue #551's own gate round 1 items 10 and 12:
-// a real OKLab hue/lightness distance check (not a naive string-inequality check) and a CSS
-// custom property's own raw cascaded value, read before trusting any `var()`-resolved colour.
+// Pure-logic helpers extracted from `verify-551-presets.mjs` to keep it under the #806 file-size cap.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveCssVarColor } from './verify-tauri-cdp.mjs';
 import { parseComputedColorToEntry } from './contrast-math.mjs';
 
-// ---- Item 12: real OKLab hue/lightness distance, not string inequality --------------------
-
-/** Linear sRGB -> OKLab, the published inverse of `contrast-math.mjs`'s own `oklabToLinearSrgb`
- * (same matrices, Bjorn Ottosson). A reverse conversion only a live-check that must classify a
- * REAL rendered colour's hue/lightness needs, not a general contrast primitive every other
- * script shares. */
+/** Linear sRGB -> OKLab; the inverse of `contrast-math.mjs`'s `oklabToLinearSrgb`. */
 export function linearSrgbToOklab([r, g, b]) {
   const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
   const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
@@ -40,10 +30,7 @@ export function hueDistanceDegrees(h1, h2) {
   return diff > 180 ? 360 - diff : diff;
 }
 
-/** Real hue/lightness-distance check between two parsed colour strings (from a REAL
- * `getComputedStyle()` read), replacing a naive `colorA === colorB` string-inequality check
- * (gate round 1, item 12) -- two distinct hex strings can still be perceptually indistinguishable
- * (near-identical hue and lightness), and a naive equality check cannot tell them apart. */
+/** Hue/lightness of a computed colour; distinct hex strings can still be perceptually identical, so string equality is not enough. */
 export function describeHueLightness(rawColor) {
   const entry = parseComputedColorToEntry(rawColor);
   if (!entry) return null;
@@ -51,20 +38,13 @@ export function describeHueLightness(rawColor) {
   return { L, hue: oklabHueDegrees({ a, b }), raw: rawColor };
 }
 
-// ---- Item 10: a missing CSS custom property must fail loudly, not silently resolve via
-// inheritance/initial-value fallback (`var(--missing)` is invalid-at-computed-value-time, which
-// most properties resolve to their OWN initial/inherited value, not an error) ------------------
-
-/** Reads the custom property's own raw cascaded value directly off `<html>` -- empty/missing
- * means the token itself was never declared for the active theme, independent of whatever a
- * probe element's `var(--name)` reference silently falls back to. */
+/** Raw cascaded value of a custom property off `<html>`; a `var()` probe would silently fall back to an inherited/initial value instead. */
 export async function cssVarRawValue(cdp, varName) {
   const raw = await cdp.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('${varName}').trim()`);
   return raw;
 }
 
-/** Resolves a token's REAL computed colour only after confirming the custom property itself is
- * actually declared -- throws (a real failure, not a silent pass) if it is missing. */
+/** Resolves a token's computed colour, throwing if the custom property is undeclared. */
 export async function requireResolvedCssVarColor(cdp, varName, property = 'color') {
   const raw = await cssVarRawValue(cdp, varName);
   if (!raw) {
@@ -73,18 +53,11 @@ export async function requireResolvedCssVarColor(cdp, varName, property = 'color
   return resolveCssVarColor(cdp, varName, property);
 }
 
-// ---- Gate round 3 item 5: worktree-cleanup path, same convention every `verify-5xx-*.mjs`/
-// `verify-9xx-*.mjs` script defines locally. Moved here (not left in the main script) because
-// gate round 3's own fixes pushed that file back over the #806 600-line cap. ------------------
-
 export function worktreesDirFor(repoDir) {
   return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
 }
 
-/** Ties the exe under test to the actual commit: both new theme ids, literally present only
- * from this story's commits onward, grepped out of the just-built renderer bundle -- a real,
- * cheap proof this build contains #551's code, independent of git log reasoning about timing
- * (same pattern `verify-927-928-quiet-composer.mjs`'s own marker-assertion established). */
+/** Greps the built bundle for both new theme ids, proving the exe contains #551's code. */
 export function assertBundleContainsPresetMarkers(repoRoot) {
   const assetsDir = path.join(repoRoot, 'out', 'tauri-web', 'assets');
   let files;

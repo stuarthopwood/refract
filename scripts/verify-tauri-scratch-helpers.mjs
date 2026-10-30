@@ -1,12 +1,5 @@
-// Shared scratch-live-check helpers for `scripts/verify-5xx-*.mjs` Tauri debug-build CDP checks
-// (issue #570 gate round 1, #806 file-size split: extracted out of `verify-570-tool-colours.mjs`
-// once it grew past the 600-line soft cap). Generic across any story's own live check: resolving
-// `git rev-parse HEAD`, building the Job-Object launcher, a scratch git repo, hashing/copying/
-// rebuilding the debug exe, launching it isolated (own `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/
-// `REFRACT_IMPORT_SOURCE_DIR`), safely removing scratch dirs, asserting the launched exe's own
-// hash didn't change under a lane, reading a real accessible name off the AX tree, and driving the
-// real Profile-menu Theme submenu. `verify-565-spine.mjs` carries its own near-identical copies of
-// several of these (written before this split); not touched here, out of scope for #570.
+// Shared helpers for the `verify-5xx-*.mjs` Tauri debug-build CDP checks: scratch repo, exe
+// build/hash/launch with isolated data dirs, safe scratch cleanup, AX-tree names, theme menu.
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync, createWriteStream, copyFileSync, existsSync, statSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
@@ -26,10 +19,7 @@ export function gitHead(repoRoot) {
   return result.status === 0 ? result.stdout.trim() : `<git rev-parse failed: ${result.stderr}>`;
 }
 
-/** `report.json`'s own `dirty` field (#1111 Low item: `verify-464-git-changes.mjs`'s own report
- * was missing this, unlike `verify-1101-git-polish.mjs`'s near-identical inline computation --
- * shared here once rather than copied a third time). `'unknown'` (never a silent `false`) if
- * `git status` itself could not be read at all. */
+/** `report.json`'s `dirty` field; `'unknown'` (never a silent `false`) if `git status` is unreadable. */
 export function computeDirty(repoRoot) {
   const result = spawnSync_('git', ['-C', repoRoot, 'status', '--porcelain']);
   const lines = result.status === 0 ? result.stdout.split('\n').filter(Boolean) : null;
@@ -61,32 +51,15 @@ export function sha256OfFile(filePath) {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
 }
 
-/** Cites each named screenshot by file AND its own sha256, so a reviewer can confirm the exact
- *  file they viewed is the one this run produced -- for `report.json`, not console output. */
+/** Cites each screenshot by file and sha256 so a reviewer can confirm the viewed file is this run's. */
 export function citeScreenshots(dir, names) {
   return names.map((name) => ({ name, sha256: sha256OfFile(path.join(dir, name)) }));
 }
 
-/** Gate round 4 fix (Main's safety finding, MUST): `SHOT_DIR`-style evidence folders are often
- *  overridable via an env var, so recursively deleting the folder itself would be building a
- *  delete target from a variable -- exactly what this repo's safe-deletion rule bans. Clears
- *  only a script's own KNOWN output files, by literal name, never the folder; refuses unless
- *  `shotDir` resolves directly under the OS temp dir with the given prefix, so a misconfigured
- *  override can never reach somewhere unintended. Recreates the (now-empty, or newly made)
- *  folder itself afterward, same as a plain `mkdirSync(shotDir, { recursive: true })` would.
- *  Gate round 5 fix (Main's finding 9): a short-path (8.3) or differently-cased `%TEMP%` would
- *  make the earlier plain string comparison wrongly refuse (or, worse, wrongly allow) a
- *  legitimate folder -- `realpathSync.native` resolves both sides to the same canonical form
- *  before comparing, and the trailing `.toLowerCase()` is belt-and-braces over Windows' own
- *  case-insensitive filesystem semantics.
- *  Gate round 2 fix (issue #991, item 7, LOW, security-auditor): the parent-directory check
- *  above never confirmed `resolved` ITSELF is a real directory, not a symlink/junction --
- *  someone (or something stale) could plant `<prefix>*` as a symlink/junction pointing anywhere,
- *  and this function would delete files by name INSIDE that target instead of a genuine temp
- *  subfolder. Refuses outright when `resolved` already exists and is a symlink/junction
- *  (`lstatSync` reports a Windows directory junction as `isSymbolicLink()` too); the delete loop
- *  and the recreate below both now operate on `resolved` (the validated, canonical path), never
- *  the caller's own possibly-relative/trailing-separator `shotDir` string. */
+/** Deletes only known output files by literal name, never the (env-overridable) folder itself, and
+ *  refuses unless `shotDir` is directly under the OS temp dir with `prefix`. Both sides are
+ *  `realpathSync.native`'d (8.3 names, case) and a symlink/junction `shotDir` is refused, so
+ *  deletes cannot be redirected elsewhere. */
 export function clearKnownOutputFiles(shotDir, prefix, fileNames) {
   const resolved = path.resolve(shotDir);
   let realParent, realTmp;
@@ -111,10 +84,7 @@ export function clearKnownOutputFiles(shotDir, prefix, fileNames) {
     }
   }
   for (const name of fileNames) {
-    // Gate round 3 fix (issue #991, LOW, security-auditor): refuses a `fileNames` entry that is
-    // not a bare filename -- `path.basename(name) !== name` catches a path separator, `..`, or
-    // a drive-qualified/absolute segment, any of which could otherwise escape `resolved` via
-    // `path.join` and delete something outside this guarded folder entirely.
+    // A non-bare filename (separator, `..`, drive) could escape `resolved` via `path.join`.
     if (path.basename(name) !== name) {
       throw new Error(`refusing to clear ${resolved} -- fileNames entry ${JSON.stringify(name)} is not a bare filename`);
     }
@@ -155,18 +125,8 @@ export function buildAndCopyExeFresh(destDir, buildOutputDir, repoRoot, { maxAtt
   throw new Error(`buildAndCopyExeFresh: source exe kept changing across ${maxAttempts} rebuild attempts.`);
 }
 
-/** Gate-fix (relaunch, caught live 2026-10-17): `webview2DataDir`/`pidFile` used to be fixed
- *  names derived only from `exePath`'s directory. Any caller that relaunches the SAME exe twice
- *  in one run (a remembered-settings-across-a-relaunch check) reused both paths: the stale
- *  `target.pid` from the first launch was still on disk when the second `launchViaJobObject`
- *  started polling, and its very first check (run essentially synchronously right after a
- *  non-blocking `spawn()`, long before a brand-new launcher could have written anything) read
- *  that leftover, now-dead pid and accepted it as the new launch's `targetPid` -- so
- *  `isTargetOwningPort` correctly refused to drive the process that actually owned the new CDP
- *  port. Matches the already-established fix in `verify-tauri-567.mjs`/`559.mjs`/
- *  `560-helpers.mjs`/`735.mjs`/`ask.mjs`'s own `launchBuiltExe` copies: suffix both names with a
- *  per-call timestamp so two launches against the same `exePath` never collide.
- */
+/** `webview2DataDir`/`pidFile` are suffixed per call: a relaunch of the same exe would otherwise read
+ *  the first launch's stale `target.pid` and accept a dead pid as `targetPid`. */
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
@@ -248,17 +208,9 @@ export async function getAccessibleNameAndRole(cdp, selectorExpr) {
   return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
 }
 
-/** `getAccessibleNameAndRole` above reads `nodes[0]`'s own `name`, which is reliable for a
- * WIDGET (a button with an `aria-label`) but not for a plain text-content `<span>`: Chromium's
- * AX tree computes "name" on the role the text is naturally exposed through, nested leaves
- * under the requested node rather than on the node itself -- confirmed live against #560's own
- * `Low memory (N agents)` span (`verify-tauri-560-helpers.mjs`'s own `axText`, promoted here
- * since #941 hit the identical issue against a plain Stage-label span). Fetches only the exact
- * node's own DIRECT children via `Accessibility.getChildAXNodes` (NOT `fetchRelatives: true`,
- * which also pulls in ancestors up to the document root, so the first hit becomes the document
- * title instead) and concatenates every child's own name in DOM order (NOT just the first:
- * JSX with an interpolated expression between two string literals renders as several sibling
- * text nodes, each its own leaf AX node). */
+/** Reads and joins every DIRECT child's name in DOM order: for plain text spans Chromium puts the
+ * name on nested leaves, and interpolated JSX renders several sibling text nodes. Not
+ * `fetchRelatives` (it pulls ancestors, so the document title wins). */
 export async function axText(cdp, selectorExpr) {
   await cdp.send('Accessibility.enable');
   const evalResult = await cdp.send('Runtime.evaluate', { expression: selectorExpr, returnByValue: false });
@@ -274,32 +226,10 @@ export async function axText(cdp, selectorExpr) {
   return names.length > 0 ? names.join('') : null;
 }
 
-/** Drives the REAL Profile-menu UI (`window.refract.theme.preview(id)` only moves the title-bar
- * overlay colour, never the renderer's `<html>` class the CSS tokens key off). A real
- * `mouseMoved` hover before the click matches how Radix's own `DropdownMenuSub` actually opens
- * (pointer-enter, not just a bare click).
- *
- * Gate fix (issue #1000's gate, root cause traced live): a REPEAT call in the same session
- * could time out finding the Theme submenu trigger, or even the dropdown menu itself, because
- * the PREVIOUS call's own Radix closing animation was still in flight when this call's own
- * profile-button click fired (most visible switching to a theme that is already current, e.g.
- * re-selecting Dark, where the menu's own close transition is the only thing happening) -- the
- * stale, still-mounted `[role="menu"]` either ate the new click's hit target or satisfied the
- * old "is a menu present" check before the NEW menu had actually opened. Fixed with two
- * precise waits: every menu fully CLOSED (`data-state` never lingers mid-animation on a
- * genuinely closed element) before the click, then a genuinely OPEN menu (`data-state="open"`,
- * not just ANY `[role="menu"]`, which could still be the stale one) containing the Theme item
- * before proceeding. Shared by every verify script that imports it (`verify-1000-stage-
- * defer.mjs`, `verify-551-presets.mjs`, `verify-557-thought-runs.mjs`, `verify-558-blocker-
- * callout.mjs`, `verify-570-tool-colours.mjs`, `verify-925-924-polish.mjs`, `verify-926-attach-
- * any-file.mjs`, `verify-927-928-quiet-composer.mjs`, `verify-937-advisor-chip.mjs`,
- * `verify-938-slash-rest.mjs`, `verify-941-part2.mjs`, `verify-941-stage-naming.mjs`, `verify-
- * 980-toast-send.mjs`, `verify-991-stage-focus.mjs`, `verify-tauri-569.mjs`).
- *
- * #1043 fix: each theme row is a real `role="menuitemradio"` (`DropdownMenuRadioItem`), never
- * `role="menuitem"` -- the two row-finding selectors below (visibility wait, click) match only
- * that role; the submenu TRIGGER itself (`themeTriggerFinder`) is untouched, still a plain
- * `DropdownMenuSubTrigger`, still `role="menuitem"`. */
+/** Drives the real Profile-menu Theme submenu (`theme.preview` only moves the title-bar overlay).
+ * Hovers before clicking, as Radix's `DropdownMenuSub` opens on pointer-enter. Waits for all menus
+ * to be closed, then for an open one containing Theme, because a still-closing menu from a prior
+ * call eats the click. Theme rows are `role="menuitemradio"`; the trigger stays `menuitem`. */
 export async function switchTheme(cdp, themeId, themeName) {
   await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Every menu closed before switching theme' });
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
@@ -326,20 +256,10 @@ export async function switchTheme(cdp, themeId, themeName) {
   });
 }
 
-/** #946: refuses to build without the shared `CARGO_TARGET_DIR`, never falling back to a
- * worktree-local `src-tauri/target` (a 2026-10-16 live-check built into one and consumed 5.9 GB,
- * dropping C: to 1.3 GB free mid-build for another lane). `repoRoot` is only used to reject a
- * `CARGO_TARGET_DIR` that resolves inside the repo/worktree itself, which is the same fallback in
- * disguise; the actual shared directory is machine-specific and deliberately not hardcoded here.
- * Refuses a relative path outright (ambiguous against whatever `cwd` happens to be). Compares
- * `fs.realpathSync.native` output (resolves symlinks/junctions and 8.3 short names, e.g. a
- * worktree reached through a junction or `RUNNER~1`) case-insensitively on win32, where the
- * filesystem itself is case-insensitive. `CARGO_TARGET_DIR` need not exist yet (cargo creates it
- * on first build), so the nearest EXISTING ancestor is realpath'd and the not-yet-created
- * remainder re-appended rather than giving up on symlink/junction resolution entirely; a leading
- * Windows `\\?\` (or `\\?\UNC\`) extended-length prefix is stripped from the realpath'd half so
- * it never breaks the suffix join or the prefix comparison below (`fs.realpathSync.native` adds
- * it, `path.resolve` on the caller's input never does). */
+/** Refuses to build without the shared `CARGO_TARGET_DIR`: a worktree-local `src-tauri/target` once
+ * consumed 5.9 GB. Rejects relative paths and ones inside `repoRoot`; realpaths the nearest
+ * existing ancestor (the dir may not exist yet) and strips the `\\?\` prefix `realpathSync.native`
+ * adds; compares case-insensitively on win32. */
 function nearestExistingRealpath(p) {
   const segments = [];
   let current = p;

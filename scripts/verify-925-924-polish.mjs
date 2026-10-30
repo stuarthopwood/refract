@@ -1,50 +1,23 @@
 #!/usr/bin/env node
-// Live CDP check for issue #925 (diff-stat colouring: `+N` green, `-N` red, a zero count stays
-// muted, wherever a change count shows), issue #924 (the Reasoning gauge needle moves with the
-// level), and issue #919 (the Pull requests Changes tab's per-file diff header gains its own
-// `+/-` counts, folded into #925's own scope and closed alongside it).
+// Live CDP check for #925 (diff-stat colouring: `+N` green, `-N` red, zero muted), #924 (the
+// Reasoning gauge needle follows the level) and #919 (the Pull requests Changes tab's per-file
+// diff header gains `+/-` counts).
 //
-// Drives the real Tauri debug build, isolated per the `refract-tauri-live-check-isolation` skill
-// (own `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR`, never Stuart's
-// real `%APPDATA%/refract-tauri`). Two real-data sources, never fixtures or mocks:
-//   - A scratch local git repo (`verify-925-924-helpers.mjs`'s `makeScratchRepoWithTrackedFile`)
-//     with one tracked, multi-line file: the composer status line's Changes chip and the Session
-//     details card's own diff line both start at a real, genuine "0 files changed +0 -0" (muted
-//     case, free on first launch, no turn needed) and, once that file is edited on disk and a
-//     local "New conversation" click fires the SAME `schedule_readout_update` hook a real turn
-//     would (`session/readout.rs`), settle to a real, non-zero `+3 -1` (the green/red case) --
-//     no prompt ever sent, no model tokens spent, no `set_thinking_level`-adjacent turn needed.
-//   - A shallow, read-only clone of `stuarthopwood/refract` itself (`verify-tauri-568.mjs`'s own
-//     established pattern), giving the Pull requests view and its Changes tab real GitHub PR
-//     data -- scanning up to the first 5 rows in the (default "Open") list for one whose own
-//     real additions AND deletions are both positive, a best-effort (not guaranteed; real PR
-//     data is outside this script's control) attempt to genuinely exercise the red branch on
-//     these two surfaces too, not just the chip/card the edit above directly controls.
+// Drives the real Tauri debug build with its own `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/
+// `REFRACT_IMPORT_SOURCE_DIR`, never the real `%APPDATA%/refract-tauri`. Real data only: a scratch
+// git repo with one tracked file (0 files `+0 -0`, then `+3 -1` after an on-disk edit and a local
+// "New conversation" click that fires `schedule_readout_update`; no model tokens), and a shallow
+// clone of `stuarthopwood/refract` for real PR data (best effort: scans the first 5 rows for one
+// with both additions and deletions, to reach the red branch).
 //
-// Checks made, per theme (Dark, Obsidian, Dark high contrast) unless noted:
-//   (1) #925: the composer status line's Changes chip -- `+N`/`-N` spans' own class
-//       (`text-diff-added`/`text-diff-removed` when positive, `text-muted-foreground` at zero)
-//       and computed `color`, contrast-measured against the real rendered backdrop behind them.
-//   (2) #925: the Session details card's identical diff line -- same assertions, a SEPARATE
-//       surface (`HoverCardContent`, `bg-popover`), re-fetched fresh on each hover-open.
-//   (3) #925/#919: the Pull requests Changes tab's own aggregate line, AND its first file's own
-//       per-file diff header (`DiffViewFromPatch`, newly added by this change) -- same
-//       assertions, against the Changes tab's own real backdrop and the per-file header's own
-//       `bg-muted`, whichever of the two per-file render paths (a real diff, or the
-//       too-large-to-show fallback) this run's first PR's first file happens to take.
-//   (4) #924: the Reasoning picker's gauge needle, at all 8 selectable levels (Default plus the
-//       7 named levels) -- the needle's own rendered angle (read off its `<path>` geometry,
-//       `verify-925-924-helpers.mjs`'s `readGaugeNeedleAngle`) compared against the SAME 7-step
-//       formula the component itself computes (`needleAngleDeg`), derived from whatever level
-//       the real RPC round trip actually settles on, never a hardcoded per-level literal. Then,
-//       once that loop ends on "Max", the Session details card's own identical icon is read
-//       ONCE and confirmed to match the picker's -- a same-Session cross-check, NOT an
-//       independent per-level check of the card itself (the card is never driven through all 8
-//       levels, only read at whatever level the picker loop left the Session on). Geometry is
-//       theme-independent (decorative, no colour), so this runs once, not per theme.
+// Per theme (Dark, Obsidian, Dark high contrast): the status-line Changes chip, the Session
+// details card diff line, and the Changes tab aggregate line and first file header, each checked
+// for class, computed `color` and contrast against the real backdrop. The gauge needle (#924) is
+// checked once, since geometry is theme-independent, at all 8 levels against the component's own
+// 7-step formula, then the details card icon is read once as a same-Session cross-check.
 //
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node
-// scripts/verify-925-924-polish.mjs (requires a prior `pnpm tauri build --debug --no-bundle`).
+// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node scripts/verify-925-924-polish.mjs
+// (needs a prior `pnpm tauri build --debug --no-bundle`).
 
 import { mkdtempSync, mkdirSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -87,7 +60,7 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// Issue #924: every selectable level, in the Reasoning picker's own menu order (Default first).
+// #924: every selectable level, in the Reasoning picker's menu order (Default first).
 const LEVEL_LABELS = ['Default', 'Off', 'Minimal', 'Low', 'Medium', 'High', 'Extra high', 'Max'];
 
 const REASONING_PICKER_FINDER =
@@ -112,13 +85,9 @@ function makeGithubScratchClone(dir) {
   return dir;
 }
 
-// Ties the exe under test to the actual commit: `diff-added`/`diff-removed` (globals.css's new
-// #925 tokens, consumed via the `text-diff-added`/`text-diff-removed` Tailwind utilities,
-// literally present in `sessionDisplay.tsx`'s `DiffStatCounts`) and `reasoning-gauge`
-// (`ReasoningGaugeIcon.tsx`'s own `data-slot` -- a genuine static string literal, unlike the
-// needle path itself, which is built from a template literal at RUNTIME and so never appears as
-// a literal string in the bundled source; the arc path string is lucide's own `gauge` icon data
-// verbatim, matched there too whenever `GaugeIcon` ships, so it cannot distinguish this story).
+// Ties the exe to this commit via `diff-added`/`diff-removed` and `reasoning-gauge`. The needle
+// path is built from a template literal at runtime, so it never appears as a bundle literal, and
+// the arc path is lucide's `gauge` data, which cannot distinguish this story.
 function assertBundleContainsStory925924Markers() {
   const bundleRoot = path.join(REPO_ROOT, 'out', 'tauri-web');
   if (!existsSync(bundleRoot)) {
@@ -152,13 +121,9 @@ async function connectCdp(port, targetPid) {
   return cdp;
 }
 
-// Issue #924: `needleAngleDeg` (`verify-925-924-helpers.mjs`) can return up to 390deg (the
-// formula's own `ARC_START_DEG + sweep`, never normalised to 0-360 in the component source
-// either -- CSS/SVG trig is periodic, so the component never needed to), while the REAL needle
-// angle read off the rendered `<path>` via `atan2` always lands in (-180, 180]. A naive
-// `Math.abs(a - b)` wrongly fails every genuinely-correct case where the two sides differ by a
-// full 360deg turn (e.g. 270deg vs -90deg, the SAME angle) -- this compares the shortest signed
-// angular distance between the two instead, which is 0 for any such pair.
+// `needleAngleDeg` can return up to 390deg (never normalised), while the angle read via `atan2`
+// lies in (-180, 180]; `Math.abs(a - b)` would fail equal angles a full turn apart (270 vs -90).
+// Compare the shortest signed angular distance instead.
 function angleDiffDeg(a, b) {
   let diff = (a - b) % 360;
   if (diff > 180) diff -= 360;
@@ -166,9 +131,8 @@ function angleDiffDeg(a, b) {
   return diff;
 }
 
-/** Gate round 1 (L3): a 2x-scaled crop of just the element `finderExpr` resolves to, via CDP's
- * own `clip` option -- real visual evidence of the needle's position at a specific level, not
- * only the numeric angle assertion. `false` (no screenshot written) if the element is not found. */
+/** A 2x-scaled crop of the element `finderExpr` resolves to, as visual evidence of the needle at
+ * a level. Returns `false` (nothing written) if the element is not found. */
 async function screenshotCrop(cdp, finderExpr, outPath, scale = 2) {
   const rect = await cdp.evaluate(`(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`);
   if (!rect || rect.width === 0 || rect.height === 0) return false;
@@ -225,21 +189,14 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green (real omp --version + get_state round trip)' }
     );
     findings.push('Readiness green against the REAL ambient omp install, scratch data dir.');
-    // Gate round 2 (Medium, Main): resolved once here -- the app launches on Dark by default,
-    // before any explicit `switchTheme` call, so the zero-case assertions just below need their
-    // own Dark-theme token colours too, not only the per-theme loop further down.
+    // Resolved once: the app launches on Dark, so the zero-case assertions need Dark tokens too.
     let currentTokenColors = await resolveDiffTokenColors(cdp);
 
-    // ---- Project 1: the GitHub clone, added FIRST so it is `repositories[0]` --
-    // `PullRequestsView.tsx:16`'s own default-scope rule (`viewRepositoryId ?? repositories[0]?.id`)
-    // means whichever Project is added first is what the Pull Requests view shows with no repo
-    // explicitly selected; a local-only Project with no GitHub remote added first would leave
-    // that view scoped to a repository `pullRequests.list` can never resolve PRs for (confirmed
-    // root cause of a real run's own "list never settles" failure -- added the local scratch
-    // repo first there, by mistake, a script bug, not a product one). ----
+    // Project 1: the GitHub clone, added first so it is `repositories[0]`; the Pull Requests view
+    // defaults to that, and a local-only Project there would leave `pullRequests.list` unresolvable.
     if (githubClone) await addRepository(cdp, githubClone);
 
-    // ---- Project 2: the local scratch repo, for the composer chip / details card / gauge ----
+    // Project 2: the local scratch repo, for the composer chip, details card and gauge.
     await addRepository(cdp, repoDir);
     const repoName = path.basename(repoDir);
     await createSessionViaQuickCreate(cdp, repoName);
@@ -247,9 +204,7 @@ async function main() {
 
     const SESSION_OPEN_FINDER = `document.querySelector('[data-session-open]')`;
 
-    // ---- (1)/(2) zero case, Dark only (findings, not a per-theme requirement -- a fresh
-    // worktree's own "0 files changed +0 -0" is identical in every theme, only the token NAMES
-    // differ, already proven identical by `check-theme-contrast.mjs`'s own token-name pairs). ----
+    // Zero case, Dark only: "0 files changed +0 -0" is identical in every theme.
     await cdp.waitFor(`!!(${CHANGES_CHIP_CONTAINER})`, { timeoutMs: 25_000, label: 'Changes chip rendered (zero case)' });
     const zeroChip = await readDiffStatSpans(cdp, CHANGES_CHIP_CONTAINER);
     assertDiffStatSpans('Composer status line Changes chip (zero, before edit)', zeroChip, findings, failures, { tokenColors: currentTokenColors });
@@ -272,16 +227,10 @@ async function main() {
     assertDiffStatSpans('Session details card diff line (zero, before edit)', zeroCard, findings, failures, { tokenColors: currentTokenColors });
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-00-details-card-zero.png'));
 
-    // ---- edit the tracked file inside the REAL worktree, then a real, local, token-free
-    // "New conversation" click fires the same schedule_readout_update a real turn would. The
-    // Session may still be attaching (status not yet 'idle'/'stopped') this soon after
-    // `createSessionViaQuickCreate`, during which `ConversationSwitcher.tsx`'s own button is
-    // `aria-disabled` with `aria-disabled:pointer-events-none` -- a coordinate-based
-    // `Input.dispatchMouseEvent` click at that point is real Chromium hit-testing, so it is
-    // silently swallowed with no error (never reaches the element at all), which is exactly what
-    // a bare `clickByText` here produced: no exception, just a 20s timeout on the chip below.
-    // Wait for the button's own enabled state first, the same idiom as the Readiness button
-    // above. ----
+    // Edit the tracked file in the real worktree, then a local "New conversation" click fires
+    // `schedule_readout_update`. Wait for the button to be enabled first: while the Session is
+    // attaching it is `aria-disabled` with `pointer-events-none`, so a coordinate click is
+    // silently swallowed (no error, just a 20s timeout on the chip below).
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     editTrackedFileForDiff(worktreePath);
     findings.push(`Edited the tracked file inside the real worktree (${worktreePath}): a real addition and deletion against HEAD.`);
@@ -296,17 +245,15 @@ async function main() {
     );
     findings.push('Changes chip settled to a non-zero diffStat after a local "New conversation" click (no prompt sent, no model tokens spent).');
 
-    // ---- (1)/(2) positive case: per theme ----
+    // Positive case, per theme.
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
       await sleep(200);
       currentTokenColors = await resolveDiffTokenColors(cdp);
       const chip = await readDiffStatSpans(cdp, CHANGES_CHIP_CONTAINER);
       assertDiffStatSpans(`${theme.name}: composer status line Changes chip (non-zero)`, chip, findings, failures, { requireBothPositive: true, tokenColors: currentTokenColors });
-      // Gate round 3 (Low, Main): confirms live, not inferred -- the surface-list comments in
-      // globals.css/theme-contrast-pairs.mjs claim the Changes chip is never painted on
-      // `--composer-background`, not even in Dark (high contrast); logged into report.json so
-      // that claim stays auditable against a real measurement, not only this script's own prose.
+      // Logged to report.json so the claim that the Changes chip is never on
+      // `--composer-background` (even in Dark high contrast) stays auditable.
       if (theme.id === 'dark-high-contrast') {
         const resolvedBackground = await resolveCssVarColor(cdp, '--background', 'background-color');
         const resolvedComposerBackground = await resolveCssVarColor(cdp, '--composer-background', 'background-color');
@@ -334,56 +281,33 @@ async function main() {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     }
 
-    // ---- (4) #924: the Reasoning picker's gauge needle, every selectable level, read once
-    // (geometry, decorative, theme-independent -- not re-checked across the loop above).
-    // Gate round 1 fix (L3): explicit switch to Dark first -- the per-theme loop above leaves
-    // the app on whichever theme it iterated last (Dark high contrast), so the "dark-" prefix
-    // on this section's own screenshots used to be false; this makes it true. ----
+    // (4) #924: gauge needle at every level, read once (decorative, theme-independent). Switch to
+    // Dark first: the loop above leaves the last theme (Dark high contrast) active.
     await switchTheme(cdp, 'dark', 'Dark');
     await sleep(200);
-    // Gate round 3 (High, Main): tracks whether ANY requested level EVER settled to itself
-    // exactly across all 8 requests -- if none ever did, the picker drive mechanism itself may
-    // be broken (not merely OMP's own level resolution), which must hard-fail, not disappear
-    // into a pile of individually-reasonable-looking `notExercised` entries.
+    // If no requested level ever settled to itself, the picker drive itself may be broken, which
+    // must hard-fail rather than vanish into individual `notExercised` entries.
     let anyLevelConfirmedAsRequested = false;
     for (const levelLabel of LEVEL_LABELS) {
       const settledLabel = await selectReasoningLevel(cdp, `(${REASONING_PICKER_FINDER})`, levelLabel);
-      // Derive the expected level STRING from the settled label text (the trigger shows the
-      // SAME `THINKING_LEVEL_LABEL` map the component itself reads), not from `levelLabel`
-      // requested -- an `inherit`/Default request may resolve to any real level, or not confirm.
+      // Derive the expected level from the settled label text (the same `THINKING_LEVEL_LABEL`
+      // map the component reads), not the requested one: `inherit`/Default may resolve to any level.
       const LABEL_TO_LEVEL = { Default: 'inherit', Off: 'off', Minimal: 'minimal', Low: 'low', Medium: 'medium', High: 'high', 'Extra high': 'xhigh', Max: 'max' };
       const settledLevel = settledLabel && Object.prototype.hasOwnProperty.call(LABEL_TO_LEVEL, settledLabel) ? LABEL_TO_LEVEL[settledLabel] : null;
       const expectedAngle = needleAngleDeg(settledLevel === 'inherit' ? null : settledLevel);
       const actualAngle = await readGaugeNeedleAngle(cdp, PICKER_GAUGE_SVG);
       const angleOk = actualAngle !== null && Math.abs(angleDiffDeg(actualAngle, expectedAngle)) <= 0.5;
-      // Gate round 1 (L3): a 2x crop of just the needle icon -- visual evidence a reviewer can
-      // actually judge the needle's own position from, rather than only the numeric angle
-      // assertion below. Gate round 2 (Medium, Main): every one of the 7 NAMED levels now gets
-      // its own crop (#924's own scope is "every selectable level"), not only three samples --
-      // "Default" is skipped (it requests `inherit`, not a named step, so there is no distinct
-      // needle position to show beyond whichever named level it settles on, already captured).
-      // Gate round 3 (Low, Main): named after the SETTLED level, not the requested one -- a
-      // mismatch (requested "Minimal", settled "Low") used to produce a file literally named
-      // "minimal" that was really a picture of "Low"'s own needle; checks `screenshotCrop`'s
-      // own return value too, a silent `false` (element not found/zero-sized) used to pass
-      // unnoticed.
+      // A 2x crop of the needle per named level ("Default" is skipped: it requests `inherit`).
+      // Named after the settled level, not the requested one, and `screenshotCrop`'s return is
+      // checked so a missing or zero-sized element cannot pass silently.
       if (levelLabel !== 'Default') {
         const cropName = (settledLabel ?? levelLabel).toLowerCase().replace(/\s+/g, '-');
         const cropped = await screenshotCrop(cdp, PICKER_GAUGE_SVG, path.join(SHOTS_DIR, `dark-gauge-2x-${cropName}.png`));
         if (!cropped) failures.push(`Requested "${levelLabel}" (settled "${settledLabel}"): could not capture a needle crop screenshot (element not found or zero-sized).`);
       }
-      // Gate round 2 (Medium, Main): when OMP settles the request on a DIFFERENT named level
-      // (seen live: requesting "Minimal" settled on "Low"), the REQUESTED level's own needle
-      // position is never actually confirmed this run -- recording a PASS for "Minimal" here
-      // would really only be re-confirming "Low" a second time under the wrong name.
-      //
-      // Gate round 3 fix (High, Main): the mismatch branch used to stop at that honest
-      // `notExercised` note WITHOUT ever validating the settled level's own angle -- a real
-      // rendering bug on whatever level OMP settled to would have been silently swallowed into
-      // a plausible-reading message instead of surfacing as a failure. Still records
-      // `notExercised` for the REQUESTED level, but a genuinely wrong or unreadable
-      // SETTLED-level angle is now its own hard failure, exactly as it would be had that same
-      // level been the one directly requested.
+      // When OMP settles on a different level (requesting "Minimal" settled on "Low"), the
+      // requested level's needle is never confirmed, so it is recorded as `notExercised`; the
+      // settled level's angle is still validated and a wrong or unreadable one is a hard failure.
       if (settledLevel === null) {
         failures.push(`Requested "${levelLabel}": OMP settled on an unrecognised label "${settledLabel}" (not one of the 8 known trigger labels) -- cannot derive an expected angle for it.`);
       } else if (actualAngle === null) {
@@ -402,8 +326,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-03-reasoning-picker-max.png'));
 
-    // Confirms the Session details card's own identical icon reflects the SAME, now-"Max",
-    // settled level -- both icons read one Session, never two independent copies of the level.
+    // Confirms the details card's icon matches the settled "Max" level (one Session, one level).
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     const lastRowRect = await cdp.waitFor(
       `(() => { const el = ${SESSION_OPEN_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
@@ -421,15 +344,9 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-04-details-card-gauge-max.png'));
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
 
-    // ---- Real GitHub PR data (#925 Changes tab + #919 per-file header). `viewStore.repositoryId`
-    // (`view-store.ts`'s `openChat`) was already pinned to the LOCAL scratch repo the moment its
-    // Session was created/opened above (research.md decision 7: the Pull Requests repository
-    // choice persists across view switches, by design) -- it does NOT reset to `repositories[0]`
-    // just because the GitHub clone was added as Project 1. Confirmed live, not guessed: a prior
-    // run read the real `[role="alert"]` text "This repository has no GitHub remote." even with
-    // the clone added first. So this explicitly selects the clone's own repository via the real
-    // `aria-label="Repository"` Select control, the same way a developer would, rather than
-    // relying on the view's own default-scope resolution. ----
+    // Real GitHub PR data. `viewStore.repositoryId` stays pinned to the local scratch repo from
+    // its Session (it does not reset to `repositories[0]`; a prior run read "no GitHub remote"),
+    // so select the clone's repository through the real `aria-label="Repository"` Select.
     if (githubClone) {
       const githubRepoName = path.basename(githubClone);
       await cdp.clickByLabel('Pull requests', { prefix: true });
@@ -463,29 +380,16 @@ async function main() {
         await cdp.screenshot(path.join(SHOTS_DIR, 'dark-06-pr-list-failure.png'));
       } else {
         const AGGREGATE_CONTAINER = `Array.from(document.querySelectorAll('p')).find((el) => /changed/.test(el.textContent))`;
-        // Gate round 1 (H2): scans up to the first 5 rows for one whose own real additions AND
-        // deletions are both positive, so the red branch gets a genuine live exercise on real
-        // PR data too -- not guaranteed (a real PR's own shape is outside this script's
-        // control), but a best effort before falling back to row 0 and recording honestly that
-        // the red branch was not reached on this surface this run.
+        // Scan the first 5 rows for one with both additions and deletions to exercise the red
+        // branch; not guaranteed, so fall back to row 0 and record that red was not reached.
         const rowCount = await cdp.evaluate(`document.querySelectorAll('.divide-y button').length`);
         const scanLimit = Math.min(rowCount, 5);
         for (let i = 0; i < scanLimit; i++) {
-          // Gate round 2 (Low, Main): `h2.line-clamp-2` alone is a STALE-match hazard --
-          // `PullRequestDetail` (`PullRequestsView.tsx`) carries no `key={number}`, so it is
-          // reconciled IN PLACE across a row switch, never remounted; the previous row's own
-          // heading (and Changes tab content below it) already satisfies "an h2 exists" the
-          // instant this click fires, well before the new PR's own fetch resolves. Reads this
-          // row's own `#<number>` off its visible text BEFORE clicking (the same `#N` suffix
-          // both the row and `detail.number` render, confirmed live in `PullRequestRow.tsx`/
-          // `PullRequestDetail.tsx`), then waits for the heading to contain THAT number, not
-          // merely "a heading exists" -- `detail` is one atomic React state object, so once the
-          // heading shows the right number every other field read from it (additions,
-          // deletions, changedFilesCount, and so the aggregate line below) is from the SAME
-          // fetch, never a stale leftover from the row this replaced. Gate round 3 fix (Low,
-          // Main): a plain substring match on `'#' + n` would let `#9` falsely match `#91` or
-          // `#910` -- matches only when the number is NOT followed by another digit (`[0-9]`,
-          // not `\d`, needs no backslash-escaping across the two template-literal layers here).
+          // `h2.line-clamp-2` alone can match stale content: `PullRequestDetail` has no
+          // `key={number}`, so it is reconciled in place across a row switch. Read the row's `#N`
+          // before clicking and wait for the heading to contain it; `detail` is one atomic state
+          // object, so every other field then comes from the same fetch. Match `N` only when not
+          // followed by a digit (`#9` must not match `#91`); `[0-9]` avoids `\d` double-escaping.
           const rowText = await cdp.evaluate(`document.querySelectorAll('.divide-y button')[${i}]?.textContent ?? ''`);
           const prNumberMatch = rowText.match(/#(\d+)/);
           const prNumber = prNumberMatch ? prNumberMatch[1] : null;
@@ -497,11 +401,8 @@ async function main() {
           await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => /^Changes \\(\\d+ files?\\)$/.test(el.textContent.trim()))`);
           await cdp.waitFor(`!!(${AGGREGATE_CONTAINER})`, { timeoutMs: 15_000, label: `PR row ${i} Changes tab aggregate rendered` });
           const probe = await readDiffStatSpans(cdp, AGGREGATE_CONTAINER);
-          // The removed span's own text is literally "-N" (`DiffStatCounts`'s `-{removedText}`
-          // glyph, not a numeric sign) -- stripping only non-digits (never the digit-adjacent
-          // `-`) keeps that glyph out of the parse, so `probeRemoved` is N's real magnitude, not
-          // `-N` (a prior version of this line kept the `-` and silently parsed every real
-          // deletion count as negative, so the `> 0` check below could never pass).
+          // The removed span's text is literally "-N" (a glyph, not a sign); strip only non-digits
+          // so `probeRemoved` is N's magnitude (keeping the `-` parsed every count as negative).
           const probeAdded = probe ? parseInt(probe.added.text.replace(/\D/g, ''), 10) : 0;
           const probeRemoved = probe ? parseInt(probe.removed.text.replace(/\D/g, ''), 10) : 0;
           if (probeAdded > 0 && probeRemoved > 0) {
@@ -512,18 +413,10 @@ async function main() {
             notExercised.push(`Pull requests red-branch exercise: scanned the first ${scanLimit} rows, none had both additions>0 and deletions>0 this run (row ${i} itself: +${probeAdded} -${probeRemoved}) -- proceeding with it anyway; the red branch is not genuinely exercised on the Changes tab/per-file header this run.`);
           }
         }
-        // #919: a per-file diff header, whichever of the two real render paths this run's first
-        // PR's first file happens to take -- a real `DiffViewFromPatch` header (`.diff-view`'s
-        // own first child, `bg-muted`), or, for a too-large-to-show file, the plain fallback
-        // block's own header (`ChangesTab.tsx`'s `data-slot="diff-fallback-header"`, also
-        // coloured by this same change). Gate round 2 fix (Medium, Main): the old fallback
-        // selector (`.rounded-md.border.border-border` first-match, `.lastElementChild`) could
-        // never find it -- that class combination ALSO matches the "Only N of M files shown"
-        // banner above it (when rendered, `document.querySelector` returns THAT one first, not
-        // the fallback's own wrapper), and even when it did match the fallback wrapper,
-        // `.lastElementChild` is the body text div, not the header. A stable `data-slot`
-        // (`ChangesTab.tsx`'s own convention, matching `reasoning-gauge`/`readout-chip`/
-        // `hover-card-content` elsewhere in this app) replaces the fragile class guess.
+        // #919: a per-file diff header on either render path: `.diff-view`'s first child
+        // (`bg-muted`), or the too-large fallback's `data-slot="diff-fallback-header"`. A stable
+        // `data-slot` replaces `.rounded-md.border.border-border`, which also matches the "Only N
+        // of M files shown" banner, and `.lastElementChild` there is the body, not the header.
         const PER_FILE_CONTAINER = `document.querySelector('.diff-view')?.firstElementChild ?? document.querySelector('[data-slot="diff-fallback-header"]')`;
         for (const theme of THEMES) {
           await switchTheme(cdp, theme.id, theme.name);

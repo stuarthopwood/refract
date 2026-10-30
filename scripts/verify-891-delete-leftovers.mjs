@@ -1,26 +1,13 @@
 #!/usr/bin/env node
-// Live CDP check for issue #891 (Delete Session dead-ends on a full/held worktree). Proves,
-// against the real built app, scratch data only, under the temp dir:
-//   (a) A registered Session whose worktree holds a pnpm-shaped tree (junctions pointing OUTSIDE
-//       to a canary folder, a path over 260 characters, read-only files, a few thousand files)
-//       deletes completely; the canary outside survives untouched; the admin entry is gone.
-//   (b) A leftover UNREGISTERED full folder (git's own admin entry dropped by hand, content left
-//       on disk) deletes completely.
-//   (c) A bare `cmd.exe` this script spawned with its cwd inside the worktree makes Delete
-//       refuse with the generic in-use message; the Session stays listed, nothing is deleted,
-//       the folder is still at its original path; killing that one pid then lets Retry succeed.
-//   (d) A PowerShell process this script spawned holding one file open inside the worktree is
-//       NAMED in the refusal (Restart Manager); killing it then lets Retry succeed.
-//   (e) The dialog shows the leftover summary (generated-folder bucket, file counts).
-//   (f) Clicking Delete while the leftover-summary walk is still running (a genuine overlap,
-//       asserted right before the click, not assumed) cancels that walk cleanly before the
-//       holder preflight -- never a false refusal over Refract's own open handles.
-//
-// Build/launch/CDP plumbing reused from the established `verify-tauri-*` scripts
-// (`verify-tauri-scratch-helpers.mjs`, `verify-tauri-cdp.mjs`, `verify-tauri-session-list-
-// helpers.mjs`, `verify-tauri-560-helpers.mjs`); the Delete-dialog driving and scratch-content
-// generation are new (`verify-891-delete-leftovers-helpers.mjs`) -- no existing script touches
-// this dialog.
+// Live CDP check for #891 (Delete Session dead-ends on a full/held worktree), against the built app with scratch data:
+//   (a) a registered worktree with pnpm-style junctions (to an outside canary), >260-char paths, read-only
+//       files and thousands of files deletes completely; the canary survives and the admin entry is gone;
+//   (b) a leftover unregistered full folder deletes completely;
+//   (c) a `cmd.exe` with its cwd in the worktree makes Delete refuse (Session kept, nothing deleted); killing it lets Retry succeed;
+//   (d) a PowerShell holding a file open is NAMED in the refusal (Restart Manager); killing it lets Retry succeed;
+//   (e) the dialog shows the leftover summary;
+//   (f) Delete clicked while the summary walk is still running cancels that walk cleanly (no false refusal).
+// Dialog driving and scratch-content generation live in verify-891-delete-leftovers-helpers.mjs.
 
 import { mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -71,8 +58,7 @@ const SHOT_DIR = process.env.REFRACT_891_SHOT_DIR || path.join(tmpdir(), `refrac
 
 const passed = [];
 const failures = [];
-// Issue #891 gate round (T5): genuinely populated, not decorative -- anything this harness
-// cannot exercise live is recorded here instead of silently passing by omission.
+// Anything this harness can't exercise live is recorded here rather than passing by omission.
 const notExercised = [];
 function fail(label, err) {
   failures.push({ label, message: err instanceof Error ? err.message : String(err) });
@@ -113,9 +99,7 @@ async function main() {
     cdp = await CdpSession.connect(wsUrl);
     assertExeMatchesProcess(targetPid, exePath, hash);
 
-    // Forwards the renderer's own console/exception output to this script's stdout -- the only
-    // way to see a silent JS throw inside an onSelect handler, which would otherwise leave a
-    // click looking like it "did nothing" with no error anywhere in this script's own output.
+    // Forwards renderer console/exception output: the only way to see a silent JS throw in an onSelect handler.
     await cdp.send('Runtime.enable');
     cdp.ws.addEventListener('message', (event) => {
       let msg;
@@ -131,8 +115,7 @@ async function main() {
       }
     });
 
-    // The Readiness screen's own omp/GitHub checks can genuinely take up to a minute on a
-    // brand-new scratch profile (established wait shape, verify-tauri-559/560/567.mjs).
+    // Readiness checks can take up to a minute on a brand-new scratch profile.
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -153,9 +136,7 @@ async function main() {
     const nameA = await newSession('a');
     const sessionA = sessionByName(dataDir, nameA);
     const { canaryFile } = populateFullWorktree(sessionA.worktreePath, canaryDir);
-    // Issue #891 gate round 2 (M8): a positive control -- prove the worktree genuinely WAS
-    // registered before Delete runs, so the later "admin entry gone" check actually proves
-    // something instead of trivially passing against a worktree that was never registered.
+    // Positive control: prove the worktree WAS registered, so "admin entry gone" can't pass trivially.
     if (isRegisteredWorktree(repoDir, sessionA.worktreePath)) ok('(a) positive control: worktree is registered before Delete runs');
     else fail('(a) positive control: worktree is registered before Delete runs', new Error('isRegisteredWorktree returned false before any delete attempt'));
     await openDeleteDialogFor(cdp, nameA, SHOT_DIR);
@@ -163,9 +144,7 @@ async function main() {
     if (summaryTextA.toLowerCase().includes('node_modules')) ok('(e) dialog shows the leftover summary (node_modules bucket present)');
     else fail('(e) dialog shows the leftover summary', new Error(`no node_modules bucket in: ${summaryTextA}`));
     await cdp.screenshot(path.join(SHOT_DIR, '01-dialog-summary.png'));
-    // Issue #891 gate round 2 (L2): a shot taken right after BOTH checks have genuinely
-    // settled (the button's own enabled-wait, immediately before the click) -- proof the
-    // dialog is actually in its real "ready to click" state, not assumed from '01' alone.
+    // Shot taken once both checks have settled, right before the click: proves the dialog is ready to click.
     await clickDeleteButton(cdp, { onReadyToClick: () => cdp.screenshot(path.join(SHOT_DIR, '04-dialog-ready.png')) });
     const outcomeA = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeA.closed) fail('(a) full worktree deletes cleanly', new Error(`delete failed: ${outcomeA.error}`));
@@ -180,17 +159,13 @@ async function main() {
     const nameB = await newSession('b');
     const sessionB = sessionByName(dataDir, nameB);
     dropAdminEntry(repoDir, sessionB.worktreePath);
-    // Issue #891 gate round 2 (M8): a positive control -- prove `dropAdminEntry` genuinely
-    // unregistered the worktree, so scenario (b) actually starts from the unregistered state
-    // its own name claims, not a silent no-op.
+    // Positive control: prove `dropAdminEntry` really unregistered the worktree, not a silent no-op.
     if (!isRegisteredWorktree(repoDir, sessionB.worktreePath)) ok('(b) positive control: worktree is unregistered right after dropAdminEntry');
     else fail('(b) positive control: worktree is unregistered right after dropAdminEntry', new Error('isRegisteredWorktree still returned true'));
     populateOrphanWorktree(sessionB.worktreePath);
     await openDeleteDialogFor(cdp, nameB, SHOT_DIR);
     await waitForDialogSettled(cdp);
-    // Issue #891 gate round 2 (H2): an unregistered folder makes every `git status` call fail,
-    // which must read as "we don't know", never a silent "Nothing left in the worktree" --
-    // this is the exact repro for the bug H2 fixes.
+    // An unregistered folder makes every `git status` fail; that must read as "we don't know", never "Nothing left in the worktree".
     const statusTextB = await readLeftoverStatusText(cdp);
     if (statusTextB === "Couldn't list the folder's files.") ok(`(b, H2) unregistered folder's failed git status reads "Couldn't list the folder's files.", never a false "Nothing left"`);
     else fail('(b, H2) unregistered folder shows "Couldn\'t list the folder\'s files."', new Error(`status line read: ${JSON.stringify(statusTextB)}`));
@@ -207,8 +182,7 @@ async function main() {
     const nameC = await newSession('c');
     const sessionC = sessionByName(dataDir, nameC);
     mkdirSync(sessionC.worktreePath, { recursive: true });
-    // Issue #891 gate round (T2): snapshot BEFORE clicking Delete so the refusal's own "nothing
-    // was touched" claim is actually proven, not assumed.
+    // Snapshot BEFORE clicking Delete so "nothing was touched" is proven, not assumed.
     const sentinelC = path.join(sessionC.worktreePath, 'sentinel.txt');
     writeFileSync(sentinelC, 'untouched');
     const cFileCountBefore = countFilesRecursive(sessionC.worktreePath);
@@ -236,9 +210,8 @@ async function main() {
           `error=${JSON.stringify(errC)} listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)} sentinelExists=${existsSync(sentinelC)} fileCountBefore=${cFileCountBefore} fileCountAfter=${cFileCountAfter}`
         )
       );
-    // Issue #891, Stuart's decision 2 (issuecomment-6273442096): a refused Delete must leave
-    // (or restart) the Session's own agent running -- checked by its REAL status, not merely
-    // that the row still exists.
+    // A refused Delete must leave (or restart) the Session's agent running (Stuart's decision, issuecomment-6273442096);
+    // checked by its real status, not just that the row exists.
     try {
       const cAgentStatus = await waitForSessionAgentRunning(cdp, nameC, { timeoutMs: 20_000 });
       ok(`(c) Session's agent is running again after the refusal (status: ${cAgentStatus})`);
@@ -246,12 +219,8 @@ async function main() {
       fail("(c) Session's agent is running again after the refusal", err);
     }
     await killSpawned(cmdHolder);
-    // Issue #891 gate round 3 (H3): a single Retry click, no retry loop -- H1 (Refract's own
-    // deleteCheck refresh no longer races the removal, worktree_access's read/write lock) and
-    // H2 (a bounded product-side retry in remove_tree_blocking for a genuinely external
-    // transient holder) now fix the real causes at the source; a script-level retry loop would
-    // silently hide a regression in either fix instead of catching it. A failure here is
-    // recorded honestly (attempt count included), never silently retried past.
+    // A single Retry click, no retry loop: a script-level loop would hide a regression in the product-side
+    // fixes (deleteCheck refresh no longer races removal; bounded retry in remove_tree_blocking).
     await clickDeleteButton(cdp);
     const outcomeC = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeC.closed) fail('(c) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeC.error}`));
@@ -267,9 +236,7 @@ async function main() {
     mkdirSync(sessionD.worktreePath, { recursive: true });
     const heldFile = path.join(sessionD.worktreePath, 'held.txt');
     writeFileSync(heldFile, 'held open by a spawned process');
-    // Issue #891 gate round (T2): a SEPARATE sentinel, distinct from the held file itself, plus
-    // a before/after file-count snapshot -- the refusal's own "nothing was touched" claim must
-    // be proven, not assumed.
+    // A separate sentinel plus a before/after file-count snapshot prove "nothing was touched".
     const sentinelD = path.join(sessionD.worktreePath, 'sentinel.txt');
     writeFileSync(sentinelD, 'untouched');
     const dFileCountBefore = countFilesRecursive(sessionD.worktreePath);
@@ -299,7 +266,7 @@ async function main() {
         )
       );
     await killSpawned(fileHolder);
-    // Issue #891 gate round 3 (H3): same single-click fix as scenario (c).
+    // Single click, as in scenario (c).
     await clickDeleteButton(cdp);
     const outcomeD = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeD.closed) fail('(d) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeD.error}`));
@@ -310,16 +277,11 @@ async function main() {
     }
 
     // ---- Scenario (f): clicking Delete while the leftover-summary walk is still running ----
-    // Issue #891 gate round item 5: deliberately does NOT call `waitForLeftoverSummary` first --
-    // `clickDeleteButton` itself waits only for `deleteCheck` (the fast git-only read) to
-    // settle, so Delete fires while "Checking files…" is still walking this deliberately large
-    // tree. Proves `sessions.delete` cancels and awaits that walk before its own holder
-    // preflight, so Refract's own open handles during the walk never cause a false refusal.
-    // Issue #891 gate round 2 (H4): a prior run never actually overlapped (the walk finished
-    // ~4s before the click) and silently reported a pass that proved nothing -- the status
-    // line is now read right at the moment `clickDeleteButton`'s own enabled-wait resolves
-    // (`onReadyToClick`), immediately before the click itself; a run that genuinely does not
-    // overlap is recorded as notExercised, never claimed as a pass.
+    // Deliberately skips `waitForLeftoverSummary`: `clickDeleteButton` waits only for the fast git-only
+    // `deleteCheck`, so Delete fires while "Checking files…" is still walking. Proves `sessions.delete`
+    // cancels that walk before the holder preflight (no false refusal over Refract's own handles).
+    // The status line is read at `onReadyToClick`, right before the click; a run that doesn't overlap
+    // is recorded notExercised, never a pass.
     const nameF = await newSession('f');
     const sessionF = sessionByName(dataDir, nameF);
     populateLargeGeneratedTree(sessionF.worktreePath);
@@ -341,11 +303,8 @@ async function main() {
       const fWorktreeGone = !existsSync(sessionF.worktreePath);
       if (outcomeF.closed && fGone && fWorktreeGone) ok("(f) Delete clicked while the leftover-summary walk was still running on a large tree succeeds cleanly, no false holder refusal from the walk's own open handles");
       else if (outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`sessionGone=${fGone} worktreeGone=${fWorktreeGone}`));
-      // Issue #891 gate round 2 (H4): `cancel_and_wait` must have actually found and cancelled
-      // this Session's own in-flight walk before the holder preflight ran -- proven by its own
-      // debug line in app.log, scoped to this Session's id (never just "a log line exists
-      // somewhere"). Retried briefly: the log writer flushes asynchronously, so a read taken
-      // the instant the IPC call resolves can race a buffered write that has not landed yet.
+      // `cancel_and_wait` must have cancelled this Session's in-flight walk, proven by its app.log debug
+      // line scoped to this Session id. Retried: the log writer flushes asynchronously.
       const cancelLogPatternF = new RegExp(`cancelling \\d+ in-flight walk\\(s\\) for ${sessionF.id}`);
       let appLogTextF = '';
       let cancelLoggedF = false;
@@ -363,9 +322,8 @@ async function main() {
     for (const p of spawned) await killSpawned(p).catch(() => {});
     if (cdp) cdp.close();
     await stopLauncher(child).catch(() => {});
-    // Preserved alongside screenshots (SHOT_DIR survives; SCRATCH_ROOT does not) -- the app's
-    // own tauri_plugin_log output is otherwise lost the moment safeRmSync below runs, which is
-    // exactly when a failure most needs it.
+    // Kept alongside screenshots (SHOT_DIR survives, SCRATCH_ROOT doesn't): the app log is lost when
+    // `safeRmSync` runs, which is when a failure most needs it.
     if (existsSync(appLogFile)) {
       try {
         copyFileSync(appLogFile, path.join(SHOT_DIR, 'app.log'));
@@ -376,10 +334,8 @@ async function main() {
     await safeRmSync(SCRATCH_ROOT, 'verify-891');
   }
 
-  // Issue #891 gate round (T5): recorded honestly, not decorative -- this harness cannot
-  // simulate a stalled `git worktree list` (RegistrationState::Unknown, worktree_delete.rs
-  // gate S4) or an undetectable holder ("proceed if none visible"); both are code-reviewed
-  // only, never live-exercised here.
+  // Can't simulate a stalled `git worktree list` (RegistrationState::Unknown, worktree_delete.rs) or an
+  // undetectable holder; both are code-reviewed only.
   notExercised.push(
     'RegistrationState::Unknown (a stalled `git worktree list --porcelain`) and its refusal wording -- this harness cannot force a real git timeout'
   );

@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// Fails unless `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (package
-// `refract-tauri`) and `src-tauri/Cargo.lock` (the `refract-tauri` package entry) all name the
-// exact same version. These four must always move together -- `scripts/release.mjs` is the only
-// thing allowed to bump them, and this check is what proves it did so correctly. Wired into
-// `.github/workflows/ci.yml` right after "Check file size", and run as part of `pnpm ci:local`
-// and `pnpm release` (both the real run and `--dry-run`).
+// Fails unless `package.json`, `tauri.conf.json`, `Cargo.toml` and the `refract-tauri` entry in `Cargo.lock` name the same version;
+// only `scripts/release.mjs` may bump them, and this proves it did so correctly.
 //
 // Usage: node scripts/check-versions.mjs
 

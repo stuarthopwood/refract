@@ -1,40 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #557 (collapse consecutive "Thought for Ns" rows into one summary
-// row), gate requirement.
-//
-// Real `omp` (resolved from PATH, ambient already-signed-in default profile, no `OMP_PROFILE`
-// override), the same isolation posture `verify-565-spine.mjs`/`verify-570-tool-colours.mjs`
-// already use: scratch cwd/worktree/`REFRACT_DATA_DIR` never touch Stuart's real Session list.
-// Spends real model tokens, tiny-ish prompts, a real reasoning-capable model.
-//
-// Getting a REAL run of 2+ consecutive thinking items live (rather than one "Thought for Ns" per
-// message) needed its own probe first (scratch, outside this repo, not committed): a model's own
-// assistant message almost always pairs its thinking with EITHER a tool call or its own visible
-// text in the SAME message, so two separate messages' own thinking items are normally separated
-// by a visible assistant-text bubble that ends any run before the next message's thinking even
-// starts. The one reliable path found: the harness's own mandatory `todo` bookkeeping tool (FR-052
-// hidden) is sometimes called a SECOND time mid-turn, and when the model reasons immediately
-// before that second call with NO text in between (`stopReason: "toolUse"`, content
-// `[thinking, toolCall]`), the hidden `todo` notice does not flush the run (FR-052/groupToolItems'
-// own exception) -- so that thinking item merges with the NEXT message's own thinking item
-// (whatever finally produces the visible answer) into one real 2-item `ThoughtRun`. The prompt
-// below spells out this exact order explicitly (think, call todo, think again, THEN answer) to
-// make it likely, not guaranteed -- a real model's own message boundaries are not scriptable.
-//
-// One scratch Session, two turns:
-//   (a) the ordered reasoning prompt above -> ideally a 2+ member `ThoughtRunRow` header
-//       ("Thought process", step count, union duration once settled); growing live with keyboard
-//       focus proven across the exact growth moment, expand/collapse, keyboard, themes, narrow
-//       width, reduced motion, Thinking off, reopened history.
-//   (b) a single, non-reasoning-heavy prompt -> exactly one thinking item -> today's own
-//       unchanged row (decision 7: no header, no Spine), the run-of-one fallback path.
-//
-// Reuses the shared `CARGO_TARGET_DIR` debug exe this session's own `node scripts/ci-local.mjs`
-// already produced, rebuilding it fresh here too and copying it to a PRIVATE scratch dir
-// immediately, confirmed byte-unchanged through the copy. The copy's own sha256, and the checked-
-// out git HEAD, are logged and asserted right after CDP attaches. Shared build/launch/teardown
-// helpers come from `verify-tauri-scratch-helpers.mjs` (issue #570 gate round 1's own #806
-// file-size split) rather than a second hand-copied set here.
+// Live CDP check for #557: consecutive "Thought for Ns" rows collapse into one ThoughtRun header.
+// Uses real `omp` in a scratch Session and spends real model tokens.
+// A 2+ item run only forms when a hidden `todo` call sits between two thinking passes with no
+// text; the prompt scripts that order, but model message boundaries are not guaranteed.
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -54,16 +22,12 @@ import {
   getAccessibleNameAndRole,
   switchTheme,
 } from './verify-tauri-scratch-helpers.mjs';
-// Gate round 1 (code/a11y/architect Low): the repo's own shared Tab/Escape senders set `key`/
-// `code` (Chromium only moves focus on a Tab keydown whose `key` is literally `"Tab"`); this
-// script's own hand-rolled `Input.dispatchKeyEvent` calls did not, which silently downgraded the
-// Tab-into-member check to "not exercised" with a wrong guessed cause.
 import { pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
 const SCRIPT_LABEL = 'verify-557-thought-runs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+// Refuses to fall back to a worktree-local src-tauri/target (#946).
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = path.join(tmpdir(), 'refract-557-gate1-shots');
 
@@ -77,12 +41,9 @@ const TURN_B_PROMPT =
   "Multiply 47 by 83, working it out digit by digit in your head first. Then reply with exactly the single word 'probe557b' and nothing else.";
 const TURN_B_SENTINEL = 'probe557b';
 
-// #557-only DOM marker: a header whose visible label reads EXACTLY "Thought process" (never a
-// substring match against a button's whole textContent -- a streaming assistant-text bubble could
-// coincidentally contain those words).
+// Exact-label match, not textContent substring: a streaming assistant bubble could contain these words.
 const THOUGHT_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); return label && label.textContent.trim() === 'Thought process'; })`;
-// A solo thought row: label is "Thinking", "Thought for Ns", or "Thought" (never "Thought process").
 const SOLO_THOUGHT_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); const t = label && label.textContent.trim(); return t === 'Thinking' || t === 'Thought' || (t && t.startsWith('Thought for ')); })`;
 
@@ -203,7 +164,6 @@ async function main() {
     if (!setLevelResp || setLevelResp.ok !== true) failures.push(`model.setThinkingLevel failed: ${JSON.stringify(setLevelResp)}`);
     else findings.push(`Session thinking level set to "${REASONING_LEVEL}".`);
 
-    // ---- Turn (a): ordered reasoning prompt -> ideally a 2+ member ThoughtRun ----
     await cdp.typeIntoByLabel('Message', TURN_A_PROMPT);
     await cdp.clickByLabel('Send message');
 
@@ -215,14 +175,8 @@ async function main() {
       notExercised.push('Could not capture a thought row mid-run before it settled (real model timing).');
     }
 
-    // ---- Growth-with-focus live check (decisions 14, 15, 17; gate round 1 code/a11y/architect
-    // High): catch the run SOLO, focus and expand it by keyboard, then prove focus and the open
-    // state survive the exact moment it grows to 2+ members -- the fix must be proven live, not
-    // only reasoned about from the code. Real model timing: the window between the run
-    // appearing solo and it growing past one item is not scriptable, so this is a genuine
-    // attempt, downgraded to `notExercised` (never a failure) if the run already grew before it
-    // could be caught solo. `TURN_A_PROMPT`'s own elongated first reasoning phase exists to
-    // widen this window.
+    // Run timing is not scriptable: if the run already grew past one item, this downgrades to
+    // `notExercised`, never a failure. TURN_A_PROMPT's long first reasoning phase widens the window.
     try {
       const soloNow = await cdp.evaluate(`(${SOLO_THOUGHT_FINDER}).length > 0 && (${THOUGHT_HEADER_FINDER}).length === 0`);
       if (!soloNow) throw new Error('no solo thought row was available to focus before the run already grew past one member');
@@ -261,9 +215,7 @@ async function main() {
       if (!growthResult.firstMemberOpen) failures.push('Member 1 did not start open after the run grew while its own solo row was expanded (decision 15 violation).');
       else findings.push('Member 1 starts open because the run was expanded at the moment it grew past one item (decision 15).');
 
-      // Decision 15 "every later mount starts collapsed": a collapse then re-expand must NOT
-      // reopen member 1 a second time (the growth-only open flag is consumed once, ThoughtRunRow's
-      // own post-growth effect).
+      // A collapse then re-expand must not reopen member 1 (the growth-open flag is consumed once).
       await setThoughtHeaderExpanded(cdp, 0, false);
       await setThoughtHeaderExpanded(cdp, 0, true);
       const memberReopened = await cdp.evaluate(`(() => {
@@ -310,10 +262,7 @@ async function main() {
       const metaTextSettled = await cdp.evaluate(`(${THOUGHT_HEADER_FINDER})[0].querySelector('.tabular-nums')?.innerText.trim() ?? (${THOUGHT_HEADER_FINDER})[0].innerText`);
       if (!/\d+ steps/.test(metaTextSettled)) failures.push(`Settled thought-run header meta does not contain "N steps" (measured: "${metaTextSettled}") -- decision 8.`);
       else findings.push(`Settled thought-run header meta reads "${metaTextSettled.trim()}" (decision 8: step count, plus total time once every member is timed).`);
-      // Gate round 1 (code/a11y/architect Medium): the header used to apply no floor to its own
-      // total, so it could read "0s" while every member (floored to 1s) read "Thought for 1s" --
-      // a total smaller than any of its own members. The fix applies the same 1s floor the
-      // members already use; assert directly that "0s" never appears once settled and timed.
+      // The header total must carry the same 1s floor as its members, so "0s" never appears.
       if (/\b0s\b/.test(metaTextSettled)) {
         failures.push(`Settled thought-run header meta reads "${metaTextSettled.trim()}" -- contains "0s" despite the 1s-floor fix (gate round 1 Medium).`);
       } else {
@@ -328,7 +277,6 @@ async function main() {
       if (thoughtOlWhileCollapsed) failures.push('A SpineList <ol> is present under the thought-run header while still COLLAPSED -- decision 14 requires it unmounted until expanded.');
       else findings.push('SpineList under the thought-run header is unmounted while collapsed (decision 14, mirrors #565 decision 17).');
 
-      // ---- Expand: measure member count, geometry, body padding, AX role ----
       await setThoughtHeaderExpanded(cdp, 0, true);
       await cdp.screenshot(path.join(SHOTS_DIR, '02-dark-expanded.png'));
       const expandedGeometry = await cdp.evaluate(`(() => {
@@ -366,7 +314,6 @@ async function main() {
         findings.push(`Settled thought-run header accessible name: "${headerAx.name}" (decision 19, AX tree -- the WebView2/NVDA-reachable name).`);
       }
 
-      // ---- Keyboard-only: Tab to the header, Enter/Space toggles, Tab into members ----
       await setThoughtHeaderExpanded(cdp, 0, false);
       const headerFocusable = await cdp.evaluate(`(() => { const el = (${THOUGHT_HEADER_FINDER})[0]; el.focus(); return document.activeElement === el; })()`);
       if (!headerFocusable) failures.push('Thought-run header did not accept programmatic focus.');
@@ -374,11 +321,7 @@ async function main() {
       const openedByEnter = await cdp.waitFor(`(${THOUGHT_HEADER_FINDER})[0]?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'Enter expands the thought-run header' }).catch(() => false);
       if (!openedByEnter) failures.push('Pressing Enter on the focused thought-run header did not expand it (decision 16).');
       else findings.push('Keyboard: Enter on the focused header expands the run (decision 16).');
-      // Gate round 1 (code/a11y/architect Low): the repo's own `pressTab` sets `key`/`code` --
-      // Chromium only moves focus on a Tab keydown whose `key` is literally "Tab"; the previous
-      // hand-rolled dispatch left those out, silently downgrading this to "not exercised" with
-      // the wrong guessed cause ("an intervening element"). With the real key event, this is
-      // now a hard assertion, matching the DOM order `CollapsedLine`/`SpineList` already produce.
+      // Chromium only moves focus on a Tab keydown whose `key` is literally "Tab", so use the shared sender.
       await pressTab(cdp);
       const focusMovedToMember = await cdp.waitFor(`(() => {
         const root = (${THOUGHT_HEADER_FINDER})[0].closest('[data-slot="collapsible"]');
@@ -392,7 +335,6 @@ async function main() {
       await setThoughtHeaderExpanded(cdp, 0, false);
       findings.push('Collapsing the run unmounts the SpineList again.');
 
-      // ---- Themes ----
       try {
         await setThoughtHeaderExpanded(cdp, 0, true);
         await switchTheme(cdp, 'obsidian', 'Obsidian');
@@ -405,7 +347,6 @@ async function main() {
         failures.push(`Could not drive the real Profile-menu Theme submenu (${err.message}).`);
       }
 
-      // ---- Narrow width ----
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
       const narrowOverflow = await cdp.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth + 2`);
@@ -414,7 +355,6 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, '06-360px-expanded.png'));
       await cdp.send('Emulation.clearDeviceMetricsOverride', {});
 
-      // ---- Reduced motion ----
       try {
         await switchTheme(cdp, 'dark', 'Dark');
       } catch (err) {
@@ -435,7 +375,6 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, '07-dark-reduced-motion.png'));
       await cdp.send('Emulation.setEmulatedMedia', { features: [] });
 
-      // ---- Thinking off mid-settled: the run disappears entirely ----
       const toggleOffResp = await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('thinking', false)`);
       if (!toggleOffResp || toggleOffResp.ok !== true) failures.push(`settings.setTranscriptDisplay('thinking', false) failed: ${JSON.stringify(toggleOffResp)}`);
       await sleep(300);
@@ -454,7 +393,6 @@ async function main() {
       if (headerCountRestored !== headerCountAfterA) failures.push(`Restoring "Show thinking" did not bring back the same ${headerCountAfterA} thought-run header(s) (measured ${headerCountRestored}).`);
       else findings.push('Restoring "Show thinking" brings every thought row back with no reload (decision 21).');
 
-      // ---- Show tool calls off: thought rows are unaffected ----
       const toolCallsOffResp = await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('toolCalls', false)`);
       if (!toolCallsOffResp || toolCallsOffResp.ok !== true) failures.push(`settings.setTranscriptDisplay('toolCalls', false) failed: ${JSON.stringify(toolCallsOffResp)}`);
       await sleep(300);
@@ -465,7 +403,6 @@ async function main() {
       await sleep(200);
     }
 
-    // ---- Turn (b): one thinking item -> run-of-one, unchanged, no Spine, no header ----
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(
@@ -476,11 +413,7 @@ async function main() {
     writeFileSync(path.join(SHOTS_DIR, 'turn-b-transcript.html'), turnBTranscriptHtml);
     const soloCountAfterB = await countSoloThoughts(cdp);
     if (soloCountAfterB < 1) {
-      // A reasoning-capable model is not guaranteed to emit a visible `thinking` part for every
-      // prompt (the model may simply answer with no exposed chain-of-thought this turn) -- a
-      // genuine model-output difference between runs, not a #557 defect; downgraded from a hard
-      // failure after an earlier run of this EXACT script/build (same git HEAD, same exe code)
-      // did render one solo thought row with no code change at all.
+      // The model may answer without exposing a thinking part; that is model variance, not a #557 defect.
       notExercised.push(`Turn (b) produced 0 solo thought rows this run (the model did not expose a visible thinking part for this prompt) -- see turn-b-transcript.html. Not a #557 defect: a prior run of this same build rendered a solo "Thought for Ns" row correctly with no code change.`);
     } else {
       findings.push(`Turn (b) rendered ${soloCountAfterB} solo thought row(s) (decision 7: a run of one is exactly today's row, no header, no Spine).`);
@@ -494,14 +427,11 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '09-dark-turn-b-solo.png'));
 
-    // ---- Reopened history: relaunch the SAME data dir, reattach, check untimed meta ----
     await stopLauncher(child);
     child = null;
     exeDir2 = mkdtempSync(path.join(tmpdir(), 'refract-557-exe2-'));
     const exePath2 = path.join(exeDir2, 'refract-tauri.exe');
-    // Reuses the SAME already-built, already-hash-verified exe (Rust is unchanged) rather than
-    // rebuilding -- a plain copy into a fresh scratch dir so this second launch never locks the
-    // same exe path the first (now-stopped) launcher still held.
+    // Copy into a fresh scratch dir so this launch never locks the exe path the stopped launcher held.
     copyFileSync(exePath, exePath2);
     if (sha256OfFile(exePath2) !== exeHash) throw new Error(`${SCRIPT_LABEL}: the exe copy for the relaunch does not match the hash already verified for turn (a)/(b).`);
     const port2 = await getFreePort();
@@ -515,16 +445,11 @@ async function main() {
     if (!reopened || reopened.ok !== true) {
       notExercised.push(`Could not reopen the scratch Session after restart to check the untimed-history meta (${JSON.stringify(reopened)}).`);
     } else {
-      // `sessions.open` reattaches the agent but does not by itself change which pane the
-      // renderer shows (`useSplitStore`'s own `paneSessionIds`, empty on a fresh launch with no
-      // persisted split) -- click the session row itself, same as a real user reopening it.
+      // `sessions.open` reattaches the agent but does not select the pane; click the session row.
       await cdp.waitFor(`!!document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`, { timeoutMs: 30_000, label: 'Session row visible in the list after restart' });
       await cdp.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`);
       await cdp.waitFor(`!!document.querySelector('[aria-label="Transcript"]')`, { timeoutMs: 30_000, label: 'Transcript re-rendered after reopen' });
-      // The agent must actually reattach and fetch history before any content replaces the
-      // "Ready. Type a message..." placeholder -- a flat short sleep raced ahead of that (first
-      // attempt measured 0 rows). Poll for either real content or that placeholder explicitly
-      // clearing, up to a generous budget for a genuine reattach + history fetch round trip.
+      // A flat sleep raced ahead of reattach + history fetch; poll until the placeholder clears.
       await cdp.waitFor(
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return false; const ready = t.textContent.includes('Ready. Type a message'); return !ready || (${SOLO_THOUGHT_FINDER}).length > 0 || (${THOUGHT_HEADER_FINDER}).length > 0; })()`,
         { timeoutMs: 60_000, label: 'Reopened history replaces the "Ready" placeholder with real content' },
@@ -567,7 +492,6 @@ async function main() {
     try {
       writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, multiRunExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
     } catch {
-      // best-effort only
     }
     console.error(`${SCRIPT_LABEL}: FAILED:`, err?.stack ?? err);
     process.exitCode = 1;

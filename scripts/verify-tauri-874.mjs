@@ -1,14 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #874 (cross-Project Pull requests view on the shared list shell, spec
-// 057). Drives the real Tauri debug build, isolated per the `refract-tauri-live-check-isolation`
-// skill (own REFRACT_DATA_DIR, WebView2 profile and import dir; never %APPDATA%/refract-tauri). A
-// fake `gh` (verify-tauri-874-fake-gh.rs) is put first on PATH, so nothing here can reach GitHub.
-// Aborts if the managed gh at %LOCALAPPDATA%\refract\tools\gh\gh.exe exists, because resolve_gh()
-// would prefer it over PATH (#1343). Four Projects: two point at the SAME GitHub repository (must
-// list once), one at a second repository, one with no GitHub remote (skipped note).
-// Checks: the Pull requests view listing both repositories once each, the skipped note, every tab,
-// the State and Project filters, search, the empty state, the detail pane with its Review actions,
-// the recorded gh calls, and the Issues view still working on the same shell.
+// Live CDP check of the cross-Project Pull requests view on the shared list shell, isolated per
+// `refract-tauri-live-check-isolation`, with a fake `gh` first on PATH. Aborts if the managed gh exists, since
+// resolve_gh() would prefer it over PATH (#1343). Two Projects share one repository (must list once).
 
 import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';

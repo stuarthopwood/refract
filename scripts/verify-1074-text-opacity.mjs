@@ -1,72 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1074 (app-wide softer text via alpha): `--foreground`
-// (headers/UI), `--chat-foreground` (body/chat prose) and `--muted-foreground` (low emphasis)
-// move to white at 90%/78%/60% alpha, composited over each theme's own `--background`, in
-// `dark`, `obsidian`, `nordic-frost` and `cyber-amber`; `dark-high-contrast` stays solid at its
-// existing 7:1 text target (#552). Aliasing tokens (`card-foreground`, `popover-foreground`,
-// `secondary-foreground`, `accent-foreground`, `sidebar-foreground`, `sidebar-accent-foreground`)
-// resolve through `var(--foreground)` and so inherit the same alpha; foregrounds that sit on a
-// coloured fill (`primary-foreground`, `send-foreground`, `destructive-foreground`,
-// `sidebar-primary-foreground`, the `state-*-foreground`/`pr-*-foreground` tokens) stay solid.
-//
-// Reuses the existing, committed `997-notice-severity.jsonl` fixture (AGENTS.md: no new
-// fixtures while prototyping; EXTENDING an existing tape, the same precedent #1039 set, is
-// allowed) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn gives a real session, a
-// real echoed user message (`.text-chat-foreground` Markdown), a real Manage sessions/Settings
-// Appearance route, the same flow `verify-1039-amber-retune.mjs` already exercises, AND (gate
-// round 3, Main's follow-up) a second rendered Mermaid diagram -- a Journey, appended this round
-// -- whose task/section labels are asserted below.
-//
-// For each of the 5 built-in themes, switches via the real Profile-menu Theme submenu
-// (`switchTheme`), then reads FIVE real rendered elements and asserts each equals its own CSS
-// custom property's resolved colour (`requireResolvedCssVarColor`, never a hidden probe alone):
-//   - a HEADER (`ChatHeader.tsx`'s session-name span, inherits `body`'s `text-foreground`) vs
-//     `--foreground`.
-//   - CHAT PROSE (the echoed user message's own `.text-chat-foreground` root) vs
-//     `--chat-foreground`.
-//   - MUTED TEXT (`StatusBar.tsx`'s own `<footer>`) vs `--muted-foreground`.
-//   - a PRIMARY BUTTON LABEL (the real Send button, `bg-send text-send-foreground`) vs
-//     `--send-foreground` -- FR-023's own named "stays solid on a coloured fill" case.
-//   - a BADGE LABEL (`ManageSessionsScreen.tsx`'s own `<Badge variant="secondary">` session
-//     count) vs `--secondary-foreground` -- proves the ALIAS cascade (`var(--foreground)`)
-//     actually resolves live, in a second independent component, not only in CSS source.
-// Then asserts each reading's real parsed alpha (`parseComputedColorToEntry`) matches what
-// FR-023 requires: 0.9/0.78/0.6/0.9 (header/chat/muted/badge) in the four non-HC themes, 1
-// (fully solid) in Dark (high contrast) and for the Send button's own label in EVERY theme.
-// Finally samples the REAL PAINTED pixels of the chat-prose paragraph (a `Page.captureScreenshot`
-// decoded via an offscreen `<canvas>`, the same dependency-free technique
-// `verify-1050-command-pill-helpers.mjs`'s own `capturePixelRegion` uses) and asserts its
-// brightest (most-inked) pixel is close to the colour this script's own gamma-space compositing
-// math (`contrast-math.mjs`'s `compositeOverLinear`, the same primitive `check-theme-
-// contrast.mjs` uses) predicts for `--chat-foreground` alpha-blended over `--background` -- so
-// the opacity is proven to really composite on screen, not only in computed style.
-// Also (gate round 3, Main's follow-up, item 1): decodes the second rendered Mermaid diagram's
-// (the new Journey fence's) own SVG and asserts it contains this theme's solid `taskTextColor`
-// literal -- Journey's task/section labels sit on Mermaid's own coloured `fillType0-7` fills
-// and, left unfixed, would inherit the SOFTENED `textColor` instead (`mermaidTheme.ts`'s own
-// comment on this fix has the full citation).
-//
-// Screenshots per theme: chat (chat prose plus the header and Send button all visible), a
-// popover menu (the Profile dropdown), selected chat-prose text, a composer-selection shot (a
-// real `/btw` command pill, Ctrl+A-selected -- round 3, Main's follow-up, VISUAL ONLY: does
-// NOT by itself prove `--composer-selection-fg` stays legible under the highlight -- that is
-// proven statically by `composerSelectionContrastRows` (5.82-8.29:1,
-// `composer-selection-contrast.mjs`) and live, for Dark, by #1050's own
-// `assertSelectionHighlightVisible` check. Gate-fix (caught live, round 3, Test HIGH --
-// evidence honesty): the shot previously showed the bare pill with NO visible selection at
-// all, since `settleForScreenshot`'s own blur+Escape ran AFTER Ctrl+A and cleared it before
-// the screenshot fired every time; fixed by reordering -- NOT yet live-verified, next build
-// slot), Manage sessions (the full Session list), Settings Appearance, and an
-// Off switch (the Appearance section's own watermark toggle, clicked off then restored --
-// gate round 1, Low item 7), and the Journey diagram itself scrolled into view (round 3, item
-// 1: visible evidence for the solid task/section labels the assertion above already proved).
-// Every shot is preceded by `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`): moves
-// the pointer, blurs, presses Escape, and THROWS if a stray tooltip/hover card is still open.
+// Live CDP check for #1074: in every built-in theme, header/chat/muted text render at the softened
+// alpha (0.9/0.78/0.6 over `--background`; solid in Dark high contrast and on coloured fills), the
+// painted pixels really composite, and Mermaid Journey labels stay solid.
 //
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 node
-// scripts/verify-1074-text-opacity.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
-// the convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs`/`verify-10xx-*.mjs` script
-// documents).
+// scripts/verify-1074-text-opacity.mjs (requires a prior `pnpm tauri build --debug --no-bundle`).
 
 import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -123,14 +61,10 @@ const THEMES = [
   { id: 'cyber-amber', name: 'Cyber Amber' }
 ];
 const SOLID_THEME_IDS = new Set(['dark-high-contrast']);
-// FR-023's own alpha tiers. `secondary` (the badge) aliases `--foreground` (headers/UI), not a
-// fourth independent tier.
+// The badge (`secondary`) aliases `--foreground`, so it shares the header tier.
 const EXPECTED_ALPHA = { header: 0.9, badge: 0.9, chat: 0.78, muted: 0.6 };
 const ALPHA_EPSILON = 0.01;
-// Gate-fix (Code/Test Medium): was 20, loose enough to hide a wrong prediction baseline (the
-// old code predicted over flat `--background`, not the real `bg-accent/50` user-bubble fill the
-// chat prose actually sits inside -- `userBubbleContrastRows`' own bubble math, below). Now that
-// the prediction composites over that real bubble fill, 4 is font antialiasing/hinting slack only.
+// Tight: the prediction composites over the real `bg-accent/50` bubble fill, so only antialiasing slack remains.
 const PIXEL_TOLERANCE = 4; // per sRGB byte channel, 0-255.
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
@@ -140,8 +74,7 @@ async function main() {
   const findings = [];
   const failures = []; // Wrong measured values, or a target genuinely missing -- ALWAYS fails the run.
   const notExercised = [
-    // Gate round 1 (Low item 7): honest, genuine skips -- none of these can be exercised by
-    // this live check as written, not fixed glossed-over gaps.
+    // Genuine skips this check cannot exercise.
     'Windows Forced Colors mode (forced-colors: active): every opacity-softened token above is overridden by the OS high-contrast palette in that mode -- never exercised here (this run always has it off).',
     'Emoji glyph rendering: emoji in chat prose paint via the font/platform\'s own colour (COLR/CBDT) layer, bypassing `color`/`--chat-foreground` entirely -- the pixel-compositing check below samples the brightest pixel in the rect, which could be an emoji glyph rather than text; not isolated or verified separately here.',
     'High-DPI rendering (devicePixelRatio != 1): the pixel-compositing check below now REFUSES to run unless devicePixelRatio === 1 (a correctness fix, not a workaround -- sampling a captured PNG\'s device pixels against a CSS-pixel rect only lines up 1:1 at DPR 1), so icon-stroke/text-opacity overlap at a scaled DPR is never exercised by this script.',
@@ -260,7 +193,6 @@ async function main() {
           failures.push(`${theme.name}: these real elements/colours could not be read (selector matched nothing): ${missing.join(', ')}.`);
         }
 
-        // ---- Every real rendered colour matches its token's own resolved value. ----
         const assertions = [
           ['header (ChatHeader session name, inherits text-foreground)', real.header, await requireResolvedCssVarColor(cdp, '--foreground', 'color')],
           ['chat prose (echoed user message)', real.chat, await requireResolvedCssVarColor(cdp, '--chat-foreground', 'color')],
@@ -277,9 +209,7 @@ async function main() {
           }
         }
 
-        // ---- A badge label (ManageSessionsScreen's secondary-variant Badge): proves the
-        // card/popover/secondary/accent/sidebar `var(--foreground)` alias cascade actually
-        // resolves live, in a second independent component, not only in CSS source. ----
+        // The badge proves the `var(--foreground)` alias cascade resolves live in a second component.
         await cdp.click(`document.querySelector('[data-profile-name-button]')`);
         await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menu"][data-state="open"]')).find((el) => el.textContent.includes('Manage sessions'))`, {
           timeoutMs: 10_000,
@@ -304,9 +234,7 @@ async function main() {
         await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
         await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: `${theme.name}: Manage sessions closed, back in chat` });
 
-        // ---- FR-023's own alpha tiers: 0.9/0.78/0.6/0.9 (header/chat/muted/badge) in the four
-        // non-HC themes, fully solid (alpha 1) in Dark (high contrast); the Send button's own
-        // label stays solid in EVERY theme (a coloured, non-neutral fill). ----
+        // The Send label stays solid in every theme (coloured fill).
         const solid = SOLID_THEME_IDS.has(theme.id);
         const alphaChecks = [
           ['header', real.header, solid ? 1 : EXPECTED_ALPHA.header],
@@ -329,32 +257,15 @@ async function main() {
           }
         }
 
-        // ---- Real painted pixel luminance of the chat-prose paragraph: proves the opacity
-        // genuinely composites on screen, not only in computed style. Gate-fix (caught live
-        // 2026-10-20): the echoed user message (DOM-first `.text-chat-foreground`) sits ABOVE
-        // the scrolled-to-bottom transcript view (the fixture's own Mermaid diagram pushes it
-        // off-screen), so its raw `getBoundingClientRect()` has a NEGATIVE `y`;
-        // `samplePixelRegion`'s `Math.max(0, ...)` clamp then silently sampled whatever real
-        // chrome sat at the TOP of the viewport instead (sidebar/header text) -- a false
-        // failure for Dark specifically (first theme iterated) and a false PASS for every other
-        // theme only because that unrelated chrome text also happened to read bright.
-        // `scrollTranscriptToShow` (real trusted wheel events -- see its own header comment for
-        // why a plain `scrollTop`/`scrollIntoView` write does not stick here) scrolls the
-        // transcript up for real, then a fresh `getBoundingClientRect()` confirms it -- and the
-        // check below now fails loudly (not silently mis-samples) if it is ever not fully
-        // inside the viewport afterwards.
+        // The message sits above the scrolled-to-bottom view; a negative rect `y` would be clamped
+        // by `samplePixelRegion` and sample unrelated chrome, so scroll it into view with real wheel events.
         const scrolled = await scrollTranscriptToShow(cdp, CHAT_PROSE_FINDER);
         if (!scrolled) {
           failures.push(`${theme.name}: chat-prose element has no scrollable ancestor to scroll it into view.`);
           continue;
         }
-        // Gate-fix (Code/Test Medium): captures the screenshot FIRST, then measures the
-        // chat-prose element's own `getBoundingClientRect()` -- not the reverse (the old order),
-        // which left a window for the rect to go stale relative to what was actually painted.
-        // Also guards `x` (not only `y`) against being scrolled/clipped out of the viewport, and
-        // asserts `devicePixelRatio === 1`: `decodePixelRegion` below samples the captured PNG's
-        // own device pixels at this rect's CSS-pixel coordinates verbatim, which only lines up
-        // 1:1 when the page has no device scaling.
+        // Screenshot first, then measure the rect, so it can't go stale. Sampling maps CSS px to
+        // device px 1:1 only at devicePixelRatio 1.
         const pngData = await capturePngBase64(cdp);
         const chatRect = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, devicePixelRatio: window.devicePixelRatio }; })()`);
         if (
@@ -370,12 +281,7 @@ async function main() {
         } else if (chatRect.devicePixelRatio !== 1) {
           failures.push(`${theme.name}: devicePixelRatio is ${chatRect.devicePixelRatio}, not 1 -- the captured screenshot's device pixels would not line up 1:1 with this CSS-pixel rect.`);
         } else {
-          // Gate-fix (Code/Test Medium): predicts over the REAL fill the chat prose actually
-          // sits inside -- the user-message bubble's own translucent `bg-accent/50`
-          // (`UserMessageRow.tsx`'s `MessageContent`), composited over `--background`, THEN
-          // `--chat-foreground`'s own alpha composited a second time on top of THAT -- not flat
-          // `--background` directly (the old, wrong baseline `userBubbleContrastRows` in
-          // `theme-contrast-pairs.mjs` already predicts the same way for its own WCAG check).
+          // Predict over the real `bg-accent/50` user-bubble fill, not flat `--background`.
           const bgRaw = await requireResolvedCssVarColor(cdp, '--background', 'background-color');
           const accentRaw = await requireResolvedCssVarColor(cdp, '--accent', 'background-color');
           const fgEntry = parseComputedColorToEntry(real.chat);
@@ -404,41 +310,26 @@ async function main() {
           }
         }
 
-        // Journey diagram labels stay solid (gate round 3 fix, Main's follow-up, item 1; split
-        // out to `assertJourneyLabelsSolid` in `verify-1074-text-opacity-helpers.mjs` -- see
-        // its own doc comment for the full citation chain: fixture provenance, the fixed
-        // literal `fillType0-7` fills, the narrowed CSS-rule-text match, the Dark-HC
-        // can't-discriminate caveat, and Timeline's unverified-but-likely coverage).
+        // Journey task/section labels sit on coloured fills and must not inherit the softened textColor.
         await assertJourneyLabelsSolid(cdp, theme, findings, failures);
 
-        // Journey diagram screenshot (Main's request, this round): scrolls the second
-        // rendered Mermaid diagram (the Journey fence) into view and captures it directly, so
-        // the solid task/section labels asserted above are also visible evidence, not only a
-        // DOM/string assertion.
+        // Capture the Journey diagram as visible evidence for the solid labels.
         await cdp.evaluate(`(() => { const imgs = document.querySelectorAll('img[role="img"]'); const el = imgs[1]; if (el) el.scrollIntoView({ block: 'center' }); })()`);
         await settleForScreenshot(cdp);
         const journeyShot = `${theme.id}-08-journey-diagram.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, journeyShot));
         shotNames.push(journeyShot);
-        // Restores the scroll position the later "selected chat-prose text" check (below) relies
-        // on -- it recomputes `chatProseCentre` from the chat-prose element's own bounding rect
-        // AT THE TIME it runs, which would be wrong (or off-screen) if left scrolled down here.
+        // The selected-text step below recomputes the chat-prose rect, so restore its scroll position.
         await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (el) el.scrollIntoView({ block: 'center' }); })()`);
         await settleForScreenshot(cdp);
 
-        // ---- Screenshots: chat (header, chat prose and Send button all visible), a popover
-        // menu, selected chat-prose text, Settings Appearance (Manage sessions already shot
-        // above) and an Off switch (gate round 1, Low item 7). `settleForScreenshot` runs
-        // before EVERY shot -- moves the pointer, blurs, presses Escape, and THROWS if a stray
-        // tooltip/hover card is still open. ----
+        // `settleForScreenshot` runs before every shot and throws if a tooltip/hover card is open.
         await settleForScreenshot(cdp);
         const chatShot = `${theme.id}-00-chat.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, chatShot));
         shotNames.push(chatShot);
 
-        // Popover menu (gate round 1, Low item 7): the Profile dropdown's own `--popover`
-        // surface, real rendered menu items whose text is `--popover-foreground` (aliases
-        // `--foreground`, so this screenshot doubles as visual evidence for the alias cascade).
+        // The popover items use `--popover-foreground` (aliases `--foreground`).
         await cdp.click(`document.querySelector('[data-profile-name-button]')`);
         await cdp.waitFor(`!!document.querySelector('[role="menu"][data-state="open"]')`, { timeoutMs: 10_000, label: `${theme.name}: Profile dropdown menu open` });
         await sleep(150);
@@ -449,9 +340,7 @@ async function main() {
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
         await cdp.waitFor(`!document.querySelector('[role="menu"][data-state="open"]')`, { timeoutMs: 5_000, label: `${theme.name}: Profile dropdown menu closed` });
 
-        // Selected chat-prose text (gate round 1, Low item 7): a real double-click word
-        // selection, not a synthetic `Range` -- demonstrates the softened `--chat-foreground`
-        // stays legible under the browser's own (unstyled, no `::selection` override) highlight.
+        // A real double-click selection (not a synthetic Range) under the browser's default highlight.
         await settleForScreenshot(cdp);
         const chatProseCentre = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
         if (!chatProseCentre) {
@@ -466,19 +355,8 @@ async function main() {
           await cdp.evaluate(`window.getSelection()?.removeAllRanges()`);
         }
 
-        // Composer-selection screenshot (round 3, Main's follow-up; gate round 3 fix, caught
-        // live, Test HIGH -- evidence honesty): the composer's own command-pill rendered
-        // per-theme, Ctrl+A-selected. `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`'s
-        // own doc) blurs the active element and presses Escape -- calling it AFTER Ctrl+A,
-        // right before the shot, cleared the selection before the screenshot fired, so every
-        // theme's shot previously showed the bare pill with NO visible selection at all. Fixed
-        // by moving the one `settleForScreenshot` call to run before `clearAndType` only, so
-        // nothing runs between Ctrl+A and the screenshot -- NOT YET live-verified (no rerun
-        // this change), next build slot. This shot is visual-only: `--composer-selection-fg`
-        // staying legible under a real native selection highlight is proven statically by
-        // `composerSelectionContrastRows` (5.82-8.29:1, `composer-selection-contrast.mjs`) and
-        // live, for Dark, by #1050's own `assertSelectionHighlightVisible` check -- not by
-        // this screenshot.
+        // Visual only. `settleForScreenshot` blurs and presses Escape, which would clear the
+        // selection, so it must run before Ctrl+A and nothing may run between Ctrl+A and the shot.
         await settleForScreenshot(cdp);
         await clearAndType(cdp, pressKey, '/btw hi');
         await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: `${theme.name}: command pill appears` });
@@ -496,9 +374,7 @@ async function main() {
         await cdp.screenshot(path.join(SHOTS_DIR, settingsShot));
         shotNames.push(settingsShot);
 
-        // Off switch (gate round 1, Low item 7): the Appearance section's own watermark toggle,
-        // clicked off then restored on (never leaves the toggle in a different state than it
-        // started, so a later theme iteration or a rerun sees the same default every time).
+        // Toggle off then restore, so reruns and later themes see the default.
         await cdp.click(`document.querySelector('#watermark-toggle')`);
         await cdp.waitFor(`document.querySelector('#watermark-toggle')?.getAttribute('aria-checked') === 'false'`, { timeoutMs: 5_000, label: `${theme.name}: watermark toggle switched off` });
         await settleForScreenshot(cdp);
