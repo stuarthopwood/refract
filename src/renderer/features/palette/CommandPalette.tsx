@@ -29,7 +29,8 @@ export function CommandPalette() {
     // After the dialog unmounts, so the action's own focus handling has the last word.
     requestAnimationFrame(() => {
       // Focus the invoker first so actions that compare against the focused element see where the user was.
-      if (document.activeElement === null || document.activeElement === document.body) invokerRef.current?.focus()
+      // Unconditional: the exit animation keeps focus in the palette input at this point.
+      if (invokerRef.current?.isConnected) invokerRef.current.focus()
       item.run()
       requestAnimationFrame(() => {
         const active = document.activeElement
