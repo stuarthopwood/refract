@@ -903,6 +903,8 @@ Also filed 2026-10-30: **#1418** (`p1`), Session details card: Copy path and Ope
 
 Also filed 2026-10-30: **#1420** (`p1`), App-wide: one label and icon for every reveal action ("Show in File Explorer" with `FolderOpenIcon`) across chat file links, the file explorer panel, the Session details card and the Session row menus, from one shared definition; pairs with #1418 and #1405; placed as an index line after #1418's line.
 
+Also filed 2026-10-30: **#1422** (`p1`), Session list: project header hover fill covers the whole row including its action buttons (one rounded `bg-sidebar-accent` shape, moved from `GroupHeaderTrigger` to a shared header-row wrapper also used by the Archived and Git changes headers); placed as an index line after #1420's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
