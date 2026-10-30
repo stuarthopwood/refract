@@ -877,6 +877,8 @@ Also filed 2026-10-30: **#1393** (`p1`), Pull requests detail header: Merge, Rev
 
 Also filed 2026-10-30: **#1395** (`p1`), App-wide text fields: `Input` and `Textarea` lose their fill and take a soft border in the four non-high-contrast dark themes, the focus halo is removed (border-only focus, 2px ring in Dark high contrast), and the Clone project and Add project Browse buttons become ghost buttons; extends the #927 quiet composer departure in `docs/design/accessibility.md`; placed as an index line after #1393's line.
 
+Also filed 2026-10-30: **#1397** (`p1`), Issues detail header: the text-only Copy link button becomes the shared icon-only `CopyButton` with a "Copy Issue Link" tooltip, replacing the local copy state and status line; placed as an index line after #1395's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
