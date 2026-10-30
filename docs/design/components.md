@@ -109,7 +109,7 @@ Decided (Stuart, 2026-10-19, #1043; swatch ruling amended 2026-10-20, ui-archite
 
 ## Tooltip
 
-Every icon-only control has a tooltip, following the "Q2 bundle" from agenda item 2 and its own follow-up (both #474 grill decisions):
+Every icon-only control has a tooltip, following the "Q2 bundle" from agenda item 2 and its own follow-up (both #474 grill decisions). Build it with **IconButton** (`components/IconButton.tsx`, #579): one `label` prop becomes both the `aria-label` and the tooltip text, with an optional `shortcut` Kbd; the provider's open delay is 400 ms. Dialog and sheet Close use it.
 
 - (a) A `Tooltip` whose text equals the control's `aria-label` (verb first, sentence case; see [patterns.md](patterns.md)).
 - (b) The `Kbd` shortcut in the tooltip when one exists.
