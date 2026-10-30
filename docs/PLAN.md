@@ -911,19 +911,19 @@ Also filed 2026-10-30: **#1426** (`feature`, `p1`), Composer clock: clicking the
 
 Also filed 2026-10-30: **#1428** (`p1`, `right-pane`), Right rail: Agents count badge uses the accent colour (`bg-primary text-primary-foreground`) instead of the `working` state tone; placed as an index line after #1426's line.
 
-Also filed 2026-10-30: **#1429** (`p1`, `chat`), Composer status line: pill row gap widens from `gap-x-2` to `gap-x-3`; hover padding unchanged; placed as an index line after #1428's line.
+Also filed 2026-10-30: **#1429** (`p1`, `chat`), Composer status line: pill row gap widens from `gap-x-2` to `gap-x-4` (16px; `gap-x-3` is off the 8px grid, #1252); hover padding unchanged; placed as an index line after #1428's line. **Status: built on branch `updater-composer-question-card` (spec 069), awaiting merge.**
 
 Also filed 2026-10-30: **#1430** (`p1`, `chat`), Advisor row: source tag, severity and message share one font size (`text-sm`) with the trailing meta kept at `text-xs`; placed as an index line after #1429's line.
 
-Also filed 2026-10-30: **#1431** (`p1`, `bug`), Composer: restore spelling suggestions and "Add to dictionary" in the right-click menu; the custom Radix context menu has no spelling items; supersedes closed #445; placed as an index line after #1430's line.
+Also filed 2026-10-30: **#1431** (`p1`, `bug`), Composer: restore spelling suggestions and "Add to dictionary" in the right-click menu; the custom Radix context menu has no spelling items; supersedes closed #445; placed as an index line after #1430's line. **Status: built on branch `updater-composer-question-card` (spec 069), awaiting merge.**
 
 Also filed 2026-10-30: **#1432** (`p1`, `design`), Chat Tasks vs Todo: keep the data models and panels separate; reserve "task" in UI text for Todo items; delegated work is "subagent", "Stage" or "Delegate"; add a `CONTEXT.md` "Todo task" entry; placed as an index line after #1431's line.
 
-Also filed 2026-10-30: **#1433** (`p1`, `bug`), Updater: update fails after download and accept; trace the quit-to-installer hand-off and capture error text, `updateState.json` and the app log before designing a fix; placed as an index line after #1432's line.
+Also filed 2026-10-30: **#1433** (`p1`, `bug`), Updater: update fails after download and accept; trace the quit-to-installer hand-off and capture error text, `updateState.json` and the app log before designing a fix; placed as an index line after #1432's line. **Status: built on branch `updater-composer-question-card` (spec 069), awaiting merge.**
 
-Also filed 2026-10-30: **#1434** (`p1`, `design`), Question card: option rows take a fill instead of borders, radio centred on the whole row, Cancel becomes a labelled ghost button; fallback card matches; placed as an index line after #1433's line.
+Also filed 2026-10-30: **#1434** (`p1`, `design`), Question card: option rows take a fill instead of borders, radio centred on the whole row, Cancel becomes a labelled ghost button; fallback card matches; placed as an index line after #1433's line. **Status: built on branch `updater-composer-question-card` (spec 069), awaiting merge.**
 
-Also filed 2026-10-30: **#1435** (`p1`, `feature`), Question card: picking a single-choice option advances to the next incomplete question or submits the batch; Other, multi-select and footer buttons unchanged; placed as an index line after #1434's line.
+Also filed 2026-10-30: **#1435** (`p1`, `feature`), Question card: picking a single-choice option advances to the next incomplete question or submits the batch; Other, multi-select and footer buttons unchanged; placed as an index line after #1434's line. **Status: built on branch `updater-composer-question-card` (spec 069), awaiting merge.**
 
 Also filed 2026-10-30: **#1436** (`p1`, `design`), Subagents chain: card treatment for the in-chat Stage chain (2+ Stages) as a recorded exception to the zero-box rule; right-pane tree and single Stages unchanged; placed as an index line after #1435's line.
 
