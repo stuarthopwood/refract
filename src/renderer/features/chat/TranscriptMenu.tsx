@@ -42,7 +42,7 @@ export function TranscriptMenu({ items, disabled = false, className, children }:
             if (event.clientX === 0 && event.clientY === 0 && event.target instanceof Element) {
               event.preventDefault()
               const rect = (focused ?? event.target).getBoundingClientRect()
-              event.target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }))
+              event.target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: Math.max(rect.bottom, 1) }))
               return
             }
             openerRef.current = focused

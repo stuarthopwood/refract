@@ -1,6 +1,6 @@
 import * as React from 'react'
 import type { MermaidConfig } from 'mermaid'
-import { DownloadIcon, ImageIcon } from 'lucide-react'
+import { DownloadIcon, FileCodeIcon, ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ContextMenuSeparator } from '@/components/ui/context-menu'
@@ -206,7 +206,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
         </span>
       )}
       <div className="flex items-center gap-1">
-        <CopyButton getText={() => code} label={`Copy source for ${accessibleName}`} announcement="Source copied" className={buttonClassName} />
+        <CopyButton getText={() => code} label={`Copy source for ${accessibleName}`} announcement="Source copied" icon={FileCodeIcon} className={buttonClassName} />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon-xs" aria-label={`Copy ${accessibleName} as image`} className={buttonClassName} onClick={() => void copyImageWithToast()}>

@@ -57,7 +57,7 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
             getText={() => text}
             label="Copy message"
             announcement="Message copied"
-            className="text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within/transcript-menu:opacity-100 group-hover/transcript-menu:opacity-100 group-data-[state=open]/transcript-menu:opacity-100"
+            className="text-muted-foreground opacity-0 transition-opacity motion-reduce:transition-none focus-visible:opacity-100 group-focus-within/transcript-menu:opacity-100 group-hover/transcript-menu:opacity-100 group-data-[state=open]/transcript-menu:opacity-100"
           />
         )}
       </div>

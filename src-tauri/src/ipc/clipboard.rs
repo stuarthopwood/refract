@@ -53,9 +53,9 @@ fn png_to_rgba(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), IpcError> {
     let mut buf = vec![0; reader.output_buffer_size().ok_or_else(bad)?];
     let frame = reader.next_frame(&mut buf).map_err(|_| bad())?;
     buf.truncate(frame.buffer_size());
-    let rgba = match frame.color_type {
-        png::ColorType::Rgba => buf,
-        png::ColorType::Rgb => buf
+    let rgba = match (frame.color_type, frame.bit_depth) {
+        (png::ColorType::Rgba, png::BitDepth::Eight) => buf,
+        (png::ColorType::Rgb, png::BitDepth::Eight) => buf
             .chunks_exact(3)
             .flat_map(|p| [p[0], p[1], p[2], 255])
             .collect(),
