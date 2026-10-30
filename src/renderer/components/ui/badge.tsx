@@ -23,6 +23,7 @@ const badgeVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         focused:
           "h-auto border-active-indicator bg-focused-badge-bg py-1 font-medium text-active-indicator-foreground",
+        warning: "h-auto border-severity-warning bg-severity-warning-bg py-0.5 text-severity-warning",
       },
     },
     defaultVariants: {

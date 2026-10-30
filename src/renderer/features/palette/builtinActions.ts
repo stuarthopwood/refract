@@ -1,11 +1,11 @@
-import { ArrowLeftRightIcon, BarChart3Icon, CommandIcon, PanelRightIcon, PauseIcon, PlayIcon, PlusIcon, SettingsIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowLeftRightIcon, BarChart3Icon, CommandIcon, PanelRightIcon, PauseIcon, PlayIcon, PlusIcon, RotateCcwIcon, SettingsIcon, SquareIcon, XIcon } from 'lucide-react'
 import { canTogglePause, setAllPaused, setSessionPaused } from '@/features/chat/pauseActions'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { stopAndRestore } from '@/features/chat/restoreQueue'
 import { toggleRightPane } from '@/features/right-pane/toggle-right-pane'
 import { focusedPaneSessionId, newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
 import { focusSessionPane } from '@/lib/focus'
-import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { useSessionsStore, useSplitStore, useThemeStore, useViewStore } from '@/state'
 import { registerActions, type PaletteAction } from './actionRegistry'
 import { usePaletteStore } from './paletteStore'
 
@@ -142,6 +142,17 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     group: 'General',
     when: () => useViewStore.getState().view !== 'usage',
     run: () => useViewStore.getState().openUsage()
+  },
+  {
+    id: 'reset-theme',
+    icon: RotateCcwIcon,
+    label: 'Reset theme to Dark',
+    group: 'General',
+    chord: ['Ctrl', 'Shift', '0'],
+    chordUnguarded: true,
+    keywords: ['appearance', 'custom theme', 'recover'],
+    when: () => true,
+    run: () => void useThemeStore.getState().resetToDark()
   }
 ]
 

@@ -59,7 +59,7 @@ export function spokenChord(chord: Chord): string {
   return chord.map((key) => (key === ',' ? 'comma' : key)).join(' plus ')
 }
 
-const PUNCTUATION_CODES: Record<string, string> = { '\\': 'Backslash', ',': 'Comma' }
+const PUNCTUATION_CODES: Record<string, string> = { '\\': 'Backslash', ',': 'Comma', '0': 'Digit0' }
 
 // Letters and comma match on `event.key` with an `event.code` fallback for non-Latin layouts; Backslash matches on code
 // alone because Shift changes `event.key` to '|'.
@@ -70,7 +70,7 @@ function keyMatches(event: KeyboardEvent, token: string): boolean {
     if (latin) return event.key.toLowerCase() === token.toLowerCase()
     return /^[A-Za-z]$/.test(token) && event.code === `Key${token.toUpperCase()}`
   }
-  if (token === '\\') return event.code === code
+  if (token === '\\' || token === '0') return event.code === code
   const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
   return latin ? event.key === token : event.code === code
 }

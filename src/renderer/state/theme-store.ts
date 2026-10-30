@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { toast } from 'sonner'
 import { isThemeId } from '../../shared/themes'
 import type { ThemeId } from '../../shared/themes'
 import type { CustomTheme, RejectedTheme } from '../../shared/ipc-themes'
@@ -13,6 +14,7 @@ interface ThemeState {
  save(id: ThemeId): Promise<boolean>
  saveCustom(id: string | null): Promise<boolean>
  refreshCustomThemes(): Promise<void>
+ resetToDark(): Promise<boolean>
  setTheme(theme: ThemeId, customId?: string | null): void
 }
 
@@ -44,6 +46,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   const result = await window.refract.themes.setCustom(id)
   if (result.ok) {
    set({ customId: result.value.customTheme ?? null })
+   if (id !== null) toast.info('Custom theme applied. If it is hard to read, press Ctrl+Shift+0 to reset to Dark.')
    return true
   }
   notify(result.error)
@@ -56,7 +59,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   else notify(result.error)
  },
 
- setTheme: (theme, customId) => set(customId === undefined ? { theme } : { theme, customId })
+ setTheme: (theme, customId) => set(customId === undefined ? { theme } : { theme, customId }),
+
+ resetToDark: async () => {
+  const ok = await get().save('dark')
+  if (ok) notify({ code: 'unsupported', message: 'Theme reset to Dark.' })
+  return ok
+ }
 }))
 
 /** The custom theme the user has active, or null when a built-in is showing. */
