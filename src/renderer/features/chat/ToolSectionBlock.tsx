@@ -28,7 +28,14 @@ export function CappedCodeBlock({ code, lang, hideCopy = false }: { code: string
   const visible = truncated ? lines.slice(0, OUTPUT_LINE_CAP).join('\n') : code
   return (
     <div>
-      <CodeBlock code={visible} lang={lang} copyText={code} wrap={lang === null} hideCopy={hideCopy} />
+      <CodeBlock
+        code={visible}
+        lang={lang}
+        copyText={code}
+        wrap={lang === null}
+        hideCopy={hideCopy}
+        expandable={truncated ? { expanded: false, onToggle: () => setShowAll(true) } : undefined}
+      />
       {truncated && (
         <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAll(true)}>
           Show all ({lines.length} lines)
