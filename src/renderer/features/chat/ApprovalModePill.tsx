@@ -113,6 +113,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
             )
           })}
         </DropdownMenuRadioGroup>
-      </DropdownMenuContent>    </DropdownMenu>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
