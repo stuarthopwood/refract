@@ -559,6 +559,10 @@
     "commentLines": 22,
     "maxBlock": 10
   },
+  "scripts/verify-tauri-934.mjs": {
+    "commentLines": 14,
+    "maxBlock": 7
+  },
   "scripts/verify-tauri-ask.mjs": {
     "commentLines": 113,
     "maxBlock": 25
@@ -1651,10 +1655,6 @@
     "commentLines": 152,
     "maxBlock": 13
   },
-  "src/renderer/features/profile/ManageSessionRow.tsx": {
-    "commentLines": 154,
-    "maxBlock": 16
-  },
   "src/renderer/features/profile/ManageSessionsScreen.tsx": {
     "commentLines": 45,
     "maxBlock": 10
@@ -1820,7 +1820,7 @@
     "maxBlock": 9
   },
   "src/renderer/features/sessions/SessionRow.tsx": {
-    "commentLines": 62,
+    "commentLines": 50,
     "maxBlock": 19
   },
   "src/renderer/features/sessions/sessionSearchSelector.ts": {
@@ -1831,8 +1831,12 @@
     "commentLines": 29,
     "maxBlock": 25
   },
+  "src/renderer/features/sessions/useSessionResume.ts": {
+    "commentLines": 36,
+    "maxBlock": 6
+  },
   "src/renderer/features/sessions/useSessionRowActions.ts": {
-    "commentLines": 224,
+    "commentLines": 181,
     "maxBlock": 16
   },
   "src/renderer/features/settings/AppearanceSection.tsx": {
