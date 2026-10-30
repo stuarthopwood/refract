@@ -33,7 +33,7 @@ interface SettingsState {
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
   /** Resolves `true` on success so the form closes only after a real save. */
   upsertAlarm(alarm: Alarm): Promise<boolean>
-  deleteAlarm(id: string): Promise<void>
+  deleteAlarm(id: string): Promise<boolean>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -207,6 +207,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const result = await window.refract.settings.deleteAlarm(id)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
+    return result.ok
   }
 }))
 

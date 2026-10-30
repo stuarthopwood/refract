@@ -12,12 +12,20 @@ export interface ListCardButtonProps {
   children: ReactNode
   /** Secondary controls rendered beside the card body, vertically centred. */
   actions?: ReactNode
+  /** Draws the card's edge in the focus colour, for an item that just changed and needs noticing. */
+  highlighted?: boolean
   className?: string
 }
 
-export function ListCardButton({ ariaLabel, onClick, children, actions, className }: ListCardButtonProps) {
+export function ListCardButton({ ariaLabel, onClick, children, actions, highlighted, className }: ListCardButtonProps) {
   return (
-    <div className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-card text-sm text-card-foreground transition-colors hover:bg-muted/50">
+    <div
+      data-highlighted={highlighted ? '' : undefined}
+      className={cn(
+        'flex w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-card text-sm text-card-foreground transition-colors hover:bg-muted/50',
+        highlighted && 'border-ring bg-muted/50'
+      )}
+    >
       <button
         type="button"
         aria-label={ariaLabel}

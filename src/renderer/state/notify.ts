@@ -66,17 +66,34 @@ export function notifyPersistentError(text: string): void {
 }
 
 let alarmListOpen = false
+const firedAlarmToastIds = new Set<string>()
+let alarmToastCounter = 0
 
-/** The Alarms popover lists the fired row itself, so a toast over it would only hide that row. */
+/** The Alarms popover lists the fired row itself, so a toast over it would only hide that row; opening it also clears earlier fired toasts. */
 export function setAlarmListOpen(open: boolean): void {
   alarmListOpen = open
+  if (!open) return
+  for (const id of firedAlarmToastIds) toast.dismiss(id)
+  firedAlarmToastIds.clear()
 }
 
 /** A fired Alarm while the window is focused; the toast stays until dismissed so a glance away cannot miss it. */
 export function notifyAlarm(label: string): void {
   const text = label ? `Alarm: ${label}` : 'Alarm'
-  if (!alarmListOpen) toast.info(text, { duration: Infinity, closeButton: true })
-  announceAssertive(text)
+  if (alarmListOpen) {
+    announceAssertive(text)
+    return
+  }
+  // sonner's own live region announces the toast, so no second announcement here.
+  const id = `alarm-fired-${++alarmToastCounter}`
+  firedAlarmToastIds.add(id)
+  const forget = () => firedAlarmToastIds.delete(id)
+  toast.info(text, { id, duration: Infinity, closeButton: true, onDismiss: forget, onAutoClose: forget })
+}
+
+/** A deleted Alarm can be restored from its toast for the default toast lifetime. */
+export function notifyAlarmDeleted(onUndo: () => void): void {
+  toast('Alarm deleted', { action: { label: 'Undo', onClick: onUndo } })
 }
 
 export interface ProgressToast {

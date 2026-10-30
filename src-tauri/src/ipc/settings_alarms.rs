@@ -60,6 +60,11 @@ pub fn settings_delete_alarm(state: AppState, args: Vec<Value>) -> HandlerFuture
         let id = arg_str(&args, 0)
             .ok_or_else(|| invalid_argument("settings.deleteAlarm: id must be a string"))?
             .to_string();
+        if !Alarm::is_valid_id(&id) {
+            return Err(invalid_argument(
+                "settings.deleteAlarm: id must be 1 to 64 characters",
+            ));
+        }
         let value = state
             .settings
             .lock()
