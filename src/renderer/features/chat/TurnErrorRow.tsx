@@ -1,10 +1,4 @@
-// #1284 (spec 040 FR-001): the Turn error row at the end of a turn that ended in a model error.
-// OMP's error text is untrusted, so it renders as plain text, never markdown. Retry resends the
-// unanswered prompt once. The row shows only while it is the last item of the transcript: any
-// later item (a new user message, or OMP's own auto-retry output) means the turn moved on, so a
-// stale Retry is never offered. No `data-pane-banner`: the composer always takes pane focus first.
-// The hint's primary action is Retry for every kind: the renderer has no restart-agent or
-// sign-in action to offer for TLS or auth errors yet.
+// OMP's error text is untrusted, so it renders as plain text, never markdown.
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { notify, EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useReadoutStore, useSessionsStore, useTranscriptStore } from '@/state'
@@ -23,8 +17,6 @@ function hasAttachments(user: UserItem): boolean {
   return (user.images?.length ?? 0) > 0 || (user.fileAttachments?.length ?? 0) > 0
 }
 
-/** The prompt text Retry can resend whole, or null when it cannot (images are blob refs with no
- * bytes here, and the file-attachment content is stripped from the transcript text). */
 function resendableText(user: UserItem): string | null {
   if (hasAttachments(user)) return null
   return user.text.trim() === '' ? null : user.text
@@ -34,7 +26,6 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
   const [sending, setSending] = React.useState(false)
   const sendingRef = React.useRef(false)
   const retryHadFocus = React.useRef(false)
-  // One selector: SUPERSEDED when any later item exists, else the nearest earlier user item (or null).
   const prompt = useTranscriptStore((s): UserItem | null | typeof SUPERSEDED => {
     const items = (sessionId ? s.bySession[sessionId] : undefined)?.items ?? EMPTY_TRANSCRIPT.items
     const index = items.findIndex((candidate) => candidate.id === item.id)
@@ -50,8 +41,6 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
   // Same readout the Retry line reads: while OMP auto-retries, a manual Retry would double-send.
   const autoRetrying = useReadoutStore((s) => !!(sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.retry : null))
 
-  // A working session queues chat.send, and `agent_start` clears the retry readout, so Retry must
-  // also hide while the session works or an auto-retried request would be sent twice.
   const working = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'working')
   const blocked = autoRetrying || working
 
@@ -80,8 +69,6 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
         return
       }
       focusSessionPane(sessionId)
-      // The latch stays set on success: the session only reads as working once `agent_start`
-      // arrives, and the row disappears when the new turn's items do.
       return
     } catch (error) {
       console.error('[refract] turn error retry failed', error)
