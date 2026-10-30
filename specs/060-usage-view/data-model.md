@@ -4,7 +4,7 @@ SQLite, `PRAGMA user_version = 1`, WAL. Shapes follow OMP's `messages`, `tool_ca
 
 | Table | Key | Columns |
 | --- | --- | --- |
-| `file_offsets` | `session_file` | `offset`, `last_modified`, `session_id`, `cwd`, `agent_type` (`main`/`subagent`), `project_label` |
+| `file_offsets` | `session_file` | `offset`, `last_modified`, `session_id`, `cwd`, `agent_type` (`main`/`subagent`), `project_label`, `file_len`, `cur_model`, `cur_reasoning` (the last two carry `model_change` and `thinking_level_change` state across a resumed read) |
 | `messages` | `(session_file, entry_id)` | `ts` (ms), `session_id`, `provider`, `model`, `reasoning`, `agent_type`, `purpose`, `project_label`, `input`, `output`, `cache_read`, `cache_write`, `total_tokens`, `cost_total`, `cost_input`, `cost_output`, `cost_cache_read`, `cost_cache_write`, `credits` (null unless `github-copilot`), `premium_requests`, `duration_ms`, `ttft_ms`, `stop_reason` |
 | `tool_calls` | `(session_file, tool_call_id)` | `ts`, `entry_id` (issuing message), `tool`, `is_error` (null until the result lands), `result_chars`, `cost_share`, plus the labels copied from the message (`project_label`, `model`, `reasoning`, `agent_type`) |
 | `user_messages` | `(session_file, entry_id)` | `ts`, `chars`, `yelling`, `profanity`, `blame`, `project_label` |

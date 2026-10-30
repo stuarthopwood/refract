@@ -4,23 +4,23 @@ Format: `ID [P] description (paths)`. `[P]` = parallelisable with its neighbours
 
 ## Slice 1: Rust `usage` module, IPC, contract (PR 1, Closes nothing; PR 2 closes #1331)
 
-- S1-01 Add `rusqlite` (`default-features = false`, `features = ["bundled"]`) to `src-tauri/Cargo.toml`; confirm the lock diff adds only rusqlite, libsqlite3-sys and its direct deps.
-- S1-02 [P] `src-tauri/src/usage/paths.rs`: `usage_db_path()`, `sessions_dir()` with the pure `REFRACT_OMP_SESSIONS_DIR` override (absolute path only, else ignored).
-- S1-03 [P] `src-tauri/src/usage/schema.rs`: DDL from `data-model.md`, `user_version`, corrupt or newer file renamed to `usage.db.bak-<ts>` and recreated, `prefs` get/set.
-- S1-04 [P] `src-tauri/src/usage/credits.rs`: `credits_for(provider, cost_total)` (x100 for `github-copilot`, else none).
-- S1-05 [P] `src-tauri/src/usage/frustration.rs`: yelling, profanity and blame counts, word lists in this file only.
-- S1-06 [P] `src-tauri/src/usage/project_label.rs`: normalise paths; label from `cwd` then folder-name fallback; match Projects and Worktrees via the registry.
-- S1-07 `src-tauri/src/usage/ingest.rs`: bounded line reader from `file_offsets` (complete lines only, restart from 0 if the file shrank); replay `model_change` and `thinking_level_change`; assistant and `model_usage` rows; toolCall/toolResult upsert by `toolCallId`; user-message rows; one transaction per file. Depends on S1-03 to S1-06.
-- S1-08 `src-tauri/src/usage/rollup.rs`: delta upserts into the three rollups in the ingest transaction. Depends on S1-03.
-- S1-09 `src-tauri/src/usage/scan.rs`: walk the sessions dir, `(len, mtime)` change detection, newest-first order, progress counters, `main`/`subagent` from path. Depends on S1-07.
-- S1-10 `src-tauri/src/usage/mod.rs`: `UsageService` (std thread worker, nudge channel, five-minute rescan while started, `start`/`stop`/`status`, `usage.progress` emission at most once a second), `usage.relabel` on start. Depends on S1-09.
-- S1-11 [P] `src-tauri/src/usage/queries.rs` (+ `queries_tables.rs` if over 500 lines): filter-to-SQL builder (bound parameters, allowlisted sort keys), summary, timeseries with `tzOffsetMinutes`, token mix, breakdowns, top sessions, paged calls, frustration series. Depends on S1-03.
-- S1-12 [P] `src-tauri/src/github/copilot_plan.rs`: add `plan_snapshot()` (percent, entitlement, remaining) from the same cached response; keep `plan_percent_used()` unchanged.
-- S1-13 `src-tauri/src/usage/budget.rs`: Copilot row from `plan_snapshot()`, `omp usage --json` by argv (no shell, 10 s timeout, existing omp path resolution), 5-minute cache, defensive parse, reset date and burn rate, `unavailable` reason. Depends on S1-12.
+- [X] S1-01 Add `rusqlite` (`default-features = false`, `features = ["bundled"]`) to `src-tauri/Cargo.toml`; confirm the lock diff adds only rusqlite, libsqlite3-sys and its direct deps.
+- [X] S1-02 [P] `src-tauri/src/usage/paths.rs`: `usage_db_path()`, `sessions_dir()` with the pure `REFRACT_OMP_SESSIONS_DIR` override (absolute path only, else ignored).
+- [X] S1-03 [P] `src-tauri/src/usage/schema.rs`: DDL from `data-model.md`, `user_version`, corrupt or newer file renamed to `usage.db.bak-<ts>` and recreated, `prefs` get/set.
+- [X] S1-04 [P] `src-tauri/src/usage/credits.rs`: `credits_for(provider, cost_total)` (x100 for `github-copilot`, else none).
+- [X] S1-05 [P] `src-tauri/src/usage/frustration.rs`: yelling, profanity and blame counts, word lists in this file only.
+- [X] S1-06 [P] `src-tauri/src/usage/project_label.rs`: normalise paths; label from `cwd` then folder-name fallback; match Projects and Worktrees via the registry.
+- [X] S1-07 `src-tauri/src/usage/ingest.rs`: bounded line reader from `file_offsets` (complete lines only, restart from 0 if the file shrank); replay `model_change` and `thinking_level_change`; assistant and `model_usage` rows; toolCall/toolResult upsert by `toolCallId`; user-message rows; one transaction per file. Depends on S1-03 to S1-06.
+- [X] S1-08 `src-tauri/src/usage/rollup.rs`: delta upserts into the three rollups in the ingest transaction. Depends on S1-03.
+- [X] S1-09 `src-tauri/src/usage/scan.rs`: walk the sessions dir, `(len, mtime)` change detection, newest-first order, progress counters, `main`/`subagent` from path. Depends on S1-07.
+- [X] S1-10 `src-tauri/src/usage/mod.rs`: `UsageService` (std thread worker, nudge channel, five-minute rescan while started, `start`/`stop`/`status`, `usage.progress` emission at most once a second), `usage.relabel` on start. Depends on S1-09.
+- [X] S1-11 [P] `src-tauri/src/usage/queries.rs` (+ `queries_tables.rs` if over 500 lines): filter-to-SQL builder (bound parameters, allowlisted sort keys), summary, timeseries with `tzOffsetMinutes`, token mix, breakdowns, top sessions, paged calls, frustration series. Depends on S1-03.
+- [X] S1-12 [P] `src-tauri/src/github/copilot_plan.rs`: add `plan_snapshot()` (percent, entitlement, remaining) from the same cached response; keep `plan_percent_used()` unchanged.
+- [X] S1-13 `src-tauri/src/usage/budget.rs`: Copilot row from `plan_snapshot()`, `omp usage --json` by argv (no shell, 10 s timeout, existing omp path resolution), 5-minute cache, defensive parse, reset date and burn rate, `unavailable` reason. Depends on S1-12.
 - S1-14 [P] `src/shared/ipc-usage.ts`: channel constants and types per `contracts/ipc.md`; `tauri-bridge` methods; `scripts/check-parity.mjs` entries; `ipc.ts` untouched.
 - S1-15 `src-tauri/src/ipc/usage.rs` and `ipc/usage_prefs.rs`: handlers, argument validation, registered from `ipc/mod.rs`. Depends on S1-10, S1-11, S1-13, S1-14.
 - S1-16 Hook the session manager: on a Refract Session's `message_end`, nudge the worker with that Session's Conversation file (`src-tauri/src/session/`, registry-sourced path). Depends on S1-10.
-- S1-17 Rust tests, a few only (`src-tauri/src/usage/*.test.rs`): offset resume after append, dedupe on re-read, partial last line, `model_change` replay, credits rule, Project label matching, filter-to-SQL parameterisation. Depends on S1-07, S1-11.
+- [X] S1-17 Rust tests, a few only (`src-tauri/src/usage/*.test.rs`): offset resume after append, dedupe on re-read, partial last line, `model_change` replay, credits rule, Project label matching, filter-to-SQL parameterisation. Depends on S1-07, S1-11.
 - S1-18 Docs: `docs/PLAN.md` row (slice 1 landed), `CONTEXT.md` terms (Usage view, Project label, usage.db), `docs/rust-build.md` env vars `REFRACT_OMP_SESSIONS_DIR`.
 - S1-19 `scripts/verify-tauri-1331.mjs` with synthetic fixture generator under `%TEMP%`, fake `omp` and fake `gh` on PATH, scratch `REFRACT_DATA_DIR` and `REFRACT_OMP_SESSIONS_DIR`, scratch exe copy and remote-debugging port; asserts per `quickstart.md` step 4 and the single `omp usage --json` call. Depends on S1-15, S1-16.
 - S1-20 Verify: `pnpm ci:local` (includes `check:file-size`, `check:parity`, cargo fmt, clippy `-D warnings`, `cargo test`), then the live check from S1-19. Gate agents, then PR (`feat(usage): ...`, no `Closes`). Depends on S1-17 to S1-19.

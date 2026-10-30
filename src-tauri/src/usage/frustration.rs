@@ -26,7 +26,8 @@ pub fn score(text: &str) -> FrustrationScore {
     let letters = text.chars().filter(char::is_ascii_alphabetic).count();
     let upper = text.chars().filter(char::is_ascii_uppercase).count();
     let bangs = text.chars().filter(|c| *c == '!').count();
-    let shouting = letters >= YELL_MIN_LETTERS && (upper as f64) > YELL_UPPER_SHARE * letters as f64;
+    let shouting =
+        letters >= YELL_MIN_LETTERS && (upper as f64) > YELL_UPPER_SHARE * letters as f64;
 
     let lower = text.to_ascii_lowercase();
     let profanity = lower

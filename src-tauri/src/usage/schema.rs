@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS file_offsets (
   session_file TEXT PRIMARY KEY,
   offset INTEGER NOT NULL DEFAULT 0,
   last_modified INTEGER NOT NULL DEFAULT 0,
+  file_len INTEGER NOT NULL DEFAULT 0,
   session_id TEXT NOT NULL DEFAULT '',
   cwd TEXT,
   agent_type TEXT NOT NULL DEFAULT 'main',

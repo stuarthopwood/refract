@@ -89,7 +89,11 @@ pub fn parse_iso_ms(text: &str) -> Option<i64> {
         Some(sign @ (b'+' | b'-')) => {
             let off = num(i + 1, 2)? * 60 + num(i + 4, 2).or_else(|| num(i + 3, 2))?;
             let off_ms = off * 60_000;
-            Some(if *sign == b'+' { ms - off_ms } else { ms + off_ms })
+            Some(if *sign == b'+' {
+                ms - off_ms
+            } else {
+                ms + off_ms
+            })
         }
         _ => None,
     }

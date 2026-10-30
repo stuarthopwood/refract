@@ -90,3 +90,7 @@ pub fn folder_name_fallback(session_file: &Path, sessions_root: &Path) -> String
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .unwrap_or_else(|| "unknown".to_string())
 }
+
+#[cfg(test)]
+#[path = "project_label.test.rs"]
+mod tests;
