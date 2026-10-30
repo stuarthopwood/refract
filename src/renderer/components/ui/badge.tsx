@@ -52,7 +52,7 @@ function Badge({
     <Comp
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant }), onDismiss && "pr-0.5", className)}
+      className={cn(badgeVariants({ variant }), onDismiss && "pr-1", className)}
       {...props}
     >
       {children}

@@ -114,7 +114,7 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden p-2">
         {showProgress && status && (
           <ProgressStrip
             value={status.sessionsDone}
@@ -124,7 +124,7 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
         )}
         {body}
       </div>
-      <div className="border-t border-border px-3 py-2">
+      <div className="border-t border-border px-2 py-2">
         <Button variant="link" className="px-0" onClick={openUsage}>
           Open in Usage
         </Button>

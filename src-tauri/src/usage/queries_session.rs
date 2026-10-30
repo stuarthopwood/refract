@@ -13,7 +13,9 @@ pub(super) fn normalise(raw: &str) -> QueryResult<String> {
     let folded = bare.replace('/', "\\").to_ascii_lowercase();
     let dir = folded.trim_end_matches('\\').to_string();
     if dir.is_empty() {
-        return Err(QueryError::InvalidArgument("empty session directory".into()));
+        return Err(QueryError::InvalidArgument(
+            "empty session directory".into(),
+        ));
     }
     Ok(dir)
 }

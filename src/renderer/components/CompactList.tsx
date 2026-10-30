@@ -19,7 +19,7 @@ export function CompactList({ label, items, className, footer }: { label: string
     <div className={cn('flex min-w-0 flex-col gap-1', className)}>
       <ul aria-label={label} className="flex min-w-0 flex-col divide-y divide-border">
         {items.map((item) => (
-          <li key={item.key} title={item.title ?? `${item.label}: ${item.value}`} className="flex min-w-0 items-baseline justify-between gap-3 py-1.5 text-sm">
+          <li key={item.key} title={item.title ?? `${item.label}: ${item.value}`} className="flex min-w-0 items-baseline justify-between gap-2 py-2 text-sm">
             <span className="flex min-w-0 flex-col">
               <span className="truncate">{item.label}</span>
               {item.caption && <span className="truncate text-xs text-muted-foreground">{item.caption}</span>}

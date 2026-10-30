@@ -166,10 +166,9 @@ impl SessionAgent {
         let _stage_guard = crate::session::start_queue::guard_stage_for_attempt(self);
 
         let mut launch_warnings = Vec::new();
-        if let Some(roster) = crate::omp::advisor_roster::detect_for(Some(PathBuf::from(
-            &session.worktree_path,
-        )))
-        .await
+        if let Some(roster) =
+            crate::omp::advisor_roster::detect_for(Some(PathBuf::from(&session.worktree_path)))
+                .await
         {
             self.events()
                 .emit_advisor_roster_detected(&self.session_id, &roster);

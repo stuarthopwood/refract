@@ -90,8 +90,9 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
             .collect::<Option<_>>()
             .ok_or_else(|| invalid_argument(USAGE))?;
         let search = arg_str(&args, 4);
-        let query =
-            Arc::new(IssueListQuery::new(tab, state_filter, &labels, search).map_err(map_gh_error)?);
+        let query = Arc::new(
+            IssueListQuery::new(tab, state_filter, &labels, search).map_err(map_gh_error)?,
+        );
 
         let mut skipped: Vec<SkippedProject> = Vec::new();
         let mut resolved: Vec<Resolved> = Vec::new();

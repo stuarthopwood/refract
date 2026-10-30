@@ -212,7 +212,11 @@ fn apply(advisor: &mut RosterAdvisor, line: &Line) {
 fn parse_map_form(lines: &[Line]) -> Vec<RosterAdvisor> {
     let mut advisors = Vec::new();
     for (at, line) in lines.iter().enumerate() {
-        let Some(name) = line.key.as_deref().filter(|_| !line.item && line.value.is_empty()) else {
+        let Some(name) = line
+            .key
+            .as_deref()
+            .filter(|_| !line.item && line.value.is_empty())
+        else {
             continue;
         };
         let mut child_indent = None;
@@ -221,7 +225,10 @@ fn parse_map_form(lines: &[Line]) -> Vec<RosterAdvisor> {
                 break;
             }
             let direct = *child_indent.get_or_insert(child.indent);
-            if child.indent == direct && child.key.as_deref() == Some("model") && !child.value.is_empty() {
+            if child.indent == direct
+                && child.key.as_deref() == Some("model")
+                && !child.value.is_empty()
+            {
                 advisors.push(RosterAdvisor {
                     name: name.to_string(),
                     model: Some(child.value.clone()),
