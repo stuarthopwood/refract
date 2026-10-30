@@ -869,6 +869,8 @@ Also filed 2026-10-30: **#1385** (`p1`), top chrome: the shared `titlebar-surfac
 
 Also filed 2026-10-30: **#1387** (`p1`), action buttons app-wide: action rows right-aligned with the primary rightmost and the only filled button (banners and centred empty states exempt); the Pull requests comment box's Close pull request becomes a ghost button with a red label beside a renamed Post comment, and a sweep fixes the Approval, Ask and Request card footers, the Appearance Save/Cancel row, the Long conversation actions and the Memory triage footer; supersedes the left-edge placement in `docs/design/components.md`'s `destructive-outline` row; placed as an index line after #1385's line.
 
+Also filed 2026-10-30: **#1389** (`p1`), Pull requests detail view: the full-width horizontal lines under the header, above the comment box and above Checks are removed and the regions are separated by whitespace only, in every theme including Dark (high contrast); cards, the comment editor box and per-file diff headers keep their edges; placed as an index line after #1387's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
