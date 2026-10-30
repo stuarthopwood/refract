@@ -1,5 +1,6 @@
 import { forwardRef } from 'react'
 import type { ComponentType, FocusEvent, HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react'
+import { TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // One source of truth for the classes either way -- this component below still uses the SAME two constants, never a second copy of the literal strings.
@@ -21,14 +22,17 @@ export interface ReadoutItemProps extends Omit<HTMLAttributes<HTMLButtonElement>
   onFocus?: (event: FocusEvent<HTMLElement>) => void
   onBlur?: (event: FocusEvent<HTMLElement>) => void
   className?: string
+  /** Amber alert icon after the content, for a readout whose figure may be wrong; pair it with a tooltip and an accessible name that says so. */
+  warning?: boolean
 }
 
 export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HTMLSpanElement, ReadoutItemProps>(function ReadoutItem(
-  { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter, onPointerLeave, onFocus, onBlur, ...rest },
+  { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter, onPointerLeave, onFocus, onBlur, warning, ...rest },
   ref
 ) {
   const baseClasses = cn(READOUT_ITEM_BASE_CLASS, className)
   const interactiveClasses = cn(baseClasses, READOUT_ITEM_INTERACTIVE_ADDITIONS)
+  const warningIcon = warning ? <TriangleAlertIcon aria-hidden data-readout-warning className="size-4 text-severity-warning forced-colors:text-[CanvasText]" /> : null
 
   if (href) {
     return (
@@ -47,6 +51,7 @@ export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
       >
         {Icon && <Icon aria-hidden className="size-4" />}
         {children}
+        {warningIcon}
       </a>
     )
   }
@@ -71,6 +76,7 @@ export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
       >
         {Icon && <Icon aria-hidden className="size-4" />}
         {children}
+        {warningIcon}
       </button>
     )
   }
@@ -79,6 +85,7 @@ export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
     <span ref={ref as Ref<HTMLSpanElement>} data-slot="readout-chip" className={baseClasses} aria-label={accessibleName}>
       {Icon && <Icon aria-hidden className="size-4" />}
       {children}
+      {warningIcon}
     </span>
   )
 })
