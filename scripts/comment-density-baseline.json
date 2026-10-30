@@ -1,0 +1,2178 @@
+{
+  "scripts/check-drag-regions.mjs": {
+    "commentLines": 72,
+    "maxBlock": 16
+  },
+  "scripts/check-file-size.mjs": {
+    "commentLines": 42,
+    "maxBlock": 21
+  },
+  "scripts/check-indent.mjs": {
+    "commentLines": 35,
+    "maxBlock": 20
+  },
+  "scripts/check-mermaid-contrast.mjs": {
+    "commentLines": 140,
+    "maxBlock": 48
+  },
+  "scripts/check-omp-schema-drift.mjs": {
+    "commentLines": 151,
+    "maxBlock": 56
+  },
+  "scripts/check-parity.mjs": {
+    "commentLines": 82,
+    "maxBlock": 19
+  },
+  "scripts/check-spacing.mjs": {
+    "commentLines": 15,
+    "maxBlock": 15
+  },
+  "scripts/check-theme-contrast.mjs": {
+    "commentLines": 190,
+    "maxBlock": 16
+  },
+  "scripts/check-ui-text.mjs": {
+    "commentLines": 15,
+    "maxBlock": 8
+  },
+  "scripts/check-versions.mjs": {
+    "commentLines": 8,
+    "maxBlock": 8
+  },
+  "scripts/ci-local.mjs": {
+    "commentLines": 37,
+    "maxBlock": 18
+  },
+  "scripts/composer-selection-contrast.mjs": {
+    "commentLines": 39,
+    "maxBlock": 28
+  },
+  "scripts/contrast-math.mjs": {
+    "commentLines": 30,
+    "maxBlock": 8
+  },
+  "scripts/find-nav-contrast.mjs": {
+    "commentLines": 12,
+    "maxBlock": 8
+  },
+  "scripts/focused-badge-contrast.mjs": {
+    "commentLines": 22,
+    "maxBlock": 10
+  },
+  "scripts/mermaid-contrast-measure.mjs": {
+    "commentLines": 123,
+    "maxBlock": 46
+  },
+  "scripts/release-changelog.mjs": {
+    "commentLines": 39,
+    "maxBlock": 11
+  },
+  "scripts/release-local.mjs": {
+    "commentLines": 171,
+    "maxBlock": 49
+  },
+  "scripts/release-versions.mjs": {
+    "commentLines": 45,
+    "maxBlock": 12
+  },
+  "scripts/release.mjs": {
+    "commentLines": 108,
+    "maxBlock": 31
+  },
+  "scripts/switch-track-contrast.mjs": {
+    "commentLines": 12,
+    "maxBlock": 12
+  },
+  "scripts/theme-contrast-pairs.mjs": {
+    "commentLines": 287,
+    "maxBlock": 29
+  },
+  "scripts/theme-swatch-drift.mjs": {
+    "commentLines": 12,
+    "maxBlock": 9
+  },
+  "scripts/verify-055-chat-link-menus.mjs": {
+    "commentLines": 15,
+    "maxBlock": 8
+  },
+  "scripts/verify-1000-stage-defer.mjs": {
+    "commentLines": 156,
+    "maxBlock": 88
+  },
+  "scripts/verify-1001-stage-focus-join.mjs": {
+    "commentLines": 159,
+    "maxBlock": 91
+  },
+  "scripts/verify-1008-stage-label-jump-helpers.mjs": {
+    "commentLines": 41,
+    "maxBlock": 17
+  },
+  "scripts/verify-1008-stage-label-jump.mjs": {
+    "commentLines": 144,
+    "maxBlock": 67
+  },
+  "scripts/verify-1039-amber-retune.mjs": {
+    "commentLines": 143,
+    "maxBlock": 56
+  },
+  "scripts/verify-1043-theme-radio-helpers.mjs": {
+    "commentLines": 111,
+    "maxBlock": 25
+  },
+  "scripts/verify-1043-theme-radio.mjs": {
+    "commentLines": 121,
+    "maxBlock": 57
+  },
+  "scripts/verify-1048-holiday-touches-helpers.mjs": {
+    "commentLines": 130,
+    "maxBlock": 57
+  },
+  "scripts/verify-1048-holiday-touches-scenarios.mjs": {
+    "commentLines": 17,
+    "maxBlock": 7
+  },
+  "scripts/verify-1048-holiday-touches.mjs": {
+    "commentLines": 97,
+    "maxBlock": 25
+  },
+  "scripts/verify-1050-command-pill-helpers.mjs": {
+    "commentLines": 108,
+    "maxBlock": 21
+  },
+  "scripts/verify-1050-command-pill.mjs": {
+    "commentLines": 120,
+    "maxBlock": 28
+  },
+  "scripts/verify-1067-enter-queued-helpers.mjs": {
+    "commentLines": 20,
+    "maxBlock": 6
+  },
+  "scripts/verify-1067-enter-queued.mjs": {
+    "commentLines": 154,
+    "maxBlock": 64
+  },
+  "scripts/verify-1069-roles-overhaul-helpers.mjs": {
+    "commentLines": 62,
+    "maxBlock": 12
+  },
+  "scripts/verify-1069-roles-overhaul.mjs": {
+    "commentLines": 173,
+    "maxBlock": 61
+  },
+  "scripts/verify-1074-text-opacity-helpers.mjs": {
+    "commentLines": 84,
+    "maxBlock": 36
+  },
+  "scripts/verify-1074-text-opacity.mjs": {
+    "commentLines": 150,
+    "maxBlock": 68
+  },
+  "scripts/verify-1077-agent-goal-helpers.mjs": {
+    "commentLines": 22,
+    "maxBlock": 11
+  },
+  "scripts/verify-1077-agent-goal.mjs": {
+    "commentLines": 132,
+    "maxBlock": 77
+  },
+  "scripts/verify-1101-git-polish.mjs": {
+    "commentLines": 154,
+    "maxBlock": 43
+  },
+  "scripts/verify-1111-git-readpath.mjs": {
+    "commentLines": 149,
+    "maxBlock": 44
+  },
+  "scripts/verify-1121-fake-gh-launcher.rs": {
+    "commentLines": 10,
+    "maxBlock": 10
+  },
+  "scripts/verify-1121-pr-polish-fake-gh.mjs": {
+    "commentLines": 35,
+    "maxBlock": 10
+  },
+  "scripts/verify-1121-pr-polish.mjs": {
+    "commentLines": 83,
+    "maxBlock": 47
+  },
+  "scripts/verify-1122-selected-style-helpers.mjs": {
+    "commentLines": 50,
+    "maxBlock": 11
+  },
+  "scripts/verify-1122-selected-style.mjs": {
+    "commentLines": 89,
+    "maxBlock": 46
+  },
+  "scripts/verify-1233-holiday-visibility.mjs": {
+    "commentLines": 16,
+    "maxBlock": 7
+  },
+  "scripts/verify-1235-crlf-paste.mjs": {
+    "commentLines": 10,
+    "maxBlock": 8
+  },
+  "scripts/verify-1236-mid-turn-prose.mjs": {
+    "commentLines": 11,
+    "maxBlock": 8
+  },
+  "scripts/verify-1238-ai-credits.mjs": {
+    "commentLines": 15,
+    "maxBlock": 8
+  },
+  "scripts/verify-406-watermark.mjs": {
+    "commentLines": 26,
+    "maxBlock": 8
+  },
+  "scripts/verify-439-history-truncate-fixtures.mjs": {
+    "commentLines": 54,
+    "maxBlock": 7
+  },
+  "scripts/verify-439-history-truncate.mjs": {
+    "commentLines": 172,
+    "maxBlock": 71
+  },
+  "scripts/verify-464-git-changes-helpers.mjs": {
+    "commentLines": 181,
+    "maxBlock": 18
+  },
+  "scripts/verify-464-git-changes-helpers2.mjs": {
+    "commentLines": 95,
+    "maxBlock": 41
+  },
+  "scripts/verify-464-git-changes.mjs": {
+    "commentLines": 172,
+    "maxBlock": 45
+  },
+  "scripts/verify-513-user-bubble-images.mjs": {
+    "commentLines": 29,
+    "maxBlock": 8
+  },
+  "scripts/verify-551-helpers.mjs": {
+    "commentLines": 30,
+    "maxBlock": 6
+  },
+  "scripts/verify-551-presets.mjs": {
+    "commentLines": 116,
+    "maxBlock": 26
+  },
+  "scripts/verify-554-chat-width.mjs": {
+    "commentLines": 130,
+    "maxBlock": 38
+  },
+  "scripts/verify-555-user-message-time.mjs": {
+    "commentLines": 115,
+    "maxBlock": 61
+  },
+  "scripts/verify-556-zero-box.mjs": {
+    "commentLines": 110,
+    "maxBlock": 49
+  },
+  "scripts/verify-557-thought-runs.mjs": {
+    "commentLines": 91,
+    "maxBlock": 36
+  },
+  "scripts/verify-558-blocker-callout.mjs": {
+    "commentLines": 94,
+    "maxBlock": 20
+  },
+  "scripts/verify-563-subagent-gate1.mjs": {
+    "commentLines": 141,
+    "maxBlock": 31
+  },
+  "scripts/verify-563-subagent-stage.mjs": {
+    "commentLines": 69,
+    "maxBlock": 18
+  },
+  "scripts/verify-564-gate2-live-check.mjs": {
+    "commentLines": 54,
+    "maxBlock": 10
+  },
+  "scripts/verify-565-spine.mjs": {
+    "commentLines": 84,
+    "maxBlock": 28
+  },
+  "scripts/verify-570-tool-colours.mjs": {
+    "commentLines": 87,
+    "maxBlock": 26
+  },
+  "scripts/verify-632-grouped-calls.mjs": {
+    "commentLines": 115,
+    "maxBlock": 27
+  },
+  "scripts/verify-672-start-message-helpers.mjs": {
+    "commentLines": 166,
+    "maxBlock": 20
+  },
+  "scripts/verify-672-start-message.mjs": {
+    "commentLines": 78,
+    "maxBlock": 29
+  },
+  "scripts/verify-680-686-chat-header.mjs": {
+    "commentLines": 14,
+    "maxBlock": 11
+  },
+  "scripts/verify-687-current-work-banner.mjs": {
+    "commentLines": 13,
+    "maxBlock": 7
+  },
+  "scripts/verify-700-pill-cards.mjs": {
+    "commentLines": 120,
+    "maxBlock": 16
+  },
+  "scripts/verify-700-todo-pin-helpers.mjs": {
+    "commentLines": 36,
+    "maxBlock": 21
+  },
+  "scripts/verify-700-todo-pin.mjs": {
+    "commentLines": 116,
+    "maxBlock": 12
+  },
+  "scripts/verify-741-role-chip-helpers.mjs": {
+    "commentLines": 150,
+    "maxBlock": 17
+  },
+  "scripts/verify-741-role-chip.mjs": {
+    "commentLines": 84,
+    "maxBlock": 42
+  },
+  "scripts/verify-777-transcript-memo.mjs": {
+    "commentLines": 16,
+    "maxBlock": 11
+  },
+  "scripts/verify-802-scale-stream-probe.mjs": {
+    "commentLines": 38,
+    "maxBlock": 26
+  },
+  "scripts/verify-802-side-chat-scrollbars.mjs": {
+    "commentLines": 110,
+    "maxBlock": 64
+  },
+  "scripts/verify-862-conversation-history.mjs": {
+    "commentLines": 81,
+    "maxBlock": 57
+  },
+  "scripts/verify-880-taskbar-icon-helpers.mjs": {
+    "commentLines": 51,
+    "maxBlock": 19
+  },
+  "scripts/verify-880-taskbar-icon.mjs": {
+    "commentLines": 45,
+    "maxBlock": 27
+  },
+  "scripts/verify-883-gh-shim.rs": {
+    "commentLines": 11,
+    "maxBlock": 11
+  },
+  "scripts/verify-883-updates.mjs": {
+    "commentLines": 24,
+    "maxBlock": 18
+  },
+  "scripts/verify-891-delete-leftovers-helpers.mjs": {
+    "commentLines": 122,
+    "maxBlock": 20
+  },
+  "scripts/verify-891-delete-leftovers.mjs": {
+    "commentLines": 85,
+    "maxBlock": 22
+  },
+  "scripts/verify-911-stop-neutral.mjs": {
+    "commentLines": 61,
+    "maxBlock": 33
+  },
+  "scripts/verify-917-advisor-command.mjs": {
+    "commentLines": 74,
+    "maxBlock": 22
+  },
+  "scripts/verify-917-advisor-off-stops-reviews.mjs": {
+    "commentLines": 66,
+    "maxBlock": 33
+  },
+  "scripts/verify-925-924-helpers.mjs": {
+    "commentLines": 112,
+    "maxBlock": 26
+  },
+  "scripts/verify-925-924-polish.mjs": {
+    "commentLines": 178,
+    "maxBlock": 46
+  },
+  "scripts/verify-926-attach-any-file.mjs": {
+    "commentLines": 185,
+    "maxBlock": 25
+  },
+  "scripts/verify-926-drag-drop-trap.mjs": {
+    "commentLines": 22,
+    "maxBlock": 12
+  },
+  "scripts/verify-926-launch-helpers.mjs": {
+    "commentLines": 7,
+    "maxBlock": 7
+  },
+  "scripts/verify-927-928-hover.mjs": {
+    "commentLines": 20,
+    "maxBlock": 6
+  },
+  "scripts/verify-927-928-quiet-composer.mjs": {
+    "commentLines": 124,
+    "maxBlock": 32
+  },
+  "scripts/verify-937-advisor-chip-helpers.mjs": {
+    "commentLines": 110,
+    "maxBlock": 12
+  },
+  "scripts/verify-937-advisor-chip.mjs": {
+    "commentLines": 114,
+    "maxBlock": 22
+  },
+  "scripts/verify-938-slash-rest.mjs": {
+    "commentLines": 87,
+    "maxBlock": 37
+  },
+  "scripts/verify-941-part2-helpers.mjs": {
+    "commentLines": 61,
+    "maxBlock": 27
+  },
+  "scripts/verify-941-part2.mjs": {
+    "commentLines": 79,
+    "maxBlock": 25
+  },
+  "scripts/verify-941-stage-naming-expand-helpers.mjs": {
+    "commentLines": 38,
+    "maxBlock": 25
+  },
+  "scripts/verify-941-stage-naming-helpers.mjs": {
+    "commentLines": 145,
+    "maxBlock": 26
+  },
+  "scripts/verify-941-stage-naming-overflow-helpers.mjs": {
+    "commentLines": 52,
+    "maxBlock": 11
+  },
+  "scripts/verify-941-stage-naming-panel-helpers.mjs": {
+    "commentLines": 48,
+    "maxBlock": 11
+  },
+  "scripts/verify-941-stage-naming.mjs": {
+    "commentLines": 77,
+    "maxBlock": 40
+  },
+  "scripts/verify-947-938-helpers.mjs": {
+    "commentLines": 124,
+    "maxBlock": 14
+  },
+  "scripts/verify-947-938-slash-menu.mjs": {
+    "commentLines": 83,
+    "maxBlock": 26
+  },
+  "scripts/verify-975-code-surface.mjs": {
+    "commentLines": 50,
+    "maxBlock": 23
+  },
+  "scripts/verify-980-toast-send.mjs": {
+    "commentLines": 118,
+    "maxBlock": 39
+  },
+  "scripts/verify-985-queued-refresh.mjs": {
+    "commentLines": 78,
+    "maxBlock": 38
+  },
+  "scripts/verify-991-stage-focus.mjs": {
+    "commentLines": 135,
+    "maxBlock": 84
+  },
+  "scripts/verify-997-notice-severity.mjs": {
+    "commentLines": 107,
+    "maxBlock": 44
+  },
+  "scripts/verify-error-prefix-space.mjs": {
+    "commentLines": 44,
+    "maxBlock": 16
+  },
+  "scripts/verify-p1-agentmsg.mjs": {
+    "commentLines": 29,
+    "maxBlock": 19
+  },
+  "scripts/verify-p1-composer.mjs": {
+    "commentLines": 32,
+    "maxBlock": 29
+  },
+  "scripts/verify-rm-live-check-blank-profile.mjs": {
+    "commentLines": 39,
+    "maxBlock": 15
+  },
+  "scripts/verify-rm-live-check.mjs": {
+    "commentLines": 114,
+    "maxBlock": 18
+  },
+  "scripts/verify-tauri-1331.mjs": {
+    "commentLines": 21,
+    "maxBlock": 8
+  },
+  "scripts/verify-tauri-499-930-helpers.mjs": {
+    "commentLines": 86,
+    "maxBlock": 19
+  },
+  "scripts/verify-tauri-499-930.mjs": {
+    "commentLines": 126,
+    "maxBlock": 34
+  },
+  "scripts/verify-tauri-504.mjs": {
+    "commentLines": 17,
+    "maxBlock": 8
+  },
+  "scripts/verify-tauri-559.mjs": {
+    "commentLines": 136,
+    "maxBlock": 37
+  },
+  "scripts/verify-tauri-560-gate2.mjs": {
+    "commentLines": 93,
+    "maxBlock": 26
+  },
+  "scripts/verify-tauri-560-helpers.mjs": {
+    "commentLines": 57,
+    "maxBlock": 14
+  },
+  "scripts/verify-tauri-560.mjs": {
+    "commentLines": 149,
+    "maxBlock": 51
+  },
+  "scripts/verify-tauri-567.mjs": {
+    "commentLines": 110,
+    "maxBlock": 48
+  },
+  "scripts/verify-tauri-568.mjs": {
+    "commentLines": 101,
+    "maxBlock": 44
+  },
+  "scripts/verify-tauri-569.mjs": {
+    "commentLines": 78,
+    "maxBlock": 35
+  },
+  "scripts/verify-tauri-735.mjs": {
+    "commentLines": 101,
+    "maxBlock": 38
+  },
+  "scripts/verify-tauri-869.mjs": {
+    "commentLines": 20,
+    "maxBlock": 8
+  },
+  "scripts/verify-tauri-874.mjs": {
+    "commentLines": 22,
+    "maxBlock": 10
+  },
+  "scripts/verify-tauri-934.mjs": {
+    "commentLines": 14,
+    "maxBlock": 7
+  },
+  "scripts/verify-tauri-ask.mjs": {
+    "commentLines": 113,
+    "maxBlock": 25
+  },
+  "scripts/verify-tauri-cdp.mjs": {
+    "commentLines": 86,
+    "maxBlock": 16
+  },
+  "scripts/verify-tauri-fake-omp.mjs": {
+    "commentLines": 107,
+    "maxBlock": 45
+  },
+  "scripts/verify-tauri-launcher.rs": {
+    "commentLines": 44,
+    "maxBlock": 22
+  },
+  "scripts/verify-tauri-omp-shim.rs": {
+    "commentLines": 17,
+    "maxBlock": 17
+  },
+  "scripts/verify-tauri-record.mjs": {
+    "commentLines": 57,
+    "maxBlock": 23
+  },
+  "scripts/verify-tauri-scratch-helpers.mjs": {
+    "commentLines": 105,
+    "maxBlock": 26
+  },
+  "scripts/verify-tauri-session-list-helpers.mjs": {
+    "commentLines": 165,
+    "maxBlock": 14
+  },
+  "scripts/verify-tauri-side-chat.mjs": {
+    "commentLines": 76,
+    "maxBlock": 29
+  },
+  "scripts/verify-tauri.mjs": {
+    "commentLines": 109,
+    "maxBlock": 39
+  },
+  "scripts/worktrees-reap.mjs": {
+    "commentLines": 31,
+    "maxBlock": 20
+  },
+  "src-tauri/src/events.rs": {
+    "commentLines": 94,
+    "maxBlock": 7
+  },
+  "src-tauri/src/fs/explorer_watch_state.rs": {
+    "commentLines": 99,
+    "maxBlock": 11
+  },
+  "src-tauri/src/fs/git_changes_watch_state.rs": {
+    "commentLines": 61,
+    "maxBlock": 23
+  },
+  "src-tauri/src/fs/leftover_summary.rs": {
+    "commentLines": 166,
+    "maxBlock": 41
+  },
+  "src-tauri/src/fs/list_directory_tests.rs": {
+    "commentLines": 22,
+    "maxBlock": 8
+  },
+  "src-tauri/src/fs/list_directory.rs": {
+    "commentLines": 38,
+    "maxBlock": 13
+  },
+  "src-tauri/src/fs/read_preview.rs": {
+    "commentLines": 36,
+    "maxBlock": 8
+  },
+  "src-tauri/src/fs/remove_tree.rs": {
+    "commentLines": 86,
+    "maxBlock": 35
+  },
+  "src-tauri/src/fs/resolve_tests.rs": {
+    "commentLines": 59,
+    "maxBlock": 13
+  },
+  "src-tauri/src/fs/resolve.rs": {
+    "commentLines": 73,
+    "maxBlock": 9
+  },
+  "src-tauri/src/fs/vscode.rs": {
+    "commentLines": 25,
+    "maxBlock": 8
+  },
+  "src-tauri/src/fs/watch_tests.rs": {
+    "commentLines": 31,
+    "maxBlock": 11
+  },
+  "src-tauri/src/fs/watch.rs": {
+    "commentLines": 90,
+    "maxBlock": 29
+  },
+  "src-tauri/src/fs/worktree_access.rs": {
+    "commentLines": 42,
+    "maxBlock": 19
+  },
+  "src-tauri/src/git/changes_diff.rs": {
+    "commentLines": 101,
+    "maxBlock": 30
+  },
+  "src-tauri/src/git/changes_parse.rs": {
+    "commentLines": 58,
+    "maxBlock": 8
+  },
+  "src-tauri/src/git/changes_score.rs": {
+    "commentLines": 107,
+    "maxBlock": 41
+  },
+  "src-tauri/src/git/changes_status.rs": {
+    "commentLines": 113,
+    "maxBlock": 53
+  },
+  "src-tauri/src/git/diff_stat.rs": {
+    "commentLines": 49,
+    "maxBlock": 8
+  },
+  "src-tauri/src/git/git.rs": {
+    "commentLines": 67,
+    "maxBlock": 8
+  },
+  "src-tauri/src/git/mod.rs": {
+    "commentLines": 10,
+    "maxBlock": 7
+  },
+  "src-tauri/src/git/pathspec.rs": {
+    "commentLines": 26,
+    "maxBlock": 21
+  },
+  "src-tauri/src/git/remote.rs": {
+    "commentLines": 58,
+    "maxBlock": 10
+  },
+  "src-tauri/src/git/status.rs": {
+    "commentLines": 58,
+    "maxBlock": 24
+  },
+  "src-tauri/src/git/test_support.rs": {
+    "commentLines": 10,
+    "maxBlock": 8
+  },
+  "src-tauri/src/git/worktree_delete_tests.rs": {
+    "commentLines": 51,
+    "maxBlock": 14
+  },
+  "src-tauri/src/git/worktree_delete.rs": {
+    "commentLines": 87,
+    "maxBlock": 12
+  },
+  "src-tauri/src/git/worktree_holders.rs": {
+    "commentLines": 150,
+    "maxBlock": 23
+  },
+  "src-tauri/src/git/worktree_holders/diag.rs": {
+    "commentLines": 12,
+    "maxBlock": 9
+  },
+  "src-tauri/src/git/worktree_validity.rs": {
+    "commentLines": 100,
+    "maxBlock": 27
+  },
+  "src-tauri/src/git/worktrees_tests.rs": {
+    "commentLines": 27,
+    "maxBlock": 10
+  },
+  "src-tauri/src/git/worktrees.rs": {
+    "commentLines": 116,
+    "maxBlock": 21
+  },
+  "src-tauri/src/github/cli.rs": {
+    "commentLines": 74,
+    "maxBlock": 7
+  },
+  "src-tauri/src/github/copilot_plan.rs": {
+    "commentLines": 24,
+    "maxBlock": 12
+  },
+  "src-tauri/src/github/gh_mutations_tests.rs": {
+    "commentLines": 25,
+    "maxBlock": 13
+  },
+  "src-tauri/src/github/gh_mutations.rs": {
+    "commentLines": 64,
+    "maxBlock": 8
+  },
+  "src-tauri/src/github/gh_pull_requests.rs": {
+    "commentLines": 62,
+    "maxBlock": 11
+  },
+  "src-tauri/src/github/gh.rs": {
+    "commentLines": 86,
+    "maxBlock": 11
+  },
+  "src-tauri/src/github/mod.rs": {
+    "commentLines": 15,
+    "maxBlock": 15
+  },
+  "src-tauri/src/github/pr_lookup.rs": {
+    "commentLines": 28,
+    "maxBlock": 9
+  },
+  "src-tauri/src/github/profile.rs": {
+    "commentLines": 56,
+    "maxBlock": 13
+  },
+  "src-tauri/src/ipc/accounts/handlers.rs": {
+    "commentLines": 33,
+    "maxBlock": 7
+  },
+  "src-tauri/src/ipc/accounts/mod.rs": {
+    "commentLines": 95,
+    "maxBlock": 23
+  },
+  "src-tauri/src/ipc/accounts/types.rs": {
+    "commentLines": 56,
+    "maxBlock": 10
+  },
+  "src-tauri/src/ipc/app.rs": {
+    "commentLines": 11,
+    "maxBlock": 7
+  },
+  "src-tauri/src/ipc/attachments.rs": {
+    "commentLines": 119,
+    "maxBlock": 13
+  },
+  "src-tauri/src/ipc/attachments.test.rs": {
+    "commentLines": 46,
+    "maxBlock": 7
+  },
+  "src-tauri/src/ipc/chat.rs": {
+    "commentLines": 71,
+    "maxBlock": 15
+  },
+  "src-tauri/src/ipc/conversations.rs": {
+    "commentLines": 92,
+    "maxBlock": 25
+  },
+  "src-tauri/src/ipc/debug.rs": {
+    "commentLines": 45,
+    "maxBlock": 8
+  },
+  "src-tauri/src/ipc/file_attachments.rs": {
+    "commentLines": 114,
+    "maxBlock": 15
+  },
+  "src-tauri/src/ipc/file_explorer.rs": {
+    "commentLines": 37,
+    "maxBlock": 19
+  },
+  "src-tauri/src/ipc/files.rs": {
+    "commentLines": 32,
+    "maxBlock": 25
+  },
+  "src-tauri/src/ipc/git_changes.rs": {
+    "commentLines": 67,
+    "maxBlock": 21
+  },
+  "src-tauri/src/ipc/mod.rs": {
+    "commentLines": 77,
+    "maxBlock": 14
+  },
+  "src-tauri/src/ipc/model_roles_tests.rs": {
+    "commentLines": 29,
+    "maxBlock": 7
+  },
+  "src-tauri/src/ipc/model_roles.rs": {
+    "commentLines": 106,
+    "maxBlock": 19
+  },
+  "src-tauri/src/ipc/model.rs": {
+    "commentLines": 23,
+    "maxBlock": 9
+  },
+  "src-tauri/src/ipc/pull_requests/mapping_fixtures_tests.rs": {
+    "commentLines": 27,
+    "maxBlock": 10
+  },
+  "src-tauri/src/ipc/pull_requests/mapping_tests.rs": {
+    "commentLines": 46,
+    "maxBlock": 22
+  },
+  "src-tauri/src/ipc/pull_requests/mapping.rs": {
+    "commentLines": 69,
+    "maxBlock": 8
+  },
+  "src-tauri/src/ipc/pull_requests/mod.rs": {
+    "commentLines": 58,
+    "maxBlock": 10
+  },
+  "src-tauri/src/ipc/readiness.rs": {
+    "commentLines": 63,
+    "maxBlock": 12
+  },
+  "src-tauri/src/ipc/repositories.rs": {
+    "commentLines": 78,
+    "maxBlock": 9
+  },
+  "src-tauri/src/ipc/sessions_agent.rs": {
+    "commentLines": 135,
+    "maxBlock": 20
+  },
+  "src-tauri/src/ipc/sessions_agent.test.rs": {
+    "commentLines": 78,
+    "maxBlock": 7
+  },
+  "src-tauri/src/ipc/sessions_lifecycle_tests.rs": {
+    "commentLines": 34,
+    "maxBlock": 7
+  },
+  "src-tauri/src/ipc/sessions_lifecycle.rs": {
+    "commentLines": 124,
+    "maxBlock": 24
+  },
+  "src-tauri/src/ipc/sessions_lifecycle/diag.rs": {
+    "commentLines": 18,
+    "maxBlock": 8
+  },
+  "src-tauri/src/ipc/sessions_lifecycle/sessions_delete_support.rs": {
+    "commentLines": 36,
+    "maxBlock": 8
+  },
+  "src-tauri/src/ipc/settings.rs": {
+    "commentLines": 50,
+    "maxBlock": 9
+  },
+  "src-tauri/src/ipc/side_chat.rs": {
+    "commentLines": 37,
+    "maxBlock": 9
+  },
+  "src-tauri/src/ipc/subagents.rs": {
+    "commentLines": 10,
+    "maxBlock": 8
+  },
+  "src-tauri/src/ipc/theme.rs": {
+    "commentLines": 35,
+    "maxBlock": 17
+  },
+  "src-tauri/src/ipc/updates.rs": {
+    "commentLines": 24,
+    "maxBlock": 7
+  },
+  "src-tauri/src/lib.rs": {
+    "commentLines": 185,
+    "maxBlock": 23
+  },
+  "src-tauri/src/omp/blob_store.rs": {
+    "commentLines": 13,
+    "maxBlock": 7
+  },
+  "src-tauri/src/omp/config_tests.rs": {
+    "commentLines": 22,
+    "maxBlock": 14
+  },
+  "src-tauri/src/omp/config.rs": {
+    "commentLines": 137,
+    "maxBlock": 39
+  },
+  "src-tauri/src/omp/diff.rs": {
+    "commentLines": 82,
+    "maxBlock": 10
+  },
+  "src-tauri/src/omp/image_store.rs": {
+    "commentLines": 13,
+    "maxBlock": 7
+  },
+  "src-tauri/src/omp/images.rs": {
+    "commentLines": 86,
+    "maxBlock": 14
+  },
+  "src-tauri/src/omp/process.rs": {
+    "commentLines": 178,
+    "maxBlock": 20
+  },
+  "src-tauri/src/omp/redact_tests.rs": {
+    "commentLines": 78,
+    "maxBlock": 16
+  },
+  "src-tauri/src/omp/redact.rs": {
+    "commentLines": 125,
+    "maxBlock": 27
+  },
+  "src-tauri/src/omp/transcript.rs": {
+    "commentLines": 232,
+    "maxBlock": 19
+  },
+  "src-tauri/src/omp/transcript/agent_message.rs": {
+    "commentLines": 10,
+    "maxBlock": 8
+  },
+  "src-tauri/src/omp/transcript/file_attachment_markers.rs": {
+    "commentLines": 45,
+    "maxBlock": 11
+  },
+  "src-tauri/src/omp/transcript/notice_prefixes.rs": {
+    "commentLines": 14,
+    "maxBlock": 7
+  },
+  "src-tauri/src/omp/transcript/subagent_items.rs": {
+    "commentLines": 131,
+    "maxBlock": 53
+  },
+  "src-tauri/src/omp/transcript/user_images.rs": {
+    "commentLines": 10,
+    "maxBlock": 8
+  },
+  "src-tauri/src/process/executables.rs": {
+    "commentLines": 52,
+    "maxBlock": 13
+  },
+  "src-tauri/src/process/job_object.rs": {
+    "commentLines": 35,
+    "maxBlock": 11
+  },
+  "src-tauri/src/process/pid_records.rs": {
+    "commentLines": 160,
+    "maxBlock": 23
+  },
+  "src-tauri/src/process/pid_records.test.rs": {
+    "commentLines": 38,
+    "maxBlock": 7
+  },
+  "src-tauri/src/session/advisor.rs": {
+    "commentLines": 210,
+    "maxBlock": 66
+  },
+  "src-tauri/src/session/agent/chat.rs": {
+    "commentLines": 49,
+    "maxBlock": 9
+  },
+  "src-tauri/src/session/agent/commands.rs": {
+    "commentLines": 96,
+    "maxBlock": 8
+  },
+  "src-tauri/src/session/agent/frame.rs": {
+    "commentLines": 118,
+    "maxBlock": 12
+  },
+  "src-tauri/src/session/agent/launch_support.rs": {
+    "commentLines": 53,
+    "maxBlock": 11
+  },
+  "src-tauri/src/session/agent/launch_support.test.rs": {
+    "commentLines": 50,
+    "maxBlock": 14
+  },
+  "src-tauri/src/session/agent/launch.rs": {
+    "commentLines": 148,
+    "maxBlock": 9
+  },
+  "src-tauri/src/session/agent/mod.rs": {
+    "commentLines": 142,
+    "maxBlock": 40
+  },
+  "src-tauri/src/session/agent/pause.rs": {
+    "commentLines": 22,
+    "maxBlock": 8
+  },
+  "src-tauri/src/session/agent/requests.rs": {
+    "commentLines": 41,
+    "maxBlock": 7
+  },
+  "src-tauri/src/session/agent/status.rs": {
+    "commentLines": 17,
+    "maxBlock": 7
+  },
+  "src-tauri/src/session/agent/sync_from_state.rs": {
+    "commentLines": 20,
+    "maxBlock": 8
+  },
+  "src-tauri/src/session/agent/types.rs": {
+    "commentLines": 46,
+    "maxBlock": 22
+  },
+  "src-tauri/src/session/health.rs": {
+    "commentLines": 15,
+    "maxBlock": 8
+  },
+  "src-tauri/src/session/manager.rs": {
+    "commentLines": 124,
+    "maxBlock": 15
+  },
+  "src-tauri/src/session/mod.rs": {
+    "commentLines": 9,
+    "maxBlock": 9
+  },
+  "src-tauri/src/session/model.rs": {
+    "commentLines": 216,
+    "maxBlock": 47
+  },
+  "src-tauri/src/session/model/model_support.rs": {
+    "commentLines": 214,
+    "maxBlock": 33
+  },
+  "src-tauri/src/session/pending_selection.rs": {
+    "commentLines": 44,
+    "maxBlock": 20
+  },
+  "src-tauri/src/session/readout_activity_emit.rs": {
+    "commentLines": 24,
+    "maxBlock": 8
+  },
+  "src-tauri/src/session/readout_head_watch.rs": {
+    "commentLines": 17,
+    "maxBlock": 9
+  },
+  "src-tauri/src/session/readout.rs": {
+    "commentLines": 152,
+    "maxBlock": 44
+  },
+  "src-tauri/src/session/saved_history.rs": {
+    "commentLines": 26,
+    "maxBlock": 7
+  },
+  "src-tauri/src/session/side_chat.rs": {
+    "commentLines": 203,
+    "maxBlock": 14
+  },
+  "src-tauri/src/session/side_chat.test.rs": {
+    "commentLines": 123,
+    "maxBlock": 25
+  },
+  "src-tauri/src/session/start_queue.rs": {
+    "commentLines": 208,
+    "maxBlock": 18
+  },
+  "src-tauri/src/session/start_queue.test.rs": {
+    "commentLines": 24,
+    "maxBlock": 9
+  },
+  "src-tauri/src/session/subagents_progress.rs": {
+    "commentLines": 89,
+    "maxBlock": 10
+  },
+  "src-tauri/src/session/subagents.rs": {
+    "commentLines": 151,
+    "maxBlock": 48
+  },
+  "src-tauri/src/session/termination_detection.rs": {
+    "commentLines": 50,
+    "maxBlock": 9
+  },
+  "src-tauri/src/session/termination.rs": {
+    "commentLines": 143,
+    "maxBlock": 22
+  },
+  "src-tauri/src/session/termination.test.rs": {
+    "commentLines": 47,
+    "maxBlock": 10
+  },
+  "src-tauri/src/session/thinking_level.rs": {
+    "commentLines": 85,
+    "maxBlock": 52
+  },
+  "src-tauri/src/session/token_guard.rs": {
+    "commentLines": 26,
+    "maxBlock": 11
+  },
+  "src-tauri/src/shell/app_identity.rs": {
+    "commentLines": 156,
+    "maxBlock": 30
+  },
+  "src-tauri/src/shell/memory.rs": {
+    "commentLines": 34,
+    "maxBlock": 15
+  },
+  "src-tauri/src/shell/menu.rs": {
+    "commentLines": 62,
+    "maxBlock": 30
+  },
+  "src-tauri/src/shell/notifications.rs": {
+    "commentLines": 58,
+    "maxBlock": 24
+  },
+  "src-tauri/src/shell/window_state.rs": {
+    "commentLines": 89,
+    "maxBlock": 18
+  },
+  "src-tauri/src/store/atomic_json.rs": {
+    "commentLines": 25,
+    "maxBlock": 11
+  },
+  "src-tauri/src/store/import.rs": {
+    "commentLines": 85,
+    "maxBlock": 33
+  },
+  "src-tauri/src/store/import/import_lock.rs": {
+    "commentLines": 32,
+    "maxBlock": 13
+  },
+  "src-tauri/src/store/registry_tests.rs": {
+    "commentLines": 23,
+    "maxBlock": 14
+  },
+  "src-tauri/src/store/registry.rs": {
+    "commentLines": 87,
+    "maxBlock": 8
+  },
+  "src-tauri/src/store/settings_parse.rs": {
+    "commentLines": 32,
+    "maxBlock": 11
+  },
+  "src-tauri/src/store/settings.rs": {
+    "commentLines": 88,
+    "maxBlock": 7
+  },
+  "src-tauri/src/store/theme_id.rs": {
+    "commentLines": 8,
+    "maxBlock": 7
+  },
+  "src-tauri/src/updates/checker.rs": {
+    "commentLines": 95,
+    "maxBlock": 19
+  },
+  "src-tauri/src/updates/dependency_install_http.rs": {
+    "commentLines": 77,
+    "maxBlock": 13
+  },
+  "src-tauri/src/updates/dependency_install.rs": {
+    "commentLines": 94,
+    "maxBlock": 22
+  },
+  "src-tauri/src/updates/gh_client.rs": {
+    "commentLines": 21,
+    "maxBlock": 7
+  },
+  "src-tauri/src/updates/install_on_quit.rs": {
+    "commentLines": 113,
+    "maxBlock": 30
+  },
+  "src-tauri/src/updates/installer.rs": {
+    "commentLines": 80,
+    "maxBlock": 19
+  },
+  "src-tauri/src/updates/mod.rs": {
+    "commentLines": 90,
+    "maxBlock": 21
+  },
+  "src-tauri/src/updates/signature.rs": {
+    "commentLines": 91,
+    "maxBlock": 24
+  },
+  "src-tauri/src/updates/state.rs": {
+    "commentLines": 69,
+    "maxBlock": 30
+  },
+  "src-tauri/src/usage/queries.rs": {
+    "commentLines": 40,
+    "maxBlock": 8
+  },
+  "src/renderer/App.tsx": {
+    "commentLines": 283,
+    "maxBlock": 24
+  },
+  "src/renderer/components/ActiveIndicatorBar.tsx": {
+    "commentLines": 15,
+    "maxBlock": 15
+  },
+  "src/renderer/components/brand/AgentSpinner.tsx": {
+    "commentLines": 151,
+    "maxBlock": 46
+  },
+  "src/renderer/components/FilterTabs.tsx": {
+    "commentLines": 12,
+    "maxBlock": 8
+  },
+  "src/renderer/components/InlineDisclosure.tsx": {
+    "commentLines": 27,
+    "maxBlock": 24
+  },
+  "src/renderer/components/ListDetailSplit.tsx": {
+    "commentLines": 16,
+    "maxBlock": 14
+  },
+  "src/renderer/components/PaneBanner.tsx": {
+    "commentLines": 10,
+    "maxBlock": 7
+  },
+  "src/renderer/components/ReasoningGaugeIcon.tsx": {
+    "commentLines": 44,
+    "maxBlock": 33
+  },
+  "src/renderer/components/SearchField.tsx": {
+    "commentLines": 59,
+    "maxBlock": 12
+  },
+  "src/renderer/components/ui/alert-dialog.tsx": {
+    "commentLines": 21,
+    "maxBlock": 11
+  },
+  "src/renderer/components/ui/button.tsx": {
+    "commentLines": 19,
+    "maxBlock": 12
+  },
+  "src/renderer/components/ui/checkbox.tsx": {
+    "commentLines": 20,
+    "maxBlock": 10
+  },
+  "src/renderer/components/ui/copy-button.tsx": {
+    "commentLines": 52,
+    "maxBlock": 11
+  },
+  "src/renderer/components/ui/dropdown-menu.tsx": {
+    "commentLines": 26,
+    "maxBlock": 17
+  },
+  "src/renderer/components/ui/menu-item-classes.ts": {
+    "commentLines": 10,
+    "maxBlock": 8
+  },
+  "src/renderer/components/ui/radio-group.tsx": {
+    "commentLines": 81,
+    "maxBlock": 38
+  },
+  "src/renderer/components/ui/sonner.tsx": {
+    "commentLines": 37,
+    "maxBlock": 37
+  },
+  "src/renderer/components/ui/switch.tsx": {
+    "commentLines": 23,
+    "maxBlock": 23
+  },
+  "src/renderer/components/useEnterOnSwitch.ts": {
+    "commentLines": 9,
+    "maxBlock": 7
+  },
+  "src/renderer/features/app-menu/AppMenuBar.tsx": {
+    "commentLines": 48,
+    "maxBlock": 15
+  },
+  "src/renderer/features/chat/AdvisoryRow.tsx": {
+    "commentLines": 150,
+    "maxBlock": 27
+  },
+  "src/renderer/features/chat/anyFileAttachments.ts": {
+    "commentLines": 87,
+    "maxBlock": 21
+  },
+  "src/renderer/features/chat/applySnapshot.ts": {
+    "commentLines": 29,
+    "maxBlock": 10
+  },
+  "src/renderer/features/chat/ApprovalModePill.tsx": {
+    "commentLines": 32,
+    "maxBlock": 16
+  },
+  "src/renderer/features/chat/AskCard.tsx": {
+    "commentLines": 88,
+    "maxBlock": 17
+  },
+  "src/renderer/features/chat/attachDroppedPaths.ts": {
+    "commentLines": 24,
+    "maxBlock": 8
+  },
+  "src/renderer/features/chat/attachImage.ts": {
+    "commentLines": 50,
+    "maxBlock": 16
+  },
+  "src/renderer/features/chat/attachments.ts": {
+    "commentLines": 233,
+    "maxBlock": 47
+  },
+  "src/renderer/features/chat/AttachmentStrip.tsx": {
+    "commentLines": 57,
+    "maxBlock": 26
+  },
+  "src/renderer/features/chat/BrandWatermark.tsx": {
+    "commentLines": 30,
+    "maxBlock": 18
+  },
+  "src/renderer/features/chat/ChainStageLine.tsx": {
+    "commentLines": 48,
+    "maxBlock": 9
+  },
+  "src/renderer/features/chat/chatAreaAnnouncer.ts": {
+    "commentLines": 12,
+    "maxBlock": 9
+  },
+  "src/renderer/features/chat/ChatHeader.tsx": {
+    "commentLines": 37,
+    "maxBlock": 17
+  },
+  "src/renderer/features/chat/ChatPane.tsx": {
+    "commentLines": 534,
+    "maxBlock": 25
+  },
+  "src/renderer/features/chat/closeChatPane.ts": {
+    "commentLines": 34,
+    "maxBlock": 9
+  },
+  "src/renderer/features/chat/CollapsedLine.tsx": {
+    "commentLines": 164,
+    "maxBlock": 12
+  },
+  "src/renderer/features/chat/CommandPillOverlay.tsx": {
+    "commentLines": 174,
+    "maxBlock": 52
+  },
+  "src/renderer/features/chat/composerHeightVar.ts": {
+    "commentLines": 28,
+    "maxBlock": 15
+  },
+  "src/renderer/features/chat/composerMarkdownMirror.tsx": {
+    "commentLines": 12,
+    "maxBlock": 8
+  },
+  "src/renderer/features/chat/ComposerPickers.tsx": {
+    "commentLines": 70,
+    "maxBlock": 31
+  },
+  "src/renderer/features/chat/ComposerStatusLine.tsx": {
+    "commentLines": 19,
+    "maxBlock": 19
+  },
+  "src/renderer/features/chat/ConversationSwitcher.tsx": {
+    "commentLines": 43,
+    "maxBlock": 16
+  },
+  "src/renderer/features/chat/CurrentWorkBanner.tsx": {
+    "commentLines": 9,
+    "maxBlock": 9
+  },
+  "src/renderer/features/chat/DiffView.tsx": {
+    "commentLines": 84,
+    "maxBlock": 13
+  },
+  "src/renderer/features/chat/EmptyChatState.tsx": {
+    "commentLines": 13,
+    "maxBlock": 13
+  },
+  "src/renderer/features/chat/enterSendsQueuedFollowUp.ts": {
+    "commentLines": 44,
+    "maxBlock": 32
+  },
+  "src/renderer/features/chat/FileAttachmentChip.tsx": {
+    "commentLines": 44,
+    "maxBlock": 21
+  },
+  "src/renderer/features/chat/formatToolCommand.ts": {
+    "commentLines": 32,
+    "maxBlock": 9
+  },
+  "src/renderer/features/chat/groupAdvisoryItems.ts": {
+    "commentLines": 12,
+    "maxBlock": 12
+  },
+  "src/renderer/features/chat/groupSubagentStages.ts": {
+    "commentLines": 45,
+    "maxBlock": 17
+  },
+  "src/renderer/features/chat/groupThoughtItems.ts": {
+    "commentLines": 14,
+    "maxBlock": 13
+  },
+  "src/renderer/features/chat/groupToolItems.ts": {
+    "commentLines": 37,
+    "maxBlock": 17
+  },
+  "src/renderer/features/chat/imageOnlySend.ts": {
+    "commentLines": 14,
+    "maxBlock": 8
+  },
+  "src/renderer/features/chat/isConversationStarted.ts": {
+    "commentLines": 26,
+    "maxBlock": 26
+  },
+  "src/renderer/features/chat/Markdown.tsx": {
+    "commentLines": 346,
+    "maxBlock": 22
+  },
+  "src/renderer/features/chat/markdownLists.tsx": {
+    "commentLines": 21,
+    "maxBlock": 8
+  },
+  "src/renderer/features/chat/MessageInput.tsx": {
+    "commentLines": 356,
+    "maxBlock": 22
+  },
+  "src/renderer/features/chat/ModelCatalogGroup.tsx": {
+    "commentLines": 33,
+    "maxBlock": 26
+  },
+  "src/renderer/features/chat/NoticeRow.tsx": {
+    "commentLines": 28,
+    "maxBlock": 4
+  },
+  "src/renderer/features/chat/pickerShared.tsx": {
+    "commentLines": 89,
+    "maxBlock": 19
+  },
+  "src/renderer/features/chat/PinnedTodoPanel.tsx": {
+    "commentLines": 99,
+    "maxBlock": 18
+  },
+  "src/renderer/features/chat/queuedChips.ts": {
+    "commentLines": 64,
+    "maxBlock": 58
+  },
+  "src/renderer/features/chat/readout/AgentsCard.tsx": {
+    "commentLines": 19,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/readout/ContextUsageReadout.tsx": {
+    "commentLines": 17,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/readout/HealthReadouts.tsx": {
+    "commentLines": 13,
+    "maxBlock": 11
+  },
+  "src/renderer/features/chat/readout/ReadoutItem.tsx": {
+    "commentLines": 55,
+    "maxBlock": 15
+  },
+  "src/renderer/features/chat/readout/Readouts.tsx": {
+    "commentLines": 170,
+    "maxBlock": 14
+  },
+  "src/renderer/features/chat/readout/TodoCard.tsx": {
+    "commentLines": 15,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/readout/todoDerive.ts": {
+    "commentLines": 32,
+    "maxBlock": 9
+  },
+  "src/renderer/features/chat/readout/TodoTree.tsx": {
+    "commentLines": 36,
+    "maxBlock": 10
+  },
+  "src/renderer/features/chat/readout/useReadoutCard.ts": {
+    "commentLines": 61,
+    "maxBlock": 18
+  },
+  "src/renderer/features/chat/removeAttachment.ts": {
+    "commentLines": 16,
+    "maxBlock": 16
+  },
+  "src/renderer/features/chat/RequestCard.tsx": {
+    "commentLines": 121,
+    "maxBlock": 20
+  },
+  "src/renderer/features/chat/resume.ts": {
+    "commentLines": 18,
+    "maxBlock": 13
+  },
+  "src/renderer/features/chat/scrollLanding.ts": {
+    "commentLines": 94,
+    "maxBlock": 19
+  },
+  "src/renderer/features/chat/SessionStartNotice.tsx": {
+    "commentLines": 68,
+    "maxBlock": 58
+  },
+  "src/renderer/features/chat/SkillPromptRow.tsx": {
+    "commentLines": 8,
+    "maxBlock": 8
+  },
+  "src/renderer/features/chat/SlashMenu.tsx": {
+    "commentLines": 63,
+    "maxBlock": 9
+  },
+  "src/renderer/features/chat/SpineList.tsx": {
+    "commentLines": 30,
+    "maxBlock": 10
+  },
+  "src/renderer/features/chat/StageDependencies.tsx": {
+    "commentLines": 29,
+    "maxBlock": 11
+  },
+  "src/renderer/features/chat/stageJump.ts": {
+    "commentLines": 37,
+    "maxBlock": 18
+  },
+  "src/renderer/features/chat/stageMeta.ts": {
+    "commentLines": 102,
+    "maxBlock": 11
+  },
+  "src/renderer/features/chat/startingMessages.ts": {
+    "commentLines": 18,
+    "maxBlock": 8
+  },
+  "src/renderer/features/chat/statusGlyph.ts": {
+    "commentLines": 19,
+    "maxBlock": 15
+  },
+  "src/renderer/features/chat/SubagentChainRow.tsx": {
+    "commentLines": 267,
+    "maxBlock": 31
+  },
+  "src/renderer/features/chat/subagentChainStatus.ts": {
+    "commentLines": 26,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/SubagentGoalPreview.tsx": {
+    "commentLines": 7,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/SubagentRow.tsx": {
+    "commentLines": 33,
+    "maxBlock": 10
+  },
+  "src/renderer/features/chat/TextPreviewModal.tsx": {
+    "commentLines": 19,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/ThoughtRunRow.tsx": {
+    "commentLines": 95,
+    "maxBlock": 15
+  },
+  "src/renderer/features/chat/ToolCallDialog.tsx": {
+    "commentLines": 43,
+    "maxBlock": 10
+  },
+  "src/renderer/features/chat/ToolRow.tsx": {
+    "commentLines": 216,
+    "maxBlock": 36
+  },
+  "src/renderer/features/chat/toolRowLabels.tsx": {
+    "commentLines": 25,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/toolStatus.tsx": {
+    "commentLines": 35,
+    "maxBlock": 22
+  },
+  "src/renderer/features/chat/Transcript.tsx": {
+    "commentLines": 369,
+    "maxBlock": 28
+  },
+  "src/renderer/features/chat/transcriptRowVisibility.ts": {
+    "commentLines": 68,
+    "maxBlock": 48
+  },
+  "src/renderer/features/chat/TurnErrorRow.tsx": {
+    "commentLines": 15,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/turnTiming.ts": {
+    "commentLines": 29,
+    "maxBlock": 13
+  },
+  "src/renderer/features/chat/UpNextList.tsx": {
+    "commentLines": 29,
+    "maxBlock": 21
+  },
+  "src/renderer/features/chat/useEffectiveStartProgress.ts": {
+    "commentLines": 17,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/UserMessageRow.tsx": {
+    "commentLines": 40,
+    "maxBlock": 16
+  },
+  "src/renderer/features/chat/useSlashMenuCompletion.ts": {
+    "commentLines": 86,
+    "maxBlock": 16
+  },
+  "src/renderer/features/chat/useStageSettleAnnouncement.ts": {
+    "commentLines": 23,
+    "maxBlock": 8
+  },
+  "src/renderer/features/chat/useStickyDisclosure.ts": {
+    "commentLines": 39,
+    "maxBlock": 20
+  },
+  "src/renderer/features/chat/useTauriFileDrop.ts": {
+    "commentLines": 37,
+    "maxBlock": 14
+  },
+  "src/renderer/features/holidays/HolidayAmbientLoop.tsx": {
+    "commentLines": 113,
+    "maxBlock": 34
+  },
+  "src/renderer/features/holidays/holidayContent.ts": {
+    "commentLines": 26,
+    "maxBlock": 8
+  },
+  "src/renderer/features/profile/HealthCheckDialog.tsx": {
+    "commentLines": 32,
+    "maxBlock": 15
+  },
+  "src/renderer/features/profile/KeyboardShortcutsDialog.tsx": {
+    "commentLines": 27,
+    "maxBlock": 10
+  },
+  "src/renderer/features/profile/ManageAccountsDialog.tsx": {
+    "commentLines": 152,
+    "maxBlock": 13
+  },
+  "src/renderer/features/profile/ManageSessionsScreen.tsx": {
+    "commentLines": 45,
+    "maxBlock": 10
+  },
+  "src/renderer/features/profile/MemoryTriageDialog.tsx": {
+    "commentLines": 143,
+    "maxBlock": 91
+  },
+  "src/renderer/features/profile/OmpProvidersSection.tsx": {
+    "commentLines": 19,
+    "maxBlock": 9
+  },
+  "src/renderer/features/profile/ProfileAlertRows.tsx": {
+    "commentLines": 79,
+    "maxBlock": 54
+  },
+  "src/renderer/features/profile/ProfileItem.tsx": {
+    "commentLines": 86,
+    "maxBlock": 27
+  },
+  "src/renderer/features/profile/ProfileMenu.tsx": {
+    "commentLines": 105,
+    "maxBlock": 32
+  },
+  "src/renderer/features/profile/SignOutDialog.tsx": {
+    "commentLines": 27,
+    "maxBlock": 10
+  },
+  "src/renderer/features/pull-requests/MergeDialog.tsx": {
+    "commentLines": 41,
+    "maxBlock": 9
+  },
+  "src/renderer/features/pull-requests/PullRequestDetail.tsx": {
+    "commentLines": 60,
+    "maxBlock": 9
+  },
+  "src/renderer/features/pull-requests/ReviewConsensus.tsx": {
+    "commentLines": 20,
+    "maxBlock": 17
+  },
+  "src/renderer/features/readiness/CheckRow.tsx": {
+    "commentLines": 16,
+    "maxBlock": 10
+  },
+  "src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx": {
+    "commentLines": 361,
+    "maxBlock": 88
+  },
+  "src/renderer/features/right-pane/file-explorer/FilePreviewPane.tsx": {
+    "commentLines": 47,
+    "maxBlock": 8
+  },
+  "src/renderer/features/right-pane/file-explorer/TreeNodeRow.tsx": {
+    "commentLines": 50,
+    "maxBlock": 16
+  },
+  "src/renderer/features/right-pane/file-explorer/TreeRowActions.tsx": {
+    "commentLines": 8,
+    "maxBlock": 7
+  },
+  "src/renderer/features/right-pane/git-changes/focus.ts": {
+    "commentLines": 33,
+    "maxBlock": 9
+  },
+  "src/renderer/features/right-pane/git-changes/GitChangesFileRow.tsx": {
+    "commentLines": 76,
+    "maxBlock": 24
+  },
+  "src/renderer/features/right-pane/git-changes/GitChangesGroup.tsx": {
+    "commentLines": 44,
+    "maxBlock": 12
+  },
+  "src/renderer/features/right-pane/git-changes/GitChangesPanel.tsx": {
+    "commentLines": 119,
+    "maxBlock": 52
+  },
+  "src/renderer/features/right-pane/git-changes/GitCommitBox.tsx": {
+    "commentLines": 51,
+    "maxBlock": 29
+  },
+  "src/renderer/features/right-pane/hosted-panel-actions.ts": {
+    "commentLines": 52,
+    "maxBlock": 26
+  },
+  "src/renderer/features/right-pane/IconRail.tsx": {
+    "commentLines": 19,
+    "maxBlock": 12
+  },
+  "src/renderer/features/right-pane/panel-registry.ts": {
+    "commentLines": 47,
+    "maxBlock": 8
+  },
+  "src/renderer/features/right-pane/PanelTabBar.tsx": {
+    "commentLines": 181,
+    "maxBlock": 93
+  },
+  "src/renderer/features/right-pane/placeholders/AgentBuilderPanel.tsx": {
+    "commentLines": 7,
+    "maxBlock": 7
+  },
+  "src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx": {
+    "commentLines": 11,
+    "maxBlock": 11
+  },
+  "src/renderer/features/right-pane/placeholders/SampleDataRow.tsx": {
+    "commentLines": 9,
+    "maxBlock": 9
+  },
+  "src/renderer/features/right-pane/RightPaneShell.tsx": {
+    "commentLines": 30,
+    "maxBlock": 10
+  },
+  "src/renderer/features/right-pane/side-chat/SideChatPanel.tsx": {
+    "commentLines": 143,
+    "maxBlock": 17
+  },
+  "src/renderer/features/right-pane/WindowControlsSpacerRow.tsx": {
+    "commentLines": 7,
+    "maxBlock": 7
+  },
+  "src/renderer/features/sessions/ArchivedGroup.tsx": {
+    "commentLines": 16,
+    "maxBlock": 7
+  },
+  "src/renderer/features/sessions/createdSessionAnnouncement.ts": {
+    "commentLines": 24,
+    "maxBlock": 13
+  },
+  "src/renderer/features/sessions/DeleteDialog.tsx": {
+    "commentLines": 97,
+    "maxBlock": 10
+  },
+  "src/renderer/features/sessions/GroupHeader.tsx": {
+    "commentLines": 59,
+    "maxBlock": 20
+  },
+  "src/renderer/features/sessions/quickCreateFallback.ts": {
+    "commentLines": 17,
+    "maxBlock": 17
+  },
+  "src/renderer/features/sessions/RemoveRepositoryDialog.tsx": {
+    "commentLines": 32,
+    "maxBlock": 7
+  },
+  "src/renderer/features/sessions/RepositoryGroup.tsx": {
+    "commentLines": 93,
+    "maxBlock": 18
+  },
+  "src/renderer/features/sessions/sessionActions.ts": {
+    "commentLines": 19,
+    "maxBlock": 8
+  },
+  "src/renderer/features/sessions/SessionDetailsCard.tsx": {
+    "commentLines": 28,
+    "maxBlock": 13
+  },
+  "src/renderer/features/sessions/sessionDisplay.tsx": {
+    "commentLines": 137,
+    "maxBlock": 21
+  },
+  "src/renderer/features/sessions/SessionList.tsx": {
+    "commentLines": 74,
+    "maxBlock": 9
+  },
+  "src/renderer/features/sessions/SessionRow.tsx": {
+    "commentLines": 50,
+    "maxBlock": 19
+  },
+  "src/renderer/features/sessions/sessionSearchSelector.ts": {
+    "commentLines": 11,
+    "maxBlock": 9
+  },
+  "src/renderer/features/sessions/useFocusSearchOnStrandedUnmount.ts": {
+    "commentLines": 29,
+    "maxBlock": 25
+  },
+  "src/renderer/features/sessions/useSessionResume.ts": {
+    "commentLines": 36,
+    "maxBlock": 6
+  },
+  "src/renderer/features/sessions/useSessionRowActions.ts": {
+    "commentLines": 181,
+    "maxBlock": 16
+  },
+  "src/renderer/features/settings/AppearanceSection.tsx": {
+    "commentLines": 77,
+    "maxBlock": 16
+  },
+  "src/renderer/features/settings/ChatDisplaySection.tsx": {
+    "commentLines": 23,
+    "maxBlock": 23
+  },
+  "src/renderer/features/settings/ChatWidthPicker.tsx": {
+    "commentLines": 12,
+    "maxBlock": 7
+  },
+  "src/renderer/features/settings/modelProviderFilter.ts": {
+    "commentLines": 18,
+    "maxBlock": 5
+  },
+  "src/renderer/features/settings/ModelRolesSection.tsx": {
+    "commentLines": 108,
+    "maxBlock": 42
+  },
+  "src/renderer/features/settings/modelRoleSuffix.ts": {
+    "commentLines": 15,
+    "maxBlock": 10
+  },
+  "src/renderer/features/settings/RightPaneSection.tsx": {
+    "commentLines": 10,
+    "maxBlock": 10
+  },
+  "src/renderer/features/settings/RoleReasoningRadios.tsx": {
+    "commentLines": 152,
+    "maxBlock": 34
+  },
+  "src/renderer/features/settings/ThemePicker.tsx": {
+    "commentLines": 16,
+    "maxBlock": 11
+  },
+  "src/renderer/features/subagents/groupSubagentPanelStages.ts": {
+    "commentLines": 31,
+    "maxBlock": 17
+  },
+  "src/renderer/features/subagents/SubagentPanel.tsx": {
+    "commentLines": 194,
+    "maxBlock": 35
+  },
+  "src/renderer/features/subagents/subagentStatus.tsx": {
+    "commentLines": 58,
+    "maxBlock": 10
+  },
+  "src/renderer/lib/account-format.ts": {
+    "commentLines": 26,
+    "maxBlock": 6
+  },
+  "src/renderer/lib/advisory-locations.ts": {
+    "commentLines": 48,
+    "maxBlock": 39
+  },
+  "src/renderer/lib/clipboard-sanitise.test.ts": {
+    "commentLines": 19,
+    "maxBlock": 7
+  },
+  "src/renderer/lib/clipboard-sanitise.ts": {
+    "commentLines": 66,
+    "maxBlock": 66
+  },
+  "src/renderer/lib/compactNumber.ts": {
+    "commentLines": 12,
+    "maxBlock": 12
+  },
+  "src/renderer/lib/defaultRepository.ts": {
+    "commentLines": 13,
+    "maxBlock": 13
+  },
+  "src/renderer/lib/diff.ts": {
+    "commentLines": 28,
+    "maxBlock": 6
+  },
+  "src/renderer/lib/focus.ts": {
+    "commentLines": 103,
+    "maxBlock": 24
+  },
+  "src/renderer/lib/linkify.ts": {
+    "commentLines": 53,
+    "maxBlock": 11
+  },
+  "src/renderer/lib/modelDisplay.ts": {
+    "commentLines": 41,
+    "maxBlock": 10
+  },
+  "src/renderer/lib/modelRoles.ts": {
+    "commentLines": 41,
+    "maxBlock": 10
+  },
+  "src/renderer/lib/overlayOpenSelector.ts": {
+    "commentLines": 8,
+    "maxBlock": 8
+  },
+  "src/renderer/lib/providerLabels.ts": {
+    "commentLines": 20,
+    "maxBlock": 12
+  },
+  "src/renderer/lib/safe-url.ts": {
+    "commentLines": 33,
+    "maxBlock": 23
+  },
+  "src/renderer/lib/useMinuteTick.ts": {
+    "commentLines": 15,
+    "maxBlock": 5
+  },
+  "src/renderer/lib/utils.ts": {
+    "commentLines": 19,
+    "maxBlock": 15
+  },
+  "src/renderer/main.tsx": {
+    "commentLines": 15,
+    "maxBlock": 14
+  },
+  "src/renderer/state/accounts.ts": {
+    "commentLines": 139,
+    "maxBlock": 13
+  },
+  "src/renderer/state/advisor-store.ts": {
+    "commentLines": 7,
+    "maxBlock": 7
+  },
+  "src/renderer/state/alert-dismiss-store.ts": {
+    "commentLines": 11,
+    "maxBlock": 7
+  },
+  "src/renderer/state/ask-focus-intent.ts": {
+    "commentLines": 52,
+    "maxBlock": 25
+  },
+  "src/renderer/state/ask-picks-store.ts": {
+    "commentLines": 34,
+    "maxBlock": 12
+  },
+  "src/renderer/state/chat-width-store.ts": {
+    "commentLines": 31,
+    "maxBlock": 7
+  },
+  "src/renderer/state/draft-store.ts": {
+    "commentLines": 41,
+    "maxBlock": 8
+  },
+  "src/renderer/state/file-explorer-store.ts": {
+    "commentLines": 240,
+    "maxBlock": 16
+  },
+  "src/renderer/state/git-changes-store.ts": {
+    "commentLines": 147,
+    "maxBlock": 17
+  },
+  "src/renderer/state/holiday-store.ts": {
+    "commentLines": 26,
+    "maxBlock": 14
+  },
+  "src/renderer/state/init-stores.ts": {
+    "commentLines": 152,
+    "maxBlock": 15
+  },
+  "src/renderer/state/model-roles-store.ts": {
+    "commentLines": 56,
+    "maxBlock": 19
+  },
+  "src/renderer/state/notify.ts": {
+    "commentLines": 35,
+    "maxBlock": 20
+  },
+  "src/renderer/state/pull-requests-layout-store.ts": {
+    "commentLines": 31,
+    "maxBlock": 19
+  },
+  "src/renderer/state/queue-store.ts": {
+    "commentLines": 12,
+    "maxBlock": 4
+  },
+  "src/renderer/state/readout-store.ts": {
+    "commentLines": 17,
+    "maxBlock": 9
+  },
+  "src/renderer/state/repositories-store.ts": {
+    "commentLines": 46,
+    "maxBlock": 23
+  },
+  "src/renderer/state/right-pane-store.ts": {
+    "commentLines": 69,
+    "maxBlock": 19
+  },
+  "src/renderer/state/scroll-store.ts": {
+    "commentLines": 51,
+    "maxBlock": 11
+  },
+  "src/renderer/state/session-list-store.ts": {
+    "commentLines": 67,
+    "maxBlock": 15
+  },
+  "src/renderer/state/sessions-store.ts": {
+    "commentLines": 101,
+    "maxBlock": 10
+  },
+  "src/renderer/state/side-chat-store.ts": {
+    "commentLines": 201,
+    "maxBlock": 28
+  },
+  "src/renderer/state/split-store.ts": {
+    "commentLines": 101,
+    "maxBlock": 22
+  },
+  "src/renderer/state/stage-toggle-store.ts": {
+    "commentLines": 27,
+    "maxBlock": 27
+  },
+  "src/renderer/state/subagent-store.ts": {
+    "commentLines": 177,
+    "maxBlock": 16
+  },
+  "src/renderer/state/theme-store.ts": {
+    "commentLines": 70,
+    "maxBlock": 18
+  },
+  "src/renderer/state/todo-pin-store.ts": {
+    "commentLines": 8,
+    "maxBlock": 8
+  },
+  "src/renderer/state/transcript-store.ts": {
+    "commentLines": 20,
+    "maxBlock": 7
+  },
+  "src/shared/canResumeSession.test.ts": {
+    "commentLines": 20,
+    "maxBlock": 6
+  },
+  "src/shared/canResumeSession.ts": {
+    "commentLines": 36,
+    "maxBlock": 22
+  },
+  "src/shared/chatWidth.ts": {
+    "commentLines": 8,
+    "maxBlock": 8
+  },
+  "src/shared/commandOutputNotice.ts": {
+    "commentLines": 12,
+    "maxBlock": 10
+  },
+  "src/shared/frames.ts": {
+    "commentLines": 189,
+    "maxBlock": 11
+  },
+  "src/shared/github.ts": {
+    "commentLines": 54,
+    "maxBlock": 9
+  },
+  "src/shared/holidays.ts": {
+    "commentLines": 45,
+    "maxBlock": 12
+  },
+  "src/shared/holidayTouches.ts": {
+    "commentLines": 11,
+    "maxBlock": 11
+  },
+  "src/shared/images.ts": {
+    "commentLines": 95,
+    "maxBlock": 23
+  },
+  "src/shared/ipc-attachments.ts": {
+    "commentLines": 53,
+    "maxBlock": 12
+  },
+  "src/shared/ipc-file-explorer.ts": {
+    "commentLines": 69,
+    "maxBlock": 15
+  },
+  "src/shared/ipc-git-changes.ts": {
+    "commentLines": 43,
+    "maxBlock": 13
+  },
+  "src/shared/ipc-model.ts": {
+    "commentLines": 79,
+    "maxBlock": 18
+  },
+  "src/shared/ipc-sessions.ts": {
+    "commentLines": 14,
+    "maxBlock": 10
+  },
+  "src/shared/ipc-usage.ts": {
+    "commentLines": 20,
+    "maxBlock": 7
+  },
+  "src/shared/ipc.ts": {
+    "commentLines": 308,
+    "maxBlock": 18
+  },
+  "src/shared/lowMemoryWarning.ts": {
+    "commentLines": 8,
+    "maxBlock": 8
+  },
+  "src/shared/mermaidTheme.ts": {
+    "commentLines": 432,
+    "maxBlock": 162
+  },
+  "src/shared/mermaidThemeData.ts": {
+    "commentLines": 233,
+    "maxBlock": 24
+  },
+  "src/shared/model.ts": {
+    "commentLines": 288,
+    "maxBlock": 20
+  },
+  "src/shared/repositoryName.ts": {
+    "commentLines": 44,
+    "maxBlock": 21
+  },
+  "src/shared/slash-commands.ts": {
+    "commentLines": 126,
+    "maxBlock": 63
+  },
+  "src/shared/slashCommandSearch.ts": {
+    "commentLines": 61,
+    "maxBlock": 21
+  },
+  "src/shared/themes.ts": {
+    "commentLines": 97,
+    "maxBlock": 35
+  },
+  "src/shared/todo.ts": {
+    "commentLines": 9,
+    "maxBlock": 7
+  },
+  "src/shared/transcriptDisplay.ts": {
+    "commentLines": 17,
+    "maxBlock": 10
+  },
+  "src/shared/updates.ts": {
+    "commentLines": 32,
+    "maxBlock": 7
+  }
+}
