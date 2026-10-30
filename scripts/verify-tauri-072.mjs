@@ -1,0 +1,238 @@
+#!/usr/bin/env node
+// Live CDP check for spec 072 (#1426 composer clock alarms, #1430 Advisor tag size, #1432 Subagent label) against a real built
+// Tauri debug exe with fake `omp`, a scratch REFRACT_DATA_DIR and its own debugging port (never %APPDATA%\refract-tauri).
+// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_072_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-072.mjs
+
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
+import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..');
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
+const SHOTS_DIR = process.env.REFRACT_072_SHOTS_DIR || path.join(tmpdir(), 'refract-072-shots');
+mkdirSync(SHOTS_DIR, { recursive: true });
+
+const REPORT = [];
+let passed = 0;
+function log(line) {
+  console.log(line);
+  REPORT.push(line);
+}
+function assert(cond, message) {
+  if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
+  passed += 1;
+  log(`PASS: ${message}`);
+}
+
+const hhmm = (ms) => {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+const DIALOG = `document.querySelector('[role="dialog"][aria-label="Alarms"]')`;
+const shot = (cdp, name) => cdp.screenshot(path.join(SHOTS_DIR, name));
+const clockButton = `Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Current time'))`;
+
+async function setTime(cdp, value) {
+  await cdp.evaluate(`(() => {
+    const i = ${DIALOG}.querySelector('input[type="time"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(value)});
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+}
+
+async function addAlarm(cdp, value, label) {
+  await cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add alarm')`);
+  await cdp.waitFor(`!!${DIALOG}.querySelector('input[type="time"]')`, { timeoutMs: 10_000, label: 'alarm form open' });
+  await setTime(cdp, value);
+  await cdp.click(`${DIALOG}.querySelector('input:not([type="time"])')`);
+  if (label) await cdp.send('Input.insertText', { text: label });
+}
+const saveAlarm = (cdp) => cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save')`);
+const rowLabels = (cdp) => cdp.evaluate(`Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).map((el) => el.getAttribute('aria-label'))`);
+
+async function enableClock(cdp) {
+  await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
+  await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
+  await sleep(600);
+  const roleLabel = await cdp.evaluate(`(() => {
+    const el = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent.trim() === 'Subagent');
+    if (el) el.scrollIntoView({ block: 'center' });
+    return !!el;
+  })()`);
+  assert(roleLabel, '#1432: Settings model roles list a "Subagent" row');
+  assert(
+    await cdp.evaluate(`!Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && e.textContent.trim() === 'Task')`),
+    '#1432: no Settings row is still labelled "Task"'
+  );
+  await sleep(300);
+  await shot(cdp, '01-settings-subagent-role.png');
+  await cdp.evaluate(`(() => {
+    const label = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent.trim() === 'Current time');
+    label.scrollIntoView({ block: 'center' });
+    label.closest('div[class*="flex"]').parentElement.querySelector('[role="switch"], button[role="switch"]')?.click();
+  })()`);
+  await sleep(400);
+  await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
+}
+
+async function runChecks(cdp, { repoDir }) {
+  await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+  await cdp.waitFor(
+    `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
+    { timeoutMs: 60_000, label: 'Readiness green (fake omp)' }
+  );
+  await cdp.click(`document.querySelector('[data-readiness-primary]')`);
+  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+  await cdp.click(`document.querySelector('[role="dialog"] input')`);
+  await cdp.send('Input.insertText', { text: repoDir });
+  await cdp.clickByText('Add repository', { inDialog: true });
+  await cdp.waitFor(
+    `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
+    { timeoutMs: 30_000, label: 'Scratch repository added' }
+  );
+  await cdp.clickByLabel('New session from a branch in ', { prefix: true });
+  await cdp.waitFor(
+    `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
+    { timeoutMs: 15_000, label: 'New session dialog open' }
+  );
+  await cdp.clickByText('Create session', { inDialog: true });
+  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
+  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
+    timeoutMs: 60_000,
+    label: 'Session composer enabled'
+  });
+
+  // #1430: one scripted turn yields an Advisor row.
+  await cdp.typeIntoByLabel('Message', 'trigger the scripted advisory');
+  await cdp.clickByLabel('Send message');
+  const finder = `Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent.trim() === 'Advisor')`;
+  await cdp.waitFor(`!!(${finder})`, { timeoutMs: 30_000, label: 'Advisor row rendered' });
+  await sleep(500);
+  const sizes = await cdp.evaluate(`(() => {
+    const tag = ${finder};
+    const row = tag.closest('li, [data-item-id], article') || tag.parentElement.parentElement;
+    const leaf = (needle) => Array.from(row.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent.includes(needle));
+    const size = (el) => (el ? getComputedStyle(el).fontSize : null);
+    return { tag: size(tag), severity: size(leaf('Concern') || leaf('concern')), message: size(leaf('share one size')) };
+  })()`);
+  log(`advisor font sizes: ${JSON.stringify(sizes)}`);
+  await shot(cdp, '02-advisor-row.png');
+  assert(sizes.tag && sizes.tag === sizes.message, `#1430: Advisor tag size equals the message size (${sizes.tag})`);
+  if (sizes.severity) assert(sizes.severity === sizes.tag, '#1430: severity label size equals the tag size');
+
+  await enableClock(cdp);
+  await cdp.waitFor(`!!(${clockButton})`, { timeoutMs: 20_000, label: 'composer clock shown' });
+  await shot(cdp, '03-clock-no-alarms.png');
+  assert(/Open alarms$/.test(await cdp.evaluate(`${clockButton}.getAttribute('aria-label')`)), '#1426: the clock is a button named "... Open alarms"');
+  await cdp.click(clockButton);
+  await cdp.waitFor(`!!${DIALOG}`, { timeoutMs: 10_000, label: 'alarms popover open' });
+  assert(await cdp.evaluate(`${DIALOG}.textContent.includes('No alarms set')`), '#1426: empty state reads "No alarms set"');
+  await shot(cdp, '04-popover-empty.png');
+
+  // Create: one tomorrow-ish (a time a minute ago) and one due in about a minute.
+  const now = Date.now();
+  await addAlarm(cdp, hhmm(now - 120_000), 'Stand-up');
+  assert(await cdp.evaluate(`${DIALOG}.textContent.includes('Tomorrow')`), '#1426: a passed time shows the "Tomorrow" hint');
+  await shot(cdp, '05-add-form.png');
+  await saveAlarm(cdp);
+  await cdp.waitFor(`${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]').length === 1`, { timeoutMs: 10_000, label: 'first alarm listed' });
+  assert((await rowLabels(cdp))[0].includes('Stand-up'), '#1426: the saved alarm is listed with its label');
+  await sleep(300);
+  assert(await cdp.evaluate(`!!(${clockButton}).querySelector('svg.lucide-bell')`), '#1426: the clock shows a bell when an alarm is armed');
+  await shot(cdp, '06-popover-one-alarm.png');
+
+  // Edit the label.
+  await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')`);
+  await cdp.waitFor(`!!${DIALOG}.querySelector('input[type="time"]')`, { timeoutMs: 10_000, label: 'edit form open' });
+  await cdp.click(`${DIALOG}.querySelector('input:not([type="time"])')`);
+  await cdp.send('Input.insertText', { text: ' edited' });
+  await saveAlarm(cdp);
+  await cdp.waitFor(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')?.getAttribute('aria-label').includes('edited')`, { timeoutMs: 10_000, label: 'edit saved' });
+  assert(true, '#1426: editing an alarm updates its row');
+
+  // Add one due at the next minute boundary, then wait for it to fire.
+  const dueAt = Math.ceil((Date.now() + 5_000) / 60_000) * 60_000;
+  await addAlarm(cdp, hhmm(dueAt), 'Fires soon');
+  await saveAlarm(cdp);
+  await cdp.waitFor(`${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]').length === 2`, { timeoutMs: 10_000, label: 'second alarm listed' });
+  await shot(cdp, '07-popover-two-alarms.png');
+  await cdp.waitFor(`Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).some((el) => /Fires soon, Fired/.test(el.getAttribute('aria-label')))`, {
+    timeoutMs: Math.max(dueAt - Date.now(), 0) + 45_000,
+    label: 'second alarm fired and marked Fired'
+  });
+  await shot(cdp, '08-popover-fired.png');
+  assert(true, '#1426: a due alarm fires and stays listed as "Fired"');
+
+  // Delete the fired one, then the other.
+  await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"][aria-label*="Fires soon"]')`);
+  await cdp.waitFor(`${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]').length === 1`, { timeoutMs: 10_000, label: 'fired alarm deleted' });
+  await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"]')`);
+  await cdp.waitFor(`${DIALOG}.textContent.includes('No alarms set')`, { timeoutMs: 10_000, label: 'all alarms deleted' });
+  assert(await cdp.evaluate(`!(${clockButton}).querySelector('svg.lucide-bell')`), '#1426: the bell disappears once no alarm is armed');
+  await shot(cdp, '09-popover-after-delete.png');
+}
+
+function buildShim(dir) {
+  mkdirSync(dir, { recursive: true });
+  const r = spawnSync('rustc', ['--edition', '2021', '-O', path.join(__dirname, 'verify-tauri-omp-shim.rs'), '-o', path.join(dir, 'omp.exe')], { encoding: 'utf8', windowsHide: true });
+  if (r.status !== 0) throw new Error(`rustc shim failed: ${r.stderr}`);
+}
+
+async function main() {
+  const head = gitHead(REPO_ROOT);
+  log(`verify-tauri-072: head ${head}, shots ${SHOTS_DIR}`);
+  let shimDir, dataDir, importDir, exeDir, repoA, child, cdp;
+  let ok = false;
+  try {
+    shimDir = mkdtempSync(path.join(tmpdir(), 'refract-072-shim-'));
+    dataDir = mkdtempSync(path.join(tmpdir(), 'refract-072-data-'));
+    importDir = mkdtempSync(path.join(tmpdir(), 'refract-072-import-'));
+    exeDir = mkdtempSync(path.join(tmpdir(), 'refract-072-exe-'));
+    repoA = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-072-repoA-')), 'A');
+    buildShim(shimDir);
+    const launcherExe = buildLauncher(shimDir);
+    const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
+    if (!existsSync(src)) throw new Error(`built exe not found at ${src}`);
+    const exePath = path.join(exeDir, 'refract-tauri.exe');
+    copyFileSync(src, exePath);
+    const port = await getFreePort();
+    const launched = await launchBuiltExe(launcherExe, exePath, {
+      port,
+      dataDir,
+      pathPrepend: shimDir,
+      logFile: path.join(SHOTS_DIR, 'app.log'),
+      extraEnv: {
+        REFRACT_IMPORT_SOURCE_DIR: importDir,
+        REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
+        REFRACT_FAKE_OMP_NODE: process.execPath,
+        REFRACT_FAKE_OMP_SCENARIO: 'advisor-1430'
+      }
+    });
+    child = launched.child;
+    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
+    cdp = await CdpSession.connect(wsUrl);
+    if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target is not owned by the launched process');
+    log(`app pid ${launched.targetPid}, port ${port}, data dir ${dataDir}`);
+    await runChecks(cdp, { repoDir: repoA });
+    log(`verify-tauri-072: ALL PASS (${passed} checks) at head ${head}`);
+    ok = true;
+  } finally {
+    writeFileSync(path.join(SHOTS_DIR, 'report.txt'), REPORT.join('\n'));
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, log: REPORT }, null, 2));
+    cdp?.close();
+    if (child) await stopLauncher(child);
+    for (const dir of [shimDir, dataDir, importDir, exeDir, repoA]) if (dir) await safeRmSync(dir);
+  }
+}
+
+main().catch((err) => {
+  console.error('verify-tauri-072: FAIL');
+  console.error(err);
+  process.exitCode = 1;
+});
