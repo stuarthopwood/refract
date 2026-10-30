@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, assertExeMatchesProcess, createReportLogger } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
-import { addRepository } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -31,8 +30,22 @@ if (existsSync(MANAGED_GH)) {
   process.exit(2);
 }
 
-const ROWS = `Array.from(document.querySelectorAll('[data-pr-row]')).map((el) => el.getAttribute('data-pr-repository').split('/')[1] + '#' + el.getAttribute('data-pr-number')).sort()`;
+const ROWS = `Array.from(document.querySelectorAll('[data-pr-row]')).map((el) => el.querySelector('[data-pr-repository]').getAttribute('data-pr-repository').split('/')[1] + '#' + el.getAttribute('data-pr-number')).sort()`;
 const OPEN_ALL = ['hello-world#1', 'hello-world#2', 'spoon-knife#4', 'spoon-knife#5'];
+
+const TRIGGER = `(document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project'))`;
+
+// Add project menu (#867): trigger, "Local folder…", then the dialog's path field.
+async function addProject(cdp, dir) {
+  await cdp.click(TRIGGER);
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Local folder'))`, { timeoutMs: 10_000, label: 'Add project menu open' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Local folder'))`);
+  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog open' });
+  await cdp.click(`document.querySelector('[role="dialog"] input')`);
+  await cdp.send('Input.insertText', { text: dir });
+  await cdp.clickByText('Add project', { inDialog: true });
+  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add project dialog closed' });
+}
 
 async function main() {
   mkdirSync(SHOTS_DIR, { recursive: true });
@@ -83,8 +96,8 @@ async function main() {
     assertExeMatchesProcess(launched.targetPid, exePath, hash);
     log(`verify-tauri-874: launched pid ${launched.targetPid}, exe sha256 ${hash}; fake gh log ${ghLog}`);
 
-    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`, { timeoutMs: 45_000, label: 'app ready' });
-    for (const [name] of projects) await addRepository(cdp, path.join(repoParent, name));
+    await cdp.waitFor(`!!${TRIGGER} && !${TRIGGER}.disabled`, { timeoutMs: 45_000, label: 'app ready' });
+    for (const [name] of projects) await addProject(cdp, path.join(repoParent, name));
     pass('Added four scratch Projects (two share one GitHub repository, one has no remote)');
 
     const rowsAre = async (expected, label) => {
@@ -159,7 +172,7 @@ async function main() {
     await rowsAre(OPEN_ALL, 'open again');
 
     await toggleProject('spoon-knife');
-    check(await rowsAre(['hello-world#1', 'hello-world#2'], 'project filter'), 'Project filter limits the list to the selected Projects', 'hello-world#1, #2');
+    check(await rowsAre(['spoon-knife#4', 'spoon-knife#5'], 'project filter'), 'Project filter limits the list to the selected Project', 'spoon-knife#4, #5');
     check(await cdp.evaluate(`document.querySelector('button[aria-label^="Filters"]').getAttribute('aria-label').includes('1 active')`), 'Project filter counts as an active filter', 'Filters, 1 active');
     await shot(cdp, '06-filter-project.png');
     await toggleProject('spoon-knife');
@@ -182,7 +195,7 @@ async function main() {
     check(await rowsAre(OPEN_ALL, 'cleared'), 'Clear filters restores the full list', 'four open pull requests');
 
     // 7. Detail pane with the Review actions
-    await cdp.click(`document.querySelector('[data-pr-row][data-pr-repository="octocat/hello-world"][data-pr-number="1"]')`);
+    await cdp.click(`Array.from(document.querySelectorAll('[data-pr-row]')).find((el) => el.getAttribute('data-pr-number') === '1' && el.querySelector('[data-pr-repository="octocat/hello-world"]'))`);
     await cdp.waitFor(`document.body.textContent.includes('Description for pull request #1.')`, { timeoutMs: 15_000, label: 'detail body' });
     const actions = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).map((el) => el.textContent.trim()).filter((t) => /^(review|merge)$/i.test(t))`);
     check(actions.some((t) => /^review$/i.test(t)) && actions.some((t) => /^merge$/i.test(t)), 'Detail pane shows its Review and Merge actions', JSON.stringify(actions));
@@ -203,7 +216,7 @@ async function main() {
     // 9. Issues still works on the shared shell
     await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="GitHub"] button')).find((el) => el.textContent.trim() === 'Issues')`);
     await cdp.waitFor(`!!document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Issues'`, { timeoutMs: 10_000, label: 'Issues heading' });
-    await cdp.waitFor(`document.body.textContent.includes('No issues match these filters.')`, { timeoutMs: 15_000, label: 'issues empty state' });
+    await cdp.waitFor(`document.body.textContent.includes('No issues match')`, { timeoutMs: 15_000, label: 'issues empty state' });
     check(await cdp.evaluate(`!!document.querySelector('button[aria-label^="Filters"]')`), 'Issues view renders on the shared shell', 'heading, Filters toggle, shared empty state');
     await shot(cdp, '10-issues-still-works.png');
   } catch (err) {
