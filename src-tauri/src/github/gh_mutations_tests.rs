@@ -1,16 +1,5 @@
-// Fixture/unit tests for `gh_mutations.rs` (lane R9, issue #792's own named ask: "write fixtures
-// from recorded `gh` output for list, detail, review submit and merge" -- this file covers the
-// review-submit and merge half of that ask). Split into a sibling file (`#[path =
-// "gh_mutations_tests.rs"]` at `gh_mutations.rs`'s tail), the same pattern
-// `ipc/pull_requests/mapping_tests.rs` already uses, to stay under the 600-line-per-file cap
-// (issue #806).
-//
-// `submit_review`/`merge_pull_request`/`get_allowed_merge_methods` themselves spawn a real `gh`
-// process, so each has a small pure helper pulled out of it (`build_approve_review_variables`,
-// `build_review_argv`, `build_merge_argv`, `allowed_merge_methods_from_wire`,
-// `classify_merge_failure`) that this file tests directly -- a narrow, behaviour-preserving
-// extraction, not a new code path: every extracted function is called from exactly the same spot
-// its inline logic used to sit, with the same inputs and outputs.
+// Tests for `gh_mutations.rs`; split out to stay under the 600-line cap (#806). The pure helpers
+// extracted from the `gh`-spawning functions are tested directly.
 
 use super::*;
 
@@ -41,8 +30,7 @@ fn wire(merge: bool, squash: bool, rebase: bool) -> AllowedMergeMethodsWire {
 
 #[test]
 fn allowed_merge_methods_from_wire_covers_every_boolean_combination_in_order() {
-    // Order is always merge/squash/rebase, matching the function's own `if`/`if`/`if` sequence,
-    // regardless of which booleans are set.
+    // Order is always merge/squash/rebase, whichever booleans are set.
     let cases: [(bool, bool, bool, &[MergeMethod]); 8] = [
         (false, false, false, &[]),
         (true, false, false, &[MergeMethod::Merge]),
@@ -222,8 +210,7 @@ fn classify_merge_failure_falls_back_to_shared_gh_failure_classification() {
 
 #[test]
 fn classify_merge_failure_redacts_a_github_token_found_in_stderr() {
-    // Split across fragments (same convention as `omp/redact_tests.rs`) so no single literal
-    // in this source file reads as a real live credential.
+    // Split across fragments so no literal here reads as a live credential.
     let token = format!("{}{}", "ghp_", "1234567890abcdef");
     let stderr = format!("merge conflict with {token}");
     let error = classify_merge_failure(&stderr, "");
@@ -247,13 +234,8 @@ fn allowed_merge_methods_wire_deserializes_a_non_trivial_combination() {
 
 #[test]
 fn threads_and_timeline_envelope_deserializes_the_real_graphql_shape() {
-    // Shaped like the real `get_review_threads_and_timeline` GraphQL envelope
-    // (`THREADS_AND_TIMELINE_QUERY`'s own selection set): a review thread with `line: null`
-    // (a file-level comment), a timeline `IssueComment` node with `author: null` (a deleted
-    // account), and a pending `PullRequestReview` node (`submittedAt: null`, `state: "PENDING"`)
-    // -- `ipc::pull_requests::mapping::build_timeline` (exercised against this same shape in
-    // `mapping_tests.rs`, which can see it) drops that last node since `map_review_verdict` has
-    // no verdict for `"PENDING"`.
+    // Shaped like the real GraphQL envelope: a file-level thread (`line: null`), a deleted-account
+    // `IssueComment` (`author: null`), and a PENDING review that `build_timeline` drops.
     let json = r#"{
         "repository": {
             "pullRequest": {

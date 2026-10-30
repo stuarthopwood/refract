@@ -1,7 +1,4 @@
-// IPC handler bodies for `pullRequests.*` (lane R9, issue #792). Split out of `mod.rs` to stay
-// under the 600-line-per-file cap (issue #806): `mod.rs` keeps registration, the staleness
-// cache, `list_pull_requests`/`build_detail`'s own orchestration, and the small validation/
-// lookup helpers every handler below calls into via `super::`.
+// IPC handler bodies for `pullRequests.*`; `mod.rs` keeps registration and the staleness cache.
 
 use serde_json::Value;
 
@@ -24,8 +21,7 @@ use super::{
     STALE_ERROR, STALE_ERROR_DIALOG, STALE_ERROR_DIALOG_MOVED,
 };
 
-/// Issue #499 (2026-10-16 decision): the State control narrowing whichever Filter tab is
-/// active; `Closed` includes Merged (decided 2026-10-07).
+/// `Closed` includes Merged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PullRequestStateFilter {
     Open,
@@ -208,8 +204,7 @@ pub(super) fn pull_requests_resolve_thread(state: AppState, args: Vec<Value>) ->
         if stale {
             return Err(stale_error(STALE_ERROR));
         }
-        // Security remediation (Constitution Principle V): `threadId` must be verified to belong
-        // to THIS pull request before the mutation, never trusted straight from the renderer.
+        // Verify `threadId` belongs to this pull request; never trust it from the renderer.
         let threads_and_timeline =
             gh_mutations::get_review_threads_and_timeline(&repo_path, number)
                 .await
@@ -320,19 +315,14 @@ pub(super) fn pull_requests_submit_review(state: AppState, args: Vec<Value>) -> 
                 )
             })?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
-        // Security remediation: requires a cache entry (`detail()` must have been called for
-        // this exact pull request before any review is submitted) so approve has a known
-        // `headSha`/`id` to pin its `commitOID` to -- a missing entry is `stale`.
+        // Approve needs a cache entry to pin its `commitOID`; a missing entry is `stale`.
         let (stale, fresh) = check_not_stale(repository_id, &repo_path, number, true)
             .await
             .map_err(map_gh_error)?;
         if stale {
             return Err(stale_error(STALE_ERROR_DIALOG));
         }
-        // High remediation: the cache-vs-cache check above only proves a cache entry exists --
-        // `expectedHeadSha` is the renderer's own dialog-open-time snapshot, compared here
-        // against a FRESH re-fetch, which is the actual guarantee against a push that landed and
-        // got re-cached as "fresh" by the 15s background poll while the dialog was open.
+        // Compare against a fresh re-fetch: a push during an open dialog must not look unchanged.
         if fresh.head_sha != expected_head_sha {
             return Err(stale_error(STALE_ERROR_DIALOG_MOVED));
         }
@@ -406,9 +396,7 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
         if let Some(reason) =
             compute_merge_disabled_reason(pr_state, &fresh.mergeable, &fresh.merge_state_status)
         {
-            // Medium remediation: a conflict (GitHub itself refuses the merge) is `not-mergeable`
-            // (FR-020); a review-state/BLOCKED gate is `disabled`, the same family as
-            // `reviewDisabledReason`.
+            // A merge conflict is `not-mergeable`; a blocked review/merge gate is `disabled`.
             let is_conflict = matches!(mergeable_state, mapping::MergeableState::Conflicting)
                 || fresh.merge_state_status.eq_ignore_ascii_case("DIRTY");
             let code = if is_conflict {
@@ -424,8 +412,7 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
                 "GitHub is still checking whether this pull request can merge; close this dialog, refresh, and try again shortly.",
             ));
         }
-        // Pinned to the renderer's own dialog-open-time snapshot (just verified identical to
-        // `fresh.head_sha` above), not `fresh.head_sha` alone.
+        // Pinned to the dialog-open-time snapshot, not `fresh.head_sha`.
         gh_mutations::merge_pull_request(&repo_path, number, method, expected_head_sha)
             .await
             .map_err(map_gh_error)?;
@@ -458,11 +445,7 @@ pub(super) fn pull_requests_new_session_from_pull_request(
         };
         let repo_path = std::path::Path::new(&repository.path);
 
-        // Gate round 3 HIGH (code review, 2026-10-14): the former two-step "resolve a free name
-        // first, then fetch into it" sequence reserved nothing between the two steps, letting
-        // two concurrent calls destroy each other's worktree/branch -- see
-        // `add_worktree_from_pull_request_branch`'s own doc comment. It now does its own atomic
-        // reservation internally; there is no separate name to resolve here any more.
+        // The worktree name is reserved atomically inside `add_worktree_from_pull_request_branch`.
         let added = add_worktree_from_pull_request_branch(repo_path, number)
             .await
             .map_err(map_git_error)?;
@@ -503,9 +486,7 @@ pub(super) fn pull_requests_new_session_from_pull_request(
             .add_session(session.clone())
             .await
         {
-            // Security remediation (ported): the Repository may have been removed while the
-            // worktree-creation steps above were still in flight -- roll back the worktree/
-            // branch just created so it is not stranded.
+            // Roll back the new worktree if the Repository was removed mid-flight.
             let _ = remove_worktree(repo_path, &added.worktree_path, &added.branch, true).await;
             return Err(map_registry_error(err));
         }

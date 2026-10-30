@@ -1,16 +1,5 @@
-// Side chat (`/btw`) and word prediction with its off switch (#772) (lane R6, issue #789). Port
-// of `src/main/omp/SessionAgent.ts`'s own `askSideChat`/`cancelSideChat`/`getSideChatHistory`/
-// `flattenBtwHistory`/`latestTurn`/`notifySideChatConversationChanged`/`predictWord`/
-// `predictWordFeedback` plus its `onFrame` `btw_delta`/`btw_record`/btw-history-`notice` cases --
-// side chat uses OMP's native `btw` RPC and frames directly (`rpc.md` "Side questions"/"Word
-// prediction"), never a bundled extension. The IPC-facing sibling is `ipc/side_chat.rs`.
-//
-// `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
-// decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
-// `on_start_progress` for the ready-wait banner (same listener). `on_conversation_reset` is the
-// sibling hook `session::agent::conversations`'s own `start_new_conversation`/`open_conversation`
-// call (issue #577/#712's own precedent, `session::readout`/`session::subagents`), the Rust home
-// for `notifySideChatConversationChanged`.
+// Side chat (`/btw`) and word prediction. Uses OMP's native `btw` RPC and frames directly.
+// The lane hooks (`on_frame`, `on_exit`, `on_conversation_reset`) are called from `agent`.
 
 use serde_json::{json, Value};
 
@@ -18,62 +7,30 @@ use crate::omp::process::ReadyWaitStage;
 
 use super::agent::{AgentError, SessionAgent};
 
-/// Mirrors `agent::mod`'s own `DEFAULT_REQUEST_TIMEOUT_MS` (private there); re-declared here with
-/// the same value, the convention every lane module takes for a constant it does not export.
+/// Matches `agent::mod`'s private `DEFAULT_REQUEST_TIMEOUT_MS`.
 const REQUEST_TIMEOUT_MS: u64 = 60_000;
-/// Port of `SessionAgent.ts`'s own `PREDICT_WORD_TIMEOUT_MS`: "about two minutes worst case" to
-/// cover a cold shared prediction daemon start (`rpc.md` "Word prediction", FINDINGS item 28).
+/// Allows for a cold shared prediction daemon start.
 const PREDICT_WORD_TIMEOUT_MS: u64 = 150_000;
 
-/// Lane R6's own runtime state, held inside `AgentState` by `agent/mod.rs` without that file ever
-/// needing to change when this lane adds a field here. Reachable through `SessionAgent`'s own
-/// `with_side_chat_state` accessor (`agent/mod.rs`).
+/// Side chat runtime state, held inside `AgentState`.
 #[derive(Default)]
 pub(super) struct State {
-    /// Port of `SessionAgent.ts`'s own `sideChatConversationEpoch`: bumped once per Conversation
-    /// change (`on_conversation_reset` below). `ask` stamps every topic (root) id it learns about
-    /// with the value current at ask-time.
+    /// Bumped on each Conversation change; topics stamped with an older value are stale.
     conversation_epoch: u64,
-    /// Port of `SessionAgent.ts`'s own `sideChatTopicEpoch`, keyed by a topic's root id (never a
-    /// flattened follow-up's own synthetic id, never `leafId`). Gate-fix (round 9): bounded by
-    /// SETTLEDNESS, not by age -- `apply_frame`'s own `btw_record` case removes an entry (moving
-    /// it to `terminal_topic_epoch` below via `tombstone_topic`) once that topic's LATEST TURN
-    /// reaches a terminal status; `on_exit` clears the whole map unconditionally on every exit.
+    /// Conversation epoch per active topic root id; removed once the topic is terminal.
     topic_epoch: std::collections::HashMap<String, u64>,
-    /// Gate-fix (2026-10-14 gate review round 2 HIGH, round 3 MEDIUM, a REAL cross-Conversation
-    /// leak; Electron has the identical hole, issue #789's own "port the fixed behaviour" note
-    /// filed against it -- issue comment #6179571662): a terminal/cancelled topic's `topic_epoch`
-    /// entry is removed to bound memory, but a late frame for that SAME `record_id` after a
-    /// switch must still read as belonging to the OLD Conversation -- `unwrap_or(conversation_
-    /// epoch)` alone cannot tell "never asked" (never stale) from "asked, went terminal, removed"
-    /// (stays stale forever after a switch) once both return "not found". `tombstone_topic`
-    /// populates this ONLY for an id this process actually had an active entry for (security Low:
-    /// never for an arbitrary claimed id, which would let a malicious response grow this map
-    /// unbounded); `apply_frame` checks it before falling back to `conversation_epoch`. Round 3:
-    /// a per-reset prune (round 2's own fix) protected only ONE switch -- a cancel landing AFTER
-    /// a bump tombstoned with the post-bump epoch, pruned as "old" by the NEXT reset, leaking a
-    /// second-switch straggler. Never pruned by a reset now; bounded by `terminal_topic_order`'s
-    /// own FIFO cap (`MAX_TOMBSTONES`) and cleared by `on_exit`.
+    /// Tombstones for terminal topics, so a late frame still reads as stale after a switch (#789).
     terminal_topic_epoch: std::collections::HashMap<String, u64>,
-    /// Insertion order for `terminal_topic_epoch`'s own FIFO eviction (`tombstone_topic`); never
-    /// contains an id not currently a key of that map.
+    /// FIFO order for `terminal_topic_epoch` eviction.
     terminal_topic_order: std::collections::VecDeque<String>,
 }
 
 // ---------------------------------------------------------------------------
-// Flatten / latest-turn (port of `SessionAgent.ts`'s own `flattenBtwHistory`/`latestTurn`)
+// Flatten / latest-turn
 // ---------------------------------------------------------------------------
 
-/// Turns one `get_btw_history`/`btw`/`btw_record` topic thread (a `BtwHistoryThread`-shaped root
-/// node plus its nested `followUps[]`) into the flat, ordered `SideChatRecord[]` the IPC contract
-/// and renderer actually consume -- confirmed live (per `SessionAgent.ts`'s own doc comment) that
-/// OMP returns one entry per independent topic, each a TREE, never a flat list. A non-root node
-/// carries no real id of its own, so each is given a stable, position-derived `${id}.${index}`
-/// key built from its OWN PARENT's id (never the root's id directly past the first level) --
-/// safe as a list key, but this synthetic id must never be sent back to OMP as a `recordId`.
-/// Every flattened record also carries `topicId` (the thread's own root `id`) -- that is the one
-/// value a continuation (`ask`'s own `recordId`) or a cross-reference (`on_frame`'s own epoch
-/// guard) ever uses, never a flattened non-root row's own `id` and never the root's `leafId`.
+/// Flattens one topic thread into ordered records. Every record carries the root's `topicId`.
+/// Non-root ids are synthetic (`${parent}.${index}`) and must never be sent back to OMP.
 fn flatten_btw_history(thread: &Value) -> Vec<Value> {
     let topic_id = thread.get("id").and_then(Value::as_str).unwrap_or("");
     let mut out = Vec::new();
@@ -103,8 +60,7 @@ fn visit_btw_node(
         "createdAt": node.get("createdAt").cloned().unwrap_or(Value::Null),
         "updatedAt": node.get("updatedAt").cloned().unwrap_or(Value::Null),
     });
-    // TS `?:` optional fields are omitted entirely when absent, not sent as JSON `null` (same
-    // convention `agent::mod`'s own `status_event_locked` documents).
+    // Optional fields are omitted, not sent as `null`.
     if let Some(error) = node.get("error").and_then(Value::as_str) {
         record["error"] = Value::String(error.to_string());
     }
@@ -120,12 +76,8 @@ fn visit_btw_node(
     }
 }
 
-/// Gate-fix (round 4, Code4/Verif4 CRITICAL): a live `btw`/`btw_record` response is the SAME
-/// whole-tree shape `get_btw_history` returns per topic -- a follow-up's own response still
-/// carries the ROOT's `question`/`answer`/`status`, with the new turn nested at `followUps`'s
-/// last entry. Reuses `flatten_btw_history` (same ids, same `topicId`) and returns its LAST
-/// entry -- the actual latest turn OMP's response/push describes, never the stale root row `ask`/
-/// `on_frame` would otherwise silently re-patch forever.
+/// Returns the thread's latest turn (the last flattened entry). A live response repeats the root's
+/// question and answer, so the root row is never the one to show.
 fn latest_turn(thread: &Value) -> Value {
     let mut flattened = flatten_btw_history(thread);
     // `flatten_btw_history` always visits the root first, so `flattened` is never empty.
@@ -133,45 +85,26 @@ fn latest_turn(thread: &Value) -> Value {
 }
 
 // ---------------------------------------------------------------------------
-// Epoch / visibility gates (pure, testable independently of a live `SessionAgent`)
+// Epoch / visibility gates
 // ---------------------------------------------------------------------------
 
-/// Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH, defense in depth; round 7, Code7/Verif7
-/// Medium): whether a `btw_delta`/`btw_record` frame for a topic stamped with `topic_epoch` (or
-/// the CURRENT conversation epoch when the topic was never stamped by `ask` at all -- loaded
-/// from history, never asked through this process instance, which must NOT be treated as stale)
-/// must be dropped rather than forwarded, because a Conversation switch landed after the topic
-/// was stamped. `ask` always captures its own epoch BEFORE sending the request (never re-reads
-/// `conversation_epoch` once the response arrives), so a switch that lands while the request is
-/// still in flight stamps the topic with the OLD epoch, which this correctly treats as stale once
-/// the switch's own epoch bump has happened.
+/// Whether a topic stamped with `topic_epoch` is stale after a Conversation switch.
 fn topic_frame_is_stale(topic_epoch: u64, conversation_epoch: u64) -> bool {
     topic_epoch < conversation_epoch
 }
 
-/// Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium; wording corrected round 10): whether a
-/// topic's own entry in `sideChatTopicEpoch` must be deleted once this turn is the topic's latest
-/// -- bounded by SETTLEDNESS (a non-"running" status), never by age.
+/// Whether a topic's `topic_epoch` entry can be removed: true once its status is no longer running.
 fn turn_reached_terminal(status: &str) -> bool {
     status != "running"
 }
 
-/// Gate-fix (round 2, Verif2 LOW / round 4, Code4 Medium): whether a `side-chat:patch` payload is
-/// forwarded given this Session's current visibility. A terminal `btw_record` and a `btw-history`
-/// notice are ALWAYS forwarded, regardless of visibility -- losing a side chat's own completion,
-/// or a save-failure notice, to the visibility gate leaves the panel stuck (or silently wrong)
-/// until a reload; only a `btw_delta` (no `record`, no `notice`) stays gated on visibility, like
-/// every other live-stream patch.
+/// Terminal records and notices always forward, even when hidden, so a completion is never lost.
+/// Live deltas are gated on visibility.
 fn should_forward_side_chat_patch(has_record_or_notice: bool, is_visible: bool) -> bool {
     has_record_or_notice || is_visible
 }
 
-/// Resolves the epoch a topic belongs to for a staleness check: the ACTIVE `topic_epoch` entry
-/// if the topic is still running; else its tombstoned `terminal_topic_epoch` entry if it already
-/// went terminal (gate-fix round 2 HIGH: without this fallback, a late frame for an
-/// already-terminal topic falls through to `conversation_epoch` itself and is wrongly treated as
-/// current/never-stale); else `conversation_epoch` (a topic never stamped this process instance
-/// at all -- loaded from history -- which must NOT be treated as stale).
+/// Epoch for staleness checks: the active entry, else the tombstone, else the current epoch.
 fn resolve_topic_epoch(state: &State, topic_id: &str) -> u64 {
     state
         .topic_epoch
@@ -181,16 +114,10 @@ fn resolve_topic_epoch(state: &State, topic_id: &str) -> u64 {
         .unwrap_or(state.conversation_epoch)
 }
 
-/// FIFO cap for `State::terminal_topic_epoch` (round 3 MEDIUM, security Low): a tombstone is
-/// never pruned by a Conversation switch, only by this eviction or by `on_exit` -- without a cap
-/// a pathologically long session (many `/btw` topics, each eventually terminal) would otherwise
-/// grow the map forever. 256 is generous for any realistic session's own side-chat topic count.
+/// FIFO cap for `State::terminal_topic_epoch`, so tombstones cannot grow without bound.
 const MAX_TOMBSTONES: usize = 256;
 
-/// Tombstones `topic_id` with `epoch` (gate-fix round 3 MEDIUM): called ONLY when `apply_frame`'s
-/// own `topic_epoch.remove(&topic_id)` actually returned something (security Low: never for an
-/// arbitrary id a frame merely claims, which would let a malicious/buggy response grow this map
-/// unbounded) -- evicts the OLDEST tombstone once `MAX_TOMBSTONES` is exceeded.
+/// Tombstones a terminal topic, evicting the oldest entry past `MAX_TOMBSTONES`.
 fn tombstone_topic(state: &mut State, topic_id: String, epoch: u64) {
     if state
         .terminal_topic_epoch
@@ -206,8 +133,7 @@ fn tombstone_topic(state: &mut State, topic_id: String, epoch: u64) {
     }
 }
 
-/// What `on_frame` must forward to the renderer as a `side-chat:patch`, if anything -- the
-/// decision `apply_frame` below makes.
+/// What `on_frame` must forward to the renderer as a `side-chat:patch`, if anything.
 #[derive(Debug, PartialEq)]
 pub(super) enum SideChatPatch {
     Delta { delta: String, record_id: String },
@@ -215,13 +141,8 @@ pub(super) enum SideChatPatch {
     Notice { message: String },
 }
 
-/// Pure core of `on_frame`'s three live-wire cases (gate-fix, 2026-10-14 gate review: these rules
-/// used to be proven only against a hand-built `State` and the isolated predicates above, which
-/// cannot fail for a regression in how `on_frame` itself reads or mutates the REAL state across a
-/// real sequence of calls -- this factors out that exact logic so a test can drive it). Mutates
-/// `state` precisely as the live path does (epoch lookups, terminal-status deletion); returns
-/// what SHOULD be forwarded, or `None` if this frame is dropped (stale, visibility-gated, or
-/// simply not a recognised case).
+/// Pure core of `on_frame`. Mutates `state` as the live path does and returns what to forward,
+/// or `None` if the frame is dropped.
 pub(super) fn apply_frame(
     state: &mut State,
     frame_type: &str,
@@ -230,10 +151,7 @@ pub(super) fn apply_frame(
 ) -> Option<SideChatPatch> {
     match frame_type {
         "notice" => {
-            // Gate-fix (round 4, Code4 Medium, constitution II/FR-010): a `btw-history` save
-            // failure arrives as an ordinary `notice` frame -- `frame.rs`'s own main match
-            // already skips it for the main transcript (see that file's header); routed to the
-            // side-chat store as a toast instead, same as every other side-chat failure.
+            // Only `btw-history` notices belong to side chat; others stay in the main transcript.
             if frame.get("source").and_then(Value::as_str) != Some("btw-history") {
                 return None;
             }
@@ -299,12 +217,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
     }
 }
 
-/// Port of `SessionAgent.ts`'s own `onExit`: fired unconditionally, before any other exit
-/// handling (see `SessionAgentEvents.sideChatInterrupted`'s own doc comment for exactly which
-/// exit path this closes) -- a side-chat record left `running` must never block Send/Retry/`/btw`
-/// forever once a NEW process starts. Both maps are cleared unconditionally too: a brand-new
-/// process for this Session always starts a brand-new history store, so nothing stamped or
-/// tombstoned here survives into it.
+/// Clears side-chat state on exit so a running record cannot block a new process.
 pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
     agent
         .with_side_chat_state(|s| {
@@ -327,17 +240,7 @@ pub(super) async fn on_start_progress(
     // none either).
 }
 
-/// Port of `SessionAgent.ts`'s own `notifySideChatConversationChanged`: the one place that bumps
-/// `conversation_epoch` and fires `side-chat:conversation-changed`, called from
-/// `session::agent::conversations`' `start_new_conversation` (unconditionally) and
-/// `open_conversation` (only when the Conversation actually changed), and from
-/// `session::agent::launch`'s `start_with_conversation` via `reset_after_start_with_conversation`
-/// below (only when the Conversation actually changed) -- same call sites TS's own
-/// `startNewConversation`/`openConversation`/`startStoppedSessionOnConversation` use. Gate-fix
-/// (round 3 MEDIUM: round 2's own per-reset tombstone prune protected only ONE switch -- see
-/// `State::terminal_topic_epoch`'s own doc comment): never prunes `terminal_topic_epoch` here
-/// any more; a tombstone now survives every switch until `on_exit` or `tombstone_topic`'s own
-/// FIFO cap retires it.
+/// Bumps the Conversation epoch and tells the renderer the side-chat Conversation changed.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_side_chat_state(|s| {
@@ -349,19 +252,8 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
         .emit_side_chat_conversation_changed(agent.session_id());
 }
 
-/// Port of `conversationSwitch.ts`'s own gate-fix (round 6 HIGH; 2026-10-14 gate review found
-/// `start_with_conversation` never called this at all): the ONLY Conversation-switch path
-/// available while `status == Stopped` -- without it a stopped Session kept the previous
-/// Conversation's side-chat rows/epoch, so the next question's topic id was rejected with
-/// "Unknown /btw topic" (the defect `open_conversation`'s own guard already fixed for a LIVE
-/// Session). Called right AFTER the registry write succeeds and BEFORE `launch()` runs (round 2
-/// gate-fix: matches `conversationSwitch.ts`'s own `prepare` callback ordering), so it fires even
-/// if the subsequent start itself fails. `previous_conversation` is `None` when
-/// `start_with_conversation` never wrote the registry at all (worktree missing); `Some(None)`
-/// means it wrote but there was no earlier Conversation. Skipped when `file` IS
-/// `previous_conversation` (reopening the same Conversation, its topics are still valid); always
-/// resets for `file: None` (a brand-new Conversation), matching `start_new_conversation`'s own
-/// unconditional reset.
+/// Resets side-chat state after a stopped Session switches Conversation. Runs before `launch()`,
+/// so a failed start still gets the reset.
 pub(crate) async fn reset_after_start_with_conversation(
     agent: &SessionAgent,
     file: Option<&str>,
@@ -379,13 +271,8 @@ pub(crate) async fn reset_after_start_with_conversation(
 // `sideChat.*` / `chat.predictWord*` (called from `ipc::side_chat`)
 // ---------------------------------------------------------------------------
 
-/// `ask`'s own pre-request stamp (gate-fix round 7, Code7/Verif7 Medium, "stamping order"):
-/// captures `conversation_epoch` BEFORE the request is sent and, for a continuation, stamps the
-/// topic with that value immediately -- never re-read after the response resolves, so a
-/// Conversation switch landing while the request is still in flight correctly leaves the topic
-/// stamped with the OLD epoch (`topic_frame_is_stale`'s own doc comment explains why that
-/// matters). Factored out of `ask` so a test can drive the exact "stamp, then a switch lands,
-/// then a late frame arrives" sequence against a real `State`.
+/// Captures the epoch before the request is sent, so a Conversation switch during the request
+/// leaves the topic stamped with the old epoch.
 fn stamp_continuation_before_ask(state: &mut State, record_id: Option<&str>) -> u64 {
     let epoch = state.conversation_epoch;
     if let Some(record_id) = record_id {
@@ -394,25 +281,12 @@ fn stamp_continuation_before_ask(state: &mut State, record_id: Option<&str>) -> 
     epoch
 }
 
-/// `ask`'s own post-response stamp (gate-fix round 6, Code6/Sec6/A11y6/Verif6 HIGH defense in
-/// depth): stamps the TOPIC's own root id (never the latest turn's own flattened id) with the
-/// epoch `stamp_continuation_before_ask` captured BEFORE the request was sent -- never a value
-/// re-read after the response resolves. Factored out of `ask` (not inlined) so a test can drive a
-/// REAL `on_conversation_reset` bump between the capture and this stamp, reproducing the exact
-/// race the epoch guard protects against. Round 3 note: if the frame listener already processed
-/// this same topic's terminal `btw_record` push (a very fast reply) before this call runs, this
-/// re-adds an active `topic_epoch` entry for an already-tombstoned topic -- benign (never acted
-/// on again unless a further frame for the same id arrives; memory-bounded only by `on_exit`,
-/// same posture `topic_epoch`'s own doc comment already accepts for any entry no later frame
-/// ever settles).
+/// Stamps the topic's root id with the epoch captured before the request, never a re-read value.
 fn stamp_topic_after_response(state: &mut State, thread_id: String, epoch: u64) {
     state.topic_epoch.insert(thread_id, epoch);
 }
 
-/// `sideChat.ask` (contracts/ipc.md "Side chat"): issues `btw`, returning the new (`running`)
-/// record's own whole shape immediately -- the answer itself arrives over `side-chat:patch` as a
-/// terminal `btw_record` (`on_frame`'s own case above), never this call's return value.
-/// `record_id` omitted starts a fresh topic (FR-003); given, continues one.
+/// Issues `btw` and returns the `running` record. The answer arrives later as a `btw_record` patch.
 pub async fn ask(
     agent: &SessionAgent,
     question: String,
@@ -462,14 +336,7 @@ pub async fn ask(
     Ok(json!({ "record": latest_turn(thread) }))
 }
 
-/// Gate-fix (2026-10-14 gate review MEDIUM; round 2 tightened to compare-and-remove): `ask`'s own
-/// pre-insert of `record_id`'s epoch above (continuing an existing topic) must not leak a dead
-/// entry into `topic_epoch` forever when the `btw` request then fails -- nothing else cleans up a
-/// continuation's entry for a topic that never got a terminal `btw_record` frame to trigger
-/// `apply_frame`'s own settledness-bounded delete. Removes the entry ONLY if it still holds the
-/// exact epoch THIS `ask` call stamped -- a later, successful `ask` for the same `record_id`
-/// (racing in before this failed call's own cleanup runs) must never have ITS entry wiped by an
-/// earlier call's own failure.
+/// Removes a failed continuation's epoch stamp, but only if it still holds this call's value.
 async fn forget_topic_epoch(agent: &SessionAgent, record_id: &Option<String>, epoch: u64) {
     if let Some(record_id) = record_id {
         agent
@@ -482,10 +349,7 @@ async fn forget_topic_epoch(agent: &SessionAgent, record_id: &Option<String>, ep
     }
 }
 
-/// `sideChat.cancel` (contracts/ipc.md): issues `btw_cancel` for this Session's currently-running
-/// side question, if any -- a no-op (not an error) if nothing is running, mirroring
-/// `subagents.cancel`'s own idempotent shape. The cancelled record itself arrives over
-/// `side-chat:patch` as an ordinary `btw_record` with `status: "cancelled"` (FR-006).
+/// Cancels the running side question. A no-op if nothing is running.
 pub async fn cancel(agent: &SessionAgent) -> Result<(), AgentError> {
     let res = match agent
         .request_rpc(json!({ "type": "btw_cancel" }), REQUEST_TIMEOUT_MS)
@@ -508,10 +372,7 @@ pub async fn cancel(agent: &SessionAgent) -> Result<(), AgentError> {
     Ok(())
 }
 
-/// `sideChat.getHistory` (contracts/ipc.md, FR-004): every side-chat record OMP has for this
-/// Session's saved session file, flattened from `get_btw_history`'s own nested per-topic shape.
-/// Gate-fix (round 4, Code4/Verif4 HIGH): OMP's own `get_btw_history` returns topics NEWEST
-/// first -- sorted ascending by `createdAt` here so the flattened result reads oldest-to-newest.
+/// Flattens OMP's per-topic history into records. Sorted oldest first, since OMP returns newest first.
 pub async fn history(agent: &SessionAgent) -> Result<Vec<Value>, AgentError> {
     let res = agent
         .request_rpc(json!({ "type": "get_btw_history" }), REQUEST_TIMEOUT_MS)
@@ -535,10 +396,7 @@ pub async fn history(agent: &SessionAgent) -> Result<Vec<Value>, AgentError> {
     Ok(sort_and_flatten_threads(threads))
 }
 
-/// Pure core of `history`'s own post-RPC shaping (gate-fix round 4, Code4/Verif4 HIGH): OMP's own
-/// `get_btw_history` returns topics NEWEST first -- sorted ascending by `createdAt` here so the
-/// flattened result reads oldest-to-newest. Factored out so a test can assert the ordering
-/// without a live RPC round trip.
+/// Sorts topics oldest first by `createdAt`, then flattens them into records.
 fn sort_and_flatten_threads(mut threads: Vec<Value>) -> Vec<Value> {
     threads.sort_by(|a, b| {
         let a = a.get("createdAt").and_then(Value::as_f64).unwrap_or(0.0);
@@ -548,13 +406,8 @@ fn sort_and_flatten_threads(mut threads: Vec<Value>) -> Vec<Value> {
     threads.iter().flat_map(flatten_btw_history).collect()
 }
 
-/// `chat.predictWord` (FR-058): ghost-text composer completion. Issues `predict_word` ONLY on an
-/// already-running live process -- `request_rpc` never starts one -- since the first call after a
-/// cold shared prediction daemon start can take up to ~150 s (`rpc.md`, FINDINGS item 28), and a
-/// keystroke in a stopped Session's composer must never trigger that. Best-effort: any failure
-/// (no live process, a timeout, an RPC-level error, a malformed response) degrades to `None`,
-/// never surfaced as an error -- the off switch (#772) is checked by the IPC caller before this
-/// is ever reached.
+/// Ghost-text completion. Runs only on a live process, since a cold start can take about 150 s.
+/// Any failure returns `None`.
 pub async fn predict_word(agent: &SessionAgent, text: String, cursor: i64) -> Option<String> {
     let res = agent
         .request_rpc(
@@ -572,8 +425,7 @@ pub async fn predict_word(agent: &SessionAgent, text: String, cursor: i64) -> Op
         .map(str::to_string)
 }
 
-/// `chat.predictWordFeedback`: companion to `predict_word` above, same silent-degradation
-/// contract -- no live process or a failed send is dropped, never surfaced.
+/// Best-effort feedback for `predict_word`. Failures are dropped silently.
 pub async fn predict_word_feedback(
     agent: &SessionAgent,
     text: String,

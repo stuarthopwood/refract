@@ -1,7 +1,4 @@
-// Token guard (issue #1212, spec 021): Refract's own OMP launch overlay and rules file. Every
-// `omp` Refract launches gets `--config <overlay>` and `--append-system-prompt <rules file>`
-// (`args`), so the token-cost settings win over the developer's global OMP config for Refract
-// Sessions only. The values live in Refract's own store (`values`), never in the global config.
+// Token guard: the `omp` overlay and rules file, applied to Refract Sessions only.
 
 use std::io;
 use std::path::Path;
@@ -13,9 +10,7 @@ pub mod rules;
 pub mod shake;
 pub mod values;
 
-/// Writes `bytes` to `path` atomically (unique temp file, then rename). A file that already holds
-/// exactly these bytes is left alone: on Windows a rename over a file another process (a running
-/// `omp` reading the overlay) holds open can fail, and an unchanged file needs no write.
+/// Writes `bytes` atomically and skips the write when the file already matches, since Windows rename can fail on an open overlay.
 pub(crate) async fn write_atomic_if_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Ok(existing) = tokio::fs::read(path).await {
         if existing == bytes {

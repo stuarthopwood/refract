@@ -1,26 +1,5 @@
-// IPC handlers for `accounts.*` (`contracts/ipc.md` "GitHub accounts", "OMP provider sign-in")
-// and `app.openReleaseNotes` (lane R9, issue #792), porting `src/main/ipc/accounts.ts`.
-//
-// GitHub half: lists/adds/switches/signs out GitHub CLI accounts via `github::cli`, enriching
-// each with `profileCache.json`'s cached display fields (`github::profile`,
-// `store::profile_cache`) and refreshing that cache opportunistically in the background
-// (research.md decision 5) -- `list()` itself never blocks on a live fetch; it always answers
-// from whatever is already cached, `None` included (the renderer falls back to login/initials).
-//
-// OMP half: research.md decision 6 / docs/spike/FINDINGS.md item 43 confirmed omp 18.5.1 exposes
-// no `/login`/`/logout` command over rpc-ui at all. `signIn`/`signOut`/`answer` unconditionally
-// refuse (`unsupported`/`not-found`) rather than driving a flow that cannot exist; only `list()`
-// does a real, read-only scratch-`OmpProcess` probe (`omp::login_providers`).
-//
-// No token is ever stored or read by Refract (spec 003 FR-027, constitution V): every GitHub
-// operation goes through the developer's own signed-in `gh` (`github::cli`); subprocess
-// arguments are arrays, never shell strings (`github::cli`'s own discipline).
-//
-// Split across this directory (issue #806, 600-line-per-file cap, matching `ipc::pull_requests`'s
-// own `mod.rs`/`mapping.rs`/`handlers.rs` layout): `types.rs` keeps the wire shapes and every pure
-// function (flattening, projection, staleness, error-message mapping); this file keeps
-// registration, the module-level state (in-flight add flows, the broadcast-ordering ticket, the
-// lazily opened profile cache), and the orchestration every handler in `handlers.rs` calls into.
+// IPC handlers for `accounts.*` and `app.openReleaseNotes`. Refract never stores or reads a token.
+// OMP exposes no sign-in command over rpc-ui, so sign-in and sign-out refuse outright.
 
 mod handlers;
 mod types;
@@ -64,37 +43,18 @@ pub fn register(d: &mut Dispatcher) {
     d.register("app.openReleaseNotes", handlers::app_open_release_notes);
 }
 
-// ---------------------------------------------------------------------------
-// Module-level state
-// ---------------------------------------------------------------------------
+// ---- Module-level state ----
 
-/// Tracks every add-account flow currently in flight, keyed by the `flowId` handed back from
-/// `addStart`, so a later `addCancel(flowId)` can find the right `GhLoginFlow` to cancel.
+/// In-flight add-account flows, keyed by `flowId`, so `addCancel` can find the `GhLoginFlow`.
 static ACTIVE_ADD_FLOWS: LazyLock<StdMutex<HashMap<String, Arc<GhLoginFlow>>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 static ADD_FLOW_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// GateCode008 MEDIUM "broadcast ordering": every reconcile/refresh round that will eventually
-/// broadcast acquires a ticket via `acquire_broadcast_ticket` right before that round's own async
-/// work begins -- for `list()` that is the call itself; for a completed add flow and for
-/// switch/signOut it is only once the CLI mutation has already settled and the post-mutation
-/// reconcile is about to start. Whichever round's ticket was acquired most recently always wins,
-/// so an earlier round's now-stale result can never overwrite it.
-///
-/// "Also fix" remediation (code review, 2026-10-14): a plain `AtomicU64` let `acquire`/`load` and
-/// the later `emit` race across two separate atomic steps on tokio's multi-threaded runtime --
-/// task A could pass its "am I still current" check, then task B could acquire a newer ticket
-/// and finish its own emit first, so A's now-stale emit still landed last. A `StdMutex` held
-/// across the whole acquire, and across the whole check-and-emit, makes the two operations
-/// mutually exclusive: whichever one gets the lock runs to completion (ticket bump, or the
-/// current-ness check plus the emit it guards) before the other can start.
+/// Serialises the ticket bump and the emit, so a stale round can never broadcast after a newer one.
+/// The newest acquired ticket wins; the mutex makes the check-and-emit atomic on tokio's runtime.
 static LATEST_BROADCAST_TICKET: StdMutex<u64> = StdMutex::new(0);
 
-/// Opened lazily on first use and reused afterward (the same single-store-instance pattern
-/// `RegistryStore`/`SettingsStore` get via `AppState`, just owned by this module instead, since
-/// nothing else in the crate needs the GitHub display cache). `get_or_try_init` never caches a
-/// rejected open forever: a failed attempt leaves the cell uninitialised, so the very next call
-/// retries `ProfileCacheStore::open` instead of re-awaiting a dead result.
+/// Opened lazily and reused. A failed open is not cached, so the next call retries.
 static PROFILE_CACHE_STORE: OnceCell<AsyncMutex<ProfileCacheStore>> = OnceCell::const_new();
 
 async fn get_profile_cache(
@@ -113,9 +73,7 @@ fn acquire_broadcast_ticket() -> u64 {
     *ticket
 }
 
-/// Never fails: a destroyed-or-not-yet-created window simply drops the event, mirroring
-/// `events::EventSink::send`'s own defensive stance -- this module reaches `AppState::app_handle`
-/// directly rather than through an `EventSink` (no `SessionManager` state is needed here).
+/// Drops the event if the window is gone; this bypasses `EventSink` on purpose.
 fn broadcast_github_changed(
     app_handle: &Arc<StdMutex<Option<tauri::AppHandle>>>,
     accounts: &[GitHubAccount],
@@ -129,9 +87,7 @@ fn broadcast_github_changed(
     }
 }
 
-/// Only broadcasts when `ticket` is still the most recently acquired one -- a re-read or
-/// reconcile holding an older ticket has been superseded by a later mutation/list and must drop
-/// its now-stale result instead of overwriting what the newer operation already broadcast.
+/// Broadcasts only if `ticket` is still the newest, so a superseded result is dropped.
 fn broadcast_github_changed_if_current(
     ticket: u64,
     app_handle: &Arc<StdMutex<Option<tauri::AppHandle>>>,
@@ -144,8 +100,7 @@ fn broadcast_github_changed_if_current(
         return;
     }
     broadcast_github_changed(app_handle, accounts);
-    // `latest` stays locked until here: no ticket bump (and so no "I am the current one" check
-    // by another caller) can interleave with this emit.
+    // Keep `latest` locked until the emit returns, so no newer ticket can interleave.
 }
 
 fn broadcast_add_progress(
@@ -161,15 +116,9 @@ fn broadcast_add_progress(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Orchestration shared by `handlers.rs`
-// ---------------------------------------------------------------------------
+// ---- Orchestration shared by `handlers.rs` ----
 
-/// Flattens `authStatus()` with `profileCache.json`'s cached display fields -- the pure,
-/// no-refresh read used for every re-read that must NOT itself kick off another refresh round:
-/// the background-refresh re-read, a switch/sign-out's post-mutation reconcile, and the
-/// completed-add path. Only the explicit `list()` path (`handlers::accounts_github_list`) ever
-/// refreshes.
+/// Flattens `authStatus()` with cached display fields. Never refreshes, so it cannot recurse.
 async fn read_github_accounts(data_dir: &Path) -> Result<Vec<GitHubAccount>, IpcError> {
     let hosts = cli::auth_status().await.map_err(map_gh_error)?;
     let cache_cell = get_profile_cache(data_dir).await.map_err(map_io_error)?;
@@ -177,12 +126,7 @@ async fn read_github_accounts(data_dir: &Path) -> Result<Vec<GitHubAccount>, Ipc
     Ok(types::to_github_accounts(&hosts, &cache))
 }
 
-/// Best-effort: a failed profile fetch leaves the cache entirely untouched (data-model.md "a
-/// failed or skipped fetch... leaves the previous entry untouched"); a failed avatar fetch after
-/// a successful profile fetch keeps the previously cached avatar rather than clearing it. Never
-/// fails -- callers fire this and forget it. `force` bypasses `is_profile_refresh_due` for a
-/// login just added via `finish_completed_add`, which must always get its first fetch regardless
-/// of any (nonexistent) prior entry's age.
+/// Best-effort. A failed fetch leaves the cache untouched, and `force` bypasses the age check.
 async fn refresh_profile_cache(
     cache_cell: &AsyncMutex<ProfileCacheStore>,
     host: &str,
@@ -190,9 +134,7 @@ async fn refresh_profile_cache(
     force: bool,
 ) {
     if host != "github.com" {
-        // GateSec008 HIGH / GateCode008 CRITICAL: skip entirely rather than attempt-then-catch --
-        // `fetch_profile` itself refuses any non-github.com host too, but a GitHub Enterprise
-        // account must never even have its token read for this.
+        // Skip non-github.com hosts before reading any token.
         return;
     }
     let previous_avatar_data_url = {
@@ -204,11 +146,7 @@ async fn refresh_profile_cache(
             .get(host, login)
             .and_then(|e| e.avatar_data_url.clone())
     };
-    // Perf finding (code review, 2026-10-14): the lock above is released before either network
-    // call below -- `accounts.github.list`'s own read, and a switch/signOut's post-mutation
-    // reconcile, must never wait behind a 10s-per-hop avatar fetch (FR-010's 1s budget, this
-    // module's own "list() never blocks on a live fetch" contract). Re-locked only once more,
-    // below, to write the finished entry.
+    // The lock is released before the network calls, so a slow avatar fetch never blocks `list()`.
     let profile = match fetch_profile(host, login).await {
         Ok(profile) => profile,
         Err(_) => {
@@ -239,11 +177,7 @@ async fn refresh_profile_cache(
         .await;
 }
 
-/// A completed add flow's `authStatus()` snapshot vs. the one taken just before the flow started
-/// is the only way to learn which host/login is new (`GhLoginFlow` reports no login); refreshes
-/// that account's profile cache (GateCode008 MEDIUM "a newly added account never gets its
-/// name/avatar this session") and then broadcasts, under `ticket` so a later mutation always wins
-/// over this if one started since. Never fails -- the caller fires this and forgets it.
+/// Finds the new account by diffing `authStatus()` before and after, then refreshes its profile.
 async fn finish_completed_add(
     data_dir: std::path::PathBuf,
     app_handle: Arc<StdMutex<Option<tauri::AppHandle>>>,
@@ -286,20 +220,13 @@ async fn finish_completed_add(
     broadcast_github_changed_if_current(ticket, &app_handle, &accounts);
 }
 
-/// Which CLI mutation `run_github_account_mutation` below performs; folds `switch`/`signOut`'s
-/// shared validate-then-broadcast body (ported from `runGithubAccountMutation`) into one function
-/// without generic closures over async fns.
+/// The CLI mutation that `run_github_account_mutation` performs.
 enum MutationKind {
     Switch,
     SignOut,
 }
 
-/// Shared body of `switch`/`signOut`: validate the pair against the current `authStatus()` list
-/// (`contracts/ipc.md` "`account-not-found`") before ever invoking the CLI, run the mutation, then
-/// return and broadcast the refreshed list. A background re-read then reconciles with the CLI's
-/// real state and broadcasts any difference -- both broadcasts share one ticket (GateCode008
-/// MEDIUM "broadcast ordering"), so a later mutation's own ticket always wins over this one's
-/// now-stale reconcile.
+/// Validates the account pair before any CLI call, then runs the mutation and broadcasts.
 async fn run_github_account_mutation(
     state: &AppState,
     host: &str,
@@ -319,10 +246,7 @@ async fn run_github_account_mutation(
         }
         MutationKind::SignOut => {
             cli::auth_logout(host, login).await.map_err(map_gh_error)?;
-            // GateSec008 LOW: once sign-out has actually succeeded, also drop that account's
-            // now-stale display name/avatar so it does not outlive the account. Best-effort,
-            // like the ported TS: a cache-store hiccup here must not undo an already-successful
-            // sign-out, so it is logged and swallowed, never propagated.
+            // Drop the signed-out account's cached name and avatar. Best-effort, so errors are logged, not propagated.
             match get_profile_cache(&state.data_dir).await {
                 Ok(cache_cell) => {
                     let mut cache = cache_cell.lock().await;

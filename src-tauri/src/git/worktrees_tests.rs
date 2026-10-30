@@ -1,7 +1,4 @@
-// Test module for `worktrees.rs`, split into its own file via `#[path = ...]` (same convention
-// `store/registry.rs` -> `registry_tests.rs` and `git/worktree_delete.rs` ->
-// `worktree_delete_tests.rs` already use) to keep `worktrees.rs` itself under the 600-line soft
-// cap.
+// Tests for `worktrees.rs`, split out to keep it under the file-size cap.
 
 use super::*;
 use crate::git::test_support::init_repo;
@@ -20,9 +17,7 @@ async fn creates_a_worktree_with_a_freshly_generated_unique_name() {
     assert!(branch_exists(&repo, &added.branch).await);
 }
 
-/// Issue #656 regression lock: two sequential creates against the same repository never
-/// pick the same name, and neither call's own failure-cleanup (had it raced the other's
-/// name) ever removes artefacts the OTHER call owns.
+/// Sequential creates never pick the same name or remove each other's artefacts (#656).
 #[tokio::test]
 async fn two_sequential_creates_never_collide_and_both_keep_their_own_worktree() {
     let repo = init_repo().await;
@@ -58,9 +53,7 @@ async fn rejects_a_missing_base_branch_without_creating_anything() {
     );
 }
 
-/// Gate round 1, HIGH #656: a pre-existing folder (nothing to do with this attempt's own
-/// branch reservation) is detected via `AlreadyExists` and never touched -- not deleted,
-/// not descended into -- and the attempt's own branch reservation is cleaned up instead.
+/// A pre-existing folder is never touched; only the attempt's own branch reservation is cleaned up.
 #[tokio::test]
 async fn try_reserve_and_create_collision_on_a_pre_existing_folder_leaves_it_untouched() {
     let repo = init_repo().await;
@@ -84,10 +77,8 @@ async fn try_reserve_and_create_collision_on_a_pre_existing_folder_leaves_it_unt
     );
 }
 
-/// Gate round 1, HIGH #656 regression lock: using the test-only candidate seam, force an
-/// attempt to collide on a name a real concurrent "winner" already fully created (branch +
-/// worktree + a file inside it), then fall back to a fresh name. The winner's branch,
-/// worktree and the file inside it must all survive untouched.
+/// A collision with a concurrent winner's full artefacts falls back to a fresh name and leaves
+/// the winner's branch, worktree and files intact.
 #[tokio::test]
 async fn a_create_skips_a_colliding_candidate_and_never_touches_the_winners_artifacts() {
     let repo = init_repo().await;
@@ -118,16 +109,8 @@ async fn a_create_skips_a_colliding_candidate_and_never_touches_the_winners_arti
     );
 }
 
-/// Gate round 3, HIGH #656 regression lock (reopened by the PR-worktree path):
-/// `add_worktree_from_pull_request_branch` generates the exact deterministic `pr-<n>`,
-/// `pr-<n>-2`, ... sequence under test here via `add_worktree_with_candidates` -- the same
-/// engine it calls in production, just with its real network fetch skipped (an existing local
-/// branch stands in for the fetched commit). Simulates two concurrent
-/// `newSessionFromPullRequest` calls for the SAME pull request number both settling on
-/// `pr-<n>`: the winner creates it first (branch, worktree, and a marker file inside); a loser
-/// forced to retry the identical sequence must skip straight to `pr-<n>-2` and leave every one
-/// of the winner's artefacts completely untouched -- the bug this round fixed had the loser's
-/// own cleanup `git worktree remove --force` + `branch -D` the WINNER's name instead.
+/// A loser retrying the `pr-<n>` sequence skips to `pr-<n>-2` and never cleans up the winner's
+/// artefacts (#656).
 #[tokio::test]
 async fn a_concurrent_pr_worktree_create_skips_the_winners_pr_branch_and_never_touches_it() {
     let repo = init_repo().await;
@@ -141,8 +124,7 @@ async fn a_concurrent_pr_worktree_create_skips_the_winners_pr_branch_and_never_t
     let marker = winner.worktree_path.join("marker.txt");
     tokio::fs::write(&marker, b"winner's file").await.unwrap();
 
-    // The exact candidate sequence `add_worktree_from_pull_request_branch` itself generates for
-    // the same pull request number: `pr-999`, `pr-999-2`, `pr-999-3`, ...
+    // Same candidate sequence production generates: `pr-999`, `pr-999-2`, ...
     let candidates = std::iter::once(base.clone()).chain((2..=5u32).map(|n| format!("{base}-{n}")));
     let loser = add_worktree_with_candidates(&repo, "main", candidates)
         .await

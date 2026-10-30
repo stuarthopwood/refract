@@ -1,7 +1,5 @@
-// Spec 054 (issue #867, FR-027, FR-029): where a clone may land, and the only deletion the clone
-// feature ever performs. A destination is validated and resolved to one literal canonical path
-// BEFORE the child starts; cleanup removes exactly that recorded path, and only when Refract
-// itself created it in this attempt.
+// Clone destination rules: validated and resolved to one literal canonical path before the child
+// starts; cleanup removes only that path, and only if this attempt created it.
 
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
@@ -67,9 +65,8 @@ fn same_as_project(path: &Path, project_paths: &[String]) -> bool {
     project_paths.iter().any(|p| path_key(Path::new(p)) == key)
 }
 
-/// FR-027: absolute, existing parent folder, not a drive root, no reserved device name, no
-/// trailing dot or space, no UNC/verbatim prefix, no `:` in the name, not the home folder or inside a Project, not inside `.git`, not a Project path; an existing non-empty folder is
-/// refused and an existing empty one is allowed but flagged as pre-existing.
+/// Rejects relative paths, drive roots, reserved names, UNC prefixes, the home folder, `.git`, and
+/// Project paths; an existing non-empty folder is refused, an empty one flagged as pre-existing.
 pub async fn validate(
     raw: &str,
     project_paths: &[String],
@@ -173,9 +170,8 @@ pub async fn create_exclusive(path: &Path) -> Result<(), DestinationError> {
     }
 }
 
-/// FR-029: removes `path` (the exact recorded clone folder this attempt created) and nothing
-/// else. Refuses a root, the home folder, a Project path, or any parent of a Project path.
-/// A path that is already gone counts as removed (`true`).
+/// Removes only `path`, the clone folder this attempt created. Refuses a root, the home folder,
+/// a Project path, or any parent of one; an already-gone path counts as removed (`true`).
 pub async fn remove_created(path: &Path, project_paths: &[String]) -> bool {
     if path.file_name().is_none() || !path.is_absolute() {
         return false;

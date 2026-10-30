@@ -1,9 +1,4 @@
-// `sessions.deleteCheck` (lane R2, #785): `deleteCheck`/`deleteCheckForMissingWorktree`/
-// `deleteCheckForSession` from `src/main/git/worktrees.ts`, split from `worktree_delete.rs`
-// (which owns the actual removal path, `remove_session_worktree`) to keep each file under the
-// 600-line soft cap. Decides the same way `remove_session_worktree` decides which removal path
-// a Session is in -- by asking git, never by `fs.stat`-ing the worktree folder -- so the
-// confirmation dialog this feeds never under-reports what Delete would lose.
+// Decides by asking git, never `fs.stat`, so the delete dialog never under-reports losses.
 
 use std::path::Path;
 
@@ -30,7 +25,7 @@ fn zero_risk() -> DeleteCheck {
     }
 }
 
-/// Feeds the delete confirmation text (contracts/ipc.md `sessions.deleteCheck`).
+/// Feeds the delete confirmation text.
 pub async fn delete_check(worktree_path: &Path) -> Result<DeleteCheck, GitError> {
     let status = git(worktree_path, &["status", "--porcelain"]).await?;
     let uncommitted_files = status.lines().filter(|l| !l.trim().is_empty()).count() as i64;
@@ -57,8 +52,7 @@ pub async fn delete_check(worktree_path: &Path) -> Result<DeleteCheck, GitError>
     })
 }
 
-/// Feeds `sessions.deleteCheck` when the worktree folder itself is gone: reads `branch`'s own
-/// commit graph from `repo` directly instead of a checked-out working tree.
+/// Delete check for a missing worktree folder: reads `branch`'s commit graph from `repo`.
 pub async fn delete_check_for_missing_worktree(
     repo: &Path,
     branch: &str,
@@ -93,11 +87,8 @@ pub async fn delete_check_for_missing_worktree(
     })
 }
 
-/// `sessions.deleteCheck` must decide the same way `remove_session_worktree` decides which
-/// removal path to take -- by asking git, never by `fs.stat`-ing the folder. Issue #1055:
-/// bounded by `worktree_access::READER_TIMEOUT`; on timeout the future (and, via git's own
-/// `kill_on_drop`, every git child it started) is dropped, so the caller's read guard is
-/// released and a waiting Delete can proceed or refuse honestly instead of hanging.
+/// Picks the delete check by asking git, never `fs.stat`; bounded by `READER_TIMEOUT` (#1055).
+/// On timeout git children are killed on drop, so the read guard is released.
 pub async fn delete_check_for_session(
     repo: &Path,
     worktree_path: &Path,
@@ -186,12 +177,8 @@ mod tests {
             .unwrap();
         let check = delete_check(&added.worktree_path).await.unwrap();
         assert_eq!(check.uncommitted_files, 1);
-        // `rev-list --count HEAD --not --remotes` excludes nothing when no remote is
-        // configured at all, so the one seed commit this branch shares with `main` counts as
-        // "unpushed" -- correct, matching `git/diffStat.ts`'s own TS behaviour exactly: with no
-        // remote, there is genuinely nowhere this commit has been pushed to.
+        // With no remote, `--not --remotes` excludes nothing, so the seed commit counts as unpushed.
         assert_eq!(check.unpushed_commits, 1);
-        // No remote is configured for this scratch repository at all.
         assert!(!check.has_upstream);
     }
 
@@ -208,8 +195,6 @@ mod tests {
         );
     }
 
-    /// `sessions.deleteCheck` must read the branch's own commit graph, never `fs.stat` the
-    /// folder, once the worktree has been removed from outside Refract entirely.
     #[tokio::test]
     async fn delete_check_for_session_falls_back_to_branch_graph_when_worktree_folder_is_gone() {
         let repo = init_repo().await;
@@ -223,7 +208,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(check.uncommitted_files, 0);
-        // Same no-remote-excludes-nothing reasoning as the sibling test above.
         assert_eq!(check.unpushed_commits, 1);
     }
 

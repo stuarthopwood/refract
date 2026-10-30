@@ -1,7 +1,4 @@
-// Spec 060 (S1-13): the Budget card. The Copilot row comes from the #1238 quota fetch
-// (`plan_snapshot`) plus a burn rate from our own `usage.db`; every other provider row comes from
-// `omp usage --json`, run by argv (no shell) with a 10 s timeout. Results are cached for five
-// minutes. A missing or failing `omp` degrades to an `unavailable` reason, never an error.
+// `omp` runs by argv with no shell and a 10 s timeout; a failure becomes an `unavailable` reason.
 
 use std::process::Stdio;
 use std::sync::Mutex;
@@ -23,7 +20,7 @@ const CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 const OMP_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 const BURN_WINDOW_DAYS: i64 = 7;
-/// Below this much Copilot history a burn rate would be noise.
+/// Below this much history a burn rate is noise.
 const MIN_BURN_HISTORY_MS: i64 = DAY_MS;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -68,7 +65,7 @@ fn now_ms() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-/// The Budget card data; cached for five minutes.
+/// The Budget card data, cached for five minutes.
 pub async fn budget() -> Budget {
     if let Some((at, cached)) = CACHE.lock().ok().and_then(|g| g.clone()) {
         if at.elapsed() < CACHE_TTL {
@@ -122,7 +119,7 @@ fn copilot_row(
     }
 }
 
-/// When `remaining` credits run out at `burn_per_day`, if that happens before the reset.
+/// When the remaining credits run out, if before the reset.
 pub fn cap_date(
     now: i64,
     remaining: Option<f64>,
@@ -137,8 +134,7 @@ pub fn cap_date(
     (at < resets_at).then_some(at)
 }
 
-/// Mean Copilot credits per day over the last seven days (or the history we have), `None` with
-/// under a day of Copilot data or when `usage.db` is unavailable.
+/// Mean Copilot credits per day; `None` without a day of data.
 fn burn_per_day(now: i64) -> Option<f64> {
     let conn = super::open_reader().ok()?;
     let first: Option<i64> = conn
@@ -174,8 +170,7 @@ struct ParsedUsage {
     copilot_resets_at: Option<i64>,
 }
 
-/// Reads the `reports[].limits[]` of `omp usage --json`. A limit that does not parse is dropped;
-/// the Copilot report only contributes its reset time (its row comes from the quota fetch).
+/// Reads `omp usage --json` limits; unparseable limits are dropped.
 fn parse_usage(value: &Value) -> ParsedUsage {
     let mut out = ParsedUsage::default();
     let reports = value.get("reports").and_then(Value::as_array);
@@ -233,7 +228,7 @@ fn parse_usage(value: &Value) -> ParsedUsage {
     out
 }
 
-/// Runs `omp usage --json`. The error text is the user-facing `unavailable` reason.
+/// Runs `omp usage --json`; the error text is the user-facing reason.
 async fn run_omp_usage() -> Result<Value, String> {
     let omp = resolve_omp().map_err(|_| "omp was not found".to_string())?;
     let mut command = Command::new(&omp);

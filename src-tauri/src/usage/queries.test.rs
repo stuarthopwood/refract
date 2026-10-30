@@ -1,4 +1,4 @@
-// Spec 060 (S1-17): the filter-to-SQL builder stays parameterised and allowlisted.
+// Filter SQL must stay parameterised; hostile values are bound, never spliced.
 
 use super::*;
 use crate::usage::queries_tables::{calls, Page, Sort};

@@ -1,5 +1,4 @@
-// Spec 054 (issue #867, FR-035): Settings > Projects "Default clone folder". A child module of
-// `settings.rs` to keep that file under the 600-line cap (issue #806).
+// "Default clone folder" setting (#867).
 use std::path::Path;
 
 use serde_json::{Map, Value};

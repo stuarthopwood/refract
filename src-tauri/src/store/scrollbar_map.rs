@@ -1,5 +1,4 @@
-// Issue #754 (spec 041): Settings > Chat "Show scrollbar map", the switch for the chat transcript's
-// scrollbar map. A child module of `settings.rs` to keep that file under the 600-line cap (issue #806).
+// Settings > Chat "Show scrollbar map" switch (#754).
 use serde_json::{Map, Value};
 
 use super::{Settings, SettingsStore};
@@ -12,7 +11,7 @@ pub(super) fn parse(object: &Map<String, Value>) -> bool {
 }
 
 impl SettingsStore {
-    /// `settings.setShowScrollbarMap(enabled)`: plain boolean.
+    /// Plain boolean setter.
     pub async fn set_show_scrollbar_map(&mut self, enabled: bool) -> std::io::Result<Settings> {
         let next = Settings {
             show_scrollbar_map: enabled,

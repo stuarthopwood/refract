@@ -1,4 +1,4 @@
-// Spec 060: the little date arithmetic the usage module needs without a date crate.
+// Date arithmetic for the usage module, without a date crate.
 
 pub const HOUR_MS: i64 = 3_600_000;
 pub const DAY_MS: i64 = 86_400_000;
@@ -46,8 +46,7 @@ pub fn next_month_start(ts_ms: i64) -> i64 {
     days_from_civil(ny, nm, 1) * DAY_MS
 }
 
-/// Parses `YYYY-MM-DD` or an RFC 3339 `YYYY-MM-DDTHH:MM:SS[.fff](Z|+HH:MM|-HH:MM)` instant to UTC
-/// milliseconds. Anything else is `None`.
+/// Parses `YYYY-MM-DD` or an RFC 3339 instant to UTC milliseconds; anything else is `None`.
 pub fn parse_iso_ms(text: &str) -> Option<i64> {
     let b = text.as_bytes();
     let num = |from: usize, len: usize| -> Option<i64> {

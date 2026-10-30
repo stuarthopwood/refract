@@ -1,9 +1,4 @@
-// Test module for `watch.rs`, split into this sibling file to stay under the 600-line soft cap
-// -- included via `#[path = "watch_tests.rs"] mod tests;` in `watch.rs` itself. Real filesystem
-// and a real OS watch (no fake): the only way to prove the debounce/fatal-detection behaviour
-// actually holds against `ReadDirectoryChangesW`. Scratch dirs left under the OS temp folder,
-// never removed, matching this crate's other test modules. Generous sleeps/timeouts (up to a few
-// seconds) to absorb real OS watch latency without flaking.
+// Real OS watches, no fake: only `ReadDirectoryChangesW` proves the debounce behaviour.
 use super::*;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
@@ -108,9 +103,7 @@ fn a_dot_git_change_never_triggers_a_callback() {
     assert!(handle.is_some());
     std::thread::sleep(Duration::from_millis(300));
     std::fs::write(root.join(".git").join("HEAD"), b"ref: refs/heads/main").unwrap();
-    // Also make a real, non-.git change right after so the test does not just wait out the
-    // full timeout on every run -- if `.git` wrongly queued a callback it would have arrived
-    // first (FIFO single-channel), failing this assertion instead of only being slow.
+    // A later real change makes a wrongly queued `.git` callback fail first, not just slow the test.
     std::fs::write(root.join("real.txt"), b"hi").unwrap();
     let received = rx.recv_timeout(Duration::from_secs(5));
     assert_eq!(received, Ok(String::new()));
@@ -134,9 +127,7 @@ fn stop_prevents_further_callbacks() {
     handle.stop();
     std::thread::sleep(Duration::from_millis(300));
     std::fs::write(root.join("after-stop.txt"), b"hi").unwrap();
-    // The channel disconnects almost immediately once `stop()` drops the watcher (dropping the
-    // closure that held `tx`), so either a timeout or a disconnect proves no callback fired --
-    // the specific `RecvTimeoutError` variant is not the thing under test here.
+    // Either a timeout or a disconnect proves no callback fired.
     let received = rx.recv_timeout(Duration::from_secs(1));
     assert!(received.is_err());
 }
@@ -172,10 +163,7 @@ fn removing_the_watched_root_fires_on_fatal_once() {
     );
     assert!(handle.is_some());
     std::thread::sleep(Duration::from_millis(300));
-    // Removing a directory a watch handle holds open can fail on Windows while the handle is
-    // live (`EPERM`-equivalent). Gate round 2 fix: this used to silently skip the whole test's
-    // assertions on that failure, including under CI, where a persistent `EPERM` would mean the
-    // fatal-detection path is never actually exercised at all -- now panics under CI instead.
+    // Windows can refuse removing a directory while a watch handle holds it open.
     if std::fs::remove_dir_all(&root).is_err() {
         if std::env::var("CI").is_ok() {
             panic!("remove_dir_all failed in CI; the fatal-detection path was never exercised");
@@ -185,10 +173,7 @@ fn removing_the_watched_root_fires_on_fatal_once() {
         );
         return;
     }
-    // Past the first liveness tick (2s) with margin (gate round 1 fix: the previous version
-    // only waited 3s then stopped checking, which could not distinguish "fired once" from
-    // "fires repeatedly" -- this polls twice more, past a second and third liveness tick, and
-    // asserts the count never climbs above 1).
+    // Check past several liveness ticks, so "fired once" is distinguishable from "fires repeatedly".
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(
         fatal_count.load(Ordering::SeqCst),
@@ -209,17 +194,7 @@ fn a_burst_of_writes_in_the_same_directory_produces_one_callback() {
     std::fs::create_dir_all(&root).unwrap();
     let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let call_count_cb = call_count.clone();
-    // A wider-than-production debounce window (2s, versus `WATCH_DEBOUNCE_MS` = 200ms): real OS
-    // event delivery for 20 near-simultaneous creates is not instantaneous (observed live: the
-    // default 200ms window sometimes split one burst into two debounce cycles under real
-    // `ReadDirectoryChangesW` scheduling jitter, which is an OS/environment timing fact, not a
-    // bug in the trailing-edge-timer logic this test exists to prove). A 2s window comfortably
-    // absorbs that jitter while still proving the SAME guarantee the production value relies on.
-    // 2026-10-20 gate fix (#464 item 2): `watch_directory_with_debounce` grew a 5th parameter
-    // (`requeue_root_on_liveness`) to let the Git changes panel's own watcher opt OUT of the
-    // root-liveness poll's debounce re-queue (see `watch.rs`'s own doc comment) -- `true` here
-    // preserves this test's pre-existing behaviour exactly (every other consumer, including the
-    // File explorer this test exercises, still gets that poll unconditionally).
+    // A 2s window, wider than production's 200ms, absorbs OS event jitter across 20 creates.
     let handle = watch_directory_with_debounce(
         &root,
         move |_rel| {

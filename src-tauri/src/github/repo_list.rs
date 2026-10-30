@@ -1,6 +1,5 @@
-// Spec 054 (issue #867, FR-026, FR-028): the "Clone from GitHub" dialog's repository listing,
-// through the user's own `gh` CLI (no stored token). Read-only; never fails the whole listing for
-// one owner (the caller reports a per-owner error).
+// "Clone from GitHub" repository listing via the user's `gh`; one owner failing never fails the
+// whole listing (#867).
 
 use std::time::Duration;
 
@@ -14,8 +13,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_DESCRIPTION_CHARS: usize = 300;
 
-/// One `gh repo list` row, already validated and sanitised, in the renderer's wire shape (less
-/// `existingProjectId`, which the IPC layer adds).
+/// One validated, sanitised `gh repo list` row in the renderer's wire shape.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoListItem {
@@ -88,8 +86,8 @@ fn is_hidden_format_char(c: char) -> bool {
     )
 }
 
-/// FR-028: control and bidi/format characters removed (line breaks and tabs become a space),
-/// whitespace collapsed, truncated to 300 characters. `None` when nothing is left.
+/// Strips control and bidi/format characters (breaks and tabs become spaces), collapses
+/// whitespace, truncates to 300 characters. `None` when nothing is left.
 pub fn sanitise_description(raw: &str) -> Option<String> {
     let cleaned: String = raw
         .chars()

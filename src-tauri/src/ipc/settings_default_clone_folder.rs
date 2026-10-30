@@ -1,5 +1,4 @@
-// IPC handler for `settings.setDefaultCloneFolder` (spec 054, issue #867, FR-035). Its own file
-// to keep `settings.rs` under the 600-line cap (issue #806).
+// IPC handler for `settings.setDefaultCloneFolder`. Own file to respect the 600-line cap (#806).
 use std::path::Path;
 
 use serde_json::Value;

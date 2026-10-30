@@ -1,17 +1,8 @@
-// Port of `src/main/ipc/files.ts`'s own `isUnsafeToken`/`resolveNoFollow`/`resolveInWorktree`
-// (lane R7, issue #790): the worktree-containment security boundary. **Do not simplify** (issue
-// #790's own words) -- every gate-round fix cited in the Electron source's comments is carried
-// over here; this file's doc comments reference the exact TS comment the logic mirrors rather
-// than restating the reasoning, so the two can be diffed side by side.
-//
-// Deliberately excludes `resolveNoFollowUnrooted` (the unrooted absolute-path walk `attachments.ts`
-// uses, #514/#432): no channel in this lane's scope (issue #790's channel list) ever resolves an
-// unrooted absolute token, and porting it here with no caller would be untested dead code.
+// Worktree-containment security boundary. Do not simplify: each check guards against a path escape.
 
 use std::path::{Path, PathBuf};
 
-/// Bounds how many link substitutions `resolve_no_follow` walks before rejecting a cycle outright
-/// (`a -> b -> a`) -- mirrors `files.ts`'s own `MAX_LINK_HOPS`.
+/// Caps link substitutions so a symlink cycle is rejected.
 const MAX_LINK_HOPS: u32 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,26 +12,17 @@ pub enum ResolveReason {
     WorktreeMissing,
 }
 
+/// Resolved path, or the reason it was refused.
 pub type ResolveInWorktreeResult = Result<PathBuf, ResolveReason>;
 
-/// Windows reserved device names (case-insensitive, with or without a trailing extension) --
-/// mirrors `files.ts`'s own `RESERVED_NAME_RE`:
-/// `/^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(COM|LPT)[1-9\u00b9\u00b2\u00b3])[ .]*(\.[^\\/]*)?$/i`.
-/// Hand-written rather than pulled through a `regex` crate dependency (none exists in this
-/// build's `Cargo.toml`): the shape is a fixed token list plus a small tail grammar, both cheap
-/// and more legible written out directly than behind a regex engine for one call site.
+/// Windows reserved device names, matched case-insensitively with an optional extension.
 const SIMPLE_RESERVED_NAMES: &[&str] = &["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"];
 
 fn is_com_lpt_digit(c: char) -> bool {
     matches!(c, '1'..='9' | '\u{00b9}' | '\u{00b2}' | '\u{00b3}')
 }
 
-/// Matches the regex's own trailing `[ .]*(\.[^\\/]*)?$` against whatever follows an exactly-
-/// matched reserved token within one path segment (never containing `\`/`/`, already split out
-/// by the caller, so `[^\\/]*` there is equivalent to "anything remaining"). Derivation: the
-/// suffix satisfies the pattern iff it is entirely made of spaces/dots, OR its leading run of
-/// spaces/dots contains at least one dot (which the optional group's own leading literal `.` can
-/// then anchor on, absorbing everything after via `[^\\/]*`).
+/// Checks the tail after a reserved token: only spaces and dots, with a dot before any other character.
 fn reserved_name_tail_matches(suffix: &str) -> bool {
     let chars: Vec<char> = suffix.chars().collect();
     let mut i = 0;
@@ -94,10 +76,7 @@ fn is_reserved_name_segment(segment: &str) -> bool {
     false
 }
 
-/// Every TEXT-ONLY rejection a token must pass before any filesystem call ever touches it --
-/// mirrors `files.ts`'s own `isUnsafeToken` doc comment and body exactly, including the PR #723
-/// gate round 1 fix (a second colon anywhere from index 2 onward is rejected, catching an NTFS
-/// alternate-data-stream marker after a legitimate drive prefix).
+/// Text-only rejection run before any filesystem call. Rejects NTFS stream colons (#723).
 pub fn is_unsafe_token(value: &str) -> bool {
     if value.contains('\0') {
         return true;
@@ -130,8 +109,7 @@ pub fn is_unsafe_token(value: &str) -> bool {
         .any(is_reserved_name_segment)
 }
 
-/// ASCII-only case fold (`/[A-Z]/g` replace, never Unicode `to_lowercase`): the Kelvin-sign fix
-/// (gate round 5, Sec4 Medium) -- `U+212A` must never compare equal to `k`/`K` here.
+/// ASCII-only case fold. Unicode folding would equate the Kelvin sign with `k`.
 fn ascii_fold(value: &str) -> String {
     value.chars().map(|c| c.to_ascii_lowercase()).collect()
 }
@@ -140,10 +118,7 @@ fn is_contained_in(value: &str, base: &str) -> bool {
     value == base || value.starts_with(&format!("{base}{}", std::path::MAIN_SEPARATOR))
 }
 
-/// Lexical `path.resolve(base, token)` equivalent: collapses `.`/`..` without touching disk,
-/// clamping a `..` at an already-absolute root rather than escaping above it (`Path::components`
-/// already classifies prefix/root/`.`/`..`/normal segments for us, so this is a thin fold over
-/// that iterator rather than a hand-rolled string parser).
+/// Lexically joins and normalises `token` against `base`, without touching disk.
 fn lexical_resolve(base: &Path, token: &str) -> PathBuf {
     let token_path = Path::new(token);
     let combined = if token_path.is_absolute() {
@@ -170,12 +145,7 @@ pub(crate) fn normalize_lexical(p: &Path) -> PathBuf {
     out.iter().collect()
 }
 
-/// Walks `relative_suffix` one path segment at a time via `lstat`/`readlink` -- never `realpath`
-/// -- substituting and re-vetting any symlink/junction target before continuing the walk, exactly
-/// as `files.ts`'s own `resolveNoFollow` describes in its (long) doc comment: a target may match
-/// either `root` (realpath'd) or `unresolved_root` (the Session's own recorded, un-realpath'd
-/// worktree path, for a worktree reached through its own junction/8.3 alias), but the walk always
-/// restarts from `root`.
+/// Walks each segment with `lstat`, re-vetting link targets without `realpath`.
 async fn resolve_no_follow(
     root: &Path,
     unresolved_root: &Path,
@@ -237,9 +207,7 @@ async fn resolve_no_follow(
         let Some(matched_root_str) = matched_root_str else {
             return Err(ResolveReason::OutsideWorktree);
         };
-        // Folding only ever changes ASCII case (never byte length), so slicing the ORIGINAL
-        // (unfolded) `target_abs_str` at the folded match's byte length is safe and yields the
-        // true-cased relative remainder.
+        // ASCII folding keeps byte lengths, so this slice of the original string is valid.
         let matched_root_path = Path::new(matched_root_str);
         let rel_str = target_abs_str
             .get(matched_root_str.len()..)
@@ -253,23 +221,17 @@ async fn resolve_no_follow(
         rest.append(&mut queue);
         queue = rest;
         current = matched_root_path.to_path_buf();
-        let _ = &current; // `current` is reset to `root` below, matching the TS restart-from-root
+        let _ = &current;
         current = root.to_path_buf();
     }
-    // A link that resolves, through however many hops, back to the worktree root itself must be
-    // rejected the same way a top-level token equal to the root already is.
+    // A link resolving back to the root is rejected like a token equal to the root.
     if current == root {
         return Err(ResolveReason::FileMissing);
     }
     Ok(current)
 }
 
-/// Canonicalizes `path` on a blocking-pool thread (perf finding: `dunce::canonicalize` is a
-/// synchronous syscall; called inline on a tokio worker it stalls every other task on that
-/// worker, and `classify_symlink_entry` can call this indirectly up to 1000 times per listing
-/// across 8 concurrently running tasks). Maps a `NotFound`/`NotADirectory` failure to
-/// `WorktreeMissing`, any other failure (including a `spawn_blocking` join failure) to
-/// `FileMissing`.
+/// Canonicalizes on a blocking thread so the async runtime is not stalled.
 pub(crate) async fn canonicalize_root(path: &Path) -> Result<PathBuf, ResolveReason> {
     let owned = path.to_path_buf();
     match tokio::task::spawn_blocking(move || dunce::canonicalize(&owned)).await {
@@ -292,24 +254,14 @@ async fn canonicalize_target(path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Resolves `token` (untrusted: agent/tool/model-authored text) against `worktree_root`, proving
-/// containment rather than assuming it -- the Rust port of `files.ts`'s own `resolveInWorktree`.
-/// Windows-only build (spec.md Assumptions): `case_insensitive` is always `true`. Thin wrapper
-/// over `resolve_in_worktree_with_root` that canonicalizes `worktree_root` once; callers that
-/// already hold that canonicalized root from an earlier step in the SAME listing (symlink
-/// classification, up to 1000 times per directory) call the shared-root variant directly instead
-/// of paying for a redundant canonicalize on every entry (perf finding).
+/// Resolves untrusted `token` under `worktree_root` and proves it stays contained.
 pub async fn resolve_in_worktree(worktree_root: &Path, token: &str) -> ResolveInWorktreeResult {
     let resolved_root = canonicalize_root(worktree_root).await?;
     let unresolved_root = normalize_lexical(worktree_root);
     resolve_in_worktree_with_root(&resolved_root, &unresolved_root, token).await
 }
 
-/// Same containment proof as `resolve_in_worktree`, but takes an ALREADY-canonicalized
-/// `resolved_root` (and its matching lexically-normalised `unresolved_root`) instead of
-/// canonicalizing `worktree_root` itself again -- see that function's own doc comment. `pub(crate)`
-/// so `fs::list_directory`'s own `classify_symlink_entry` can reuse the root it already
-/// canonicalized once per listing.
+/// Like `resolve_in_worktree`, but reuses an already-canonicalized root.
 pub(crate) async fn resolve_in_worktree_with_root(
     resolved_root: &Path,
     unresolved_root: &Path,
@@ -368,10 +320,7 @@ pub(crate) async fn resolve_in_worktree_with_root(
         return Err(ResolveReason::FileMissing);
     };
 
-    // The REAL, final-target containment check: no case folding at all here (gate round 5, Sec4
-    // Medium) -- both sides are already fully realpath'd, and any folding transform (including
-    // the ASCII-only one used for the lexical pre-check above) could make two DIFFERENT on-disk
-    // paths compare equal.
+    // Final check uses no case folding: both sides are realpath'd, and folding could equate distinct paths.
     let resolved_target_str = resolved_target.to_string_lossy().into_owned();
     let contained = resolved_target_str == resolved_root_str
         || resolved_target_str
@@ -387,10 +336,7 @@ pub(crate) async fn resolve_in_worktree_with_root(
     Ok(resolved_target)
 }
 
-/// Shared by every caller of `resolve_in_worktree`/`resolve_list_target` to map a `ResolveReason`
-/// to the SAME error code and message (DRY fix, code-reviewer MEDIUM: `ipc::files::
-/// resolve_error_result` and `fs::list_directory`'s own mapping used to each hardcode these
-/// strings independently). `noun` lets each call site say "file" or "folder".
+/// Stable error code for a `ResolveReason`.
 pub fn resolve_reason_code(reason: ResolveReason) -> &'static str {
     match reason {
         ResolveReason::WorktreeMissing => "worktree-missing",
@@ -399,6 +345,7 @@ pub fn resolve_reason_code(reason: ResolveReason) -> &'static str {
     }
 }
 
+/// Human-readable refusal text for a `ResolveReason`.
 pub fn resolve_reason_message(reason: ResolveReason, noun: &str) -> String {
     match reason {
         ResolveReason::WorktreeMissing => {
@@ -408,8 +355,7 @@ pub fn resolve_reason_message(reason: ResolveReason, noun: &str) -> String {
             format!("Couldn't find that {noun} in this Session's worktree")
         }
         ResolveReason::OutsideWorktree => {
-            // #1111 Low item: used to be "That path is outside this Session's worktree" --
-            // true, but gave the user nothing to DO about it. Named the fix directly.
+            // Tells the user how to fix it (#1111).
             "That path is outside this Session's worktree. Choose a file inside the worktree instead.".to_string()
         }
     }

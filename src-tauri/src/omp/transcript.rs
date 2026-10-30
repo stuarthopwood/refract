@@ -1,22 +1,6 @@
-// Port of `src/main/omp/transcript.ts` (tasks.md T020): builds the renderer-facing
-// `TranscriptItem[]` from OMP's own message history (`TranscriptState::from_history`) and from
-// live rpc-ui frames (`TranscriptState::apply_frame`). Pure data transformation: no I/O.
-//
-// Unlike the TS source, this module has no strongly typed `Frame`/`OmpMessage` union to work
-// against (`omp::process` deliberately forwards every non-response frame as raw
-// `serde_json::Value`, see that module's own header comment) -- every frame/message field is
-// read defensively by name, the same way `transcript.ts` itself already reads every `unknown`
-// (`args`, `details`, custom-message payloads) rather than trusting a static type. Field names
-// on the wire are unchanged from `src/shared/frames.ts`/`src/shared/model.ts`.
-//
-// Change-detection deviation (documented per the Slice C/Phase 3 facade contract): `transcript.ts`
-// diffs by JS object identity (`replaceMessageItems` preserves the reference of any item it did
-// not touch). `TranscriptItem` here derives `PartialEq` and every "did this change" signal in this
-// module (`TranscriptState::apply_frame`'s return value, `settle_*`'s return value) is computed by
-// comparing the item list by VALUE before and after, not by reference. This is a strictly more
-// precise definition of "unchanged" than reference identity (it can never report a change for an
-// item whose fields are all still the same), so it is a safe substitute for `diff.rs`'s own
-// `diff_transcript`, which needs the same signal.
+// Builds renderer-facing transcript items from OMP history and live rpc-ui frames. Pure: no I/O.
+// Frame and message fields are read defensively by name because the wire types are untyped.
+// Change detection compares items by value (`PartialEq`), not by reference.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -50,11 +34,8 @@ use turn_error::{build_turn_error_item, current_turn_has_error};
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
 // ---------------------------------------------------------------------------
 
-/// One renderer-facing transcript row. Wire-identical to `src/shared/model.ts`'s
-/// `TranscriptItem` union: each variant's `kind` tag and field names match the TS shape
-/// field-for-field (`#[serde(tag = "kind", rename_all = "kebab-case")]` reproduces the TS
-/// variant names; a `rename_all = "camelCase"` on each multi-word-field variant reproduces the
-/// TS field names), so a serialized value round-trips through `src/renderer` unchanged.
+/// One renderer-facing transcript row, wire-identical to `src/shared/model.ts`'s `TranscriptItem`.
+/// The `kind` tag and camelCase field names must match the renderer.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TranscriptItem {
@@ -62,14 +43,14 @@ pub enum TranscriptItem {
         id: String,
         text: String,
         at: i64,
-        // #926: files/folders attached, parsed by `file_attachment_markers`; empty for none.
+        // Files and folders attached to the message (#926).
         #[serde(
             rename = "fileAttachments",
             default,
             skip_serializing_if = "Vec::is_empty"
         )]
         file_attachments: Vec<FileAttachmentRef>,
-        // #513: images sent with the message (ids only, never bytes); empty for none.
+        // Image ids only, never bytes (#513).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         images: Vec<ImageRef>,
     },
@@ -100,14 +81,12 @@ pub enum TranscriptItem {
         started_at: Option<i64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_ms: Option<i64>,
-        /// `unknown` on the TS side; serialized as absent (not `null`) when unset, matching
-        /// `JSON.stringify` dropping an explicit `args: undefined`.
+        /// Unset args serialize as absent, not `null`.
         #[serde(default, skip_serializing_if = "Value::is_null")]
         args: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
-        /// Never set by this module (renderer-computed from `edit`/`write`, per `transcript.ts`'s
-        /// own comment); kept only for wire parity with `ToolItem['diff']`.
+        /// Never set here; the renderer computes it from `edit`/`write`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diff: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -116,7 +95,7 @@ pub enum TranscriptItem {
         edit: Option<EditField>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         write: Option<WriteField>,
-        /// The model's sanitised one-line intent (#469, `transcript/tool_intent.rs`).
+        /// The model's one-line intent (#469).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         intent: Option<String>,
     },
@@ -127,11 +106,8 @@ pub enum TranscriptItem {
         spec_index: u32,
         name: String,
         task: String,
-        /// The owning batch `task()` call's own shared `context` argument (sibling of `tasks[]`
-        /// on the wire, `omp/tools/task.md`'s own batch schema): the Stage's batch brief, whose
-        /// first line names the Stage (issue #941). Absent for a flat (non-batch) call or a
-        /// malformed/missing string -- the renderer then falls back to the agents' shared name
-        /// prefix, then a bare "Stage N".
+        /// The batch `task()` call's shared `context`, whose first line names the Stage (#941).
+        /// Absent for flat calls; the renderer then falls back to a shared name prefix.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         context: Option<String>,
         status: SubagentStatus,

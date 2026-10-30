@@ -1,6 +1,4 @@
-// `sessions.setHidden` (issue #748): the Session list's hide flag. A view setting, not a
-// lifecycle state -- it never touches the agent, the file watcher or the worktree, and it is
-// independent of `archivedAt` (a Session can be hidden, archived, or both).
+// `sessions.setHidden`: a view setting. It never touches the agent, watcher or worktree.
 
 use serde_json::Value;
 

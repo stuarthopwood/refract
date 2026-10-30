@@ -1,7 +1,5 @@
-// Progress/jobs application and synthetic-stream helpers for `session::subagents` (lane R5,
-// issue #788), split out of that file (issue #806, 600-line cap) the same way
-// `session::termination`'s own `termination_detection.rs` splits out its tail-read logic.
-// Pre-declared/owned by lane R5 exactly like its parent file.
+// Progress/jobs application and synthetic-stream helpers for `session::subagents`, split out to
+// keep that file under the 600-line cap.
 
 use std::time::Duration;
 
@@ -10,35 +8,15 @@ use serde_json::{json, Value};
 use super::super::agent::SessionAgent;
 use super::{State, SummaryStatus};
 
-/// Performance gate round 1: matches `readout`'s own coalesce window so `subagent:patch` is
-/// coalesced the same way `transcript:patch`'s `PatchCoalescer` is -- a bespoke debounce here
-/// rather than reusing that struct directly, since it is generic over `TranscriptItem`/
-/// `Arc<TranscriptItem>`, not the plain `serde_json::Value` rows this module's own synthetic
-/// stream uses.
+/// Coalesces `subagent:patch` on the same window as `readout`'s transcript patches.
 const PATCH_COALESCE_MS: u64 = 50;
 
-/// Gate round 2 (security/perf LOW): Electron's `subagentStream.ts` has no cap of its own to
-/// mirror, so this is a new, deliberately generous bound -- a very long-running or chatty
-/// subagent must not grow its own synthetic CONTENT stream without limit for the lifetime of
-/// the Conversation. Oldest rows are dropped first; the visible subagent's own `subagent:patch`
-/// stream only ever diffs forward from here anyway, so an already-open panel never sees a row
-/// vanish out from under it mid-view. Follow-up fix (#788): the `stream_ids` dedupe set itself
-/// is deliberately NOT capped alongside it -- OMP can re-report an id it already sent, and an
-/// evicted-but-forgotten id would churn straight back into the stream and immediately
-/// re-trigger its own eviction; a dedupe set's own small string ids cost far less memory than
-/// the full content rows they stand for.
+/// Caps the synthetic stream so a long-running subagent cannot grow without limit.
+/// The `stream_ids` dedupe set is not capped: OMP can re-report an evicted id.
 const MAX_STREAM_ROWS: usize = 500;
 
-/// Port of `transcript.ts`'s own `mapProgressStatus`, extended to settle a `SubagentSummary`
-/// (not just a chat-row `running|done|error`): every terminal status OMP sends (`"completed"`,
-/// `"finished"`, `"failed"`, `"cancelled"`, `"error"`, `"aborted"`, ...) maps to `Finished`/
-/// `Failed`/`Cancelled`; `"pending"`/`"running"`/absent stays `Running`. Critical gate fix
-/// (round 1): the previous version only ever recognised the literal string `"completed"` as
-/// terminal, so a real `omp`'s own `"finished"` (confirmed by
-/// `scripts/fixtures/omp-frames/subagents.jsonl`, written against the documented wire contract)
-/// was read as still-running forever. Issue #563 decision 15: `"cancelled"`/`"aborted"` used to
-/// fold into `Failed` -- split into their own `Cancelled` status, since neither means the
-/// subagent's own work went wrong.
+/// Maps OMP's progress status to a terminal or running `SubagentStatus`.
+/// Any terminal word settles the entry; `pending`/`running`/absent stays running.
 fn map_progress_status(status: &str) -> SummaryStatus {
     let lower = status.to_lowercase();
     if lower.contains("cancel") || lower.contains("abort") {
@@ -53,21 +31,12 @@ fn map_progress_status(status: &str) -> SummaryStatus {
     ) {
         return SummaryStatus::Running;
     }
-    // "completed", "finished", "done", or anything else OMP might send that isn't one of the
-    // recognised in-flight/failure/cancellation words above: a terminal, successful status.
+    // Unrecognised terminal words count as success.
     SummaryStatus::Finished
 }
 
-/// Shared by `tool_execution_update` (`force_terminal: false`) and the `task` call's own
-/// `tool_execution_end` (`force_terminal: true`, see the parent file's own header for why reading
-/// the END frame's real per-index progress is not the same bug as Electron's blanket override):
-/// scoped first to only this call's own batch (`tool_call_id`), then correlated by `progress[].id`
-/// within that batch, falling back to position when no id match is found -- identical to TS's own
-/// disambiguation (see `handle_task_start`'s own occurrence suffix, the reason a bare id match can
-/// legitimately miss for a duplicate-named batch). `force_terminal` only affects entries that have
-/// NO matching progress entry at all: when the end frame's own progress array is simply shorter
-/// than the batch (a subagent OMP stopped reporting on), that entry has nothing here to settle it
-/// -- `apply_jobs`/`on_exit` are what eventually resolve it, never a blanket mark here.
+/// Applies per-index progress from a `task` call's batch, matched by id then by position.
+/// `force_terminal` only settles entries that have no matching progress entry at all.
 pub(super) async fn apply_progress_to_batch(
     agent: &SessionAgent,
     tool_call_id: &str,
@@ -113,12 +82,7 @@ pub(super) async fn apply_progress_to_batch(
                     entry.status = new_status;
                     changed = true;
                 }
-                // Gate round 2 (perf MEDIUM): `durationMs` ticks up on nearly every live
-                // `tool_execution_update` while still running -- storing it is cheap and keeps
-                // the data fresh, but it must not by itself trigger a full `subagents:update`
-                // broadcast on every single tick; only a genuine status move (already handled
-                // above) or the FINAL duration once the entry leaves `Running` counts as a
-                // visible change here.
+                // Duration updates are stored but do not emit a broadcast by themselves.
                 if new_duration.is_some() && entry.duration_ms != new_duration {
                     entry.duration_ms = new_duration;
                     if new_status != SummaryStatus::Running {
@@ -151,11 +115,8 @@ pub(super) async fn apply_progress_to_batch(
     super::super::readout::schedule_readout_update(agent).await;
 }
 
-/// `transcript.ts`'s own `jobsFromDetails`/`applyAsyncResultJobs`: settles a `Running` summary
-/// that has NO matching `progress[]` entry at all, correlated here by `label === name_or_task`
-/// (this build does not track a separate `job_id`, a disclosed simplification -- see the PR body).
-/// `"pending"`/`"running"` job statuses are not terminal; arrival with no `status` field at all is
-/// read as done, matching `applyAsyncResultJobs`'s own "arrival itself is read as done" rule.
+/// Settles a running summary with no `progress[]` entry, matched by label. A missing status
+/// on arrival counts as done.
 pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
     let summaries_value = agent
         .with_subagents_state(|s| {
@@ -193,12 +154,9 @@ pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
     super::super::readout::schedule_readout_update(agent).await;
 }
 
-/// Issue #712: asks OMP (default level `off`) to push `subagent_lifecycle`/`subagent_progress`
-/// frames for every subagent, including detached background jobs. Best effort: an older OMP
-/// without the command just answers `success:false`, leaving `apply_jobs`/`on_exit` as the
-/// settle paths.
+/// Asks OMP to push subagent lifecycle frames. Best effort; older OMP just answers `success:false`.
 pub(super) async fn subscribe_to_subagent_frames(agent: &SessionAgent) {
-    // Fire-and-forget: the RPC can take up to its 10 s timeout and must not block attach/reset.
+    // Fire-and-forget so attach and reset never block on the RPC timeout.
     let agent = agent.arc();
     tokio::spawn(async move {
         if let Err(err) = agent
@@ -213,10 +171,8 @@ pub(super) async fn subscribe_to_subagent_frames(agent: &SessionAgent) {
     });
 }
 
-/// Issue #712: applies one standalone `subagent_lifecycle`/`subagent_progress` payload, matched to
-/// a summary by `(parentToolCallId, index)`. Only a `Running` entry moves, so a late frame never
-/// rewrites an already-settled status. The lifecycle frame carries no duration, so a settled
-/// entry keeps the larger of the last progress `durationMs` and the time Refract observed.
+/// Applies one standalone lifecycle or progress frame, matched by `(parentToolCallId, index)`.
+/// Only a running entry moves, so a late frame never rewrites a settled status.
 pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str, payload: &Value) {
     let Some(parent) = payload.get("parentToolCallId").and_then(Value::as_str) else {
         return;
@@ -308,9 +264,7 @@ fn tool_args_preview(entry: &Value) -> String {
         .to_string()
 }
 
-/// `recentOutput[]`'s populated element shape was never observed live (FINDINGS item 36): read
-/// defensively -- a plain string, or a common `{text}`/`{content}` wrapper; anything else is
-/// skipped rather than guessed at.
+/// Reads `recentOutput` defensively; the populated element shape is not yet confirmed live.
 fn output_text(entry: &Value) -> Option<String> {
     if let Some(s) = entry.as_str() {
         return Some(s.to_string());
@@ -326,12 +280,7 @@ fn output_text(entry: &Value) -> Option<String> {
     None
 }
 
-/// Port of `applySubagentProgress`, rewritten to mutate `state.streams`/`state.stream_ids` IN
-/// PLACE (performance gate round 1): the previous version cloned the whole stream twice per
-/// update (once to read it, once via `items.to_vec()` inside the old free function) regardless of
-/// whether anything new had arrived, and deduped by a linear scan of the ever-growing vec.
-/// Returns only the newly-appended rows (never the whole stream), which is also exactly what a
-/// visible subagent's own `subagent:patch` diff needs -- no separate "diff by length" pass.
+/// Appends progress rows in place and returns only the new rows, so the caller never clones the stream.
 fn apply_subagent_progress_in_place(
     state: &mut State,
     subagent_id: &str,
@@ -380,12 +329,7 @@ fn apply_subagent_progress_in_place(
             new_rows.push(row);
         }
     }
-    // Follow-up fix (#788): the evicted row's own id must STAY in `ids` -- OMP's own
-    // `recentTools`/`recentOutput` can re-report an id it already sent once before (the
-    // existing "already rendered" dedupe above relies on this), so removing it here let an
-    // evicted-then-re-reported id churn back into the stream, immediately re-triggering its own
-    // eviction next time -- only the CONTENT row is dropped to bound memory; the dedupe
-    // membership itself is permanent for the life of this subagent's stream.
+    // The evicted row's id stays in `ids` so a re-reported id is still deduped.
     if stream.len() > MAX_STREAM_ROWS {
         let overflow = stream.len() - MAX_STREAM_ROWS;
         stream.drain(0..overflow);
@@ -411,13 +355,13 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
                         .expect("summary entry serialises to a JSON object")
                         .insert("durationMs".to_string(), json!(duration));
                 }
-                // Gate round 1 fix 6 (#700/#701 slice b): the Agents card's own row header.
+                // Row header for the Agents card.
                 if let Some(name) = &e.name {
                     obj.as_object_mut()
                         .expect("summary entry serialises to a JSON object")
                         .insert("name".to_string(), json!(name));
                 }
-                // Issue #700/#701 slice (b): the Agents hover-focus card's own one-line summary.
+                // One-line summary for the Agents hover card.
                 if let Some(task_summary) = &e.task_summary {
                     obj.as_object_mut()
                         .expect("summary entry serialises to a JSON object")
@@ -434,10 +378,7 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
     )
 }
 
-/// Code-review round 1: `subagents:update` follows `transcript:patch`'s own visibility rule --
-/// a hidden Session's subagent list keeps computing (so it is correct the instant it becomes
-/// visible, carried by the `sessions.open`/`.recover` snapshot) but is never pushed live while
-/// hidden.
+/// A hidden Session computes its subagent list but never pushes it live.
 pub(super) async fn emit_subagents_update(agent: &SessionAgent, value: Value) {
     if !agent.is_visible() {
         return;
@@ -447,13 +388,7 @@ pub(super) async fn emit_subagents_update(agent: &SessionAgent, value: Value) {
         .emit_subagents_update(agent.session_id(), value);
 }
 
-/// Performance gate round 1 ("one `subagent:patch` per update frame with no coalescing"):
-/// accumulates ops and debounces the actual emit to at most one per `PATCH_COALESCE_MS`, the same
-/// window `PatchCoalescer` uses for `transcript:patch`. Also gates on visibility (code-review
-/// round 1): queuing still happens unconditionally (cheap, just a `Vec` push), but nothing is EVER
-/// sent for a hidden Session -- `set_visible` already clears `pending_patch_ops` the instant a
-/// different subagent (or none) is selected, so a hidden Session never accumulates ops for a
-/// subagent nobody is looking at either.
+/// Coalesces subagent patch ops to one emit per `PATCH_COALESCE_MS`, and never emits for a hidden Session.
 pub(super) async fn queue_patch_ops(agent: &SessionAgent, ops: Vec<Value>) {
     let should_spawn = agent
         .with_subagents_state(|s| {

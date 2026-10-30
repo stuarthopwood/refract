@@ -1,33 +1,5 @@
-// Native menu (lane R8, issue #791): `window.popupMenu`, port of `src/main/ipc/window.ts` +
-// `src/main/menu.ts`. Builds four detached `Submenu`s (File/Edit/View/Window) once, lazily, on
-// first use -- never attached as the window's own menu bar (`WebviewWindow::set_menu`), since
-// this build's window uses native OS decorations (`lib.rs`'s own "no custom caption parity in
-// milestone 1" comment): attaching would show a second, OS-drawn menu row duplicating the
-// renderer's own Alt-revealed `AppMenuBar.tsx` row. Popped up on demand via `popup_menu_at`,
-// matching Electron's own `popupAppMenu` (a real native menu, never a second hand-rolled
-// implementation) -- the one deliberate difference: Electron overrides `Close`'s accelerator to
-// Alt+F4 so Ctrl+W reaches the renderer's own close-chat-pane handler instead of closing the
-// window (#621); the custom `MenuItem`s below do the same.
-//
-// Quality-gate correction (code review, 2026-10-14): an earlier version of this file read
-// `tauri::menu::SubmenuBuilder`'s own per-method docs ("Windows/Linux: Unsupported" on its
-// `undo()`/`redo()`/`fullscreen()` convenience methods) and dropped all three. That is wrong for
-// two of them: muda 0.20.0's own Windows `run_predefined` match DOES have arms for `Undo`/`Redo`
-// (simulated Ctrl+Z/Ctrl+Y keystrokes, the same mechanism `Cut`/`Copy` use) -- restored below via
-// `.undo().redo()`. `Fullscreen` is the one that really is a no-op there (no `Fullscreen` arm at
-// all, falling through to nothing when clicked) -- fixed with a custom `MenuItem` below calling
-// `window.set_fullscreen(!is_fullscreen)` in `on_menu_event` instead of the predefined item.
-// Reset Zoom / Zoom In / Zoom Out ship in Electron's PRODUCTION build (`menu.ts`; only Reload,
-// Force Reload and Toggle DevTools are gated on `isDev`) -- ported here as three more custom
-// items driving `WebviewWindow::set_zoom` against a tracked `ZOOM_FACTOR` (no getter exists on
-// this Tauri version), with `window.popupMenu`'s own x/y multiplied by that same factor before
-// building the popup position, mirroring `window.ts`'s own `webContents.getZoomFactor()` multiply
-// exactly. No accelerator label on any of the three (code-review correction, round 2): this menu
-// is popup-only, never attached as the window/app menu, so WebView2 never registers these as
-// live keyboard shortcuts -- showing "Ctrl+=" next to an item that only fires on a click would be
-// misleading. Tracked as a follow-up (#825) rather than wiring real accelerator keys, which
-// would need intercepting them before WebView2's own browser-side zoom handling. Reload/Force
-// Reload/Toggle DevTools stay out: nothing else in this build wires a reload/devtools action.
+// Popup-only menu for `window.popupMenu`; never the window's own menu bar, which would duplicate AppMenuBar.
+// Ctrl+W and the zoom items are custom, so Ctrl+W reaches the renderer (#621); zoom labels have no accelerator (#825).
 
 use std::sync::Mutex as StdMutex;
 
@@ -44,11 +16,10 @@ const ZOOM_STEP: f64 = 1.1;
 const ZOOM_MIN: f64 = 0.25;
 const ZOOM_MAX: f64 = 3.0;
 
-/// Page zoom level the View menu's Reset/In/Out items track (`WebviewWindow` has no zoom getter
-/// on this Tauri version), separate from `Position::Logical`'s own OS-DPI scaling -- this is the
-/// CSS-pixel page zoom `window.ts` also tracks via `webContents.getZoomFactor()`.
+/// Page zoom the View menu tracks, since this Tauri version has no zoom getter.
 static ZOOM_FACTOR: StdMutex<f64> = StdMutex::new(1.0);
 
+/// Registers the app menu's custom and predefined items with the dispatcher.
 pub fn register(d: &mut Dispatcher) {
     d.register("window.popupMenu", window_popup_menu);
 }
@@ -80,12 +51,8 @@ fn apply_zoom(app: &tauri::AppHandle, new_factor: f64) {
 
 static MENUS: OnceCell<AppMenus> = OnceCell::const_new();
 
-/// Builds the four submenus and registers the one app-wide `on_menu_event` listener their custom
-/// (non-predefined) items need. Registered on the `AppHandle`, not a specific window (low-sev
-/// code-review finding): a window-keyed listener would be silently replaced by any other lane
-/// that also registers one for the same window label, where the app-wide listener is additive.
-/// `Cut`/`Copy`/`Paste`/`SelectAll`/`Minimize` are `PredefinedMenuItem`s and fire their native
-/// OS/WebView2 action with no handler of ours.
+/// Builds the four submenus and their one app-wide `on_menu_event` listener.
+/// App-wide, so a per-window registration elsewhere cannot replace it.
 fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
     let file_close = MenuItemBuilder::with_id("file-close", "Close")
         .accelerator("Alt+F4")
@@ -170,12 +137,7 @@ fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
     })
 }
 
-/// `window.popupMenu(menuId, x, y)` (FR-057): pops one top-level item's real submenu at `x`/`y`
-/// (window-content-relative logical pixels, matching `popup_menu_at`'s own documented coordinate
-/// space), multiplied by the current page zoom factor -- the same adjustment Electron's own
-/// handler makes with `webContents.getZoomFactor()` before calling `Menu.popup`, since neither
-/// API auto-adjusts for in-page CSS zoom (distinct from OS DPI scaling, which `Position::Logical`
-/// already handles on its own).
+/// `window.popupMenu`: pops one top-level submenu at `x`/`y`, scaled by the page zoom factor.
 fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let menu_id = match args.first().and_then(Value::as_str) {
@@ -210,14 +172,7 @@ fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(not_found("No window to show the menu on"));
         };
 
-        // `build_menus` runs via `tauri::async_runtime::spawn_blocking` rather than inline:
-        // `MenuItemBuilder::build`/`SubmenuBuilder::build` end in Tauri's `run_main_thread!`
-        // macro, which blocks the calling thread on a `std::sync::mpsc` `rx.recv()` until the
-        // main thread's event loop services the posted task. This call itself is quick (no modal
-        // loop, unlike `popup_menu_at` below) so it was never the cause of the deadlock this
-        // handler used to have -- `spawn_blocking` here is standard good practice (never block a
-        // Tokio async-worker thread with a synchronous channel recv), not the fix for that hang.
-        // The real fix is at the `popup_menu_at` call below.
+        // Built off the async worker: the Tauri builders block on the main thread.
         let app_handle_for_menus = app_handle.clone();
         let menus = MENUS
             .get_or_try_init(|| async move {
@@ -236,15 +191,7 @@ fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(not_found(format!("Menu '{menu_id}' has no submenu")));
         };
 
-        // Fire-and-forget (parity, `src/main/menu.ts`'s own `popupAppMenu`): Electron's
-        // `Menu.popup()` call is NOT awaited by `window.ts`'s IPC handler either -- showing a
-        // native popup menu enters a modal loop on whichever thread drives it (Win32
-        // `TrackPopupMenuEx`, which `muda`/Tauri's `popup_menu_at` runs on the main thread) that
-        // only returns once the menu is dismissed. Awaiting that before resolving the IPC
-        // promise (an earlier version of this handler did) made every `window.popupMenu` call
-        // hang until the user dismissed the menu -- reproduced live via CDP, where nothing ever
-        // dismisses it, so the call simply never returned. Spawned onto a dedicated blocking
-        // thread and left unawaited instead, exactly like Electron's fire-and-forget `.popup()`.
+        // Fire-and-forget: the popup runs a modal loop, so awaiting it would hang the IPC call.
         let zoom = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
         let position = Position::Logical(LogicalPosition::new(x * zoom, y * zoom));
         tauri::async_runtime::spawn_blocking(move || {

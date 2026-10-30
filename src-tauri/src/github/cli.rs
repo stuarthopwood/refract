@@ -1,8 +1,4 @@
-// Port of `src/main/github/cli.ts`: GitHub CLI access for Account commands (specs 008), lane R9
-// issue #792. Shares `gh.rs`'s own timed/resolved `gh_raw` core rather than duplicating it
-// (GateCode008 MEDIUM "two gh wrappers") -- the long-lived interactive `GhLoginFlow` below
-// (`gh auth login --web`) is a raw spawn, not a single timed call, so it is intentionally NOT
-// built on `gh_raw`.
+// `GhLoginFlow` is a long-lived raw spawn, not a single timed call, so it is not built on `gh_raw`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,26 +13,20 @@ use tokio::sync::{mpsc, watch, Mutex as AsyncMutex};
 
 use super::gh::{gh_raw, GhError, GhErrorCode};
 
-/// Windows-only: `CREATE_NO_WINDOW` (same flag `gh.rs`'s own `gh_raw` applies).
+/// Windows-only: `CREATE_NO_WINDOW`.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// `gh auth login --web` does not exit on stdin EOF while it polls for authorisation (measured
-/// in the Electron build: still running after 10s, only `taskkill` ended it), so a long grace
-/// just makes Cancel feel broken. A pre-completion kill never touches the stored credential.
+/// `gh auth login --web` ignores stdin EOF while polling, so a long grace makes Cancel feel
+/// broken. A pre-completion kill never touches the stored credential.
 const CANCEL_GRACE_MS: u64 = 750;
 
-/// Account commands are host/login-scoped, never repo-scoped, so there is no repository path to
-/// hand `gh_raw` as `cwd` -- the OS temp dir is the same neutral choice `readiness`'s own git
-/// probe makes.
+/// Account commands are not repo-scoped, so `gh_raw` gets the OS temp dir as a neutral `cwd`.
 fn account_cwd() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// Runs `gh <args>` via the shared timed/resolved runner (`gh.rs`'s `gh_raw`, 15s timeout) and
-/// returns trimmed stdout. Fails with `GhErrorCode::GhNotFound` when `gh` is not on PATH,
-/// `GhErrorCode::Timeout` if the 15s timeout fires, else `GhErrorCode::GhFailed` on a non-zero
-/// exit -- the message is built from stderr only (or a fixed string), NEVER stdout, which can be
-/// a secret (e.g. `auth token`'s token).
+/// Runs `gh <args>` via `gh_raw` (15s timeout) and returns trimmed stdout.
+// Error messages use stderr only, never stdout, which can be a secret (`auth token`).
 async fn gh(args: &[&str]) -> Result<String, GhError> {
     let cwd = account_cwd();
     let result = gh_raw(
@@ -96,8 +86,7 @@ pub struct GhAuthHostEntry {
     pub login: String,
     pub active: bool,
     pub state: String,
-    /// Set when `state != "success"`; classified from gh's per-account `error` text (never the
-    /// raw text itself -- GateSec008/GateUi008: the renderer and logs must never see it).
+    /// Set when `state != "success"`; the raw `error` text must never reach the renderer or logs.
     pub problem: Option<GhAccountProblem>,
 }
 
@@ -111,8 +100,7 @@ struct GhAuthStatusHostAccount {
     active: Option<bool>,
     #[serde(default)]
     state: Option<String>,
-    /// `gh`'s per-account failure detail -- classified into `GhAccountProblem` below and never
-    /// itself stored or exposed to the renderer/logs.
+    /// Raw failure detail; classified into `GhAccountProblem`, never stored or exposed.
     #[serde(default)]
     error: Option<String>,
 }
@@ -123,9 +111,8 @@ struct GhAuthStatusJson {
     hosts: HashMap<String, Vec<GhAuthStatusHostAccount>>,
 }
 
-/// Classifies a non-success account entry's `error` text into one of the three fixed
-/// `GhAccountProblem` buckets -- `None` for a successful account. The raw `error` text itself is
-/// read only here and never stored or returned.
+/// Classifies a non-success account's `error` text into a fixed `GhAccountProblem`; the raw text
+/// is read only here.
 fn classify_account_problem(state: &str, error: Option<&str>) -> Option<GhAccountProblem> {
     if state == "success" {
         return None;
@@ -167,13 +154,8 @@ fn classify_account_problem(state: &str, error: Option<&str>) -> Option<GhAccoun
     Some(GhAccountProblem::Unknown)
 }
 
-/// Runs `gh auth status --json hosts` and flattens every host's account array into one list.
-/// `gh auth status` exits non-zero when nobody is signed in to any host at all, but `--json`
-/// still writes a parseable (near-empty) body to stdout in that case; a non-empty stdout body is
-/// treated as authoritative regardless of exit code, and `gh-failed` is raised both when stdout
-/// itself is not JSON (a real CLI/transport failure, not "signed out") AND when stdout is empty
-/// on a non-zero exit (an older `gh` without `--json` support on `auth status` prints only to
-/// stderr in that case, which must surface as a failure, not a silent "signed out").
+/// Runs `gh auth status --json hosts` and flattens every host's accounts into one list.
+// A non-empty stdout is authoritative despite a non-zero exit; empty/non-JSON on failure is `gh-failed`.
 pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
     let cwd = account_cwd();
     let result = gh_raw(
@@ -224,9 +206,7 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
     Ok(flatten_auth_status(parsed))
 }
 
-/// Flattens `GhAuthStatusJson`'s per-host account map into one list, preserving each host's own
-/// account ordering (`gh`'s own listing order, non-alphabetical) and classifying every non-
-/// success account's problem.
+/// Flattens the per-host account map, keeping `gh`'s (non-alphabetical) account order.
 fn flatten_auth_status(parsed: GhAuthStatusJson) -> Vec<GhAuthHostEntry> {
     let mut entries = Vec::new();
     for (host_key, accounts) in parsed.hosts {
@@ -247,9 +227,7 @@ fn flatten_auth_status(parsed: GhAuthStatusJson) -> Vec<GhAuthHostEntry> {
     entries
 }
 
-/// Runs `gh auth token --hostname <host> --user <login>` and returns the trimmed token. Reads a
-/// *non*-active account's token without an `gh auth switch` side effect; callers must never
-/// persist the returned value.
+/// Returns a (possibly non-active) account's token without a switch; callers must never persist it.
 pub async fn auth_token(host: &str, login: &str) -> Result<String, GhError> {
     gh(&["auth", "token", "--hostname", host, "--user", login]).await
 }
@@ -270,22 +248,18 @@ pub async fn auth_logout(host: &str, login: &str) -> Result<(), GhError> {
 pub struct GhLoginExitInfo {
     pub code: Option<i32>,
     pub requested: bool,
-    /// Short, plain-language reason when the flow ended in failure (`code != 0`, not
-    /// `requested`); absent on success/cancel. Classified from the exit code and a short internal
-    /// stderr tail -- NEVER the raw stderr itself, which can carry a command line or token.
+    /// Plain-language failure reason; never raw stderr, which can carry a command line or token.
     pub detail: Option<String>,
 }
 
-/// Events a `GhLoginFlow` emits on its channel: `Code` (the parsed one-time code string, as soon
-/// as it is seen), `Exit` (fires exactly once).
+/// Events a `GhLoginFlow` emits: `Code` as soon as seen, `Exit` exactly once.
 #[derive(Debug, Clone)]
 pub enum GhLoginFlowEvent {
     Code(String),
     Exit(GhLoginExitInfo),
 }
 
-/// GateUi008 M5: the last 2 KB of stderr, kept only to classify a failed exit into one of four
-/// fixed `detail` sentences -- never logged, never emitted, never leaves this module.
+/// Last 2 KB of stderr, only to classify a failed exit; never logged or emitted.
 const STDERR_TAIL_BYTES: usize = 2 * 1024;
 
 struct FlowShared {
@@ -297,9 +271,7 @@ struct FlowShared {
     events_tx: mpsc::UnboundedSender<GhLoginFlowEvent>,
 }
 
-/// `gh auth login --web`'s one-time code is always `XXXX-XXXX` (4 uppercase-alphanumeric, a
-/// hyphen, 4 more uppercase-alphanumeric). Anything else is treated as a parsing fluke rather
-/// than emitted to the renderer verbatim.
+/// The one-time code is always `XXXX-XXXX`; anything else is a parsing fluke, not emitted.
 fn is_valid_device_code(code: &str) -> bool {
     let bytes = code.as_bytes();
     if bytes.len() != 9 || bytes[4] != b'-' {
@@ -352,9 +324,7 @@ impl FlowShared {
         }
     }
 
-    /// Classifies a failed `gh auth login` run into one of four short, plain-language sentences
-    /// using only the exit code and the stderr tail -- the raw stderr text itself never leaves
-    /// this method, is never logged, and is never emitted.
+    /// Classifies a failed login into a fixed sentence; raw stderr never leaves this method.
     fn classify_failure(&self) -> String {
         let tail = self
             .stderr_tail
@@ -377,9 +347,7 @@ impl FlowShared {
         "Sign-in did not finish.".to_string()
     }
 
-    /// Guards against a double call (the normal exit firing after a spawn-error path already
-    /// called this, or vice versa) -- without this, `Exit` would emit twice and a caller (the
-    /// `accounts.github.addStart` handler) would broadcast a completed/failed add flow twice.
+    /// Guards against a double call (spawn-error path plus normal exit) emitting `Exit` twice.
     fn on_exit(&self, code: Option<i32>) {
         if self.exited.swap(true, Ordering::SeqCst) {
             return;
@@ -408,11 +376,8 @@ impl FlowShared {
     }
 }
 
-/// Drives one `gh auth login --hostname <host> --web` child process and streams its stdout/
-/// stderr, line by line, as `Code` events -- the one-time code and device URL arrive this way,
-/// never by re-parsing a finished run. `cancel()` mirrors `OmpProcess::stop()`'s two-step
-/// shutdown: stdin close, then `taskkill /T /F` after a grace period if the process has not
-/// exited on its own.
+/// Drives one `gh auth login --web` child, streaming its output lines as `Code` events.
+/// `cancel()` closes stdin, then `taskkill /T /F`s after a grace period.
 pub struct GhLoginFlow {
     shared: Arc<FlowShared>,
     stdin: AsyncMutex<Option<ChildStdin>>,
@@ -422,8 +387,7 @@ pub struct GhLoginFlow {
 }
 
 impl GhLoginFlow {
-    /// Spawns the child and returns the flow plus its event channel; resolves once spawned (not
-    /// once signed in -- the flow keeps running).
+    /// Spawns the child and returns the flow plus its event channel (resolves once spawned).
     pub async fn start(
         host: &str,
     ) -> Result<(Arc<GhLoginFlow>, mpsc::UnboundedReceiver<GhLoginFlowEvent>), GhError> {
@@ -515,8 +479,7 @@ impl GhLoginFlow {
         ))
     }
 
-    /// Idempotent: stdin close, then force-kill via `taskkill` after a 750ms grace
-    /// (`CANCEL_GRACE_MS`) if the process has not exited on its own.
+    /// Idempotent: stdin close, then `taskkill` after `CANCEL_GRACE_MS`.
     pub async fn cancel(self: &Arc<Self>) {
         self.shared.requested.store(true, Ordering::SeqCst);
         let mut started = self.cancel_started.lock().await;
@@ -555,8 +518,7 @@ impl GhLoginFlow {
             .stderr(std::process::Stdio::null())
             .status()
             .await;
-        // taskkill /F should be reliable; wait for the real exit it triggers rather than a second
-        // timeout, matching `OmpProcess::stop`'s own `hardKill`.
+        // taskkill /F is reliable; wait for the real exit rather than a second timeout.
         let mut rx = self.exit_rx.clone();
         let _ = rx.wait_for(|exited| *exited).await;
     }
@@ -575,24 +537,19 @@ impl GhLoginFlow {
     }
 }
 
-/// Starts a `gh auth login --hostname <host> --web` flow; see `GhLoginFlow` for the event/cancel
-/// contract.
+/// Starts a `gh auth login --web` flow; see `GhLoginFlow`.
 pub async fn auth_login_start(
     host: &str,
 ) -> Result<(Arc<GhLoginFlow>, mpsc::UnboundedReceiver<GhLoginFlowEvent>), GhError> {
     GhLoginFlow::start(host).await
 }
 
-/// Cancels `flow` (stdin close, then force-kill after a grace period). A thin alias over
-/// `GhLoginFlow::cancel()` for callers that only hold the flow, not its type.
+/// Cancels `flow`; alias for `GhLoginFlow::cancel()`.
 pub async fn auth_login_cancel(flow: &Arc<GhLoginFlow>) {
     flow.cancel().await;
 }
 
-// Unit tests for this module's pure parsing/classification logic (issue #792's own "tests
-// ported" ask -- this file had zero tests before this lane). Split into a sibling file
-// (`#[path = "cli_tests.rs"]`) to stay under the 600-line-per-file cap (issue #806), the same
-// pattern `ipc/pull_requests/mapping.rs` already uses.
+// Tests live in a sibling file to stay under the 600-line cap (#806).
 #[cfg(test)]
 #[path = "cli_tests.rs"]
 mod cli_tests;

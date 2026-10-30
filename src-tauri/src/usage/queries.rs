@@ -1,10 +1,5 @@
-// Spec 060 (S1-11): the read side of `usage.db`. A `Filters` value becomes a bound-parameter
-// `WHERE` through `Filters::build`; column names come only from the `Target` constants below, never
-// from the caller, so a renderer value can only ever be a bound parameter. Cards, charts and the
-// by-* tables read the rollups; the per-call log reads `messages` (see `queries_tables`).
-//
-// `tz_offset_minutes` is minutes EAST of UTC (the negation of JS `getTimezoneOffset()`); it moves
-// "today" and the day buckets to the viewer's local midnight.
+// Column names come only from the `Target` constants, so a renderer value is always a bound parameter.
+// `tz_offset_minutes` is minutes EAST of UTC (the negation of JS `getTimezoneOffset()`).
 
 use rusqlite::types::Value;
 use rusqlite::Connection;
@@ -16,9 +11,9 @@ use super::timeutil::{hour_start, iso_date, DAY_MS, HOUR_MS};
 pub const RANGES: [&str; 5] = ["today", "7d", "30d", "all", "custom"];
 /// The agent-type filter values.
 pub const AGENT_TYPES: [&str; 2] = ["main", "subagent"];
-/// The widest time-zone offset in minutes either way (UTC+14 / UTC-12 round up to this).
+/// Widest time-zone offset in minutes either way.
 pub const MAX_TZ_MINUTES: i64 = 14 * 60;
-/// A custom `from` or `to` is clamped to this many ms either side of the epoch.
+/// Clamp for custom `from`/`to`, in ms either side of the epoch.
 const MAX_CUSTOM_MS: i64 = 1_000_000_000_000_000;
 
 #[derive(Debug, thiserror::Error)]
@@ -59,8 +54,7 @@ impl QueryCtx {
     }
 }
 
-/// Which columns of one table the filters apply to; `None` means the table lacks that column and
-/// the filter is skipped. All values are `'static` literals.
+/// Filter columns of one table; `None` means the table lacks that column and the filter is skipped.
 pub(super) struct Target {
     pub time: &'static str,
     pub project: Option<&'static str>,
@@ -112,7 +106,7 @@ pub(super) const SESSION_ROLLUP: Target = Target {
     agent: None,
 };
 
-/// Which rollup table `rollup_source` reads, and the per-call table that backs its exact edges.
+/// Rollup table and per-call table backing its exact edges.
 #[derive(Clone, Copy)]
 pub(super) enum Rollup {
     Messages,
@@ -120,8 +114,7 @@ pub(super) enum Rollup {
 }
 
 impl Rollup {
-    /// `(rollup table, its columns, per-call table, per-call select list after the hour)`; the
-    /// select list yields the rollup's columns, in order, for one call.
+    /// Rollup table, its columns, per-call table, and per-call select list after the hour.
     fn parts(self) -> (&'static str, &'static str, &'static str, &'static str) {
         match self {
             Self::Messages => (
@@ -219,8 +212,7 @@ impl Filters {
         Ok(w)
     }
 
-    /// The Project, model, reasoning and agent-type filters only, no time bound. Rollup queries
-    /// take their time bound from `rollup_source` instead.
+    /// Project, model, reasoning and agent-type filters only, with no time bound.
     pub(super) fn build_dims(&self, target: &Target, ctx: &QueryCtx) -> QueryResult<Where> {
         self.validate()?;
         self.window(ctx)?;
@@ -239,8 +231,7 @@ impl Filters {
         Ok(w)
     }
 
-    /// Checks the range and agent-type allowlists and that a custom range is not inverted. The one
-    /// place these rules live; `ipc/usage.rs` calls it too.
+    /// Checks the allowlists and that a custom range is not inverted. `ipc/usage.rs` calls it too.
     pub fn validate(&self) -> QueryResult<()> {
         if !RANGES.contains(&self.range.as_str()) {
             return Err(QueryError::InvalidArgument(format!(
@@ -263,14 +254,8 @@ impl Filters {
         Ok(())
     }
 
-    /// The rollup table (or a union that makes it exact) to read in place of `message_rollup` or
-    /// `tool_rollup`. A rollup row is a whole UTC hour, so a window edge inside an hour would
-    /// otherwise pull in or drop part of that hour. When an edge is not hour-aligned (a rolling 7d
-    /// or 30d, a half-hour time zone's midnight, a custom range) the whole hours come from the
-    /// rollup and the partial edge hours come from the per-call table by exact timestamp, so cards
-    /// agree with the call log. With `exact` every row comes from the per-call table with its exact
-    /// timestamp in `hour` (used for day buckets in a time zone that is not a whole number of hours).
-    /// Values are bound into `w`; the filters from `build_dims` go in the outer `WHERE`.
+    /// Rollup table (or union) to read instead of the raw rollup. Partial edge hours come from the
+    /// per-call table so cards match the call log; `exact` reads per-call rows for all buckets.
     pub(super) fn rollup_source(
         &self,
         w: &mut Where,
@@ -311,7 +296,7 @@ impl Filters {
             let c = bounds(w, "hour");
             return Ok(format!("(SELECT {cols} FROM {table}{})", clause(&c)));
         }
-        // Whole hours [r_lo, r_hi) come from the rollup; everything else in the window from rows.
+        // Whole hours [r_lo, r_hi) come from the rollup; the rest of the window comes from rows.
         let mut rollup_c = Vec::new();
         let mut edge = Vec::new();
         let mut fact_c = bounds(w, "ts");
@@ -335,8 +320,7 @@ impl Filters {
         ))
     }
 
-    /// True when a model or reasoning filter forces the per-call tool table (the tool rollup has
-    /// neither column).
+    /// True when a model or reasoning filter forces the per-call tool table.
     fn needs_tool_calls(&self) -> bool {
         self.model.is_some() || self.reasoning.is_some()
     }
@@ -446,7 +430,7 @@ pub fn timeseries(
     ctx: &QueryCtx,
 ) -> QueryResult<Vec<TimeBucket>> {
     let mut w = f.build_dims(&MESSAGE_ROLLUP, ctx)?;
-    // Day buckets in a half-hour zone need exact timestamps; whole-hour zones can use hours.
+    // Day buckets in a half-hour zone need exact timestamps.
     let exact = !hour_buckets && ctx.offset_ms() % HOUR_MS != 0;
     let src = f.rollup_source(&mut w, Rollup::Messages, ctx, exact)?;
     let bucket = if hour_buckets {

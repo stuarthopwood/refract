@@ -1,13 +1,5 @@
-// Unit tests for `session::termination` (lane R3, issue #786): ports `terminationDetection.
-// test.ts`'s own tail-parsing edge cases (empty file, truncated last line, session_exit present/
-// absent, unmatched tool starts, judging each process life on its own, tail-only read guarantee,
-// cache invalidation) plus `stoppedOnRequestMarker.test.ts`'s own marker record/clear/validate/
-// resolve cases. `#[path]`-loaded sibling of `termination.rs` (excluded from `check:file-size` by
-// its own `.test.rs` name).
-//
-// Scratch Conversation files are written under the OS temp directory only (never inside this
-// repo) and left in place rather than deleted where harmless: each file's name is unique (pid,
-// an incrementing counter, and a uuid), never reused, so leaving them is harmless.
+// Unit tests for `session::termination`: tail parsing, per-life judgement, cache and marker.
+// Scratch files go under the OS temp dir (never the repo) and are left in place: names are unique.
 use super::*;
 use serde_json::json;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -388,12 +380,7 @@ async fn excludes_an_earlier_lifes_orphaned_call_from_a_later_still_unmatched_on
     assert_eq!(result.pending_tool_names, vec!["bash".to_string()]);
 }
 
-// -------------------------------------------------------------------------------------------
-// Marker tests (port of `stoppedOnRequestMarker.test.ts`'s own pure-validation cases; the
-// record/clear write paths go through `SessionAgent::registry()`, exercised instead via
-// `is_stopped_on_request_marker_valid`/`resolve_termination_for` directly against a `Session`
-// fixture -- no live `SessionAgent` construction needed for these).
-// -------------------------------------------------------------------------------------------
+// Marker tests: pure validation against a `Session` fixture, no live agent needed.
 
 fn make_session(
     current_conversation: Option<&str>,
@@ -479,13 +466,8 @@ async fn marker_invalid_with_no_marker_at_all() {
 
 #[tokio::test]
 async fn resolve_termination_is_clean_when_stopped_on_request_flag_is_set() {
-    // Gate-fix (round 3, test review HIGH): the file now carries an UNMATCHED tool call -- if
-    // the `stopped_on_request` short-circuit were ever removed, `detect_unexpected_termination`
-    // reading this SAME file would report `terminated_unexpectedly: true` (see
-    // `no_exit_record_an_unmatched_tool_call_names_the_pending_tool`), so this test only stays
-    // green while the short-circuit genuinely skips the tail read. The previous version pointed
-    // at a nonexistent file, which reads as clean either way (a missing file is always clean),
-    // so it passed regardless of whether the short-circuit existed at all.
+    // An unmatched tool call makes this go red if the `stopped_on_request` short-circuit is
+    // removed; a nonexistent file would read clean either way.
     let file = write_scratch(&assistant_tool_call("call-1", "bash")).await;
     let session = make_session(Some(&file), None, None);
     let result = resolve_termination_for(&session, true).await;
@@ -512,23 +494,14 @@ async fn resolve_termination_falls_through_to_the_tail_read_otherwise() {
 
 #[tokio::test]
 async fn marker_invalid_for_a_negative_size() {
-    // Port of `stoppedOnRequestMarker.test.ts`'s own "is false for a negative or non-finite
-    // size" -- a hand-edited or corrupt `registry.json` must never be trusted (fails closed,
-    // same as every other mismatch this function checks).
+    // A hand-edited or corrupt `registry.json` is never trusted (fails closed).
     let file = write_scratch("hello").await;
     let session = make_session(Some(&file), Some(&file), Some(-1));
     assert!(!is_stopped_on_request_marker_valid(&session).await);
 }
 
 // -------------------------------------------------------------------------------------------
-// `record_stopped_on_request_marker`/`clear_stopped_on_request_marker` against a real agent +
-// registry (gate-fix, test review HIGH, round 6): ports `stoppedOnRequestMarker.test.ts`'s own
-// `recordStoppedOnRequestMarker`/`clearStoppedOnRequestMarker` describe blocks. TS injects a
-// `stillCurrent: () => boolean` closure directly; this port's equivalent check
-// (`s.epoch == epoch_at_exit`) lives behind an async `with_termination_state` lock, so these
-// tests exercise it through the REAL `SessionAgent`'s own epoch instead (Main's "or the agent
-// state" alternative) -- `clear_stopped_on_request_marker`'s own bump is what a concurrent
-// Recover racing this exact write would have done.
+// `record_/clear_stopped_on_request_marker` against a real agent and registry, staleness via epoch.
 
 async fn make_marker_test_agent(
     label: &str,
@@ -592,10 +565,7 @@ async fn record_marker_writes_the_patch_when_still_current() {
 
 #[tokio::test]
 async fn record_marker_skips_the_write_once_a_newer_life_has_started() {
-    // Port of "skips the write entirely when stillCurrent() reports false after the stat
-    // resolves": `epoch_at_exit` was captured for a life that is no longer current by the time
-    // this call's own check runs -- a concurrent Recover's `clear_stopped_on_request_marker`
-    // (called at the top of every fresh `launch()`) already bumped the live epoch past it.
+    // `epoch_at_exit` is stale: a concurrent Recover's clear already bumped the live epoch.
     let agent = make_marker_test_agent("stale", None, None).await;
     let file = write_scratch("hello").await;
     let stale_epoch = agent.with_termination_state(|s| s.epoch).await;
@@ -614,13 +584,8 @@ async fn record_marker_skips_the_write_once_a_newer_life_has_started() {
 
 #[tokio::test]
 async fn record_marker_checks_still_current_after_the_stat_not_before() {
-    // Gate-fix (round 3, test review HIGH): the sibling test above bumps the epoch BEFORE
-    // calling `record_stopped_on_request_marker` at all, so it cannot distinguish a check done
-    // before the stat from one done after it -- the mismatch already exists either way. Races
-    // the two calls for real via `tokio::join!` so the epoch bump genuinely lands WHILE
-    // `record`'s own `fs::metadata` await is still pending, proving the `still_current` check
-    // runs AFTER the stat resolves (a check done before the stat would read the old epoch and
-    // wrongly let the write through).
+    // Races the calls so the epoch bump lands while `record`'s `fs::metadata` await is pending,
+    // proving the `still_current` check runs after the stat, not before.
     let file = write_scratch("hello").await;
     let agent = make_marker_test_agent("race-after-stat", None, None).await;
     let epoch_at_exit = agent.with_termination_state(|s| s.epoch).await;

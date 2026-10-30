@@ -1,32 +1,5 @@
-// Port of `src/main/fs/watchDirectory.ts` (lane R7, issue #790): watches a worktree's whole
-// subtree and reports, via a debounced callback, which single directory (relative to the root,
-// POSIX `/`-separated, matching `FileTreeNode.path`'s own convention) needs re-listing. Built on
-// the `notify` crate (not already in `Cargo.lock`, added minimally in `Cargo.toml`), whose
-// `RecommendedWatcher` wraps `ReadDirectoryChangesW` on Windows -- the same underlying API the TS
-// original's own `fs.watch({ recursive: true })` uses.
-//
-// **Adaptation, not a literal port** (worth stating plainly): the TS original detects "the
-// watched root was deleted out from under a running watch" via a low-level Node quirk -- an
-// ABSOLUTE `filename` in a raw `fs.watch` callback, which Node documents as always relative, so
-// an absolute one is itself the fatal signal (`ReadDirectoryChangesW` floods relative-looking
-// events otherwise). `notify` abstracts that raw buffer away entirely: every event it reports
-// already carries absolute, already-parsed `PathBuf`s, so there is no "absolute when it should be
-// relative" signal left to detect; worse, a live probe on this machine found `notify`'s Windows
-// backend emits **no event and no error at all** when an already-empty watched root is removed
-// out from under the watch (`ReadDirectoryChangesW`'s own handle presumably just goes quietly
-// invalid). This port instead treats THREE things as fatal, matching the TS original's
-// OBSERVABLE behaviour (stop once, call `on_fatal` once, never spin): (1) any `Err` from `notify`
-// itself (mirrors the TS `watcher.on('error', fail)` -- always fatal, no second-guessing), (2) a
-// `Remove` event whose path is the watched root itself (a cheap exact path comparison, kept as a
-// fast path for whichever backend/condition DOES surface it), and (3) a periodic liveness poll
-// (`ROOT_LIVENESS_POLL_INTERVAL`) that checks the root still exists even with no events at all --
-// the actual mechanism that fires for the reproduced case above, bounding worst-case detection
-// latency to that interval rather than relying on a signal that may never arrive.
-//
-// Debounce: a trailing-edge timer started at the FIRST event of a burst (not reset by every
-// subsequent event, which would let a continuous burst delay the flush indefinitely) -- mirrors
-// `watchDirectory.ts`'s own `queueDirectory` (`if (flushTimer) return;`), bounding worst-case
-// re-list latency to `WATCH_DEBOUNCE_MS` regardless of burst length.
+// Debounced per-directory watcher. Fatal on a watcher error, a removed root, or a root that
+// vanishes with no event (a Windows `notify` gap), detected by a periodic liveness poll.
 
 use std::collections::{HashSet, VecDeque};
 use std::path::Path;
@@ -40,38 +13,28 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use crate::fs::paths::contains_git_segment;
 
 const WATCH_DEBOUNCE_MS: u64 = 200;
-/// How often the watcher thread wakes, even with no pending event, to check whether the watched
-/// root itself still exists -- the fatal-detection fallback this file's own header comment
-/// describes (a live probe found `notify` emits no event at all for an already-empty root
-/// removed out from under a Windows watch). Bounds worst-case detection latency to this value.
+/// Wake interval for the root-exists check; `notify` may emit no event when an empty root is removed.
 const ROOT_LIVENESS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
-/// Returned by `watch_directory`; the caller's one way to tear down a Session's watcher. Clone is
-/// cheap (an `Arc`) and comparable by identity (`DirectoryWatchHandle::same_as`), matching
-/// `watchDirectory.ts`'s own handle-identity guards throughout `fileExplorer.ts` (a stale
-/// callback from an already-replaced watcher must never act on the new one's state).
+/// Handle to stop a watcher. `same_as` lets stale callbacks detect a replaced watcher.
 #[derive(Clone)]
 pub struct DirectoryWatchHandle {
     inner: Arc<StdMutex<Option<RecommendedWatcher>>>,
 }
 
 impl DirectoryWatchHandle {
-    /// Stops watching immediately (drops the native watch), discarding any not-yet-flushed
-    /// debounced directories. Safe to call more than once.
+    /// Drops the native watch and any unflushed directories. Safe to call twice.
     pub fn stop(&self) {
         *self.inner.lock().expect("watch handle mutex poisoned") = None;
     }
 
+    /// True when both handles refer to the same watcher.
     pub fn same_as(&self, other: &DirectoryWatchHandle) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
-/// POSIX-relative directory containing `path` (mirrors `watchDirectory.ts`'s own
-/// `toRelativeDirectory`): the PARENT of whatever entry changed, so the caller re-lists the
-/// directory that gained/lost/renamed that entry. `None` when the changed path is under `.git`
-/// (FR-007: never queue a re-list for it) or does not fall under `root` at all (a notify quirk
-/// reporting a sibling path, defensively ignored rather than panicking).
+/// POSIX-relative parent directory of `changed_path`. `None` for `.git` paths or paths outside `root`.
 fn relative_directory_for(root: &Path, changed_path: &Path) -> Option<String> {
     let rel = changed_path.strip_prefix(root).ok()?;
     let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -84,12 +47,7 @@ fn relative_directory_for(root: &Path, changed_path: &Path) -> Option<String> {
     }
 }
 
-/// Watches `worktree_root`'s whole subtree and reports, via `on_directory_changed`, which single
-/// directory needs re-listing; calls `on_fatal` at most once if the watch itself becomes
-/// unusable (the root was deleted, or `notify` reports an error). Returns `None` when the root
-/// does not exist (or is otherwise unwatchable) at call time -- the caller must not cache that as
-/// a handle, so the next `listDirectory`-equivalent call retries instead of staying silently
-/// un-watched forever.
+/// Watches the subtree of `worktree_root`. Calls `on_fatal` at most once; `None` if unwatchable.
 pub fn watch_directory<F, G>(
     worktree_root: &Path,
     on_directory_changed: F,
@@ -108,16 +66,7 @@ where
     )
 }
 
-/// Gate round 1 item 2 (#464, Git changes panel): identical to `watch_directory`, except the
-/// root-liveness poll's own perf mitigation (re-queuing the watched ROOT ITSELF into the
-/// debounce `pending` set every `ROOT_LIVENESS_POLL_INTERVAL`, see that block's own comment
-/// below) is skipped. That mitigation is correct and wanted for the File explorer (whose
-/// `is_loaded` guard already turns a no-op refresh for a closed directory into nothing), but
-/// this panel's own callback treats EVERY ping -- root or not -- as "refetch everything", so the
-/// same mitigation would instead re-fire a full refetch roughly every `ROOT_LIVENESS_POLL_
-/// INTERVAL` forever, with nothing actually changed. The "does the root still exist" fatal
-/// check one block above the skipped re-queue keeps running regardless: a deleted/moved
-/// worktree root must still fire `on_fatal` for this consumer too.
+/// Like `watch_directory`, but never re-queues the root on liveness ticks (#464); the fatal check still runs.
 pub fn watch_directory_without_liveness_requeue<F, G>(
     worktree_root: &Path,
     on_directory_changed: F,
@@ -170,11 +119,7 @@ where
         let mut deadline: Option<Instant> = None;
         let mut last_liveness_check = Instant::now();
         loop {
-            // Gate round 1 fix (perf MEDIUM / code LOW): checked UNCONDITIONALLY at the top of
-            // every iteration, not only inside the `Timeout` arm below -- a continuous burst
-            // (events arriving faster than `recv_timeout`'s own wait) previously never reached
-            // that arm at all, silently delaying both the debounce flush and the liveness poll
-            // past their own stated bounds for as long as the burst lasted.
+            // Checked every iteration so a continuous event burst cannot starve the flush or the poll.
             if let Some(d) = deadline {
                 if Instant::now() >= d {
                     for dir in pending.drain() {
@@ -191,26 +136,8 @@ where
                     }
                     return;
                 }
-                // Gate round 1 fix (perf MEDIUM): `notify`'s own buffer can overflow during an
-                // event storm, on which some backends silently stop watching with no `Err`
-                // reaching this thread at all (no documented, reliable signal to detect this
-                // specifically) -- as a bounded mitigation, every liveness tick also re-queues
-                // the WATCHED ROOT ITSELF (`relative_path == ""`) through the SAME debounce
-                // `pending` set a real event would use (never called directly -- a direct call
-                // here would bypass coalescing entirely, firing an extra, undebounced callback
-                // even when a real burst is already pending a flush for the same path). A
-                // Session whose panel is closed pays nothing extra once its directory is no
-                // longer loaded (`explorer_watch_state::refresh_directory`'s own `is_loaded`
-                // guard turns this into a no-op); one whose root IS open self-heals within
-                // roughly one `ROOT_LIVENESS_POLL_INTERVAL` plus one debounce period even if the
-                // detailed per-subfolder event stream has gone silent. Subdirectories below the
-                // root are not covered by this mitigation; recorded as a residual, not a
-                // complete fix. Gate round 1 item 2 (#464): skipped entirely when
-                // `requeue_root_on_liveness` is false (`watch_directory_without_liveness_
-                // requeue`'s own caller, `git_changes_watch_state`, treats EVERY ping as
-                // "refetch everything" and would otherwise refire roughly every
-                // `ROOT_LIVENESS_POLL_INTERVAL` forever) -- the fatal "root still exists" check
-                // just above this block is NOT part of this gate and always runs regardless.
+                // Self-heal a silently stalled watch by re-queuing the root through the debounce.
+                // Skipped when `requeue_root_on_liveness` is false (#464).
                 if requeue_root_on_liveness {
                     pending.insert(String::new());
                     if deadline.is_none() {
@@ -253,17 +180,13 @@ where
                     }
                 }
                 Ok(Err(_notify_err)) => {
-                    // Mirrors `watchDirectory.ts`'s own `watcher.on('error', fail)`: any genuine
-                    // notify-level error is always fatal, no second-guessing.
+                    // Any notify error is fatal.
                     if !fired_fatal.swap(true, Ordering::SeqCst) {
                         on_fatal();
                     }
                     return;
                 }
                 Err(std_mpsc::RecvTimeoutError::Timeout) => {
-                    // Nothing extra to do here now: the deadline/liveness checks at the top of
-                    // the loop already ran and will run again next iteration regardless of why
-                    // we woke up.
                 }
                 Err(std_mpsc::RecvTimeoutError::Disconnected) => return,
             }

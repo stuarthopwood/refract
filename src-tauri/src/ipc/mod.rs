@@ -1,15 +1,5 @@
-// The one Tauri command's dispatch table (FR-006, FR-007): routes a `refract_request(channel,
-// args)` call to the registered handler for `channel`, or the `unsupported` envelope if nothing
-// is registered for it yet. `lib.rs`'s `refract_request` command is the only caller of
-// `Dispatcher::dispatch`; every other module (`omp`, `session`, `store`, `git`) registers its own
-// channels into the same `Dispatcher` via `register_handlers` as it is built out, so this file
-// never needs to change shape again once the dispatch mechanism itself is right.
-//
-// Phase 2(b) (tasks.md T013 to T019): widens `AppState` to hold the real, `Arc`-shared
-// `RegistryStore`/`SettingsStore` (replacing the Phase 1 scaffold's minimal, non-validating
-// `read_settings`/`read_bootstrap_theme` outright) and a slot for a `tauri::AppHandle` --
-// `lib.rs`'s own `setup` closure fills it in once the window exists, for Phase 3's event
-// emission (`events::emit` needs a live `AppHandle`, which does not exist until `setup` runs).
+// Routes `refract_request` channels to their handlers. `lib.rs` is the only caller of `dispatch`.
+// `AppState::app_handle` is filled in by `setup`, since a live `AppHandle` only exists after setup.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -67,19 +57,8 @@ pub mod updates;
 pub mod usage;
 pub mod usage_prefs;
 
-/// Shared state every registered handler receives. `registry`/`settings` are each behind their
-/// own `Arc<tokio::sync::Mutex<_>>` -- one lock per store, not one lock for both, so a slow
-/// repository write never blocks an unrelated `settings.get` -- and that per-store lock is also
-/// what lets `store::atomic_json`'s own write skip the TS `atomicJson.ts`'s per-file write queue
-/// (see that module's own doc comment): every write to a given store's file already goes through
-/// the one `RegistryStore`/`SettingsStore` instance behind this one lock, so at most one write is
-/// ever in flight for it. `app_handle` is `None` until `lib.rs`'s `setup` closure runs (Phase 3's
-/// event emission is the first reader); behind a plain `std::sync::Mutex` since it is only ever
-/// read-then-cloned, never held across an `.await`. `session_manager` (Phase 3, tasks.md T029)
-/// is the one `session::SessionManager` every agent-backed handler (`sessions.open`/
-/// `.stopAgent`/`.setVisible`, `conversations.startNew`/`.open`, every `chat.*` channel)
-/// dispatches into; it shares this SAME `registry`/`settings` pair, never a second copy, so a
-/// registry-only handler and an agent-backed one never disagree about the Session row.
+/// Shared state passed to every handler. Each store has its own lock, so one slow write never
+/// blocks another store. `session_manager` shares the same store instances, never copies.
 #[derive(Clone)]
 pub struct AppState {
     pub data_dir: PathBuf,
@@ -89,8 +68,7 @@ pub struct AppState {
     pub session_manager: Arc<crate::session::SessionManager>,
 }
 
-/// The exact shape `src/shared/ipc.ts`'s `IpcError` serialises to inside the `Result<T>`
-/// envelope's `error` field.
+/// The `error` field of the `Result<T>` envelope, matching the renderer's `IpcError`.
 #[derive(Debug)]
 pub struct IpcError {
     pub code: &'static str,
@@ -108,14 +86,10 @@ impl IpcError {
 
 pub type HandlerResult = Result<Value, IpcError>;
 pub type HandlerFuture = Pin<Box<dyn Future<Output = HandlerResult> + Send>>;
-/// A plain `fn` (not a closure) so each handler is defined as an ordinary top-level `async fn`
-/// wrapped in `Box::pin` at the call site -- no captured state beyond the `AppState`/`Vec<Value>`
-/// arguments every handler already receives.
+/// A plain `fn` pointer, so each handler is an ordinary `async fn` wrapped in `Box::pin`.
 pub type Handler = fn(AppState, Vec<Value>) -> HandlerFuture;
 
-/// Routes a channel string to its registered handler, or the `unsupported` envelope (FR-007) if
-/// nothing is registered for it yet -- every milestone-1 channel not implemented by this scaffold
-/// (`parity.md`'s full table) falls through to this branch until its owning module registers it.
+/// Routes a channel to its handler, or to the `unsupported` envelope if none is registered.
 #[derive(Default)]
 pub struct Dispatcher {
     handlers: HashMap<&'static str, Handler>,
@@ -132,9 +106,7 @@ impl Dispatcher {
         self.handlers.insert(channel, handler);
     }
 
-    /// Always resolves (never rejects the frontend's `invoke` promise): the `Result<T>` envelope
-    /// itself carries success/failure, exactly as every `ipcMain.handle` in the Electron build
-    /// does for `src/preload/index.ts`'s `request<T>` helper.
+    /// Always resolves; success or failure travels in the `Result<T>` envelope, never a rejection.
     pub async fn dispatch(&self, channel: &str, state: AppState, args: Vec<Value>) -> Value {
         let envelope = match self.handlers.get(channel) {
             Some(handler) => match handler(state, args).await {
@@ -151,9 +123,7 @@ impl Dispatcher {
                 }
             }),
         };
-        // Security/perf: never log the envelope itself -- `sessions.open`/`conversations.open`
-        // carry the whole transcript (prompts, tool output, secrets) in `value`. Only the
-        // channel name and the outcome (`ok`, or the error code) are safe and cheap to log.
+        // Never log the envelope: `value` can carry whole transcripts and secrets.
         match envelope.get("ok").and_then(Value::as_bool) {
             Some(true) => log::debug!("refract_request {channel} -> ok"),
             _ => {
@@ -169,20 +139,8 @@ impl Dispatcher {
     }
 }
 
-/// Registers every channel this build implements (tasks.md T013 to T029, `parity.md`'s
-/// milestone-1 set), by calling exactly one `<module>::register(dispatcher)` per module (issue
-/// #784, "Pre-declare per-lane Rust files"): each module owns its own `dispatcher.register(...)`
-/// calls, so a lane adds a channel inside its own file and this function gains one new call,
-/// never a second pass over another lane's registrations. Milestone-1 channels registered today:
-/// `settings.get`/`settings.setApprovalMode` (Phase 2(b)), the registry-only
-/// `repositories.*`/`sessions.{list,create,rename}`/`conversations.list` channels (Phase 2(b)),
-/// `clipboard.writeText`/`readiness.check` (Phase 1), and the agent-backed `sessions.{open,
-/// stopAgent,setVisible}`, `conversations.{startNew,open}`, and every `chat.*` channel (Phase 3,
-/// tasks.md T024 to T026) -- each now dispatches into the live `session::SessionManager`
-/// `AppState::session_manager` carries. `settings.*`, `theme.*`, `modelRoles.*`, and
-/// `window.popupMenu` (lane R8, #791) are now also fully wired. Every other module registered
-/// below (`accounts`, `attachments`, `file_explorer`, `files`, `pull_requests`, `side_chat`) is
-/// an empty, pre-declared stub: its `register` is a no-op until that lane lands.
+/// Registers every implemented channel by calling each module's `register` once. Modules that
+/// are still stubs register nothing.
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings::register(dispatcher);
     settings_animated_status_text::register(dispatcher);
@@ -228,10 +186,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     crate::shell::menu::register(dispatcher);
 }
 
-// ---------------------------------------------------------------------------
-// Shared handler helpers (the Rust equivalent of `src/main/ipc/util.ts`'s own
-// `invalidArgument`/`notFound`/`mapStoreThrown`).
-// ---------------------------------------------------------------------------
+// ---- Shared handler helpers ----
 
 pub fn invalid_argument(message: impl Into<String>) -> IpcError {
     IpcError::new("invalid-argument", message)
@@ -241,16 +196,12 @@ pub fn not_found(message: impl Into<String>) -> IpcError {
     IpcError::new("not-found", message)
 }
 
-/// Mirrors `ipc/util.ts`'s own `mapStoreThrown`'s `GitError` branch.
+/// Maps a git error to its IPC code.
 pub fn map_git_error(err: GitError) -> IpcError {
     IpcError::new(err.code.as_str(), err.message)
 }
 
-/// Mirrors `ipc/util.ts`'s own `mapStoreThrown`'s `RegistryError` branch, plus its catch-all
-/// (any error that is not a recognised typed error maps to the `git-failed` fallback code) for
-/// the `Io` variant -- a `registry.json` write failure is not a git error at all, but the TS
-/// catch-all maps it to that same code regardless, since it never recognises anything beyond
-/// `GitError`/`RegistryError`/`GhError`.
+/// Maps a registry error to its IPC code. Write failures fall back to `git-failed`.
 pub fn map_registry_error(err: RegistryStoreError) -> IpcError {
     match err {
         RegistryStoreError::Registry(e) => IpcError::new(e.code.as_str(), e.message),
@@ -258,13 +209,8 @@ pub fn map_registry_error(err: RegistryStoreError) -> IpcError {
     }
 }
 
-/// Mirrors `ipc/util.ts`'s own `mapSessionThrown`: `AgentError::code` is NOT always one of
-/// `src/shared/ipc.ts`'s `IpcErrorCode` values -- `SessionAgent::launch`'s own internal
-/// bookkeeping reasons `start-failed`/`not-started` are Session `stopReason`s (data-model.md),
-/// never meant to cross the wire as an IPC error code -- so an unrecognised code falls back to
-/// `reattach-failed`, exactly like `mapSessionThrown`'s own catch-all branch (code-review
-/// finding, 2026-10-13: `conversations.startNew`/`.open` used to pass `err.code` straight
-/// through for the `start_with_conversation` path, which can return either of those two).
+/// Maps an agent error to an IPC code. Unknown codes fall back to `reattach-failed`, since
+/// `start-failed` and `not-started` are stop reasons, not wire codes.
 pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
     const IPC_ERROR_CODES: &[&str] = &[
         "not-a-repo",
@@ -315,17 +261,12 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
     IpcError::new(code, err.message)
 }
 
-/// Reads one positional string argument (`args[index]`), the Rust equivalent of destructuring
-/// `ipcMain.handle`'s own `(_event, ...args)` callback parameters. Returns `None` for a missing
-/// or non-string argument alike, so every call site can fold both into one `invalid_argument`.
+/// Reads a string argument. Missing and non-string values both return `None`.
 pub fn arg_str(args: &[Value], index: usize) -> Option<&str> {
     args.get(index).and_then(Value::as_str)
 }
 
-/// `new Date().toISOString()`'s Rust equivalent, used by `repositories.add`/`sessions.create` to
-/// stamp `addedAt`/`createdAt`/`lastActivityAt`. No `chrono`/`time` crate dependency (neither is
-/// in this build's `Cargo.toml`): a manual proleptic-Gregorian civil-date conversion (Howard
-/// Hinnant's well-known `civil_from_days` algorithm), UTC only.
+/// UTC ISO-8601 timestamp. Uses a manual civil-date conversion, since the crate has no date dependency.
 pub fn now_iso8601() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

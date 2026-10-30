@@ -1,23 +1,14 @@
-// Port of `src/main/fs/readPreview.ts` (lane R7, issue #790): reads one file's preview data for
-// `FilePreviewPane.tsx`. Path containment is the caller's own job (`ipc::file_explorer`'s
-// `read_preview` handler reuses `fs::list_directory::resolve_list_target`) -- this module only
-// ever receives an ALREADY-validated, realpath'd absolute path; it never resolves or re-checks
-// containment itself.
+// Receives only an already-contained, realpath'd path; the caller owns containment checks.
 
 use std::path::Path;
 
 use serde::Serialize;
 use tokio::io::AsyncReadExt;
 
-/// Matches `diffStat.ts`'s own `MAX_FILE_BYTES` (1 MiB): the same "this is plausibly readable in
-/// a UI panel" threshold. A file over this is `kind: TooLarge` with `size` set, never a partial
-/// read.
+/// Files over this size are `TooLarge`, never partially read.
 const MAX_PREVIEW_BYTES: u64 = 1024 * 1024;
 
-/// Mirrors `diffStat.rs`'s own private `is_binary`/`BINARY_SNIFF_BYTES` -- duplicated here rather
-/// than imported (that function is `fn`-private to lane R2's own `git::diff_stat`, not `pub`, and
-/// this is a single, pure, three-line NUL-byte sniff, not worth a cross-lane visibility change for
-/// one caller).
+/// Duplicates `git::diff_stat`'s private sniff to avoid widening its visibility.
 const BINARY_SNIFF_BYTES: usize = 8000;
 
 fn is_binary(buf: &[u8]) -> bool {
@@ -80,8 +71,7 @@ impl FilePreview {
     }
 }
 
-/// Magic-byte signatures for the image formats this preview pane renders, checked on the file's
-/// own leading bytes, never its extension -- mirrors `readPreview.ts`'s own `sniffImageMimeType`.
+/// Sniffs leading magic bytes, never the extension.
 fn sniff_image_mime_type(buf: &[u8]) -> Option<&'static str> {
     if buf.len() >= 8 && buf[0..8] == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] {
         return Some("image/png");
@@ -103,10 +93,7 @@ fn sniff_image_mime_type(buf: &[u8]) -> Option<&'static str> {
     {
         return Some("image/webp");
     }
-    // BMP ("BM" magic) last and narrowest -- also requires the 32-bit little-endian DIB-header-
-    // size field (bytes 14-17) to be one of BMP's own known header sizes AND the little-endian
-    // file-size field (bytes 2-5) to equal the buffer's own actual length, so a coincidental
-    // "BM"-prefixed text file is not force-rendered as a broken image.
+    // BMP is checked last: a bare "BM" prefix would match ordinary text files.
     if buf.len() >= 18 && buf[0] == 0x42 && buf[1] == 0x4d {
         let file_size_field = u32::from_le_bytes([buf[2], buf[3], buf[4], buf[5]]);
         let header_size = u32::from_le_bytes([buf[14], buf[15], buf[16], buf[17]]);
@@ -132,14 +119,7 @@ async fn read_fully(file: &mut tokio::fs::File, buf: &mut [u8]) -> std::io::Resu
     Ok(total)
 }
 
-/// Reads one already-contained, realpath'd file's preview data. `relative_path` is used only for
-/// the returned `FilePreview.path` and to pick `Text` vs `Markdown` by extension -- never for any
-/// filesystem call, which always uses `absolute_path`.
-///
-/// Opens ONE file handle and does every later check (`stat`, `read`) against that SAME handle --
-/// the OS resolves the path exactly once, and nothing between the size check and the read can
-/// swap the underlying file out from under it (mirrors `readPreview.ts`'s own PR #671 gate round
-/// 4 fix).
+/// Reads one file's preview. Stat and read use the same handle, so a swap between checks cannot happen.
 pub async fn read_preview(absolute_path: &Path, relative_path: &str) -> FilePreview {
     let mut file = match tokio::fs::File::open(absolute_path).await {
         Ok(f) => f,
@@ -190,10 +170,7 @@ pub async fn read_preview(absolute_path: &Path, relative_path: &str) -> FilePrev
     if bytes_read > MAX_PREVIEW_BYTES {
         return FilePreview::sized(relative_path, FilePreviewKind::TooLarge, stat.len());
     }
-    // The buffer was sized from `stat.len() + 1`, not always `MAX_PREVIEW_BYTES + 1`: growth
-    // BELOW the cap between the stat above and this read still fills the whole buffer without
-    // reaching EOF -- `bytes_read > stat.len()` is only possible in that race, never a legitimate
-    // "read it all" outcome for an unchanged file.
+    // Reading more than stat reported means the file grew mid-read.
     if bytes_read > stat.len() {
         return FilePreview::bare(relative_path, FilePreviewKind::ReadError);
     }

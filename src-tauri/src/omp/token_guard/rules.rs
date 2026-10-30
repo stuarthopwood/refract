@@ -1,6 +1,4 @@
-// The Refract-owned rules file (FR-010): shipped inside the app (`include_str!`), written to the
-// data dir on every launch, and passed to `omp` by path with `--append-system-prompt` (which
-// accepts text or a file; a path avoids quoting about 1.5k characters on a Windows command line).
+// Refract rules file. Passed to `omp` by path so its text is not quoted on the Windows command line.
 
 use std::io;
 use std::path::{Path, PathBuf};

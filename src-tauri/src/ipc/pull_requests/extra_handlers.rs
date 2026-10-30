@@ -1,5 +1,4 @@
-// IPC handlers for the wave 2 `pullRequests.close` and `pullRequests.fetchImage` channels (spec
-// 038), split from `handlers.rs` to keep that file under the 600-line cap (issue #806).
+// IPC handlers for `pullRequests.close` and `pullRequests.fetchImage`.
 
 use serde_json::Value;
 
@@ -23,9 +22,7 @@ pub(super) fn register(d: &mut Dispatcher) {
     );
 }
 
-/// Closes without merging. The staleness check is lenient (no cache entry is fine, like
-/// `comment`): closing is never pinned to a head commit, but a pull request that changed since the
-/// renderer last loaded it is still refused.
+/// Closes without merging; refuses a pull request that changed since the renderer last loaded it.
 pub(super) fn pull_requests_close(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         const USAGE: &str = "pullRequests.close expects (repositoryId, number)";

@@ -1,14 +1,11 @@
-// Parses OMP's `abort_and_restore_queue` result (spec 030, issue #517) into the shape `chat.stop`
-// returns to the renderer: `{ messages: [{ text, images }], imagesDropped, truncated }`.
+// Parses OMP's `abort_and_restore_queue` result into the shape `chat.stop` returns.
 
 use serde_json::{json, Value};
 
 const SUPPORTED_IMAGE_MIME_TYPES: [&str; 4] =
     ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-/// Rebuilds each image from only `{type, data, mimeType}` (never the whole OMP object, same
-/// reasoning as `ipc/chat.rs`'s `parse_images_argument`) and drops any entry that is malformed or
-/// not a supported mime type.
+/// Rebuilds each image from `{type, data, mimeType}` only, dropping malformed or unsupported entries.
 fn restored_images(entry: &Value) -> Vec<Value> {
     let Some(images) = entry.get("images").and_then(Value::as_array) else {
         return Vec::new();
@@ -26,7 +23,7 @@ fn restored_images(entry: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// Steering first (it would have run sooner), then follow-ups; each queue is already oldest first.
+/// Steering messages come first, then follow-ups.
 pub(super) fn parse_restored_queue(data: &Value) -> Value {
     let mut messages: Vec<Value> = Vec::new();
     for queue in ["steering", "followUp"] {
@@ -45,8 +42,7 @@ pub(super) fn parse_restored_queue(data: &Value) -> Value {
     })
 }
 
-/// What `chat.stop` returns when nothing was withdrawn (idle, no process, or the plain-`abort`
-/// fallback on an older runtime).
+/// The empty result returned when nothing was withdrawn.
 pub(super) fn empty_restored_queue() -> Value {
     json!({ "messages": [], "imagesDropped": false, "truncated": false })
 }

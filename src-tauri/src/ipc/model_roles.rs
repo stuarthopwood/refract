@@ -1,17 +1,5 @@
-// IPC handlers for `modelRoles.*` (lane R8, issue #791; issue #455 originally). Thin wrapper
-// over `omp::config`'s generic engine (#691) -- no `SettingsStore`/`SessionManager` dependency at
-// all, since model roles live in OMP's own global config, not Refract's `settings.json`. Also
-// owns the model-roles-specific business logic `src/main/omp/config.ts` keeps alongside its own
-// generic engine (read-merge-write, selector validation, catalog-row parsing): split into this
-// file, rather than `omp/config.rs`, only to keep that file's generic engine under this build's
-// 600-line-per-file cap -- every function below is still a direct, faithful port of its
-// `config.ts` namesake.
-//
-// Every public entry point re-checks its own role id / catalog kind (`is_model_role_id`/
-// `is_catalog_kind`) even though the IPC handlers below already validate first -- the same
-// independent-second-layer convention `config.ts` itself uses (`setModelRole`'s own redundant
-// `isModelRoleId` check), so a future caller reaching these functions directly (bypassing the
-// handler) can never put an unvalidated value on `omp`'s argv.
+// IPC handlers for `modelRoles.*` and the read-merge-write logic over `omp::config`.
+// Entry points re-check role ids and catalog kinds so no unvalidated value reaches `omp` argv.
 
 use std::collections::HashMap;
 
@@ -81,24 +69,14 @@ pub struct ModelCatalogEntry {
     pub id: String,
     pub selector: String,
     pub name: String,
-    /// Issue #1069: whether this model supports a reasoning/thinking budget at all -- drives the
-    /// reasoning radios' "Off" option. Confirmed present on every real `omp models --kind chat
-    /// --json` row.
+    /// Whether the model supports a reasoning budget; drives the "Off" radio option.
     pub reasoning: bool,
-    /// Issue #1069: the subset of minimal/low/medium/high/xhigh this model itself reports
-    /// supporting; `None` for a non-reasoning model, never `Some(vec![])` when `reasoning` is
-    /// true (confirmed live across 87 chat rows).
+    /// Supported reasoning levels; `None` for a non-reasoning model.
     pub thinking: Option<Vec<String>>,
 }
 
-/// Security-audit finding (unconfirmed-but-defended, FINDINGS item 48's "env override probe"):
-/// stripped from both the merge-read and the `config set` call so a runtime role override never
-/// folds into what this module reads back as the persisted baseline. The public, display-only
-/// `get_model_roles` deliberately does NOT strip these. Passed to `omp::config`'s own
-/// `strip_env_vars: &[&str]` parameter (`Command::env_remove` per name), never built into a
-/// replacement `HashMap` from `std::env::vars()` -- that panics on a non-UTF-8 environment
-/// variable and silently drops any `OsString`-only one (code-review finding; `git.rs` already
-/// avoids this with its own `vars_os` loop).
+// Stripped from the merge-read and `config set` so a runtime env override never becomes the persisted baseline.
+// Applied via `Command::env_remove`, not a rebuilt env map, which panics on non-UTF-8 values.
 const ROLE_OVERRIDE_ENV_VARS: [&str; 4] = [
     "PI_SMOL_MODEL",
     "PI_SLOW_MODEL",
@@ -106,9 +84,7 @@ const ROLE_OVERRIDE_ENV_VARS: [&str; 4] = [
     "PI_CONFIG_FILES",
 ];
 
-/// Validates that `value` is a plain, non-array object (the shape `omp config get/set modelRoles`
-/// always returns), returning a shallow copy. `Value::Null` is an empty record. Exported for
-/// direct unit testing.
+/// Validates a plain, non-array object; `Value::Null` is an empty record.
 pub fn raw_model_roles_record(value: &Value) -> Result<Map<String, Value>, OmpConfigError> {
     match value {
         Value::Null => Ok(Map::new()),
@@ -120,9 +96,7 @@ pub fn raw_model_roles_record(value: &Value) -> Result<Map<String, Value>, OmpCo
     }
 }
 
-/// Narrows a raw modelRoles record to the string-only view the renderer understands; a blank
-/// (empty-after-trim) string entry is dropped too (a11y: never shown as "Inherited" with no
-/// visible text). Exported for direct unit testing.
+/// Keeps string entries only; blank ones are dropped so no empty "Inherited" label shows.
 pub fn string_entries_only(record: &Map<String, Value>) -> HashMap<String, String> {
     record
         .iter()
@@ -133,9 +107,7 @@ pub fn string_entries_only(record: &Map<String, Value>) -> HashMap<String, Strin
         .collect()
 }
 
-/// Pure merge step: applies one role change without touching any other key, without mutating
-/// `current`. Returns `None` when clearing a role that was already absent (the caller skips a
-/// needless `omp config set`). Exported for direct unit testing.
+/// Applies one role change without touching other keys. Returns `None` when clearing an absent role.
 pub fn merge_model_role(
     current: &Map<String, Value>,
     role: &str,
@@ -163,11 +135,7 @@ async fn read_model_roles_raw_with(
     strip_env_vars: &[&str],
 ) -> Result<Map<String, Value>, OmpConfigError> {
     let response = get_config_with(executor, "modelRoles", strip_env_vars).await?;
-    // Gate-fix (round 6): a response with NO `value` field at all is a malformed/incomplete
-    // read -- SUSPECTED (not directly observed) to be reachable under heavy concurrent `omp`
-    // load even with `OMP_INVOCATION_LOCK` serialising every `config get/set` this process makes
-    // and must fail closed, not be silently read as an empty/unconfigured record the same way a
-    // genuine `"value": null` legitimately is.
+    // A missing `value` field is a malformed read and must fail closed, not look like an empty record.
     let Some(inner) = response.get("value") else {
         return Err(OmpConfigError::new(
             OmpConfigErrorCode::ParseFailed,
@@ -177,8 +145,7 @@ async fn read_model_roles_raw_with(
     raw_model_roles_record(inner)
 }
 
-/// `omp config get modelRoles --json`: the whole record as the TRUE effective value (environment
-/// overrides included -- for display, not for merging-before-write).
+/// The whole record as the effective value, env overrides included; for display only.
 pub async fn get_model_roles_with(
     executor: &dyn OmpExecutor,
 ) -> Result<HashMap<String, String>, OmpConfigError> {
@@ -190,25 +157,7 @@ pub async fn get_model_roles() -> Result<HashMap<String, String>, OmpConfigError
     get_model_roles_with(&RealOmpExecutor).await
 }
 
-/// Gate-fix (round 7, `session::model::known_chat_role_list`'s own caller and
-/// `session::model::apply_role_now`'s own same-model check): an empty `modelRoles` record is
-/// ambiguous -- genuinely unconfigured (the common case: a fresh profile, or one whose roles
-/// come from `modelTags`/`PI_*_MODEL` env vars rather than `modelRoles`) vs a
-/// transient/unreliable read (SUSPECTED, not confirmed -- a direct 65-call falsification
-/// against 3 concurrently-starting/-running `omp --mode rpc-ui` agents on the same profile
-/// reproduced nothing). `cycleOrder` is NOT a usable presence signal here: it always has a
-/// non-empty DEFAULT (`omp://settings.md`) regardless of whether `modelRoles` is configured at
-/// all, so gating the retry on "`cycleOrder` is non-empty" made it fire on EVERY blank profile
-/// too and fail closed permanently (caught in review, round 7 follow-up) -- retries
-/// unconditionally on an empty result instead. If still empty after one retry, accepts it as
-/// genuine (the pre-existing behaviour) rather than guessing further. This does NOT cover every
-/// unreliable-read shape: a read that returns a non-empty but PARTIAL record (some keys
-/// silently missing) looks identical to a genuinely smaller `modelRoles` and cannot be detected
-/// here; nor does it cover a bad `cycleOrder` read (a separate call, `known_role_list`'s own
-/// `parse_cycle_order_response` fail-closed path covers that one on a missing `value` field
-/// only, not a partial `cycleOrder` array). Fails closed only on a REAL read error (non-zero
-/// exit, timeout, missing `value` field, unparseable JSON) via the normal `?` propagation from
-/// `get_model_roles` below -- never on "empty twice in a row".
+/// Retries once on an empty record, since an empty read can be transient. A non-empty partial read is not detected.
 pub async fn get_model_roles_reliable() -> Result<HashMap<String, String>, OmpConfigError> {
     let first = get_model_roles().await?;
     if !first.is_empty() {
@@ -227,9 +176,7 @@ pub async fn get_model_roles_reliable() -> Result<HashMap<String, String>, OmpCo
 
 const MAX_ROLE_VALUE_LENGTH: usize = 512;
 
-// Widened past C0 controls and DEL to also cover C1 controls (U+0080-U+009F), the line/paragraph
-// separators (U+2028/U+2029), and the bidi/zero-width/BOM range (U+200B-U+200F, U+202A-U+202E,
-// U+2066-U+2069, U+FEFF).
+// Also rejects C1 controls, line separators, and bidi/zero-width/BOM characters.
 fn is_forbidden_selector_char(c: char) -> bool {
     matches!(c as u32, 0x00..=0x1F | 0x7F..=0x9F | 0x200B..=0x200F | 0x2028..=0x202E | 0x2066..=0x2069)
         || c == '\u{FEFF}'
@@ -258,12 +205,10 @@ pub fn assert_valid_selector(value: &str) -> Result<(), OmpConfigError> {
     Ok(())
 }
 
-/// Serialises the whole read-merge-write (not just the final write) so two near-simultaneous role
-/// edits never race each other into a lost update -- mirrors `config.ts`'s own `enqueueWrite`.
+/// Serialises the whole read-merge-write so concurrent role edits cannot lose an update.
 static MODEL_ROLES_WRITE_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
-/// Sets or clears one role. `value: None` clears it (deletes the key) rather than writing a JSON
-/// `null`. Validates the role id and the selector shape before ever entering the write lock.
+/// Sets or clears one role; `None` deletes the key rather than writing JSON `null`.
 pub async fn set_model_role_with(
     executor: &dyn OmpExecutor,
     role: &str,
@@ -315,9 +260,7 @@ async fn set_model_role_now_with(
         .get("overriddenBy")
         .and_then(Value::as_str)
         .map(str::to_string);
-    // Always re-read the TRUE effective record (full environment, no stripping) after a
-    // successful write, rather than trusting the write response -- matches `config.ts`'s own
-    // quality-gate fix.
+    // Re-read the full effective record after a write rather than trusting the write response.
     let roles = get_model_roles_with(executor).await?;
     Ok(SetModelRoleResult {
         roles,
@@ -325,9 +268,7 @@ async fn set_model_role_now_with(
     })
 }
 
-/// Pure response-shape handling for `omp models --kind <kind> --json`: accepts either a bare
-/// top-level array or `{ models: [...] }`, validating each row before trusting it. Exported for
-/// direct unit testing.
+/// Parses `omp models --json`, accepting a bare array or `{ models: [...] }`.
 pub fn parse_catalog_response(value: &Value) -> Result<Vec<ModelCatalogEntry>, OmpConfigError> {
     let rows: &Vec<Value> = if let Some(array) = value.as_array() {
         array
@@ -359,9 +300,7 @@ pub fn parse_catalog_response(value: &Value) -> Result<Vec<ModelCatalogEntry>, O
         if let (Some(provider), Some(id), Some(selector), Some(name)) =
             (provider, id, selector, name)
         {
-            // Issue #1069: `reasoning` defaults to `false` when absent (a defensive fallback --
-            // every real row confirmed to carry it); `thinking` is `None` for a missing/non-array
-            // field, matching a genuine `"thinking": null` on a non-reasoning row.
+            // `reasoning` defaults to false when absent; `thinking` is None for a non-array field.
             let reasoning = object
                 .get("reasoning")
                 .and_then(Value::as_bool)
@@ -388,9 +327,7 @@ pub fn parse_catalog_response(value: &Value) -> Result<Vec<ModelCatalogEntry>, O
     Ok(entries)
 }
 
-/// `omp models --kind <kind> --json`: a read-only catalog listing, independent of any live RPC
-/// session (how the Role picker gets model options). Re-checks `kind` even though the IPC handler
-/// already did (see module header).
+/// Read-only catalog listing for the Role picker; re-checks `kind` for direct callers.
 pub async fn list_catalog_models_with(
     executor: &dyn OmpExecutor,
     kind: &str,
@@ -414,9 +351,7 @@ pub async fn list_catalog_models(kind: &str) -> Result<Vec<ModelCatalogEntry>, O
     list_catalog_models_with(&RealOmpExecutor, kind).await
 }
 
-// ---------------------------------------------------------------------------
-// IPC handlers.
-// ---------------------------------------------------------------------------
+// ---- IPC handlers ----
 
 pub fn model_roles_list(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
@@ -435,9 +370,7 @@ pub fn model_roles_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 ))
             }
         };
-        // A missing second argument is `invalid-argument`, same as any other malformed call --
-        // only an explicit `null` (clear the role) or a `string` (set it) are accepted, matching
-        // `config.ts`'s own `value !== null && typeof value !== 'string'` guard exactly.
+        // Only an explicit `null` (clear) or a string (set) is accepted; anything else is invalid.
         let value = match args.get(1) {
             Some(Value::Null) => None,
             Some(Value::String(text)) => Some(text.clone()),
@@ -451,10 +384,7 @@ pub fn model_roles_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(|err| to_ipc_error(&err))?;
         let mut out = Map::new();
-        // Gate-fix (round 10, MEDIUM): clone before `result.roles` moves into the JSON reply
-        // below -- `apply_role_change` takes the SAME map this write just produced, rather than
-        // issuing its own re-read (which could race a second `modelRoles.set` landing mid-sweep,
-        // `manager.rs`'s own doc comment there).
+        // Clone before `result.roles` moves into the reply; the sweep reuses this map instead of re-reading.
         let roles_for_sweep = result.roles.clone();
         out.insert(
             "roles".to_string(),
@@ -463,14 +393,8 @@ pub fn model_roles_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
         if let Some(overridden_by) = result.overridden_by {
             out.insert("overriddenBy".to_string(), Value::String(overridden_by));
         }
-        // Issue #740 (lane RM): a role change made here must reach every open Session already
-        // on that role ("Changing a role's model does not affect current Sessions" -- this is
-        // the fix). Runs only once the write itself succeeded; a failed/overridden write never
-        // touches a live Session. AWAITED here: this IPC call's own reply does not go out until
-        // the whole sweep finishes (`apply_role_change`'s own doc comment -- gate-fix, the sweep
-        // is concurrent and bounded ACROSS Sessions, not off this reply path). `propagation` is
-        // a short summary for the Settings page's own polite one-line result ("Moved N
-        // Sessions..., left M pinned, K waiting").
+        // Propagate the change to open Sessions on this role, only after a successful write.
+        // Awaited, so the reply carries the propagation summary.
         let propagation = state
             .session_manager
             .apply_role_change(&role, roles_for_sweep)
@@ -501,9 +425,7 @@ pub fn model_roles_list_catalog(_state: AppState, args: Vec<Value>) -> HandlerFu
     })
 }
 
-// Split into a sibling file (not inline here) only to keep this file's handler/business-logic
-// line count comfortably under this build's 600-line-per-file cap once the full ported test
-// suite (below) is included.
+// Tests live in a sibling file to keep this file under the 600-line cap.
 #[cfg(test)]
 #[path = "model_roles_tests.rs"]
 mod tests;

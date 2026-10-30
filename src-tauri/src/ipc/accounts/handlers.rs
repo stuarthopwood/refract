@@ -1,7 +1,4 @@
-// IPC handler bodies for `accounts.*`/`app.openReleaseNotes` (lane R9, issue #792). Split out of
-// `mod.rs` to stay under the 600-line-per-file cap (issue #806): `mod.rs` keeps registration, the
-// module-level state, and the shared orchestration every handler here calls into; `types.rs`
-// keeps the wire shapes and pure logic.
+// IPC handler bodies for `accounts.*` and `app.openReleaseNotes`; wire shapes and logic live in `types.rs`.
 
 use std::sync::atomic::Ordering;
 
@@ -28,11 +25,8 @@ pub(super) fn accounts_github_list(state: AppState, _args: Vec<Value>) -> Handle
             super::types::to_github_accounts(&hosts, &cache)
         };
 
-        // The background cache refresh kicked off here may change displayName/avatarDataUrl for
-        // one or more accounts -- re-read the (now-updated) cache and push it, so the renderer
-        // picks up the real name/avatar shortly after the FIRST list() call ever returned them as
-        // absent, instead of only on some later unrelated list() call. Never awaited by the
-        // caller: list() itself must never block on it.
+        // The background refresh may update names/avatars, so re-read and push them.
+        // Never awaited: `list()` must not block on it.
         let data_dir = state.data_dir.clone();
         let app_handle = state.app_handle.clone();
         tokio::spawn(async move {
@@ -57,15 +51,10 @@ pub(super) fn accounts_github_list(state: AppState, _args: Vec<Value>) -> Handle
 
 pub(super) fn accounts_github_add_start(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        // contracts/ipc.md: always `github.com` -- `switch`/`signOut` are the only operations
-        // that ever take an explicit host, since adding a *new* account is always against
-        // github.com. The pre-start snapshot lets the completed-add path (below) learn which
-        // host/login is new once the flow exits, since `gh`/`GhLoginFlow` never reports the
-        // login it signed in.
+        // Always github.com: only switch/signOut take an explicit host.
+        // The pre-start snapshot lets the completed add find the new login.
         let hosts_before_start = cli::auth_status().await.map_err(map_gh_error)?;
-        // Every failure path inside `GhLoginFlow::start` (an unresolved `gh` binary, a spawn
-        // failure after resolution) is already a correctly classified `GhError` -- unlike the
-        // ported TS, there is no separate "non-GhError throw" branch to special-case here.
+        // `GhLoginFlow::start` failures are already classified `GhError`s; no extra branch needed.
         let (flow, mut events_rx) = cli::auth_login_start("github.com")
             .await
             .map_err(map_gh_error)?;
@@ -208,12 +197,8 @@ pub(super) fn accounts_omp_list(_state: AppState, _args: Vec<Value>) -> HandlerF
     })
 }
 
-// research.md decision 6 fallback: no `/login`/`/logout` can ever be driven over rpc-ui, so both
-// unconditionally refuse. Kept with contracts/ipc.md's exact signature so a future omp version
-// that does support this can be wired up later without an API change -- `classifyDialog`/
-// `buildDialogResponse` relaying machinery for the dialog a real `/login`/`/logout` could raise
-// has no live caller in this fallback branch and would be dead, unverifiable code, so it is not
-// built here; this comment is the promised note citing FINDINGS item 43 instead.
+// `/login` and `/logout` cannot be driven over rpc-ui, so both refuse.
+// The signature is kept so a future omp version can wire them up without an API change.
 
 pub(super) fn accounts_omp_sign_in(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
@@ -233,9 +218,7 @@ pub(super) fn accounts_omp_sign_out(_state: AppState, _args: Vec<Value>) -> Hand
     })
 }
 
-/// No `signIn`/`signOut` flow can ever start in this fallback branch, so there is never a pending
-/// dialog for this to resolve; kept with contracts/ipc.md's exact signature for the same
-/// forward-compatibility reason as the two handlers above.
+/// No flow can start here, so there is never a dialog to resolve. Kept for forward compatibility.
 pub(super) fn accounts_omp_answer(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move { Err(not_found("No pending accounts.omp dialog to answer.")) })
 }
@@ -251,13 +234,8 @@ pub(super) fn app_open_release_notes(_state: AppState, _args: Vec<Value>) -> Han
     })
 }
 
-/// Opens `url` in the system browser only when it parses and its scheme is `https` or `http`;
-/// every other request (a malformed string, `file:`, a UNC path, `mailto:`, `javascript:`, ...)
-/// is silently dropped (port of `src/main/index.ts`'s `openExternalSafe`). Never logs the URL
-/// itself, only whether/why it was dropped. Calls the opener plugin's free function directly
-/// (not through an `AppHandle`/`OpenerExt`): the IPC-command scope (`capabilities/default.json`)
-/// gates webview-to-plugin calls only, never a direct Rust-side call like this one, and this
-/// handler's one fixed, hard-coded URL needs no window reference at all.
+/// Opens `url` in the system browser only when it parses as `https` or `http`; anything else is dropped.
+/// Never logs the URL. Calls the opener free function directly, since the IPC scope gates webview calls only.
 fn open_external_safe(url: &str) {
     let parsed = match reqwest::Url::parse(url) {
         Ok(parsed) => parsed,

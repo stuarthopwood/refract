@@ -1,28 +1,5 @@
-// Unit tests for `session::side_chat` (lane R6, issue #789). No TS test file exists for side
-// chat (confirmed: `SessionAgent.test.ts` and every other `.test.ts` in `src/main` have zero
-// references to `sideChat`/`btw`/`flattenBtwHistory`) -- these port the issue's own named
-// gate-fix behaviours (SessionAgent.ts lines ~105-330, ~979-1010) as Rust tests instead: terminal
-// record forwarding, cancelled-topic isolation, stamping order, and entry deletion at a terminal
-// turn. `#[path]`-loaded sibling of `side_chat.rs` (excluded from `check:file-size` by its own
-// `.test.rs` name), matching `session::termination`'s own split.
-//
-// Gate-fix (2026-10-14 gate review round 1 CRITICAL): the stamping-order / cancelled-topic-
-// isolation tests used to hand-build a `State` and assert on the isolated `topic_frame_is_stale`
-// predicate directly -- a tautology that cannot fail for a regression in how `ask`/`on_frame`
-// themselves read or mutate the REAL state. They now drive `apply_frame`/`stamp_continuation_
-// before_ask`/`stamp_topic_after_response`/`on_conversation_reset`, the exact seams production
-// code calls, across realistic multi-call sequences against one real `State` (or a real
-// `SessionAgent`, same harness pattern `session::termination.test.rs`'s own
-// `make_marker_test_agent` uses, when a test needs `on_conversation_reset`/`on_exit` for real).
-//
-// Gate-fix (round 2 CRITICAL/HIGH): a REAL cross-Conversation leak this round's own review found
-// -- a cancelled topic's terminal record fully deleted its `topic_epoch` entry, so a late
-// straggler frame for that SAME topic fell back to the CURRENT epoch (`unwrap_or`) once the
-// active entry was gone, and was wrongly forwarded into the new Conversation. `apply_frame` now
-// tombstones a terminal topic's epoch (`State::terminal_topic_epoch`) instead of forgetting it
-// outright; `on_conversation_reset` retains only the current generation's tombstones so the map
-// stays bounded. See `a_cancelled_topics_late_frames_are_dropped_even_after_a_conversation_switch`
-// below -- it fails without that fix.
+// Unit tests for `session::side_chat`: terminal record forwarding, cancelled-topic isolation,
+// stamping order and entry deletion, driven through the real `apply_frame`/stamp seams.
 use super::*;
 
 fn node(question: &str, answer: &str, status: &str) -> Value {
@@ -55,10 +32,8 @@ fn flatten_a_root_only_thread_carries_topic_id_and_leaf_id() {
     assert_eq!(root["status"], "complete");
 }
 
-/// Gate-fix (round 4, Code4/Verif4 CRITICAL): a non-root node carries no real id of its own, so
-/// each is given a stable, position-derived `${id}.${index}` key built from its OWN PARENT's id;
-/// every flattened record (root or not) carries `topicId` (the thread's own root `id`); only the
-/// root carries `leafId`.
+/// Non-root nodes get a position-derived `${id}.${index}` key; every record carries `topicId`,
+/// only the root carries `leafId`.
 #[test]
 fn flatten_a_multi_level_thread_builds_dotted_synthetic_ids_and_shared_topic_id() {
     let thread = json!({
@@ -119,9 +94,8 @@ fn flatten_a_multi_level_thread_builds_dotted_synthetic_ids_and_shared_topic_id(
     assert_eq!(flattened[3]["error"], "boom");
 }
 
-/// Gate-fix (round 4, Code4/Verif4 CRITICAL): a follow-up's own terminal `btw_record` still
-/// carries the ROOT's `question`/`answer`/`status`, with the new turn nested at `followUps`'s
-/// last entry -- `latest_turn` must normalise it to the actual LATEST turn, never the stale root.
+/// A follow-up's terminal record still carries the root's fields; `latest_turn` must return the
+/// last `followUps` entry, never the stale root.
 #[test]
 fn latest_turn_returns_the_deepest_follow_up_not_the_stale_root() {
     let thread = json!({
@@ -158,9 +132,7 @@ fn latest_turn_of_a_root_only_thread_is_the_root_itself() {
     assert_eq!(turn["answer"], "a");
 }
 
-// ---------------------------------------------------------------------------
-// Entry deletion at a terminal turn (gate-fix round 9)
-// ---------------------------------------------------------------------------
+// Entry deletion at a terminal turn
 
 #[test]
 fn a_running_turn_is_not_terminal() {
@@ -174,20 +146,14 @@ fn every_non_running_status_is_terminal() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// `apply_frame` -- the real seam `on_frame` calls, driven end to end (gate-fix, 2026-10-14 gate
-// review round 1 CRITICAL: replaces every isolated-predicate test below this point)
-// ---------------------------------------------------------------------------
+// `apply_frame`: the real seam `on_frame` calls
 
 fn btw_record_frame(id: &str, status: &str) -> Value {
     json!({ "record": { "id": id, "leafId": format!("{id}-leaf"), "question": "q", "answer": "a", "status": status, "createdAt": 1, "updatedAt": 2, "followUps": [] } })
 }
 
-/// Gate-fix (round 2, Verif2 LOW / round 4, Code4 Medium): a `btw_delta` is gated on visibility;
-/// a terminal `btw_record` and a `btw-history` save-failure notice are ALWAYS forwarded, even for
-/// a Session hidden mid-request -- losing a side chat's own completion, or a save-failure notice,
-/// to the visibility gate leaves the panel stuck (or silently wrong) until a reload. Driven
-/// through the real `apply_frame` (gate-fix round 2 MEDIUM: replaces direct predicate calls).
+/// A `btw_delta` is visibility-gated; a terminal `btw_record` and a `btw-history` save-failure
+/// notice are always forwarded, or the panel sticks until reload.
 #[test]
 fn a_btw_delta_is_dropped_while_hidden_but_forwarded_while_visible() {
     let mut state = State::default();
@@ -217,11 +183,8 @@ fn a_terminal_record_and_a_btw_history_notice_are_forwarded_even_while_hidden() 
     ));
 }
 
-/// Gate-fix (round 6, defense in depth; round 2 MEDIUM: epoch bumped to a nonzero value so a
-/// real fallback to `conversation_epoch` is distinguishable from a bug that fell back to a
-/// hardcoded `0`): a topic never stamped by `ask` at all (loaded from history, never asked
-/// through this process instance) must NOT be treated as stale -- only a topic actually stamped
-/// with an OLDER epoch is dropped.
+/// A topic never stamped by `ask` (loaded from history) is not stale; only one stamped with an
+/// older epoch is dropped. The nonzero epoch distinguishes a real fallback from a hardcoded `0`.
 #[test]
 fn a_topic_never_stamped_falls_back_to_the_current_epoch_and_is_never_stale() {
     let mut state = State {
@@ -239,10 +202,8 @@ fn a_topic_never_stamped_falls_back_to_the_current_epoch_and_is_never_stale() {
     );
 }
 
-/// Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium): a STALE terminal frame still removes its
-/// own ACTIVE `topic_epoch` entry (settledness-bounded, never by staleness) even though the frame
-/// itself is dropped as stale -- moved to `terminal_topic_epoch` (the tombstone, round 2's own
-/// leak fix), not forgotten outright.
+/// A stale terminal frame is dropped but still moves its active `topic_epoch` entry to the
+/// `terminal_topic_epoch` tombstone.
 #[test]
 fn a_stale_terminal_frame_is_dropped_but_still_tombstones_its_entry() {
     let mut state = State::default();
@@ -259,9 +220,8 @@ fn a_stale_terminal_frame_is_dropped_but_still_tombstones_its_entry() {
     );
 }
 
-/// Gate-fix (round 9, wording corrected round 10): deletion is bounded by the LATEST turn's own
-/// status, never the root's -- a root left `running` forever (because a follow-up, not the root,
-/// settled) must still have its entry deleted once `latest_turn` reports terminal.
+/// Deletion is bounded by the latest turn's status, not the root's: a root left `running` is
+/// still deleted once `latest_turn` is terminal.
 #[test]
 fn deletion_follows_the_latest_turns_status_not_the_stale_root() {
     let mut state = State::default();
@@ -284,9 +244,8 @@ fn deletion_follows_the_latest_turns_status_not_the_stale_root() {
     );
 }
 
-/// Gate-fix (round 4, Code4 Medium, constitution II/FR-010): a `btw-history` save-failure notice
-/// routes through `apply_frame`'s own `"notice"` case, forwarded unconditionally (even hidden);
-/// a `notice` from any OTHER source is never routed to side chat at all.
+/// A `btw-history` save-failure notice routes through `apply_frame`'s `"notice"` case and is
+/// always forwarded; a `notice` from any other source never reaches side chat.
 #[test]
 fn btw_history_notice_is_forwarded_unconditionally_other_notices_are_ignored() {
     let mut state = State::default();
@@ -301,14 +260,8 @@ fn btw_history_notice_is_forwarded_unconditionally_other_notices_are_ignored() {
     assert_eq!(apply_frame(&mut state, "notice", &other_notice, true), None);
 }
 
-// ---------------------------------------------------------------------------
-// Real `SessionAgent` harness (same pattern `session::termination.test.rs`'s own
-// `make_marker_test_agent` uses) -- needed whenever a test must drive the REAL
-// `on_conversation_reset`/`on_exit` (both emit through `EventSink`, which silently no-ops with
-// no live Tauri window -- exactly what a unit test needs, but also means `side-chat:conversation-
-// changed`/`side-chat:interrupted` themselves cannot be observed firing from here; these tests
-// assert on the STATE mutation each one is responsible for instead).
-// ---------------------------------------------------------------------------
+// Real `SessionAgent` harness for `on_conversation_reset`/`on_exit`. `EventSink` no-ops without a
+// Tauri window, so tests assert on the state mutation, not the emitted events.
 
 async fn make_test_agent(
     label: &str,
@@ -370,13 +323,8 @@ async fn make_test_agent(
     manager.get_or_create_agent(&session_id)
 }
 
-/// Gate-fix (round 7, Code7/Verif7 Medium), the "stamping order" behaviour, driven through BOTH
-/// of `ask`'s own stamp functions (gate-fix round 2 HIGH: the round-1 test never reached the
-/// post-response stamp at all): `stamp_continuation_before_ask` captures the epoch BEFORE the
-/// request is sent; a REAL Conversation switch (`on_conversation_reset`) then lands while the
-/// request is conceptually still in flight; `stamp_topic_after_response` -- `ask`'s own
-/// post-response stamp -- runs with that OLD captured epoch, never a value re-read after the
-/// switch. The late response must still be dropped as stale.
+/// Stamping order: the epoch captured by `stamp_continuation_before_ask` is used by
+/// `stamp_topic_after_response` even after a Conversation switch, so the late response is dropped.
 #[tokio::test]
 async fn a_switch_landing_between_the_capture_and_the_post_response_stamp_is_still_caught() {
     let agent = make_test_agent("stamp-order", None).await;
@@ -397,15 +345,8 @@ async fn a_switch_landing_between_the_capture_and_the_post_response_stamp_is_sti
     );
 }
 
-/// Gate-fix (2026-10-14 gate review round 2 HIGH/CRITICAL, a REAL cross-Conversation leak): a
-/// cancelled topic's terminal record used to fully delete its `topic_epoch` entry, so a LATER
-/// straggler frame for that SAME topic fell back to `conversation_epoch` itself (`unwrap_or`) and
-/// was wrongly treated as current/never-stale once the active entry was gone -- forwarding the
-/// old Conversation's leaked text into the new one (Electron has the identical hole; issue #789's
-/// own "port the fixed behaviour, not the bug" note has been filed against it). This test FAILS
-/// without the `terminal_topic_epoch` tombstone fix: drives a real `ask` stamp, a terminal
-/// (cancelled) response, a REAL Conversation switch, then two late straggler frames for the SAME
-/// topic -- both must be dropped. A topic asked in the NEW Conversation is unaffected.
+/// A cancelled topic's terminal record must tombstone, not delete, its `topic_epoch` entry, or a
+/// late straggler would fall back to the current epoch and leak into the new Conversation.
 #[tokio::test]
 async fn a_cancelled_topics_late_frames_are_dropped_even_after_a_conversation_switch() {
     let agent = make_test_agent("leak-fix", None).await;
@@ -455,8 +396,7 @@ async fn a_cancelled_topics_late_frames_are_dropped_even_after_a_conversation_sw
     );
 }
 
-/// Port of `SessionAgent.ts`'s own `onExit`: both maps are cleared unconditionally on every
-/// process exit, regardless of what was in them.
+/// `on_exit` clears both maps unconditionally.
 #[tokio::test]
 async fn on_exit_clears_both_epoch_maps_unconditionally() {
     let agent = make_test_agent("on-exit", None).await;
@@ -484,12 +424,8 @@ async fn on_exit_clears_both_epoch_maps_unconditionally() {
     assert_eq!(conversation_epoch, 5);
 }
 
-/// `on_conversation_reset` bumps the epoch exactly once per call. Gate-fix (round 3 MEDIUM):
-/// tombstones must SURVIVE every reset now -- round 2's own per-reset prune (keep only the
-/// retiring generation) is what caused the two-switch leak
-/// (`a_tombstone_survives_a_second_conversation_switch_after_a_late_cancel` below); asserted
-/// directly here, across TWO resets, so a regression back to pruning is caught without needing
-/// the full end-to-end scenario.
+/// `on_conversation_reset` bumps the epoch once per call; tombstones must survive every reset
+/// (asserted across two resets).
 #[tokio::test]
 async fn on_conversation_reset_bumps_the_epoch_once_and_never_prunes_tombstones() {
     let agent = make_test_agent("conv-reset", None).await;
@@ -519,9 +455,7 @@ async fn on_conversation_reset_bumps_the_epoch_once_and_never_prunes_tombstones(
     );
 }
 
-/// Gate-fix (round 3 MEDIUM, security Low): `tombstone_topic`'s own FIFO cap bounds
-/// `terminal_topic_epoch` regardless of how many topics a session's whole lifetime ever asks --
-/// the oldest tombstone is evicted once `MAX_TOMBSTONES` is exceeded.
+/// `tombstone_topic`'s FIFO cap evicts the oldest tombstone once `MAX_TOMBSTONES` is exceeded.
 #[test]
 fn tombstone_topic_evicts_the_oldest_once_the_fifo_cap_is_exceeded() {
     let mut state = State::default();
@@ -542,13 +476,8 @@ fn tombstone_topic_evicts_the_oldest_once_the_fifo_cap_is_exceeded() {
     );
 }
 
-/// Gate-fix (round 3 MEDIUM, a deeper cross-Conversation leak the round 2 fix still had): a
-/// cancel record arriving AFTER a switch is tombstoned with the epoch `topic_epoch.remove`
-/// actually returns (the stamped-before epoch) -- round 2's own per-reset prune then wrongly
-/// treated that as "an older generation" and dropped it at the VERY NEXT reset, so a late frame
-/// arriving after a SECOND switch leaked. Drives exactly that sequence: stamp at epoch 0, switch
-/// #1 (the cancel hasn't arrived yet), the cancel arrives only now, switch #2 -- a late frame
-/// afterward must still be dropped. This test FAILS against round 2's own per-reset prune.
+/// A cancel arriving after switch #1 is tombstoned with its stamped epoch; a late frame after
+/// switch #2 must still be dropped (per-reset pruning would leak it).
 #[tokio::test]
 async fn a_tombstone_survives_a_second_conversation_switch_after_a_late_cancel() {
     let agent = make_test_agent("leak-fix-two-switch", None).await;
@@ -579,10 +508,7 @@ async fn a_tombstone_survives_a_second_conversation_switch_after_a_late_cancel()
     );
 }
 
-// ---------------------------------------------------------------------------
-// `reset_after_start_with_conversation` (gate-fix, 2026-10-14 gate review round 1 HIGH: a stopped
-// Session's Conversation switch used to never reset side chat at all)
-// ---------------------------------------------------------------------------
+// `reset_after_start_with_conversation`: a stopped Session's Conversation switch resets side chat
 
 #[tokio::test]
 async fn reset_after_start_with_conversation_skips_when_the_worktree_write_never_happened() {
@@ -629,12 +555,8 @@ async fn reset_after_start_with_conversation_skips_reopening_the_same_conversati
     );
 }
 
-/// Gate-fix (round 2 MEDIUM; renamed round 3 LOW -- the old name claimed to test that `prev` is
-/// captured BEFORE `start_with_conversation`'s own `update_session` write, which this does NOT
-/// drive; see Not-exercised in the PR body): `reset_after_start_with_conversation` accepts
-/// whatever `current_conversation_path` (the real accessor `start_with_conversation` itself
-/// calls) genuinely returns, not a hand-picked `Some(Some("file-a"))` literal -- a regression in
-/// that accessor itself would still be caught here.
+/// `reset_after_start_with_conversation` accepts whatever `current_conversation_path` really
+/// returns, not a hand-picked literal, so an accessor regression is caught.
 #[tokio::test]
 async fn reset_after_start_with_conversation_accepts_the_real_current_conversation_path_result() {
     let agent = make_test_agent("prev-capture", Some("file-a")).await;
@@ -650,13 +572,9 @@ async fn reset_after_start_with_conversation_accepts_the_real_current_conversati
     assert_eq!(after, before.wrapping_add(1));
 }
 
-// ---------------------------------------------------------------------------
-// `history`'s own post-RPC shaping (gate-fix round 4, Code4/Verif4 HIGH)
-// ---------------------------------------------------------------------------
+// `history` post-RPC shaping
 
-/// OMP's own `get_btw_history` returns topics NEWEST first; `sort_and_flatten_threads` (what
-/// `history` itself calls) must reorder them ascending so the flattened result reads
-/// oldest-to-newest.
+/// OMP returns topics newest first; `sort_and_flatten_threads` must reorder them oldest-to-newest.
 #[test]
 fn sort_and_flatten_threads_reorders_newest_first_input_to_oldest_first_output() {
     let newest_first = vec![

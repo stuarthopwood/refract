@@ -1,27 +1,6 @@
-// Port of `src/main/git/status.ts` (lane R7, issue #790): answers "what does this working tree
-// look like against HEAD right now" (modified/added/untracked/deleted/ignored). One `git_raw`
-// call (`-c core.fsmonitor=false -c core.untrackedCache=false --no-optional-locks status
-// --porcelain=v1 -z --ignored=matching --ignore-submodules=all`) answers both the status-mark
-// and the ignore-handling question, `-z` NUL-delimits entries with no C-style path quoting.
-// Returns `None` on any failure (missing worktree, git failure, timeout) so main never throws
-// this into the renderer, matching `diff_stat.rs`'s own convention.
-//
-// Issue #768 ("extended git status marks"): unlike the TS original's five-value
-// `modified | added | untracked | deleted | ignored` collapse (a rename maps to `added`, a
-// conflict or a staged-vs-worktree distinction is lost entirely), this port keeps **renamed**,
-// **conflicted**, and **staged** distinct from the start -- the shared `GitStatusMark` type
-// (`src/shared/model.ts`) is extended once for this and the future Git panel (#464), instead of
-// porting the bug and fixing it twice. Precedence (checked in order): untracked/ignored (the `??`
-// /`!!` special pairs) first; then the standard porcelain v1 unmerged-path codes (`DD`, `AU`,
-// `UD`, `UA`, `DU`, `AA`, `UU`) as `Conflicted`; then a rename (`R` in either column) as
-// `Renamed`; then a delete or an add; then, for a plain modify, `Staged` when only the index
-// column changed (nothing in the worktree column) versus `Modified` when the worktree column
-// itself differs (the state most relevant to a file browser showing live content).
-//
-// Not ported: the belt-and-suspenders `GIT_OPTIONAL_LOCKS=0`/`GIT_TERMINAL_PROMPT=0` env vars
-// (`git::git::git_raw` takes no custom env, only a timeout -- `--no-optional-locks` alone already
-// covers the lock question for THIS invocation, and the existing 10s timeout already fails safe
-// against a hung credential prompt; recorded as a PR decision, not silently dropped).
+// Git status via one `git_raw` call; `-z` avoids path quoting. Returns `None` on any failure so errors never reach the renderer.
+// Precedence: `??`/`!!`, conflicts, rename/copy, delete, add, then `Staged` (index-only) vs `Modified`.
+// `GIT_OPTIONAL_LOCKS`/`GIT_TERMINAL_PROMPT` are not set: `git_raw` takes no env; `--no-optional-locks` and the timeout cover it.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -46,13 +25,10 @@ const STATUS_GIT_ARGS: &[&str] = &[
 ];
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
-/// Mirrors `status.ts`'s own `STATUS_MAX_BUFFER_BYTES`: a repo with enough untracked/ignored
-/// entries to exceed this returns `None` (gate round 1 perf fix), rather than building an
-/// unbounded `BTreeMap`/JSON payload from an enormous status output.
+/// Output cap: past this, `read_git_status` returns `None` rather than build an unbounded map.
 const STATUS_MAX_BUFFER_BYTES: usize = 32 * 1024 * 1024;
 
-/// Same shape as `src/shared/model.ts`'s `GitStatusMark`, extended per issue #768 with
-/// `Renamed`/`Conflicted`/`Staged`.
+/// Status mark for a path, mirroring the shared `GitStatusMark`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GitStatusMark {
@@ -66,9 +42,7 @@ pub enum GitStatusMark {
     Staged,
 }
 
-/// Same shape as `src/shared/model.ts`'s `GitStatusMap`: keyed by path, relative to the worktree
-/// root; a path absent from this map is clean and not ignored. `.git` itself is never a key
-/// (FR-007).
+/// Marks keyed by worktree-relative path; absent means clean. `.git` is never a key.
 pub type GitStatusMap = BTreeMap<String, GitStatusMark>;
 
 const CONFLICT_CODES: &[&str] = &["DD", "AU", "UD", "UA", "DU", "AA", "UU"];
@@ -85,10 +59,7 @@ fn mark_from_code(code: &str) -> GitStatusMark {
     }
     let bytes = code.as_bytes();
     let (x, y) = (bytes[0], bytes[1]);
-    // Gate round 1 fix (LOW): a copy (`C`, only ever emitted under a repo-level
-    // `status.renames=copies` setting) is treated exactly like a rename -- both carry the SAME
-    // extra renamed/copied-FROM path field right after in `-z` output (see `parse_status`'s own
-    // consumption below), and neither is a plain content edit.
+    // A copy (`C`, under `status.renames=copies`) also carries a from-path field, like a rename.
     if x == b'R' || y == b'R' || x == b'C' || y == b'C' {
         return GitStatusMark::Renamed;
     }
@@ -107,17 +78,9 @@ fn mark_from_code(code: &str) -> GitStatusMark {
     GitStatusMark::Modified
 }
 
-/// Parses `-z`-delimited `status --porcelain=v1` output into a `GitStatusMap`. Each entry is
-/// `XY<space>path`; a renamed OR copied entry (`R`/`C` in either column) additionally carries the
-/// renamed/copied-FROM path as its own extra NUL-terminated field right after -- consumed and
-/// discarded, never treated as an entry of its own (gate round 1 fix: previously only `R` was
-/// consumed, so a `C` entry's own from-path leaked into the next loop iteration and was
-/// misinterpreted as a fresh status line, byte-indexing into an arbitrary path string that need
-/// not even be ASCII at that offset -- a panic risk `-z`'s own NUL-delimited, no-quoting output
-/// otherwise avoids). Strips exactly one trailing `/` before using a path as a key (git reports
-/// an ignored or untracked DIRECTORY with a trailing slash; `FileTreeNode.path` never carries
-/// one). Every slice is `get`-based (never indexed directly): a malformed or truncated entry is
-/// skipped, never a panic.
+/// Parses `-z` `status --porcelain=v1` output into a `GitStatusMap`.
+// Rename/copy entries carry an extra from-path field that must be consumed, else it parses as a status line.
+// Slices are `get`-based so a malformed entry is skipped, never a panic.
 fn parse_status(stdout: &str) -> GitStatusMap {
     let mut map = GitStatusMap::new();
     let mut tokens = stdout.split('\0');
@@ -141,21 +104,15 @@ fn parse_status(stdout: &str) -> GitStatusMap {
             tokens.next(); // renamed/copied-from path: not a map key, `file_path` above is
         }
         if contains_git_segment(file_path) {
-            continue; // FR-007: `.git` itself is never a key
+            continue; // `.git` itself is never a key
         }
         map.insert(file_path.to_string(), mark_from_code(code));
     }
     map
 }
 
-/// The File explorer's shared git-status/ignore reader. Caps the read at
-/// `STATUS_MAX_BUFFER_BYTES` (perf finding, gate round 1): `git_raw` itself buffers the whole of
-/// stdout with no limit, so this is a post-read guard rather than a true streaming cap (changing
-/// `git_raw`'s own signature to accept a bounded reader is `git::git`'s file, another lane's
-/// already-merged core module, out of this lane's scope for a targeted fix) -- it still restores
-/// the TS original's own OBSERVABLE behaviour (`null` past the cap, never an unbounded
-/// `BTreeMap`/JSON build from an enormous status output) even though the allocation itself cannot
-/// be avoided this way.
+/// Reads git status for the File explorer; `None` past `STATUS_MAX_BUFFER_BYTES`.
+// `git_raw` buffers all stdout, so the cap is a post-read guard, not a streaming limit.
 pub async fn read_git_status(worktree_path: &Path) -> Option<GitStatusMap> {
     let result = git_raw(worktree_path, STATUS_GIT_ARGS, Some(STATUS_TIMEOUT)).await;
     if result.code != 0 {

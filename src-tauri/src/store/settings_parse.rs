@@ -1,14 +1,11 @@
-// Lazy-correction parsers and clamps for `settings.json`'s own per-field validate-then-default
-// pattern (split out of `settings.rs` to stay under the 600-line-per-file cap, issue #806):
-// `settings.rs` keeps the `Settings`/`SettingsStore` shapes and the open/persist/setter
-// orchestration; this file is pure, side-effect-free parsing/clamping helpers only.
+// Pure lazy-correction parsers and clamps for `settings.json`.
 use std::collections::HashSet;
 
 use serde_json::Value;
 
 use super::{SessionListCollapse, SessionReadout, SplitLayout};
 
-/// Matches `src/shared/model.ts`'s own `DEFAULT_SESSION_READOUT` exactly, field for field.
+/// Default session readout flags.
 fn default_session_readout() -> SessionReadout {
     SessionReadout {
         changes: true,
@@ -22,8 +19,8 @@ fn default_session_readout() -> SessionReadout {
     }
 }
 
-/// `sessionReadout`: each flag read on its own, a missing or non-boolean flag falling back to
-/// `default_session_readout`'s value; a missing or non-object row is the whole default.
+/// Reads each flag on its own, defaulting a missing or non-boolean one; a non-object row is
+/// the whole default.
 pub(super) fn parse_session_readout(value: Option<&Value>) -> SessionReadout {
     value
         .and_then(Value::as_object)
@@ -44,11 +41,8 @@ pub(super) fn parse_session_readout(value: Option<&Value>) -> SessionReadout {
         .unwrap_or_else(default_session_readout)
 }
 
-/// Spec 005 data-model.md "Validation"/"Migration": a present-but-malformed `split` (hand-edited,
-/// or from a future/older build) is reset to `None` rather than trusted, the same lazy-correction
-/// pattern `settings.ts`'s own `isValidSplitLayout` uses. Rejects a JSON array explicitly (`typeof
-/// [] === 'object'` in JS let one slip through the old, weaker check) since `serde_json::Value`
-/// distinguishes `Array` from `Object` directly.
+/// A malformed `split` (hand-edited or from another build) resets to `None`. Arrays are rejected
+/// explicitly.
 pub(super) fn parse_split_layout(value: &Value) -> Option<SplitLayout> {
     let object = value.as_object()?;
     let session_ids = object.get("sessionIds")?.as_array()?;
@@ -76,10 +70,7 @@ pub(super) fn parse_split_layout(value: &Value) -> Option<SplitLayout> {
     })
 }
 
-/// #735 data-model.md: a present-but-malformed `sessionListCollapse` resets to the default
-/// (`{ collapsedRepositoryIds: [], archivedOpen: false }`), the same lazy-correction pattern
-/// `parse_split_layout` uses. De-duplicates `collapsedRepositoryIds` (a hand-edited file could
-/// repeat an id).
+/// A malformed `sessionListCollapse` resets to the default; duplicate ids are de-duplicated (#735).
 pub(super) fn default_session_list_collapse() -> SessionListCollapse {
     SessionListCollapse {
         collapsed_repository_ids: Vec::new(),
@@ -88,17 +79,8 @@ pub(super) fn default_session_list_collapse() -> SessionListCollapse {
     }
 }
 
-/// Gate round 2 fix (Low, security-auditor + code-reviewer): shared de-dupe-and-cap pass for
-/// `collapsedRepositoryIds`, used by both the disk parser above and the IPC setter
-/// (`ipc/settings.rs::parse_session_list_collapse_arg`) so the two can never drift apart again.
-/// Caps at 1,000 ids (far more than any real profile's Repository count) and 256 bytes per id
-/// (well over any real Repository id's length), a floor under a hand-edited `settings.json` or
-/// a renderer bug, not a real workflow. Duplicate ids are REMOVED, never rejected
-/// (contracts/ipc.md), the same lazy-correction pattern the rest of this file already uses. A
-/// `HashSet` membership check replaces the previous `Vec::iter().any()` scan (O(n) instead of
-/// O(n^2)). Returns `None` once either cap is exceeded or an element is not a string -- the IPC
-/// caller turns that into `invalid-argument`; the disk loader's own caller resets to the
-/// default, exactly like any other malformed field here.
+/// De-dupes and caps `collapsedRepositoryIds`, shared by disk parser and IPC setter; `None` on
+/// a cap breach or non-string element.
 pub(crate) const SESSION_LIST_COLLAPSE_MAX_IDS: usize = 1000;
 pub(crate) const SESSION_LIST_COLLAPSE_MAX_ID_BYTES: usize = 256;
 
@@ -136,10 +118,7 @@ pub(super) fn parse_session_list_collapse(value: &Value) -> Option<SessionListCo
     })
 }
 
-/// #930 gate-fix (M8, caught live 2026-10-18): named, not bare, so `settings.rs`'s own
-/// `.unwrap_or(...)` default and this clamp's bounds can never drift apart from each other or
-/// from `pull-requests-layout-store.ts`'s own `PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX`/`_MIN_WIDTH_PX`
-/// (320/280; the renderer's own `maxSize="50%"` has no fixed Rust-side counterpart).
+/// Named so the `settings.rs` default and this clamp's bounds cannot drift apart (#930).
 pub(crate) const PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT: i64 = 320;
 pub(crate) const PULL_REQUESTS_LIST_WIDTH_PX_MIN: i64 = 280;
 pub(crate) const PULL_REQUESTS_LIST_WIDTH_PX_MAX: i64 = 4000;

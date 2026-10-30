@@ -1,24 +1,5 @@
-// IPC handlers for `gitChanges.*` (spec 018 slice 1, issue #464): `list` (the panel's full
-// snapshot -- header plus four grouped file lists), per-file `stage`/`unstage` (FR-006/FR-007),
-// bulk `stageAll` (FR-004, group-scoped to "changes" or "untracked", re-reading the CURRENT
-// status server-side rather than trusting a client-supplied path list) and `unstageAll` (always
-// the whole Staged group, the only group it ever applies to) -- Conflicts is excluded from both:
-// a developer resolves a conflict per-file, never swept up by a bulk click), `commit` (FR-009 to
-// FR-011), `diff` (FR-008: one file's patch body, `git diff`/`git diff --cached` by whether it
-// is staged -- added alongside the renderer lane's own US1, no design doc of its own beyond that
-// FR), and the watcher lifecycle pair `ensureWatching`/`stopWatching` (FR-015b/FR-016),
-// mirroring `ipc/file_explorer.rs`'s own `session_context`/watcher-lifecycle pattern (research.md
-// decision 6). The per-session watcher bookkeeping lives in `fs::git_changes_watch_state` (this
-// panel's own much-smaller analogue of `fs::explorer_watch_state`, see that module's own header
-// comment for why a full tree-diff watcher is not needed here); this file is the thin IPC-shaped
-// wiring over it.
-//
-// Gate round 1 item 13 (issue #464): every mutating handler (`stage`/`unstage`/`stageAll`/
-// `unstageAll`/`commit` -- NOT `list`/`diff`, which are read-only) also calls
-// `session::readout::schedule_readout_update` right after its own git operation succeeds, so the
-// readout's own `changes` chip (a DIFFERENT figure, `diff_stat` against Base) never goes stale
-// through a stage/unstage/commit this panel's own watcher ping would otherwise be the only thing
-// to catch.
+// IPC handlers for `gitChanges.*`: list, stage/unstage, stageAll/unstageAll, commit, diff, and watcher lifecycle.
+// Mutating handlers call `session::readout::schedule_readout_update` so the readout's `changes` chip stays current.
 
 use std::path::PathBuf;
 
@@ -38,20 +19,13 @@ use super::{
 };
 
 const MAX_SESSION_ID_LENGTH: usize = 256;
-/// Matches `ipc::file_explorer`'s own `MAX_RELATIVE_PATH_LENGTH` (a single path, not a whole
-/// prompt) -- kept independent rather than importing that one, the two call sites have no reason
-/// to be forced to change together.
+/// Matches `ipc::file_explorer`'s path cap; kept separate so the two can change independently.
 const MAX_PATH_LENGTH: usize = 4096;
-/// A generous ceiling on how many paths one `stage`/`unstage` call can carry, purely to stop a
-/// pathological request body from building an unbounded `Vec` -- an ordinary "Stage all" click
-/// never comes close (`changes_status::MAX_FILES` already caps how many files this panel ever
-/// scores/lists at 200).
+/// Bounds paths per `stage`/`unstage` call to cap request size.
 const MAX_PATHS_PER_CALL: usize = 10_000;
-/// A commit message has no git-enforced length limit when piped on stdin (FR-011's whole reason
-/// to use `-F -` over `-m`); this is purely a sanity ceiling against a pathological request body.
+/// Caps commit message length; git does not enforce one on stdin.
 const MAX_COMMIT_MESSAGE_LENGTH: usize = 100_000;
-/// `"changes"`/`"untracked"` are the only two valid `gitChanges.stageAll` group values -- a
-/// generous ceiling, not a tight one, since the exact match below rejects anything else anyway.
+/// Caps the group name; the exact match in `stageAll` rejects anything else.
 const MAX_GROUP_LENGTH: usize = 32;
 
 pub fn register(d: &mut Dispatcher) {
@@ -105,10 +79,7 @@ fn require_paths(
     Ok(paths)
 }
 
-/// Looks up a Session's worktree path and Base branch (for the header's "from {base}" line,
-/// `SessionDetailsCard.tsx`'s own shape, FR-014) -- `Err(not_found)` only when the Session
-/// itself no longer exists. Mirrors `ipc::file_explorer::session_context`, minus the
-/// repository-path/`worktree_is_valid` plumbing this panel's own slice 1 scope does not need.
+/// Looks up a Session's worktree and Base branch; `Err(not_found)` only when the Session is gone.
 async fn session_context(
     state: &AppState,
     session_id: &str,
@@ -134,9 +105,7 @@ pub fn git_changes_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
             "gitChanges.list rejected an oversized sessionId",
         )?;
         let (worktree_path, base_branch, _archived) = session_context(&state, &session_id).await?;
-        // `read_changes_status` never throws (matches `diff_stat.rs`'s own never-throw
-        // convention): `None` is itself a normal, successful result (not-a-repo, git failure, or
-        // past the status size cap, FR-018), not an IPC error.
+        // Never throws: `None` means a normal "not available" state, not an IPC error.
         let snapshot = read_changes_status(&worktree_path, &base_branch).await;
         Ok(json!({ "snapshot": snapshot }))
     })
@@ -188,11 +157,7 @@ pub fn git_changes_unstage(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// FR-004: `group` ('changes' or 'untracked' only -- 'conflicts'/'staged' are rejected, matching
-/// the renderer's own `BULK_ACTION` map, which never offers a Stage-all button for either) picks
-/// which group's CURRENT status (re-read server-side, never a client-supplied path list) this
-/// call stages. 2026-10-20 fix: the two groups used to be chained into one combined stage,
-/// something a developer clicking the OTHER group's own "Stage all" button never asked for.
+/// Stages all of `group` ('changes' or 'untracked'), re-reading its status server-side.
 pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let session_id = require_str(
@@ -235,12 +200,7 @@ pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .map_err(map_git_error)?;
             schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         } else {
-            // Gate round 2 item 13 (#464): `read_changes_status` returning `None` (not a repo, a
-            // git failure, or past the status size cap -- the same `None` `list`/`diff` treat as
-            // a normal non-error "not available" state for their own read-only purpose) means
-            // this action did precisely nothing; falling through to `Ok(Value::Null)` below
-            // would report success for a stageAll that never ran. Same `GitError`/`map_git_error`
-            // shape every other failure path in this file already uses.
+            // A `None` status read is an error here, never a silent success.
             return Err(map_git_error(GitError::new(
                 GitErrorCode::GitFailed,
                 "Couldn't read this worktree's Git status",
@@ -272,9 +232,7 @@ pub fn git_changes_unstage_all(state: AppState, args: Vec<Value>) -> HandlerFutu
                 .map_err(map_git_error)?;
             schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         } else {
-            // Gate round 2 item 13 (#464): same reasoning as `git_changes_stage_all`'s own
-            // `else` branch above -- a failed status read must not be reported as a successful
-            // no-op unstageAll.
+            // Same as the stageAll branch: a failed status read must not look like success.
             return Err(map_git_error(GitError::new(
                 GitErrorCode::GitFailed,
                 "Couldn't read this worktree's Git status",
@@ -314,20 +272,8 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `gitChanges.diff(sessionId, path, staged, untracked)` (FR-008): one file's diff body, by
-/// whether it is currently staged -- `git diff --cached` vs the plain worktree `git diff`.
-/// `untracked` (#1101, item 4): true for a file with no index/HEAD side to diff against at all
-/// (re-confirmed server-side, `changes_diff.rs::confirm_untracked`, gate round 1 HIGH 1(e) --
-/// never the renderer's own flag alone) -- the Rust side then synthesises the whole file as
-/// added lines instead of an empty patch. `path` is checked only for length here (the same bound
-/// `stage`/`unstage` apply to each path in their own list); the real containment rule for the
-/// TRACKED path is git's own `--` argv-literal diff against this Session's worktree. **Gate
-/// round 1 HIGH 1: the UNTRACKED path is different** -- `untracked_file_patch` reads the
-/// filesystem directly (there is no git blob to operate on), so it resolves the path's own
-/// PARENT folder through `fs::resolve::resolve_in_worktree`'s disk-aware, symlink-walking
-/// containment proof, then classifies the (never independently resolved) LEAF itself --
-/// rendering a symlink/junction leaf as git's own view (its target text) rather than ever
-/// resolving through it and reading its target's content.
+/// Returns one file's diff; `untracked` files are synthesised as added lines, with the path resolved symlink-safely.
+/// A symlink leaf is shown as its target text, never followed.
 pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let session_id = require_str(

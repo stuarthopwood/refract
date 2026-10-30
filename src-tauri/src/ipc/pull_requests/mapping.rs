@@ -1,8 +1,4 @@
-// Wire shapes (mapped to the renderer's `src/shared/github.ts` entity types) and gh-wire-shape
-// -> renderer-shape mapping functions for `pullRequests.*` (lane R9, issue #792). Split out of
-// `mod.rs` to stay under the 600-line-per-file cap (issue #806): `mod.rs` keeps the IPC handler
-// registration, the staleness cache, and `list`/`buildDetail`'s own orchestration; this file is
-// pure data shapes and pure mapping functions, no `gh`/IPC side effects of its own.
+//! Wire shapes and pure gh-to-renderer mapping functions for `pullRequests.*`.
 
 use serde::Serialize;
 
@@ -48,8 +44,7 @@ pub enum CheckStateOrNone {
     None,
 }
 
-/// One row in the list (FR-005). `repository` is `"owner/repo"`, for the row's Repository
-/// column.
+/// One row in the pull request list.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestSummary {
@@ -69,8 +64,7 @@ pub struct PullRequestListResult {
     pub fetched_at: String,
 }
 
-/// One entry in the Changes tab (FR-009). `patch: None` is the per-file truncation signal; it
-/// never means "no changes".
+/// One file in the Changes tab. `patch: None` means truncated, not unchanged.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangedFile {
@@ -91,9 +85,7 @@ pub enum MergeableState {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[allow(dead_code)] // Kept for wire-shape parity with `AutomatedFinding.severity`; this build
-                    // never constructs a non-empty `findings` list (see that struct's own doc comment), so no
-                    // variant is ever actually matched/constructed, but the type must still exist and serialise
-                    // correctly if a future slice starts populating it.
+                    // Kept for wire parity; nothing constructs a non-empty `findings` yet.
 pub enum FindingSeverity {
     Low,
     Medium,
@@ -102,9 +94,7 @@ pub enum FindingSeverity {
     Unknown,
 }
 
-/// Non-empty only for an automated reviewer's review; a human review's `findings` is always
-/// `[]` -- no dedicated GraphQL field and no live Copilot-review sample exists to confirm a body
-/// convention, so this build never constructs one, but the shape is kept for wire parity.
+/// Non-empty only for automated reviews; no GraphQL field exposes them yet.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomatedFinding {
@@ -154,8 +144,7 @@ pub struct ReviewThread {
     pub comments: Vec<ReviewComment>,
 }
 
-/// The Overview's ordered timeline (FR-008): commits, general comments, submitted reviews, and
-/// review threads, in chronological order.
+/// The Overview timeline, in chronological order.
 #[derive(Debug, Clone, Serialize)]
 #[serde(
     tag = "kind",
@@ -184,8 +173,7 @@ pub enum TimelineEntry {
     },
 }
 
-/// The Overview tab's content plus everything the detail view's header actions need to decide
-/// what's offered (FR-007, FR-016, FR-019, FR-020).
+/// Overview content plus the data the header actions need.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestDetail {
@@ -218,16 +206,8 @@ pub struct PullRequestDetail {
     pub head_repository_owner: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Mapping: gh wire shapes -> renderer entity shapes
-// ---------------------------------------------------------------------------
 
-/// Gate round 1 fix (#568 decision 6, Code High): `isDraft` alone used to short-circuit straight
-/// to Draft, which mislabelled a CLOSED draft pull request (GitHub keeps `isDraft: true` on a
-/// draft that was closed without being marked ready) as "Draft" on every one of the four
-/// relation-tab searches that actually include closed pull requests. Draft only applies while
-/// the pull request is still open; a closed or merged draft reads as Closed/Merged like any
-/// other pull request in that state.
+/// Draft applies only while open; a closed draft still reads as Closed (GitHub keeps `isDraft`).
 pub fn map_pull_request_state(state: &str, is_draft: bool) -> PullRequestState {
     let upper = state.to_uppercase();
     if is_draft && upper == "OPEN" {
@@ -255,9 +235,7 @@ pub fn map_actor(actor: Option<&GhActor>) -> PullRequestActor {
     }
 }
 
-/// A commit's GraphQL author is `{ name: string } | null` -- no `login` at all, since a commit
-/// can be authored with an email that isn't linked to a GitHub account. `name` doubles as the
-/// fallback `login` so the UI always has something stable to key/display on.
+/// `name` doubles as `login`: a commit author may have no linked GitHub account.
 pub fn map_commit_author(name: Option<&str>) -> PullRequestActor {
     PullRequestActor {
         login: name.unwrap_or("unknown").to_string(),
@@ -303,8 +281,7 @@ pub fn map_check_state(runs: Option<&[GhCheckRun]>) -> CheckStateOrNone {
     }
 }
 
-/// `PullRequestDetail.reviewDisabledReason` (FR-019): review actions are only ever disabled by
-/// the pull request's own state -- draft, closed, or merged.
+/// Review actions are disabled only by the pull request's own state.
 pub fn compute_review_disabled_reason(state: PullRequestState) -> Option<String> {
     match state {
         PullRequestState::Draft => Some("This pull request is a draft.".to_string()),
@@ -314,10 +291,7 @@ pub fn compute_review_disabled_reason(state: PullRequestState) -> Option<String>
     }
 }
 
-/// `PullRequestDetail.mergeDisabledReason` (FR-019, FR-020): merge-only concerns layered on top
-/// of the same state gate -- conflicts and a blocked merge state. `UNSTABLE` (only non-required
-/// checks failing) is deliberately never folded in here: GitHub itself still allows merging in
-/// that case.
+/// Merge gate: conflicts and blocked state. `UNSTABLE` is not folded in; GitHub allows that merge.
 pub fn compute_merge_disabled_reason(
     state: PullRequestState,
     mergeable: &str,
@@ -339,9 +313,7 @@ pub fn compute_merge_disabled_reason(
     }
 }
 
-/// `view.mergeable` is a 3-value string enum, not a boolean: `'UNKNOWN'` (GitHub still computing
-/// mergeability in the background) gets its own state here so the renderer can show "still
-/// checking" rather than a false conflict message.
+/// `UNKNOWN` means GitHub is still computing; it must not show as a conflict.
 pub fn map_mergeable_state(mergeable: &str) -> MergeableState {
     match mergeable.to_uppercase().as_str() {
         "MERGEABLE" => MergeableState::Mergeable,
@@ -355,26 +327,14 @@ pub fn map_review_verdict(state: Option<&str>) -> Option<ReviewVerdict> {
         "APPROVED" => Some(ReviewVerdict::Approve),
         "CHANGES_REQUESTED" => Some(ReviewVerdict::RequestChanges),
         "COMMENTED" => Some(ReviewVerdict::Comment),
-        // Gate round 2 fix (#568 decision 10 amendment, Code High N1): DISMISSED used to share
-        // PENDING's `None` -- a real review state, not a not-yet-submitted one -- which deleted
-        // every dismissed review from the Overview `Timeline` entirely (FR-008 regression) once
-        // gate round 1 taught `ReviewConsensus` about dismissals via a backend pre-pass. A
-        // dismissed review IS a submitted review (it has a real body/author/timestamp); it now
-        // keeps its own place in the timeline with a `Dismissed` verdict, and the renderer
-        // (`ReviewConsensus.tsx`) decides what a dismissal means for the standing-verdict
-        // rollup, not this mapping function.
+        // DISMISSED is a submitted review, so it keeps its timeline slot.
         "DISMISSED" => Some(ReviewVerdict::Dismissed),
         // PENDING: not yet a submitted verdict at all.
         _ => None,
     }
 }
 
-/// FR-011: once the running total of patch bytes across a pull request's changed files would
-/// exceed this, every remaining file's patch is dropped (the existing per-file `patch: None`
-/// truncation signal, same banner the whole-call REST-failure fallback below already uses) --
-/// `get_changed_files_with_patch`'s own `--paginate` has no upper bound on file count or
-/// per-file patch size, so an unusually large pull request could otherwise send megabytes of
-/// diff text over IPC in one payload (performance finding, code review 2026-10-14).
+/// Caps total patch bytes per pull request so one IPC payload stays bounded.
 const MAX_TOTAL_PATCH_BYTES: usize = 2 * 1024 * 1024;
 
 pub fn map_changed_files(
@@ -399,9 +359,7 @@ pub fn map_changed_files(
             })
             .collect();
     }
-    // REST call failed entirely: fall back to the porcelain `files` field (never carries
-    // `patch`), so every file reads as truncated (FR-011's banner) rather than losing the file
-    // list too.
+    // REST failure: the `files` field has no `patch`, so every file reads as truncated.
     view.files
         .iter()
         .map(|file| ChangedFile {
@@ -413,11 +371,7 @@ pub fn map_changed_files(
         .collect()
 }
 
-/// Merges `reviewThreads` + the three relevant `timelineItems` kinds into one chronologically
-/// sorted array (FR-008). Gate round 2 fix (#568 decision 10 amendment): the round 1 pre-pass
-/// that excluded a dismissed reviewer's reviews from this array entirely is removed -- every
-/// review (including a dismissed one, now mapped to a real `Dismissed` verdict above) keeps its
-/// place here; `ReviewConsensus.tsx` alone decides what a dismissal means for its own rollup.
+/// Merges threads and timeline items into one chronologically sorted array.
 pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
     let mut with_timestamps: Vec<(TimelineEntry, String)> = Vec::new();
 
@@ -512,15 +466,10 @@ pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
         .collect()
 }
 
-/// Narrow helper so `mod.rs`'s `__typename` match above never needs to import `GhTimelineNode`
-/// itself just to reference its type in a doc comment.
 #[allow(dead_code)]
 fn _typename_reference(_: &GhTimelineNode) {}
 
-// Fixture-based tests for the mapping functions above (issue #792's own named ask: "write
-// fixtures from recorded `gh` output for list, detail, review submit and merge"). Split into a
-// sibling file -- the same pattern `session/agent` already uses for splitting a module by
-// concern -- to stay under the 600-line-per-file cap (issue #806).
+// Fixture-based tests for the mapping functions, kept in a sibling file.
 #[cfg(test)]
 #[path = "mapping_tests.rs"]
 mod mapping_tests;

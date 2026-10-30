@@ -1,14 +1,11 @@
-// Spec 060 (S1-08): every write to the fact tables and the three rollups. A row that is new
-// (INSERT OR IGNORE changed one row) adds its delta to the rollups in the same transaction the
-// caller holds, so re-reading a file adds nothing (FR-005). Functions take the open transaction as
-// `&Connection`. No prompt prose is accepted anywhere here: counts, ids, labels and sizes only.
+// Every write to the fact tables and the three rollups. A new row adds its delta to the rollups in the
+// caller's transaction, so re-reading a file adds nothing. No prompt text is accepted: counts only.
 
 use rusqlite::{params, Connection};
 
 use super::timeutil::hour_start;
 
-/// One assistant message or `model_usage` entry. `reasoning`, `model` and `project_label` are
-/// `''` when unknown.
+/// One assistant message or `model_usage` entry; unknown labels are `''`.
 #[derive(Debug, Clone, Default)]
 pub struct MessageRow {
     pub entry_id: String,
@@ -90,8 +87,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(hour, project_label, tool, a
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
 result_chars = result_chars + excluded.result_chars, cost_share = cost_share + excluded.cost_share";
 
-/// Inserts a message and, only when it was new, adds it to `message_rollup` and `session_rollup`.
-/// Returns whether it was new.
+/// Inserts a message; adds it to the rollups only when new. Returns whether it was new.
 pub fn record_message(
     conn: &Connection,
     session_file: &str,
@@ -157,8 +153,7 @@ pub fn record_message(
     Ok(true)
 }
 
-/// Inserts a tool call (result unknown yet) and, only when new, adds its call and cost share to
-/// `tool_rollup`. Returns whether it was new.
+/// Inserts a tool call; adds it to `tool_rollup` only when new. Returns whether it was new.
 pub fn record_tool_call(
     conn: &Connection,
     session_file: &str,
@@ -198,9 +193,7 @@ pub fn record_tool_call(
     Ok(inserted)
 }
 
-/// Joins a `toolResult` to its call (the call may have landed in an earlier pass). Only the first
-/// result for a call counts; its error flag and size are added to `tool_rollup` as a delta.
-/// Returns whether a call was updated.
+/// Joins a `toolResult` to its call; only the first result counts. Returns whether it updated.
 pub fn record_tool_result(
     conn: &Connection,
     session_file: &str,
@@ -304,10 +297,8 @@ ON CONFLICT(hour, project_label, tool, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
 result_chars = result_chars + excluded.result_chars, cost_share = cost_share + excluded.cost_share";
 
-/// Moves one file's rows to the `new` label. Each row's contribution is subtracted from the rollup
-/// row under that row's own stored label (rows of one file can carry different labels), added under
-/// `new`, and the row labels are rewritten. Emptied rollup rows are dropped and float residue is
-/// clamped to zero. Run inside a transaction (`usage.relabel`).
+/// Moves one file's rows to `new`, subtracting each row from its own stored label's rollup first.
+/// Drops emptied rollup rows; runs inside a transaction.
 pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlite::Result<()> {
     for (label, sign) in [("project_label", -1i64), ("?1", 1i64)] {
         conn.execute(

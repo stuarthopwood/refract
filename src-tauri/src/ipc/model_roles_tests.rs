@@ -1,10 +1,5 @@
-// Test suite for `ipc::model_roles` (lane R8, issue #791), split into this sibling file via
-// `#[path]` only to keep `model_roles.rs` itself under this build's 600-line-per-file cap. Ports
-// `src/main/ipc/modelRoles.test.ts`'s `toIpcError` cases, `src/main/omp/config.test.ts`'s pure
-// function cases, and `src/main/omp/config.cli.test.ts`'s real-code behavioural guarantees
-// (serialised read-merge-write, role/kind rejected before `omp` runs, `overriddenBy` carried
-// through, env stripping asymmetry) via `FakeModelRolesExecutor`, a fake `OmpExecutor` that never
-// spawns a real process.
+// Test suite for `ipc::model_roles`, kept in a sibling file to stay under the 600-line cap.
+// Uses `FakeModelRolesExecutor`, so no real `omp` process runs.
 use super::*;
 use std::future::Future;
 use std::pin::Pin;
@@ -137,7 +132,7 @@ fn parse_catalog_response_accepts_both_shapes_and_drops_bad_rows() {
         id: "claude-sonnet-4-5".into(),
         selector: "anthropic/claude-sonnet-4-5".into(),
         name: "Claude Sonnet 4.5".into(),
-        // Issue #1069: `valid` carries neither field, so both parse to their absent defaults.
+        // Issue #1069: neither field is present, so both parse to their defaults.
         reasoning: false,
         thinking: None,
     }];
@@ -232,9 +227,7 @@ fn assert_valid_selector_rejects_blank_oversized_and_formatting_characters() {
 }
 
 // ---------------------------------------------------------------------------
-// `FakeModelRolesExecutor`: a fake `OmpExecutor` simulating `omp config get/set modelRoles` in
-// memory (no real process), letting these tests prove the REAL `set_model_role`/
-// `MODEL_ROLES_WRITE_LOCK`/`list_catalog_models` behave correctly -- not a stand-in primitive.
+// Fake `OmpExecutor` simulating `omp config get/set modelRoles` in memory.
 struct FakeModelRolesExecutor {
     state: TokioMutex<Map<String, Value>>,
     calls: TokioMutex<Vec<(Vec<String>, Vec<String>)>>,
@@ -285,13 +278,7 @@ impl OmpExecutor for FakeModelRolesExecutor {
     }
 }
 
-/// Ports `config.cli.test.ts`'s "setModelRole keeps the whole read-merge-write inside the
-/// enqueued task": a slow first SET must delay the second role's own READ, and the second SET
-/// must carry both keys (proving the second task's merge read the first task's ALREADY-WRITTEN
-/// value, not a stale pre-lock copy) -- against the real `set_model_role_with`/
-/// `MODEL_ROLES_WRITE_LOCK`, not a stand-in mutex. No sleep decides which task runs first: the
-/// assertions hold for whichever task wins that race, because they check group-of-three call
-/// ordering (get, set, re-read) never interleaves across tasks, not a specific interleaving.
+/// Two concurrent role writes: the second read must see the first write (locked read-merge-write).
 #[tokio::test]
 async fn set_model_role_with_serialises_two_concurrent_calls_and_merges_both_writes() {
     let fake = Arc::new(FakeModelRolesExecutor::new(30, None));
@@ -309,8 +296,7 @@ async fn set_model_role_with_serialises_two_concurrent_calls_and_merges_both_wri
     let result_a = result_a.unwrap().unwrap();
     let result_b = result_b.unwrap().unwrap();
 
-    // By the time BOTH calls have returned, both roles are present in whichever result reflects
-    // the later write.
+    // Both roles must be present in the later write's result.
     let final_roles = if result_a.roles.len() >= result_b.roles.len() {
         result_a.roles
     } else {
@@ -327,9 +313,7 @@ async fn set_model_role_with_serialises_two_concurrent_calls_and_merges_both_wri
 
     let calls = fake.calls.lock().await;
     assert_eq!(calls.len(), 6, "each set_model_role call makes exactly 3 omp calls (stripped-get, stripped-set, full re-read)");
-    // Calls 0,1,2 belong to whichever task ran first; 3,4,5 to the other. If the lock did not
-    // cover the whole read-merge-write, the second task's own GET could land at index 1 (where
-    // the first task's SET belongs) instead -- this is exactly what the assertion below rules out.
+    // Calls 0-2 and 3-5 each belong to one task; interleaving would break this layout.
     assert_eq!(calls[0].0[1], "get");
     assert_eq!(
         calls[1].0[1], "set",
@@ -339,13 +323,11 @@ async fn set_model_role_with_serialises_two_concurrent_calls_and_merges_both_wri
     assert_eq!(calls[3].0[1], "get");
     assert_eq!(calls[4].0[1], "set");
     assert_eq!(calls[5].0[1], "get");
-    // The second SET (whichever task it belongs to) carries BOTH roles -- its merge-read saw the
-    // first task's already-written value.
+    // The second SET carries both roles, proving its merge read saw the first write.
     let second_set_value = calls[4].0.last().unwrap();
     assert!(second_set_value.contains("anthropic/claude-sonnet-4-5"));
     assert!(second_set_value.contains("openai/gpt-4.1-mini"));
-    // Env stripping asymmetry: both the merge-read (index 0) and the set (index 1) strip the
-    // four role-override variables; the final re-read (index 2) uses the full environment.
+    // The merge-read and set strip the role-override env vars; the re-read keeps the full env.
     assert_eq!(calls[0].1, ROLE_OVERRIDE_ENV_VARS.to_vec());
     assert_eq!(calls[1].1, ROLE_OVERRIDE_ENV_VARS.to_vec());
     assert!(calls[2].1.is_empty());
@@ -397,6 +379,6 @@ async fn set_model_role_with_clearing_an_already_unset_role_skips_the_set_call()
     let fake = FakeModelRolesExecutor::new(0, None);
     let result = set_model_role_with(&fake, "task", None).await.unwrap();
     assert!(result.roles.is_empty());
-    // Only the one stripped-env merge-read ran; no `set` and no re-read, since nothing changed.
+    // Only the stripped-env merge-read runs when nothing changed.
     assert_eq!(fake.calls.lock().await.len(), 1);
 }

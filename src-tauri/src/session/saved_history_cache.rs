@@ -1,6 +1,4 @@
-// Issue #1205 (FR-103): a small cache of a stopped Session's saved-history transcript items,
-// keyed by the contained file's path, modified time, and length, so reopening an unchanged
-// file costs one stat instead of a re-parse.
+// Caches saved-history items by path, mtime and length, so an unchanged file costs one stat.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -17,8 +15,7 @@ type Items = Arc<Vec<Arc<TranscriptItem>>>;
 /// Most recently used last.
 static CACHE: Mutex<Vec<(Key, Items)>> = Mutex::new(Vec::new());
 
-/// Resolves the Session's current Conversation file inside its `session_dir` and returns its
-/// saved history, from the cache when the file is unchanged.
+/// Returns the saved history of the Session's current Conversation file, cached when unchanged.
 pub async fn load_saved_history(session_dir: Option<&str>, file: Option<&str>) -> SavedHistory {
     let Some(path) = contained_history_file(session_dir, file).await else {
         return SavedHistory::Missing;

@@ -1,9 +1,4 @@
-// IPC handlers for `fileExplorer.*` (lane R7, issue #790): `listDirectory` (tree browsing),
-// `readPreview`/`getStatus` (the preview pane and git status marks), `openInVSCode`/`reveal`/
-// `copyPath` (the row actions), `stopWatching`/`ensureWatching` (the watcher lifecycle a mounted
-// `FileExplorerPanel` drives). The per-session watcher/loaded-path bookkeeping lives in
-// `fs::explorer_watch_state` (same lane, split out to stay under the 600-line soft cap); this
-// file is the thin IPC-shaped wiring over it.
+// IPC handlers for `fileExplorer.*`. Watcher bookkeeping lives in `fs::explorer_watch_state`.
 
 use std::path::PathBuf;
 
@@ -20,9 +15,7 @@ use super::files::{resolve_error_result, show_item_in_folder};
 use super::{arg_str, invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
 const MAX_SESSION_ID_LENGTH: usize = 256;
-/// Matches `files.rs`'s own `MAX_TOKEN_LENGTH` (a single path, not a whole prompt) -- kept
-/// independent rather than importing that one, the two call sites have no reason to be forced to
-/// change together.
+/// Matches `files.rs`'s `MAX_TOKEN_LENGTH`; kept independent so the two call sites never change together.
 const MAX_RELATIVE_PATH_LENGTH: usize = 4096;
 
 pub fn register(d: &mut Dispatcher) {
@@ -50,9 +43,7 @@ fn require_str(
     }
 }
 
-/// Looks up a Session's worktree path, its repository's path (for issue #729's
-/// `worktree_is_valid` check, `None` if the repository itself was removed), and whether it is
-/// archived. `Err(not_found)` only when the Session itself no longer exists.
+/// Session worktree path, repository path (`None` if removed), and archived flag. `Err` only if the Session is gone.
 async fn session_context(
     state: &AppState,
     session_id: &str,
@@ -264,8 +255,7 @@ pub fn file_explorer_get_status(state: AppState, args: Vec<Value>) -> HandlerFut
             "fileExplorer.getStatus rejected an oversized sessionId",
         )?;
         let (worktree_path, _repo_path, _archived) = session_context(&state, &session_id).await?;
-        // `read_git_status` never throws (matches `diff_stat.rs`'s own never-throw convention):
-        // `None` is itself a normal, successful result, not an IPC error.
+        // `None` is a normal result, never an IPC error.
         let status = read_git_status(&worktree_path).await;
         Ok(json!({ "status": status }))
     })
@@ -297,31 +287,14 @@ pub fn file_explorer_open_in_vscode(state: AppState, args: Vec<Value>) -> Handle
         .await
         .map_err(|r| resolve_error_result(r, "folder"))?;
 
-        // Research decision (fixed-install-root resolver, never a bare `code`/PATH search):
-        // `None` is a normal, expected state (VS Code not installed), never an IPC error.
+        // `None` means VS Code is not installed: a normal state, never an IPC error.
+        // Argv array, never a shell string, so `& | ^ %` in a path cannot run a second command.
         let Some(code_exe) = resolve_vscode_executable().await else {
             return Ok(json!({ "opened": false }));
         };
 
-        // `shell: false` equivalent (the default): an argv array, never a shell-interpolated
-        // command string, so a path containing `& | ^ %` cannot be read as a second command.
-        // `ELECTRON_RUN_AS_NODE`/`NODE_OPTIONS` stripped from the child's env: VS Code itself
-        // embeds an Electron/Node runtime, and an inherited `ELECTRON_RUN_AS_NODE=1` would make
-        // it try to run its first argument as a Node script instead of opening it as a file.
-        // `stdio(null)` (gate round 1 LOW): Electron's own spawn used `stdio: 'ignore'`; VS Code
-        // inheriting Refract's console handles was an unintended difference, not a security
-        // issue.
-        //
-        // Job Object note (gate round 1 LOW, corrects a prior misreading of this comment): both
-        // builds join VS Code to the SAME kind of kill-on-close Job Object -- Electron's own
-        // `jobObject.ts` sets `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` with no breakaway permission
-        // either, and `detached: true` on Windows does not set `CREATE_BREAKAWAY_FROM_JOB` (only
-        // `CREATE_NEW_PROCESS_GROUP`), so the Electron build's VS Code was already a job member
-        // and also closed with Refract. VS Code surviving Refract's own exit is therefore not
-        // parity with Electron and not something this lane's live check can claim -- it would be
-        // a NEW behaviour, requiring `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` on the job
-        // (`process::job_object`, another lane's file) plus `CREATE_BREAKAWAY_FROM_JOB` on this
-        // spawn; left as an open problem, not attempted here.
+        // Strip ELECTRON_RUN_AS_NODE/NODE_OPTIONS, or VS Code runs its argument as a Node script.
+        // stdio is null, and VS Code exits with Refract (job breakaway is still open).
         let mut command = std::process::Command::new(&code_exe);
         command.arg(resolved.real_path());
         command.env_remove("ELECTRON_RUN_AS_NODE");
@@ -370,8 +343,7 @@ pub fn file_explorer_reveal(state: AppState, args: Vec<Value>) -> HandlerFuture 
         )
         .await
         .map_err(|r| resolve_error_result(r, "file"))?;
-        // Deliberately the "show item in folder" verb, never an "open" verb that would run the
-        // file's own default handler (constitution V: agent/tool/file output is untrusted).
+        // Reveal (show in folder), never an open verb, which would run the file (constitution V).
         let _ = show_item_in_folder(resolved.real_path());
         Ok(Value::Null)
     })

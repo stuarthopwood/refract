@@ -1,56 +1,9 @@
-// Git changes panel backend (spec 018 slice 1, issue #464): a `git status --porcelain=v2 -z
-// --branch` reader, used instead of `status.rs`'s existing `--porcelain=v1` reader because v2's
-// own header lines (`# branch.head`, `# branch.upstream`, `# branch.ab`) carry branch name,
-// upstream, and ahead/behind counts in the SAME call this panel needs for its own header row
-// (research.md decision 1) -- a second `git rev-list --left-right --count` call is never needed
-// purely for that header. `GitStatusMark` is reused UNCHANGED from `status.rs` (research.md
-// decision 2); only the porcelain-v2 parser itself is new -- v2's per-entry shape (`1 XY sub mH
-// mI mW hH hI path` for an ordinary change, `2 ...` for a rename/copy with a rename score plus a
-// second NUL-terminated origPath, `u XY sub m1 m2 m3 mW h1 h2 h3 path` for an unmerged/conflicted
-// entry, `? path` for untracked, and `.` rather than v1's space for an unchanged XY column)
-// differs enough that `status.rs::parse_status` is not reused as-is, following its established
-// NUL-delimited, `get`-based-slicing pattern (never indexed directly) rather than its literal
-// function body.
+// `--porcelain=v2` carries branch and ahead/behind in one call. v1 (`status.rs`) lacks those lines.
+// A partially staged path becomes two rows, one Staged and one Changes, like VS Code.
+// Only a rename with nothing pending in the worktree keeps the `Renamed` mark.
+// `--no-renames` reports a rename as delete plus add. Untracked files are counted from their content.
 //
-// Grouping (FR-002, amended by gate round 1 item 5 / issue #464, Skippy's decision on behalf of
-// Stuart): computed directly from each entry's own XY pair, not from the collapsed
-// `GitStatusMark` alone. A record whose Y column is `.` groups as Staged only; a record whose X
-// column is `.` groups as Changes/Untracked only -- both exactly as before. A record with BOTH
-// columns non-`.` (partially staged -- `MM`/`AM`/`RM` and friends) now produces TWO separate
-// rows for the SAME path, like VS Code: one in Staged (scored against the `--cached` numstat
-// map, mark driven by the X column alone: `D`->Deleted, `A`->Added, else `Staged`) and one in
-// Changes (scored against the plain numstat map, mark driven by the Y column alone: `D`->
-// Deleted, else `Modified` -- Y is only ever `M`/`D`/`T` for an ordinary entry per git's own
-// porcelain v2 format, never `A`/`R`). This applies uniformly to ordinary (`1`) AND rename/copy
-// (`2`) records alike -- a partially-staged rename's own Staged-half mark is therefore `Staged`
-// (X is `R`, never `D`/`A`), not `Renamed`; the `Renamed` mark survives only for a rename with
-// nothing further pending in the worktree (Y == `.`, still a single Staged-only row, unchanged).
-// An unmerged (`u`) entry is always exactly one Conflicts row regardless of its own XY (FR-002,
-// unchanged). See `ParsedGroups`/`group_marks_for_xy` for the implementation and
-// `specs/018-git-changes-panel/spec.md`'s own FR-002 for the amended requirement text.
-//
-// Per-file additions/deletions (FR-019) follow `diff_stat.rs`'s own `MAX_FILES`/partial
-// convention (the exact constant values are re-declared here rather than imported: both are
-// private `const`s in their own file, and this module's per-FILE partial flag is a different
-// shape from `diff_stat.rs`'s own whole-result `partial` flag). Staged entries read from one
-// `git diff --cached --numstat` call; every other entry reads from one `git diff --numstat`
-// call; an untracked entry has no index/HEAD side to diff against at all, so its additions are
-// counted directly from its own content (reusing `diff_stat.rs`'s `is_binary`/`count_lines`
-// approach, re-declared locally for the same reason). `--no-renames` is passed to both numstat
-// calls so a rename always reports as a plain delete (old path) plus add (new path) rather than
-// the `old => new` arrow notation -- this panel only ever needs the counts for the path status
-// parsing already resolved, not a second rename-aware path-matching pass. `MAX_FILES` counts
-// each produced ROW, not each parsed status line (gate round 1 item 5): a partially-staged file
-// producing two rows counts as 2 toward the cap.
-//
-// Hardened invocation flags (gate round 1 items 9/10, issue #464): every `git` call this module
-// makes gets `--literal-pathspecs` (every pathspec argument matched literally, never
-// glob-interpreted) and `-c core.fsmonitor=false` as global options before the subcommand,
-// mirroring `status.rs`'s own `STATUS_GIT_ARGS` convention. Every numstat call additionally gets
-// `--no-color`, `--no-optional-locks` (never block on a concurrent agent-held lock; read a
-// possibly-slightly-stale index instead of hanging, same reasoning as `status.rs`'s own
-// read), and `-z` (NUL-delimited records, so a quoted/non-ASCII path is never silently
-// corrupted by `.trim()`ing a C-quoted string -- see `changes_score::parse_numstat_map`'s own
+// `--no-optional-locks` avoids blocking on an agent-held lock. `-z` keeps quoted paths intact.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -64,11 +17,7 @@ use super::git::{git, git_raw, git_raw_with_stdin, GitError, GitErrorCode};
 use super::pathspec::validate_pathspec;
 use super::status::GitStatusMark;
 
-// `--untracked-files=all` (unlike `status.rs`'s own default/"normal" mode, left as-is for the
-// File explorer's own TREE, where a collapsed untracked directory is fine since expanding it
-// lists its own files separately): this panel is a FLAT list (no tree), so an entire new,
-// untracked directory must still explode into one row per individual file inside it, or none of
-// those files could ever be staged/diffed individually (FR-005, FR-006).
+// `--untracked-files=all` lists each file in a new directory, since this panel is a flat list.
 const CHANGES_STATUS_GIT_ARGS: &[&str] = &[
     "--literal-pathspecs",
     "-c",
@@ -86,25 +35,15 @@ const CHANGES_STATUS_GIT_ARGS: &[&str] = &[
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 const DIFF_TIMEOUT: Duration = Duration::from_secs(5);
-/// The overall budget for one `read_changes_status` call (status read + two numstat reads +
-/// every untracked file's own content read) -- mirrors `diff_stat.rs`'s own `TIMEOUT` wrapping
-/// the whole of `compute_diff_stat`: the in-flight work is dropped, never left running, past
-/// this budget.
+/// The overall budget for one `read_changes_status` call; in-flight work is dropped past it.
 const OVERALL_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Mirrors `status.rs`'s own `STATUS_MAX_BUFFER_BYTES` (FR-018): re-declared rather than
-/// imported since that constant is a private `const` in its own file.
+/// Matches `status.rs`'s own cap.
 const STATUS_MAX_BUFFER_BYTES: usize = 32 * 1024 * 1024;
-/// Mirrors `diff_stat.rs`'s own `MAX_FILES` (FR-019): re-declared for the same reason.
+/// Matches `diff_stat.rs`'s own cap.
 const MAX_FILES: usize = 200;
 
-/// data-model.md "Git changes file row": one path's display state for this panel. `folder` is
-/// the path's own POSIX-relative containing directory (`''` for a top-level entry), matching
-/// `FileTreeNode.path`'s own convention (FR-005). `partial` (FR-019): this file's own
-/// additions/deletions were not fully computed -- either the `MAX_FILES` cap was already reached
-/// before this file was counted, or (for an untracked file) its content exceeds `MAX_FILE_BYTES`
-/// -- the row itself still appears and is still fully operable (stage/unstage/diff), only its
-/// own badge shows "(partial)" (`sessionDisplay.tsx`'s existing wording).
+/// One path's display state. `folder` is `''` for a top-level entry. `partial` means its counts were not computed.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitChangesFileEntry {
@@ -116,9 +55,7 @@ pub struct GitChangesFileEntry {
     pub partial: bool,
 }
 
-/// data-model.md "Panel count"/header figure: `git status --porcelain=v2 -z --branch`'s own
-/// `# branch.ab +<ahead> -<behind>` header line, present only when an upstream exists and the
-/// commit it points at is known locally (FR-014: entirely omitted otherwise).
+/// The `# branch.ab` counts. Absent when no upstream exists.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AheadBehind {
@@ -126,11 +63,7 @@ pub struct AheadBehind {
     pub behind: i64,
 }
 
-/// data-model.md "Git changes header": the panel's own branch-line data (FR-014). `base_branch`
-/// is NOT parsed from git status at all -- it is the Session's own already-stored
-/// `Registry::Session::base_branch` (`SessionDetailsCard.tsx`'s own "from {base}" muted text),
-/// passed in by the caller (`ipc::git_changes`) exactly as `diff_stat::diff_stat` already takes
-/// it, never re-derived here.
+/// The panel's branch line. `base_branch` comes from the caller, not from git status.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitChangesHeader {
@@ -139,8 +72,7 @@ pub struct GitChangesHeader {
     pub ahead_behind: Option<AheadBehind>,
 }
 
-/// data-model.md "Git changes group" x4: every non-ignored status entry sorted into exactly one
-/// of these four lists (FR-002), each already numstat-scored and alphabetically ordered by path.
+/// One of the four panel groups. Each list is sorted by path.
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GitChangesGroups {
@@ -150,7 +82,7 @@ pub struct GitChangesGroups {
     pub untracked: Vec<GitChangesFileEntry>,
 }
 
-/// `gitChanges.list`'s own return shape (contracts/ipc.md): the panel's whole state in one call.
+/// The panel's whole state, returned in one call.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitChangesSnapshot {
@@ -158,16 +90,8 @@ pub struct GitChangesSnapshot {
     pub groups: GitChangesGroups,
 }
 
-/// FR-019: scores every parsed entry's additions/deletions and sorts each of the four groups by
-/// path. Two `git diff --numstat` calls (unstaged, cached) run once each, concurrently, covering
-/// every tracked entry regardless of group; an untracked entry is scored from its own content
-/// instead (see `score_untracked_file`). The `MAX_FILES` cap applies across every ROW produced
-/// (gate round 1 item 5: a partially-staged entry producing two rows counts as 2) -- once
-/// reached, every further row still gets its own entry, just with `partial: true` and no attempt
-/// to compute its score. Both numstat calls are hardened (gate round 1 items 9/10, issue #464):
-/// `--literal-pathspecs`/`-c core.fsmonitor=false` as global options, `--no-color`/
-/// `--no-optional-locks` alongside the already-present `--no-ext-diff --no-textconv`, and `-z`
-/// so `parse_numstat_map` never has to `.trim()` a C-quoted path.
+/// Scores each row's counts and sorts each group by path. Runs two numstat calls concurrently.
+/// Past `MAX_FILES` rows, the rest get `partial: true` and no score.
 async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitChangesGroups {
     let mut groups = GitChangesGroups::default();
     if entries.is_empty() {
@@ -292,11 +216,7 @@ async fn compute_changes_status(
     Some(GitChangesSnapshot { header, groups })
 }
 
-/// `gitChanges.list(sessionId)` (contracts/ipc.md): `worktree_path`/`base_branch` come from the
-/// registry, never the renderer (constitution V). `None` when the worktree is missing, not a git
-/// repository, a git call fails, the status read exceeds `STATUS_MAX_BUFFER_BYTES` (FR-018), or
-/// the overall budget runs out -- never thrown, mirrors `diff_stat.rs`'s own never-throw
-/// convention; the panel shows a not-available state rather than hanging or crashing (SC-006).
+/// Returns `None` instead of throwing, so the panel shows "not available". Paths come from the registry, never the renderer.
 pub async fn read_changes_status(
     worktree_path: &Path,
     base_branch: &str,
@@ -312,9 +232,7 @@ pub async fn read_changes_status(
     .unwrap_or_default()
 }
 
-/// `git add --`, every path a literal post-`--` argv entry (FR-007) -- `paths` must already come
-/// only from the current status map's own keys; `validate_pathspec` is the backstop that never
-/// trusts that alone (constitution V). A no-op for an empty `paths`.
+/// `git add --`. `validate_pathspec` checks every path, since callers are not trusted alone.
 pub async fn stage_files(worktree_path: &Path, paths: &[String]) -> Result<(), GitError> {
     if paths.is_empty() {
         return Ok(());
@@ -334,9 +252,7 @@ pub async fn stage_files(worktree_path: &Path, paths: &[String]) -> Result<(), G
     Ok(())
 }
 
-/// `git restore --staged --`, the same path-sourcing rule and `validate_pathspec` backstop as
-/// `stage_files` (FR-007, research.md decision 3: the dedicated `restore` verb, never
-/// `checkout`, and never `--worktree`, which is slice 3's own discard verb).
+/// `git restore --staged --`. Never `--worktree`, which would discard edits.
 pub async fn unstage_files(worktree_path: &Path, paths: &[String]) -> Result<(), GitError> {
     if paths.is_empty() {
         return Ok(());
@@ -357,11 +273,7 @@ pub async fn unstage_files(worktree_path: &Path, paths: &[String]) -> Result<(),
     Ok(())
 }
 
-/// `git commit -F -`, the composed message piped on stdin -- never `-m` (FR-011, research.md
-/// decision 4: no argv quoting/length-limit footgun for a multi-line subject+body message).
-/// Commit author identity comes solely from the worktree's own already-configured `git config
-/// user.name`/`user.email` (FR-025); an unconfigured identity surfaces here as git's own plain
-/// `GitFailed` error, exactly like any other git failure (FR-013), never a Refract-side override.
+/// `git commit -F -` reads the message from stdin, avoiding argv length limits. Author identity comes from git config.
 pub async fn commit(worktree_path: &Path, message: &str) -> Result<(), GitError> {
     let args = [
         "--literal-pathspecs",
@@ -371,10 +283,7 @@ pub async fn commit(worktree_path: &Path, message: &str) -> Result<(), GitError>
         "-F",
         "-",
     ];
-    // Gate round 1 item 4 (#464): no timeout -- a commit hook (pre-commit, commit-msg) can
-    // legitimately run long, and killing it mid-hook is unsafe (an interrupted hook can leave
-    // repo state inconsistent). The renderer's own `committing` boolean is the only
-    // double-submit guard going forward, not a server-side timeout.
+    // No timeout: killing a commit hook mid-run can leave the repo inconsistent (#464).
     let result = git_raw_with_stdin(worktree_path, &args, message.as_bytes(), None).await;
     if result.code != 0 {
         let detail = if !result.stderr.trim().is_empty() {

@@ -1,12 +1,5 @@
-// Issue #724 (spec 019 FR-003): a per-Session watch on the directory holding the worktree's own
-// HEAD file, so a branch switch made outside a turn (a terminal, an IDE) refreshes the readout's
-// live `branch` within about a second. `readout::on_launch` starts it, `readout::on_exit` stops it.
-//
-// The HEAD path comes from `git rev-parse --git-path HEAD`, never `<worktree>/.git/HEAD`: in a
-// linked worktree `.git` is a pointer file and HEAD lives under `<repo>/.git/worktrees/<name>/`.
-// The containing directory is watched (non-recursive) because git replaces HEAD by writing
-// `HEAD.lock` and renaming it, which can drop a watch placed on the file itself. Only events whose
-// file name is exactly `HEAD` count (`ORIG_HEAD`, `FETCH_HEAD`, the index and so on are ignored).
+// Per-Session HEAD watch (#724): a branch switch outside a turn refreshes `branch` within about a second.
+// Watches the directory: git renames `HEAD.lock` over HEAD, which drops a file watch.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -48,9 +41,7 @@ async fn resolve_head_dir(worktree_path: &str) -> Option<PathBuf> {
     head.parent().map(Path::to_path_buf)
 }
 
-/// Fast path: the full readout recompute also runs the diff stat (several git processes, about a
-/// second on a loaded Windows box), so the new branch is pushed on the last readout at once and
-/// the full recompute (scheduled straight after) then stores it with everything else.
+/// Pushes the new branch on the last readout at once; the full recompute stores the rest later.
 async fn push_branch_now(agent: &Arc<SessionAgent>, worktree_path: &str) {
     let branch = compute_branch(worktree_path).await;
     let mut readout = current_readout_value(agent).await;
@@ -63,9 +54,7 @@ async fn push_branch_now(agent: &Arc<SessionAgent>, worktree_path: &str) {
         .emit_readout_update(agent.session_id(), readout);
 }
 
-/// Starts (or replaces) the HEAD watch for `agent`'s Session. A worktree git cannot read, or a
-/// directory the OS will not watch, leaves the Session unwatched; turn and tool-call refreshes
-/// still apply.
+/// Starts or replaces the watch; an unreadable worktree leaves the Session unwatched.
 pub(super) async fn start(agent: &SessionAgent, worktree_path: &str) {
     let session_id = agent.session_id().to_string();
     stop(&session_id);

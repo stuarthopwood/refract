@@ -1,6 +1,4 @@
-// `pullRequests.listAcross` (issue #874, spec 057): the cross-Project Pull requests list. One
-// batched `gh search prs` with a `--repo` per distinct owner/repo (two Projects on one remote
-// list a pull request once), paged by `limit`, rate limit checked first.
+// `pullRequests.listAcross`: one batched `gh search prs` with a `--repo` per distinct owner/repo.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -109,7 +107,7 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
         let mut skipped: Vec<SkippedProject> = Vec::new();
         let mut projects: Vec<Project> = Vec::new();
         for id in ids {
-            // A Project removed since the renderer last listed is skipped, not a failed request.
+            // Removed Projects are skipped, not failed.
             match repo_path_for(&state, &id).await {
                 Ok((path, name)) => projects.push(Project {
                     repository_id: id,

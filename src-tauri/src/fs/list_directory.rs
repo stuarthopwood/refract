@@ -1,16 +1,5 @@
-// Port of `src/main/ipc/fileExplorer.ts`'s own `resolveListTarget`/`listDirectoryEntries`/
-// `sortEntries`/`classifySymlinkEntry`/`mapReaddirError` (lane R7, issue #790): resolves, reads,
-// caps, classifies, and sorts one directory's listing -- shared by `ipc::file_explorer`'s own
-// `listDirectory` handler and its watcher's re-list-on-change path, so a live patch is never
-// produced by a second, drifting copy of this containment/capping/classification logic.
-//
-// Folds in issue #729 (`worktree_is_valid`, lane R2 #785): a root listing (`relative_path ==
-// ""`) first proves the worktree is actually REGISTERED with git and has its own `.git` pointer,
-// not merely that the folder exists -- an empty, orphaned folder (the bug #729 describes) is
-// `worktree-missing`, never a false "this folder is empty". The validity check itself is cached
-// per Session (`fs::explorer_watch_state::cached_worktree_validity`) so a watcher-triggered
-// re-list of the root never spawns a fresh `git worktree list` on every debounced flush (perf
-// finding, gate round 1).
+// Lists one directory, shared with the watcher's re-list so live patches match the listing.
+// Root listings check worktree validity (#729), cached per Session so flushes do not spawn `git`.
 
 use std::path::{Path, PathBuf};
 
@@ -24,7 +13,7 @@ use crate::fs::resolve::{
 };
 use crate::git::worktree_validity::WorktreeValidity;
 
-/// Same shape as `src/shared/model.ts`'s `FileTreeEntryKind`.
+/// Entry kind, mirrored by the renderer's `FileTreeEntryKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FileTreeEntryKind {
@@ -33,9 +22,7 @@ pub enum FileTreeEntryKind {
     CannotAccess,
 }
 
-/// Same shape as `src/shared/model.ts`'s `FileTreeNode`. `git_status` is merged in by the
-/// renderer from `fileExplorer.getStatus`'s own full-worktree map (never sent by this listing
-/// itself), so always `None` here.
+/// One listing entry. `git_status` is merged in by the renderer, so it is always `None` here.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileTreeNode {
@@ -44,6 +31,7 @@ pub struct FileTreeNode {
     pub kind: FileTreeEntryKind,
 }
 
+/// A successful listing: capped entries plus how many were truncated.
 pub struct ListDirectoryOk {
     pub entries: Vec<FileTreeNode>,
     pub truncated: usize,
@@ -57,6 +45,7 @@ pub enum ListDirectoryError {
     InvalidArgument(String),
 }
 
+/// Result of a directory listing.
 pub type ListDirectoryResult = Result<ListDirectoryOk, ListDirectoryError>;
 
 #[derive(Debug)]
@@ -66,6 +55,7 @@ pub enum ResolveTargetOk {
 }
 
 impl ResolveTargetOk {
+    /// Canonical path of the resolved target.
     pub fn real_path(&self) -> &Path {
         match self {
             ResolveTargetOk::Root(p) | ResolveTargetOk::Path(p) => p,
@@ -73,11 +63,7 @@ impl ResolveTargetOk {
     }
 }
 
-/// Resolves, for the `relative_path` LISTING target (never a plain file-containment proof --
-/// `''` is this function's own special case for the worktree root itself, mirrors `fileExplorer.
-/// ts`'s own `resolveListTarget`): proves the worktree is a VALID one (issue #729, cached per
-/// `session_id`) for a root listing, rejects `.git` as a requested path (as-typed AND
-/// post-realpath, FR-007), and defers to `resolve_in_worktree` unchanged for every other value.
+/// Resolves a listing target. `""` is the root, which must be a valid worktree (#729). Rejects `.git` both as typed and after realpath.
 pub async fn resolve_list_target(
     session_id: &str,
     repo_path: Option<&Path>,
@@ -113,14 +99,10 @@ pub async fn resolve_list_target(
     Ok(ResolveTargetOk::Path(resolved))
 }
 
-/// Spec.md Edge Cases ("a huge repository"): caps how many entries ONE `list_directory_entries`
-/// call ever classifies/returns for a single directory -- enforced here in the backend, not only
-/// by the renderer's own virtualisation, so a pathologically huge directory can never force
-/// unbounded per-entry symlink-classification work.
+/// Caps entries per listing in the backend, so a huge directory cannot force unbounded work.
 const MAX_ENTRIES_PER_DIRECTORY: usize = 1000;
 
-/// Bounds how many symlink/junction entries are classified at once (never one `readlink`/`stat`
-/// round trip after another for a folder full of them, e.g. a pnpm `node_modules`).
+/// Bounds concurrent symlink classification, so a folder full of links (e.g. pnpm `node_modules`) doesn't serialise.
 const SYMLINK_CLASSIFY_CONCURRENCY: usize = 8;
 
 fn sort_entries(entries: &mut [FileTreeNode]) {
@@ -138,13 +120,8 @@ fn sort_entries(entries: &mut [FileTreeNode]) {
     });
 }
 
-/// Classifies ONE symlink/junction dirent's `kind` by reusing the SAME hardened resolver every
-/// other path in this codebase goes through: a target that escapes, is UNC/device-shaped, or
-/// sits behind a chain of links into any of those (or lands under `.git`), resolves to
-/// `cannot-access` without ever being followed by anything else. Takes the worktree root ALREADY
-/// canonicalized once by the caller (`resolved_root`/`unresolved_root`), rather than re-running
-/// `dunce::canonicalize` on a tokio worker for every one of up to 1000 entries (perf finding,
-/// gate round 1): `resolve_in_worktree_with_root` skips exactly that redundant step.
+/// Classifies one link using the shared hardened resolver. Any escaping or unsafe target is `cannot-access`.
+/// The root is pre-canonicalized so each entry skips a redundant `canonicalize`.
 async fn classify_symlink_entry(
     resolved_root: &Path,
     unresolved_root: &Path,
@@ -189,9 +166,7 @@ fn map_readdir_error(err: &std::io::Error) -> ListDirectoryError {
     }
 }
 
-/// Resolves, reads, caps, classifies, and sorts one directory's listing -- the one hardened
-/// implementation shared by the `listDirectory` IPC handler and the file watcher's own
-/// re-list-on-change path. `session_id` keys the issue #729 validity cache (root listings only).
+/// Lists one directory. `session_id` keys the #729 validity cache for root listings.
 pub async fn list_directory_entries(
     session_id: &str,
     repo_path: Option<&Path>,

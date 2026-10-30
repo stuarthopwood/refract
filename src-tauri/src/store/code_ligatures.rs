@@ -1,5 +1,4 @@
-// Issue #1246: Settings > Chat "Code ligatures", the switch for font ligatures in the Code font.
-// A child module of `settings.rs` to keep that file under the 600-line cap (issue #806).
+// "Code ligatures" setting (#1246).
 use serde_json::{Map, Value};
 
 use super::{Settings, SettingsStore};

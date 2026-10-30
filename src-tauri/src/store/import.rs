@@ -1,36 +1,5 @@
-// One-time import of the Electron build's `registry.json`/`settings.json`/`profileCache.json`
-// into this build's own data directory (issue #796 acceptance item 6, lane R13a, pulled forward
-// so Stuart can daily-drive the Rust build before Electron is deleted). Runs once, at startup,
-// before `RegistryStore::open`/`SettingsStore::open` read `data_dir` (`lib.rs::run()`).
-//
-// Read-only on `source_dir` (Electron's pinned `userData`): every read is a plain, capped
-// `tokio::fs::read`/`serde_json::from_slice`, never `atomic_json::read_json_file` (a quarantine
-// RENAME on a bad file would be a write, never allowed). A parse failure aborts, no marker.
-//
-// Decisions (R13a, recorded in the PR body too):
-// - Registry MERGED, never overwritten, respecting the registry's own uniqueness rules
-//   (`registry.rs`'s `add_repository`/`add_session`, `same_path` reused from there): a
-//   same-PATH repository maps onto an existing one (Sessions' `repositoryId` rewritten); a
-//   duplicate `id`/`worktreePath`/`(repositoryId, branch)` Session is skipped and logged. The
-//   SAME checks run on a crash-recovery replay (`apply_pending`), not just a fresh merge, via
-//   one shared `SessionUniqueness` tracker.
-// - Settings/profile cache imported only when this build's own copy is absent (byte-for-byte,
-//   `create_new`/`hard_link` semantics so a target that appears meanwhile is never clobbered).
-// - All-or-nothing, no resurrection: a `PendingImportMarker` freezes WHICH ids are about to be
-//   added, written BEFORE any data change. Settings/profile-cache commit first, registry last;
-//   a failed final-marker write returns `Failed` and keeps the pending marker. A retry first
-//   checks `pending_already_landed`: one `write_json_file` is all-or-nothing, so ANY frozen id
-//   already present means the earlier write landed (only the marker failed) -- nothing is
-//   re-added (an absent id was deliberately deleted since), only the marker is (re)written with
-//   the frozen counts. Only when NONE have landed does the retry redo the original decision,
-//   re-validated against current uniqueness and same-path rules. Once the final marker exists,
-//   nothing below ever runs again.
-// - `ImportLock` (own file `import_lock.rs`), once won, is held for the REST OF THIS PROCESS'S
-//   LIFETIME -- closing a deeper race where a launch that merely READ a pre-merge snapshot
-//   could later `persist()` over a completed import; a launch finding it held by a still-running
-//   PID skips its own import (`AlreadyRunning`) and opens the stores as-is. The final marker is
-//   checked BEFORE anything else (same-folder guard included), then AGAIN after winning the
-//   lock. Same-folder guard: canonicalizes when both dirs exist, else falls back to `same_path`.
+// One-time import of the Electron build's data into this build's data dir (#796).
+// Read-only on `source_dir`; a parse failure aborts with no marker.
 
 mod import_lock;
 
@@ -60,9 +29,8 @@ struct ImportMarker {
     profile_cache_imported: bool,
 }
 
-/// Frozen BEFORE any data file changes ("all-or-nothing, no resurrection" above). `repo_id_map`
-/// covers every Electron repository id seen this attempt, so a retry rewrites a Session's
-/// `repositoryId` identically without re-deriving path/id matches against an edited dest.
+/// Frozen before any data file changes; `repo_id_map` lets a retry rewrite `repositoryId`s
+/// identically.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PendingImportMarker {
@@ -73,32 +41,27 @@ struct PendingImportMarker {
     session_ids: Vec<String>,
 }
 
-/// What happened; the caller (`lib.rs::run()`) passes it straight to `log_outcome` below.
+/// What happened; passed straight to `log_outcome`.
 #[derive(Debug)]
 pub enum ImportOutcome {
-    /// A marker from a previous launch already recorded a decision; nothing checked or copied.
+    /// A previous launch already recorded a decision; nothing copied.
     AlreadyDecided,
-    /// The import lock is held by another PID that is still running; this launch does not
-    /// attempt its own import and proceeds straight to opening the stores.
+    /// The lock is held by another running PID; this launch skips its own import.
     AlreadyRunning,
-    /// The Electron source directory has no `registry.json`; marked done (nothing to import,
-    /// now or on a future launch -- tied to this build's first run, not to Electron's data).
+    /// The Electron source has no `registry.json`; marked done.
     NoElectronRegistry,
-    /// The registry merge ran (even if zero records were added); `settings_imported`/
-    /// `profile_cache_imported` say whether those two files were copied.
+    /// The registry merge ran; the flags say whether settings/profile cache were copied.
     Imported {
         repositories_added: usize,
         sessions_added: usize,
         settings_imported: bool,
         profile_cache_imported: bool,
     },
-    /// An unexpected I/O error. No marker was written, so the next launch retries; every step
-    /// that already ran is safe to repeat (see the module doc comment).
+    /// An unexpected I/O error. No marker was written, so the next launch retries safely.
     Failed(String),
 }
 
-/// Logs `outcome` at the right level; kept separate from the `lib.rs` call site to stay under
-/// the 600-line file-size cap there.
+/// Logs `outcome` at the right level.
 pub fn log_outcome(outcome: &ImportOutcome) {
     match outcome {
         ImportOutcome::AlreadyDecided => {}
@@ -130,8 +93,8 @@ pub fn log_outcome(outcome: &ImportOutcome) {
     }
 }
 
-/// Returns the outcome and, if this launch won the import lock, the guard to keep alive for the
-/// rest of the process (`ImportLock` decision above); `None` for every other outcome.
+/// Returns the outcome and, if this launch won the import lock, the guard to keep for the rest
+/// of the process.
 pub async fn import_once(
     data_dir: &Path,
     source_dir: &Path,
@@ -168,9 +131,7 @@ async fn run_import(data_dir: &Path, source_dir: &Path, final_marker_path: &Path
     let source_registry_file = source_dir.join("registry.json");
     let source_registry: Registry = match read_capped(&source_registry_file).await {
         Ok(None) => {
-            // No Electron registry.json at all: still import settings/profile-cache if this
-            // build has none of its own yet, then mark done -- there is nothing a future launch
-            // could usefully retry (the import decision is tied to this build's first run).
+            // No Electron registry.json: still import settings/profile-cache, then mark done.
             let settings_imported =
                 match import_if_absent(data_dir, source_dir, "settings.json").await {
                     Ok(v) => v,
@@ -205,11 +166,8 @@ async fn run_import(data_dir: &Path, source_dir: &Path, final_marker_path: &Path
         Err(err) => return ImportOutcome::Failed(err),
     };
 
-    // Whatever is already in this build's own `registry.json` (possibly Stuart's real
-    // Sessions/Repositories, or scratch ones an earlier lane's live check left behind), or an
-    // empty registry on a fresh data dir. `read_json_file` already applies the normal
-    // corrupt-quarantine resilience here, since this file IS owned by this build (never the
-    // Electron one).
+    // This build's own registry (possibly real data); `read_json_file`'s quarantine is fine here
+    // since this file is not Electron's.
     let dest_registry_file = data_dir.join("registry.json");
     let dest_registry: Registry = match read_json_file(&dest_registry_file, || Registry {
         version: 1,
@@ -270,8 +228,7 @@ async fn run_import(data_dir: &Path, source_dir: &Path, final_marker_path: &Path
         }
     }
 
-    // Commit order: settings and profile cache first, the registry last -- immediately followed
-    // by the final marker (see the module doc comment).
+    // Commit order: settings and profile cache, then the registry, then the final marker.
     let settings_imported = match import_if_absent(data_dir, source_dir, "settings.json").await {
         Ok(v) => v,
         Err(err) => return ImportOutcome::Failed(err),
@@ -296,8 +253,7 @@ async fn run_import(data_dir: &Path, source_dir: &Path, final_marker_path: &Path
         settings_imported,
         profile_cache_imported,
     };
-    // The pending marker is the only record of what still needs doing; it is deleted ONLY once
-    // the final marker -- which supersedes it -- is confirmed on disk.
+    // The pending marker is deleted only once the final marker is confirmed on disk.
     if let Err(err) = write_final_marker(final_marker_path, &marker).await {
         return ImportOutcome::Failed(format!("writing {final_marker_path:?}: {err}"));
     }
@@ -321,7 +277,7 @@ async fn check_final_marker(final_marker_path: &Path) -> Option<ImportOutcome> {
     }
 }
 
-/// One `write_json_file` is all-or-nothing: ANY frozen id already present means the write landed.
+/// One `write_json_file` is atomic: any frozen id present means the write landed.
 fn pending_already_landed(dest: &Registry, marker: &PendingImportMarker) -> bool {
     let repo_ids: HashSet<&str> = dest.repositories.iter().map(|r| r.id.as_str()).collect();
     let session_ids: HashSet<&str> = dest.sessions.iter().map(|s| s.id.as_str()).collect();
@@ -341,8 +297,8 @@ struct MergePlan {
     session_ids_added: Vec<String>,
 }
 
-/// Tracks the registry's own Session uniqueness rules across BOTH a fresh merge and a replay,
-/// so the two paths can never drift. `try_claim` records the entry as claimed on success.
+/// Applies the registry's Session uniqueness rules for both fresh merge and replay, so the two
+/// cannot drift. `try_claim` records the entry on success.
 struct SessionUniqueness {
     ids: HashSet<String>,
     worktree_paths: Vec<String>,
@@ -394,9 +350,8 @@ impl SessionUniqueness {
     }
 }
 
-/// Fresh-attempt merge, not a per-id dedupe: a same-PATH repository maps onto an existing Rust
-/// one (`repo_id_map` covers EVERY source repository, persisted for a retry); a Session failing
-/// `SessionUniqueness::try_claim`, or referencing an unmapped repository, is skipped.
+/// Fresh-attempt merge: a same-path repository maps onto an existing one (`repo_id_map`, persisted
+/// for retry); a Session failing `try_claim` or with an unmapped repository is skipped.
 fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<String, String>) {
     let mut merged = dest.clone();
     let mut repo_id_map: HashMap<String, String> = HashMap::new();
@@ -454,9 +409,8 @@ fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<Stri
     )
 }
 
-/// Crash-recovery path, reached only when nothing from this batch has landed yet: performs the
-/// original decision in full, re-validated against current uniqueness AND same-path rules,
-/// since `dest` may have changed since the pending marker was frozen.
+/// Crash-recovery path when nothing from this batch landed: redoes the decision, re-validated
+/// since `dest` may have changed after the pending marker was frozen.
 fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarker) -> MergePlan {
     let mut merged = dest.clone();
     let mut repo_id_map = marker.repo_id_map.clone();
@@ -493,8 +447,7 @@ fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarke
             continue;
         };
         if !merged.repositories.iter().any(|r| &r.id == mapped_repo_id) {
-            // Dangling repositoryId: the mapped repository isn't actually in `merged` (skipped
-            // above, or never existed); never add a Session pointing nowhere.
+            // Dangling repositoryId: never add a Session pointing nowhere.
             continue;
         }
         let mut session = session.clone();
@@ -513,9 +466,8 @@ fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarke
     }
 }
 
-/// Copies `name` into `data_dir` verbatim, ONLY when absent: a unique temp file, `sync_all`
-/// before commit, always removed afterward, and `hard_link` (fails if `dest` exists, unlike
-/// `rename`) so a target that appeared since the initial check is never clobbered.
+/// Copies `name` into `data_dir` only when absent; `hard_link` (fails if `dest` exists) so a
+/// target that appeared meanwhile is never clobbered.
 async fn import_if_absent(data_dir: &Path, source_dir: &Path, name: &str) -> Result<bool, String> {
     let dest = data_dir.join(name);
     match tokio::fs::try_exists(&dest).await {
@@ -540,9 +492,7 @@ async fn import_if_absent(data_dir: &Path, source_dir: &Path, name: &str) -> Res
     let _ = tokio::fs::remove_file(&tmp).await;
     match link_result {
         Ok(()) => Ok(true),
-        // Appeared meanwhile (another launch's own import racing this one, or the user); keep
-        // what is there now, not an error -- the same "never overwrite" intent as the
-        // top-of-function existence check above.
+        // Appeared meanwhile (another launch or the user); keep it, not an error.
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
         Err(err) => Err(format!("linking into {dest:?}: {err}")),
     }
@@ -557,8 +507,8 @@ async fn write_and_sync(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.sync_all().await
 }
 
-/// Reads `path` capped at `MAX_IMPORT_FILE_BYTES` (checked via `metadata` first, so an oversized
-/// file is never loaded). `Ok(None)` for a missing file, same as a bare NotFound.
+/// Reads `path` capped at `MAX_IMPORT_FILE_BYTES` (size checked first, so an oversized file is
+/// never loaded). `Ok(None)` for a missing file.
 async fn read_capped(path: &Path) -> Result<Option<Vec<u8>>, String> {
     match tokio::fs::metadata(path).await {
         Ok(meta) if meta.len() > MAX_IMPORT_FILE_BYTES => {
@@ -578,9 +528,8 @@ async fn read_capped(path: &Path) -> Result<Option<Vec<u8>>, String> {
     }
 }
 
-/// Refuses outright if `data_dir`/`source_dir` resolve to the same folder. Canonicalizes
-/// (resolves symlinks/junctions) when both exist; falls back to the lexical `same_path` compare
-/// when either does not exist yet.
+/// Refuses if `data_dir`/`source_dir` are the same folder: canonicalizes when both exist, else
+/// compares lexically via `same_path`.
 fn same_folder(a: &Path, b: &Path) -> bool {
     match (dunce::canonicalize(a), dunce::canonicalize(b)) {
         (Ok(ca), Ok(cb)) => ca == cb,

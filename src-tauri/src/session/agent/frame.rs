@@ -1,7 +1,4 @@
-// Live frames (port of `SessionAgent.ts`'s own `onFrame`): the listener loop, the one frame-type
-// match (including the per-lane `on_frame` extension-point calls right after it), queue/commands
-// updates, pending-request dialog routing, turn-settle, and process-exit handling. See `mod.rs`'s
-// own header for this module's place in the `agent/` split and the lane extension contract.
+// Live frame handling: the frame match, turn settle, and process-exit handling.
 
 use std::sync::Arc;
 
@@ -22,32 +19,19 @@ impl SessionAgent {
             "agent_start" => {
                 {
                     let mut state = self.state.lock().await;
-                    // Gate-fix (#856): `turn_generation` replaces the old `turn_settle_handled`
-                    // bool via parity -- odd means "mid-turn, not yet settled", even means
-                    // "settled" (see `handle_turn_settled`'s own doc comment). Only bumped when
-                    // currently even (round 2 LOW: `wrapping_add(1) | 1` added 2, not 1, from an
-                    // already-odd value -- a defensive double `agent_start` with no intervening
-                    // settle -- wrongly making a still-in-flight reply from the turn BEFORE this
-                    // one look like a full later settle had already happened). This starts a
-                    // fresh turn: `on_session_settled`'s own `get_state` round trip runs on a
-                    // spawned task (see `handle_turn_settled`), so its reply can land after this
-                    // point -- `sync_from_state`'s own staleness check only drops it once a FULL
-                    // LATER settle has also happened, not merely because a newer turn started.
+                    // Parity counter: odd is mid-turn, even is settled. Bumped only from even.
+                    // A settle reply landing after this turn starts is dropped by sync_from_state.
                     if state.turn_generation % 2 == 0 {
                         state.turn_generation = state.turn_generation.wrapping_add(1);
                     }
-                    // Issue #911 (gate-fix): every new turn starts clean -- also covers a
-                    // queued follow-up/steer starting its own next turn after a stop.
+                    // Every new turn starts clean, including a queued follow-up after a stop. (#911)
                     state.turn_abort_requested = false;
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
             "session_settled" => {
                 self.handle_turn_settled().await;
-                // Issue #937, gate round 2 fix (decided): a settled turn is the one signal
-                // that is genuinely safe to retry the silent attach/resume probe on -- see
-                // `session::advisor`'s own header for why `on_launch` alone cannot tell "a
-                // prompt is in flight" from "truly idle".
+                // A settled turn is the only safe point to retry the silent attach/resume probe. (#937)
                 crate::session::advisor::on_turn_settled(self).await;
             }
             "prompt_result" => {
@@ -81,11 +65,7 @@ impl SessionAgent {
             "message_start" | "message_update" | "message_end" => {
                 self.apply_transcript_frame(&frame).await;
             }
-            // Issue #937, gate round 1 fix: `session::advisor`'s own `handle_command_output`
-            // decides in one pass whether this frame is a silent probe reply to swallow (never
-            // reaching the transcript) or an authoritative `/advisor on|off` toggle to track on
-            // the way to rendering normally -- every OTHER `command_output` (`/usage show`,
-            // `/session info`, ...) renders exactly as before #937.
+            // The advisor module decides whether a command_output is a silent probe reply to swallow. (#937)
             "command_output" => {
                 if !crate::session::advisor::handle_command_output(self, &frame).await
                     && !crate::session::token_guard::swallow_shake_output(self, &frame).await
@@ -94,8 +74,7 @@ impl SessionAgent {
                 }
             }
             "notice" => {
-                // Side-chat (`btw-history`) notices are out of scope (see this file's header);
-                // every other notice goes into the main transcript.
+                // Side-chat notices stay out of the main transcript.
                 if frame.get("source").and_then(Value::as_str) != Some("btw-history") {
                     self.apply_transcript_frame(&frame).await;
                 }
@@ -103,23 +82,12 @@ impl SessionAgent {
             "tool_execution_start" | "tool_execution_end" => {
                 self.apply_transcript_frame(&frame).await;
             }
-            // `tool_execution_update` has no live-transcript effect in this build (perf/code-
-            // review finding, 2026-10-13): TS only acts on it for a `task` tool's streamed
-            // progress (SessionAgent.ts:1555-1558), and subagents are not ported here (see this
-            // file's own header). Routing it into `apply_transcript_frame` anyway paid a lock
-            // acquisition plus a transcript diff on every streamed tool-output chunk for no
-            // effect; falls to the default no-op arm below instead.
-            // `agent_end`, `btw_delta`/`btw_record` (side chat), and anything else: no-op, same
-            // as `SessionAgent.ts`'s own default branch minus the subagent-IRC-message handling
-            // this slice does not port.
+            // tool_execution_update is ignored: only subagent progress uses it, and that is not ported.
+            // Other frames, including agent_end and side-chat deltas, are no-ops here.
             _ => {}
         }
 
-        // Issue #784 ("Pre-declare per-lane Rust files"): the one extension point for every
-        // not-yet-landed lane's frame handling, so each lane adds behaviour inside its own file
-        // only and this match above never changes shape again for that lane's sake. Each
-        // `on_frame` is a no-op today (cheap, allocation-free); `frame` is shared by reference so
-        // no lane clones it just to decline the frame.
+        // Extension point for lanes not yet landed. Each on_frame is a cheap no-op today.
         crate::session::model::on_frame(self, frame_type, &frame).await;
         crate::session::readout::on_frame(self, frame_type, &frame).await;
         crate::session::side_chat::on_frame(self, frame_type, &frame).await;
@@ -166,9 +134,7 @@ impl SessionAgent {
                 };
                 self.upsert_request_row(&target, Some(RequestResolution::Cancelled))
                     .await;
-                // D17 (#572): an `Ask` card closes WITHOUT this notice -- after a timeout it
-                // would be untrue, since the answer summary is built from the tool result
-                // instead. Every other pending-request kind keeps it exactly as before.
+                // Ask cards close without this notice, since their answer summary comes from the tool result. (#572)
                 if !matches!(cancelled_request, PendingRequest::Ask { .. }) {
                     self.append_notice(
                         "Request withdrawn: the agent cancelled it.".to_string(),
@@ -182,10 +148,7 @@ impl SessionAgent {
                 }
             }
             DialogClassification::Malformed { id } => {
-                // D3 (#572): no `PendingRequest` was ever created for this frame, so Refract
-                // answers `{cancelled:true}` on the wire itself (instead of via
-                // `answer_request`, which requires an existing pending row) and surfaces the
-                // error notice in its place.
+                // No PendingRequest exists for this frame, so reply cancelled on the wire directly. (#572)
                 let proc = self.state.lock().await.process.clone();
                 if let Some(proc) = proc {
                     let _ = proc
@@ -198,48 +161,30 @@ impl SessionAgent {
                     .await;
             }
             DialogClassification::Request(request) => {
-                // Port of `addPendingRequest` (SessionAgent.ts:1641-1644): push+`NeedsYou`+
-                // transcript row+`request:pending` emit all happen inside `push_pending_request`
-                // (`mod.rs`) so a lane can register its own pending request the same way, in one
-                // call (code-review finding, 2026-10-14: this arm used to duplicate the row
-                // upsert and event emit instead of calling the accessor).
+                // push_pending_request handles the row, NeedsYou, and the emit in one call.
                 self.push_pending_request(request).await;
             }
         }
     }
 
-    /// Runs the turn-end settle sequence at most once per turn (port of `SessionAgent.ts`'s own
-    /// `handleTurnSettled`): resolves any still-pending requests, moves to `idle`, then
-    /// re-syncs from a fresh `get_state`.
+    /// Runs the turn-end settle once per turn: resolves pending requests, goes idle, then re-syncs.
     async fn handle_turn_settled(&self) {
         let (generation, shutdown_generation) = {
             let mut state = self.state.lock().await;
-            // Even `turn_generation` means this turn is already settled (see the `agent_start`
-            // arm's own doc comment for the odd/even encoding) -- a duplicate `session_settled`/
-            // `prompt_result.sessionSettled` frame for the same turn, so this is a no-op.
+            // Already settled for this turn, so a duplicate settle frame is a no-op.
             if state.turn_generation % 2 == 0 {
                 return;
             }
             state.turn_generation = state.turn_generation.wrapping_add(1);
-            // Issue #911: this turn (whichever one it was) has now fully settled -- every
-            // `tool_execution_end` it will ever receive has already been applied (frames are
-            // handled strictly in arrival order, one at a time; a prompt_result/session_settled
-            // frame is always the LAST frame of its own turn). Safe to clear unconditionally:
-            // a no-op on a turn `stop()` was never called for (the flag was already false).
+            // Clears the abort flag for this turn. A no-op if stop() was never called for it. (#911)
             state.turn_abort_requested = false;
             (state.turn_generation, state.shutdown_generation)
         };
         self.settle_turn_pending().await;
         self.set_status(SessionStatus::Idle, None, None).await;
         crate::session::token_guard::on_turn_settled(self, generation).await;
-        // Gate-fix (#856): `on_session_settled`'s own `get_state` round trip (up to
-        // `DEFAULT_REQUEST_TIMEOUT_MS`, 60s) used to run inline here, on the SAME task that
-        // `spawn_frame_listener`'s own `rx.recv()` loop calls `handle_frame` from -- nothing
-        // read another frame (including the NEXT turn's own `agent_start`) until it returned.
-        // Spawned instead, tagged with this turn's `turn_generation` and `shutdown_generation`:
-        // `sync_from_state` re-checks both (see its own doc comment) before applying anything,
-        // so a reply landing after a NEWER SETTLE (not merely a newer turn starting) or a
-        // stop/restart is dropped rather than clobbering fresher state.
+        // Spawned so the get_state round trip does not block the frame loop. Tagged with generation counters.
+        // sync_from_state re-checks both counters before writing, so stale replies are dropped.
         let agent = self.arc();
         tokio::spawn(async move {
             agent
@@ -248,8 +193,7 @@ impl SessionAgent {
         });
     }
 
-    /// Port of `SessionAgent.ts`'s own `settleTurnPendingRequests`: every still-pending request
-    /// is resolved `cancelled` (constitution II: every request must be answered or settled).
+    /// Resolves every still-pending request as cancelled, so none is left unanswered.
     async fn settle_turn_pending(&self) {
         let ids: Vec<String> = {
             let mut state = self.state.lock().await;
@@ -284,12 +228,8 @@ impl SessionAgent {
         }
     }
 
-    /// `launch.rs`'s own `sync_from_state` staleness guard, factored out so it can be re-checked
-    /// BOTH at entry and again immediately before that function's own registry write (round 2
-    /// MEDIUM/security finding: a settle-time reply or a Conversation reset could otherwise land
-    /// in the gap between the entry check and the write, which is awaited behind its own
-    /// `registry`/`readout` locks) without duplicating this 6-line check at both call sites.
-    /// `None` (every OTHER `sync_from_state` caller) is never stale.
+    /// Staleness guard for sync_from_state, checked at entry and again before its registry write.
+    /// None (other callers) is never stale.
     pub(super) async fn settle_is_stale(&self, stale_if: Option<(u64, u64)>) -> bool {
         let Some((generation, shutdown_generation)) = stale_if else {
             return false;
@@ -299,17 +239,8 @@ impl SessionAgent {
             || s.shutdown_generation != shutdown_generation
     }
 
-    /// Port of `SessionAgent.ts`'s own `onExit`. The epoch guard (`proc` must still be
-    /// `state.process`) is a real port, not a no-op (code-review finding, 2026-10-13: this
-    /// file's header previously said the TS guard only protects a `restart()` this build does
-    /// not implement -- that was wrong; `SessionAgent.ts:1440-1449` says it guards exactly this
-    /// `launch()` race, where the listener task's own `Exit` can arrive after a quick
-    /// stop-then-start already moved `state.process` on to a newer life).
-    /// `detectUnexpectedTermination`'s crash-tail read and the persisted stopped-on-request
-    /// marker are computed by `session::termination`'s own `on_exit` hook, called right after
-    /// this function returns (`agent::launch`'s own `spawn_frame_listener`), not here -- the
-    /// fourth returned value is `termination::State::epoch` as read in THIS call's own lock
-    /// acquisition, threaded through as that hook's `epoch_at_exit` parameter.
+    /// Handles process exit. The epoch guard stops a late Exit from a previous life from applying.
+    /// The crash-tail read and stopped marker run in termination's on_exit hook, after this returns.
     pub(super) async fn handle_exit(
         &self,
         proc: &Arc<OmpProcess>,
@@ -330,29 +261,21 @@ impl SessionAgent {
             let turn_abort_requested = state.turn_abort_requested;
             if is_current {
                 state.process = None;
-                // Issue #911 (gate-fix): this exit ends whatever turn the flag belonged to --
-                // clear it here so it can never leak into a later reattach/fresh launch.
+                // Clears the abort flag so it cannot leak into a later launch. (#911)
                 state.turn_abort_requested = false;
             }
             (
                 is_current,
                 state.stop_requested,
                 was_already_stopped,
-                // Gate-fix (code review MEDIUM, round 6): captured in this SAME lock acquisition
-                // -- see `termination::State::epoch`'s own doc comment for why a separate,
-                // later read left a race window open.
+                // Epoch is read in this same lock, so a racing stop cannot slip between reads.
                 state.termination.epoch,
                 proc.pid(),
                 turn_abort_requested,
             )
         };
         if is_current {
-            // Lane R3 (issue #786, #656): the pid-record fallback for orphan reaping. Awaited
-            // here (not fire-and-forget, gate-fix: perf/correctness review) so this write is
-            // strictly ordered after the matching `record_process` write in `launch()` --
-            // otherwise two independently-spawned tasks racing on the same `pid` have no
-            // guaranteed ordering, and a very-short-lived process could have its "exited" write
-            // land before its own "spawned" write, leaving a phantom orphan record behind.
+            // Awaited so this write lands after the matching spawn record, avoiding a phantom orphan.
             if let Some(pid) = exited_pid {
                 crate::process::pid_records::remove_process_record(pid).await;
             }
@@ -360,18 +283,8 @@ impl SessionAgent {
         if !is_current {
             return (false, stop_requested, was_already_stopped, epoch_at_exit);
         }
-        // Finalizes every still-live row before settling pending requests (code-review finding,
-        // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
-        // crash or `stop()` mid-turn leaves a streaming/running row spinning forever. `cause` is
-        // `UserStop` either from the SAME `requested`/`stop_requested` session-level signal
-        // already captured above (#563 decision 15: "the user asked this session to stop"), OR
-        // (issue #911 gate-fix) from `turn_abort_requested` -- the user's own chat-pane Stop
-        // click was in flight for this turn when the process exited (a crash, or a race between
-        // the abort taking effect and the process otherwise going down) -- so a cut-short call
-        // still settles `Cancelled`, never `Error`/`Exited`, exactly as it would have had the
-        // abort settled normally instead. Anything else -- a genuine crash, or `launch()`'s
-        // internal handshake-cleanup stop, which is not a user request either -- settles a
-        // still-running Subagent/Tool row to `Exited`/`Error`.
+        // Finalizes live rows before settling requests, so a crash or stop mid-turn leaves no spinners.
+        // A user stop, requested or via the turn abort, settles Cancelled. Any other exit settles Exited or Error.
         let finalize_cause = if (requested && stop_requested) || turn_abort_requested {
             SubagentFinalizeCause::UserStop
         } else {
@@ -389,9 +302,7 @@ impl SessionAgent {
         self.settle_turn_pending().await;
         if requested {
             if !stop_requested {
-                // A `launch()`-internal cleanup stop (failed handshake/attach), never the user
-                // asking to stop -- `launch()`'s own catch paths already recorded the real
-                // stopped/start-failed status for this; nothing further to do here.
+                // A launch-internal cleanup stop; launch already recorded the real status.
                 return (
                     is_current,
                     stop_requested,

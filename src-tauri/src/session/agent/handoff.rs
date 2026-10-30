@@ -1,6 +1,4 @@
-// Token guard Hand off (#1212, spec 021 Lane B): asks the agent for a handoff summary, starts a
-// fresh Conversation in the same Session, and sends the summary as its first message. See
-// `mod.rs`'s own header for this module's place in the `agent/` split.
+// Hand off (#1212): asks the agent for a summary, then starts a fresh Conversation with it.
 
 use std::time::Duration;
 
@@ -11,7 +9,7 @@ const SUMMARY_TIMEOUT_SECS: u64 = 180;
 const POLL_MS: u64 = 100;
 const MAX_SUMMARY_CHARS: usize = 12_000;
 
-/// Caps the summary sent as the new Conversation's first message, on a char boundary.
+/// Caps the summary at a char boundary.
 fn truncate_summary(summary: &str) -> String {
     match summary.char_indices().nth(MAX_SUMMARY_CHARS) {
         Some((end, _)) => format!("{}\n\n[summary truncated]", &summary[..end]),
@@ -20,8 +18,7 @@ fn truncate_summary(summary: &str) -> String {
 }
 
 impl SessionAgent {
-    /// `tokenGuard.handoff`: only while idle with a live process. A failure before the new
-    /// Conversation exists leaves the old one untouched.
+    /// Only while idle with a live process. A failure before the new Conversation exists leaves the old one intact.
     pub async fn hand_off(&self) -> Result<(), AgentError> {
         let before = {
             let state = self.state.lock().await;
@@ -69,7 +66,7 @@ impl SessionAgent {
         Ok(())
     }
 
-    /// Polls for a later, even (settled) turn generation with the Session idle again.
+    /// Polls for a later, settled turn generation while the Session is idle.
     async fn wait_for_settle_after(&self, before: u64) -> Result<(), AgentError> {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(SUMMARY_TIMEOUT_SECS);
         loop {

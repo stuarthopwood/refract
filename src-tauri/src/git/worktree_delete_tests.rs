@@ -1,13 +1,10 @@
-// Test module for `worktree_delete.rs`, split into its own file via `#[path = ...]` (same
-// pattern `store/registry.rs` uses for `registry_tests.rs`) to keep `worktree_delete.rs` itself
-// under the 600-line soft cap.
+// Split from `worktree_delete.rs` via `#[path]` to keep it under the 600-line soft cap.
 
 use super::*;
 use crate::git::test_support::init_repo;
 use crate::git::worktrees::{add_worktree_with_generated_name, branch_exists};
 
-/// Security-relevant path containment (issue #599/#656): the single gate every removal
-/// path below goes through before touching anything.
+/// Path containment is the single gate before any removal (#599/#656).
 #[tokio::test]
 async fn assert_within_worktrees_root_accepts_a_path_inside_the_root() {
     let repo = init_repo().await;
@@ -24,9 +21,7 @@ async fn assert_within_worktrees_root_reports_outside_missing_for_a_gone_path_el
     assert!(matches!(result, Ok(RootContainment::OutsideMissing)));
 }
 
-/// The critical safety property: a path outside Refract's own worktree folder that EXISTS
-/// is refused outright, never silently permitted through to a removal call that could
-/// delete someone else's unrelated folder.
+/// An existing path outside the worktrees folder is refused, never deleted.
 #[tokio::test]
 async fn assert_within_worktrees_root_refuses_a_path_outside_the_root_that_exists() {
     let repo = init_repo().await;
@@ -64,9 +59,7 @@ async fn remove_session_worktree_removes_an_unregistered_empty_orphan_folder() {
     assert!(tokio::fs::metadata(&orphan).await.is_err());
 }
 
-/// Issue #599's own core safety property, proved end to end through the public entry
-/// point: a path outside the worktrees root that still exists is refused, and -- the part
-/// that actually matters -- nothing inside it is ever touched.
+/// Outside path that still exists is refused end to end and nothing inside it is touched (#599).
 #[tokio::test]
 async fn remove_session_worktree_refuses_a_path_outside_the_worktrees_root_that_exists() {
     let repo = init_repo().await;
@@ -112,20 +105,8 @@ async fn remove_session_worktree_refuses_a_symlink_at_the_worktree_path() {
     assert!(tokio::fs::metadata(&real_target).await.is_ok());
 }
 
-/// A junction living INSIDE the worktrees root (its path lexically "inside" the root, so
-/// `assert_within_worktrees_root` reports `Inside` -- it is purely lexical, never resolving the
-/// junction) can still redirect a trailing path component to somewhere OUTSIDE the root
-/// entirely. `remove_session_worktree` must never let that redirect destroy content living at
-/// the junction's real target: with a marker file planted there, `fs::remove_tree`'s own
-/// containment check now closes this (issue #891 gate round: the removed "not empty"
-/// orphan-folder refusal this comment used to cite no longer exists at all --
-/// `remove_orphaned_worktree_folder` removes a non-empty folder unconditionally via
-/// `remove_tree` today). `remove_tree` canonicalizes `path` ONCE (resolving every reparse point
-/// along it, including this junction) and refuses unless that canonical form is a strict
-/// descendant of the canonical worktrees root -- the junction's real target resolves somewhere
-/// else entirely, so this refuses before `std::fs::remove_dir_all` is ever called. This test
-/// locks that behaviour in rather than trusting it by inspection. Skips gracefully outside CI,
-/// fails outright in CI (same convention as every other junction test in this crate).
+/// A junction inside the root can redirect outside it; `remove_tree` canonicalizes and refuses,
+/// so the junction target's content survives. Skips outside CI, fails in CI.
 #[tokio::test]
 async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_inside_the_root() {
     let repo = init_repo().await;
@@ -172,17 +153,8 @@ async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_insi
     );
 }
 
-/// Adapted (issue #891 unified the registered removal path; the old
-/// `is_registered_but_hand_emptied` helper this test originally exercised directly is gone) to
-/// run the same scenario -- a registered worktree whose OWN `.git` gitdir-pointer file was
-/// hand-removed, leaving real files behind but no pointer back to the repository -- through the
-/// new single entry point instead: `remove_session_worktree`'s own doc comment calls this out
-/// explicitly as one of the three shapes a "registered" worktree can be in today (a live
-/// checkout, hand-emptied with files left behind, or folder missing entirely), all handled by
-/// the one `worktree_registration_state` branch, never a dedicated helper of its own any more.
-/// Renamed (L1): the old name described a now-gone PREDICATE's own return value; this
-/// one test still checks exactly one scenario end to end -- both the folder AND the admin
-/// entry are gone afterward.
+/// A registered worktree whose `.git` pointer file was hand-removed is still fully removed
+/// (folder and admin entry).
 #[tokio::test]
 async fn remove_session_worktree_deletes_a_hand_emptied_registered_worktree_and_its_admin_entry() {
     let repo = init_repo().await;
@@ -205,9 +177,7 @@ async fn remove_session_worktree_deletes_a_hand_emptied_registered_worktree_and_
     );
 }
 
-/// A `..` built into the path, lexically resolving one level ABOVE the real worktrees root --
-/// never silently treated as `Inside` just because the on-the-wire string starts with the
-/// root's own path.
+/// A `..` escaping the root is never treated as `Inside` despite the matching string prefix.
 #[tokio::test]
 async fn assert_within_worktrees_root_refuses_a_dotdot_escape_above_the_root() {
     let repo = init_repo().await;
@@ -223,11 +193,8 @@ async fn assert_within_worktrees_root_refuses_a_dotdot_escape_above_the_root() {
     );
 }
 
-/// A sibling folder named `<root>-evil` shares a string prefix with the real worktrees root
-/// (e.g. if root is `.../pinion-worktrees/pinion` then `.../pinion-worktrees/pinion-evil`) but
-/// is NOT nested inside it. This is exactly why the containment check appends
-/// `MAIN_SEPARATOR` before its own `starts_with` -- a naive unseparated prefix match would
-/// wrongly call this `Inside`.
+/// A sibling `<root>-evil` shares a string prefix but is not inside the root; the check appends
+/// `MAIN_SEPARATOR` before `starts_with` for exactly this reason.
 #[tokio::test]
 async fn assert_within_worktrees_root_treats_a_string_prefix_lookalike_sibling_as_outside() {
     let repo = init_repo().await;
@@ -246,11 +213,8 @@ async fn assert_within_worktrees_root_treats_a_string_prefix_lookalike_sibling_a
     );
 }
 
-/// A junction living ABOVE the worktrees root (pointing somewhere unrelated) must not break
-/// containment for a real worktree underneath: `comparable_path` is purely lexical (see this
-/// crate's own `worktree_validity.rs` header), so it never follows the junction at all. Skips
-/// gracefully outside CI (sandbox/non-admin environments commonly refuse junction creation),
-/// but fails outright in CI so the loss of coverage is never silent there.
+/// A junction above the root must not break containment (the check is lexical). Skips outside
+/// CI, since sandboxes often refuse junction creation; fails in CI.
 #[tokio::test]
 async fn assert_within_worktrees_root_is_unaffected_by_a_junction_above_it() {
     let repo = init_repo().await;
@@ -287,8 +251,7 @@ async fn assert_within_worktrees_root_is_unaffected_by_a_junction_above_it() {
     assert!(matches!(result, Ok(RootContainment::Inside)));
 }
 
-/// Windows paths are already case-insensitive via `comparable_path`'s own lowercasing: a
-/// same-named path differing only in drive-letter case must compare equal.
+/// Drive-letter case differences compare equal (`comparable_path` lowercases).
 #[test]
 fn comparable_path_is_case_insensitive_for_a_differently_cased_drive_letter() {
     assert_eq!(

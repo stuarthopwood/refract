@@ -1,6 +1,4 @@
-// Spec 060 (S1-03): `usage.db`'s DDL, `PRAGMA user_version`, the rebuild-on-corruption rule and
-// the `prefs` table. The file is derived data (ADR 0006): a corrupt file or one written by a newer
-// Refract is renamed to `usage.db.bak-<unix-ts>` and recreated, never repaired and never deleted.
+// `usage.db` is derived data: a corrupt or newer-version file is renamed aside, never repaired.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -10,8 +8,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension};
 
 pub const USER_VERSION: i64 = 2;
 
-/// `reasoning`, `model` and `project_label` are `''` rather than NULL when unknown so the rollup
-/// primary keys stay unique.
+/// Unknown key parts are `''` rather than NULL so the primary keys stay unique.
 const DDL: &str = "
 CREATE TABLE IF NOT EXISTS file_offsets (
   session_file TEXT PRIMARY KEY,
@@ -133,12 +130,10 @@ CREATE INDEX IF NOT EXISTS tool_calls_tool_ts ON tool_calls (tool, ts);
 CREATE INDEX IF NOT EXISTS user_messages_ts ON user_messages (ts);
 ";
 
-/// Serialises create/rebuild so a reader opening while the worker initialises never races the
-/// rename of a corrupt file.
+/// Serialises create and rebuild so no reader races a rename.
 static INIT_LOCK: Mutex<()> = Mutex::new(());
 
-/// Opens `path` (creating it), applies pragmas and the schema. A corrupt file or one with a newer
-/// `user_version` (or an older, DDL-incompatible one) is set aside as `usage.db.bak-<unix-ts>` and a fresh file is created.
+/// Opens `path`, creating and migrating it. A corrupt or incompatible file is set aside first.
 pub fn open_db(path: &Path) -> rusqlite::Result<Connection> {
     let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     match try_open(path) {
@@ -150,7 +145,7 @@ pub fn open_db(path: &Path) -> rusqlite::Result<Connection> {
     }
 }
 
-/// A connection for queries: the same open path, then `query_only` so a query can never write.
+/// Opens a read connection with `query_only` set, so queries cannot write.
 pub fn open_reader(path: &Path) -> rusqlite::Result<Connection> {
     let conn = open_db(path)?;
     conn.pragma_update(None, "query_only", true)?;
@@ -184,7 +179,7 @@ fn is_rebuildable(err: &rusqlite::Error) -> bool {
     )
 }
 
-/// Renames the database and its `-wal`/`-shm` side files to `<name>.bak-<unix-ts>`.
+/// Renames the database and its WAL side files aside.
 fn quarantine(path: &Path) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -205,7 +200,7 @@ fn quarantine(path: &Path) {
     }
 }
 
-/// One JSON-encoded preference (`jokes`, `filters`).
+/// One JSON-encoded preference.
 pub fn prefs_get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
     conn.query_row("SELECT value FROM prefs WHERE key = ?1", [key], |row| {
         row.get(0)

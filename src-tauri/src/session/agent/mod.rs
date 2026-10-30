@@ -1,43 +1,4 @@
-// Port of `src/main/omp/SessionAgent.ts` (tasks.md T022): one instance per opened Session, owns
-// one `omp::process::OmpProcess`, the Session's in-memory runtime status/transcript/queue/
-// pending-request state, the approval-mode-aware prompt send/stop/answer loop, slash-command
-// filtering, `startNewConversation`/`openConversation`, and the stopped-Session Conversation
-// switch (port of `src/main/omp/conversationSwitch.ts`'s `startStoppedSessionOnConversation`).
-//
-// Explicit scope cut (assignment brief): subagents, side chat (`btw`), the spec-004 readout chip
-// bundle, `predict_word`/`predict_word_feedback`, and model roles are not ported -- their frames
-// are decoded by `apply_transcript_frame` where OMP's own wire shape requires it (so the main
-// transcript still renders correctly), but no subagent panel, side-chat store, readout chip, or
-// ghost-text completion exists in this build.
-//
-// Further simplifications made to fit this slice's scope (see the final report for the full
-// list): no `restart()`/approval-mode-change auto-restart (`settings.setApprovalMode` persists
-// and broadcasts `settings:changed`, T028, but does not yet respawn a live Session); no
-// ready-wait retry-on-ceiling loop (`OmpProcess::spawn` itself has no caller-visible retry); no
-// live start-progress banner (`SessionStartProgress`) events; `detectUnexpectedTermination`'s
-// crash-tail detection is not ported, so `terminatedUnexpectedly` is always absent/`false`; the
-// persisted `stoppedOnRequestConversation`/`stoppedOnRequestAtSize` marker is not written, so a
-// deliberate Stop followed by a full app restart cannot be distinguished from a crash the way the
-// Electron build distinguishes it; `openConversation`'s failed-switch recovery is simplified to
-// "stop and mark stopped/start-failed" rather than TS's "try switching back to the previous
-// Conversation first".
-//
-// Issue #784 ("Pre-declare per-lane Rust files") pre-declares the above scope cuts as their own
-// empty sibling files -- `model.rs`, `readout.rs`, `side_chat.rs`, `start_queue.rs`,
-// `subagents.rs`, `termination.rs` -- so each lane (RM, R5, R6, R3) adds its behaviour inside its
-// own file only, never here: the `on_frame(agent, frame_type, &frame)`, `on_exit(agent, code,
-// requested)`, and `on_start_progress(agent, stage, elapsed_ms)` calls `agent::frame`'s own
-// `handle_frame` and `agent::launch`'s own `spawn_frame_listener` make per lane module, the
-// lane's own `State` slot inside `AgentState`, and the narrow status/events/transcript/request/
-// `session_id()` accessors below are the only things a lane ever needs.
-//
-// This module is itself split across `session/agent/` by concern (code-review finding,
-// 2026-10-13: a single ~1,900-line `agent.rs` violated issue #784's own 600-line-per-file
-// criterion): `mod.rs` (core state/status/transcript), `launch.rs` (start/attach/reattach),
-// `frame.rs` (frame dispatch), `requests.rs` (dialog classification), `chat.rs`
-// (send/stop/removeQueued), `conversations.rs` (startNew/open), `commands.rs` (slash-command
-// tables), `types.rs` (split out round 2 to keep `mod.rs` under its own 600-line limit). `mod
-// agent;` in `session/mod.rs` still resolves here, so every external import is unchanged.
+// One agent per opened Session; split by concern across `session/agent/`.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex, Weak};
@@ -74,17 +35,15 @@ pub use requests::is_chat_answer;
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 
-/// Mirrors `OmpProcess.ts`'s own `DEFAULT_REQUEST_TIMEOUT_MS`; not exported by `omp::process`
-/// (private there), so re-declared here with the same value for every `request()` call this
-/// module makes.
+/// Same value as `omp::process`'s private request timeout.
 const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 60_000;
-/// Port of `SessionAgent.ts`'s own `ABORT_SETTLE_TIMEOUT_MS` ("about two minutes worst case").
+/// Upper bound on waiting for an aborted turn to settle.
 const ABORT_SETTLE_TIMEOUT_MS: u64 = 60_000;
-/// Port of `fetchAllMessages.ts`'s own `MESSAGES_PAGE_SIZE`.
+/// Page size when fetching the full message history.
 const MESSAGES_PAGE_SIZE: u64 = 200;
-/// Port of `fetchAllMessages.ts`'s own page-count safety cap.
+/// Safety cap on pages fetched, so a bad cursor cannot loop forever.
 const MAX_MESSAGE_PAGES: u32 = 10_000;
-/// Port of `SessionAgent.ts`'s own `MAX_MODEL_FIELD_LENGTH` (security audit finding, 2026-10-03).
+/// Caps model-supplied string fields so an oversized value cannot bloat the transcript.
 const MAX_MODEL_FIELD_LENGTH: usize = 256;
 
 pub type SharedRegistry = Arc<AsyncMutex<RegistryStore>>;
@@ -103,15 +62,15 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    // D1/D2 (#572): `set_ask_dialog` result, in-memory only (gate round 2, security Low) -- `send_set_ask_dialog`'s own return value drives the fallback (`launch.rs`); nothing else reads this field.
+    // Set by `ask_dialog` (#572).
     #[allow(dead_code)]
     ask_dialog_enabled: bool,
-    // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
+    // Even while settled, so a reset can never be mistaken for an in-flight turn.
     turn_generation: u64,
     stop_requested: bool,
     shutdown_generation: u64,
     turn_abort_requested: bool, // issue #911: true while `chat.stop`'s own `abort` RPC is in flight for this turn
-    // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
+    // Each lane owns its own state slot, reached via its `with_<lane>_state` accessor.
     advisor: crate::session::advisor::State,
     #[allow(dead_code)]
     model: crate::session::model::State,
@@ -129,8 +88,7 @@ struct AgentState {
     pause: pause::State,
 }
 
-/// One per opened Session (`session::manager::SessionManager::get_or_create_agent`). See this
-/// file's own header for the scope this slice ports and the simplifications it makes.
+/// One per opened Session.
 pub struct SessionAgent {
     self_ref: Weak<SessionAgent>,
     session_id: String,
@@ -144,9 +102,7 @@ pub struct SessionAgent {
     coalescer: PatchCoalescer,
 }
 
-/// Generates one `pub(super) async fn with_<lane>_state<R>(&self, f: impl FnOnce(&mut $state) ->
-/// R) -> R` per invocation inside `impl SessionAgent` below (issue #806, 600-line cap, round 4
-/// code-review finding: six of these were identical but for the field name/`State` type).
+/// Generates one `with_<lane>_state` accessor per lane.
 macro_rules! with_lane_state {
     ($name:ident, $field:ident, $state:path) => {
         #[allow(dead_code)]
@@ -171,9 +127,7 @@ impl SessionAgent {
         let coalescer = PatchCoalescer::new(
             std::time::Duration::from_millis(50),
             Box::new(move |ops: Vec<TranscriptOp>| {
-                // Port of `SessionManager.ts`'s own `agent.on('patch', ...)` listener: a hidden
-                // Session's patches are still computed (the coalescer always flushes) but never
-                // forwarded, matching `visibleSessionIds.has(payload.sessionId)`'s own gate.
+                // A hidden Session's patches are computed but not forwarded.
                 if !flush_visible_ids
                     .lock()
                     .expect("visible_ids mutex poisoned")
@@ -225,8 +179,7 @@ impl SessionAgent {
         })
     }
 
-    /// Lane R3 (issue #786): `pub(super)` (not private) so `session::start_queue`'s own cancel
-    /// watcher task can hold a strong reference across its own `tokio::spawn`.
+    /// `pub(super)` so the cancel watcher can hold it across `tokio::spawn`.
     pub(super) fn arc(&self) -> Arc<Self> {
         self.self_ref
             .upgrade()
@@ -257,31 +210,22 @@ impl SessionAgent {
             })
     }
 
-    /// Lane R3 (issue #786): `session::termination`'s own marker record/clear and
-    /// `resolve_termination` both need the Session's registry row (`currentConversation`,
-    /// `stoppedOnRequestConversation`/`AtSize`), which `SessionAgent`'s own fields are
-    /// otherwise private to this module for.
+    /// Needs the registry row to record and clear the termination marker.
     pub(super) fn registry(&self) -> &SharedRegistry {
         &self.registry
     }
 
-    /// Lane R3 (issue #786): `session::start_queue`'s own `acquire_slot` needs to honour a
-    /// `shutdown()` racing a brand-new `start()`, not only an explicit `cancelStart()`.
+    /// Lets `shutdown()` abort a `start()` that is still waiting for a slot.
     pub(super) async fn stop_requested(&self) -> bool {
         self.state.lock().await.stop_requested
     }
 
-    /// Lane R3 (issue #786, gate-fix FR-038): a deliberate stop racing a start in flight ends
-    /// as `stopped`/`not-started` with no failure notice, not `record_start_failure`'s own
-    /// `start-failed` (reserved for a plain `cancelStart()` alone).
+    /// A deliberate stop during a start ends as `stopped`, not `start-failed`.
     pub(super) async fn mark_stopped_not_started(&self) {
         self.set_status(SessionStatus::Stopped, Some("not-started"), None)
             .await;
     }
 
-    // -----------------------------------------------------------------------------------------
-    // Status / events
-    // -----------------------------------------------------------------------------------------
 
     pub(super) async fn emit_status(&self) {
         self.ensure_pause_loaded().await;
@@ -291,10 +235,7 @@ impl SessionAgent {
         self.events.emit_session_status(&payload);
     }
 
-    /// Port of `SessionAgent.ts`'s own `setStatus`: becomes `unread` only on a `working` ->
-    /// `idle` transition while this Session is not the visible one (T037). Window-focus is not
-    /// tracked in this build (simplification, see this file's own header), so only visibility
-    /// gates `unread`, not focus.
+    /// Becomes `unread` only on `working` -> `idle` while the Session is hidden.
     pub(super) async fn set_status(
         &self,
         status: SessionStatus,
@@ -317,20 +258,7 @@ impl SessionAgent {
         self.emit_status().await;
     }
 
-    /// Port of `exitVerdictGuard.ts`'s `shouldApplyCrashExitVerdict`'s `statusNow !== 'stopped'`
-    /// half, used by `handle_exit`'s crash branch (code-review finding, 2026-10-13): a crash
-    /// arriving during `launch()`'s post-spawn history fetch can race `launch()`'s own
-    /// synchronous `exitedDuringStart`/`record_start_failure` write (both read/write
-    /// `state.process`/`state.status` across the same await). Checking `state.status` and
-    /// writing the new one inside ONE lock acquisition -- instead of a separate pre-check
-    /// followed by `set_status`'s own lock -- closes the narrow window where the two writers
-    /// could otherwise still interleave between check and write. TS's single-threaded
-    /// `shouldApplyCrashExitVerdict` only needs the read-then-write to be atomic with respect to
-    /// awaits, which this mirrors with an explicit lock. Whichever write actually lands first,
-    /// this makes the final reason always `start-failed` (never `agent-exited`) for this race,
-    /// matching TS: if `record_start_failure` wins the race to the lock, this call sees
-    /// `Stopped` already and skips; if this call wins instead, `record_start_failure`'s own
-    /// unconditional `set_status` still overwrites it right after, same final result.
+    /// Check and write under one lock, so a racing start cannot interleave.
     async fn set_stopped_unless_already_stopped(
         &self,
         stop_reason: &'static str,
@@ -352,7 +280,7 @@ impl SessionAgent {
         self.emit_status().await;
     }
 
-    /// `sessions.setVisible` (T036/T037): clears `unread` once this Session becomes visible.
+    /// Clears `unread` once the Session becomes visible.
     pub async fn clear_unread(&self) {
         let changed = {
             let mut state = self.state.lock().await;
@@ -368,8 +296,7 @@ impl SessionAgent {
         }
     }
 
-    /// `sessions.list()`'s live-runtime fields (#985): `startProgress` now included -- omitted,
-    /// an unrelated Session's refresh wiped this one's notice until its next status emit (no tick).
+    /// Includes `startProgress`, so an unrelated refresh does not wipe the notice.
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
         let pending_selection = crate::session::pending_selection::wire(self).await;
@@ -400,8 +327,7 @@ impl SessionAgent {
         payload
     }
 
-    /// `SessionRuntimeView` (`sessions.open`/`.recover`/`conversations.startNew`/`.open`'s own
-    /// `SessionSnapshot.runtime`).
+    /// Shape the renderer requires when a Session pane opens.
     pub async fn runtime_view(&self) -> Value {
         self.ensure_pause_loaded().await;
         let state = self.state.lock().await;
@@ -411,13 +337,7 @@ impl SessionAgent {
             "unread": state.unread,
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
-            // `SessionRuntimeView` (`src/shared/ipc.ts`) requires all three of these: the
-            // renderer's `ChatPane`/`Transcript` components read `runtime.transcript`/`.queue`/
-            // `.pending` unconditionally (no optional-chaining fallback) the moment a Session
-            // pane opens, so an omitted field here throws under the renderer's own ErrorBoundary
-            // ("Something went wrong rendering this view") the instant `sessions.open` resolves,
-            // before any turn even runs. Fixed live (tasks.md T032 verification, first Session
-            // ever opened in this build).
+            // The renderer reads these three unconditionally.
             "transcript": state.transcript.items(),
             "queue": { "followUp": pause::queue_view(&state, &state.queue_follow_up, &state.queue_steering).0, "steering": state.queue_steering },
             "pending": state.pending,
@@ -435,9 +355,6 @@ impl SessionAgent {
         payload
     }
 
-    // -----------------------------------------------------------------------------------------
-    // Transcript
-    // -----------------------------------------------------------------------------------------
 
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
@@ -445,10 +362,7 @@ impl SessionAgent {
         let turn_abort_requested = state.turn_abort_requested;
         state.transcript.apply_frame(frame, turn_abort_requested);
         let ops = diff_transcript(&before, state.transcript.items());
-        // Queued while still holding `state.lock()` (code-review finding, 2026-10-13): otherwise
-        // a concurrent `emit_patch_reset` (`SessionManager::set_visible`) can slip its own
-        // `Reset` into the coalescer between this diff and this queue call, and the reset would
-        // then supersede (drop) this upsert even though it is the newer change.
+        // Queued under the state lock so a concurrent reset cannot supersede this upsert.
         if !ops.is_empty() {
             self.coalescer.queue(ops);
         }
@@ -459,9 +373,7 @@ impl SessionAgent {
             .await;
     }
 
-    /// Port of `SessionAgent.ts`'s `upsertTranscriptItem` for `kind: 'request'` rows
-    /// (`addPendingRequest` and `resolvePendingRequest`). The renderer draws an approval or
-    /// question card only from these rows, joined with the live pending list (`Transcript.tsx`).
+    /// Upserts a `kind: 'request'` row; the renderer draws approval cards from these.
     async fn upsert_request_row(&self, request_id: &str, resolved: Option<RequestResolution>) {
         self.upsert_transcript_item(TranscriptItem::Request {
             id: format!("request:{request_id}"),
@@ -471,15 +383,7 @@ impl SessionAgent {
         .await;
     }
 
-    /// Full-snapshot flush (`PatchCoalescer`'s `reset` semantics: "reset supersedes queue"),
-    /// used at the end of `launch()`/`start_new_conversation()`/`open_conversation()`, and by
-    /// `session::manager::SessionManager::set_visible` for a Session that just became visible
-    /// (its patches were dropped by the coalescer's own visibility gate while hidden). Skips
-    /// queuing entirely for a hidden Session (performance finding, 2026-10-13): the flush
-    /// closure's own `visible_ids` gate would drop the patch anyway, so there is no reason to
-    /// even clone the `Arc` pointers for it. `set_visible` always calls this AFTER it has
-    /// already added the Session to `visible_ids`, so the one call that must fire -- the
-    /// newly-visible catch-up snapshot -- still passes this check.
+    /// Full-snapshot flush; hidden Sessions skip queuing.
     pub async fn emit_patch_reset(&self) {
         if !self.is_visible() {
             return;
@@ -491,31 +395,24 @@ impl SessionAgent {
         self.coalescer.flush_now();
     }
 
-    // -----------------------------------------------------------------------------------------
-    // Lane extension points (state slot + narrow accessors; see "Lane extension contract" above)
-    // -----------------------------------------------------------------------------------------
-
-    // `#[allow(dead_code)]` below: unread until a lane's `on_frame` calls it (all are no-ops).
+    // Lanes reach the agent only through these accessors.
     #[allow(dead_code)]
     pub(super) fn events(&self) -> &EventSink {
         &self.events
     }
 
-    /// Narrow accessor so a lane can build its own per-session event payload (for example
-    /// `{"sessionId": agent.session_id(), ...}` before calling `agent.events().send(...)`)
-    /// without reaching into `SessionAgent`'s private `session_id` field.
+    /// Session id for building a lane's own event payload.
     #[allow(dead_code)]
     pub(super) fn session_id(&self) -> &str {
         &self.session_id
     }
 
-    /// Issue #561: the live process handle, for `session::health`'s pid and latency reads.
+    /// Live process handle, for pid and latency reads.
     pub(super) async fn process_handle(&self) -> Option<Arc<OmpProcess>> {
         self.state.lock().await.process.clone()
     }
 
-    /// Generic transcript upsert a lane can call from its own `on_frame`, the same sequence
-    /// `upsert_request_row` above factors through for its own `kind: 'request'` rows.
+    /// Generic transcript upsert for a lane's own `on_frame`.
     pub(super) async fn upsert_transcript_item(&self, item: TranscriptItem) {
         let mut state = self.state.lock().await;
         let before = state.transcript.items().to_vec();
@@ -526,11 +423,7 @@ impl SessionAgent {
         }
     }
 
-    /// Registers a pending request the same way `handle_frame`'s own `DialogClassification::
-    /// Request` arm used to inline (code-review finding, 2026-10-14): pushes onto
-    /// `state.pending`, moves the Session to `NeedsYou`, upserts the transcript `kind: 'request'`
-    /// row (`upsert_request_row`), and emits `request:pending` -- the full sequence in one call,
-    /// so a lane can register its own pending request the same way `frame.rs` does.
+    /// Registers a pending request: queue, `NeedsYou`, transcript row and event in one call.
     pub(super) async fn push_pending_request(&self, request: PendingRequest) {
         let payload =
             serde_json::to_value(&request).expect("PendingRequest is always JSON-serialisable");
@@ -544,12 +437,7 @@ impl SessionAgent {
         self.events.emit_request_pending(&self.session_id, &payload);
     }
 
-    // Issue #806 (600-line cap, round 4 code-review finding): these six accessors are
-    // identical but for the field name and its `State` type, so they are generated by one
-    // macro instead of hand-repeated -- behaviour is unchanged (each still compiles to its own
-    // named `async fn`, callable exactly as before; `with_termination_state` is already in real
-    // use by `session::termination`, the rest stay `#[allow(dead_code)]` until their own lane
-    // lands, same as before this macro existed).
+    // Generated by one macro; the accessors differ only by field and type.
     with_lane_state!(with_advisor_state, advisor, crate::session::advisor::State);
     with_lane_state!(with_model_state, model, crate::session::model::State);
     with_lane_state!(with_readout_state, readout, crate::session::readout::State);

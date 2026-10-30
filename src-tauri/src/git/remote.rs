@@ -1,11 +1,4 @@
-// Repository remotes (port of `git/remote.ts`), part of session worktree and lifecycle (lane R2,
-// issue #785). Pre-declared so lane R2 is the only lane that ever edits this file (issue #784,
-// "Pre-declare per-lane Rust files").
-//
-// Generic (not GitHub-specific) remote detection for the Session list's group-header icons
-// (issue #528): whether a repository has ANY configured remote, and that remote's host when it
-// does -- used only to pick an icon and its tooltip text, never to open a link or reach the
-// network.
+// Remote detection for Session list icons; never opens a link or touches the network.
 
 use std::path::Path;
 use std::time::Duration;
@@ -14,16 +7,11 @@ use serde::Serialize;
 
 use crate::git::git::git_raw;
 
-/// `repositoryRemote`'s own per-call bound (`remote.ts`'s `TIMEOUT_MS`): long enough for a
-/// normal `git config` read, short enough that a hung or missing `git` can never block the
-/// Session list for long.
+/// Per-call bound so a hung or missing `git` cannot block the Session list.
 const REMOTE_CHECK_TIMEOUT_MS: u64 = 3000;
 
-/// `src/shared/model.ts`'s `RepositoryRemote` union. `rename_all_fields` (not `rename_all`, which
-/// only renames variant tags) is this crate's convention for an enum with a struct variant
-/// (`session/agent/types.rs`'s `PendingRequest`); `Has`'s own `host` field is already a single
-/// lowercase word so it round-trips unchanged either way, but each variant's tag still needs its
-/// own explicit `rename` since `rename_all_fields` never touches tag names.
+/// Repository remote state, mirroring the shared `RepositoryRemote` union.
+// `rename_all_fields` never renames tags, so each variant carries an explicit `rename`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all_fields = "camelCase")]
 pub enum RepositoryRemoteKind {
@@ -32,8 +20,7 @@ pub enum RepositoryRemoteKind {
     #[serde(rename = "has")]
     Has {
         host: String,
-        /// Issue #646: `owner` and `repo` parsed from the remote URL path, only for the tooltip.
-        /// Absent when the path does not hold at least two segments.
+        /// Tooltip-only owner/repo; absent when the path has fewer than two segments.
         #[serde(skip_serializing_if = "Option::is_none")]
         owner: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,9 +30,7 @@ pub enum RepositoryRemoteKind {
     Unknown,
 }
 
-/// Git itself treats a drive-letter prefix (`C:/...`, `C:\...`) as a LOCAL path, never a remote
-/// host (`remote.ts` gate round 1 fix) -- without this check it would match the scp-like form
-/// below and report a false host of a single letter.
+// Git treats `C:/...` as a local path; otherwise it would match scp-like as host "c".
 fn is_windows_drive_path(s: &str) -> bool {
     let bytes = s.as_bytes();
     bytes.len() >= 3
@@ -54,13 +39,9 @@ fn is_windows_drive_path(s: &str) -> bool {
         && (bytes[2] == b'\\' || bytes[2] == b'/')
 }
 
-/// The scp-like SSH form (`user@host:owner/repo.git`, no `://` scheme). Mirrors `remote.ts`'s
-/// own `/^(?:[^/]*@)?([^:/@]+):/`: the optional userinfo prefix is the longest run of non-`/`
-/// characters ending in the LAST `@` before the first `/` (so a userinfo segment that itself
-/// embeds an `@`, e.g. `a@b@host:path`, can never leak into the reported host); the host itself
-/// is then the longest run of characters that are none of `:`, `/`, `@`, immediately followed by
-/// a literal `:`. An IPv6-literal false match (`git@[fe80::1]:repo`) is rejected by the shared
-/// `[`-guard below, same as `remote.ts`'s own gate round 2 fix.
+/// Parses the scp-like SSH form (`user@host:owner/repo.git`).
+// Userinfo ends at the LAST `@` before the first `/`, so `a@b@host:path` cannot leak into host.
+// IPv6 literals are rejected by the `[`-guard.
 fn scp_like_parts(trimmed: &str) -> Option<(String, &str)> {
     let search_region = match trimmed.find('/') {
         Some(slash) => &trimmed[..slash],
@@ -82,17 +63,12 @@ fn scp_like_parts(trimmed: &str) -> Option<(String, &str)> {
     Some((host.to_lowercase(), &rest[host_len + 1..]))
 }
 
-/// Any other remote URL (`https://`, `ssh://`, `git://`, ...): the bare authority host, userinfo
-/// and port stripped, matching `new URL(trimmed).hostname`. No `url` crate dependency in this
-/// build's `Cargo.toml`, so parsed manually: find `://`, then the authority up to the next `/`,
-/// `?`, or `#`, strip a userinfo segment before the last `@` in that authority. An IPv6 literal's
-/// `hostname` keeps its brackets (`[::1]`) in that Web API too, so it is produced here the same
-/// way and then rejected by the shared `[`-guard below, exactly like `remote.ts`.
+/// Parses a `://` remote URL into host (userinfo and port stripped) and path.
+// Hand-parsed: no `url` crate dependency. IPv6 literals keep brackets and are rejected by the `[`-guard.
 fn url_parts(trimmed: &str) -> Option<(String, &str)> {
     let scheme_end = trimmed.find("://")? + 3;
     let after_scheme = &trimmed[scheme_end..];
-    // Userinfo ends at the LAST `@` before any `?` or `#` in the whole URL, so a password that
-    // contains `/` cannot leak into the path (and from there into `owner`).
+    // Last `@` before `?`/`#`, so a password containing `/` cannot leak into `owner`.
     let before_query = after_scheme
         .find(['?', '#'])
         .map_or(after_scheme, |end| &after_scheme[..end]);
@@ -118,11 +94,7 @@ fn url_parts(trimmed: &str) -> Option<(String, &str)> {
     Some((host.to_lowercase(), path))
 }
 
-/// The bare authority host from a git remote URL, with any userinfo/credentials stripped before
-/// it ever leaves this function (a remote URL can embed a token, for example
-/// `https://x-access-token:ghp_xxx@github.com/owner/repo.git`) -- a privacy requirement, never a
-/// display nicety. Handles the scp-like SSH form (`user@host:owner/repo.git`, no scheme) in
-/// addition to any `://`-schemed URL (`https://`, `ssh://`, `git://`, ...).
+/// Host of a remote URL. Userinfo (tokens) must be stripped before the host leaves this module (privacy).
 #[cfg(test)]
 fn host_from_remote_url(url: &str) -> Option<String> {
     remote_parts(url).map(|(host, _)| host)
@@ -139,9 +111,7 @@ fn remote_parts(url: &str) -> Option<(String, &str)> {
     url_parts(trimmed)
 }
 
-/// Issue #646: `(owner, repo)` from a remote URL path, for the tooltip only. `repo` is the last
-/// segment without `.git`; `owner` is every segment before it (a GitLab subgroup path stays
-/// whole). `None` when fewer than two segments remain.
+/// `(owner, repo)` from a remote URL path; owner keeps GitLab subgroups whole.
 fn owner_repo_from_path(path: &str) -> Option<(String, String)> {
     let path = path.split(['?', '#']).next().unwrap_or("");
     let mut segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
@@ -150,7 +120,7 @@ fn owner_repo_from_path(path: &str) -> Option<(String, String)> {
     if repo.is_empty() || segments.is_empty() {
         return None;
     }
-    // Only plain path characters reach the tooltip; anything else drops owner/repo, not the host.
+    // Non-plain characters drop owner/repo, not the host.
     let is_plain = |segment: &str| {
         segment
             .bytes()
@@ -162,16 +132,7 @@ fn owner_repo_from_path(path: &str) -> Option<(String, String)> {
     Some((segments.join("/"), repo.to_string()))
 }
 
-/// `Repository.remote` (issue #528): read-only, no network call, and bounded so a hung or missing
-/// `git` can never block the Session list for long. `None` means this call never got a settled
-/// answer at all (its own 3s timeout fired), so the caller should treat that the same as "absent"
-/// and keep whatever value it already had; `Some(RepositoryRemoteKind::Unknown)` means the check
-/// ran to completion and genuinely could not tell (a real git failure, an unparseable remote,
-/// ...). Simplified from `remote.ts`'s own `AbortSignal.any([timeoutSignal, deadline])`
-/// combinator down to a single `tokio::time::timeout`: this build has no shared-deadline pool yet
-/// (`ipc::repositories::repositories_remotes`, the only caller, loops sequentially -- each call
-/// is already bounded by this same per-call timeout, so a sequential loop stays bounded too, just
-/// slower for many repositories).
+/// Read-only, bounded remote check; `None` means it timed out, `Unknown` means it ran but could not tell.
 pub async fn repository_remote(repo_path: &Path) -> Option<RepositoryRemoteKind> {
     let git_dir_exists = tokio::fs::symlink_metadata(repo_path.join(".git"))
         .await
@@ -330,9 +291,7 @@ mod tests {
         );
     }
 
-    /// Distinct from the `Option` wrapper's own `None` (a timed-out check, "no settled answer"):
-    /// this asserts the SETTLED `RepositoryRemoteKind::None` variant, for a repository the check
-    /// ran to completion against and genuinely has no configured remote.
+    /// Asserts the settled `None` variant, distinct from the timed-out `Option::None`.
     #[tokio::test]
     async fn repository_remote_returns_the_settled_none_variant_when_no_remote_is_configured() {
         let dir = temp_dir("no-remote");

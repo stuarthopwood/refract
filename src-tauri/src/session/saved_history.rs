@@ -1,10 +1,5 @@
-// Issue #1205 (FR-103): a stopped Session's current Conversation history, read straight from
-// OMP's saved session file with no `omp` process, so showing a stopped Session never has to
-// start its agent. Record format (docs/spike/FINDINGS.md item 63): a `type: "title"` first line,
-// a `type: "session"` header, then entries carrying `id`/`parentId`; `type: "message"` entries
-// hold the same `message` objects `get_messages` returns. One file can hold more than one branch:
-// the active branch ends at the LAST entry in file order (OMP's own fallback when no leaf is
-// recorded), and is walked back through `parentId` to its root.
+// Stopped Session history, read from OMP's saved file so no agent starts (#1205).
+// The active branch ends at the last entry in file order, OMP's own fallback when no leaf is recorded.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
@@ -17,11 +12,10 @@ use crate::omp::transcript::{NoticeLevel, TranscriptItem, TranscriptState};
 
 /// Files larger than this are never read without an agent; a plain notice is shown instead.
 pub const MAX_HISTORY_FILE_BYTES: u64 = 64 * 1024 * 1024;
-/// A single line longer than this is skipped, so a file with no newline cannot grow the buffer.
+/// Longer lines are skipped, so a file with no newline cannot grow the buffer.
 const MAX_LINE_BYTES: u64 = 16 * 1024 * 1024;
 
-/// What `read_saved_history` found. `Missing`, `Empty`, and `TooLarge` are reported separately
-/// so the caller can say so plainly (FR-024) instead of showing a blank transcript.
+/// Missing, empty, and too-large files get a plain notice instead of a blank transcript.
 pub enum SavedHistory {
     Items(Arc<Vec<Arc<TranscriptItem>>>),
     Missing,
@@ -35,8 +29,7 @@ struct Entry {
     message: Option<Value>,
 }
 
-/// Canonicalises `file` and returns it only when it is a `.jsonl` file inside `session_dir`, so
-/// a registry value can never point the reader anywhere else.
+/// Accepts only a `.jsonl` file inside `session_dir`, so a registry value cannot point elsewhere.
 pub async fn contained_history_file(
     session_dir: Option<&str>,
     file: Option<&str>,
@@ -51,9 +44,7 @@ pub async fn contained_history_file(
     (is_jsonl && file.starts_with(&dir)).then_some(file)
 }
 
-/// Reads the contained history file at `path` (already sized at `len` bytes by the caller) off
-/// the async worker. A tool row still `running` in the file is settled `interrupted`: no process
-/// is left to finish it.
+/// Reads the file off the async worker; a `running` tool row becomes `interrupted`.
 pub async fn read_saved_history(path: PathBuf, len: u64) -> SavedHistory {
     if len > MAX_HISTORY_FILE_BYTES {
         return SavedHistory::TooLarge;
@@ -63,9 +54,7 @@ pub async fn read_saved_history(path: PathBuf, len: u64) -> SavedHistory {
         .unwrap_or(SavedHistory::Missing)
 }
 
-/// Reads `path` line by line, skipping blank, malformed, over-long, and header lines the same way
-/// `ipc::conversations`'s `read_conversation_file` does, follows the active branch, and builds
-/// the transcript items through `TranscriptState::from_history`.
+/// Parses lines, skipping blank, malformed, and over-long ones, then follows the active branch.
 fn parse_history_file(path: &Path) -> SavedHistory {
     let Ok(handle) = std::fs::File::open(path) else {
         return SavedHistory::Missing;
@@ -159,8 +148,7 @@ fn skip_rest_of_line(reader: &mut impl BufRead) -> std::io::Result<()> {
     }
 }
 
-/// Walks from `leaf` back through `parentId` (bounded by the entry count, so a malformed cycle
-/// can never loop forever) and returns that branch's messages oldest first.
+/// Walks `parentId` links from `leaf`, bounded so a malformed cycle cannot loop forever.
 fn active_branch_messages(
     entries: &mut HashMap<String, Entry>,
     leaf: Option<String>,
@@ -183,8 +171,7 @@ fn active_branch_messages(
     messages
 }
 
-/// The plain notice shown in place of history when the file is missing, holds no messages, or
-/// is too large to read without an agent (FR-103, FR-024).
+/// Plain notice shown in place of history when it is missing, empty, or too large.
 pub fn notice_for(history: &SavedHistory) -> Option<TranscriptItem> {
     let text = match history {
         SavedHistory::Items(_) => return None,

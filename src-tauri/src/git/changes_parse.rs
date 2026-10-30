@@ -1,21 +1,11 @@
-// Split out of `changes_status.rs` (issue #806 "no god files" convention, already followed by
-// this file's own siblings `changes_score.rs`/`changes_diff.rs`): gate round 1 item 5 (issue
-// #464)'s dual-membership redesign pushed `changes_status.rs` back over the 600-line soft cap,
-// so its porcelain v2 parsing/grouping step -- `ParsedEntry`/`ParsedGroups`/`GitChangesGroup` and
-// every `parse_*` function -- moves here, behaviour (plus the item 5 redesign itself) unchanged.
-// See `changes_status.rs`'s own header comment for the full FR-002 dual-membership decision.
+// Split from changes_status.rs to keep it under the 600-line cap (#806).
 
 use crate::fs::paths::contains_git_segment;
 
 use super::changes_status::AheadBehind;
 use super::status::GitStatusMark;
 
-/// One of the four fixed buckets every non-ignored status entry sorts into (FR-002, data-model.md
-/// "Git changes group"). Internal to the parsing/grouping step -- never serialised on its own;
-/// group membership reaches the wire purely as which list (`GitChangesGroups`'s own fields) a
-/// `GitChangesFileEntry` appears in. Gate round 1 item 5 (issue #464): a single parsed entry can
-/// now produce up to two `(group, mark)` pairs (see `ParsedGroups`), so this is no longer a
-/// strict 1:1 "bucket per entry" -- it is still a strict 1:1 "bucket per produced ROW".
+/// One of the four fixed buckets a non-ignored status row sorts into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum GitChangesGroup {
     Conflicts,
@@ -24,19 +14,13 @@ pub(super) enum GitChangesGroup {
     Untracked,
 }
 
-/// One already-classified status entry, before its own additions/deletions are scored --
-/// `build_groups` fills those in with a second pass (the two numstat reads it needs run once
-/// each for every entry, not once per entry). `groups` is 1-or-2 `(group, mark)` pairs (gate
-/// round 1 item 5, issue #464): a partially-staged ordinary/rename entry (both XY columns
-/// non-`.`) produces two independent rows for the SAME `path` -- see `changes_status.rs`'s own
-/// header comment for the decision, and `group_marks_for_xy` for how the pairs are derived.
+/// A classified status entry; `groups` holds one or two rows for the same path.
 pub(super) struct ParsedEntry {
     pub(super) path: String,
     pub(super) groups: ParsedGroups,
 }
 
-/// Up to two `(GitChangesGroup, GitStatusMark)` pairs for one parsed status line -- a fixed-size
-/// inline array (never a `Vec`), since the count is always known (1 or 2) at construction.
+/// One or two `(group, mark)` pairs; a fixed-size array avoids a `Vec` allocation.
 #[derive(Clone, Copy)]
 pub(super) struct ParsedGroups {
     items: [(GitChangesGroup, GitStatusMark); 2],
@@ -66,12 +50,8 @@ impl ParsedGroups {
     }
 }
 
-/// The Staged-half mark for an ordinary/rename entry, driven ONLY by the X column (gate round 1
-/// item 5, issue #464): `D` -> Deleted, `A` -> Added, otherwise `Staged` -- the SAME rule for
-/// both record types, so a partially-staged rename's own Staged-half row reads `Staged`, not
-/// `Renamed` (X is `R` there, never `D`/`A`); `Renamed` survives only for a rename with nothing
-/// further pending in the worktree (Y == `.`), handled as its own special case in
-/// `parse_rename_entry` rather than here.
+/// Staged-half mark, driven by the X column only. A rename's X is `R`, so it reads `Staged`
+/// here; `Renamed` is handled in `parse_rename_entry`.
 fn staged_half_mark(x: u8) -> GitStatusMark {
     if x == b'D' {
         GitStatusMark::Deleted
@@ -82,9 +62,7 @@ fn staged_half_mark(x: u8) -> GitStatusMark {
     }
 }
 
-/// The Changes-half mark for an ordinary/rename entry, driven ONLY by the Y column: `D` ->
-/// Deleted, otherwise `Modified` -- Y is only ever `M`/`D`/`T` for an ordinary entry per git's
-/// own porcelain v2 format, never `A`/`R` (gate round 1 item 5, issue #464).
+/// Changes-half mark, driven by the Y column only.
 fn changes_half_mark(y: u8) -> GitStatusMark {
     if y == b'D' {
         GitStatusMark::Deleted
@@ -93,14 +71,8 @@ fn changes_half_mark(y: u8) -> GitStatusMark {
     }
 }
 
-/// FR-002's own grouping rule, amended by gate round 1 item 5 (issue #464, decision recorded in
-/// `specs/018-git-changes-panel/spec.md`'s own FR-002): a non-`.` Y column means there is still
-/// a pending UNSTAGED edit; a non-`.` X column means something is staged. A record with BOTH
-/// non-`.` (partially staged, like VS Code) now produces BOTH halves -- Staged (X-driven mark)
-/// AND Changes (Y-driven mark) -- as two separate rows for the same path, rather than picking
-/// one. Applies uniformly to ordinary and rename/copy entries alike (a rename is always carried
-/// by the index, per git's own porcelain v2 format -- a worktree-only move is reported as a
-/// plain delete+untracked-add pair, never a `2` record).
+/// A non-`.` X means staged; a non-`.` Y means an unstaged edit. Both non-`.` yields two rows
+/// (partially staged, like VS Code).
 fn group_marks_for_xy(xy: &[u8]) -> ParsedGroups {
     let (x, y) = (xy[0], xy[1]);
     let staged = (GitChangesGroup::Staged, staged_half_mark(x));
@@ -108,9 +80,7 @@ fn group_marks_for_xy(xy: &[u8]) -> ParsedGroups {
     match (x != b'.', y != b'.') {
         (true, true) => ParsedGroups::two(staged, changes),
         (true, false) => ParsedGroups::one(staged),
-        // `(false, false)` should not occur for a listed entry (both columns unchanged);
-        // Changes is the safer default -- it still shows the row rather than silently dropping
-        // it, same as the pre-item-5 fallback.
+        // Not expected for a listed entry; Changes keeps the row visible rather than dropping it.
         (false, true) | (false, false) => ParsedGroups::one(changes),
     }
 }
@@ -124,14 +94,13 @@ fn parse_ahead_behind(value: &str) -> Option<AheadBehind> {
     Some(AheadBehind { ahead, behind })
 }
 
-/// `1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>`: 7 space-separated fields before `path`, which
-/// is the remainder (never re-split -- a path itself may contain spaces).
+/// Parses a `1` record. The path is the remainder, never re-split, since it may contain spaces.
 fn parse_ordinary_entry(entry: &str) -> Option<ParsedEntry> {
     let rest = entry.strip_prefix("1 ")?;
     let mut parts = rest.splitn(8, ' ');
     let xy = parts.next()?;
     for _ in 0..6 {
-        parts.next()?; // sub, mH, mI, mW, hH, hI
+        parts.next()?;
     }
     let path = parts.next()?;
     if xy.len() != 2 || contains_git_segment(path) {
@@ -143,15 +112,13 @@ fn parse_ordinary_entry(entry: &str) -> Option<ParsedEntry> {
     })
 }
 
-/// `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>`, with `<origPath>` as its own
-/// SEPARATE NUL-terminated token right after (consumed by the caller's own `tokens.next()`,
-/// mirroring `status.rs::parse_status`'s identical handling of a v1 rename's extra field).
+/// Parses a `2` record. The original path is a separate NUL token, consumed by the caller.
 fn parse_rename_entry(entry: &str) -> Option<ParsedEntry> {
     let rest = entry.strip_prefix("2 ")?;
     let mut parts = rest.splitn(9, ' ');
     let xy = parts.next()?;
     for _ in 0..7 {
-        parts.next()?; // sub, mH, mI, mW, hH, hI, Xscore
+        parts.next()?;
     }
     let path = parts.next()?;
     if xy.len() != 2 || contains_git_segment(path) {
@@ -159,8 +126,7 @@ fn parse_rename_entry(entry: &str) -> Option<ParsedEntry> {
     }
     let xy_bytes = xy.as_bytes();
     let groups = if xy_bytes[1] == b'.' {
-        // Nothing further pending in the worktree: single Staged row, `Renamed` mark preserved
-        // exactly as before item 5 -- only the dual-membership (Y != '.') case below is new.
+        // Nothing pending in the worktree: a single Staged row with the `Renamed` mark.
         ParsedGroups::one((GitChangesGroup::Staged, GitStatusMark::Renamed))
     } else {
         group_marks_for_xy(xy_bytes)
@@ -171,16 +137,13 @@ fn parse_rename_entry(entry: &str) -> Option<ParsedEntry> {
     })
 }
 
-/// `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`: always Conflicts/Conflicted
-/// regardless of its own XY (FR-002: "a conflicted entry always sorted into Conflicts
-/// regardless of any other mark it might otherwise also carry") -- always exactly one row,
-/// unaffected by gate round 1 item 5's dual-membership change.
+/// Parses a `u` record. Always one Conflicts row, whatever its XY.
 fn parse_unmerged_entry(entry: &str) -> Option<ParsedEntry> {
     let rest = entry.strip_prefix("u ")?;
     let mut parts = rest.splitn(10, ' ');
     let xy = parts.next()?;
     for _ in 0..8 {
-        parts.next()?; // sub, m1, m2, m3, mW, h1, h2, h3
+        parts.next()?;
     }
     let path = parts.next()?;
     if xy.len() != 2 || contains_git_segment(path) {
@@ -192,13 +155,8 @@ fn parse_unmerged_entry(entry: &str) -> Option<ParsedEntry> {
     })
 }
 
-/// Parses `-z`-delimited `status --porcelain=v2 --branch` output: header lines into the branch
-/// name and ahead/behind pair, and `1`/`2`/`u`/`?` entry lines into `ParsedEntry`s. `!` (ignored)
-/// lines are skipped outright (FR-002 "every non-ignored status entry") -- none are expected
-/// since `--ignored` is never passed, but a line in that shape is still defensively dropped
-/// rather than misparsed. Every slice is `get`/`strip_prefix`-based (never indexed directly,
-/// matching `status.rs::parse_status`'s own discipline): a malformed or truncated entry is
-/// skipped, never a panic.
+/// Parses `-z` porcelain v2 output into the branch, ahead/behind, and entries. Malformed
+/// lines are skipped via `get`/`strip_prefix`, never a panic.
 pub(super) fn parse_porcelain_v2(
     stdout: &str,
 ) -> (Option<String>, Option<AheadBehind>, Vec<ParsedEntry>) {
@@ -231,7 +189,7 @@ pub(super) fn parse_porcelain_v2(
                 if let Some(parsed) = parse_rename_entry(entry) {
                     entries.push(parsed);
                 }
-                tokens.next(); // origPath: never a row of its own, discarded
+                tokens.next(); // origPath: discarded
             }
             Some("u") => {
                 if let Some(parsed) = parse_unmerged_entry(entry) {
@@ -251,7 +209,7 @@ pub(super) fn parse_porcelain_v2(
                     }
                 }
             }
-            _ => {} // "!" (ignored, not requested) or malformed -- skipped
+            _ => {} // Ignored (`!`) or malformed lines are skipped.
         }
     }
     (branch, ahead_behind, entries)

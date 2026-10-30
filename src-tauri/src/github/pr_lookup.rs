@@ -1,12 +1,5 @@
-// Port of `src/main/git/github.ts`: pull request lookup for the Session's own branch (spec 004
-// FR-006, contracts/ipc.md), read-only, `gh` CLI, no shell, argument arrays only (same discipline
-// as `git/git.rs`). Any failure -- `gh` not installed, not signed in, offline, rate limited, an
-// unrecognised remote -- resolves to `Unavailable`, never a propagated error (FR-006, SC-007); a
-// clean lookup that genuinely finds no open pull request is `None`, distinct from `Unavailable`.
-//
-// Deliberately independent of `github::gh`/`github::cli` (see those modules' own doc comments):
-// this file keeps its own small `gh`-invocation and owner/repo-parsing logic, exactly as the TS
-// source states it does relative to its spec-003 sibling.
+// Read-only `gh` lookup of the PR for a Session's branch; no shell. Any failure resolves to
+// `Unavailable`, distinct from a clean `None`. Independent of `github::gh`/`cli` by design.
 
 use std::path::Path;
 use std::time::Duration;
@@ -15,8 +8,7 @@ use serde::Deserialize;
 
 use crate::git::git::git_raw;
 
-/// Windows-only: `CREATE_NO_WINDOW` (same flag every other spawn in this crate applies) -- no
-/// console window flashes for a `gh` child process.
+/// Windows-only: `CREATE_NO_WINDOW` so no console flashes for the `gh` child.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const TIMEOUT_MS: u64 = 5_000;
@@ -27,10 +19,8 @@ pub enum PullRequestLookup {
     Unavailable,
 }
 
-/// `owner/repo`, inferred from the repository's `origin` remote URL. Handles both the HTTPS
-/// (`https://github.com/<owner>/<repo>.git`) and SSH (`git@github.com:<owner>/<repo>.git`) forms;
-/// `.git` suffix and any trailing slash are stripped. `None` when there is no `origin` remote, or
-/// it does not point at github.com (a self-hosted GitHub Enterprise remote is out of scope here).
+/// `owner/repo` from the `origin` remote (HTTPS or SSH, `.git` and trailing slash stripped).
+/// `None` without an `origin` or for non-github.com hosts.
 fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
     let trimmed = remote_url.trim();
 
@@ -56,8 +46,7 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
         if !host.eq_ignore_ascii_case("github.com") {
             return None;
         }
-        // `trim_end_matches` so a trailing slash (promised by this fn's own doc comment) does
-        // not leave a trailing empty segment that would otherwise make `segments.len() != 2`.
+        // `trim_end_matches` so a trailing slash cannot leave an empty segment.
         let path = host_and_path.1.trim_end_matches('/');
         let segments: Vec<&str> = path.split('/').collect();
         if segments.len() != 2 || segments[0].is_empty() || segments[1].is_empty() {
@@ -104,8 +93,7 @@ struct GhPrListEntry {
     state: String,
 }
 
-/// The Session's open pull request for `branch` (spec 004 FR-006). Never fails: every error path
-/// below resolves to `PullRequestLookup::Unavailable` instead of propagating.
+/// The Session's open pull request for `branch`; every error resolves to `Unavailable`.
 pub async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequestLookup {
     let remote_result = git_raw(repo_path, &["remote", "get-url", "origin"], None).await;
     if remote_result.code != 0 {
@@ -115,11 +103,7 @@ pub async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequ
         return PullRequestLookup::Unavailable;
     };
 
-    // Shares `github::gh`'s own cached `resolve_gh` (LOW finding, code review round 2,
-    // 2026-10-14) -- this file's own "deliberately independent" header comment is about the
-    // owner/repo-parsing and gh-invocation LOGIC (matching the TS source's own stated
-    // independence from its spec-003 sibling), not about where the `gh` binary itself lives on
-    // disk, which is the same answer for every caller in this crate.
+    // Shares `github::gh`'s cached `resolve_gh`: independence is about logic, not the binary path.
     let Ok(gh_path) = super::gh::resolve_gh() else {
         return PullRequestLookup::Unavailable;
     };

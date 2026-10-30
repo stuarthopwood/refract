@@ -1,6 +1,4 @@
-// `issues.*` (issue #503, spec 049): "Report an issue". Thin handlers over
-// `github/gh_issues.rs`; every input is validated there before it reaches `gh`, and the
-// repository is always resolved from the registry, never from a renderer-supplied path.
+// Thin handlers over `github/gh_issues.rs`, which validates input; the repo comes from the registry.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -15,8 +13,7 @@ use crate::github::gh_issues;
 use super::pull_requests::{map_gh_error, repo_path_for};
 use super::{arg_str, invalid_argument, now_iso8601, Dispatcher, HandlerFuture};
 
-/// Issues are listed for at most this many Projects at once, and at most this many `gh` calls run
-/// at the same time (each repository is one call).
+/// Caps how many Projects are listed and how many `gh` calls run at once.
 const MAX_PROJECTS: usize = 200;
 const LIST_CONCURRENCY: usize = 4;
 
@@ -63,9 +60,7 @@ struct Resolved {
     path: std::path::PathBuf,
 }
 
-/// `issues.list(tab, state, repositoryIds, label, query)`: one `gh issue list` per distinct
-/// owner/repo (two Projects on the same remote list once), newest updated first. A Project that
-/// fails (no GitHub remote, rate limit) is reported in `skipped`, never as a blank.
+/// One `gh issue list` per distinct owner/repo, newest first; failures go in `skipped`.
 fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         const USAGE: &str = "issues.list expects (tab, state, repositoryIds, label, query)";
@@ -94,7 +89,7 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
         let mut skipped: Vec<SkippedProject> = Vec::new();
         let mut resolved: Vec<Resolved> = Vec::new();
         for id in ids {
-            // A Project removed since the renderer last listed is skipped, not a failed request.
+            // A Project removed since the last listing is skipped, not failed.
             let Ok((path, name)) = repo_path_for(&state, &id).await else {
                 skipped.push(SkippedProject {
                     repository_name: id.clone(),
@@ -118,8 +113,7 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
             let path = project.path.clone();
             let query = Arc::clone(&query);
             let semaphore = Arc::clone(&semaphore);
-            // The remote is resolved inside the task so the slug dedupe below stays cheap; a
-            // duplicate slug is dropped when its result comes back.
+            // Duplicate slugs are dropped when their result comes back.
             tasks.spawn(async move {
                 let _permit = semaphore.acquire_owned().await.ok();
                 let outcome: ProjectOutcome = async {

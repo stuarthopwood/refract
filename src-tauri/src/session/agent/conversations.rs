@@ -1,5 +1,4 @@
-// `conversations.startNew`/`.open` (agent-backed arms). See `mod.rs`'s own header for this
-// module's place in the `agent/` split and the lane extension contract.
+// Agent-backed `conversations.startNew` and `conversations.open` arms.
 
 use serde_json::{json, Value};
 
@@ -11,9 +10,8 @@ use super::launch_support::{fetch_all_messages, verify_reattach};
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
-    /// `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same
-    /// worktree, a brand-new OMP session file. Only reachable while `idle` with a live process
-    /// (a `stopped` Session instead goes through `start_with_conversation`).
+    /// Starts a fresh OMP session file in the same process and worktree.
+    /// Only reachable while `idle` with a live process.
     pub async fn start_new_conversation(&self) -> Result<(), AgentError> {
         let proc = {
             let mut state = self.state.lock().await;
@@ -26,18 +24,11 @@ impl SessionAgent {
                     ),
                 ));
             }
-            // Gate-fix (#856, round 2 MEDIUM): bumped here, BEFORE the `new_session` RPC/
-            // registry clear below (not after, inside the transcript-reset block that used to
-            // be this bump's only home) -- a settle-time reply still in flight from a turn that
-            // just ended must already be stale (`sync_from_state`'s own `>= 2` rule) well before
-            // this reset's own patch/registry write can land, not race it.
+            // Bump before the reset so a late settle-time reply is already stale (#856).
             state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
-        // Lane R6 (issue #789), defense in depth: normally a no-op, since OMP's own
-        // `RpcBtwController.close()` already cancels any running side question before
-        // `new_session` itself runs. Best-effort: a failure here must never block starting the
-        // new Conversation.
+        // Best-effort: a failed side-chat cancel must not block the new Conversation (#789).
         let _ = crate::session::side_chat::cancel(self).await;
         let res = proc
             .request(json!({ "type": "new_session" }), DEFAULT_REQUEST_TIMEOUT_MS)
@@ -70,13 +61,10 @@ impl SessionAgent {
             state.transcript = TranscriptState::new();
         }
         self.emit_patch_reset().await;
-        // Lane R5 (issue #577, #712): clears the PREVIOUS Conversation's readout/subagent state
-        // before (possibly) refreshing it from the brand-new one's `get_state` below -- never
-        // left showing a stale reading if that request itself fails.
+        // Clear the old readout first so a failed `get_state` never shows stale data (#577).
         crate::session::readout::on_conversation_reset(self).await;
         crate::session::subagents::on_conversation_reset(self).await;
-        // Lane R6 (issue #789): a brand-new Conversation always means a brand-new side-chat
-        // history store too -- unconditional, matching the readout/subagents resets above.
+        // A new Conversation always gets a fresh side-chat history (#789).
         crate::session::side_chat::on_conversation_reset(self).await;
         crate::session::token_guard::on_conversation_reset(self, None).await;
         if let Ok(res) = proc
@@ -92,12 +80,8 @@ impl SessionAgent {
         Ok(())
     }
 
-    /// `conversations.open` (contracts/omp-usage.md "Open an earlier Conversation"): the same
-    /// reattach verification `launch()` uses, reloading history AS-IS (never merged with the
-    /// current live transcript -- this switches to a DIFFERENT Conversation). Simplified
-    /// failure recovery (see this file's own header): a failed post-switch verification stops
-    /// the process and marks the Session `stopped`/`start-failed`, rather than TS's own
-    /// try-the-previous-Conversation-first recovery.
+    /// Switches to an earlier Conversation and reloads its history as-is.
+    /// A failed post-switch verification stops the process and marks the Session `start-failed`.
     pub async fn open_conversation(&self, file: String) -> Result<(), AgentError> {
         let proc = {
             let mut state = self.state.lock().await;
@@ -110,18 +94,13 @@ impl SessionAgent {
                     ),
                 ));
             }
-            // Gate-fix (#856, round 2 MEDIUM): see `start_new_conversation`'s own identical
-            // comment -- bumped here, before `switch_session` below, not after.
+            // Bump before the switch so a late settle-time reply is already stale (#856).
             state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
-        // Lane R6 (issue #789): captured BEFORE the switch below, so the side-chat conversation-
-        // changed notification (below) can tell a genuine Conversation change from a reopen of
-        // the SAME Conversation (whose side-chat topics are still valid, nothing to drop).
+        // Captured before the switch, so a reopen of the same Conversation keeps its side-chat topics (#789).
         let previous_conversation = self.current_conversation_path().await;
-        // Lane R6 (issue #789), defense in depth: normally a no-op, since OMP's own
-        // `RpcBtwController.close()` already cancels any running side question before
-        // `switch_session` itself runs.
+        // Best-effort side-chat cancel before the switch (#789).
         let _ = crate::session::side_chat::cancel(self).await;
         let switch_res = proc
             .request(
@@ -178,12 +157,7 @@ impl SessionAgent {
         }
 
         let (messages, complete) = fetch_all_messages(&proc).await;
-        // Issue #786 follow-up: `file` is the historical Conversation just switched to -- if
-        // ITS tail shows it was abandoned mid tool-call, the row `settle_interrupted_tool_rows`
-        // below settles to `interrupted` rather than leaving it `running` forever once rendered
-        // as history. Port of `SessionAgent.ts`'s `openConversation` calling
-        // `detectUnexpectedTermination(file)` at this exact point, read only when `complete`
-        // (matching TS's own `if (complete) { ... }` gating).
+        // Settle rows the old tail left `running`, so history never shows them forever (#786).
         let terminated_unexpectedly = if complete {
             termination::detect_unexpected_termination_for_transcript(Some(&file)).await
         } else {
@@ -200,15 +174,10 @@ impl SessionAgent {
                 TranscriptState::new()
             };
         }
-        // Lane R5 (issue #577, #712): this is a DIFFERENT Conversation's history, so the
-        // previous one's readout/subagent state never carries over (see `start_new_conversation`
-        // above for the identical reasoning).
+        // A different Conversation, so the old readout and subagent state must not carry over (#577).
         crate::session::readout::on_conversation_reset(self).await;
         crate::session::subagents::on_conversation_reset(self).await;
-        // Lane R6 (issue #789): OMP's own `btw` topics are scoped to the OMP session FILE just
-        // switched away from, so any side-chat topic/history the renderer still holds belongs to
-        // `previous_conversation`, not `file` -- skipped when `file` IS `previous_conversation`
-        // (reopening the same Conversation: its side-chat topics are still valid).
+        // Side-chat topics belong to the file switched away from, so drop them unless reopening it (#789).
         if previous_conversation.as_deref() != Some(file.as_str()) {
             crate::session::side_chat::on_conversation_reset(self).await;
         }

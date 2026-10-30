@@ -1,9 +1,5 @@
-// Port of `src/main/store/profileCache.ts`: holds `profileCache.json`, the revalidated GitHub
-// display cache (data-model.md "profileCache.json"). Never holds a GitHub access token
-// (FR-012) -- only the two display fields derived from a one-time profile/avatar fetch.
-//
-// `ProfileCache`/`ProfileCacheEntry` are the canonical shapes from `shared/model.ts` lines
-// 574-583, ported field for field (camelCase on the wire via serde).
+// `profileCache.json`: the revalidated GitHub display cache. Never holds an access token, only
+// the display fields from a one-time profile/avatar fetch.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -52,8 +48,7 @@ impl ProfileCacheStore {
         self.data.accounts.get(&format!("{host}/{login}"))
     }
 
-    /// Writes a fresh entry for `host/login` (data-model.md "an entry is written whenever a fetch
-    /// for that `host/login` succeeds"); a failed or skipped fetch must simply not call this.
+    /// Writes a fresh entry for `host/login`; call only after a successful fetch.
     pub async fn set(
         &mut self,
         host: &str,
@@ -64,9 +59,8 @@ impl ProfileCacheStore {
         write_json_file(&self.file, &self.data).await
     }
 
-    /// Deletes `host/login`'s cached entry, if any (GateSec008 LOW: a signed-out account must not
-    /// leave its display name/avatar behind in profileCache.json). No-op (and no write) when
-    /// there was nothing cached for that pair.
+    /// Deletes `host/login`'s entry so a signed-out account leaves no name/avatar behind; no write
+    /// when nothing was cached.
     pub async fn delete(&mut self, host: &str, login: &str) -> std::io::Result<()> {
         let key = format!("{host}/{login}");
         if self.data.accounts.remove(&key).is_none() {
