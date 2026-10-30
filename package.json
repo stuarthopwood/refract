@@ -1,6 +1,6 @@
 {
   "name": "refract",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "description": "Desktop workspace that drives omp --mode rpc-ui, one process per session worktree.",
@@ -14,6 +14,7 @@
     "check:ui-text": "node scripts/check-ui-text.mjs",
     "check:drag-regions": "node scripts/check-drag-regions.mjs",
     "check:theme-contrast": "node scripts/check-theme-contrast.mjs",
+    "check:display-profiles": "node scripts/check-display-profiles.mjs",
     "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs",
     "verify:tauri": "node scripts/verify-tauri.mjs",
     "verify:1238": "node scripts/verify-1238-ai-credits.mjs",

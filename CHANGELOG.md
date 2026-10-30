@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.15.0 (2026-10-30)
+
+### Features
+
+- feat(chat): pause mode (#477) (https://github.com/stuarthopwood/refract/pull/1354)
+- feat(pull-requests): cross-Project Pull requests view on the shared list shell (https://github.com/stuarthopwood/refract/pull/1357)
+- feat(ui): subtle enter-only switching animations app-wide (https://github.com/stuarthopwood/refract/pull/1362)
+- feat(session-list): Home view with needs-you, recent, PRs, issues and tidy-up (https://github.com/stuarthopwood/refract/pull/1364)
+- feat(usage): usage.db ingest, rollups and usage IPC (slice 1 of 2) (https://github.com/stuarthopwood/refract/pull/1366)
+- feat(usage): usage view (slice 2 of 2) (https://github.com/stuarthopwood/refract/pull/1367)
+- feat(holidays): Bonfire Night, Christmas, New Year, Star Wars Day and Pi Day (#1048) (https://github.com/stuarthopwood/refract/pull/1375)
+- feat(composer): right-click context menu with Cut, Copy, Paste, Paste as plain text, Select all (https://github.com/stuarthopwood/refract/pull/1379)
+- feat(themes): display-profile luminance audit script (#553) (https://github.com/stuarthopwood/refract/pull/1382)
+
+### Fixes
+
+- fix(ui): move Approval pill and Model picker onto the shared radio mark (https://github.com/stuarthopwood/refract/pull/1359)
+- fix(sessions): Manage sessions reuses the shared Session row (#934) (https://github.com/stuarthopwood/refract/pull/1372)
+
+### Other
+
+- chore(settings): live-verify the brand watermark (#406) (https://github.com/stuarthopwood/refract/pull/1365)
+- chore(gates): add the why-only comment rule and check:comment-density gate (#1322) (https://github.com/stuarthopwood/refract/pull/1371)
+- chore(rust): cut src-tauri comments to why-only (#1322) (https://github.com/stuarthopwood/refract/pull/1376)
+- chore(scripts): cut scripts comments to why-only (#1322) (https://github.com/stuarthopwood/refract/pull/1378)
+
 ## v0.14.0 (2026-10-30)
 
 ### Features

@@ -122,6 +122,14 @@ Edges split into two classes, and a theme can only change token values, never wh
 
 `scripts/check-theme-contrast.mjs` resolves `var()` indirection and treats `--divider` pairs as informational only (the high-contrast-specific stricter floor stays deferred to #552); `--border`/`--border-strong` are checked as real control-edge pairs in every theme. #606 wires `--divider` (via the `border-divider`/`bg-divider` utilities) into the main-split resize handle, the Pull requests list/detail divider, the status bar's top border, and the composer's top border. It also removed the bottom border outright from `ChatHeader.tsx`, `SessionList.tsx`'s own header, and `SubagentPanel.tsx`'s header -- **accepted by Stuart, 2026-10-09, as the correct rule, not a gap**: a panel header is never separated from its own content by a divider line, only by a different surface shade and/or whitespace (see "Panel header" in [components.md](components.md#panel-header)). `PullRequestsView.tsx`'s own header still carries its original full-strength `border-border` today, which does not follow this rule -- an inconsistency left for the #579 sweep to fix, not a second accepted pattern.
 
+## Display-profile audit (#553, spec 063)
+
+`pnpm check:display-profiles` applies a display transform to each theme's key pairs (card, popover and sidebar against the canvas, dividers, control and input edges, muted text) and lists the pairs that fall under their threshold. It is a developer tool: nothing ships to users, it is not in Settings, and it is not in `ci:local` yet because existing themes would fail. Pass `--strict` to exit 1 on any offender.
+
+- **Profiles** (`scripts/display-profiles.mjs`): TN washout, VA black crush and sunlight glare. Each is a gamma (against 2.2), black-level lift, crush and gain curve applied to relative luminance after alpha tokens are composited over their surface.
+- **Limits:** it is not a simulation of a specific panel. It ignores viewing angle, colour shift, local dimming and real panel response, so use it to find pairs worth checking by eye.
+- **Thresholds:** the ladder rule above. Cards and popovers at least 5 L* above the canvas, the sidebar at least 2.3 L*, dividers at least 1.5:1, control and input edges at least 3:1, muted text at least 4.5:1. "Also baseline" marks a pair that already misses its threshold with no profile.
+
 ## Wave 1 token API (spec 032)
 
 The app-wide tokens later bundles build on:
