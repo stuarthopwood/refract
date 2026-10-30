@@ -10,3 +10,4 @@
 - T008 Five-reviewer gate, then `pnpm ci:local` on the final head. [SC-3]
 - T009 Slice (b) done: `src-tauri/src` cut to why-only comments, comment-only diff proved by a strip-comments equivalence check, `src-tauri` baseline entries removed. [Refs #1322]
 - T010 Slice (c) done: `scripts/` cut to why-only comments, comment-only diff proved by a strip-comments equivalence check, `scripts/` baseline entries removed. [Refs #1322]
+- T011 Slice (a) done: `src/renderer` and `src/shared` cut to why-only comments, comment-only diff proved by a strip-comments equivalence check, their baseline entries removed. Closes #1322.
