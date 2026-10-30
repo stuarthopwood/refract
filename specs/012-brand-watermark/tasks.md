@@ -114,6 +114,10 @@ chat area.
   its ~8-line maximum; visible in the "Select a Session" empty state; scales on resize with no
   layout shift; exactly one instance, in the right pane's reading area, with a split chat pane
   open; unaffected by the Subagent panel or session list (depends on T010). (#418)
+  Partial evidence 2026-10-30 (`scripts/verify-406-watermark.mjs`, debug build of main at v0.14.0,
+  fake omp and gh): the empty state shows one mark; a single pane shows one mark whose bottom
+  (569px) sits above the composer top (647px); a split shows one mark, inside `#split-pane-1`
+  only. Not yet run live: composer growth to 8 lines, window resize, Subagent panel toggle.
 
 **Checkpoint**: quickstart.md Story 1 passes in full.
 
@@ -138,6 +142,10 @@ without leaving Settings.
   with no restart; the preview updates immediately; the real mark in the chat area updates
   immediately; the choice survives a full restart; a missing or non-boolean stored value falls
   back to on (depends on T012, T004). (#420)
+  Partial evidence 2026-10-30 (`verify-406-watermark.mjs`): switch defaults on; the preview and the
+  live mark update immediately when toggled off and on; `settings.json` holds
+  `watermarkEnabled: false` after a restart and the mark and switch stay off. Not yet run live:
+  hand-edited missing or non-boolean `watermarkEnabled` (covered only by Rust unit tests).
 
 **Checkpoint**: quickstart.md Story 2 passes in full.
 
@@ -166,6 +174,11 @@ below WCAG 2.2 AA.
   not shown regardless of the switch; turn off "Show transparency in Windows" and confirm the same;
   run the extended `check-theme-contrast.mjs` and confirm every built-in theme preset still passes
   (depends on T014). (#422)
+  Partial evidence 2026-10-30 (`verify-406-watermark.mjs`): `pointer-events: none`,
+  `aria-hidden="true"`, no `tabindex`, no focusable descendants, `elementFromPoint` at the mark
+  centre returns real content, hidden under CDP-emulated `forced-colors` and
+  `prefers-reduced-transparency` (both media features recognised by WebView2). Not yet run:
+  drag-select over the mark, Narrator, real Windows High Contrast and transparency toggles.
 
 **Checkpoint**: quickstart.md Story 3 passes in full, including the extended contrast script's
 numbers.
@@ -184,6 +197,9 @@ session-list/Subagent-panel/split state, and consistently absent from every full
   split chat pane repeatedly; narrow the window to the 360px chat-area floor; confirm the mark is
   never shown on the Settings screen, the Readiness screen, or (once spec 008 builds it) the
   Manage sessions screen (depends on T010, T012). (#423)
+  Partial evidence 2026-10-30 (`verify-406-watermark.mjs`, one mark in the right pane only, none
+  in the left; none on Readiness or Settings). Not yet run live: divider drags, the 360px minimum
+  pane, and the Manage sessions screen.
 
 **Checkpoint**: quickstart.md Story 4 passes in full.
 
@@ -198,6 +214,9 @@ session-list/Subagent-panel/split state, and consistently absent from every full
   first build" naming the switch (depends on T011, T013). (#424)
 - [ ] T018 Run every check in [quickstart.md](quickstart.md), all four stories, on one clean build;
   confirm `pnpm typecheck` and `pnpm build` both pass (depends on T011, T013, T015, T016, T017). (#425)
+  Partial evidence 2026-10-30: `pnpm typecheck` passes and the debug build succeeds on v0.14.0;
+  `scripts/verify-406-watermark.mjs` passes 22 of 22 checks (see T011). Stays open until the
+  not-yet-run checks listed under T011, T015 and T016 are done.
 
 **Checkpoint**: every quickstart.md check passes on a single clean build; typecheck and build are
 green.
