@@ -10,6 +10,7 @@
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
@@ -173,11 +174,32 @@ async function main() {
 
     await cdp.screenshot(path.join(SHOTS_DIR, '1-usage-slice1.png'));
 
+    // The left nav only exists once a repository is added: pass readiness, add a scratch repo.
+    const repoDir = mkdtempSync(path.join(tmpdir(), 'refract-1331-repo-'));
+    extraDirs.push(repoDir);
+    const git = (...args) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: repoDir, encoding: 'utf8' });
+    git('init', '-q', '-b', 'main');
+    git('commit', '--allow-empty', '-q', '-m', 'init');
+    const addScratchRepo = async () => {
+      await cdp.waitFor(
+        `(() => { const b = document.querySelector('[data-readiness-primary]'); return !!b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
+        { timeoutMs: 60_000, label: 'readiness green' }
+      );
+      await cdp.click(`document.querySelector('[data-readiness-primary]')`);
+      await cdp.clickByText('Local folder…', { tag: '[role="menuitem"]' });
+      await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog' });
+      await cdp.click(`document.querySelector('[role="dialog"] input')`);
+      await cdp.send('Input.insertText', { text: repoDir });
+      await cdp.clickByText('Add project', { inDialog: true });
+      await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'repository added' });
+    };
+    await addScratchRepo();
+
     // Slice 2, step 5: open Usage from the left nav and check the populated state.
     const text = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.innerText ?? '')`;
     await cdp.clickByText('Usage');
     await cdp.waitFor(`!!document.querySelector('section[aria-label="Usage"] h1')`, { label: 'Usage view with h1 landmark' });
-    await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes('Spend')`, { label: 'headline cards render' });
+    await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes('Tool error rate')`, { label: 'headline cards render' });
     const pageText = await cdp.evaluate(text('section[aria-label="Usage"]'));
     for (const label of ['Spend', 'AI credits', 'Model calls', 'Cache hit rate', 'Tool error rate', 'Frustration index']) {
       check(pageText.includes(label), `Usage view shows "${label}"`);
@@ -218,7 +240,7 @@ async function main() {
     await cdp.evaluate(`location.reload()`).catch(() => {});
     await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'reloaded again' });
     await cdp.clickByText('Usage');
-    await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes('Spend')`, { label: 'cards render with jokes off' });
+    await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes('Tool error rate')`, { label: 'cards render with jokes off' });
     const clean = await cdp.evaluate(text('section[aria-label="Usage"]'));
     check(!clean.includes('Frustration index'), 'jokes off hides the frustration card');
     check(!clean.includes('Counting your sins'), 'jokes off uses the plain progress copy');
@@ -241,6 +263,7 @@ async function main() {
     child = launched2.child;
     cdp = await CdpSession.connect(await waitForCdpTarget(port2, { timeoutMs: 60_000 }));
     await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'second launch ready' });
+    await addScratchRepo();
     await cdp.clickByText('Usage');
     await cdp.waitFor(`${text('section[aria-label="Usage"]')}.includes(${JSON.stringify(emptySessions)})`, { label: 'empty state names the sessions folder' });
     check(true, 'the empty state names the sessions folder');
