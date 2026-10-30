@@ -91,9 +91,9 @@ export function notifyAlarm(label: string): void {
   toast.info(text, { id, duration: Infinity, closeButton: true, onDismiss: forget, onAutoClose: forget })
 }
 
-/** A deleted Alarm can be restored from its toast; the longer lifetime gives keyboard users time to reach Undo. */
+/** A deleted Alarm can be restored from its toast; it stays until dismissed so keyboard users can reach Undo. */
 export function notifyAlarmDeleted(onUndo: () => void): void {
-  toast('Alarm deleted', { duration: 10_000, closeButton: true, action: { label: 'Undo', onClick: onUndo } })
+  toast('Alarm deleted', { duration: Infinity, closeButton: true, action: { label: 'Undo', onClick: onUndo } })
 }
 
 export interface ProgressToast {

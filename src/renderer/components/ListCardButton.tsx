@@ -23,7 +23,7 @@ export function ListCardButton({ ariaLabel, onClick, children, actions, highligh
       data-highlighted={highlighted ? '' : undefined}
       className={cn(
         'flex w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-card text-sm text-card-foreground transition-colors hover:bg-muted/50',
-        highlighted && 'border-active-indicator bg-muted'
+        highlighted && 'border-active-indicator bg-muted hover:bg-muted'
       )}
     >
       <button
