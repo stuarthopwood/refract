@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, groupTriggerFinder } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -60,11 +61,14 @@ async function enableClock(cdp) {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
   await sleep(600);
+  await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Models')`);
+  await sleep(800);
   const roleLabel = await cdp.evaluate(`(() => {
-    const el = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent.trim() === 'Subagent');
+    const el = Array.from(document.querySelectorAll('body *')).find((e) => Array.from(e.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim() === 'Subagent'));
     if (el) el.scrollIntoView({ block: 'center' });
     return !!el;
   })()`);
+  await shot(cdp, '01-settings-subagent-role.png');
   assert(roleLabel, '#1432: Settings model roles list a "Subagent" row');
   assert(
     await cdp.evaluate(`!Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && e.textContent.trim() === 'Task')`),
@@ -72,10 +76,12 @@ async function enableClock(cdp) {
   );
   await sleep(300);
   await shot(cdp, '01-settings-subagent-role.png');
+  await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Status line')`);
+  await sleep(600);
   await cdp.evaluate(`(() => {
-    const label = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent.trim() === 'Current time');
-    label.scrollIntoView({ block: 'center' });
-    label.closest('div[class*="flex"]').parentElement.querySelector('[role="switch"], button[role="switch"]')?.click();
+    const sw = Array.from(document.querySelectorAll('[role="switch"]')).find((s) => document.getElementById(s.getAttribute('aria-describedby'))?.textContent.includes('current time of day'));
+    sw.scrollIntoView({ block: 'center' });
+    sw.click();
   })()`);
   await sleep(400);
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
@@ -87,31 +93,15 @@ async function runChecks(cdp, { repoDir }) {
     `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
     { timeoutMs: 60_000, label: 'Readiness green (fake omp)' }
   );
-  await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
-  await cdp.click(`document.querySelector('[role="dialog"] input')`);
-  await cdp.send('Input.insertText', { text: repoDir });
-  await cdp.clickByText('Add repository', { inDialog: true });
-  await cdp.waitFor(
-    `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
-    { timeoutMs: 30_000, label: 'Scratch repository added' }
-  );
-  await cdp.clickByLabel('New session from a branch in ', { prefix: true });
-  await cdp.waitFor(
-    `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
-    { timeoutMs: 15_000, label: 'New session dialog open' }
-  );
-  await cdp.clickByText('Create session', { inDialog: true });
-  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
-  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
-    timeoutMs: 60_000,
-    label: 'Session composer enabled'
-  });
+  await addRepository(cdp, repoDir);
+  const repoName = path.basename(repoDir);
+  await cdp.waitFor(groupTriggerFinder(repoName) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
+  await createSessionViaQuickCreate(cdp, repoName);
 
   // #1430: one scripted turn yields an Advisor row.
   await cdp.typeIntoByLabel('Message', 'trigger the scripted advisory');
   await cdp.clickByLabel('Send message');
-  const finder = `Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && e.textContent.trim() === 'Advisor')`;
+  const finder = `Array.from(document.querySelectorAll('[data-slot="source-tag"]')).find((e) => e.textContent.trim() === 'Advisor')`;
   await cdp.waitFor(`!!(${finder})`, { timeoutMs: 30_000, label: 'Advisor row rendered' });
   await sleep(500);
   const sizes = await cdp.evaluate(`(() => {
@@ -170,7 +160,13 @@ async function runChecks(cdp, { repoDir }) {
   assert(true, '#1426: a due alarm fires and stays listed as "Fired"');
 
   // Delete the fired one, then the other.
+  // The fired-alarm toast overlaps the popover; dismiss it so clicks reach the rows.
+  await cdp.click(`document.querySelector('[data-sonner-toast] [data-close-button]')`);
+  await sleep(600);
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"][aria-label*="Fires soon"]')`);
+  await sleep(500);
+  log(`after delete: ${await cdp.evaluate(`JSON.stringify({ dialog: !!document.querySelector('[role="dialog"]'), active: document.activeElement?.tagName + ':' + (document.activeElement?.getAttribute('aria-label') ?? ''), alarms: document.querySelectorAll('button[aria-label^="Edit alarm"]').length })`)}`);
+  await shot(cdp, '08b-after-delete.png');
   await cdp.waitFor(`${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]').length === 1`, { timeoutMs: 10_000, label: 'fired alarm deleted' });
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"]')`);
   await cdp.waitFor(`${DIALOG}.textContent.includes('No alarms set')`, { timeoutMs: 10_000, label: 'all alarms deleted' });

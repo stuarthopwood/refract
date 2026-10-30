@@ -96,7 +96,7 @@ function AlarmRow({ alarm, now, onEdit }: { alarm: Alarm; now: number; onEdit: (
       onClick={onEdit}
       className={alarm.active ? undefined : 'opacity-70'}
       actions={
-        <Button type="button" size="sm" variant="ghost-destructive" aria-label={`Delete alarm ${name}`} onClick={() => void deleteAlarm(alarm.id)}>
+        <Button type="button" size="sm" variant="ghost-destructive" aria-label={`Delete alarm ${name}`}         onClick={() => void deleteAlarm(alarm.id)}>
           Delete
         </Button>
       }
@@ -144,8 +144,13 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
           )}
         </ReadoutItem>
       </PopoverAnchor>
-      <PopoverContent side="top" align="end" collisionPadding={8} className="w-80 p-4" aria-label="Alarms">
-        <ScreenSection
+      <PopoverContent side="top" align="end" collisionPadding={8}       className="w-80 p-4"
+        aria-label="Alarms"
+        onInteractOutside={(e) => {
+          // A fired-alarm toast takes focus; it must not close the popover that is listing that alarm.
+          if (e.target instanceof Element && e.target.closest('[data-sonner-toaster]')) e.preventDefault()
+        }}
+      >        <ScreenSection
           title="Alarms"
           count={alarms.length}
           empty={alarms.length === 0 && !form ? 'No alarms set' : null}
