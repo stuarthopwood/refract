@@ -8,8 +8,8 @@
 - [x] T6 #1409 Advisor row warning, Usage caption
 - [x] T7 #1409 check:advisor-roster and ci:local wiring
 - [ ] T8 docs/PLAN.md rows
-- [ ] T9 ci:local, live check with screenshots
-- [ ] T10 reviewer gate
+- [x] T9 ci:local, live check with screenshots
+- [x] T10 reviewer gate (follow-up #1452) reviewer gate
 
 ## Analysis
 
