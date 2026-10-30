@@ -247,9 +247,16 @@ pub fn run() {
                 .expect("app_handle mutex poisoned") = Some(app.handle().clone());
 
             // Set before any renderer script runs, so the synchronous theme bootstrap can read it.
+            let (bootstrap_custom, reset_notice) =
+                tauri::async_runtime::block_on(ipc::themes::bootstrap(&managed.app_state));
             let init_script = format!(
                 "window.__REFRACT_THEME_BOOTSTRAP__ = {};",
-                serde_json::json!({ "theme": bootstrap_theme, "typography": bootstrap_typography })
+                serde_json::json!({
+                    "theme": bootstrap_theme,
+                    "typography": bootstrap_typography,
+                    "customTheme": bootstrap_custom,
+                    "customThemeNotice": reset_notice,
+                })
             );
 
             let window =

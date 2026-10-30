@@ -63,7 +63,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
         <MessageAvatar aria-hidden>
           <UserAvatar name={name} src={userAvatarUrl} />
         </MessageAvatar>
-        <MessageContent className="w-fit max-w-[85%] rounded-lg bg-row-hover-bg px-4 py-2">
+        <MessageContent className="w-fit max-w-[85%] rounded-lg bg-chat-user-bubble-bg px-4 py-2 outline-1 -outline-offset-1 outline-chat-user-bubble-border">
           <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
           {/* Chips instead of the raw inlined file text, which could flood the transcript (#926). */}
           {item.fileAttachments && item.fileAttachments.length > 0 && (
@@ -74,7 +74,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
             </div>
           )}
           {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-2" />}
-          {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} className="text-chat-foreground" />}
+          {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} className="text-chat-user-bubble-fg" />}
           {/* An image-only message whose images are missing still says so (#744). */}
           {item.text.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
         </MessageContent>

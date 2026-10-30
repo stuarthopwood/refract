@@ -8,4 +8,5 @@ pub mod import;
 pub mod profile_cache;
 pub mod registry;
 pub mod settings;
+pub mod theme_files;
 pub mod theme_id;

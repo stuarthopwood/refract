@@ -56,6 +56,7 @@ pub mod side_chat;
 pub mod spellcheck;
 pub mod subagents;
 pub mod theme;
+pub mod themes;
 pub mod token_guard;
 pub mod updates;
 pub mod usage;
@@ -183,6 +184,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     file_attachments::register(dispatcher);
     side_chat::register(dispatcher);
     theme::register(dispatcher);
+    themes::register(dispatcher);
     app::register(dispatcher);
     token_guard::register(dispatcher);
     advisor_roster::register(dispatcher);
