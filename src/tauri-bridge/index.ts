@@ -199,13 +199,13 @@ const refract: RefractApi = {
   },
 
   advisorRoster: {
-  detect: (sessionId) => request<AdvisorRoster | null>(IPC_REQUESTS.ADVISOR_ROSTER_DETECT, sessionId),
-  open: (sessionId) => request<void>(IPC_REQUESTS.ADVISOR_ROSTER_OPEN, sessionId)
+    detect: (sessionId) => request<AdvisorRoster | null>(IPC_REQUESTS.ADVISOR_ROSTER_DETECT, sessionId),
+    open: (sessionId) => request<void>(IPC_REQUESTS.ADVISOR_ROSTER_OPEN, sessionId)
   },
 
   spellcheck: {
-  suggest: (word, language) => request<string[]>(IPC_REQUESTS.SPELLCHECK_SUGGEST, word, language),
-  add: (word, language) => request<void>(IPC_REQUESTS.SPELLCHECK_ADD, word, language)
+    suggest: (word, language) => request<string[]>(IPC_REQUESTS.SPELLCHECK_SUGGEST, word, language),
+    add: (word, language) => request<void>(IPC_REQUESTS.SPELLCHECK_ADD, word, language)
   },
 
   conversations: {
