@@ -48,7 +48,7 @@ export function FindResultsList({ matches, cursor, capped, onSelect }: { matches
               aria-current={current ? 'true' : undefined}
               onClick={() => onSelect(index)}
               className={cn(
-                'relative h-12 w-full flex-col items-start justify-center gap-1 rounded-none px-2 text-start text-compact font-normal hover:bg-accent/50',
+                'relative h-12 w-full flex-col items-start justify-center gap-1 rounded-none px-2 text-start text-compact font-normal hover:bg-row-hover-bg',
                 current && 'bg-accent text-accent-foreground hover:bg-accent',
                 COMPOSER_BUTTON_FOCUS_CLASS,
                 'focus-visible:-outline-offset-2'

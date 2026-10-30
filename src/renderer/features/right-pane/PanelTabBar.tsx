@@ -244,7 +244,7 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
         FOCUS_VISIBLE,
         selected
           ? cn('font-semibold', TAB_ACTIVE_UNDERLINE_CLASS)
-          : 'font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+          : 'font-medium text-muted-foreground hover:bg-row-hover-bg hover:text-foreground'
       )}
       aria-label={countText ? accessibleLabel : undefined}
       onClick={onSelect}

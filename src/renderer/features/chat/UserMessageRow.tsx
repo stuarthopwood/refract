@@ -63,7 +63,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
         <MessageAvatar aria-hidden>
           <UserAvatar name={name} src={userAvatarUrl} />
         </MessageAvatar>
-        <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-4 py-2">
+        <MessageContent className="w-fit max-w-[85%] rounded-lg bg-row-hover-bg px-4 py-2">
           <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
           {/* Chips instead of the raw inlined file text, which could flood the transcript (#926). */}
           {item.fileAttachments && item.fileAttachments.length > 0 && (

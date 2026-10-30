@@ -56,7 +56,7 @@ function Slider({
         aria-labelledby={ariaLabelledby}
         aria-describedby={ariaDescribedby}
         aria-valuetext={ariaValuetext}
-        className="block size-4 rounded-full border border-foreground bg-background outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 forced-colors:border-[CanvasText] forced-colors:bg-[Canvas]"
+        className="block size-4 rounded-full border border-foreground bg-background outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow forced-colors:border-[CanvasText] forced-colors:bg-[Canvas]"
       />
     </SliderPrimitive.Root>
   )

@@ -7,6 +7,7 @@ import { TextPreviewModal } from './TextPreviewModal'
 import { FileAttachmentChip } from './FileAttachmentChip'
 import type { ChipOccurrence, PendingFileAttachment, PendingImageAttachment, PendingTextChip } from './attachments'
 import { formatByteSize } from './attachments'
+import { IconButton } from '@/components/IconButton'
 
 export interface AttachmentStripProps {
   images: PendingImageAttachment[]
@@ -46,15 +47,15 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
               />
             }
           />
-          <button
-            type="button"
-            aria-label={images.length > 1 ? `Remove image ${index + 1} of ${images.length}` : 'Remove image'}
+          <IconButton
+            label={images.length > 1 ? `Remove image ${index + 1} of ${images.length}` : 'Remove image'}
+            variant="outline"
             onClick={() => onRemoveImage(image.id)}
             // pointer-events-none while invisible so the 24px hit area can't be mis-clicked over the thumbnail.
-            className="pointer-events-none absolute -top-1 -right-1 flex size-6 items-center justify-center rounded-full border border-border bg-surface-1 text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+            className="pointer-events-none absolute -top-1 -right-1 rounded-full bg-surface-1 text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-surface-1 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100"
           >
-            <XIcon className="size-4" />
-          </button>
+            <XIcon aria-hidden />
+          </IconButton>
         </div>
       ))}
       {(() => {

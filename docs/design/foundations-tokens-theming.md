@@ -20,7 +20,7 @@ Components may use only layers 2 and 3. Specifically:
 
 - Never a hex literal in component code.
 - Never a Tailwind palette colour (`text-green-600`, `text-amber-500`, and the like).
-- Never a Tailwind opacity modifier (`bg-accent/50`). Alpha lives inside the token value itself, so a theme file controls its own transparency instead of every call site guessing at it.
+- Never a Tailwind opacity modifier (`bg-accent/50`). Alpha lives inside the token value itself, so a theme file controls its own transparency instead of every call site guessing at it. The shared translucent tokens (#579) are `--row-hover-bg`, `--focus-glow`, `--elevated-edge`, `--scrim-bg`, `--invalid-ring`, `--primary-hover-bg`, `--destructive-hover-bg`, `--field-bg` and `--field-hover-bg`; `pnpm check:alpha-modifiers` baselines the remaining uses per file (`scripts/alpha-modifiers-baseline.json`), which may shrink, never grow.
 
 A script beside `check:ui-text` and the contrast scripts will enforce this (agenda items 9 and 12; not built yet). Until it exists, the Spec Kit plan-gate checklist in [accessibility.md](accessibility.md) is the check.
 

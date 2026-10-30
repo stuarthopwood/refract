@@ -40,7 +40,7 @@ export function OutlineRowItem({ row, current, tabbable, onActivate, onToggle, o
   return (
     <div
       className={cn(
-        'relative flex items-stretch hover:bg-accent/50',
+        'relative flex items-stretch hover:bg-row-hover-bg',
         current && 'bg-accent text-accent-foreground',
         row.depth === 1 && 'pl-4'
       )}

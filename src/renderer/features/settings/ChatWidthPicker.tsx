@@ -62,8 +62,8 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
                 'flex w-full flex-col items-start gap-1 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none',
-                'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
-                isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow',
+                isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-row-hover-bg hover:text-foreground'
               )}
             >
               <span className="flex w-full items-center gap-2">
@@ -82,7 +82,7 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
         })}
       </div>
       {/* Preview tile driven by activeId so it tracks the saved choice. */}
-      <div aria-hidden className="mt-2 w-full max-w-56 rounded-md border border-border bg-muted/30 p-2">
+      <div aria-hidden className="mt-2 w-full max-w-56 rounded-md border border-border bg-row-hover-bg p-2">
         <div data-chat-width-preview-bars className={cn('mx-auto flex flex-col gap-1', activeId === 'reading-column' && 'w-2/3')}>
           <div className="h-1.5 w-full rounded-full bg-muted-foreground/40" />
           <div className="h-1.5 w-5/6 rounded-full bg-muted-foreground/40" />

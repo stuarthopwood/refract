@@ -109,7 +109,7 @@ Decided (Stuart, 2026-10-19, #1043; swatch ruling amended 2026-10-20, ui-archite
 
 ## Tooltip
 
-Every icon-only control has a tooltip, following the "Q2 bundle" from agenda item 2 and its own follow-up (both #474 grill decisions):
+Every icon-only control has a tooltip, following the "Q2 bundle" from agenda item 2 and its own follow-up (both #474 grill decisions). Build it with **IconButton** (`components/IconButton.tsx`, #579): one `label` prop becomes both the `aria-label` and the tooltip text, with an optional `shortcut` Kbd; the provider's open delay is 400 ms. Dialog and sheet Close use it without an Esc hint, because an open tooltip would take the first Esc away from the dialog. `ScreenHeader` and the Settings Back button, the session and project row actions and the group header buttons all use it.
 
 - (a) A `Tooltip` whose text equals the control's `aria-label` (verb first, sentence case; see [patterns.md](patterns.md)).
 - (b) The `Kbd` shortcut in the tooltip when one exists.
@@ -124,7 +124,7 @@ Destructive or ambiguous actions are never icon-only: they carry a label, or liv
 
 ### Open
 
-The read-only audit at `origin/main` 9f23d22 found 12 icon-only controls missing a tooltip: `SessionList.tsx:304-319` and `:403-416`, `ConversationSwitcher.tsx:134-137`, `AttachmentStrip.tsx:41-49`, `MessageInput.tsx:706-722`, `dialog.tsx:72-80`, `sheet.tsx:73-81`, `sidebar.tsx:261-291`, `App.tsx:334-342`, `message-scroller.tsx:109-118`. Only the composer's Send and Stop buttons meet the full pattern today. Fixing these is tracked in the #474 follow-up sweep issue (#579), not fixed by this documentation change. Quoted verbatim from the decision record; a live recheck for the #580 quality-gate review found tighter ranges for the icon-only controls themselves (`SessionList.tsx:295-302` and `:410-417`; `MessageInput.tsx:714-722` — `:706-713` is the labelled "Send now" button, not icon-only) and that the app-wide tooltip delay is 0ms today (`tooltip.tsx:8`), not the decided 400ms — both flagged for #579 rather than silently edited into the quote above.
+Resolved by #579 slice A (spec 077): the 12 icon-only controls the original audit found now go through `IconButton`, and the app-wide tooltip delay is 400 ms. Skipped on purpose: the unused `MessageScrollerButton`, the non-tabbable `SidebarRail` and the `aria-hidden` outline toggle.
 
 Of those, `AttachmentStrip.tsx:41-49` ("Remove pasted image") and `MessageInput.tsx:714-722` ("Remove queued message") are reversible removals and are allowed to stay icon-only once they gain the tooltip they are missing — see "Destructive actions" in [patterns.md](patterns.md).
 

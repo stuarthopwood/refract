@@ -33,6 +33,15 @@
   --color-composer-border: var(--composer-border);
   --color-composer-focus: var(--composer-focus);
   --color-composer-ring: var(--composer-ring);
+  --color-row-hover-bg: var(--row-hover-bg);
+  --color-focus-glow: var(--focus-glow);
+  --color-elevated-edge: var(--elevated-edge);
+  --color-scrim-bg: var(--scrim-bg);
+  --color-invalid-ring: var(--invalid-ring);
+  --color-primary-hover-bg: var(--primary-hover-bg);
+  --color-destructive-hover-bg: var(--destructive-hover-bg);
+  --color-field-bg: var(--field-bg);
+  --color-field-hover-bg: var(--field-hover-bg);
   --color-composer-control-border: var(--composer-control-border);
   --color-composer-placeholder: var(--composer-placeholder);
   --color-card: var(--card);
@@ -274,6 +283,16 @@ samp {
   /* #1233, #1298: safe default for the Halloween artwork (bats and glyph); every `.theme-*` block
      overrides it with the value that gives about 1.6:1 against its own background. */
   --holiday-artwork-opacity: 0.30;
+  /* #579: translucent surfaces as tokens instead of Tailwind opacity modifiers; same element as the theme class, so they follow each preset's base colours. */
+  --row-hover-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --focus-glow: color-mix(in oklab, var(--ring) 50%, transparent);
+  --elevated-edge: color-mix(in oklab, var(--foreground) 10%, transparent);
+  --scrim-bg: color-mix(in oklab, black 10%, transparent);
+  --invalid-ring: color-mix(in oklab, var(--destructive) 40%, transparent);
+  --primary-hover-bg: color-mix(in oklab, var(--primary) 80%, transparent);
+  --destructive-hover-bg: color-mix(in oklab, var(--destructive) 80%, transparent);
+  --field-bg: color-mix(in oklab, var(--input) 30%, transparent);
+  --field-hover-bg: color-mix(in oklab, var(--input) 50%, transparent);
 }
 
 /* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (Dark (high contrast) uses a bundled Shiki theme and never reads them). */
@@ -1000,7 +1019,7 @@ samp {
    * `border-muted-foreground/85` (`color-mix(in oklab, var(--muted-foreground) 85%,
    * transparent)` is exactly how Tailwind's own `/85` alpha modifier resolves a token colour);
    * `--composer-focus` replaces `border-ring` (the focus-visible border colour);
-   * `--composer-ring` replaces `ring-ring/50` (the focus glow). Nothing this preset renders
+   * `--composer-ring` replaces `ring-focus-glow` (the focus glow). Nothing this preset renders
    * changes. */
   --composer-border: color-mix(in oklab, var(--muted-foreground) 85%, transparent);
   --field-border: var(--border);
