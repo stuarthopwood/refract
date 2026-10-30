@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.17.0 (2026-10-30)
+
+### Features
+
+- feat(filters): issue label filter, session usage panel and advisor roster (https://github.com/stuarthopwood/refract/pull/1455)
+- feat(chat): transcript context menus for messages, code, tools and diagrams (https://github.com/stuarthopwood/refract/pull/1456)
+- feat(chat): composer alarm clock, Advisor tag sizing and Subagent role label (https://github.com/stuarthopwood/refract/pull/1458)
+- feat(chat): alarm clock polish, border-only subagent chain card, stable fs watch test (https://github.com/stuarthopwood/refract/pull/1464)
+
+### Fixes
+
+- fix(chat): Subagents chain card treatment and settled Stage status (https://github.com/stuarthopwood/refract/pull/1460)
+
+### Other
+
+- refactor(ui): shared InlineStatus and ConfirmAlertDialog for status text and confirm dialogs (https://github.com/stuarthopwood/refract/pull/1462)
+- docs(plan): OMP 18.14.0 review and re-verify (https://github.com/stuarthopwood/refract/pull/1465)
+
 ## v0.16.0 (2026-10-30)
 
 ### Features

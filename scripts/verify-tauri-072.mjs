@@ -146,7 +146,7 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.send('Input.insertText', { text: ' edited' });
   await saveAlarm(cdp);
   await cdp.waitFor(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')?.getAttribute('aria-label').includes('edited')`, { timeoutMs: 10_000, label: 'edit saved' });
-  console.log('PASS: #1426: editing an alarm updates its row');
+  assert(await cdp.evaluate(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]').getAttribute('aria-label').includes('edited')`), '#1426: editing an alarm updates its row');
 
   // Add one due at the next minute boundary, then wait for it to fire.
   const dueAt = Math.ceil((Date.now() + 5_000) / 60_000) * 60_000;
@@ -159,7 +159,14 @@ async function runChecks(cdp, { repoDir }) {
     label: 'second alarm fired and marked Fired'
   });
   await shot(cdp, '08-popover-fired.png');
-  console.log('PASS: #1426: a due alarm fires and stays listed as "Fired"');
+  assert(
+    await cdp.evaluate(`Array.from(${DIALOG}.querySelectorAll('[data-highlighted]')).some((el) => /Fires soon/.test(el.textContent))`),
+    '#1457: the fired row is highlighted'
+  );
+  assert(
+    await cdp.evaluate(`/Fires soon, Fired/.test(Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).map((el) => el.getAttribute('aria-label')).join('|'))`),
+    '#1426: a due alarm fires and stays listed as "Fired"'
+  );
 
   // Delete the fired one, then the other.
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"][aria-label*="Fires soon"]')`);
