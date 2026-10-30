@@ -35,7 +35,7 @@ function renderGutter({ change, side, renderDefault }: GutterOptions) {
 // Inert text throughout: react-diff-view tokenises the diff text itself, it never interprets it as
 // markup.
 export function DiffView({ path, oldText, newText, capped = false }: DiffViewProps) {
-  // Memoised so the `canExpand` effect does not re-run on every render (including the Expand click).
+  // Memoised so the diff is not recomputed on every render.
   const patch = React.useMemo(() => buildUnifiedDiff(path, oldText, newText), [path, oldText, newText])
   const diffTooLarge = patch === undefined
   const parsed = React.useMemo(() => (patch ? parseDiff(patch)[0] : undefined), [patch])
