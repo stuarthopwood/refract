@@ -142,10 +142,12 @@ async function main() {
     await pressEscape();
     await rowsAre(['hello-world#12', 'hello-world#20', 'spoon-knife#3', 'spoon-knife#5'], 'project cleared');
 
-    await pickSelect('Label', 'bug');
+    await cdp.click(`document.querySelector('button[aria-label^="Label:"]')`);
+    await cdp.click(`Array.from(document.querySelectorAll('[role="menuitemcheckbox"], [role="checkbox"]')).find((el) => el.textContent.trim() === 'bug')`);
+    await pressEscape();
     check(await rowsAre(['hello-world#12', 'spoon-knife#5'], 'label'), 'Label filter "bug"', 'hello-world#12, spoon-knife#5');
     await shot(cdp, '06-filter-label.png');
-    await pickSelect('Label', 'Any label');
+    await cdp.click(`document.querySelector('button[aria-label="Remove label filter bug"]')`);
     await rowsAre(['hello-world#12', 'hello-world#20', 'spoon-knife#3', 'spoon-knife#5'], 'label cleared');
 
     // Search applies on Enter
@@ -174,7 +176,7 @@ async function main() {
     const listCalls = calls.split('\n').filter((line) => line.includes('"issue", "list"'));
     check(
       listCalls.length > 0 && listCalls.every((l) => l.includes('"--repo"') && l.includes('"--json"')) &&
-        calls.includes('"--assignee=@me"') && calls.includes('"--author=@me"') && calls.includes('"--mention=@me"') && calls.includes('"--label=bug"') && calls.includes('"--search=spoon"'),
+        calls.includes('"--assignee=@me"') && calls.includes('"--author=@me"') && calls.includes('"--mention=@me"') && calls.includes('label:\\"bug\\"') && calls.includes('"--search=spoon"'),
       'Recorded gh calls are argv arrays carrying --repo, --json and the tab, label and search flags',
       `${listCalls.length} issue list calls`
     );
