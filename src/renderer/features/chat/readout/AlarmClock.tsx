@@ -197,8 +197,6 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
     notifyAlarmDeleted(() => void useSettingsStore.getState().upsertAlarm(alarm))
     parkFocus()
   }
-  // The module flag outlives this component, so clear it if the chip is hidden while open.
-  useEffect(() => () => setAlarmListOpen(false), [])
 
   return (
     <Popover open={open} onOpenChange={changeOpen}>

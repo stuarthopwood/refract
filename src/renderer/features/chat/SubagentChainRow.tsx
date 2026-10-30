@@ -315,7 +315,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       open={open}
       onOpenChange={onOpenChange}
       className="-mx-1 mt-6 rounded-lg p-1 ring-1 ring-divider"
-      triggerClassName="hover:bg-transparent"
+      triggerClassName="hover:bg-muted/50"
       contentClassName={SPINE_HOST_CONTENT_CLASS}
       // The ticking duration is omitted from the accessible name while running so it does not change every second.
       triggerAriaLabel={`Subagents, ${summary}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${!isRunning && durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}

@@ -5,6 +5,6 @@
 - [x] T003 Alarm popover leftovers (#1457)
 - [x] T004 Chain status matching, card edge, Stage glyph (#1459)
 - [x] T005 Docs and verify scripts
-- [ ] T006 `pnpm ci:local`
-- [ ] T007 Live check with fake omp
-- [ ] T008 Review gate
+- [x] T006 `pnpm ci:local`
+- [x] T007 Live check with fake omp
+- [x] T008 Review gate
