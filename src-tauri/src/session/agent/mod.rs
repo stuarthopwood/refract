@@ -9,6 +9,7 @@ use tokio::sync::{watch, Mutex as AsyncMutex};
 use crate::events::EventSink;
 use crate::omp::diff::{diff_transcript, PatchCoalescer, TranscriptOp};
 use crate::omp::process::OmpProcess;
+use crate::omp::transcript::subagent_items::ProgressOutcome;
 use crate::omp::transcript::{RequestResolution, TranscriptItem, TranscriptState};
 use crate::store::registry::{RegistryStore, Session};
 use crate::store::settings::{ApprovalMode, SettingsStore};
@@ -415,6 +416,28 @@ impl SessionAgent {
         let mut state = self.state.lock().await;
         let before = state.transcript.items().to_vec();
         state.transcript.upsert_item(item);
+        let ops = diff_transcript(&before, state.transcript.items());
+        if !ops.is_empty() {
+            self.coalescer.queue(ops);
+        }
+    }
+
+    /// Settles matching running `subagent` rows in one diff, so the chain row follows the Agents
+    /// summaries (#1437). Each entry is `(tool_call_id, spec_index, outcome, duration_ms)`.
+    pub(super) async fn settle_transcript_subagents(
+        &self,
+        settles: &[(String, u32, ProgressOutcome, Option<i64>)],
+    ) {
+        if settles.is_empty() {
+            return;
+        }
+        let mut state = self.state.lock().await;
+        let before = state.transcript.items().to_vec();
+        for (tool_call_id, spec_index, outcome, duration_ms) in settles {
+            state
+                .transcript
+                .settle_subagent(tool_call_id, *spec_index, *outcome, *duration_ms);
+        }
         let ops = diff_transcript(&before, state.transcript.items());
         if !ops.is_empty() {
             self.coalescer.queue(ops);

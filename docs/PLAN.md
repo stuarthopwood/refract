@@ -925,9 +925,9 @@ Also filed 2026-10-30: **#1434** (`p1`, `design`), Question card: option rows ta
 
 Also filed 2026-10-30: **#1435** (`p1`, `feature`), Question card: picking a single-choice option advances to the next incomplete question or submits the batch; Other, multi-select and footer buttons unchanged; placed as an index line after #1434's line. **Status: built on branch `updater-composer-question-card` (spec 069), awaiting merge.**
 
-Also filed 2026-10-30: **#1436** (`p1`, `design`), Subagents chain: card treatment for the in-chat Stage chain (2+ Stages) as a recorded exception to the zero-box rule; right-pane tree and single Stages unchanged; placed as an index line after #1435's line.
+Also filed 2026-10-30: **#1436** (`p1`, `design`), Subagents chain: card treatment for the in-chat Stage chain (2+ Stages) as a recorded exception to the zero-box rule; right-pane tree and single Stages unchanged; placed as an index line after #1435's line. **Status: done (merged 2026-10-30, spec 073; follow-ups #1459).**
 
-Also filed 2026-10-30: **#1437** (`p1`, `bug`), Subagents chain: a Stage stays running in the chain row after the Agents pill shows finished; settle transcript subagent items from the same lifecycle and jobs events as the summaries; placed as an index line after #1436's line.
+Also filed 2026-10-30: **#1437** (`p1`, `bug`), Subagents chain: a Stage stays running in the chain row after the Agents pill shows finished; settle transcript subagent items from the same lifecycle and jobs events as the summaries; placed as an index line after #1436's line. **Status: done (merged 2026-10-30, spec 073; follow-ups #1459).**
 
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 

@@ -12,7 +12,7 @@ use super::diff::{finalize_live_transcript, merge_history_with_live, SubagentFin
 
 mod tool_intent;
 use tool_intent::{read_history_intent, read_live_intent};
-mod subagent_items;
+pub mod subagent_items;
 use subagent_items::{
     apply_async_result_jobs, apply_batch_task_result, build_message_subagent_items,
     hidden_tool_failure_notice, jobs_from_details, read_batch_context, read_task_specs,
