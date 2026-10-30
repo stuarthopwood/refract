@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import { getActions, spokenChord, type Chord } from '@/features/palette/actionRegistry'
 
 export interface KeyboardShortcutsDialogProps {
   open: boolean
@@ -12,7 +13,7 @@ export interface KeyboardShortcutsDialogProps {
 
 interface ShortcutRow {
   action: string
-  keys: string[]
+  chords: Chord[]
 }
 
 interface ShortcutGroup {
@@ -20,49 +21,36 @@ interface ShortcutGroup {
   rows: ShortcutRow[]
 }
 
-// Lists only chords with a real handler; chords documented but unhandled (Ctrl+Shift+N, Ctrl+1..9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) stay out.
-const SHORTCUT_GROUPS: ShortcutGroup[] = [
-  {
-    heading: 'Message box',
-    rows: [
-      { action: 'Send message', keys: ['Enter'] },
-      { action: 'Newline in message', keys: ['Shift', 'Enter'] },
-      { action: 'Clear the message box', keys: ['Esc'] },
-      { action: 'Stop the running turn', keys: ['Ctrl', 'Shift', 'X'] }
-    ]
-  },
-  {
-    heading: 'Sessions',
-    rows: [{ action: 'New session', keys: ['Ctrl', 'N'] }]
-  },
-  {
-    heading: 'Pause',
-    rows: [{ action: 'Resume the focused paused session', keys: ['Space'] }]
-  },
-  {
-    heading: 'Chat pane',
-    rows: [{ action: 'Close chat pane', keys: ['Ctrl', 'W'] }]
-  },
-  {
-    heading: 'Right pane',
-    rows: [{ action: 'Collapse or expand the right pane', keys: ['Ctrl', 'Shift', 'B'] }]
-  },
-  {
-    heading: 'Split view',
-    rows: [
-      { action: 'Open a session in split view', keys: ['Ctrl', 'Click'] },
-      { action: 'Move focus to the other pane', keys: ['Ctrl', 'Shift', '\\'] }
-    ]
-  },
-  {
-    heading: 'General',
-    rows: [{ action: 'Open Settings', keys: ['Ctrl', ','] }]
+// Keys that are not actions: they only work inside one control, so no registry entry (or palette row) fits them.
+const CONTEXTUAL_ROWS: Record<string, ShortcutRow[]> = {
+  'Message box': [
+    { action: 'Send message', chords: [['Enter']] },
+    { action: 'Newline in message', chords: [['Shift', 'Enter']] },
+    { action: 'Clear the message box', chords: [['Esc']] }
+  ],
+  Pause: [{ action: 'Resume the focused paused session', chords: [['Space']] }],
+  'Split view': [{ action: 'Open a session in split view', chords: [['Ctrl', 'Click']] }]
+}
+
+const GROUP_ORDER = ['Message box', 'Sessions', 'Pause', 'Chat pane', 'Right pane', 'Split view', 'General']
+
+// Bound-chord rows are display metadata from the action registry; the handlers that match those chords live elsewhere.
+function buildShortcutGroups(): ShortcutGroup[] {
+  const rows = new Map<string, ShortcutRow[]>(Object.entries(CONTEXTUAL_ROWS).map(([heading, list]) => [heading, [...list]]))
+  for (const action of getActions()) {
+    if (!action.chord) continue
+    const list = rows.get(action.group) ?? []
+    list.push({ action: action.label, chords: action.aliasChord ? [action.chord, action.aliasChord] : [action.chord] })
+    rows.set(action.group, list)
   }
-]
+  const headings = [...GROUP_ORDER.filter((heading) => rows.has(heading)), ...[...rows.keys()].filter((heading) => !GROUP_ORDER.includes(heading))]
+  return headings.map((heading) => ({ heading, rows: rows.get(heading) ?? [] }))
+}
 
 /** Read-only list of the supported keyboard shortcuts. */
 export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: KeyboardShortcutsDialogProps) {
   const doneRef = useRef<HTMLButtonElement>(null)
+  const groups = open ? buildShortcutGroups() : []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -82,28 +70,26 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
           <DialogDescription>The shortcuts Refract supports today.</DialogDescription>
         </DialogHeader>
         <div className="flex min-w-0 flex-col gap-4 overflow-y-auto">
-          {SHORTCUT_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.heading} className="flex min-w-0 flex-col gap-2">
               <h3 className="text-xs text-muted-foreground">{group.heading}</h3>
-              <ul role="list" className="flex flex-col gap-2">
+              <ul className="flex flex-col gap-2">
                 {group.rows.map((row) => (
                   <li key={row.action} className="flex min-w-0 items-center justify-between gap-2">
                     <span className="min-w-0 truncate text-sm">{row.action}</span>
-                    <KbdGroup className="shrink-0">
-                      {row.keys.map((key) => (
-                        <Kbd key={key}>
-                          {/* A lone ',' reads ambiguously to screen readers. */}
-                          {key === ',' ? (
-                            <>
-                              <span aria-hidden>,</span>
-                              <span className="sr-only">comma</span>
-                            </>
-                          ) : (
-                            key
-                          )}
-                        </Kbd>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {row.chords.map((chord, index) => (
+                        <span key={chord.join('+')} className="flex items-center gap-2">
+                          {index > 0 && <span className="text-xs text-muted-foreground">or</span>}
+                          <KbdGroup aria-hidden>
+                            {chord.map((key) => (
+                              <Kbd key={key}>{key}</Kbd>
+                            ))}
+                          </KbdGroup>
+                          <span className="sr-only">{spokenChord(chord)}</span>
+                        </span>
                       ))}
-                    </KbdGroup>
+                    </span>
                   </li>
                 ))}
               </ul>
