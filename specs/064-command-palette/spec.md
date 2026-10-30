@@ -77,7 +77,7 @@ Slice 1's registry now also drives context menus and dropdowns, the window-level
 - Q: Where does the text-editing item set live? [DECISION by agent, confirm] One builder `textEditItems` in the palette feature produces Cut, Copy, Paste, Paste as text and Select all (with their `Ctrl+X` and similar hints), used by the composer menu and any other text surface.
 - Q: A menu item with an action id that is disabled? [DECISION by agent, confirm] It renders disabled, never hidden, matching what the menu did before; the palette still omits disabled actions.
 - Q: One open menu at a time, how? [DECISION by agent, confirm] A tiny shared store holds the id of the open menu; each shared menu root closes itself when another id opens, and a menu that opens while another is open replaces it.
-- Q: Where is the native menu blocked? [DECISION by agent, confirm] Everywhere except editable fields (`input`, `textarea`, `contenteditable`) that lack a Refract menu, where the browser menu still gives spellcheck and paste, and except an element inside a Radix context-menu trigger (which handles its own event).
+- Q: Where is the native menu blocked? [Confirmed by Stuart in #1404] Everywhere. Text fields outside the composer get a themed Cut, Copy, Paste and Select all menu from the shared text-edit items; selected read-only text gets Copy.
 - Q: Which chords route through the registry? [DECISION by agent, confirm] Ctrl+N, Ctrl+W, Ctrl+, , Ctrl+Shift+B, Ctrl+Shift+\ and Ctrl+Shift+X, by one window-level dispatcher that matches `chordMatches` against every enabled registry action and keeps each handler's existing guards inside the action's `when()`/`run()`. Chords that are not registry actions (Enter, Esc, Space and similar) are untouched.
 
 ## Slice 2 functional requirements
@@ -89,7 +89,7 @@ Slice 1's registry now also drives context menus and dropdowns, the window-level
 - FR-14: Where a menu item maps to a registry action it is built from the registry (`actionMenuItem`), so label, chord hint and enabled state come from one place.
 - FR-15: One window-level dispatcher handles the registered chords: Ctrl+N, Ctrl+W, Ctrl+, , Ctrl+Shift+B, Ctrl+Shift+\ and Ctrl+Shift+X run their registry action when enabled. The shortcuts dialog and the bound chords read the same registry, so they cannot drift. Ctrl+K in the Markdown editor still inserts a link.
 - FR-16: `shell/menu.rs` is unchanged; the renderer has no duplicate handler for any native item (see decision).
-- FR-17: One app-wide `contextmenu` handler calls `preventDefault` on any context-menu event that no Refract menu handles, except in editable fields.
+- FR-17: One app-wide `contextmenu` handler calls `preventDefault` on any context-menu event that no Refract menu handles. Text fields and selected read-only text get a themed Cut, Copy, Paste and Select all (or Copy) menu.
 - FR-18: The repo header in the Session list has a context menu.
 - FR-19: At most one context menu or dropdown is open at a time; opening one closes the other.
 - FR-20: `docs/PLAN.md` and `docs/design/index.md` record the slice 2 status and the chord table.
