@@ -22,7 +22,7 @@ Format: `ID [P] description (paths)`. `[P]` = parallelisable with its neighbours
 - [X] S1-16 Hook the session manager: on a Refract Session's `message_end`, nudge the worker with that Session's Conversation file (`src-tauri/src/session/`, registry-sourced path). Depends on S1-10.
 - [X] S1-17 Rust tests, a few only (`src-tauri/src/usage/*.test.rs`): offset resume after append, dedupe on re-read, partial last line, `model_change` replay, credits rule, Project label matching, filter-to-SQL parameterisation. Depends on S1-07, S1-11.
 - S1-18 Docs: `docs/PLAN.md` row (slice 1 landed), `CONTEXT.md` terms (Usage view, Project label, usage.db), `docs/rust-build.md` env vars `REFRACT_OMP_SESSIONS_DIR`.
-- S1-19 `scripts/verify-tauri-1331.mjs` with synthetic fixture generator under `%TEMP%`, fake `omp` and fake `gh` on PATH, scratch `REFRACT_DATA_DIR` and `REFRACT_OMP_SESSIONS_DIR`, scratch exe copy and remote-debugging port; asserts per `quickstart.md` step 4 and the single `omp usage --json` call. Depends on S1-15, S1-16.
+- [X] S1-19 `scripts/verify-tauri-1331.mjs` with synthetic fixture generator under `%TEMP%`, fake `omp` and fake `gh` on PATH, scratch `REFRACT_DATA_DIR` and `REFRACT_OMP_SESSIONS_DIR`, scratch exe copy and remote-debugging port; asserts per `quickstart.md` step 4 and the single `omp usage --json` call. Depends on S1-15, S1-16.
 - S1-20 Verify: `pnpm ci:local` (includes `check:file-size`, `check:parity`, cargo fmt, clippy `-D warnings`, `cargo test`), then the live check from S1-19. Gate agents, then PR (`feat(usage): ...`, no `Closes`). Depends on S1-17 to S1-19.
 
 ## Slice 2: renderer Usage view (PR 2, stacked on slice 1, Closes #1331)
