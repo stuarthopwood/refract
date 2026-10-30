@@ -37,6 +37,7 @@ import { closeChatPane } from './closeChatPane'
 import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
+import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'
 import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
 import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
@@ -262,6 +263,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // element's forced blur reads as `<body>`, not the pane. Used only to decide whether a
   // remounted MessageInput should reclaim focus (see `autoFocusRef` below).
   const chatPaneRef = useRef<HTMLDivElement>(null)
+  useEnterOnSwitch(sessionId, 'fade', chatPaneRef)
   const chatHadFocusRef = useRef(false)
   useEffect(() => {
     const updateFocusFlag = () => {

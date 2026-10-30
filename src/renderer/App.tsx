@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeftRightIcon } from 'lucide-react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { EmptyChatState } from '@/features/chat/EmptyChatState'
 import { ChatPane } from '@/features/chat/ChatPane'
@@ -67,6 +68,7 @@ export function App() {
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
   const showReadiness = !ready || !hasRepositories
   const view = useViewStore((state) => state.view)
+  const viewRef = useEnterOnSwitch(view, 'view')
   const rightPaneOpen = useRightPaneStore((state) => state.open)
   // Gate remediation (Medium, round 2): the rail and pane are chat-view only (Stuart's
   // decision). The store's own `open` flag genuinely survives a view switch (not just FR-003's
@@ -504,13 +506,13 @@ export function App() {
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
         ) : view === 'settings' ? (
-          <ErrorBoundary>
+          <div ref={viewRef} className="h-full"><ErrorBoundary>
             <SettingsScreen />
-          </ErrorBoundary>
+          </ErrorBoundary></div>
         ) : view === 'manage-sessions' ? (
-          <ErrorBoundary>
+          <div ref={viewRef} className="h-full"><ErrorBoundary>
             <ManageSessionsScreen />
-          </ErrorBoundary>
+          </ErrorBoundary></div>
         ) : (
           <div className="flex h-full overflow-hidden">
           <ResizablePanelGroup orientation="horizontal" className="h-full flex-1 min-w-0">
@@ -541,7 +543,7 @@ export function App() {
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />
             <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
-              <ErrorBoundary>
+              <div ref={viewRef} className="h-full"><ErrorBoundary>
                 {view === 'pull-requests' ? (
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : view === 'issues' ? (
@@ -625,7 +627,7 @@ export function App() {
                     </ResizablePanel>
                   </ResizablePanelGroup>
                 )}
-              </ErrorBoundary>
+              </ErrorBoundary></div>
             </ResizablePanel>
             <RightPaneResizeHandle disabled={view !== 'chat'} />
             <ResizablePanel

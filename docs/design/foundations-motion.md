@@ -61,8 +61,29 @@ Today's code uses a 3px ring (`focus-visible:ring-3`, `button.tsx`), not the 2px
 
 Today's focus ring token (`--ring`, an achromatic grey) is the **decided, permanent** token for this rule: Stuart ruled 2026-10-09 that the focus ring stays achromatic rather than moving to the accent token, closing the gap PR #596 had declared open (see "Accent and primary fill" in foundations-tokens-theming.md).
 
+## Switching
+
+Subtle enter-only motion when content changes (#678, spec 058). Tokens in `globals.css`: `--motion-fast` 100ms, `--motion-base` 150ms, `--motion-panel` 200ms, `--ease-out` `cubic-bezier(0.2, 0, 0, 1)`. Utilities are built on `tw-animate-css`; the shared hooks are `useEnterOnSwitch`, `useEnterOnAppear` and the `ValueCrossfade` component in `src/renderer/components/`.
+
+| Surface | Utility | Motion |
+|---|---|---|
+| View switch (chat area, Settings, Manage sessions; the session list and rail stay still) | `motion-enter` | 150ms fade, 4px rise |
+| Session switch | `motion-enter-fade` | `--motion-fade` 120ms, opacity only; pills do not also crossfade |
+| Right pane opens and panel switch | `motion-enter-panel` | 200ms fade, 8px slide of the content only; the panel size and frame change instantly; closing never animates |
+| Panel tab | `motion-tab-underline` | 150ms underline fade and grow in place |
+| Model, reasoning, Approval pills | `motion-crossfade` | 100ms fade on change only |
+| New session row (created in the last 3s only) | `motion-enter` | 150ms fade, 4px rise; restore, remount, search, archive and group expand never animate |
+| Settings section | `motion-enter-fade` | 120ms fade |
+| Dialogs, menus, popovers, tooltips | none added | audited onto the tokens only |
+
+Rules:
+
+- Enter only. Animate `opacity` and a `transform` of at most 8px; never height or width.
+- Never on first paint or restore, and never replayed on re-render. The hooks key to a real content change and restart the class without remounting, so scroll restore and land-at-end (#485) are untouched.
+- A switch within 150ms of the previous one skips to the final state.
+- Reduced motion collapses every utility to an instant change through the global rule.
 ## Open
 
-Unresolved before building the five animations above: easing curves and the manual reduced-motion check for each.
+Decided (#678, 2026-10-30): the easing curve is `--ease-out` (`cubic-bezier(0.2, 0, 0, 1)`) for every enter. Still open before building the five animations above: the manual reduced-motion check for each.
 
 Also open: the WCAG 2.2.2 pause-path mechanism for every looping animation (the waiting dots, the streaming caret, `AgentSpinner`, every `animate-spin` icon — `Loader2Icon`/`LoaderCircleIcon` (sign-in, readiness, running tool rows, the streaming thinking row, running subagents, the New session button) — the spinning `CheckIcon` for pending PR checks, and the other indicators listed above) is undecided — #566 leaves it open between a Settings control (for example, Reduce motion, stopping every looping animation on command) and relying on `prefers-reduced-motion` alone. Decide the mechanism in #566 before building. The status-text shimmer (row 6) is already covered: Settings > Appearance "Animated status text" is its pause control.
