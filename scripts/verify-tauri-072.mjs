@@ -71,14 +71,13 @@ async function enableClock(cdp) {
     if (el) el.scrollIntoView({ block: 'center' });
     return !!el;
   })()`);
+  await sleep(300);
   await shot(cdp, '01-settings-subagent-role.png');
   assert(roleLabel, '#1432: Settings model roles list a "Subagent" row');
   assert(
     await cdp.evaluate(`!Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && e.textContent.trim() === 'Task')`),
     '#1432: no Settings row is still labelled "Task"'
   );
-  await sleep(300);
-  await shot(cdp, '01-settings-subagent-role.png');
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Status line')`);
   await sleep(600);
   await cdp.evaluate(`(() => {
@@ -147,7 +146,7 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.send('Input.insertText', { text: ' edited' });
   await saveAlarm(cdp);
   await cdp.waitFor(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')?.getAttribute('aria-label').includes('edited')`, { timeoutMs: 10_000, label: 'edit saved' });
-  assert(true, '#1426: editing an alarm updates its row');
+  console.log('PASS: #1426: editing an alarm updates its row');
 
   // Add one due at the next minute boundary, then wait for it to fire.
   const dueAt = Math.ceil((Date.now() + 5_000) / 60_000) * 60_000;
@@ -160,7 +159,7 @@ async function runChecks(cdp, { repoDir }) {
     label: 'second alarm fired and marked Fired'
   });
   await shot(cdp, '08-popover-fired.png');
-  assert(true, '#1426: a due alarm fires and stays listed as "Fired"');
+  console.log('PASS: #1426: a due alarm fires and stays listed as "Fired"');
 
   // Delete the fired one, then the other.
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"][aria-label*="Fires soon"]')`);

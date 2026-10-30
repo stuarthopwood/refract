@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { BellIcon } from 'lucide-react'
 import { READOUT_KIND_ICONS } from '@/components/icons/readout-icons'
@@ -131,15 +131,16 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
   // The focused control unmounts on save, cancel and delete; park focus on the dialog so keyboard users keep their place.
   const parkFocus = () => requestAnimationFrame(() => contentRef.current?.focus())
 
+  const changeOpen = (next: boolean) => {
+    setOpen(next)
+    setAlarmListOpen(next)
+    if (!next) setForm(null)
+  }
+  // The module flag outlives this component, so clear it if the chip is hidden while open.
+  useEffect(() => () => setAlarmListOpen(false), [])
+
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        setAlarmListOpen(next)
-        if (!next) setForm(null)
-      }}
-    >
+    <Popover open={open} onOpenChange={changeOpen}>
       <PopoverAnchor asChild>
         <ReadoutItem
           ref={clockRef}
@@ -148,15 +149,12 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
           accessibleName={name}
           aria-haspopup="dialog"
           aria-expanded={open}
-          onActivate={() => {
-            setOpen((v) => !v)
-            setAlarmListOpen(!open)
-          }}
+          onActivate={() => changeOpen(!open)}
         >
           <span aria-hidden>{formatted}</span>
           {armed > 0 && (
             <span aria-hidden className="relative inline-flex">
-              <BellIcon className="size-3.5" />
+              <BellIcon className="size-4" />
               <CountBadge value={armed} />
             </span>
           )}
