@@ -122,7 +122,7 @@ async function main() {
       throw new Error(`clipboard still unavailable after retries: ${lastPsError}`);
     };
     let lastPsError = '';
-    const clipboard = async () => ps(`$ErrorActionPreference='Stop'; Get-Clipboard -Raw`);
+    const clipboard = async () => ps(`$ErrorActionPreference='Stop'; Get-Clipboard -Raw`).replace(/\r?\n$/, '');
     const setClipboard = async (t) => {
       ps(`$ErrorActionPreference='Stop'; Set-Clipboard -Value '${t.replace(/'/g, "''")}'`);
       return true;
