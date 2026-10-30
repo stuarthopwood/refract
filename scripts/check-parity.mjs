@@ -344,6 +344,8 @@ const REQUEST_LANES = {
   MODEL_ROLES_LIST_CATALOG: 'R8',
   WINDOW_POPUP_MENU: 'R8', // #791, shell/menu.rs ("native menu")
   PULL_REQUESTS_LIST: 'R9', // #792, ipc/pull_requests.rs
+  HOME_LAST_MESSAGES: 'R9', // #869, ipc/home.rs
+  HOME_CLOSED_BRANCHES: 'R9', // #869, ipc/home.rs
   PULL_REQUESTS_LIST_ACROSS: 'R9', // #874, ipc/pull_requests/extra_handlers/list_across.rs
   PULL_REQUESTS_DETAIL: 'R9',
   PULL_REQUESTS_COMMENT: 'R9',

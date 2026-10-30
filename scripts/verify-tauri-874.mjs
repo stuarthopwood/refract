@@ -134,11 +134,11 @@ async function main() {
     };
 
     // 1. Open the view; both repositories listed, the shared repository once.
-    await cdp.waitFor(`!!document.querySelector('[role="group"][aria-label="GitHub"]')`, { timeoutMs: 20_000, label: 'GitHub nav group' });
-    await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="GitHub"] button')).find((el) => el.textContent.trim().startsWith('Pull requests'))`);
+    await cdp.waitFor(`!!document.querySelector('[role="group"][aria-label="Views"]')`, { timeoutMs: 20_000, label: 'GitHub nav group' });
+    await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="Views"] button')).find((el) => el.textContent.trim().startsWith('Pull requests'))`);
     await cdp.waitFor(`!!document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Pull requests'`, { timeoutMs: 10_000, label: 'Pull requests heading' });
     check(await rowsAre(OPEN_ALL, 'open pull requests'), 'Pull requests view lists open pull requests from two repositories, the shared one once', OPEN_ALL.join(', '));
-    check(await cdp.evaluate(`document.querySelector('[role="group"][aria-label="GitHub"] button[aria-current="page"]')?.textContent.trim().startsWith('Pull requests')`), 'Pull requests nav item is aria-current="page"');
+    check(await cdp.evaluate(`document.querySelector('[role="group"][aria-label="Views"] button[aria-current="page"]')?.textContent.trim().startsWith('Pull requests')`), 'Pull requests nav item is aria-current="page"');
     await shot(cdp, '01-two-projects-listed.png');
 
     // 2. Skipped note for the Project with no GitHub repository.
@@ -259,7 +259,7 @@ async function main() {
     await cdp.clickByText('Clear filters').catch(() => undefined);
 
         // 9. Issues still works on the shared shell
-    await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="GitHub"] button')).find((el) => el.textContent.trim() === 'Issues')`);
+    await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="Views"] button')).find((el) => el.textContent.trim() === 'Issues')`);
     await cdp.waitFor(`!!document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Issues'`, { timeoutMs: 10_000, label: 'Issues heading' });
     await cdp.waitFor(`document.body.textContent.includes('No issues match')`, { timeoutMs: 15_000, label: 'issues empty state' });
     check(await cdp.evaluate(`!!document.querySelector('button[aria-label^="Filters"]')`), 'Issues view renders on the shared shell', 'heading, Filters toggle, shared empty state');

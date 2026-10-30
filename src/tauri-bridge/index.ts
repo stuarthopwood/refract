@@ -12,6 +12,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import { chatPauseBridge } from './chatPause'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
+import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch } from '../shared/ipc-issues'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
@@ -330,6 +331,10 @@ const refract: RefractApi = {
     view: (repositoryId, number) => request<IssueDetail>(IPC_REQUESTS.ISSUES_VIEW, repositoryId, number)
   },
 
+  home: {
+    lastMessages: (sessionIds) => request<Record<string, string | null>>(IPC_REQUESTS.HOME_LAST_MESSAGES, sessionIds),
+    closedBranches: (repositoryIds) => request<ClosedBranchesResult>(IPC_REQUESTS.HOME_CLOSED_BRANCHES, repositoryIds)
+  },
   pullRequests: {
     list: (repositoryId, tab, state, query) => request<PullRequestListResult>(IPC_REQUESTS.PULL_REQUESTS_LIST, repositoryId, tab, state, query),
     listAcross: (tab, state, repositoryIds, query, limit) =>

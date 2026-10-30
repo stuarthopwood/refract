@@ -24,9 +24,11 @@ export interface FilterTabsProps<T extends string> {
   tabs: ReadonlyArray<{ value: T; label: string }>
   /** Re-reveals the active tab when this changes (for example the scoped Project id). */
   revealKey?: string
+  /** Names the tablist for screen readers; set it when a screen has more than one strip. */
+  ariaLabel?: string
 }
 
-export function FilterTabs<T extends string>({ value, onValueChange, tabs, revealKey }: FilterTabsProps<T>) {
+export function FilterTabs<T extends string>({ value, onValueChange, tabs, revealKey, ariaLabel }: FilterTabsProps<T>) {
   const tabsWrapRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -78,7 +80,7 @@ export function FilterTabs<T extends string>({ value, onValueChange, tabs, revea
         ref={tabsWrapRef}
         className="relative min-w-0 scroll-px-6 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <TabsList className="h-8 w-max shrink-0 justify-start gap-1 rounded-none bg-transparent p-0">
+        <TabsList aria-label={ariaLabel} className="h-8 w-max shrink-0 justify-start gap-1 rounded-none bg-transparent p-0">
           {tabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className={FILTER_TAB_TRIGGER_CLASS}>
               {tab.label}

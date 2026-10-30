@@ -158,7 +158,7 @@ export const useSplitStore = create<SplitState>((set, get) => {
   // arrangement" branches below -- so the view switch happens unconditionally, before those
   // early returns, not only on the branches that actually change `paneSessionIds`.
   function targetSession(sessionId: string, replaceIndex: 0 | 1, mode: 'split' | 'replace'): void {
-    if (useViewStore.getState().view === 'pull-requests') useViewStore.getState().openChat()
+    if (['pull-requests', 'home'].includes(useViewStore.getState().view)) useViewStore.getState().openChat()
     const { paneSessionIds, focusedIndex } = get()
     const pristineIds = withoutPristine(sessionId)
 
