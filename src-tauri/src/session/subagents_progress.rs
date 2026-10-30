@@ -254,7 +254,11 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
                 };
                 (changed, ops)
             })();
-            (changed.then(|| summaries_to_value(&s.summaries)), ops, settles)
+            (
+                changed.then(|| summaries_to_value(&s.summaries)),
+                ops,
+                settles,
+            )
         })
         .await;
     agent.settle_transcript_subagents(&settles).await;
