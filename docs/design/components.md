@@ -275,3 +275,12 @@ A pane banner (Worktree missing, Terminated unexpectedly, The agent stopped, sta
 - **Live region.** `role="alert"` applies at appearance only. An expanding disclosure (Details) sits outside the banner element so toggling it never re-announces the banner.
 - **Placement exception (recorded):** `StopBanner` stays under the pane header, while `AgentStoppedBar` and `RetryLine` sit above the composer in `ComposerAboveStack`; the stop banner replaces the composer path, the other two accompany it.
 - Other rows in the family (for example the Turn error row, #1284) reuse `PaneBanner` rather than a hand-styled copy.
+
+## Usage view components (spec 060, #1331)
+
+Four shared pieces carry the Usage view; reuse them rather than copying.
+
+- **Chart** (`components/ui/chart.tsx`): hand-written SVG (`StackedBarChart`, `BarChart`, `Sparkline`), no charting library. Series are told apart by fill pattern plus a legend with direct labels and totals, never colour alone, and every chart has a **View as table** toggle (`aria-pressed`) that swaps the SVG for a real table.
+- **StatCard** (`components/StatCard.tsx`): a label, a value and an optional caption read as one labelled group.
+- **SortableTable** (`components/SortableTable.tsx`): header buttons inside `th` cells carrying `aria-sort`, controlled sort, optional paging and an empty row. Keyboard-only.
+- **ProgressStrip** (`components/ProgressStrip.tsx`): `role="progressbar"` with value, min and max, plus a polite live region that announces completion.

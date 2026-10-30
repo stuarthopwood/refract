@@ -27,22 +27,22 @@ Format: `ID [P] description (paths)`. `[P]` = parallelisable with its neighbours
 
 ## Slice 2: renderer Usage view (PR 2, stacked on slice 1, Closes #1331)
 
-- S2-01 Check `package.json` for an existing charting library; if none, add the SVG chart primitive `src/renderer/components/ui/chart.tsx` (stacked bars, pattern fills, direct labels, sparkline, "View as table" toggle).
-- S2-02 [P] `src/renderer/components/StatCard.tsx` (value, label and caption read as one unit).
-- S2-03 [P] `src/renderer/components/SortableTable.tsx` (keyboard, `aria-sort`, paging, empty row).
-- S2-04 [P] `src/renderer/components/ProgressStrip.tsx` (`role="progressbar"` with value, polite live region on finish).
-- S2-05 `MainView` gains `'usage'` and `openUsage` in `src/renderer/state/view-store.ts`; `src/renderer/state/usage-store.ts` (filters, prefs, results, progress, start on open, stop on close, persisted via `usage.setPrefs`).
-- S2-06 `src/renderer/App.tsx`: one `usage` branch beside `pull-requests`/`issues`, net zero lines (baseline cap); Usage item in `src/renderer/features/sessions/ViewsNavGroup.tsx` after Issues.
-- S2-07 [P] `src/renderer/features/usage/captions.ts`: fixed caption templates chosen by value; hidden when jokes are off.
-- S2-08 `src/renderer/features/usage/UsageFilters.tsx` using `FilterTabs`, `Select`, `ListToolbar`; Custom range inputs.
-- S2-09 [P] `BudgetCard.tsx` (Copilot row, burn-rate line, provider rows, "Budget unavailable" with reason).
-- S2-10 [P] `HeadlineCards.tsx` (eight `StatCard`s; USD instead of credits for non-Copilot).
-- S2-11 [P] `SpendChart.tsx` and `TokenMixChart.tsx` on the chart primitive; day/hour toggle.
-- S2-12 [P] `UsageTables.tsx` split into one component per table if over 400 lines: by Project, by model and reasoning, by tool, top ten (row opens the Session when known), per-call log.
-- S2-13 [P] `FrustrationCard.tsx` (counts, mood sparkline; hidden when jokes are off).
-- S2-14 `UsageView.tsx` and `UsageEmptyState.tsx` (names the sessions folder): composes S2-08 to S2-13 under `ScreenHeader`, `region` landmark with `h1`, `ProgressStrip` while backfilling. Depends on S2-02 to S2-13.
-- S2-15 Settings row "Jokes on the Usage view" with `SettingSwitchRow` in `src/renderer/features/settings/ChatDisplaySection.tsx`, wired to `usage.setPrefs`.
-- S2-16 `src/renderer/features/usage/usageViewAction.ts` palette descriptor (registered when #5 lands).
-- S2-17 Docs: `docs/PLAN.md` row done, `CONTEXT.md`, `docs/design/components.md` (chart, StatCard, SortableTable, ProgressStrip).
-- S2-18 Extend `scripts/verify-tauri-1331.mjs` with the `quickstart.md` step 5 checks and a screenshot per state; include the large generated fixture for the progress bar and the empty `sessions\` folder.
+- [X] S2-01 Check `package.json` for an existing charting library; if none, add the SVG chart primitive `src/renderer/components/ui/chart.tsx` (stacked bars, pattern fills, direct labels, sparkline, "View as table" toggle).
+- [X] S2-02 [P] `src/renderer/components/StatCard.tsx` (value, label and caption read as one unit).
+- [X] S2-03 [P] `src/renderer/components/SortableTable.tsx` (keyboard, `aria-sort`, paging, empty row).
+- [X] S2-04 [P] `src/renderer/components/ProgressStrip.tsx` (`role="progressbar"` with value, polite live region on finish).
+- [X] S2-05 `MainView` gains `'usage'` and `openUsage` in `src/renderer/state/view-store.ts`; `src/renderer/state/usage-store.ts` (filters, prefs, results, progress, start on open, stop on close, persisted via `usage.setPrefs`).
+- [X] S2-06 `src/renderer/App.tsx`: one `usage` branch beside `pull-requests`/`issues`, net zero lines (baseline cap); Usage item in `src/renderer/features/sessions/ViewsNavGroup.tsx` after Issues.
+- [X] S2-07 [P] `src/renderer/features/usage/captions.ts`: fixed caption templates chosen by value; hidden when jokes are off.
+- [X] S2-08 `src/renderer/features/usage/UsageFilters.tsx` using `FilterTabs`, `Select`, `ListToolbar`; Custom range inputs.
+- [X] S2-09 [P] `BudgetCard.tsx` (Copilot row, burn-rate line, provider rows, "Budget unavailable" with reason).
+- [X] S2-10 [P] `HeadlineCards.tsx` (eight `StatCard`s; USD instead of credits for non-Copilot).
+- [X] S2-11 [P] `SpendChart.tsx` and `TokenMixChart.tsx` on the chart primitive; day/hour toggle.
+- [X] S2-12 [P] `UsageTables.tsx` split into one component per table if over 400 lines: by Project, by model and reasoning, by tool, top ten (row opens the Session when known), per-call log.
+- [X] S2-13 [P] `FrustrationCard.tsx` (counts, mood sparkline; hidden when jokes are off).
+- [X] S2-14 `UsageView.tsx` and `UsageEmptyState.tsx` (names the sessions folder): composes S2-08 to S2-13 under `ScreenHeader`, `region` landmark with `h1`, `ProgressStrip` while backfilling. Depends on S2-02 to S2-13.
+- [X] S2-15 Settings row "Jokes on the Usage view" with `SettingSwitchRow` in `src/renderer/features/settings/ChatDisplaySection.tsx`, wired to `usage.setPrefs`.
+- [X] S2-16 `src/renderer/features/usage/usageViewAction.ts` palette descriptor (registered when #5 lands).
+- [X] S2-17 Docs: `docs/PLAN.md` row done, `CONTEXT.md`, `docs/design/components.md` (chart, StatCard, SortableTable, ProgressStrip).
+- [X] S2-18 Extend `scripts/verify-tauri-1331.mjs` with the `quickstart.md` step 5 checks and a screenshot per state; include the large generated fixture for the progress bar and the empty `sessions\` folder.
 - S2-19 Verify: `pnpm ci:local`, live check, then `code-reviewer`, `security-auditor`, `performance-optimiser`, `accessibility-auditor` gates; PR (`feat(usage): usage view`, `Closes #1331`). Depends on S2-14 to S2-18.
