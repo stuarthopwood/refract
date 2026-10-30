@@ -10,13 +10,13 @@ Requirement and story numbers refer to [spec.md](spec.md); data and protocol det
 - The GitHub CLI (`gh`) installed and signed in to at least one account (`gh auth status`). For
   User Story 2's switch/sign-out checks, a second GitHub account you can safely add and remove
   (`gh auth login --web`) is needed — use a disposable or secondary account, not your only one.
-- `pnpm install`, `pnpm dev` (or `pnpm build` then run `out/main/index.js`'s packaged app).
+- `pnpm install`, then the Tauri debug exe per docs/rust-build.md (`pnpm verify:tauri-008` is the scripted live check).
 
 ## Run
 
 ```
 pnpm install
-pnpm dev          # Electron with hot reload
+pnpm dev          # renderer only; never use it for a live check
 pnpm typecheck    # must pass before a change lands on main
 pnpm build        # must pass before a change lands on main
 ```
