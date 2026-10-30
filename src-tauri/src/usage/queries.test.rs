@@ -153,3 +153,28 @@ fn summary_and_calls_read_what_was_recorded() {
     assert_eq!((page.total, page.rows.len()), (2, 1));
     assert_eq!(page.rows[0].model, "m2");
 }
+
+#[test]
+fn half_hour_zone_day_buckets_read_exact_rows() {
+    let conn = scratch_db();
+    let row = MessageRow {
+        entry_id: "a".into(),
+        ts: NOW - 60_000,
+        session_id: "s".into(),
+        provider: "github-copilot".into(),
+        model: "m1".into(),
+        agent_type: "main".into(),
+        project_label: "proj".into(),
+        total_tokens: 100,
+        cost_total: 1.0,
+        credits: Some(100.0),
+        ..MessageRow::default()
+    };
+    assert!(record_message(&conn, "file", &row).unwrap());
+    let ist = QueryCtx {
+        now_ms: NOW,
+        tz_offset_minutes: 330,
+    };
+    let buckets = timeseries(&conn, &filters("7d"), false, &ist).unwrap();
+    assert_eq!(buckets.len(), 1);
+}

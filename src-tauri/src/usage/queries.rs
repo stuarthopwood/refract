@@ -130,15 +130,15 @@ impl Rollup {
                  cache_read, cache_write, total_tokens, cost_total, cost_input, cost_output, \
                  cost_cache_read, cost_cache_write, credits",
                 "messages",
-                "project_label, model, reasoning, agent_type, 1, input, output, cache_read, \
+                "project_label, model, reasoning, agent_type, 1 AS calls, input, output, cache_read, \
                  cache_write, total_tokens, cost_total, cost_input, cost_output, cost_cache_read, \
-                 cost_cache_write, coalesce(credits, 0)",
+                 cost_cache_write, coalesce(credits, 0) AS credits",
             ),
             Self::Tools => (
                 "tool_rollup",
                 "hour, project_label, tool, agent_type, calls, errors, result_chars, cost_share",
                 "tool_calls",
-                "project_label, tool, agent_type, 1, coalesce(is_error, 0), result_chars, cost_share",
+                "project_label, tool, agent_type, 1 AS calls, coalesce(is_error, 0) AS errors, result_chars, cost_share",
             ),
         }
     }

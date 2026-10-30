@@ -177,8 +177,9 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
     let mut conn: Option<Connection> = None;
     let mut next_scan = Instant::now() + SCAN_INTERVAL;
     loop {
-        // Idle (stopped, or no connection yet): block without a timer so nothing rescans.
-        let msg = if conn.is_some() && inner.started.load(Ordering::SeqCst) {
+        // Idle (stopped): block without a timer so nothing rescans. While started, even without a
+        // connection, the timer retries open_db and fires the periodic rescan.
+        let msg = if inner.started.load(Ordering::SeqCst) {
             match rx.recv_timeout(next_scan.saturating_duration_since(Instant::now())) {
                 Ok(msg) => msg,
                 Err(RecvTimeoutError::Timeout) => Msg::Rescan,
@@ -215,6 +216,7 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
                 Err(e) => {
                     *lock(&inner.last_error) = Some(e.to_string());
                     inner.scan_pending.store(false, Ordering::SeqCst);
+                    next_scan = Instant::now() + SCAN_INTERVAL;
                     continue;
                 }
             }
