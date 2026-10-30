@@ -131,10 +131,8 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   return (
     <div data-git-changes-session={sessionId} className="flex h-full flex-col overflow-hidden">
       {snapshot && <GitChangesHeader header={snapshot.header} />}
-      {/* Item 5 (gate round 2): a background refresh failure while a stale-but-known snapshot
-          still shows -- quiet and always mounted, distinct from GitCommitBox's own role="alert"
-          for an ACTION failure, and from the Not-available state's own role="alert" below
-          (which has nothing else to show at all, so it IS the primary signal there). */}
+      {/* A background refresh failure over a stale-but-known snapshot: quiet, mounted only while it
+          fails, and distinct from GitCommitBox's role="alert" for an action failure. */}
       {snapshot && sessionEntry?.loadError && (
         <InlineStatus tone="notice" density="compact">
           {sessionEntry.loadError}

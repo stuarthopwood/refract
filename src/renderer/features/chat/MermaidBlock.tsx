@@ -3,11 +3,10 @@ import type { MermaidConfig } from 'mermaid'
 import { DownloadIcon, FileCodeIcon, ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { ContextMenuSeparator } from '@/components/ui/context-menu'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
-import { actionMenuItem } from '@/features/palette/menuItems'
+import { actionMenuItem, menuSeparator } from '@/features/palette/menuItems'
 import { notify, useActiveThemeId } from '@/state'
 import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
 import { CodeBlock } from './CodeBlock'
@@ -183,14 +182,14 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
   return (
     <TranscriptMenu
       className="space-y-1"
-      items={
+      items={(kind) => (
         <>
-          {actionMenuItem('transcript.mermaid-copy-source', { onSelect: () => void copyLinkText(code, 'Source copied', 'Nothing to copy: the source only contains hidden characters') })}
-          {actionMenuItem('transcript.mermaid-copy-image', { onSelect: () => void copyImageWithToast() })}
-          <ContextMenuSeparator />
-          {actionMenuItem('transcript.mermaid-save-image', { onSelect: () => void saveImage() })}
+          {actionMenuItem('transcript.mermaid-copy-source', { kind, onSelect: () => void copyLinkText(code, 'Source copied', 'Nothing to copy: the source only contains hidden characters') })}
+          {actionMenuItem('transcript.mermaid-copy-image', { kind, onSelect: () => void copyImageWithToast() })}
+          {menuSeparator(kind)}
+          {actionMenuItem('transcript.mermaid-save-image', { kind, onSelect: () => void saveImage() })}
         </>
-      }
+      )}
     >
       <img
         ref={imageRef}
@@ -207,14 +206,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
       )}
       <div className="flex items-center gap-1">
         <CopyButton getText={() => code} label={`Copy source for ${accessibleName}`} announcement="Source copied" icon={FileCodeIcon} className={buttonClassName} />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label={`Copy ${accessibleName} as image`} className={buttonClassName} onClick={() => void copyImageWithToast()}>
-              <ImageIcon aria-hidden />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Copy as image</TooltipContent>
-        </Tooltip>
+        <CopyButton onCopy={copyImage} label={`Copy ${accessibleName} as image`} announcement="Image copied" icon={ImageIcon} className={buttonClassName} />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon-xs" aria-label={`Save ${accessibleName} as image`} className={buttonClassName} onClick={() => void saveImage()}>

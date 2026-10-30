@@ -1,17 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileIcon, FolderIcon, Loader2Icon, OctagonXIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { FileIcon, FolderIcon, Loader2Icon } from 'lucide-react'
 import type { LeftoverSummary } from '../../../shared/ipc'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
+import { InlineStatus } from '@/components/InlineStatus'
 
 interface DeleteCheck {
   uncommittedFiles: number
@@ -201,126 +192,85 @@ export function DeleteDialog({
     onOpenChange(false)
   }
 
-  const { first: errorFirst, rest: errorRest } = error ? splitFirstSentence(error) : { first: '', rest: '' }
   const statusText = leftoverStatusText(deleting, loading || refreshing, leftoverLoading, leftoverError, leftoverSummary)
   const hasLeftoverList = !!leftoverSummary && (leftoverSummary.generatedFolders.length > 0 || leftoverSummary.otherFiles.length > 0)
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent
-        size="md"
-        onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          if (deletedRef.current) {
-            deletedRef.current = false
-            onDeleted?.()
-          } else {
-            onCancelled?.()
-          }
-        }}
-        onEscapeKeyDown={(event) => {
-          if (deleting) event.preventDefault()
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete Session {session.name}?</AlertDialogTitle>
-          <AlertDialogDescription>This removes its worktree, its branch, and its Conversations.</AlertDialogDescription>
-        </AlertDialogHeader>
-        {result && (result.uncommittedFiles > 0 || result.unpushedCommits > 0 || !result.hasUpstream) && (
-          <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
-            {result.uncommittedFiles > 0 && (
-              <li>
-                {result.uncommittedFiles} uncommitted file{result.uncommittedFiles === 1 ? '' : 's'} will be lost
-              </li>
-            )}
-            {result.unpushedCommits > 0 && (
-              <li>
-                {result.unpushedCommits} commit{result.unpushedCommits === 1 ? '' : 's'} not pushed will be lost
-              </li>
-            )}
-            {!result.hasUpstream && <li>This branch has no upstream</li>}
-          </ul>
-        )}
-        {recheckFailed && <p className="text-sm text-muted-foreground">Couldn't re-check what Delete would lose.</p>}
-        <p role="status" className="flex min-h-5 items-center gap-2 text-sm text-muted-foreground">
-          {deleting && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
-          {statusText}
-        </p>
-        {hasLeftoverList && leftoverSummary && (
-          <div className="min-w-0">
-            <p id="leftover-files-label" className="text-sm">
-              Files left in the worktree
-            </p>
-            <ul
-              aria-labelledby="leftover-files-label"
-              tabIndex={0}
-              className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-            >
-              {leftoverSummary.generatedFolders.map((folder) => (
-                <li key={folder.name} className="flex min-w-0 items-start gap-2">
-                  <FolderIcon aria-hidden className="mt-1 size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 font-code [overflow-wrap:anywhere]">
-                    {folder.name} — <span className="tabular-nums">{folder.fileCount.toLocaleString()}</span> file
-                    {folder.fileCount === 1 ? '' : 's'}
-                  </span>
-                </li>
-              ))}
-              {leftoverSummary.otherFiles.map((filePath) => (
-                <li key={filePath} className="flex min-w-0 items-start gap-2">
-                  <FileIcon aria-hidden className="mt-1 size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 font-code [overflow-wrap:anywhere]">
-                    {leftoverSummary.rootName}/{normalizeDisplayPath(filePath)}
-                  </span>
-                </li>
-              ))}
-              {leftoverSummary.moreCount > 0 && (
-                <li className="pl-6 text-xs">and {leftoverSummary.moreCount.toLocaleString()} more files</li>
-              )}
-            </ul>
-          </div>
-        )}
-        {/* `min-h-5` keeps this box's own height constant whether or not it holds text, so the footer below never jumps as a Retry clears and re-sets `error`. */}
-        <div
-          id="delete-dialog-error"
-          role="alert"
-          className={cn('flex min-h-5 min-w-0 items-start gap-2 text-sm [overflow-wrap:anywhere]')}
-        >
-          {error && (
-            <>
-              <OctagonXIcon aria-hidden className="mt-1 size-4 shrink-0 text-destructive" />
-              <p className="min-w-0 flex-1">
-                <span className="sr-only">Error: </span>
-                <span className="text-destructive">{errorFirst}</span>
-                {errorRest && <span className="text-foreground"> {errorRest}</span>}
-              </p>
-            </>
+    <ConfirmAlertDialog
+      open={open}
+      busy={deleting}
+      confirmDisabled={loading}
+      size="md"
+      tone="destructive"
+      title={`Delete Session ${session.name}?`}
+      description="This removes its worktree, its branch, and its Conversations."
+      confirmLabel={refused ? 'Retry' : 'Delete'}
+      busyLabel="Deleting…"
+      error={error}
+      onCancel={() => onOpenChange(false)}
+      onConfirm={() => void handleDelete()}
+      onCloseAutoFocus={() => {
+        if (deletedRef.current) {
+          deletedRef.current = false
+          onDeleted?.()
+        } else {
+          onCancelled?.()
+        }
+      }}
+    >
+      {result && (result.uncommittedFiles > 0 || result.unpushedCommits > 0 || !result.hasUpstream) && (
+        <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
+          {result.uncommittedFiles > 0 && (
+            <li>
+              {result.uncommittedFiles} uncommitted file{result.uncommittedFiles === 1 ? '' : 's'} will be lost
+            </li>
           )}
+          {result.unpushedCommits > 0 && (
+            <li>
+              {result.unpushedCommits} commit{result.unpushedCommits === 1 ? '' : 's'} not pushed will be lost
+            </li>
+          )}
+          {!result.hasUpstream && <li>This branch has no upstream</li>}
+        </ul>
+      )}
+      {recheckFailed && <InlineStatus className="p-0">Couldn't re-check what Delete would lose.</InlineStatus>}
+      <InlineStatus tone="loading" className="flex min-h-5 items-center gap-2 p-0">
+        {deleting && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
+        {statusText}
+      </InlineStatus>
+      {hasLeftoverList && leftoverSummary && (
+        <div className="min-w-0">
+          <p id="leftover-files-label" className="text-sm">
+            Files left in the worktree
+          </p>
+          <ul
+            aria-labelledby="leftover-files-label"
+            tabIndex={0}
+            className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          >
+            {leftoverSummary.generatedFolders.map((folder) => (
+              <li key={folder.name} className="flex min-w-0 items-start gap-2">
+                <FolderIcon aria-hidden className="mt-1 size-4 shrink-0" />
+                <span className="min-w-0 flex-1 font-code [overflow-wrap:anywhere]">
+                  {folder.name} — <span className="tabular-nums">{folder.fileCount.toLocaleString()}</span> file
+                  {folder.fileCount === 1 ? '' : 's'}
+                </span>
+              </li>
+            ))}
+            {leftoverSummary.otherFiles.map((filePath) => (
+              <li key={filePath} className="flex min-w-0 items-start gap-2">
+                <FileIcon aria-hidden className="mt-1 size-4 shrink-0" />
+                <span className="min-w-0 flex-1 font-code [overflow-wrap:anywhere]">
+                  {leftoverSummary.rootName}/{normalizeDisplayPath(filePath)}
+                </span>
+              </li>
+            ))}
+            {leftoverSummary.moreCount > 0 && (
+              <li className="pl-6 text-xs">and {leftoverSummary.moreCount.toLocaleString()} more files</li>
+            )}
+          </ul>
         </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel
-            aria-disabled={deleting}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              if (deleting) event.preventDefault()
-            }}
-          >
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            aria-disabled={loading || deleting}
-            aria-describedby="delete-dialog-error"
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              event.preventDefault()
-              if (loading || deleting) return
-              void handleDelete()
-            }}
-          >
-            {deleting ? 'Deleting…' : refused ? 'Retry' : 'Delete'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      )}
+    </ConfirmAlertDialog>
   )
 }

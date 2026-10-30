@@ -1,6 +1,6 @@
 import { BookPlusIcon, ClipboardPasteIcon, ClipboardTypeIcon, CopyIcon, ScissorsIcon, SpellCheckIcon, TextSelectIcon } from 'lucide-react'
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from '@/components/ui/context-menu'
-import { DropdownMenuItem, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
 import { chordText, findAction, isActionEnabled } from './actionRegistry'
 
 export type MenuKind = 'context' | 'dropdown'
@@ -11,6 +11,11 @@ interface ActionMenuItemOptions {
   label?: string
   /** Runs the action; defaults to `action.run`. A menu that must defer it until close passes its own. */
   onSelect?: () => void
+}
+
+/** A separator for the given menu kind. */
+export function menuSeparator(kind: MenuKind = 'context') {
+  return kind === 'dropdown' ? <DropdownMenuSeparator /> : <ContextMenuSeparator />
 }
 
 /** A menu item for a registered action: label, icon, chord hint, disabled from `when`, runs on select. Null for an unknown id. */

@@ -1,17 +1,18 @@
 import * as React from 'react'
 import { WrapTextIcon } from 'lucide-react'
 import type { Highlighter } from 'shiki'
-import { ContextMenuCheckboxItem, ContextMenuSeparator } from '@/components/ui/context-menu'
+import { ContextMenuCheckboxItem } from '@/components/ui/context-menu'
+import { DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { actionMenuItem } from '@/features/palette/menuItems'
+import { actionMenuItem, menuSeparator, type MenuKind } from '@/features/palette/menuItems'
 import { cn } from '@/lib/utils'
 import { useActiveThemeId } from '@/state'
 import { THEMES } from '../../../shared/themes'
 import { copyLinkText } from './linkClipboard'
 import { getHighlighter, highlightToHtml } from './shikiHighlighter'
-import { TranscriptMenu } from './TranscriptMenu'
+import { TranscriptKebab, TranscriptMenu } from './TranscriptMenu'
 
 interface CodeBlockHeaderProps {
   label: string
@@ -19,13 +20,15 @@ interface CodeBlockHeaderProps {
   hideCopy: boolean
   /** Null hides the Wrap control (a caller with its own, or a streaming block). */
   wrap: { on: boolean; onChange: (on: boolean) => void } | null
+  /** The menu's items, shown by the trailing kebab; null hides it. */
+  items: ((kind: MenuKind) => React.ReactNode) | null
 }
 
 // Header above every code block: the language when known and highlighted, else "text", so it never
 // claims a highlight the body lacks. `copyText` is the full value to copy (a caller may show a
 // truncated body, #524); the Copy button is always visible, hidden when empty so it never clears
 // the clipboard, and its label names the language so blocks are distinguishable to a screen reader.
-function CodeBlockHeader({ label, copyText, hideCopy, wrap }: CodeBlockHeaderProps) {
+function CodeBlockHeader({ label, copyText, hideCopy, wrap, items }: CodeBlockHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-2 border-b border-border bg-code-block px-2 py-1 font-code text-xs text-muted-foreground">
       <span className="truncate text-md-code-label">{label}</span>
@@ -55,6 +58,7 @@ function CodeBlockHeader({ label, copyText, hideCopy, wrap }: CodeBlockHeaderPro
             className="-my-1 text-muted-foreground focus-visible:ring-inset"
           />
         )}
+        {items && <TranscriptKebab items={items} label={`More actions, ${label}`} className="-my-1" />}
       </div>
     </div>
   )
@@ -174,34 +178,31 @@ export function CodeBlock({
     </pre>
   )
 
-  const viewItems = (
-    <>
-      {!hideWrap && (
-        <ContextMenuCheckboxItem icon={WrapTextIcon} checked={wrapOn} onCheckedChange={setWrapOn}>
-          Wrap lines
-        </ContextMenuCheckboxItem>
-      )}
-      {expandable && actionMenuItem(expandable.expanded ? 'transcript.collapse' : 'transcript.expand', { onSelect: expandable.onToggle })}
-    </>
-  )
+  const menuDisabled = streaming || (fullText === '' && hideWrap && !expandable)
+  const items = (kind: MenuKind) => {
+    const WrapItem = kind === 'dropdown' ? DropdownMenuCheckboxItem : ContextMenuCheckboxItem
+    return (
+      <>
+        {fullText !== '' && actionMenuItem('transcript.copy-code', { kind, onSelect: () => void copyLinkText(fullText, 'Code copied', 'Nothing to copy: this block only contains hidden characters') })}
+        {fullText !== '' && (!hideWrap || expandable) && menuSeparator(kind)}
+        {!hideWrap && (
+          <WrapItem icon={WrapTextIcon} checked={wrapOn} onCheckedChange={setWrapOn}>
+            Wrap lines
+          </WrapItem>
+        )}
+        {expandable && actionMenuItem(expandable.expanded ? 'transcript.collapse' : 'transcript.expand', { kind, onSelect: expandable.onToggle })}
+      </>
+    )
+  }
 
   return (
-    <TranscriptMenu
-      disabled={streaming || (fullText === '' && hideWrap && !expandable)}
-      className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs"
-      items={
-        <>
-          {fullText !== '' && actionMenuItem('transcript.copy-code', { onSelect: () => void copyLinkText(fullText, 'Code copied', 'Nothing to copy: this block only contains hidden characters') })}
-          {fullText !== '' && (!hideWrap || expandable) && <ContextMenuSeparator />}
-          {viewItems}
-        </>
-      }
-    >
+    <TranscriptMenu disabled={menuDisabled} className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs" items={items}>
       <CodeBlockHeader
         label={label}
         copyText={fullText}
         hideCopy={hideCopy || streaming}
         wrap={hideWrap || streaming ? null : { on: wrapOn, onChange: setWrapOn }}
+        items={menuDisabled ? null : items}
       />
       <div className="flex">
         {gutter}

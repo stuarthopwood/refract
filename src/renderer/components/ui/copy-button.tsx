@@ -1,5 +1,5 @@
 import * as React from "react"
-import { CheckIcon, CopyIcon } from "lucide-react"
+import { CheckIcon, CopyIcon, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -19,7 +19,7 @@ export interface CopyButtonProps {
   className?: string
   tabIndex?: number
   disabled?: boolean
-  icon?: React.ComponentType<{ "aria-hidden"?: boolean }>
+  icon?: LucideIcon
 }
 
 export function CopyButton({ getText, onCopy, label, announcement, className, tabIndex, disabled, icon: Icon = CopyIcon }: CopyButtonProps) {
