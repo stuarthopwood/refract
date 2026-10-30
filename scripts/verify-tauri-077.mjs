@@ -45,7 +45,7 @@ async function hoverTooltip(cdp, label) {
   await cdp.evaluate(`${sel}.scrollIntoView({ block: 'center' })`);
   const rect = await cdp.evaluate(`(() => { const r = ${sel}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; })()`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
-  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[data-slot="tooltip-content"]')).find((t) => t.textContent.includes(${JSON.stringify(label)}))`, { timeoutMs: 5_000, label: `tooltip for ${label}` });
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[data-slot="tooltip-content"][data-state^="delayed-open"], [data-slot="tooltip-content"][data-state="instant-open"]')).find((t) => t.textContent.includes(${JSON.stringify(label)}))`, { timeoutMs: 5_000, label: `tooltip for ${label}` });
   return rect;
 }
 
