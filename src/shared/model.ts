@@ -145,6 +145,8 @@ export interface ModelCatalogEntry {
   selector: string;
   name: string;
   reasoning: boolean; thinking: string[] | null;
+  /** OMP's reported context window; absent or null when OMP omits it. */
+  contextWindow?: number | null;
 }
 
 /** Holds the two Session ids shown. */

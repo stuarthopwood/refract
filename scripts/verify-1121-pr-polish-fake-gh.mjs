@@ -104,7 +104,14 @@ function fail(message) {
   process.exit(1);
 }
 
-if (args[0] === 'pr' && args[1] === 'list') {
+if (args[0] === 'search' && args[1] === 'prs') {
+  const stateIdx = args.indexOf('--state');
+  const state = stateIdx >= 0 ? args[stateIdx + 1] : 'all';
+  let rows = PR_FIXTURES;
+  if (state === 'open') rows = PR_FIXTURES.filter((p) => p.state === 'OPEN');
+  else if (state === 'closed') rows = PR_FIXTURES.filter((p) => p.state === 'CLOSED' || p.state === 'MERGED');
+  emit(rows.map((p) => ({ ...toListEntry(p), state: p.state.toLowerCase(), url: 'https://github.com/fake-owner/fake-repo-1121/pull/' + p.number, repository: { nameWithOwner: 'fake-owner/fake-repo-1121', name: 'fake-repo-1121' } })));
+} else if (args[0] === 'pr' && args[1] === 'list') {
   const stateIdx = args.indexOf('--state');
   const state = stateIdx >= 0 ? args[stateIdx + 1] : 'open';
   let rows = PR_FIXTURES;

@@ -5,7 +5,7 @@
 // they confirm first; elide keeps `artifact://` references and does not.
 import { Fragment, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { BrainIcon, ImageIcon, ScissorsIcon } from 'lucide-react'
+import { BrainIcon, ExternalLinkIcon, ImageIcon, ScissorsIcon } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +17,9 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { SUSPECT_WINDOW_ISSUE_URL } from '@/lib/suspectContextWindow'
 import { notify, useDraftStore, useSessionsStore } from '@/state'
 
 interface ShakeAction {
@@ -52,8 +54,8 @@ const SHAKE_ACTIONS: ShakeAction[] = [
 
 const IDLE_REASON_ID = 'context-shake-idle-reason'
 
-/** Wraps the Context readout (`children`, a `ReadoutItem`) as the menu trigger. */
-export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: string; figure: string | null; children: ReactNode }) {
+/** Wraps the Context readout (`children`, a `ReadoutItem`) as the menu trigger. A `notice` adds a tooltip and an upstream-issue link, because a tooltip cannot hold a clickable link. */
+export function ContextShakeMenu({ sessionId, figure, notice, children }: { sessionId: string; figure: string | null; notice?: string; children: ReactNode }) {
   const idle = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'idle')
   const [confirming, setConfirming] = useState<ShakeAction | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -85,7 +87,16 @@ export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: s
   return (
     <>
       <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild ref={triggerRef}>{children}</DropdownMenuTrigger>
+        {notice ? (
+          <Tooltip>
+            <TooltipTrigger asChild aria-describedby={undefined}>
+              <DropdownMenuTrigger asChild ref={triggerRef}>{children}</DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-80">{notice}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <DropdownMenuTrigger asChild ref={triggerRef}>{children}</DropdownMenuTrigger>
+        )}
         <DropdownMenuContent align="start" side="top">
           {figure && <DropdownMenuLabel className="text-foreground">{figure}</DropdownMenuLabel>}
           {!idle && (
@@ -108,6 +119,17 @@ export function ContextShakeMenu({ sessionId, figure, children }: { sessionId: s
               </Fragment>
             )
           })}
+          {notice && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <a href={SUSPECT_WINDOW_ISSUE_URL} target="_blank" rel="noreferrer noopener">
+                  <ExternalLinkIcon aria-hidden className="size-4" />
+                  Why this window may be wrong (oh-my-pi#17481)
+                </a>
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>

@@ -64,7 +64,7 @@ export function CommentBox({ repositoryId, number, state, title, prTitle, text, 
   }
 
   return (
-    <div className="border-t border-border p-4">
+    <div className="px-4 pt-2 pb-4">
       <MarkdownEditor
         value={text}
         onChange={onTextChange}

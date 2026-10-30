@@ -63,7 +63,7 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
       <UsageFilters />
       <div
         aria-busy={s.refreshing}
-        className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 transition-opacity ${s.refreshing ? 'opacity-60' : ''}`}
+        className={`flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto p-4 transition-opacity ${s.refreshing ? 'opacity-60' : ''}`}
       >
         {showProgress && status && (
           <ProgressStrip
@@ -92,7 +92,7 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
             <ScreenSection title="Overview" loading={!s.loaded || s.summary === null}>
               {s.summary && <HeadlineCards summary={s.summary} jokes={s.jokes} />}
             </ScreenSection>
-            <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+            <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
               <SpendChart buckets={s.timeseries} bucket={s.bucket} onBucketChange={s.setBucket} loading={pending(s.timeseries.length === 0)} />
               <TokenMixChart rows={s.tokenMix} loading={pending(s.tokenMix.length === 0)} />
             </div>

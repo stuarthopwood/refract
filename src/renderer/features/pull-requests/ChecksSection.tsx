@@ -99,7 +99,7 @@ export function ChecksSection({ checks, checkState }: { checks: PullRequestDetai
   const overall = CHECK_STATE_DISPLAY[checkState]
   const OverallIcon = overall.icon
   return (
-    <section aria-label="Checks" className="border-t border-divider p-4">
+    <section aria-label="Checks" className="px-4 pt-2 pb-4">
       <h3 className={cn('mb-2 flex items-center gap-2 text-base font-semibold', overall.colorClass)}>
         <OverallIcon aria-hidden className={cn('size-4', checkState === 'pending' && 'animate-spin')} />
         {overall.label}

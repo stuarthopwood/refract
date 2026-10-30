@@ -73,6 +73,9 @@ pub struct ModelCatalogEntry {
     pub reasoning: bool,
     /// Supported reasoning levels; `None` for a non-reasoning model.
     pub thinking: Option<Vec<String>>,
+    /// OMP's reported context window; `None` when the row omits it.
+    #[serde(rename = "contextWindow")]
+    pub context_window: Option<i64>,
 }
 
 // Stripped from the merge-read and `config set` so a runtime env override never becomes the persisted baseline.
@@ -321,6 +324,7 @@ pub fn parse_catalog_response(value: &Value) -> Result<Vec<ModelCatalogEntry>, O
                 name: name.to_string(),
                 reasoning,
                 thinking,
+                context_window: object.get("contextWindow").and_then(Value::as_i64),
             });
         }
     }
