@@ -121,8 +121,12 @@ async function main() {
       throw new Error(`clipboard still unavailable after retries: ${lastPsError}`);
     };
     let lastPsError = '';
-    const clipboard = async () => ps('Get-Clipboard -Raw');
-    const setClipboard = async (t) => { ps(`Set-Clipboard -Value ${JSON.stringify(t)}`); return true; };    const openMenu = async () => {
+    const clipboard = async () => ps(`$ErrorActionPreference='Stop'; Get-Clipboard -Raw`);
+    const setClipboard = async (t) => {
+      ps(`$ErrorActionPreference='Stop'; Set-Clipboard -Value '${t.replace(/'/g, "''")}'`);
+      return true;
+    };
+    const openMenu = async () => {
       // A right-click outside a selection moves the caret, so collapsed carets open via the keyboard.
       const [a, b] = await sel();
       if (a === b) await key('F10', 'F10', 121, 8);
@@ -193,7 +197,7 @@ async function main() {
     check((await value()) === big, 'Paste as plain text inserts the literal block, bypassing the handler', (await value()).length);
 
     // Over the 1 MB cap the IPC refuses; the draft stays as it was.
-    ps(`Set-Clipboard -Value ('y' * 1200000)`);
+    ps(`$ErrorActionPreference='Stop'; Set-Clipboard -Value ('y' * 1200000)`);
     await cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(0, 0); return true; })()`);
     await key('F10', 'F10', 121, 8);
     await menuOpen();

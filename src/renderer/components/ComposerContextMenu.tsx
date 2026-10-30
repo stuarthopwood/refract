@@ -1,10 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
+import { toast } from 'sonner'
 import { notify } from '@/state'
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 
@@ -30,7 +32,7 @@ async function readClipboard(): Promise<string | null> {
     return null
   }
   if (result.value === '') {
-    notify({ code: 'clipboard-failed', message: 'The clipboard has no text. Use Ctrl+V to paste images or files.' })
+    toast.info('The clipboard has no text. Use Ctrl+V to paste images or files.')
     return null
   }
   return result.value
@@ -39,7 +41,8 @@ async function readClipboard(): Promise<string | null> {
 async function runAction(field: HTMLTextAreaElement, action: FieldAction): Promise<void> {
   const start = field.selectionStart
   const end = field.selectionEnd
-  const selected = field.value.slice(start, end)
+  const value = field.value
+  const selected = value.slice(start, end)
   switch (action) {
     case 'select-all':
       field.select()
@@ -48,9 +51,9 @@ async function runAction(field: HTMLTextAreaElement, action: FieldAction): Promi
       await writeClipboard(selected)
       return
     case 'cut':
-      // Delete only after a confirmed write, and only if the selection did not move meanwhile.
+      // Delete only after a confirmed write, and only if the text and selection did not move meanwhile.
       if (!(await writeClipboard(selected))) return
-      if (field.selectionStart !== start || field.selectionEnd !== end) return
+      if (field.value !== value || field.selectionStart !== start || field.selectionEnd !== end) return
       document.execCommand('delete')
       return
     case 'paste':
@@ -93,7 +96,8 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
-        aria-label="Message actions"
+        aria-label="Text editing"
+        collisionPadding={8}
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           const el = field()
@@ -105,12 +109,15 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
       >
         <ContextMenuItem disabled={!state.editable || !state.hasSelection} onSelect={() => (pendingRef.current = 'cut')}>
           Cut
+          <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem disabled={!state.hasSelection} onSelect={() => (pendingRef.current = 'copy')}>
           Copy
+          <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem disabled={!state.editable} onSelect={() => (pendingRef.current = 'paste')}>
           Paste
+          <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem disabled={!state.editable} onSelect={() => (pendingRef.current = 'paste-text')}>
           Paste as plain text
@@ -118,6 +125,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
         <ContextMenuSeparator />
         <ContextMenuItem disabled={!state.hasText} onSelect={() => (pendingRef.current = 'select-all')}>
           Select all
+          <ContextMenuShortcut>Ctrl+A</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
