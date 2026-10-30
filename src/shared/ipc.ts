@@ -32,10 +32,7 @@ import type {
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames'; import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type { AttachmentsApi } from './ipc-attachments'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { IssuesApi } from './ipc-issues'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
-import type {
-  ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
-  PullRequestStateFilter, PullRequestSummary, ReviewVerdict
-} from './github';
+import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
 import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
 
@@ -416,7 +413,8 @@ export const IPC_REQUESTS = {
   MODEL_LIST_ROLES: 'model.listRoles',
   MODEL_SET_THINKING_LEVEL: 'model.setThinkingLevel',
   WINDOW_POPUP_MENU: 'window.popupMenu',
-  PULL_REQUESTS_LIST: 'pullRequests.list', PULL_REQUESTS_LIST_ACROSS: 'pullRequests.listAcross',
+  PULL_REQUESTS_LIST: 'pullRequests.list',
+  PULL_REQUESTS_LIST_ACROSS: 'pullRequests.listAcross',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
   PULL_REQUESTS_COMMENT: 'pullRequests.comment',
   PULL_REQUESTS_REPLY_TO_THREAD: 'pullRequests.replyToThread',
