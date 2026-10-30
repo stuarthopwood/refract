@@ -37,6 +37,14 @@ export async function svgToPngBase64(svg: string, background: string): Promise<s
   ctx.fillStyle = background
   ctx.fillRect(0, 0, w, h)
   ctx.drawImage(img, 0, 0, w, h)
-  const url = canvas.toDataURL('image/png')
+  // toBlob encodes off the main thread; toDataURL blocked it on large diagrams.
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+  if (!blob) throw new Error('The diagram could not be drawn')
+  const url = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error('The diagram could not be drawn'))
+    reader.readAsDataURL(blob)
+  })
   return url.slice(url.indexOf(',') + 1)
 }

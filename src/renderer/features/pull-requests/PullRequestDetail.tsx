@@ -319,8 +319,19 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
       <ConfirmAlertDialog
         open={forkWarningOpen}
         busy={false}
+        size="md"
         title="Start a Session on untrusted code?"
-        description={`${title} comes from a fork${detail.headRepositoryOwner ? ` owned by ${detail.headRepositoryOwner}` : ''}, not this project's GitHub repository. Its branch may contain code, commit messages, or an AGENTS.md written by someone you don't control, which an agent session would then read and could act on. Only continue if you trust this pull request's author.`}
+        description={
+          <>
+            <span className="block">
+              {title} comes from a fork{detail.headRepositoryOwner ? ` owned by ${detail.headRepositoryOwner}` : ''}, not this project's GitHub repository.
+            </span>
+            <span className="mt-2 block">
+              Its branch may contain code, commit messages, or an AGENTS.md written by someone you don't control, which an agent session would then read and could act on.
+            </span>
+            <span className="mt-2 block">Only continue if you trust this pull request's author.</span>
+          </>
+        }
         confirmLabel="Start Session anyway"
         onCancel={() => setForkWarningOpen(false)}
         onConfirm={() => {

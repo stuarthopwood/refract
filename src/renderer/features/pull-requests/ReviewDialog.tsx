@@ -5,16 +5,8 @@
 // no confirmation (FR-017 names only approve, request changes, and merge).
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -129,17 +121,15 @@ export function ReviewDialog({
     onOpenChange(next)
   }
 
-  function focusTrigger(event: { preventDefault(): void }): void {
-    event.preventDefault()
-    // Security/accessibility remediation (round 4): unlike `MergeDialog.tsx`'s identical-looking
-    // `succeededRef`, a successful review submission never disables this dialog's own "Review"
-    // trigger -- `reviewDisabledReason` (FR-019) only reacts to the pull request's own
-    // draft/closed/merged state, which a review never changes. The enabled-check below is
-    // already correct for both the success and cancel paths, so no synchronous success flag is
-    // needed here.
+  function restoreTriggerFocus(): void {
     const button = restoreFocusTo.current
     if (button && !button.disabled) button.focus()
     else restoreFocusFallbackTo.current?.focus()
+  }
+
+  function focusTrigger(event: { preventDefault(): void }): void {
+    event.preventDefault()
+    restoreTriggerFocus()
   }
 
   const actionLabel = verdict === 'approve' ? 'Approve' : 'Request changes'
@@ -173,7 +163,7 @@ export function ReviewDialog({
               <Button
                 key={option.value}
                 type="button"
-                variant={verdict === option.value ? 'default' : 'outline'}
+                variant={verdict === option.value ? 'secondary' : 'outline'}
                 aria-pressed={verdict === option.value}
                 size="sm"
                 onClick={() => {
@@ -196,9 +186,9 @@ export function ReviewDialog({
             readOnly={submitting}
             aria-disabled={submitting}
           />
-          <p id={bodyErrorId} role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+          <InlineStatus tone="error" id={bodyErrorId} className={cn('p-0', !error && 'sr-only')}>
             {error ?? ''}
-          </p>
+          </InlineStatus>
           <DialogFooter>
             <Button
               variant="outline"
@@ -231,53 +221,18 @@ export function ReviewDialog({
       </Dialog>
       {/* FR-017: approve/request-changes each require an explicit confirmation naming the pull
           request and the exact action, before the review is submitted. */}
-      <AlertDialog
+      <ConfirmAlertDialog
         open={open && confirming}
-        onOpenChange={(next) => {
-          if (!next) setConfirming(false)
-        }}
-      >
-        <AlertDialogContent
-          onCloseAutoFocus={focusTrigger}
-          onEscapeKeyDown={(event) => {
-            if (submitting) event.preventDefault()
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {actionLabel} {title}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This submits your review as {verdict === 'approve' ? 'an approval' : 'a request for changes'} on {title}.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
-            {error ?? ''}
-          </p>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              aria-disabled={submitting}
-              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-              onClick={(event) => {
-                if (submitting) event.preventDefault()
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              aria-disabled={submitting}
-              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-              onClick={(event) => {
-                event.preventDefault()
-                if (submitting) return
-                void submit()
-              }}
-            >
-              {submitting ? 'Submitting…' : actionLabel}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        busy={submitting}
+        title={`${actionLabel} ${title}?`}
+        description={`This submits your review as ${verdict === 'approve' ? 'an approval' : 'a request for changes'} on ${title}.`}
+        confirmLabel={error ? 'Retry' : actionLabel}
+        busyLabel="Submitting…"
+        error={error}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void submit()}
+        onCloseAutoFocus={restoreTriggerFocus}
+      />
     </>
   )
 }
