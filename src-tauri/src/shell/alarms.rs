@@ -48,13 +48,13 @@ pub fn spawn(app: AppHandle, settings: Arc<AsyncMutex<SettingsStore>>) {
     tauri::async_runtime::spawn(async move {
         loop {
             let now = now_ms();
-            let (fired, snapshot, next) = {
+            let (fired, snapshot, next, save_failed) = {
                 let mut store = settings.lock().await;
-                let fired = store.take_due_alarms(now).await.unwrap_or_else(|err| {
+                let (fired, err) = store.take_due_alarms(now).await;
+                if let Some(err) = &err {
                     log::warn!("refract-tauri: failed to save fired alarms: {err}");
-                    Vec::new()
-                });
-                (fired, store.get(), store.next_alarm_ms())
+                }
+                (fired, store.get(), store.next_alarm_ms(), err.is_some())
             };
             if !fired.is_empty() {
                 for alarm in &fired {
@@ -66,7 +66,12 @@ pub fn spawn(app: AppHandle, settings: Arc<AsyncMutex<SettingsStore>>) {
             match next {
                 None => WAKE.notified().await,
                 Some(at) => {
-                    let wait = Duration::from_millis((at - now).max(0) as u64).min(MAX_SLEEP);
+                    // A failing save must not turn the loop into a busy retry.
+                    let wait = if save_failed {
+                        MAX_SLEEP
+                    } else {
+                        Duration::from_millis(at.saturating_sub(now).max(0) as u64).min(MAX_SLEEP)
+                    };
                     tokio::select! {
                         _ = tokio::time::sleep(wait) => {}
                         _ = WAKE.notified() => {}

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { BellIcon } from 'lucide-react'
 import { READOUT_KIND_ICONS } from '@/components/icons/readout-icons'
@@ -9,6 +9,7 @@ import { CountBadge } from '@/components/ui/count-badge'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { useSettingsStore } from '@/state'
+import { setAlarmListOpen } from '@/state/notify'
 import type { Alarm } from '../../../../shared/model'
 import { ReadoutItem } from './ReadoutItem'
 
@@ -44,7 +45,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
   const upsertAlarm = useSettingsStore((s) => s.upsertAlarm)
   const timeId = useId()
   const labelId = useId()
-  const [time, setTime] = useState(() => toInputTime(editing?.fireAtMs ?? now))
+  const [time, setTime] = useState(() => toInputTime(editing?.fireAtMs ?? now + 60_000))
   const [label, setLabel] = useState(editing?.label ?? '')
   const [saving, setSaving] = useState(false)
   const fireAtMs = time ? nextOccurrence(time, now) : null
@@ -59,7 +60,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4 rounded-lg border border-border p-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <label htmlFor={timeId} className="text-sm font-medium">
           Time
@@ -85,7 +86,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
   )
 }
 
-function AlarmRow({ alarm, now, onEdit }: { alarm: Alarm; now: number; onEdit: () => void }) {
+function AlarmRow({ alarm, now, onEdit, onDeleted }: { alarm: Alarm; now: number; onEdit: () => void; onDeleted: () => void }) {
   const deleteAlarm = useSettingsStore((s) => s.deleteAlarm)
   const time = timeFormat.format(alarm.fireAtMs)
   const name = alarm.label ? `${time} ${alarm.label}` : time
@@ -94,14 +95,22 @@ function AlarmRow({ alarm, now, onEdit }: { alarm: Alarm; now: number; onEdit: (
     <ListCardButton
       ariaLabel={`Edit alarm ${name}${hint ? `, ${hint}` : ''}`}
       onClick={onEdit}
-      className={alarm.active ? undefined : 'opacity-70'}
       actions={
-        <Button type="button" size="sm" variant="ghost-destructive" aria-label={`Delete alarm ${name}`}         onClick={() => void deleteAlarm(alarm.id)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost-destructive"
+          aria-label={`Delete alarm ${name}`}
+          onClick={() => {
+            void deleteAlarm(alarm.id)
+            onDeleted()
+          }}
+        >
           Delete
         </Button>
       }
     >
-      <span className="font-medium tabular-nums">{time}</span>
+      <span className={alarm.active ? 'font-medium tabular-nums' : 'tabular-nums text-muted-foreground'}>{time}</span>
       {alarm.label && <span className="truncate text-muted-foreground">{alarm.label}</span>}
       {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
     </ListCardButton>
@@ -113,44 +122,63 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
   const alarms = useSettingsStore((s) => s.settings.alarms) ?? NO_ALARMS
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<{ editing: Alarm | null } | null>(null)
+  const clockRef = useRef<HTMLButtonElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
   const nowMs = now.getTime()
   const armed = alarms.filter((a) => a.active).length
   const sorted = [...alarms].sort((a, b) => Number(b.active) - Number(a.active) || a.fireAtMs - b.fireAtMs)
   const name = armed > 0 ? `Current time ${formatted}, ${armed} ${armed === 1 ? 'alarm' : 'alarms'} set. Open alarms` : `Current time ${formatted}. Open alarms`
+  // The focused control unmounts on save, cancel and delete; park focus on the dialog so keyboard users keep their place.
+  const parkFocus = () => requestAnimationFrame(() => contentRef.current?.focus())
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
+        setAlarmListOpen(next)
         if (!next) setForm(null)
       }}
     >
       <PopoverAnchor asChild>
         <ReadoutItem
+          ref={clockRef}
           icon={READOUT_KIND_ICONS['current-time']}
           className={className}
           accessibleName={name}
           aria-haspopup="dialog"
           aria-expanded={open}
-          onActivate={() => setOpen((v) => !v)}
+          onActivate={() => {
+            setOpen((v) => !v)
+            setAlarmListOpen(!open)
+          }}
         >
           <span aria-hidden>{formatted}</span>
           {armed > 0 && (
             <span aria-hidden className="relative inline-flex">
-              <BellIcon className="size-4" />
+              <BellIcon className="size-3.5" />
               <CountBadge value={armed} />
             </span>
           )}
         </ReadoutItem>
       </PopoverAnchor>
-      <PopoverContent side="top" align="end" collisionPadding={8}       className="w-80 p-4"
+      <PopoverContent
+        ref={contentRef}
+        side="top"
+        align="start"
+        collisionPadding={8}
+        className="w-80 p-4"
         aria-label="Alarms"
         onInteractOutside={(e) => {
-          // A fired-alarm toast takes focus; it must not close the popover that is listing that alarm.
-          if (e.target instanceof Element && e.target.closest('[data-sonner-toaster]')) e.preventDefault()
+          // The clock's own click toggles; letting Radix close first would make it reopen.
+          if (e.target instanceof Node && clockRef.current?.contains(e.target)) e.preventDefault()
         }}
-      >        <ScreenSection
+        onCloseAutoFocus={(e) => {
+          e.preventDefault()
+          clockRef.current?.focus()
+        }}
+      >
+        <ScreenSection
           title="Alarms"
           count={alarms.length}
           empty={alarms.length === 0 && !form ? 'No alarms set' : null}
@@ -162,11 +190,21 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
             )
           }
         >
-          {form && <AlarmForm key={form.editing?.id ?? 'new'} editing={form.editing} now={nowMs} onDone={() => setForm(null)} />}
+          {form && (
+            <AlarmForm
+              key={form.editing?.id ?? 'new'}
+              editing={form.editing}
+              now={nowMs}
+              onDone={() => {
+                setForm(null)
+                parkFocus()
+              }}
+            />
+          )}
           {!form && (
             <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
               {sorted.map((alarm) => (
-                <AlarmRow key={alarm.id} alarm={alarm} now={nowMs} onEdit={() => setForm({ editing: alarm })} />
+                <AlarmRow key={alarm.id} alarm={alarm} now={nowMs} onEdit={() => setForm({ editing: alarm })} onDeleted={parkFocus} />
               ))}
             </div>
           )}

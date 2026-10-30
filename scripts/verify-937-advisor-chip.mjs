@@ -183,13 +183,13 @@ async function main() {
       failures.push('Could not enable the Current time readout chip via settings.setReadoutVisibility -- skipping the order check.');
     } else {
       await cdp.waitFor(
-        `!!Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"] .sr-only')).some((el) => el.textContent?.startsWith('Current time:'))`,
+        `!!Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"]')).some((el) => (el.getAttribute('aria-label') ?? el.querySelector('.sr-only')?.textContent ?? '').startsWith('Current time'))`,
         { timeoutMs: 5_000, label: 'Current time chip appeared after enabling it for the order check' }
       ).catch((err) => failures.push(err.message));
       const order = await cdp.evaluate(`(() => {
         const chips = Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"]'));
         const index = chips.findIndex((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor');
-        const lastIsCurrentTime = (chips.at(-1)?.querySelector('.sr-only')?.textContent ?? '').startsWith('Current time:');
+        const lastIsCurrentTime = (chips.at(-1)?.getAttribute('aria-label') ?? chips.at(-1)?.querySelector('.sr-only')?.textContent ?? '').startsWith('Current time');
         return { total: chips.length, index, lastIsCurrentTime };
       })()`);
       if (order.index === -1) {

@@ -10,6 +10,8 @@ pub const MAX_LABEL_CHARS: usize = 80;
 const MAX_ID_CHARS: usize = 64;
 /// An alarm overdue by more than this (app closed or asleep) goes inactive without notifying.
 pub const FIRE_GRACE_MS: i64 = 5 * 60 * 1000;
+/** Year 9999: anything later is garbage and would overflow time arithmetic. */
+const MAX_FIRE_AT_MS: i64 = 253_402_300_799_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,12 +27,20 @@ impl Alarm {
     /// Trims the label, caps lengths, and rejects an empty or oversize id.
     pub fn sanitized(id: &str, label: &str, fire_at_ms: i64, active: bool) -> Option<Alarm> {
         let id = id.trim();
-        if id.is_empty() || id.chars().count() > MAX_ID_CHARS {
+        if id.is_empty()
+            || id.chars().count() > MAX_ID_CHARS
+            || !(0..=MAX_FIRE_AT_MS).contains(&fire_at_ms)
+        {
             return None;
         }
         Some(Alarm {
             id: id.to_string(),
-            label: label.trim().chars().take(MAX_LABEL_CHARS).collect(),
+            label: label
+                .trim()
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(MAX_LABEL_CHARS)
+                .collect(),
             fire_at_ms,
             active,
         })
@@ -111,7 +121,8 @@ impl SettingsStore {
     }
 
     /// Marks every due alarm inactive and persists once; returns those fresh enough to notify.
-    pub async fn take_due_alarms(&mut self, now_ms: i64) -> std::io::Result<Vec<Alarm>> {
+    /// A failed save still returns them (the in-memory state is already updated), with the error.
+    pub async fn take_due_alarms(&mut self, now_ms: i64) -> (Vec<Alarm>, Option<std::io::Error>) {
         let mut alarms = self.data.alarms.clone();
         let mut to_notify = Vec::new();
         for alarm in alarms
@@ -119,18 +130,17 @@ impl SettingsStore {
             .filter(|a| a.active && a.fire_at_ms <= now_ms)
         {
             alarm.active = false;
-            if now_ms - alarm.fire_at_ms <= FIRE_GRACE_MS {
+            if now_ms.saturating_sub(alarm.fire_at_ms) <= FIRE_GRACE_MS {
                 to_notify.push(alarm.clone());
             }
         }
         if alarms == self.data.alarms {
-            return Ok(to_notify);
+            return (to_notify, None);
         }
         let next = Settings {
             alarms,
             ..self.data.clone()
         };
-        self.persist_whole(next).await?;
-        Ok(to_notify)
+        (to_notify, self.persist_whole(next).await.err())
     }
 }

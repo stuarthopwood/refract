@@ -31,7 +31,7 @@ interface SettingsState {
   setCodeLigatures(enabled: boolean): Promise<void>
   setShowScrollbarMap(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
-  /** Issue #1426: resolves 	rue on success so the form closes only after a real save. */
+  /** Resolves `true` on success so the form closes only after a real save. */
   upsertAlarm(alarm: Alarm): Promise<boolean>
   deleteAlarm(id: string): Promise<void>
 }

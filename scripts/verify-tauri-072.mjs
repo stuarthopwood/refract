@@ -117,7 +117,7 @@ async function runChecks(cdp, { repoDir }) {
   log(`advisor font sizes: ${JSON.stringify(sizes)}`);
   await shot(cdp, '02-advisor-row.png');
   assert(sizes.tag && sizes.tag === sizes.message, `#1430: Advisor tag size equals the message size (${sizes.tag})`);
-  if (sizes.severity) assert(sizes.severity === sizes.tag, '#1430: severity label size equals the tag size');
+  assert(sizes.severity && sizes.severity === sizes.tag, '#1430: severity label size equals the tag size');
 
   await enableClock(cdp);
   await cdp.waitFor(`!!(${clockButton})`, { timeoutMs: 20_000, label: 'composer clock shown' });
@@ -163,9 +163,6 @@ async function runChecks(cdp, { repoDir }) {
   assert(true, '#1426: a due alarm fires and stays listed as "Fired"');
 
   // Delete the fired one, then the other.
-  // The fired-alarm toast overlaps the popover; dismiss it so clicks reach the rows.
-  await cdp.click(`document.querySelector('[data-sonner-toast] [data-close-button]')`);
-  await sleep(600);
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"][aria-label*="Fires soon"]')`);
   await sleep(500);
   log(`after delete: ${await cdp.evaluate(`JSON.stringify({ dialog: !!document.querySelector('[role="dialog"]'), active: document.activeElement?.tagName + ':' + (document.activeElement?.getAttribute('aria-label') ?? ''), alarms: document.querySelectorAll('button[aria-label^="Edit alarm"]').length })`)}`);
