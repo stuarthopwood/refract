@@ -234,7 +234,7 @@ export function SessionList() {
       )}
       {/* The one persistent footer for adding a repository; its divider is inset like the Views separator (#1385). */}
       <div className="shrink-0">
-        <div role="separator" className="mx-2 border-t border-divider" />
+        <div aria-hidden className="mx-2 border-t border-divider" />
         <div className="p-2">
           <AddProjectMenu variant="footer" />
         </div>
