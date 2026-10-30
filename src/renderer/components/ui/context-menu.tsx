@@ -75,7 +75,7 @@ function ContextMenuContent({
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
-        className={cn("max-h-(--radix-context-menu-content-available-height) origin-(--radix-context-menu-content-transform-origin) overflow-y-auto duration-100", MENU_CONTENT_CLASS, className )}
+        className={cn("max-h-(--radix-context-menu-content-available-height) origin-(--radix-context-menu-content-transform-origin) overflow-y-auto duration-[var(--motion-fast)] ease-[var(--ease-out)]", MENU_CONTENT_CLASS, className )}
         {...props}
       />
     </ContextMenuPrimitive.Portal>
@@ -135,7 +135,7 @@ function ContextMenuSubContent({
   return (
     <ContextMenuPrimitive.SubContent
       data-slot="context-menu-sub-content"
-      className={cn("origin-(--radix-context-menu-content-transform-origin) duration-100", MENU_SUB_CONTENT_CLASS, className )}
+      className={cn("origin-(--radix-context-menu-content-transform-origin) duration-[var(--motion-fast)] ease-[var(--ease-out)]", MENU_SUB_CONTENT_CLASS, className )}
       {...props}
     />
   )

@@ -6,6 +6,7 @@
 import { Button } from '@/components/ui/button'
 import { ArrowLeftIcon } from 'lucide-react'
 import { focusSettingsEntry } from '@/lib/focus'
+import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { useViewStore } from '@/state'
 import { AppearanceSection } from './AppearanceSection'
 import { ChatDisplaySection } from './ChatDisplaySection'
@@ -20,6 +21,7 @@ import { StatusLineSection } from './StatusLineSection'
 
 export function SettingsScreen() {
   const settingsSection = useViewStore((state) => state.settingsSection) ?? 'appearance'
+  const sectionRef = useEnterOnSwitch(settingsSection, 'fade')
   const openChat = useViewStore((state) => state.openChat)
   const openSettings = useViewStore((state) => state.openSettings)
 
@@ -50,7 +52,7 @@ export function SettingsScreen() {
       </div>
       <div className="flex min-h-0 flex-1">
         <SettingsNav active={settingsSection} onSelect={openSettings} />
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <div ref={sectionRef} className="min-h-0 flex-1 overflow-y-auto p-6">
           {settingsSection === 'appearance' ? (
             <AppearanceSection />
           ) : settingsSection === 'chat' ? (
