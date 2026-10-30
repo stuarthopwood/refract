@@ -59,7 +59,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4 rounded-lg border border-border p-4">
       <div className="flex flex-col gap-1">
         <label htmlFor={timeId} className="text-sm font-medium">
           Time

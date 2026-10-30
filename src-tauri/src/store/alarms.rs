@@ -43,7 +43,10 @@ fn parse_one(value: &Value) -> Option<Alarm> {
         object.get("id")?.as_str()?,
         object.get("label").and_then(Value::as_str).unwrap_or(""),
         object.get("fireAtMs")?.as_i64()?,
-        object.get("active").and_then(Value::as_bool).unwrap_or(false),
+        object
+            .get("active")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     )
 }
 
@@ -72,10 +75,12 @@ impl SettingsStore {
     /// `settings.upsertAlarm`: replaces by id, or appends. `Ok(None)` when the list is full.
     pub async fn upsert_alarm(&mut self, alarm: Alarm) -> std::io::Result<Option<Settings>> {
         let mut alarms = self.data.alarms.clone();
-        match alarms.iter_mut().find(|a| a.id == alarm.id) {
-            Some(existing) => *existing = alarm,
-            None if alarms.len() >= MAX_ALARMS => return Ok(None),
-            None => alarms.push(alarm),
+        if let Some(index) = alarms.iter().position(|a| a.id == alarm.id) {
+            alarms[index] = alarm;
+        } else if alarms.len() >= MAX_ALARMS {
+            return Ok(None);
+        } else {
+            alarms.push(alarm);
         }
         let next = Settings {
             alarms,
@@ -109,7 +114,10 @@ impl SettingsStore {
     pub async fn take_due_alarms(&mut self, now_ms: i64) -> std::io::Result<Vec<Alarm>> {
         let mut alarms = self.data.alarms.clone();
         let mut to_notify = Vec::new();
-        for alarm in alarms.iter_mut().filter(|a| a.active && a.fire_at_ms <= now_ms) {
+        for alarm in alarms
+            .iter_mut()
+            .filter(|a| a.active && a.fire_at_ms <= now_ms)
+        {
             alarm.active = false;
             if now_ms - alarm.fire_at_ms <= FIRE_GRACE_MS {
                 to_notify.push(alarm.clone());
