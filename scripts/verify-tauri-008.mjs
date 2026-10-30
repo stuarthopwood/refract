@@ -139,6 +139,8 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Keyboard shortcuts closed' });
 
   // Manage sessions screen (FR-025).
+  const overflow = await cdp.evaluate(`(() => { const s = ${NAME_BUTTON}.querySelector('span.truncate'); return s ? getComputedStyle(s).textOverflow : 'none'; })()`);
+  assert(overflow === 'ellipsis', 'the profile name truncates with an ellipsis (FR-028)');
   await openMenu(cdp);
   await clickMenuItem(cdp, 'Manage sessions');
   await cdp.waitFor(`!!document.querySelector('[aria-label="All sessions across projects"]') || /Manage sessions/.test(document.body.innerText)`, { timeoutMs: 15_000, label: 'Manage sessions screen' });
@@ -149,10 +151,6 @@ async function runChecks(cdp, { repoDir }) {
   }
   assert(true, 'Manage sessions screen opens from the menu (FR-025)');
   await setTheme(cdp, 'theme-dark');
-
-  // Narrow width keeps avatar + cog visible and truncates the name (FR-026, FR-028).
-  const overflow = await cdp.evaluate(`(() => { const s = ${NAME_BUTTON}.querySelector('span.truncate'); return s ? getComputedStyle(s).textOverflow : 'none'; })()`);
-  assert(overflow === 'ellipsis', 'the profile name truncates with an ellipsis (FR-028)');
 }
 
 function buildShim(dir) {
