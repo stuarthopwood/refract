@@ -1,17 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
-import { cn } from '@/lib/utils'
 import type { MergeMethod } from '../../../shared/github'
 
 /** Props for {@link MergeDialog}. */
@@ -78,79 +68,50 @@ export function MergeDialog({
   }
 
   return (
-    <AlertDialog
+    <ConfirmAlertDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next) setError(null)
-        onOpenChange(next)
+      busy={submitting}
+      size="md"
+      title={`Merge ${title}?`}
+      description="Choose a merge method, then confirm."
+      confirmLabel="Merge"
+      busyLabel="Merging…"
+      error={error}
+      onCancel={() => {
+        setError(null)
+        onOpenChange(false)
+      }}
+      onConfirm={() => void handleMerge()}
+      onCloseAutoFocus={() => {
+        const button = restoreFocusTo.current
+        if (succeededRef.current) {
+          succeededRef.current = false
+          restoreFocusFallbackTo.current?.focus()
+          return
+        }
+        if (button && !button.disabled) button.focus()
+        else restoreFocusFallbackTo.current?.focus()
       }}
     >
-      <AlertDialogContent
-        size="md"
-        onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          const button = restoreFocusTo.current
-          if (succeededRef.current) {
-            succeededRef.current = false
-            restoreFocusFallbackTo.current?.focus()
-            return
-          }
-          if (button && !button.disabled) button.focus()
-          else restoreFocusFallbackTo.current?.focus()
-        }}
-        onEscapeKeyDown={(event) => {
-          if (submitting) event.preventDefault()
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">Merge {title}?</AlertDialogTitle>
-          <AlertDialogDescription>Choose a merge method, then confirm.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <RadioGroup aria-label="Merge method" value={method} onValueChange={(value) => setMethod(value as MergeMethod)}>
-          {allowedMergeMethods.map((candidate) => {
-            const labelId = `merge-method-${candidate}-label`
-            const descriptionId = `merge-method-${candidate}-description`
-            return (
-              <RadioGroupItem key={candidate} value={candidate} aria-labelledby={labelId} aria-describedby={descriptionId}>
-                <span className="flex w-full min-w-0 items-center gap-2">
-                  <span aria-hidden className={RADIO_RING_CLASS}>
-                    <RadioGroupIndicator />
-                  </span>
-                  <span id={labelId} className="min-w-0 flex-1 break-words">{METHOD_LABEL[candidate]}</span>
+      <RadioGroup aria-label="Merge method" value={method} onValueChange={(value) => setMethod(value as MergeMethod)}>
+        {allowedMergeMethods.map((candidate) => {
+          const labelId = `merge-method-${candidate}-label`
+          const descriptionId = `merge-method-${candidate}-description`
+          return (
+            <RadioGroupItem key={candidate} value={candidate} aria-labelledby={labelId} aria-describedby={descriptionId}>
+              <span className="flex w-full min-w-0 items-center gap-2">
+                <span aria-hidden className={RADIO_RING_CLASS}>
+                  <RadioGroupIndicator />
                 </span>
-                <span id={descriptionId} className="w-full min-w-0 break-words pl-6 text-xs text-muted-foreground">
-                  {METHOD_DESCRIPTION[candidate]}
-                </span>
-              </RadioGroupItem>
-            )
-          })}
-        </RadioGroup>
-        <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
-          {error ?? ''}
-        </p>
-        <AlertDialogFooter>
-          <AlertDialogCancel
-            aria-disabled={submitting}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              if (submitting) event.preventDefault()
-            }}
-          >
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            aria-disabled={submitting}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              event.preventDefault()
-              if (submitting) return
-              void handleMerge()
-            }}
-          >
-            {submitting ? 'Merging…' : 'Merge'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+                <span id={labelId} className="min-w-0 flex-1 break-words">{METHOD_LABEL[candidate]}</span>
+              </span>
+              <span id={descriptionId} className="w-full min-w-0 break-words pl-6 text-xs text-muted-foreground">
+                {METHOD_DESCRIPTION[candidate]}
+              </span>
+            </RadioGroupItem>
+          )
+        })}
+      </RadioGroup>
+    </ConfirmAlertDialog>
   )
 }

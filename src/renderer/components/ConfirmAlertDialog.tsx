@@ -3,7 +3,8 @@
 // description, Cancel, and one confirm action. While `busy`, Escape and both buttons are inert.
 // Focus on close is always the caller's choice (`onCloseAutoFocus`), since these dialogs open
 // from a plain state flag with no Trigger for Radix to return focus to.
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
+import { cn } from '@/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,40 +23,65 @@ export function ConfirmAlertDialog({
   description,
   confirmLabel,
   busyLabel,
+  cancelLabel = 'Cancel',
+  size,
+  error,
+  children,
+  cancelRef,
   onCancel,
   onConfirm,
   onCloseAutoFocus,
+  onOpenAutoFocus,
   tone = 'default'
 }: {
   open: boolean
   busy: boolean
   title: ReactNode
   description: ReactNode
-  confirmLabel: string
-  busyLabel: string
+  /** Omitted for an informational dialog that only offers the cancel button (a "can't do this yet" notice). */
+  confirmLabel?: string
+  busyLabel?: string
+  cancelLabel?: string
+  size?: 'default' | 'sm' | 'md'
+  /** An always-mounted live region under the body: announces a failure the moment it is set. */
+  error?: string | null
+  /** Body content between the description and the error line (a radio group, a list). */
+  children?: ReactNode
+  cancelRef?: Ref<HTMLButtonElement>
   onCancel(): void
-  onConfirm(): void
-  onCloseAutoFocus(): void
+  onConfirm?(): void
+  /** Return `false` to let Radix restore focus itself; any other result means the caller moved it. */
+  onCloseAutoFocus(): boolean | void
+  /** Runs on open; `preventDefault` stops Radix focusing the first control. */
+  onOpenAutoFocus?(event: Event): void
   /** destructive fills the confirm button with the destructive colour (a close, a delete). */
   tone?: 'default' | 'destructive'
 }) {
   return (
     <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onCancel() }}>
       <AlertDialogContent
+        size={size}
+        onOpenAutoFocus={onOpenAutoFocus}
         onEscapeKeyDown={(event) => {
           if (busy) event.preventDefault()
         }}
         onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          onCloseAutoFocus()
+          if (onCloseAutoFocus() !== false) event.preventDefault()
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogTitle className="break-words">{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
+        {error !== undefined && (
+          <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+            {error ?? ''}
+          </p>
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel
+            ref={cancelRef}
             aria-disabled={busy}
             className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={(event) => {
@@ -66,21 +92,24 @@ export function ConfirmAlertDialog({
               onCancel()
             }}
           >
-            Cancel
+            {cancelLabel}
           </AlertDialogCancel>
-          <AlertDialogAction
-            variant={tone === 'destructive' ? 'destructive' : 'invert'}
-            aria-disabled={busy}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              event.preventDefault()
-              onConfirm()
-            }}
-          >
-            {busy ? busyLabel : confirmLabel}
-          </AlertDialogAction>
+          {confirmLabel && (
+            <AlertDialogAction
+              variant={tone === 'destructive' ? 'destructive' : 'invert'}
+              aria-disabled={busy}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+              onClick={(event) => {
+                event.preventDefault()
+                if (!busy) onConfirm?.()
+              }}
+            >
+              {busy ? (busyLabel ?? confirmLabel) : confirmLabel}
+            </AlertDialogAction>
+          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   )
 }
+

@@ -5,6 +5,7 @@
 // `shell.openExternal`, no new IPC, matching `ReadoutItem.tsx`'s own external-link pattern).
 import { ExternalLinkIcon } from 'lucide-react'
 import type { ChangedFile } from '../../../shared/github'
+import { InlineStatus } from '@/components/InlineStatus'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
 import { DiffStatCounts } from '@/features/sessions/sessionDisplay'
 
@@ -24,7 +25,7 @@ interface ChangesTabProps {
 
 export function ChangesTab({ additions, deletions, changedFilesCount, files, url }: ChangesTabProps) {
   if (files.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">No changed files.</p>
+    return <InlineStatus>No changed files.</InlineStatus>
   }
 
   return (
@@ -75,7 +76,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
                   </a>
                 </span>
               </div>
-              <div className="px-2 py-1 text-xs text-muted-foreground">This file's diff is too large to show in full.</div>
+              <InlineStatus density="compact">This file's diff is too large to show in full.</InlineStatus>
             </div>
           )}
         </div>

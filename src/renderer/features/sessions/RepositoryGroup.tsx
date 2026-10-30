@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -310,9 +311,9 @@ export function RepositoryGroup({
         <CollapsibleContent>
           {active.length === 0 ? (
             // Empty-state line; "yet" is wrong when the only Sessions are archived (#567).
-            <p className="py-1 pl-6 text-xs text-muted-foreground">
+            <InlineStatus density="compact" className="py-1 pl-6">
               {sessions.length === 0 ? 'No sessions yet' : 'No active sessions'}
-            </p>
+            </InlineStatus>
           ) : (
             <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0 py-1">
               {active.map((session) => (

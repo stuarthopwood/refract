@@ -2,17 +2,7 @@
 // menu, whose items unmount on close. Focus-on-close is always explicit via `onCloseFocus`: there is no
 // Trigger, so Radix would otherwise drop focus to `<body>`.
 import { useEffect, useRef, useState } from 'react'
-import { cn } from '@/lib/utils'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
+import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { signOutSuccessor } from '@/lib/account-format'
 import { useAccountsStore } from '@/state'
 import type { GitHubAccount } from '../../../shared/accounts'
@@ -77,60 +67,27 @@ export function SignOutDialog({ account, accounts, onOpenChange, onCloseFocus }:
   if (!displayAccount) return null
 
   return (
-    <AlertDialog
+    <ConfirmAlertDialog
       open={account !== null}
-      onOpenChange={(next) => {
-        if (!signingOut) onOpenChange(next)
+      busy={signingOut}
+      title={`Sign out @${displayAccount.login}?`}
+      description={signOutBody(displayAccount, accounts)}
+      confirmLabel="Sign out"
+      busyLabel="Signing out…"
+      tone="destructive"
+      error={error}
+      cancelRef={cancelRef}
+      onCancel={() => onOpenChange(false)}
+      onConfirm={() => void handleConfirm()}
+      onOpenAutoFocus={(event) => {
+        event.preventDefault()
+        cancelRef.current?.focus()
       }}
-    >
-      <AlertDialogContent
-        onOpenAutoFocus={(event) => {
-          event.preventDefault()
-          cancelRef.current?.focus()
-        }}
-        onCloseAutoFocus={(event) => {
-          const outcome = justConfirmedRef.current ? 'confirmed' : 'cancelled'
-          justConfirmedRef.current = false
-          if (onCloseFocus?.(outcome, displayAccount)) {
-            event.preventDefault()
-          }
-        }}
-        onEscapeKeyDown={(event) => {
-          if (signingOut) event.preventDefault()
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>Sign out @{displayAccount.login}?</AlertDialogTitle>
-          <AlertDialogDescription>{signOutBody(displayAccount, accounts)}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
-          {error ?? ''}
-        </p>
-        <AlertDialogFooter>
-          <AlertDialogCancel
-            ref={cancelRef}
-            aria-disabled={signingOut}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              if (signingOut) event.preventDefault()
-            }}
-          >
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            aria-disabled={signingOut}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-            onClick={(event) => {
-              event.preventDefault()
-              if (signingOut) return
-              void handleConfirm()
-            }}
-          >
-            {signingOut ? 'Signing out…' : 'Sign out'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      onCloseAutoFocus={() => {
+        const outcome = justConfirmedRef.current ? 'confirmed' : 'cancelled'
+        justConfirmedRef.current = false
+        return Boolean(onCloseFocus?.(outcome, displayAccount))
+      }}
+    />
   )
 }
