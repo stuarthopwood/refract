@@ -165,6 +165,7 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
     }
     throw err;
   } finally {
+    if (cdp) cdp.close();
     if (child) await stopLauncher(child).catch(() => {});
     await safeRmSync(dataDir, LOG);
     await safeRmSync(importSourceDir, LOG);
