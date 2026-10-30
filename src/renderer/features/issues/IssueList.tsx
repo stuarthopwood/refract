@@ -57,7 +57,7 @@ export function IssueList() {
       extraActiveCount={store.label !== null ? 1 : 0}
       extraFilters={
         <Select value={store.label ?? ANY_LABEL} onValueChange={(value) => store.setLabel(value === ANY_LABEL ? null : value)}>
-          <SelectTrigger aria-label="Label" className={FILTER_PICKER_CLASS}>
+          <SelectTrigger aria-label={`Label: ${store.label ?? 'Any label'}`} className={FILTER_PICKER_CLASS}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent position="popper">
