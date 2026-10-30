@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
+import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { addRepository, groupTriggerFinder } from './verify-tauri-session-list-helpers.mjs';
@@ -52,7 +52,7 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.waitFor(groupTriggerFinder(repoName) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
 
   await openRemoveDialog(cdp, repoName);
-  await sleep(400);
+  await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Cancel'`, { timeoutMs: 5_000, label: 'Cancel autofocused' });
   await shot(cdp, '01-remove-project-dialog.png');
   const info = await cdp.evaluate(`(() => {
     const d = ${DIALOG};
@@ -65,7 +65,7 @@ async function runChecks(cdp, { repoDir }) {
 
   await cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Cancel')`);
   await cdp.waitFor(`!${DIALOG}`, { timeoutMs: 10_000, label: 'dialog closed by Cancel' });
-  await sleep(300);
+  await cdp.waitFor(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(`Project actions for ${repoName}`)}`, { timeoutMs: 5_000, label: 'focus restored' });
   const focusName = await cdp.evaluate(`document.activeElement?.getAttribute('aria-label') ?? ''`);
   log(`focus after cancel: ${focusName}`);
   assert(focusName === `Project actions for ${repoName}`, 'focus returns to the Project actions trigger after Cancel');
@@ -75,7 +75,6 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Remove')`);
   await cdp.waitFor(`!${DIALOG}`, { timeoutMs: 15_000, label: 'dialog closed by Remove' });
   await cdp.waitFor(`!(${groupTriggerFinder(repoName)})`, { timeoutMs: 15_000, label: 'Project removed' });
-  assert(true, 'confirming Remove removes the Project');
   await shot(cdp, '03-after-remove.png');
 }
 

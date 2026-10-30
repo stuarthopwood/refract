@@ -188,9 +188,9 @@ export function ReviewDialog({
             readOnly={submitting}
             aria-disabled={submitting}
           />
-          <p id={bodyErrorId} role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+          <InlineStatus tone="error" id={bodyErrorId} className={cn('p-0', !error && 'sr-only')}>
             {error ?? ''}
-          </p>
+          </InlineStatus>
           <DialogFooter>
             <Button
               variant="outline"
