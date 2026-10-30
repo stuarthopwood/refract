@@ -28,6 +28,7 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SettingsIcon, TriangleAlertIcon } from 'lucide-react'
+import { PauseAllButton } from './PauseAllButton'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -287,6 +288,7 @@ export function ProfileItem() {
           onThemeApplied={handleThemeApplied}
         />
       </DropdownMenu>
+      <PauseAllButton />
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

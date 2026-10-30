@@ -58,6 +58,9 @@ impl SessionAgent {
         if let Some(progress) = state.start_queue.to_wire() {
             obj.insert("startProgress".to_string(), progress);
         }
+        if let Some(pause) = super::pause::wire_value(state) {
+            obj.insert("pause".to_string(), pause.into());
+        }
     }
 }
 

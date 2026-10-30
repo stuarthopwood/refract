@@ -337,6 +337,7 @@ async fn make_test_agent(
         last_activity_at: now,
         archived_at: None,
         hidden_at: None,
+        paused_held: None,
         current_turn_subagents: None,
         stopped_on_request_conversation: None,
         stopped_on_request_at_size: None,

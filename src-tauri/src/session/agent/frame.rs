@@ -130,11 +130,12 @@ impl SessionAgent {
     }
 
     async fn set_queue(&self, follow_up: Vec<String>, steering: Vec<String>) {
-        {
+        let (follow_up, steering) = {
             let mut state = self.state.lock().await;
-            state.queue_follow_up = follow_up.clone();
-            state.queue_steering = steering.clone();
-        }
+            state.queue_follow_up = follow_up;
+            state.queue_steering = steering;
+            super::pause::queue_view(&state, &state.queue_follow_up, &state.queue_steering)
+        };
         self.events
             .emit_queue_update(&self.session_id, &follow_up, &steering);
     }

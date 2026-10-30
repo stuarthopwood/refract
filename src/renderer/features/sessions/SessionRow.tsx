@@ -27,7 +27,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { describeStartProgress, describeStartProgressLabel } from './startProgressDisplay'
-import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTimeShort } from './sessionDisplay'
+import { StateIcon, displayLabel, displayStatus, formatRelativeTimeShort } from './sessionDisplay'
 import { useSessionRowActions } from './useSessionRowActions'
 import { useSessionRowActivity } from './useSessionRowActivity'
 import { SessionAgentsButton } from './SessionAgentsButton'
@@ -124,7 +124,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
   // already says. Restores the `isSplitOpen` gate decision 16's own name formula leaves implicit.
   const accessibleName = [
     session.name,
-    session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : STATUS_LABEL[displayStatus(session)],
+    session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : displayLabel(session),
     session.archivedAt ? 'Archived' : null,
     session.hiddenAt ? 'Hidden' : null,
     isSplitOpen && isFocusedPane ? 'focused pane' : null

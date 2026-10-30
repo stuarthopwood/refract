@@ -2,7 +2,7 @@ import { StateIcon, STATUS_LABEL } from '@/features/sessions/sessionDisplay'
 import type { SessionDisplayStatus } from '@/features/sessions/sessionDisplay'
 import type { StatusStyle } from '../../shared/statusStyle'
 
-const STATES: readonly SessionDisplayStatus[] = ['idle', 'working', 'needs-you', 'stopped', 'unread-response']
+const STATES: readonly SessionDisplayStatus[] = ['idle', 'working', 'needs-you', 'paused', 'stopped', 'unread-response']
 
 /** Issue #482: all five Session states drawn in one Status style, in the active theme. Phrasing
  * content only, so it can sit inside a button (a radio option); each state's word is visible, so

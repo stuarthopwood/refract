@@ -107,6 +107,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
               // Issue #512: live while this Session's start is in flight; absent once it settles.
               startProgress: event.startProgress,
               unread: event.unread,
+              pause: event.pause,
               launchedMode: event.launchedMode,
               pendingMode: event.pendingMode
             }

@@ -193,6 +193,11 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     .map_err(map_chat_error)?;
                 return Ok(serde_json::json!({ "queued": false }));
             }
+            // Issue #477: `/pause` toggles; `/resume` stays OMP's own.
+            if name == "pause" && rest.is_empty() {
+                agent.toggle_pause().await.map_err(map_chat_error)?;
+                return Ok(serde_json::json!({ "queued": false }));
+            }
             // Issue #762 (lane RM): `/model`/`/model <model>` are a Refract-side rewrite to
             // `/switch`/`/switch <model>`, before anything is classified or forwarded -- OMP's
             // own `model` builtin (alias `models`) opens the role-writing hub, never what

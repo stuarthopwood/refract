@@ -7,6 +7,7 @@ import type { DragEvent as ReactDragEvent } from 'react'
 import { MessageSquareIcon, PaperclipIcon } from 'lucide-react'
 import { FocusedPaneTint } from './FocusedPaneTint'
 import { StopBanner } from './StopBanner'
+import { PausedBody } from './PausedBody'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
@@ -1222,6 +1223,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           else focusSessionsNav()
         }}
       />
+      <PausedBody sessionId={sessionId}>
       <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" allowHoliday={false} />}
         {showAmbientLoop && <HolidayAmbientLoop avoidTextColumn />}
@@ -1251,14 +1253,10 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         />
       </div>
       <ComposerAboveStack key={`todo-${sessionId}`} sessionId={sessionId} stoppedBarAllowed={!showBanner && !effectiveStartProgress} queued={queued} />
-      <MessageInput
-        key={`composer-${sessionId}`}
-        queued={queued}
-        sessionId={sessionId}
-        stopReason={effectiveStopReason}
-        stopDetail={effectiveStopDetail}
-        autoFocusOnMount={autoFocusRef.current}
-      />
+      <MessageInput key={`composer-${sessionId}`} queued={queued} sessionId={sessionId}
+        stopReason={effectiveStopReason} stopDetail={effectiveStopDetail}
+        autoFocusOnMount={autoFocusRef.current} />
+      </PausedBody>
     </div>
   )
 }

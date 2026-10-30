@@ -15,14 +15,15 @@
 // `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
 // before the double-click ever reaches the page's own JS, so a renderer-driven toggle was dead
 // code and has been removed.
-import { MessageSquareXIcon, SearchIcon, SplitSquareHorizontalIcon } from 'lucide-react'
+import { MessageSquareXIcon, PauseIcon, PlayIcon, SearchIcon, SplitSquareHorizontalIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionsStore } from '@/state'
 import { closeChatFind, EMPTY_CHAT_FIND, openChatFind, useChatFindStore } from '@/state/chat-find-store'
-import { STATUS_LABEL, StateIcon } from '@/features/sessions/sessionDisplay'
+import { displayLabel, displayStatus, StateIcon } from '@/features/sessions/sessionDisplay'
+import { canTogglePause, setSessionPaused } from './pauseActions'
 import { HiddenMarker } from '@/features/sessions/HiddenMarker'
 import { ConversationSwitcher } from './ConversationSwitcher'
 
@@ -57,8 +58,8 @@ export function ChatHeader({
   return (
     <header className="drag-region titlebar-surface flex h-10 shrink-0 items-center justify-between gap-2 px-4">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <StateIcon status={session.status} />
-        <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+        <StateIcon status={displayStatus(session)} />
+        <span className="sr-only">{displayLabel(session)}</span>
         <span className="min-w-0 truncate text-sm font-medium" title={session.name}>{session.name}</span>
         {session.hiddenAt && <HiddenMarker />}
         <span className="min-w-0 truncate text-xs text-muted-foreground" title={session.branch}>{session.branch}</span>
@@ -96,6 +97,22 @@ export function ChatHeader({
         <div className="shrink-0">
           <ConversationSwitcher sessionId={sessionId} />
         </div>
+        {canTogglePause(session) && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => void setSessionPaused(sessionId, !session.pause)}
+                aria-label={session.pause === 'pausing' ? `Cancel pause for ${session.name}` : session.pause ? `Resume ${session.name}` : `Pause ${session.name}`}
+              >
+                {session.pause ? <PlayIcon aria-hidden className="size-4" /> : <PauseIcon aria-hidden className="size-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause after this turn'}</TooltipContent>
+          </Tooltip>
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
