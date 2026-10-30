@@ -7,6 +7,7 @@ import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
+import { IconButton } from "@/components/IconButton"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -258,12 +259,7 @@ function SidebarTrigger({
   const { toggleSidebar } = useSidebar()
 
   return (
-    <Button
-      data-sidebar="trigger"
-      data-slot="sidebar-trigger"
-      variant="ghost"
-      size="icon-sm"
-      className={cn(className)}
+    <IconButton label="Toggle sidebar" data-sidebar="trigger" data-slot="sidebar-trigger" className={cn(className)}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()
@@ -271,8 +267,7 @@ function SidebarTrigger({
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
-    </Button>
+      </IconButton>
   )
 }
 

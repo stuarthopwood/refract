@@ -3,7 +3,6 @@
 // `SettingsPage` / `SettingsGroup` / `SettingRow`, and focuses its own heading on mount, so a
 // section change always lands on the new content (the nav button is never left holding focus).
 // Reached via the profile menu's Settings item (spec 008) and the gear control in SessionList.tsx.
-import { Button } from '@/components/ui/button'
 import { ArrowLeftIcon } from 'lucide-react'
 import { focusSettingsEntry } from '@/lib/focus'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
@@ -18,6 +17,7 @@ import { ProjectsSection } from './ProjectsSection'
 import { SettingsBrand } from './SettingsBrand'
 import { SettingsNav } from './SettingsNav'
 import { StatusLineSection } from './StatusLineSection'
+import { IconButton } from '@/components/IconButton'
 
 export function SettingsScreen() {
   const settingsSection = useViewStore((state) => state.settingsSection) ?? 'appearance'
@@ -37,15 +37,9 @@ export function SettingsScreen() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="no-drag-region size-6"
-          aria-label="Back to chat"
-          onClick={handleBackToChat}
-        >
-          <ArrowLeftIcon aria-hidden className="size-4" />
-        </Button>
+        <IconButton label="Back to chat" className="no-drag-region" onClick={handleBackToChat}>
+          <ArrowLeftIcon aria-hidden />
+        </IconButton>
         <SettingsBrand />
         <span aria-hidden className="text-sm text-muted-foreground">/</span>
         <span className="text-sm font-medium">Settings</span>

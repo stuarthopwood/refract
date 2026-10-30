@@ -8,6 +8,7 @@ import { DiffStatCounts } from '@/features/sessions/sessionDisplay'
 import { STATUS_MARKS } from '../file-explorer/git-decoration'
 import { focusGitRow, focusNearestGroupTrigger } from './focus'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
+import { IconButton } from '@/components/IconButton'
 
 export function GitChangesFileRow({
   entry,
@@ -120,18 +121,18 @@ export function GitChangesFileRow({
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
+          <IconButton
             ref={kebabTriggerRef}
-            type="button"
-            aria-label={`More actions for ${entry.path}`}
+            size="icon-xs"
+            label={`More actions for ${entry.path}`}
             aria-disabled={actionPending || undefined}
             onKeyDown={(event) => {
               if (actionPending && (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp')) event.preventDefault()
             }}
-            className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 outline-none hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 aria-expanded:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            className="text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100 aria-expanded:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >
-            <EllipsisVerticalIcon aria-hidden className="size-4" />
-          </button>
+            <EllipsisVerticalIcon aria-hidden />
+          </IconButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isConflict ? (

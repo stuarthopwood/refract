@@ -37,6 +37,7 @@ import {
   onDropdownOpenChange
 } from './SessionRowParts'
 import type { SessionRowSurface } from './sessionRowSurface'
+import { IconButton } from '@/components/IconButton'
 
 // The menu trigger stays in the DOM and focusable (opacity/pointer-events swap, overlaid on the time cell under
 // hover:hover) because a `hidden` trigger can't take focus, stranding keyboard close paths. `group-has[...]`
@@ -266,15 +267,14 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                 </span>
                 <DropdownMenu onOpenChange={(open) => onDropdownOpenChange(row, open)}>
                   <DropdownMenuTrigger asChild>
-                    <Button
+                    <IconButton
                       ref={menuTriggerRef}
-                      variant="ghost"
                       size="icon-xs"
-                      aria-label={`${session.name} actions`}
+                      label={`${session.name} actions`}
                       className={TRAILING_MENU_BUTTON_CLASS}
                     >
                       <EllipsisVerticalIcon aria-hidden className="size-4" />
-                    </Button>
+                    </IconButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>
                     <DropdownActionItems actions={actions} />

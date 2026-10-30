@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { notify, useChatScrollStore, useSessionsStore } from '@/state'
 import type { ConversationInfo } from '../../../shared/model'
 import { applySnapshot } from './applySnapshot'
+import { IconButton } from '@/components/IconButton'
 
 export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
@@ -92,9 +93,9 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
       </Button>
       <Dialog open={historyOpen} onOpenChange={(open) => void handleOpenChange(open)}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label="Conversation history">
+          <IconButton label="Conversation history">
             <HistoryIcon />
-          </Button>
+          </IconButton>
         </DialogTrigger>
         <DialogContent className="max-h-[70vh] overflow-x-hidden overflow-y-auto sm:max-w-md">
           <DialogHeader>

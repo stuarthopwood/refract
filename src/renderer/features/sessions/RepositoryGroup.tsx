@@ -28,6 +28,7 @@ import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
 import { ContextActionItems, DropdownActionItems } from './SessionRowParts'
 import { buildRepositoryActions } from './repositoryActions'
+import { IconButton } from '@/components/IconButton'
 
 // Hidden at rest via opacity (stays in the Tab order); revealed on group hover/focus, own aria-expanded, and under (hover: none) (#567).
 // `dark:hover:` / `aria-expanded:` fills beat the Button base's `dark:hover:bg-muted/50`, which equals the selected row; the focus class restores a forced-colours outline.
@@ -288,15 +289,14 @@ export function RepositoryGroup({
           />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
+              <IconButton
                 ref={menuTriggerRef}
-                variant="ghost"
                 size="icon-xs"
-                aria-label={`Project actions for ${repository.name}`}
+                label={`Project actions for ${repository.name}`}
                 className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
               >
                 <EllipsisVerticalIcon aria-hidden />
-              </Button>
+              </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
               <DropdownActionItems actions={actions} />
