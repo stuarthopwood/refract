@@ -11,7 +11,7 @@ Shared components decided in #934: **ScreenHeader** (**built**, `src/renderer/co
 Added by spec 074 (#935 groups: inline status text, confirm dialogs):
 
 - **InlineStatus** (`src/renderer/components/InlineStatus.tsx`): the one line for loading, error and empty text. `tone` is `info`, `loading` or `notice` (a quiet failure such as a background refresh) (role `status`), or `error` (role `alert`, destructive colour); `density` is `block` (`p-4 text-sm`) or `compact` (`px-2 py-1 text-xs`). Do not hand-style a `<p>` for these.
-- **ConfirmAlertDialog** (`src/renderer/components/ConfirmAlertDialog.tsx`): every confirm dialog uses it. Extra props: `cancelLabel`, `size`, `error` (an always-mounted alert line), `children` (a body slot, such as Merge's method radios), `cancelRef`, `onOpenAutoFocus`, and an optional `confirmLabel` (omit it for an info dialog with one Close button). `onCloseAutoFocus` returning `false` lets Radix restore focus. Still hand-built, tracked in the #935 follow-up: DeleteDialog, ReviewDialog, ContextShakeMenu.
+- **ConfirmAlertDialog** (`src/renderer/components/ConfirmAlertDialog.tsx`): every confirm dialog uses it. Extra props: `cancelLabel`, `size`, `error` (an always-mounted alert line), `children` (a body slot, such as Merge's method radios), `cancelRef`, `onOpenAutoFocus`, and an optional `confirmLabel` (omit it for an info dialog with one Close button). The confirm button is `invert`, or `destructive` with `tone="destructive"`; while `busy` the body is locked by a disabled fieldset. `onCloseAutoFocus` returning `false` lets Radix restore focus. Still hand-built, tracked in the #935 follow-up: DeleteDialog, ReviewDialog, ContextShakeMenu.
 
 Added by spec 042 (Chat user avatar):
 
@@ -39,11 +39,11 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | Variant | Use |
 |---|---|
 | `outline` | The normal button everywhere. Cards and pane headers (Approve, Merge, Refresh) use `outline`, with emphasis coming from position and order, not weight. A banner's one primary action is `outline` too (see "Banners" below). Settles #531 (Merge no longer outweighs the title). |
-| `default` (filled) | The single commit action in a dialog or form, and in first run (Add project, Create, Save). One filled button per surface. |
+| `default` (filled) | The single commit action in a form, and in first run (Add project, Create, Save). A `ConfirmAlertDialog` confirm is `invert` (or `destructive`) instead. One filled button per surface. |
 | `ghost` | Icon-only toolbar and row actions. |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
 | `destructive-outline` | A destructive action at rest that must stay visually below the surface's filled primary (spec 038: "Close pull request" in the comment box footer, left edge, away from Comment). Destructive-coloured edge and label, no fill; always confirms through `ConfirmAlertDialog tone="destructive"`. Superseded for the comment box by #1387 (Stuart, 2026-10-30): Close pull request becomes a ghost button with a red label, sitting at the trailing edge left of the filled Post comment. |
-| `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. Composer Stop only (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
+| `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. The composer Stop button and the non-destructive `ConfirmAlertDialog` confirm (spec 074) (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `text` | A non-primary action in a banner (#746): foreground text, no border or fill, underlined on hover and keyboard focus, 2px focus ring, 24px minimum target. `text-destructive` is the same shape with a red label, for a destructive action that opens a confirm dialog. |
 | `secondary`, `link` | Not part of the design system, except the one decided `link` use below and the floating transcript icon buttons (see "Floating icon buttons"). |
 
@@ -66,7 +66,7 @@ Open:
 
 | Size | Height | Use |
 |---|---|---|
-| `default` | 32px | First run and Settings primary actions (for example Add project), and anywhere outside a denser `sm`/`xs` context. |
+| `default` | 32px | First run and Settings primary actions (for example Add project), form commit actions, and anywhere outside a denser `sm`/`xs` context; not the confirm in a `ConfirmAlertDialog` (that is `invert` or `destructive`). |
 | `sm` | 24px | Cards, dialogs, and panes. |
 | `xs` | 24px | Dense rows. |
 | `icon` | 32px | Icon-only buttons outside a dense context. |
