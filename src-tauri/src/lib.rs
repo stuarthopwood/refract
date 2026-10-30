@@ -283,6 +283,7 @@ pub fn run() {
             app.manage(update_state_for_setup.clone());
 
             shell::notifications::init(app.handle());
+            shell::alarms::spawn(app.handle().clone(), managed.app_state.settings.clone());
 
             window.show()?;
 

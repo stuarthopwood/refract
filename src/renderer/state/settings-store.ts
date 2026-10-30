@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
-import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
+import type { Alarm, ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
 import type { ActivityText } from '../../shared/activity'
 import type { StatusStyle } from '../../shared/statusStyle'
 import type { ChatRowDensity } from '../../shared/chatRowDensity'
@@ -31,6 +31,9 @@ interface SettingsState {
   setCodeLigatures(enabled: boolean): Promise<void>
   setShowScrollbarMap(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
+  /** Resolves `true` on success so the form closes only after a real save. */
+  upsertAlarm(alarm: Alarm): Promise<boolean>
+  deleteAlarm(id: string): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -191,6 +194,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setShowFinishedTurnTimes: async (enabled) => {
     const result = await window.refract.settings.setShowFinishedTurnTimes(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
+  upsertAlarm: async (alarm) => {
+    const result = await window.refract.settings.upsertAlarm(alarm)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+    return result.ok
+  },
+  deleteAlarm: async (id) => {
+    const result = await window.refract.settings.deleteAlarm(id)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   }

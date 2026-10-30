@@ -15,6 +15,7 @@ pub const REQUEST_PENDING: &str = "request:pending";
 pub const REQUEST_RESOLVED: &str = "request:resolved";
 pub const COMMANDS_UPDATE: &str = "commands:update";
 pub const SETTINGS_CHANGED: &str = "settings:changed";
+pub const ALARM_FIRED: &str = "alarm:fired";
 pub const UI_OPEN_SESSION: &str = "ui:open-session";
 pub const MEMORY_WARNING: &str = "memory:warning";
 pub const TOKEN_GUARD_LAUNCH_WARNING: &str = "token-guard:launch-warning";

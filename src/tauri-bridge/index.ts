@@ -53,6 +53,7 @@ import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
 import type {
+  Alarm,
   CatalogKind,
   ConversationInfo,
   ModelCatalogEntry,
@@ -289,6 +290,8 @@ const refract: RefractApi = {
     setCodeLigatures: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CODE_LIGATURES, enabled),
     setShowScrollbarMap: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SCROLLBAR_MAP, enabled),
     setTypography: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TYPOGRAPHY, value),
+    upsertAlarm: (alarm) => request<Settings>(IPC_REQUESTS.SETTINGS_UPSERT_ALARM, alarm),
+    deleteAlarm: (id) => request<Settings>(IPC_REQUESTS.SETTINGS_DELETE_ALARM, id),
     setShowFinishedTurnTimes: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_FINISHED_TURN_TIMES, enabled),
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
@@ -440,6 +443,7 @@ const refract: RefractApi = {
   onCommandsUpdate: (handler) =>
     on<{ sessionId: string; commands: SlashCommand[] }>(IPC_EVENTS.COMMANDS_UPDATE, handler),
   onSettingsChanged: (handler) => on<Settings>(IPC_EVENTS.SETTINGS_CHANGED, handler),
+  onAlarmFired: (handler) => on<Alarm>(IPC_EVENTS.ALARM_FIRED, handler),
   onUiOpenSession: (handler) => on<{ sessionId: string }>(IPC_EVENTS.UI_OPEN_SESSION, handler),
   onMemoryWarning: (handler) => on<LowMemoryWarning>(IPC_EVENTS.MEMORY_WARNING, handler),
   onTokenGuardLaunchWarning: (handler) =>

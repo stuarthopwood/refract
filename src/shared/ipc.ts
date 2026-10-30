@@ -4,6 +4,7 @@ import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './a
 import type { LowMemoryWarning } from './lowMemoryWarning';
 import type { TokenGuardCalls, TokenGuardHandoffResult, TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';
 import type {
+  Alarm,
   ApprovalMode,
   CatalogKind,
   ConversationInfo,
@@ -306,6 +307,8 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_SCROLLBAR_MAP: 'settings.setShowScrollbarMap',
   SETTINGS_SET_TYPOGRAPHY: 'settings.setTypography',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
+  SETTINGS_UPSERT_ALARM: 'settings.upsertAlarm',
+  SETTINGS_DELETE_ALARM: 'settings.deleteAlarm',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
   SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
@@ -382,6 +385,7 @@ export const IPC_EVENTS = {
   REQUEST_RESOLVED: 'request:resolved',
   COMMANDS_UPDATE: 'commands:update',
   SETTINGS_CHANGED: 'settings:changed',
+  ALARM_FIRED: 'alarm:fired',
   UI_OPEN_SESSION: 'ui:open-session',
   MEMORY_WARNING: 'memory:warning',
   TOKEN_GUARD_LAUNCH_WARNING: 'token-guard:launch-warning',
@@ -509,6 +513,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
     setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; setShowScrollbarMap(enabled: boolean): Promise<Result<Settings>>; // Issue #1246; #754 (spec 041) scrollbar map switch
     setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
+    upsertAlarm(alarm: Alarm): Promise<Result<Settings>>; // Issue #1426: create or edit one composer-clock Alarm; `alarm-limit` when the list is full.
+    deleteAlarm(id: string): Promise<Result<Settings>>;
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
     setStatusStyle(value: StatusStyle): Promise<Result<Settings>>; setChatRowDensity(value: ChatRowDensity): Promise<Result<Settings>>; setActivityText(value: ActivityText): Promise<Result<Settings>>; // #482 setStatusStyle (Appearance Status style, applies live). #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
@@ -590,6 +596,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onRequestResolved(handler: (payload: { sessionId: string; requestId: string }) => void): Unsubscribe;
   onCommandsUpdate(handler: (payload: { sessionId: string; commands: SlashCommand[] }) => void): Unsubscribe;
   onSettingsChanged(handler: (payload: Settings) => void): Unsubscribe;
+  onAlarmFired(handler: (payload: Alarm) => void): Unsubscribe;
   onUiOpenSession(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
   onTokenGuardLaunchWarning(handler: (payload: TokenGuardLaunchWarning) => void): Unsubscribe;
