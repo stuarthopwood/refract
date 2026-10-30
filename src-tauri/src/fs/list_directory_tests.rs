@@ -1,7 +1,4 @@
-// Test module for `list_directory.rs`, split into this sibling file to stay under the 600-line
-// soft cap -- included via `#[path = "list_directory_tests.rs"] mod tests;`. Gate round 1 fix:
-// `resolve_list_target`/`list_directory_entries` had NO tests at all despite the issue naming
-// every one of these cases explicitly.
+// Tests for `list_directory.rs`, kept in a sibling file for the 600-line cap.
 
 use super::*;
 use crate::git::test_support::{init_repo, run_git};
@@ -10,9 +7,7 @@ fn is_ci() -> bool {
     std::env::var("CI").is_ok()
 }
 
-/// Directory junctions (`mklink /J`) need no elevation or Developer Mode on Windows -- panics
-/// under CI rather than silently skipping (matches `git/worktree_validity.rs`'s own convention,
-/// gate round 1 fix: a soft-skipped link test proves nothing under CI).
+/// Creates a junction. Panics under CI rather than skipping, so a skipped test never passes silently.
 fn make_junction(target_dir: &std::path::Path, link: &std::path::Path) {
     let status = std::process::Command::new("cmd")
         .args(["/C", "mklink", "/J"])
@@ -55,14 +50,7 @@ async fn dot_git_nested_path_as_typed_is_rejected() {
 
 #[tokio::test]
 async fn dot_git_reached_via_an_8_3_short_name_alias_is_rejected_post_realpath() {
-    // Windows auto-generates an 8.3 short-name alias for any folder not already in 8.3 form
-    // (`.git` has a leading dot, so it qualifies) UNLESS the volume has disabled 8.3 generation.
-    // Gate round 2 fix: a bare `is_err()` passed even when 8.3 generation is disabled (`GIT~1`
-    // then does not exist at all, so the result is a mundane `FileMissing`, proving nothing about
-    // the post-realpath `.git` rejection this test exists for). Checks whether the alias actually
-    // exists first: if it does, asserts the EXACT reason (`OutsideWorktree`); if 8.3 generation is
-    // disabled, panics under CI (this crate's windows-latest CI runner is not expected to have it
-    // disabled) rather than silently passing on an untested path.
+    // The `.git` alias may be absent if 8.3 generation is disabled, so the assertion is conditional.
     let session = format!("s-{}", uuid::Uuid::new_v4());
     let root = fixture();
     let alias_exists = std::fs::metadata(root.join("GIT~1")).is_ok();
@@ -98,11 +86,7 @@ async fn a_valid_worktree_with_its_tracked_file_removed_lists_as_genuinely_empty
         ],
     )
     .await;
-    // Gate round 2 fix: the comment claimed a file was removed, but nothing was -- the test
-    // actually asserted ONE entry (README.md from the seed commit), contradicting its own name.
-    // Remove the tracked file for real (working-tree delete, no commit needed -- `listDirectory`
-    // only reads the filesystem, never the index) so the worktree is genuinely, validly empty of
-    // content while the `.git` pointer file itself still proves registration.
+    // Removes the tracked file so the root lists empty while the `.git` pointer still proves registration.
     tokio::fs::remove_file(worktree.join("README.md"))
         .await
         .unwrap();
@@ -119,8 +103,7 @@ async fn a_valid_worktree_with_its_tracked_file_removed_lists_as_genuinely_empty
 
 #[tokio::test]
 async fn an_unregistered_orphaned_folder_is_worktree_missing_not_empty() {
-    // Issue #729: a folder that exists but was never (or is no longer) registered with git must
-    // report `worktree-missing`, never a false "this folder is empty".
+    // Issue #729: an unregistered folder must report `worktree-missing`, never an empty listing.
     let session = format!("s-{}", uuid::Uuid::new_v4());
     let repo = init_repo().await;
     let orphan =

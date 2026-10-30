@@ -1,17 +1,7 @@
-// Unit tests for `ipc::attachments` (lane R4, issue #787; gate-fix round 1): the text-only
-// `is_unsafe_token`/`is_reserved_name` rejections, the lexical/verbatim-prefix helpers, and the
-// filesystem-backed `resolve_in_worktree`/`resolve_no_follow`/`resolve_no_follow_unrooted`/
-// `read_image_file` paths, including a symlink that stays inside the worktree (accepted) and one
-// that escapes it (rejected) -- the central security property this module exists for.
-// `#[path]`-loaded sibling of `attachments.rs` (excluded from `check:file-size` by its own
-// `.test.rs` name, matching the project's TS `*.test.ts` convention).
+// Unit tests for `ipc::attachments`, loaded via `#[path]`. Covers the symlink and junction containment cases.
 
 use super::*;
 use uuid::Uuid;
-
-// ---------------------------------------------------------------------------
-// is_unsafe_token / is_reserved_name (text-only, no filesystem)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn is_unsafe_token_rejects_nul_byte() {
@@ -87,10 +77,6 @@ fn is_unsafe_token_rejects_a_reserved_name_anywhere_in_the_path() {
     assert!(is_unsafe_token("CON.png"));
 }
 
-// ---------------------------------------------------------------------------
-// lexical_normalize / strip_verbatim_prefix / fold_case
-// ---------------------------------------------------------------------------
-
 #[test]
 fn lexical_normalize_collapses_parent_and_current_dir_components() {
     let out = lexical_normalize(Path::new(r"C:\a\b\..\c\.\d"));
@@ -99,10 +85,7 @@ fn lexical_normalize_collapses_parent_and_current_dir_components() {
 
 #[test]
 fn strip_verbatim_prefix_strips_both_real_forms() {
-    // `fs::canonicalize` only ever emits these exact (upper-case marker) forms on Windows --
-    // `Path`'s own component parser (which this function now builds on, gate-fix) recognises
-    // the verbatim-disk and verbatim-UNC prefix kinds exactly as the OS does, not via a
-    // hand-rolled case fold.
+    // `fs::canonicalize` emits upper-case verbatim markers on Windows; `Path` parses them the same way.
     assert_eq!(
         strip_verbatim_prefix(PathBuf::from(r"\\?\C:\foo")),
         PathBuf::from(r"C:\foo")
@@ -128,11 +111,6 @@ fn fold_case_folds_ascii_only() {
         assert_eq!(folded, "AbC");
     }
 }
-
-// ---------------------------------------------------------------------------
-// Filesystem-backed: resolve_in_worktree / resolve_no_follow / resolve_no_follow_unrooted /
-// read_image_file, against real temp-dir fixtures (including symlinks).
-// ---------------------------------------------------------------------------
 
 /// A scratch worktree directory under the OS temp dir, uniquely named per test, removed on drop.
 struct TempWorktree {
@@ -225,12 +203,7 @@ async fn resolve_attachment_path_rejects_an_unsafe_absolute_token() {
     assert!(resolved.is_none());
 }
 
-/// Attempts to create a file symlink. If creation fails AND the `CI` env var is set (a real CI
-/// runner, where symlink privilege is expected), this PANICS instead of silently skipping --
-/// gate-fix: a CI environment that cannot create symlinks is a real gap to know about, not
-/// something to quietly route around. Outside CI (a local dev sandbox that may genuinely lack
-/// Windows Developer Mode / an elevated process), a failure soft-skips with a loud `eprintln!`
-/// at the call site.
+/// Creates a file symlink. Panics on failure in CI; a local failure soft-skips with a loud `eprintln!`.
 fn try_symlink(original: &Path, link: &Path) -> bool {
     #[cfg(windows)]
     let created = std::os::windows::fs::symlink_file(original, link).is_ok();
@@ -242,10 +215,7 @@ fn try_symlink(original: &Path, link: &Path) -> bool {
     created
 }
 
-/// Directory junctions (`mklink /J`) need no elevation or Developer Mode on Windows, unlike
-/// symlinks -- so these tests never soft-skip. Junctions only target DIRECTORIES. Windows-only
-/// (gate-fix): `mklink` is a `cmd.exe` built-in with no equivalent on other platforms this crate
-/// doesn't target anyway (Windows-only, spec.md Assumptions).
+/// Junctions need no elevation, so these tests never soft-skip. Windows-only.
 #[cfg(windows)]
 fn try_junction(target_dir: &Path, link: &Path) -> bool {
     std::process::Command::new("cmd")
@@ -327,9 +297,7 @@ async fn resolve_no_follow_rejects_a_link_cycle() {
     );
 }
 
-/// No elevation/Developer Mode needed (directory junctions, unlike symlinks): a junction sitting
-/// inside the worktree, pointing to a real directory OUTSIDE it, must never let a token reached
-/// through it escape containment.
+/// A junction inside the worktree pointing outside it must never let a token escape containment.
 #[tokio::test]
 #[cfg(windows)]
 async fn junction_escaping_the_worktree_is_rejected() {
@@ -352,10 +320,7 @@ async fn junction_escaping_the_worktree_is_rejected() {
     let _ = std::fs::remove_dir_all(&outside_dir);
 }
 
-/// The Session's own worktree root reached through a junction (the same shape OneDrive/pnpm
-/// junction redirection produces in the real worktree-creation flow): a normal relative file
-/// inside it must still resolve, exercising the dual-root (`resolved_root`/`unresolved_root`)
-/// fallback this module's own doc comments describe.
+/// A worktree root reached through a junction must still resolve its relative files.
 #[tokio::test]
 #[cfg(windows)]
 async fn junctioned_worktree_root_resolves_correctly() {
@@ -379,9 +344,7 @@ async fn junctioned_worktree_root_resolves_correctly() {
     let _ = std::fs::remove_dir_all(&real_dir);
 }
 
-/// The absolute-token (no-containment) branch, `resolve_no_follow_unrooted`, walked through a
-/// directory junction mid-path -- the no-follow-unrooted walker must substitute the junction's
-/// own real target the same way it already does for the worktree-relative branch.
+/// The unrooted walker must substitute a junction's real target mid-path, as the rooted one does.
 #[tokio::test]
 #[cfg(windows)]
 async fn absolute_token_through_a_junction_resolves() {
@@ -428,9 +391,7 @@ async fn read_image_file_returns_valid_bytes_for_a_real_in_worktree_image() {
 
 #[tokio::test]
 async fn read_image_file_rejects_an_oversized_declared_pixel_count() {
-    // Regression test for the gate-round-1 live finding: a tiny file can still declare an
-    // enormous pixel count in its header (#771); the file-path reader must enforce the pixel
-    // cap exactly like the base64 path does.
+    // Regression for #771: a tiny file can declare a huge pixel count, so the file reader must cap pixels too.
     let wt = TempWorktree::new();
     let mut bytes = vec![0x89u8, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
     bytes.extend_from_slice(&[0, 0, 0, 13]);

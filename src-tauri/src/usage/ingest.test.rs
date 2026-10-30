@@ -1,5 +1,4 @@
-// Spec 060 (S1-17): ingest behaviour against scratch files and databases under the OS temp folder
-// (left in place, like this crate's other test modules).
+// Runs against scratch files under the OS temp folder, left in place like the other test modules.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

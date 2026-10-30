@@ -1,8 +1,4 @@
-// Unit tests for `is_chat_answer` (lane R4, issue #787; gate-fix round 2 -- pure, cheap to test
-// now rather than deferring). Scoped to this one function only: the rest of `requests.rs`
-// (dialog classification, `answer_request`'s own live-process path) belongs to the broader
-// `session::agent` split, not this lane. `#[path]`-loaded sibling of `requests.rs` (excluded from
-// `check:file-size` by its own `.test.rs` name).
+// Unit tests for `is_chat_answer`. Scoped to that one function.
 
 use super::*;
 
@@ -30,7 +26,7 @@ fn is_chat_answer_rejects_wrong_field_types() {
     assert!(!is_chat_answer(&json!({ "approve": "yes" })));
     assert!(!is_chat_answer(&json!({ "value": 123 })));
     assert!(!is_chat_answer(&json!({ "confirmed": "true" })));
-    // `cancelled` is only ever meaningful as the literal `true`.
+    // `cancelled` only means anything as the literal `true`.
     assert!(!is_chat_answer(&json!({ "cancelled": false })));
     assert!(!is_chat_answer(&json!({ "cancelled": "true" })));
 }

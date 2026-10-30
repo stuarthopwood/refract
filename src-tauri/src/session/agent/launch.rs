@@ -1,8 +1,4 @@
-// Start / reattach (port of `SessionAgent.ts`'s `start`/`doStart`/`launch`/`attachAndVerify`).
-// The free functions this flow needs (`reattachVerification.ts`'s `verifyReattach`,
-// `fetchAllMessages.ts`) live in the sibling `launch_support.rs` (split out round 4, 2026-10-14,
-// issue #806 600-line cap). See `mod.rs`'s own header for this module's place in the `agent/`
-// split and the lane extension contract.
+// Start and reattach. Pure helpers live in the sibling `launch_support.rs`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,18 +18,10 @@ use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
 impl SessionAgent {
-    /// `sessions.open`'s auto-start path and the initial `start()` call alike. Joins an
-    /// already-live process as a no-op (simplified "join the in-flight attempt" behaviour: the
-    /// TS original shares the exact in-flight `Promise`; this serialises instead through
-    /// `start_lock`, which gives the same externally-visible result for every caller here).
+    /// Starts the process, or joins a live one as a no-op. Serialised through `start_lock`.
     pub async fn start(&self) -> Result<(), AgentError> {
-        // Gate-fix (round 6, test review HIGH): `generation_at_entry` snapshotted BEFORE
-        // `start_lock` is even requested, so a `shutdown()` bump (always under the same lock as
-        // `stop_requested = true`) while waiting is visible instantly. The re-check, the
-        // "already running" check, and the `stop_requested = false` reset below all happen
-        // under ONE lock acquisition -- three separate ones left a window where a `shutdown()`
-        // landing in between could bump the generation only for this call's own stale reset to
-        // undo it again.
+        // Snapshot the generation before taking `start_lock`, so a concurrent `shutdown()` is
+        // seen. The re-check and the reset must share one lock acquisition.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
         {
@@ -67,13 +55,8 @@ impl SessionAgent {
         self.launch(&session, "").await
     }
 
-    /// Lane R3 (issue #786), once R2 (#826) landed `worktree_is_valid`: replaces the plain
-    /// `fs::metadata` existence check -- catches a worktree whose `.git` pointer was hand-
-    /// deleted or that git no longer has registered, not merely "the folder is gone" (#729).
-    /// `Unknown` (the underlying `git worktree list` call could not be made to settle within
-    /// its own timeout) must never block a start -- a slow disk/antivirus scan is not
-    /// evidence the worktree is actually missing, so this agent starts normally the same as
-    /// `Valid` (matching `session::manager::summaries()`'s own documented `Unknown` policy).
+    /// Checks the worktree via git, not just the folder. `Unknown` never blocks a start,
+    /// because a slow disk scan is not evidence that the worktree is missing.
     async fn worktree_validity(&self, session: &Session) -> WorktreeValidity {
         let repo_path = {
             let registry = self.registry.lock().await;
@@ -89,9 +72,8 @@ impl SessionAgent {
         }
     }
 
-    /// Issue #1205 (FR-107): a passive open never calls `start()`, so a stopped Session whose
-    /// worktree is gone records `worktree-missing` here instead, keeping its stop banner in
-    /// place of the Agent stopped bar. Only a not-yet-explained stop is relabelled.
+    /// A passive open never calls `start()`, so a stopped Session with a missing worktree is
+    /// relabelled here. Only an unexplained stop is changed.
     pub async fn mark_worktree_missing_if_invalid(&self) {
         if self.status().await != SessionStatus::Stopped {
             return;
@@ -118,11 +100,9 @@ impl SessionAgent {
         }
     }
 
-    /// Port of `conversationSwitch.ts`'s `startStoppedSessionOnConversation` gate-fix (round 2
-    /// HIGH): resets side chat right after the registry write succeeds, before `launch()` runs,
-    /// so it fires even if the start itself then fails (matches Electron's own ordering).
+    /// Resets side chat after the registry write, before `launch()`, so it runs even if the start fails.
     pub async fn start_with_conversation(&self, file: Option<String>) -> Result<(), AgentError> {
-        // Gate-fix (round 6, HIGH): mirrors `start()`'s own identical guard above.
+        // Same guard as `start()`.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
         {
@@ -171,9 +151,7 @@ impl SessionAgent {
         session: &Session,
         failure_prefix: &str,
     ) -> Result<(), AgentError> {
-        // Lane R3 (issue #786): a new life starting means whatever the PREVIOUS life's
-        // requested stop protected no longer applies to THIS one (`stoppedOnRequestMarker.ts`'s
-        // own `clearStoppedOnRequestMarker`, called at the top of every `launch()` attempt).
+        // A new life clears the previous life's stop marker.
         self.clear_stopped_on_request_marker().await;
 
         let approval_mode = self.settings.lock().await.get().approval_mode;
@@ -182,14 +160,9 @@ impl SessionAgent {
             to_process_mode(approval_mode),
         );
 
-        // Lane R3 (issue #786, "one hook" this lane adds to core `agent.rs`): the process-wide
-        // start-slot gate and low-memory defer (`startQueue.ts`'s own `acquireStartSlot`/
-        // `deferStartIfMemoryLow`).
+        // Process-wide start slot and low-memory defer.
         let slot_guard = crate::session::start_queue::acquire_slot(self).await?;
-        // Gate-fix (code review HIGH, round 2): covers the WHOLE rest of this attempt (every
-        // return path below, success included -- `clear_stage` is idempotent) so a start that
-        // fails during `wait_ready` (ceiling, or the process exiting before ready) can never
-        // leave its `waiting`/`prompt` stage stuck on the wire the way a success-only clear did.
+        // Clears the stage on every return path, so a failed start never leaves it stuck.
         let _stage_guard = crate::session::start_queue::guard_stage_for_attempt(self);
 
         let mut launch_warnings = Vec::new();
@@ -207,55 +180,27 @@ impl SessionAgent {
             }
         };
         let proc = Arc::new(proc);
-        // Lane R3 (issue #786): `startQueue.ts`'s own `markSpawned`/`unmarkSpawned` pairing (the
-        // narrower "has a process actually spawned" count the memory defer above checks), and
-        // `pidRecords.ts`'s own orphan-reaping fallback record. Awaited (gate-fix, perf/
-        // correctness review): strictly orders this write before any later `remove_process_
-        // record` for the same pid (`handle_exit`) could possibly run, and a JSON write here is
-        // cheap next to the ready-wait this attempt is about to pay regardless.
+        // Awaited, so this write always precedes any later `remove_process_record` for the pid.
         let spawned_guard = crate::session::start_queue::mark_spawned();
         if let Some(pid) = proc.pid() {
             crate::process::pid_records::record_process(pid, &self.session_id).await;
         }
-        // Issue #937, gate round 3 fix (Critical): moved here, BEFORE the frame listener
-        // subscribes below -- `available_commands_update` arrives once near startup, and the
-        // OLD location (the per-life reset block further down, after `attach_and_verify`/
-        // `fetch_all_messages`) ran AFTER the listener had already started, so it could (and,
-        // live, likely would) silently wipe a list that frame had ALREADY populated for THIS
-        // life, leaving every OMP slash command (`/advisor` included) permanently
-        // `UnknownCommand` for the rest of the life. Clears a PREVIOUS life's stale list before
-        // anything can observe it, never a list this life's own frame just wrote.
+        // Clears the previous life's slash-command list before the frame listener starts,
+        // so it cannot wipe this life's own list.
         {
             self.state.lock().await.commands = Vec::new();
         }
-        // Subscribed before `wait_ready` (code-review/perf finding, 2026-10-13): registers this
-        // listener before any frame -- including ones the ready-wait itself observes -- can
-        // possibly be produced, the same guarantee `OmpProcess.ts` gets from attaching
-        // `proc.on('frame', ...)` before calling `start()` (SessionAgent.ts:471).
+        // Subscribed before `wait_ready`, so no frame, including ready-wait frames, is missed.
         self.spawn_frame_listener(proc.clone(), proc.subscribe());
-        // Lane R3 (issue #786, #656): a cancel landing from here on must stop the now-spawned
-        // process, not just abandon the wait -- `acquire_slot`'s own cancel check above only
-        // covers the queued/memory-deferred phase, before any process existed to leak.
+        // A cancel from here on must stop the spawned process, not just abandon the wait.
         let cancel_watch = crate::session::start_queue::watch_for_cancel(self, proc.clone()).await;
         let wait_result = proc.wait_ready(&opts).await;
-        // Gate-fix (code review MEDIUM, round 3): both released right here, matching TS's own
-        // `OmpProcess.start()` scope (`acquireStartSlot`/`markSpawned` are process-level, never
-        // held across the Session-level reattach/history-fetch below) -- held any longer, a
-        // Cancel or `shutdown()` landing during `attach_and_verify`/`fetch_all_messages` would
-        // still reach `watch_for_cancel`'s own handler and kill an agent that is already ready.
+        // Released here, before reattach and history fetch, so a late cancel cannot kill a ready agent.
         drop(cancel_watch);
         drop(slot_guard);
         drop(spawned_guard);
         if let Err(err) = wait_result {
-            // Gate-fix (round 4, found live via CDP): a cancel landing during this exact wait
-            // (`watch_for_cancel`'s own handler above) already recorded a clean cancelled status
-            // via `end_cancelled_attempt` -- that handler's own `proc.stop()` call is what makes
-            // THIS `wait_ready` call return the error being matched here in the first place, so
-            // without this check every cancelled start ended up on the raw, generic
-            // "OmpProcess: process exited before ready" failure banner (Retry/Start new
-            // conversation) a moment later, clobbering the correct one. See
-            // `start_queue::State::cancel_already_recorded`'s own doc comment for the exact
-            // ordering guarantee that makes this check race-free.
+            // A cancel already recorded its status, so skip the generic exit-before-ready error.
             if crate::session::start_queue::take_cancel_already_recorded(self).await {
                 return Err(AgentError::new(
                     "not-started",
@@ -266,10 +211,7 @@ impl SessionAgent {
             self.record_start_failure(&detail).await;
             return Err(AgentError::new("start-failed", detail));
         }
-        // Lane R3 (issue #786, gate-fix): the ready frame arrived -- any lingering `waiting`/
-        // `prompt`/`extended` stage must disappear from the wire right now, not linger until the
-        // next unrelated status event happens to clear it (TS's own `OmpProcess.ts` calls
-        // `setStartProgress(undefined)` at this exact point too).
+        // Clears any start-progress stage as soon as the ready frame arrives.
         crate::session::start_queue::clear_stage_on_ready(self).await;
 
         if self.state.lock().await.stop_requested {
@@ -285,7 +227,7 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.process = Some(proc.clone());
-            // Issue #911 (gate-fix): a brand-new process life starts with no turn in flight.
+            // A new process life starts with no turn in flight.
             state.turn_abort_requested = false;
         }
 
@@ -294,14 +236,8 @@ impl SessionAgent {
             Err(err) => {
                 proc.stop().await;
                 self.state.lock().await.process = None;
-                // Gate-fix (round 6, FR-038, code review HIGH): a `shutdown()` (stopAgent/
-                // archive/delete/app quit) racing this exact await sets `stop_requested` and
-                // stops this SAME process -- exactly what makes `attach_and_verify`'s own
-                // request fail here. Re-checked AFTER the `proc.stop()` above (which can itself
-                // take a moment) so a deliberate stop during attach never ends start-failed
-                // with an error notice; it ends stopped/not-started like every other
-                // stop-during-launch branch in this function, matching TS's own `shutdown()`
-                // contract (`bailIfStopRequested`).
+                // A `shutdown()` racing this await also fails the attach, so re-check the stop flag
+                // and end stopped, not start-failed.
                 if self.state.lock().await.stop_requested {
                     self.mark_stopped_not_started().await;
                     return Err(AgentError::new(
@@ -315,10 +251,7 @@ impl SessionAgent {
             }
         };
         let ask_dialog_enabled = send_set_ask_dialog(self, &proc).await;
-        // Constitution v1.9.0 / FINDINGS item 44: computed from the PRE-launch `session`
-        // parameter (the registry's last known `last_message_count`) vs the freshly observed
-        // `state_data`, before `sync_from_state` re-baselines it below -- see
-        // `reattach_rebaseline_notice`'s own doc comment.
+        // Compares the pre-launch count with the observed state before `sync_from_state` re-baselines it.
         let rebaseline_notice = session
             .current_conversation
             .as_ref()
@@ -340,8 +273,7 @@ impl SessionAgent {
         let terminated_unexpectedly =
             complete && termination::detect_unexpected_termination_for_transcript(conv).await;
 
-        // Port of `exitedDuringStart`: a concurrent `onExit` may have cleared `process` while the
-        // history fetch above was in flight.
+        // A concurrent exit may clear `process` during the history fetch.
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         let current_mode = self.settings.lock().await.get().approval_mode;
@@ -361,10 +293,9 @@ impl SessionAgent {
                 transcript.merge_from_history(&messages, terminated_unexpectedly);
             }
         }
-        // After the merge above, not right after `send_set_ask_dialog` (gate-fix round 1 High).
+        // After the merge above, so the notice is not dropped as unpersisted.
         append_ask_dialog_unavailable_notice(self, ask_dialog_enabled).await;
-        // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
-        // and BEFORE `sync_from_state` re-baselines `last_message_count` to the observed value.
+        // Sent before `sync_from_state` re-baselines `last_message_count`.
         if let Some(notice) = rebaseline_notice {
             self.append_notice(notice, "info").await;
         }
@@ -379,18 +310,13 @@ impl SessionAgent {
 
         self.emit_status().await;
         self.emit_patch_reset().await;
-        // #766 part A: a choice made while the agent was stopped applies before the first prompt.
+        // A choice made while stopped applies before the first prompt.
         crate::session::pending_selection::drain(self).await;
         Ok(())
     }
 
-    /// Port of `exitedDuringStart`: fails the attempt when a concurrent `on_exit` (a real crash)
-    /// has cleared `state.process` out from under it while `fetch_all_messages`/`sync_from_state`
-    /// were in flight -- factored out (round 6, code review HIGH) since both call sites need the
-    /// SAME FR-038 re-check this got wrong before: a `shutdown()` racing this exact window also
-    /// clears `process` (via the exit its own `proc.stop()` causes), which must end
-    /// stopped/not-started like every other stop-during-launch branch in `launch()`, never
-    /// start-failed with an error notice.
+    /// Fails the attempt when a concurrent exit cleared `state.process` mid-launch. A
+    /// requested stop ends stopped, not start-failed.
     async fn fail_if_process_changed(
         &self,
         proc: &Arc<OmpProcess>,
@@ -411,10 +337,8 @@ impl SessionAgent {
         Err(AgentError::new("start-failed", detail))
     }
 
-    /// Port of `SessionAgent.ts`'s own `attachAndVerify`: `switch_session` to the Session's
-    /// `currentConversation` (skipped for a brand-new Session), then `get_state` plus the
-    /// reattach verification (`reattachVerification.ts`'s `verifyReattach`). Throws (returns
-    /// `Err`) on any failure; the caller stops `proc` and records it.
+    /// Switches to the Session's conversation (skipped when new), then verifies with `get_state`.
+    /// Returns `Err` on failure; the caller stops `proc`.
     async fn attach_and_verify(
         &self,
         proc: &OmpProcess,
@@ -460,8 +384,7 @@ impl SessionAgent {
         }
         Ok(data)
     }
-    // `sync_from_state` (used by `launch` above and the settle path) moved to its own sibling
-    // module, `sync_from_state.rs` (round 3, #806 600-line cap).
+    // `sync_from_state` lives in `sync_from_state.rs`.
     pub(super) fn spawn_frame_listener(
         &self,
         proc: Arc<OmpProcess>,
@@ -473,9 +396,7 @@ impl SessionAgent {
                 match rx.recv().await {
                     Some(ProcessEvent::Frame(frame)) => agent.handle_frame(frame).await,
                     Some(ProcessEvent::StartProgress { stage, elapsed_ms }) => {
-                        // Issue #784 ("Pre-declare per-lane Rust files"): the one extension point
-                        // for every not-yet-landed lane's start-progress handling, same shape as
-                        // `frame.rs`'s own `on_frame` fan-out.
+                        // Extension point for start-progress handling.
                         crate::session::model::on_start_progress(&agent, stage, elapsed_ms).await;
                         crate::session::readout::on_start_progress(&agent, stage, elapsed_ms).await;
                         crate::session::side_chat::on_start_progress(&agent, stage, elapsed_ms)
@@ -490,15 +411,10 @@ impl SessionAgent {
                     Some(ProcessEvent::Exit { code, requested }) => {
                         let (is_current, stop_requested, was_already_stopped, epoch_at_exit) =
                             agent.handle_exit(&proc, code, requested).await;
-                        // Issue #784: the same extension point for every not-yet-landed lane's
-                        // exit handling, same shape as `frame.rs`'s own `on_frame` fan-out.
+                        // Extension point for exit handling.
                         crate::session::model::on_exit(&agent, code, requested).await;
                         crate::session::side_chat::on_exit(&agent, code, requested).await;
-                        // Lane R3 (issue #786): gated on `is_current` -- a stale exit for an
-                        // already-superseded life must never recompute a newer life's own
-                        // termination verdict, cancel its start, or (gate round 2, code LOW,
-                        // lane R5) bump `readout`'s `pr_poll_generation` a second time, which
-                        // would silently kill the NEWER life's own PR-poll timer.
+                        // Gated on `is_current`, so a stale exit cannot affect a newer life.
                         if is_current {
                             crate::session::advisor::on_exit(&agent).await;
                             crate::session::readout::on_exit(&agent, code, requested).await;
@@ -523,19 +439,15 @@ impl SessionAgent {
                         }
                         break;
                     }
-                    // The unbounded `mpsc` channel never lags; it only closes when the process
-                    // itself is gone (every sender dropped).
+                    // The unbounded channel closes only when the process is gone.
                     None => break,
                 }
             }
         });
     }
 
-    /// Adds an error notice and moves the runtime to `stopped`/`start-failed` (data-model.md
-    /// "Reattach verification" step 3), so a failed spawn or reattach never leaves a blank chat.
-    /// `pub(in crate::session)` (not `pub(super)`): lane R3 (issue #786) calls this from
-    /// `session::start_queue`'s own cancel paths, a sibling of `session::agent`, not a
-    /// descendant of it.
+    /// Adds an error notice and sets `start-failed`, so a failed start never leaves a blank chat.
+    /// `pub(in crate::session)`: also called from `session::start_queue`.
     pub(in crate::session) async fn record_start_failure(&self, detail: &str) {
         self.append_notice(detail.to_string(), "error").await;
         self.set_status(
@@ -546,41 +458,28 @@ impl SessionAgent {
         .await;
     }
 
-    /// `sessions.stopAgent` (T040) and the app-exit stop-all path (`lib.rs`'s `ExitRequested`
-    /// handler): closes stdin, awaits a graceful exit up to the grace period, then force-kills
-    /// via the Job Object's owning process tree (`OmpProcess::stop`'s own `taskkill /T /F`
-    /// fallback, FR-004).
+    /// Closes stdin, waits for a graceful exit, then force-kills the process tree.
     pub async fn shutdown(&self) {
         {
             let mut state = self.state.lock().await;
             state.stop_requested = true;
-            // Bumped alongside, under this SAME lock, before `start_lock` is ever awaited
-            // below -- see `start()`'s own identical generation re-check.
+            // Bumped under this lock, before `start_lock` is awaited.
             state.shutdown_generation = state.shutdown_generation.wrapping_add(1);
         }
-        // Lane R3 (gate-fix TS cycles 2/3): reaches a start still queued/memory-deferring too
-        // (`acquire_slot` has no live `process` yet) -- a no-op if nothing is starting.
+        // Also reaches a start still queued or deferred, which has no process yet.
         self.cancel_start().await;
         let proc = { self.state.lock().await.process.clone() };
         if let Some(proc) = &proc {
             proc.stop().await;
         }
-        // Gate-fix (round 3, HIGH): covers a start already past `acquire_slot`, still inside
-        // `OmpProcess::connect`/its own ready-wait -- no `state.process` yet for either step
-        // above to find; without this, `sessions.delete`/`.archive` could remove the worktree
-        // while `omp` was still alive inside it. `start_lock` blocks until whichever
-        // `start()`/`launch()` call holds it returns -- `stop_requested` is already `true`.
-        // Gate-fix (round 5, HIGH): HELD (not dropped immediately) for the rest of this
-        // function, refusing any NEW `start()` until `proc_after` below is dealt with.
+        // Waits for an in-flight `start()` to return, so its process cannot outlive this stop.
+        // Held to the end of this function, so no new `start()` begins meanwhile.
         let _start_guard = self.start_lock.lock().await;
-        // A start could have completed and recorded a fresh `state.process` in the narrow
-        // window between the checks above and this lock acquisition -- stop it too, unless it
-        // is the exact same process already stopped above.
+        // A start may have recorded a new process in the gap above, so stop it too.
         let proc_after = { self.state.lock().await.process.clone() };
         if let Some(proc_after) = &proc_after {
             if !proc.as_ref().is_some_and(|p| Arc::ptr_eq(p, proc_after)) {
-                // Belt-and-braces: re-set immediately before stopping it, so this exit is never
-                // misread as an unrequested crash.
+                // Set the stop flag first, so this exit is not read as a crash.
                 {
                     let mut state = self.state.lock().await;
                     state.stop_requested = true;

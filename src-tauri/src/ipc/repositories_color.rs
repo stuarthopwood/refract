@@ -1,7 +1,5 @@
-// `repositories.setColor` (issue #887): sets or clears the Project colour shown on a Project's
-// Session list header. Kept apart from `repositories.rs`, which sits near the 600-line cap
-// (#806). The renderer sends `(id, color | null)`; `color` is `{ kind: 'preset', id }` with one
-// of the ten known preset ids, or `{ kind: 'custom', hex }` with `#RGB` or `#RRGGBB`.
+// `repositories.setColor`: sets or clears the Project colour. Kept apart from `repositories.rs` (#806).
+// `color` is a known preset id or `#RGB`/`#RRGGBB` hex.
 
 use serde_json::Value;
 
@@ -9,7 +7,7 @@ use crate::store::registry::ProjectColor;
 
 use super::{arg_str, invalid_argument, map_registry_error, AppState, Dispatcher, HandlerFuture};
 
-/// The ten preset ids, in the order of the renderer's `--project-1` to `--project-10` tokens.
+/// The ten preset ids, matching the renderer's `--project-1` to `--project-10` tokens.
 pub const PRESET_IDS: [&str; 10] = [
     "lime", "teal", "cyan", "blue", "indigo", "violet", "magenta", "pink", "slate", "sand",
 ];
@@ -18,7 +16,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("repositories.setColor", repositories_set_color);
 }
 
-/// `#RGB` or `#RRGGBB` only: no alpha, no named colours, no CSS functions.
+/// `#RGB` or `#RRGGBB` only.
 fn is_valid_hex(hex: &str) -> bool {
     let digits = match hex.strip_prefix('#') {
         Some(digits) => digits,
@@ -55,8 +53,7 @@ fn parse_color(value: &Value) -> Result<Option<ProjectColor>, String> {
     }
 }
 
-/// `Repository` carries no `remote`; the renderer merges its own known remote back in, so this
-/// returns the plain registry shape.
+/// Returns the plain registry shape; the renderer merges its own remote back in.
 pub fn repositories_set_color(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {

@@ -1,11 +1,5 @@
-// Issue #526 (spec 001 FR-108 to FR-110, contracts/ipc.md `session:activity`): the Session row
-// Activity line's raw inputs, streamed for EVERY live Session -- unlike `readout:update`, never
-// gated by visibility, and never doing any git work. A child module of `readout_activity` (#806
-// file-size discipline: `readout.rs` sits at its 600-line cap) so it can read the parent
-// `readout::State`'s retained todo tree, turn timer and activity fields directly. Every trigger
-// `schedule_readout_update` already receives (frames, todo tool ends, subagent changes, settle,
-// exit, Conversation switch) also calls `emit_activity` here, before that function's own
-// debounce. The payload carries agent-authored text, so it is never logged.
+// Session row Activity line (#526): streamed for every live Session, never gated by visibility, and
+// never runs git. The payload carries agent-authored text, so it is never logged.
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -14,11 +8,10 @@ use super::super::super::agent::SessionAgent;
 use super::super::readout_todo::TodoPhaseState;
 use super::super::State;
 
-/// FR-109: at most one `session:activity` per Session per second, with a trailing update.
+/// At most one `session:activity` per Session per second, with a trailing update.
 const THROTTLE: Duration = Duration::from_secs(1);
 
-/// The last value sent and when, held inside `ActivityState` so it survives that state's own
-/// per-turn `reset`.
+/// Throttle bookkeeping; kept across the parent state's per-turn `reset`.
 #[derive(Debug, Clone, Default)]
 pub(in super::super) struct EmitState {
     last_sent: Value,
@@ -26,13 +19,7 @@ pub(in super::super) struct EmitState {
     trailing: bool,
 }
 
-/// `SessionActivity` or `null` (not working: no turn running on this agent and no subagent still
-/// running). #507: a background subagent outliving its turn keeps `runningSubagents` flowing so
-/// the Session row's agents button stays; the Activity line itself still needs a live status.
-/// `todo` mirrors the
-/// renderer's `deriveTodoTotals`/`deriveCurrentTask` (`todoDerive.ts`): `total` excludes
-/// abandoned tasks, `done` counts completed ones, the current task is the first `in_progress`
-/// one (else the first still-open one); `null` when there is no plan or every open task is done.
+/// `null` when no turn runs and no subagent does; a subagent outliving its turn still reports (#507).
 fn activity_value(s: &State, running_subagents: u64) -> Value {
     if s.turn_started_at.is_none() {
         if running_subagents == 0 {
@@ -81,8 +68,7 @@ async fn running_subagents(agent: &SessionAgent) -> u64 {
         .unwrap_or(0)
 }
 
-/// `SessionSummary.activity` for `sessions.list()`: the current value, computed fresh; `null`
-/// for a Session with no live agent this run.
+/// `SessionSummary.activity`, computed fresh; `null` with no live agent.
 pub async fn current_activity(agent: Option<&SessionAgent>) -> Value {
     let Some(agent) = agent else {
         return Value::Null;
@@ -93,9 +79,7 @@ pub async fn current_activity(agent: Option<&SessionAgent>) -> Value {
         .await
 }
 
-/// Emits `session:activity` when the value changed: immediately when the last emit was over a
-/// second ago (or the value is `null`, so a row reverts at once on turn end or stop), otherwise
-/// once from a trailing timer that recomputes the latest value when it fires.
+/// Emits on change, or from a trailing timer when throttled; `null` always goes out at once.
 pub(in super::super) async fn emit_activity(agent: &SessionAgent) {
     if let Some(delay) = evaluate(agent, false).await {
         let agent = agent.arc();

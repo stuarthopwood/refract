@@ -1,11 +1,5 @@
-// IPC handlers for `chat.setVisibleSubagent`/`chat.subagentSnapshot` (lane R5, issue #788).
-// `src/shared/ipc.ts`'s own doc comments: `setVisibleSubagent` tells main which subagent's
-// stream to forward as `subagent:patch` (mirrors `sessions.setVisible`'s own shape, `null` stops
-// forwarding); `subagentSnapshot` is the full current stream for one subagent, for when the
-// panel first selects it, before any patch arrives -- `not-found` when `subagentId` does not
-// match a `SubagentSummary` of the current state. Split from `ipc/chat.rs` (issue #784,
-// "Pre-declare per-lane Rust files"; `chat.rs`'s own header already carves these two channels out
-// of its scope) so lane R5 is the only lane that ever edits this file.
+// `chat.setVisibleSubagent` and `chat.subagentSnapshot`. `null` stops forwarding;
+// `not-found` when `subagentId` matches no current subagent.
 
 use serde_json::Value;
 
@@ -25,8 +19,7 @@ pub fn chat_set_visible_subagent(state: AppState, args: Vec<Value>) -> HandlerFu
                 "chat.setVisibleSubagent expects (sessionId, subagentId | null)",
             ));
         };
-        // `subagentId` is `string | null` (`src/shared/ipc.ts`): a non-string, non-null second
-        // argument is still rejected outright, matching every other handler's own shape check.
+        // A non-string, non-null `subagentId` is rejected, as in every other handler.
         let subagent_id = match args.get(1) {
             None | Some(Value::Null) => None,
             Some(Value::String(id)) => Some(id.clone()),

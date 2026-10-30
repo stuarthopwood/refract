@@ -1,6 +1,4 @@
-// Test suite for `omp/config.rs`, split into this sibling file (via `#[path]`) only to keep
-// `config.rs` itself comfortably under this build's 600-line-per-file cap -- same convention as
-// `ipc/model_roles.rs`/`model_roles_tests.rs` and `store/settings.rs`/`settings_tests.rs`.
+// Test suite for `omp/config.rs`, kept in a sibling file to stay under the line cap.
 use super::*;
 
 #[test]
@@ -65,8 +63,7 @@ async fn ensure_scratch_dir_recreates_after_external_removal() {
     assert!(tokio::fs::try_exists(&second).await.unwrap());
 }
 
-/// A minimal fake executor proving `get_config_with`/`set_config_with` build the exact argv
-/// the module header documents, including the `--json -- <value>` ordering.
+/// Fake executor that records argv, so the tests can check the exact `--json -- <value>` order.
 struct RecordingExecutor {
     calls: AsyncMutex<Vec<Vec<String>>>,
     response: String,
@@ -120,20 +117,8 @@ async fn get_config_rejects_an_invalid_key_before_ever_calling_the_executor() {
     assert!(executor.calls.lock().await.is_empty());
 }
 
-/// Regression test for the pipe-drain hang (code review, round 4): a real child process whose
-/// stdout exceeds a tiny cap must be killed and reported as `ParseFailed` promptly, never left
-/// running until some outer timeout gives up. No real `omp` is needed (the bug is in the
-/// generic pipe-draining code, not anything `omp`-specific): the child writes one line past the
-/// cap, then spends ~29s pinging localhost before exiting on its own (`ping`, not a `for`/`while`
-/// loop -- CI's Windows runner treats a compiled test binary that spawns a hidden-window `cmd.exe`
-/// loop as a resource-exhaustion signature and silently corrupts the EXE on disk, reproduced
-/// live as `STATUS_ENTRYPOINT_NOT_FOUND` on every CI run until this was found and changed; `ping`
-/// as a deliberate delay is already an established pattern in this repo's own probe scripts,
-/// FINDINGS item 11). The old buggy code always awaited `child.wait()` before ever checking the
-/// byte count, so without the fix this test would block for the full ~29s delay and fail the 5s
-/// test-local timeout; with the fix, the capped read resolves within milliseconds of the single
-/// `echo`, `start_kill` fires immediately, and the child never reaches its natural ping-driven
-/// exit.
+/// Regression for the pipe-drain hang: a child over the stdout cap must be killed and reported
+/// promptly. Uses `ping` for the delay, not a `cmd` loop, which CI's Windows runner flags.
 #[tokio::test]
 async fn read_capped_output_kills_the_child_and_returns_immediately_once_stdout_exceeds_the_cap() {
     let mut command = Command::new("cmd");

@@ -1,8 +1,5 @@
-// Spec 024 FR-005/FR-006 (#538): the right pane's own persisted state -- open or collapsed,
-// width, open panel ids in tab order, the active tab. A child module of `settings.rs` (not
-// inline there) to keep that file under this build's 600-line cap (issue #806), the same reason
-// `agent_stopped_bar.rs` was split out. The renderer's `right-pane-persistence.ts` is the sole
-// writer and never reads a broadcast back, so there is no raw/lazy-correction tracking.
+// Right pane persisted state (#538).
+// The renderer is the sole writer, so there is no raw/lazy-correction tracking.
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
@@ -26,8 +23,7 @@ pub struct RightPaneState {
     pub width_px: i64,
     pub open_panel_ids: Vec<String>,
     pub active_panel_id: Option<String>,
-    /// Issue #730: the user's saved panel order (empty means the default). May hold ids this
-    /// build does not register; the renderer keeps and merges them.
+    /// Saved panel order (#730); may hold unregistered ids, which the renderer keeps.
     #[serde(default)]
     pub panel_order: Vec<String>,
 }
@@ -61,9 +57,8 @@ fn parse_ids(ids: &[Value]) -> Option<Vec<String>> {
     Some(out)
 }
 
-/// Shared by the disk loader (malformed resets to the default) and the IPC setter (malformed is
-/// `invalid-argument`). Width is clamped, ids are de-duplicated (over the cap or a non-string is
-/// malformed), and an active id outside `openPanelIds` is repaired to the last open tab.
+/// Shared by the disk loader (malformed resets to default) and the IPC setter (`invalid-argument`).
+/// Clamps width, de-duplicates ids, and repairs an out-of-range active id to the last open tab.
 pub(crate) fn parse(value: &Value) -> Option<RightPaneState> {
     let object = value.as_object()?;
     let open = object.get("open")?.as_bool()?;
@@ -99,7 +94,7 @@ pub(super) fn parse_from_disk(object: &Map<String, Value>) -> RightPaneState {
 }
 
 impl SettingsStore {
-    /// `settings.setRightPane(value)`: plain-replace shape, as `set_session_list_collapse` uses.
+    /// Plain-replace setter.
     pub async fn set_right_pane(&mut self, value: RightPaneState) -> std::io::Result<Settings> {
         let next = Settings {
             right_pane: value,

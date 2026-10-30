@@ -1,8 +1,4 @@
-// Unit tests for `ipc::chat` (lane R4, issue #787; gate-fix round 1): `parse_images_argument`'s
-// shape/argument validation AND the Critical security property that it rebuilds a fresh
-// `{ type, data, mimeType }` object rather than forwarding the caller's whole entry, plus
-// `map_chat_error`'s passthrough. `#[path]`-loaded sibling of `chat.rs` (excluded from
-// `check:file-size` by its own `.test.rs` name).
+// Tests for `ipc::chat` argument validation and image-object rebuilding.
 
 use super::*;
 use crate::omp::images::base64_encode;
@@ -66,8 +62,7 @@ async fn parse_images_argument_rejects_missing_mime_type() {
 
 #[tokio::test]
 async fn parse_images_argument_rejects_a_non_string_mime_type() {
-    // Gate-fix (Critical, security): a non-string `mimeType` (e.g. a number) must be refused as
-    // invalid-argument, never silently coerced or defaulted to an empty string.
+    // A non-string `mimeType` is refused, never coerced.
     let images = json!([{ "type": "image", "data": fake_png_base64(), "mimeType": 12345 }]);
     let err = parse_images_argument(Some(&images))
         .await
@@ -87,9 +82,7 @@ async fn parse_images_argument_rejects_an_unsupported_mime_type() {
 
 #[tokio::test]
 async fn parse_images_argument_accepts_a_valid_image_and_rebuilds_a_fresh_object() {
-    // Gate-fix (Critical, security): the output object contains ONLY `type`/`data`/`mimeType` --
-    // an extra field the caller attached (`providerFile`, `url`, `detail`, ...) must never reach
-    // the outgoing prompt command, even though every shape/mime/size check above it passed.
+    // Output carries only `type`/`data`/`mimeType`; extra caller fields never reach the prompt.
     let data = fake_png_base64();
     let images = json!([{
         "type": "image",
@@ -138,9 +131,7 @@ async fn parse_images_argument_rejects_an_oversized_pixel_count() {
     assert_eq!(err.message, "Image exceeds the maximum pixel count");
 }
 
-// ---------------------------------------------------------------------------
-// map_chat_error
-// ---------------------------------------------------------------------------
+// ---- map_chat_error ----
 
 #[test]
 fn map_chat_error_passes_code_and_message_through() {
@@ -150,9 +141,7 @@ fn map_chat_error_passes_code_and_message_through() {
     assert_eq!(ipc_err.message, "no live process");
 }
 
-// ---------------------------------------------------------------------------
-// is_native_reserved / is_valid_queue_kind / parse_session_id_and_text
-// ---------------------------------------------------------------------------
+// ---- is_native_reserved / is_valid_queue_kind / parse_session_id_and_text ----
 
 #[test]
 fn is_native_reserved_table() {

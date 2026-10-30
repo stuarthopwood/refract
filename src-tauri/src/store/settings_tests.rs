@@ -1,12 +1,7 @@
-// Test suite for `store::settings` (lane R8, issue #791), split into this sibling file via
-// `#[path]` only to keep `settings.rs` itself under this build's 600-line-per-file cap. Ports
-// `store/settings.test.ts`'s transcriptDisplay migration/setter cases and adds a persist test per
-// remaining setter plus the issue's own unknown-key round-trip acceptance test.
+// Test suite for `store::settings`, split out to keep `settings.rs` under the size cap.
 use super::*;
 
-/// Port of `store/settings.test.ts`'s own `openScratchStore`: a fresh, uniquely-named directory
-/// under the OS temp root, left on disk (never deleted), matching this project's existing
-/// scratch-directory test convention.
+/// A fresh, uniquely-named scratch directory under the OS temp root, never deleted.
 async fn open_scratch_store(initial_json: Option<Value>) -> SettingsStore {
     let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir)
@@ -105,8 +100,7 @@ async fn set_transcript_display_persists_across_a_reopen() {
     assert!(reopened.get().transcript_display.tool_calls);
 }
 
-/// Issue #791 acceptance: "unknown keys round-trip untouched so renderer features can add fields
-/// later (a Settings round-trip test)".
+/// Unknown keys round-trip untouched so renderer features can add fields later (#791).
 #[tokio::test]
 async fn unknown_keys_round_trip_untouched_across_an_unrelated_setter_and_a_reopen() {
     let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
@@ -130,14 +124,12 @@ async fn unknown_keys_round_trip_untouched_across_an_unrelated_setter_and_a_reop
         on_disk.get("aFutureFeature"),
         Some(&json!({ "enabled": true }))
     );
-    // The nine known fields are still written correctly alongside the unknown key, not displaced
-    // by it.
+    // Known fields are still written correctly alongside the unknown key.
     assert_eq!(on_disk.get("showSampleData"), Some(&json!(true)));
     assert_eq!(on_disk.get("approvalMode"), Some(&json!("ask")));
 
-    // Quality-gate correction: `settings.get`'s own wire shape (what `serde_json::to_value`
-    // produces for the IPC reply and every `settings:changed` broadcast) must ALSO carry the
-    // unknown key -- `#[serde(flatten)]` on `Settings::extra` is what makes this true.
+    // The wire shape (`serde_json::to_value`) must also carry the unknown key, via
+    // `#[serde(flatten)]` on `Settings::extra`.
     let wire = serde_json::to_value(store.get()).unwrap();
     assert_eq!(
         wire.get("aFutureFeature"),

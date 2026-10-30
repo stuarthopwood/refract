@@ -1,7 +1,5 @@
-// Port of `src/main/github/gh.ts`'s list/search/view/staleness/files surface (lane R9, issue
-// #792), split out of `gh.rs` to stay under the 600-line-per-file cap (issue #806): the core
-// timed `gh` wrapper (`gh_raw`/`gh_json`/`gh_graphql`/`owner_repo_for`) lives in `gh.rs`; the
-// review-thread/timeline/comment/review/merge surface lives in `gh_mutations.rs`.
+// `gh pr` list/search/view/staleness/files; the core `gh` wrapper is in `gh.rs`, mutations in
+// `gh_mutations.rs` (split for the 600-line cap, #806).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,7 +9,7 @@ use serde::Deserialize;
 
 use super::gh::{gh_json, owner_repo_for, GhActor, GhCheckRun, GhError, GhLabel};
 
-/// `gh pr list --json <LIST_FIELDS>` (docs/spike/FINDINGS.md row 37).
+/// `gh pr list --json <LIST_FIELDS>`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GhPrListEntry {
@@ -31,12 +29,7 @@ pub struct GhPrListEntry {
 
 const LIST_FIELDS: &str = "number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,statusCheckRollup,labels,reviewRequests,assignees";
 
-/// `--state <state>` directly (not `--state all --limit 50` filtered client-side): scopes the
-/// whole 50-row limit to the requested state up front. `state` is one of `gh pr list`'s own
-/// accepted values (`open`, `closed`, `merged`, `all`) -- issue #499's State control only ever
-/// passes `open`, `closed`, or `all` (`"closed"` already returns merged pull requests too, per
-/// the issue's own verified probe against gh 2.102.0), but the whole set is accepted here
-/// unchanged from `gh`'s own vocabulary rather than re-narrowing it in this wrapper.
+/// Passes `--state <state>` straight to `gh` so the 50-row limit applies to that state (#499).
 pub async fn list_pull_requests_by_state(
     repo_path: &Path,
     state: &str,
@@ -60,8 +53,8 @@ pub async fn list_pull_requests_by_state(
     .await
 }
 
-/// `gh search prs --repo <repo> "<qualifier>" --json <SEARCH_FIELDS>` (row 37): a narrower,
-/// documented field set than `gh pr list --json`.
+/// `gh search prs --repo <repo> "<qualifier>" --json <SEARCH_FIELDS>`: a narrower field set than
+/// `gh pr list --json`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GhSearchEntry {
@@ -78,8 +71,7 @@ pub struct GhSearchEntry {
 
 const SEARCH_FIELDS: &str = "number,title,state,isDraft,author,url,updatedAt,labels";
 
-/// One of the 4 built-in narrowing qualifiers this feature offers: `--author @me` /
-/// `--assignee @me` / `--involves @me` / `--review-requested @me`.
+/// Built-in `@me` narrowing qualifiers: author, assignee, involves, review-requested.
 #[derive(Debug, Clone, Copy)]
 pub enum SearchQualifierFlag {
     Author,
@@ -99,10 +91,8 @@ impl SearchQualifierFlag {
     }
 }
 
-/// Every flag, `--json` included, is pushed before `--`; `--` and `query` are the final two argv
-/// entries -- `gh search prs` genuinely misparses a qualifier/free-text pair joined into one argv
-/// entry, and GitHub's own exclusion syntax (`-label:bug`) needs the `--` separator to not be
-/// read as an unknown flag.
+/// Flags go before `--`; `gh search prs` misparses a qualifier joined to free text, and `-label:bug`
+/// needs `--` to not read as a flag.
 pub async fn search_pull_requests(
     repo_path: &Path,
     qualifier_flag: SearchQualifierFlag,
@@ -119,10 +109,7 @@ pub async fn search_pull_requests(
         qualifier_flag.as_str(),
         "@me",
     ];
-    // Issue #499's State control (Open, Closed, All): omitted entirely for "All" (matching
-    // `gh search prs`'s own no-`--state` default of every state), `--state open`/`--state
-    // closed` otherwise -- `--state closed` already includes merged pull requests on this
-    // surface too (the issue's own verified probe).
+    // "All" omits `--state` (gh's default); `--state closed` already includes merged.
     if let Some(state) = state {
         args.push("--state");
         args.push(state);
@@ -144,21 +131,14 @@ struct GhCheckStateResult {
     status_check_rollup: Option<Vec<GhCheckRun>>,
 }
 
-/// Perf finding (code review, 2026-10-14): cached per `(owner_repo, number)`, invalidated the
-/// instant `updated_at` moves -- a non-Open tab used to spawn one `gh pr view` process per row
-/// on EVERY list refresh, even when nothing about that pull request had changed since the last
-/// refresh. The search surface has no `statusCheckRollup`; fetched per-row for these smaller,
-/// non-Open tab result counts. Takes an already-resolved `owner/repo` so the caller resolves it
-/// ONCE per request, not once per row.
+/// Cached per `(owner_repo, number)` and invalidated when `updated_at` moves, so a refresh does not
+/// respawn `gh pr view` per row. Search has no `statusCheckRollup`; takes a pre-resolved `owner/repo`.
 struct CachedCheckState {
     updated_at: String,
     status_check_rollup: Option<Vec<GhCheckRun>>,
 }
 
-/// LOW finding (code review round 2, 2026-10-14): unbounded otherwise -- a long-running session
-/// that opens many repositories/pull requests would grow this forever. Correctness never
-/// depends on this cache (a miss just costs one more `gh pr view` spawn), so the cheapest
-/// correct eviction is good enough: clear the whole map rather than track per-entry recency.
+/// Bounded by clearing the whole map; a miss only costs one more `gh pr view`.
 const CHECK_STATE_CACHE_CAP: usize = 500;
 
 static CHECK_STATE_CACHE: LazyLock<StdMutex<HashMap<(String, u64), CachedCheckState>>> =
@@ -212,13 +192,8 @@ pub async fn view_check_state(
     Ok(result.status_check_rollup)
 }
 
-/// "Also fix" remediation (code review, 2026-10-14): `GhReview`/`reviews` used to carry
-/// `gh pr view --json reviews`'s submitted-review history, but nothing in `mapping.rs` ever read
-/// it (the Overview timeline's reviews come from `gh_mutations`'s own GraphQL `timelineItems`
-/// query instead) -- and `submittedAt` is `null` for a pending (not-yet-submitted) review, which
-/// a required `String` field can never deserialise, breaking `detail()` outright whenever the
-/// viewer has an in-progress review open in the GitHub web UI. Removed rather than made
-/// `Option<String>`: dead code that can also crash is strictly worse than no code.
+/// No `reviews` field: `submittedAt` is `null` for a pending review, which a required `String`
+/// cannot deserialise and would break `detail()`; the timeline comes from `gh_mutations`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GhCommit {
@@ -237,8 +212,7 @@ pub struct GhRestFileLite {
     pub change_type: String,
 }
 
-/// `gh pr view --json <VIEW_FIELDS>` (row 38): `mergeable`/`mergeStateStatus` confirmed live as
-/// `"MERGEABLE"`/`"CLEAN"` string enums on a clean PR; `files` never carries `patch`.
+/// `gh pr view --json <VIEW_FIELDS>`; `files` never carries `patch`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GhPrViewDetail {
@@ -263,9 +237,7 @@ pub struct GhPrViewDetail {
     pub updated_at: String,
     pub head_ref_oid: String,
     pub body: String,
-    /// `gh`'s own documented "head and base are in different repositories" flag -- true for a
-    /// fork pull request, whose code a "New session" would check out and run an agent against
-    /// untrusted.
+    /// True for a fork PR, whose code a "New session" would run an agent against untrusted.
     pub is_cross_repository: bool,
     pub head_repository_owner: Option<GhActor>,
 }
@@ -293,10 +265,8 @@ pub async fn view_pull_request_detail(
     .await
 }
 
-/// Cheap staleness re-fetch (FR-021): only the fields a mutating action compares against the
-/// cache or needs to re-derive `reviewDisabledReason`/`mergeDisabledReason`, never the full
-/// detail. `id` (the GraphQL node id) lets `submit_review`'s approve path pin its mutation to the
-/// exact reviewed commit via `commitOID`.
+/// Cheap staleness re-fetch of only the fields a mutation compares or needs for disabled reasons.
+/// `id` lets the approve path pin its mutation to the reviewed commit via `commitOID`.
 pub struct GhStalenessCheck {
     pub id: String,
     pub updated_at: String,
@@ -349,17 +319,8 @@ pub async fn view_staleness_check(
     })
 }
 
-/// REST `repos/<owner>/<repo>/pulls/<number>/files`: the only surface that carries `patch`;
-/// absent (never `null`) once a file exceeds GitHub's per-file size threshold. Returns `None`
-/// (never fails the caller) on any failure so it can fall back to the porcelain `files` field
-/// (every `patch` absent) plus the FR-011 truncation banner.
-///
-/// `--paginate` (gh's own documented way to follow every `Link: rel="next"` page) so a pull
-/// request with more than GitHub's default 30-per-page REST limit does not silently drop files
-/// past the first page. No `-f per_page=100` alongside it: `gh api`'s own documented behaviour is
-/// that ANY `-f`/`-F`/`--input` body parameter forces the request method to POST even for a
-/// GET-only endpoint, which GitHub's REST API rejects with a 404 here -- `--paginate` already
-/// appends its own `per_page=100` with no body parameter and no method change.
+/// REST `pulls/<number>/files`, the only surface carrying `patch`; `None` on any failure.
+/// `--paginate` avoids truncation; no `-f per_page`, as any `-f` makes `gh api` POST (404).
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhRestFile {
     pub filename: String,
@@ -394,8 +355,7 @@ mod tests {
 
     #[test]
     fn gh_staleness_check_wire_deserialises_camel_case_including_head_ref_oid_rename() {
-        // Shaped like `gh pr view --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,
-        // isDraft,state`.
+        // Shaped like `gh pr view --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state`.
         let json = r#"{
             "id": "PR_kwDO1234",
             "updatedAt": "2024-06-01T12:00:00Z",

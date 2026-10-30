@@ -1,11 +1,5 @@
-// Issue #561: degraded-only health readouts. Every few seconds this samples each live Session's
-// agent (OMP) process -- the latest quick-RPC round trip and the process working set -- and
-// pushes `session:health` only when a measure enters or leaves its degraded state (plus a slow
-// repeat while degraded, so a pane that mounted late still catches up). Healthy is silent: the
-// renderer shows nothing and reserves no space.
-//
-// Thresholds and hysteresis are the ui-architect ruling recorded on #561 and in
-// `specs/044-readout-health/spec.md`.
+// Degraded-only health readouts. Samples each live agent and emits `session:health` only when a
+// measure enters or leaves its degraded state.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +11,7 @@ use crate::session::SessionManager;
 
 const TICK: Duration = Duration::from_secs(5);
 const REPEAT_WHILE_DEGRADED: Duration = Duration::from_secs(15);
-/// A readout that appeared stays at least this long, so a borderline value cannot blink.
+/// Keeps a readout visible at least this long, so a borderline value cannot flicker.
 const MIN_DISPLAY: Duration = Duration::from_secs(10);
 
 const RPC_ENTER_STREAK: u32 = 2;
@@ -88,7 +82,7 @@ fn working_set_bytes(pid: u32) -> Option<u64> {
     use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-    // Safety: a query-only handle on a pid we spawned, closed on every path below.
+    // Safety: query-only handle on a pid we spawned, closed on every path below.
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
     let mut counters = PROCESS_MEMORY_COUNTERS {
         cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
@@ -107,8 +101,7 @@ fn working_set_bytes(_pid: u32) -> Option<u64> {
     None
 }
 
-/// Debug-only hooks (never compiled into a release build, same posture as
-/// `REFRACT_FORCE_LOW_MEMORY`) so a live check can force each degraded state.
+/// Debug-only hooks, never compiled into release builds, that force each degraded state.
 #[cfg(debug_assertions)]
 fn forced(name: &str) -> Option<u64> {
     std::env::var(name).ok()?.parse().ok()

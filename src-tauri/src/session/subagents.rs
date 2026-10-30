@@ -1,51 +1,5 @@
-// Subagent tracking built on OMP's own per-call frames (`get_subagents`/#712, #489) (lane R5,
-// issue #788). Pre-declared so lane R5 is the only lane that ever edits this file (issue #784,
-// "Pre-declare per-lane Rust files").
-//
-// Port of `src/main/omp/subagentStream.ts` (`applySubagentProgress`) plus the subagent-tracking
-// half of `SessionAgent.ts` (`handleTaskStart`/`handleTaskUpdate`/`handleTaskEnd`) and the
-// authoritative-completion half of `transcript.ts` (`mapProgressStatus`/`applyAsyncResultJobs`,
-// FINDINGS item 22(e)).
-//
-// Round 2 (code review + test review + performance gate, round 1): the status mapping now
-// settles every terminal status OMP actually sends (not only `"completed"`), the `task` call's
-// own END frame (`tool_execution_end`'s `result.details.progress`) is read the same way an
-// update frame is -- applying whatever REAL per-index status it carries, never Electron's own
-// blanket "every still-running becomes Finished/Failed" safety net (issue #712's actual bug: a
-// background/async `task` call's end frame arrives the moment the batch is spawned, long before
-// its subagents are genuinely done, so a blanket override there is exactly the bug, but reading
-// the SAME frame's own real per-index progress is not -- it only ever applies a status OMP
-// itself reported for that index, same as an update frame would) -- and ANY `tool_execution_end`'s
-// `result.details.jobs[]` (the `wait` tool's own completion carrier, `transcript.ts`'s own
-// `jobsFromDetails`/`applyAsyncResultJobs`, matched here by `label === name_or_task` since this
-// build does not track a separate `job_id`) settles a `Running` entry with no `progress` match at
-// all. `on_exit` now settles every `Running` entry to `Exited` immediately (not only on the next
-// `launch()`), so a crash or a deliberate stop clears the pill without waiting for a reattach.
-//
-// Issue #712 (spec 037): every attach and Conversation reset sets `set_subagent_subscription`
-// to `progress` (OMP's default is `off`), so OMP pushes standalone `subagent_lifecycle`/
-// `subagent_progress` frames for every subagent, background (detached) ones included; those
-// settle a background agent with its real status long after its `task` call ended, with no
-// `wait()` call needed (`subagents_progress::apply_subagent_frame`). `get_subagents` is never
-// called: a fresh process's registry is always empty (FINDINGS.md item 58). `on_attach_reconcile`
-// still does not re-derive historical candidates from the reattached transcript (Electron gate
-// finding 4).
-//
-// `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
-// decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
-// `on_start_progress` for the ready-wait banner (same listener) -- one call per lane module each,
-// cheap and allocation-free as a no-op; lane R5 adds its subagent behaviour inside these
-// functions, never inside any file under `session/agent/`.
-//
-// Two small core hooks this lane adds (issue #784, "if you truly need a core change, keep it to
-// one line"), mirroring `session::readout`'s own: `session::agent::launch`'s own `launch()` calls
-// `on_attach_reconcile` right before its own `sync_from_state` call (the same point TS's
-// `reconcileSubagentsOnAttach()` runs); `conversations.rs`'s `start_new_conversation`/
-// `open_conversation` each call `on_conversation_reset` before their own `sync_from_state` call.
-//
-// Split round 2 (issue #806, 600-line cap): progress/jobs/lifecycle application and the
-// synthetic-stream helpers live in the sibling `subagents_progress.rs`; this file keeps the data
-// model, the lane hooks, the IPC-facing entry points, and `handle_task_start`.
+// Subagent tracking from OMP's per-call and `subagent_*` frames.
+// A `task` end frame applies only real per-index statuses, since blanket overrides break async batches.
 
 use std::collections::{HashMap, HashSet};
 
@@ -63,7 +17,7 @@ use subagents_progress::{
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
-/// Issue #700/#701 slice (b) decision item 1: "first sentence of `task`, ~100 chars" -- a SEPARATE budget from `NAME_OR_TASK_MAX_CHARS` above (the panel's own identity label).
+/// Task-summary budget, separate from `NAME_OR_TASK_MAX_CHARS` (#700/#701).
 const TASK_SUMMARY_MAX_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,8 +25,7 @@ pub(super) enum SummaryStatus {
     Running,
     Finished,
     Failed,
-    /// Issue #563 decision 15: split out of `Failed` -- a cancelled/aborted subagent never did
-    /// anything wrong, so counting it as a failure overstated the batch's own result.
+    /// Split from `Failed`: a cancelled subagent did nothing wrong (#563).
     Cancelled,
     Exited,
 }
@@ -95,9 +48,9 @@ pub(super) struct SummaryEntry {
     tool_call_id: String,
     spec_index: u32,
     name_or_task: String,
-    /// Gate round 1 fix 6 (#700/#701 slice b): subagent's own given `name`; `None` falls back to `nameOrTask` on the card.
+    /// Subagent's given `name`; `None` falls back to `nameOrTask` on the card.
     name: Option<String>,
-    /// Issue #700/#701 slice (b): Agents card's own one-line summary (`model.ts`'s `taskSummary`), independent of `name`.
+    /// One-line summary for the Agents card, independent of `name`.
     task_summary: Option<String>,
     status: SummaryStatus,
     started_at: i64,
@@ -106,28 +59,18 @@ pub(super) struct SummaryEntry {
     background: bool,
 }
 
-/// Lane R5's own runtime state, held inside `AgentState` by `agent/mod.rs` without that file
-/// ever needing to change when this lane adds a field here. Reachable through `SessionAgent`'s
-/// own `with_subagents_state` accessor (`agent/mod.rs`).
+/// Subagent runtime state held inside `AgentState`, reached via `with_subagents_state`.
 #[derive(Default)]
 pub(super) struct State {
-    /// Current subagents (issue #712: persists across turns). Correlated by `(tool_call_id,
-    /// spec_index)` internally; the public `id` is `${toolCallId}:${nameOrTask}`, disambiguated
-    /// with a `:${occurrence}` suffix within one batch when two specs share a name.
+    /// Keyed by `(tool_call_id, spec_index)`; the public `id` gets a suffix on duplicate names.
     summaries: Vec<SummaryEntry>,
-    /// Per-subagent live stream (`recentTools[]`/`recentOutput[]` diffed into synthetic
-    /// `TranscriptItem`-shaped rows), keyed by summary id. The `chat.subagentSnapshot` source and
-    /// the `subagent:patch` diff base for whichever id is currently `visible_id`.
+    /// Live stream rows per summary id.
     streams: HashMap<String, Vec<Value>>,
-    /// Performance gate round 1: one `HashSet` of row ids per stream, kept alongside `streams`
-    /// so a new `recentTools`/`recentOutput` entry's "already rendered?" check is O(1) instead of
-    /// a linear scan of the (ever-growing) stream vec itself.
+    /// Row ids per stream so the "already rendered?" check is O(1), not a vec scan.
     stream_ids: HashMap<String, HashSet<String>>,
-    /// `chat.setVisibleSubagent`'s own selection: `None` = panel closed / nothing selected, so
-    /// no `subagent:patch` is ever forwarded.
+    /// `None` = panel closed, so no `subagent:patch` is forwarded.
     visible_id: Option<String>,
-    /// Performance gate round 1 (coalescing): ops accumulated for the CURRENTLY visible subagent
-    /// since the last flush, and whether a flush timer is already pending.
+    /// Coalesced patch ops for the visible subagent since the last flush.
     pending_patch_ops: Vec<Value>,
     patch_timer_pending: bool,
 }
@@ -170,10 +113,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
                 apply_progress_to_batch(agent, &tool_call_id, progress, false).await;
             }
         }
-        // Issue #712 (the real fix, not the bug): the `task` call's OWN end frame still applies
-        // whatever REAL per-index status its `result.details.progress` carries (exactly like an
-        // update frame) -- it never force-overrides an index with no matching entry, so a
-        // background batch whose subagents are still genuinely running is untouched here.
+        // Only real per-index statuses apply here; a background batch is still running.
         "tool_execution_end" => {
             let tool_call_id = frame
                 .get("toolCallId")
@@ -190,9 +130,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
                     apply_progress_to_batch(agent, &tool_call_id, progress, true).await;
                 }
             }
-            // `transcript.ts`'s own `jobsFromDetails`/`applyAsyncResultJobs`: the `wait` tool's
-            // own end frame is the other real carrier of per-subagent completion, checked on
-            // EVERY tool_execution_end regardless of the calling tool's name.
+            // The `wait` tool's end frame also carries completions, so check every end frame.
             if let Some(jobs) = frame
                 .get("result")
                 .and_then(|r| r.get("details"))
@@ -211,26 +149,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
     }
 }
 
-/// Settles every `Running` summary immediately (not only on the next `launch()`'s own
-/// `on_attach_reconcile`): a crash or a deliberate stop must clear the pill right away, matching
-/// the CRITICAL gate finding ("in on_exit, settle Running to exited"). Follow-up fix (#788): an
-/// earlier round gated the "No live output" notice to `on_attach_reconcile`'s own call only
-/// (`seed_notice: bool`), reasoning a plain exit should never claim "Refract reattached" -- but
-/// `agent::frame::handle_exit` already settles every `Running` subagent on the ORDINARY
-/// (non-stale) exit path too, so by the time a later reattach's own `on_attach_reconcile` ran,
-/// nothing was ever left `Running` for it to seed a notice onto; the notice was effectively dead
-/// code. Fixed: both call sites now ALWAYS seed a notice for an empty-stream entry they settle,
-/// each with its own path-appropriate wording.
-///
-/// Gate round 3 fix (`agent://Main`): `_requested` used to be ignored (hence the leading
-/// underscore), so a deliberate Stop and a crash both settled every `Running` summary to
-/// `Exited` -- the SAME agent the chat transcript's own `finalize_live_transcript` settles to
-/// `Cancelled` on a `UserStop` (`diff.rs`). The two pipelines disagreed on exactly the case
-/// decision 15 exists to tell apart. `requested && stop_requested` is `frame.rs`'s own
-/// `handle_exit` condition for `SubagentFinalizeCause::UserStop` verbatim (`requested` alone can
-/// also be true for `launch()`'s own internal handshake-cleanup stop, which is not a user
-/// request): matching it here picks `Cancelled` for exactly the same case the chat row settles
-/// to `Cancelled`, `Exited` for everything else (a crash, or that internal cleanup stop).
+/// Settles `Running` summaries on exit: `Cancelled` for a requested stop, else `Exited`.
 pub(super) async fn on_exit(
     agent: &SessionAgent,
     _code: Option<i32>,
@@ -255,24 +174,10 @@ pub(super) async fn on_start_progress(
     _stage: ReadyWaitStage,
     _elapsed_ms: u64,
 ) {
-    // No-op: the start-progress banner is `session::start_queue`'s own concern.
+    // No-op: the start-progress banner belongs to `session::start_queue`.
 }
 
-/// Settles every `Running` summary to `target_status` (gate finding ("in on_exit, settle Running
-/// to exited"); gate round 3: generalised from a hardcoded `Exited` so `on_exit` can settle to
-/// `Cancelled` for a requested stop instead). Seeds a one-row "No live output" notice
-/// (`notice_text`, caller-supplied so each of the two call sites below can word it for what
-/// actually happened) for any settled entry whose stream is still empty -- port of
-/// `reconcileSubagentsOnAttach`'s own placeholder (Electron gate finding 6). Scoped to exactly
-/// the `Running`->`target_status` transition this function performs; a summary that was already
-/// `Finished`/`Failed` before this call is untouched, and this does not re-derive historical
-/// finished/failed candidates from the reattached transcript's own `subagent` rows the way TS's
-/// fuller version does (Electron gate finding 4, still disclosed as not ported -- see the PR
-/// body). Also schedules a readout update when anything changed: otherwise the chip can keep
-/// reading "1 running" after a crash/stop with no turn left to trigger a recompute. If the
-/// settled, notice-seeded subagent is the CURRENTLY visible one, the notice is also queued as a
-/// `subagent:patch` upsert -- replacing `streams` alone never reaches an already-open panel,
-/// which only ever learns of new rows through that patch channel.
+/// Settles `Running` summaries to `target_status`, queueing a patch so an open panel sees it.
 async fn settle_running_subagents(
     agent: &SessionAgent,
     target_status: SummaryStatus,
@@ -325,15 +230,7 @@ async fn settle_running_subagents(
     }
 }
 
-/// `session::agent::launch`'s own hook (see this file's own header), called once per `launch()`
-/// attempt, right before `sync_from_state`. Simplified from `reconcileSubagentsOnAttach` (issue
-/// #489): resolves every summary THIS `SessionAgent` instance still remembers as `Running` to
-/// `Exited` (a fresh `OmpProcess` is about to attach -- or just did -- and has no way to confirm
-/// the old one's in-flight work survived it), covering the common "Resume/Recover after a crash,
-/// same app run" case, and seeds the "No live output" notice for any of those with no stream
-/// (Electron gate finding 6). Does NOT re-derive historical finished/failed candidates from the
-/// reattached transcript's own `subagent` rows the way TS's fuller version does (Electron gate
-/// finding 4) -- disclosed simplification, see the PR body's own "Open problems".
+/// Launch hook: settles stale `Running` summaries to `Exited`; a new process can't confirm them.
 pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
     settle_running_subagents(
         agent,
@@ -344,10 +241,7 @@ pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
     subscribe_to_subagent_frames(agent).await;
 }
 
-/// `conversations.rs`'s own hook (issue #577): the previous Conversation's subagents (and their
-/// streams/selection) never belong to the brand-new or just-switched-to one. Also schedules a
-/// readout update (code-review finding, round 1): the chip's own `subagentCount` must not keep
-/// showing the old Conversation's count if this clear is the only thing that changed.
+/// Conversation hook: clears the previous Conversation's subagents (#577).
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     let had_any = agent
         .with_subagents_state(|s| {
@@ -367,11 +261,7 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     subscribe_to_subagent_frames(agent).await;
 }
 
-/// Performance gate round 1 (memory growth): at every `agent_start`, drops the (potentially
-/// large) stream content of every subagent that has both settled (not `Running`) AND is not the
-/// currently visible one -- `summaries` themselves are kept (the panel/pill still needs their
-/// final status), only the heavy per-row stream data is freed. A long Conversation's finished
-/// batches therefore cost a small, bounded summary row each, never an ever-growing stream.
+/// At `agent_start`, frees streams of settled, non-visible subagents to bound memory.
 async fn prune_finished_streams(agent: &SessionAgent) {
     agent
         .with_subagents_state(|s| {
@@ -390,8 +280,7 @@ async fn prune_finished_streams(agent: &SessionAgent) {
         .await;
 }
 
-/// `chat.setVisibleSubagent` (`ipc::subagents`): selects which subagent's live stream is
-/// forwarded as `subagent:patch`.
+/// Selects which subagent's live stream is forwarded as `subagent:patch`.
 pub async fn set_visible(agent: &SessionAgent, subagent_id: Option<String>) {
     agent
         .with_subagents_state(|s| {
@@ -401,9 +290,7 @@ pub async fn set_visible(agent: &SessionAgent, subagent_id: Option<String>) {
         .await;
 }
 
-/// `chat.subagentSnapshot` (`ipc::subagents`): the full current stream for one subagent, or
-/// `None` when `subagent_id` does not match a current `SubagentSummary` (the channel's own
-/// `not-found` error, per `src/shared/ipc.ts`'s doc comment).
+/// Full current stream for one subagent, or `None` when the id is unknown (`not-found`).
 pub async fn snapshot(agent: &SessionAgent, subagent_id: &str) -> Option<Vec<Value>> {
     agent
         .with_subagents_state(|s| {
@@ -415,19 +302,14 @@ pub async fn snapshot(agent: &SessionAgent, subagent_id: &str) -> Option<Vec<Val
         .await
 }
 
-/// Code-review round 1: `ipc::conversations::build_snapshot`'s own one-line hook, the
-/// `SubagentSummary[]` counterpart to `readout::current_readout_value` -- the live list instead
-/// of the permanent empty seed, so a Session switch/split/resume shows running agents straight
-/// away (matches `util.ts`'s own `agent.runtimeSnapshot.subagents` seed).
+/// Live `SubagentSummary[]` for conversation snapshots, so a switch/resume shows running agents.
 pub async fn current_summaries_value(agent: &SessionAgent) -> Value {
     agent
         .with_subagents_state(|s| summaries_to_value(&s.summaries))
         .await
 }
 
-/// `session::readout`'s own cross-lane read for `SessionReadout.subagentCount` (spec 004
-/// FR-007): running/finished/exited/failed counts over the CURRENT list, or `None` when there
-/// are none at all (hides the chip).
+/// Counts for `SessionReadout.subagentCount`; `None` hides the chip.
 pub(super) async fn subagent_count(agent: &SessionAgent) -> Option<Value> {
     agent
         .with_subagents_state(|s| {
@@ -459,7 +341,7 @@ pub(super) async fn subagent_count(agent: &SessionAgent) -> Option<Value> {
         .await
 }
 
-/// `args.tasks[]` entries, read the same defensive way `transcript.ts`'s `readTaskSpecs` does.
+/// `args.tasks[]` entries, read defensively.
 fn read_task_specs(args: &Value) -> Vec<Value> {
     args.get("tasks")
         .and_then(Value::as_array)
@@ -486,7 +368,7 @@ fn subagent_name_or_task(spec: &Value) -> String {
     }
 }
 
-/// Gate round 1 fix 6 (#700/#701 slice b): subagent's own given `name`; `None` on an empty or absent name.
+/// Subagent's given `name`; `None` when empty or absent.
 fn subagent_name(spec: &Value) -> Option<String> {
     spec.get("name")
         .and_then(Value::as_str)
@@ -494,8 +376,7 @@ fn subagent_name(spec: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Issue #700/#701 slice (b), decision item 1: one-line task summary (first sentence of `task`, ~100 chars, inert text). Gate round 1 fix 8: a "sentence" ends only at `.`/`!`/`?` followed by whitespace or end-of-text (`package.json`/`e.g.`/`v1.2`/`./x` no longer cut mid-token); whitespace runs collapse to one space, and a leading markdown heading marker is stripped.
-/// `None` once nothing remains. The 100-char cap uses `char_indices().nth(N)` (one O(n) scan, never a full `Vec<char>` copy), reserving the trailing `...` inside the cap, with any dangling trailing space trimmed first.
+/// One-line task summary: first sentence, capped at 100 chars. `None` when empty.
 fn subagent_task_summary(spec: &Value) -> Option<String> {
     let raw = spec.get("task").and_then(Value::as_str).unwrap_or("");
     let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -542,10 +423,7 @@ fn subagent_task_summary(spec: &Value) -> Option<String> {
     }
 }
 
-/// `tool_execution_start` for the `task` tool: creates one `SubagentSummary` per spec (port of
-/// `handleTaskStart`, minus the persisted `currentTurnSubagents` durable-turn marker -- this
-/// build never clears the list at the next turn start, so that marker's own purpose, telling
-/// "this turn's" subagents apart from an earlier one's, does not apply here).
+/// `tool_execution_start` for `task`: creates one `SubagentSummary` per spec.
 async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Value) {
     let specs = read_task_specs(args);
     if specs.is_empty() {

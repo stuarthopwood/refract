@@ -1,5 +1,4 @@
-// Port of `src/main/git/git.ts`: a shell-free `execFile` wrapper and the typed errors every
-// git-backed module in `src-tauri/src/git` throws (contracts/omp-usage.md and tasks.md T011).
+//! Shell-free git `execFile` wrapper and typed git errors.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -8,10 +7,7 @@ use std::time::Duration;
 
 use tokio::process::Command;
 
-/// Windows-only: `CREATE_NO_WINDOW`, the same flag Node's `execFile({ windowsHide: true })` sets
-/// under the hood -- no console window flashes for a `git`/`omp` child process. The whole build
-/// is Windows-only (spec.md Assumptions), so this is applied unconditionally, the same way the
-/// Job Object (`process::job_object`) and `windows` crate dependency already assume Windows.
+/// Windows-only build, so `CREATE_NO_WINDOW` is applied unconditionally to stop console flashes.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,21 +20,12 @@ pub enum GitErrorCode {
     PathTooLong,
     BranchMissing,
     CheckoutFailed,
-    /// Issue #891: something external still holds the worktree folder (a named process via
-    /// Windows Restart Manager, or an unnamed one detected only by the rename-probe failing).
-    /// Never raised for anything this Session's own recorded `omp` pids hold.
+    /// An external process still holds the worktree folder (#891).
     WorktreeHeld,
-    /// Issue #1163: Refract's OWN per-Session worktree lock stayed busy past its bound (a slow
-    /// or hung reader of the same worktree). Distinct from `WorktreeHeld`, which means an
-    /// external file-handle holder was found. Nothing was touched; Retry works.
+    /// Refract's own per-Session worktree lock stayed busy past its bound (#1163); retry works.
     WorktreeBusy,
-    /// 2026-10-20 security hardening (Skippy, delegated by Stuart): a pathspec this module was
-    /// about to pass to `git` (`changes_status::stage_files`/`unstage_files`,
-    /// `changes_diff::diff_text`) failed `changes_status::validate_pathspec`'s own containment
-    /// check -- refused before it ever reaches a `git` subprocess. Reuses the SAME wire code
-    /// `fs::resolve::ResolveReason::OutsideWorktree` already uses for the File explorer lane
-    /// (`src/shared/ipc.ts`'s `IpcErrorCode` already lists `'outside-worktree'`; no TS change
-    /// needed).
+    /// A pathspec failed containment validation before reaching git; shares the
+    /// `outside-worktree` wire code with the File explorer.
     OutsideWorktree,
 }
 
@@ -83,10 +70,7 @@ impl std::fmt::Display for GitError {
 
 impl std::error::Error for GitError {}
 
-/// An unexpected I/O error (for example `git` itself missing from PATH, or a spawn failure) maps
-/// to the same `git-failed` code `git()`'s own non-zero-exit branch below uses -- matching
-/// `ipc/util.ts`'s `mapStoreThrown` catch-all, which maps any error this module did not itself
-/// construct as a typed `GitError` to that same fallback code.
+/// Unexpected I/O errors (e.g. git missing from PATH) map to the `git-failed` fallback code.
 impl From<io::Error> for GitError {
     fn from(err: io::Error) -> Self {
         Self::new(GitErrorCode::GitFailed, err.to_string())
@@ -100,12 +84,8 @@ pub struct GitRawResult {
     pub code: i32,
 }
 
-/// Environment variables that redirect git to a DIFFERENT repository than `cwd` says (set by an
-/// unrelated tool, a shell profile, or a parent process) would otherwise let every caller of
-/// `git_raw`/`git` operate on the wrong repository. Stripped for every invocation, matched
-/// case-insensitively (Windows environment lookups are case-insensitive): `GIT_CEILING_
-/// DIRECTORIES` is deliberately kept -- it only ever narrows git's own upward search, never
-/// redirects it to an unrelated repository.
+/// Env vars that would redirect git to a different repository than `cwd`; stripped
+/// case-insensitively. `GIT_CEILING_DIRECTORIES` is kept: it only narrows the upward search.
 const GIT_ENV_VARS_TO_STRIP: &[&str] = &[
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -114,10 +94,7 @@ const GIT_ENV_VARS_TO_STRIP: &[&str] = &[
     "GIT_OBJECT_DIRECTORY",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_NAMESPACE",
-    // Gate round 2 item 1 (#464), defense-in-depth alongside `changes_diff.rs::diff_text`'s own
-    // `--no-ext-diff`: no current or plausible future caller in this module ever wants a user's
-    // own `GIT_EXTERNAL_DIFF` env var honoured by any of this app's own git calls, the same
-    // reasoning every other entry in this list already gives for its own var.
+    // Defence in depth alongside `--no-ext-diff`: never honour a user's external diff driver.
     "GIT_EXTERNAL_DIFF",
 ];
 
@@ -127,20 +104,13 @@ fn is_stripped_env_var(key: &str) -> bool {
         .any(|stripped| stripped.eq_ignore_ascii_case(key))
 }
 
-/// Resolves git's absolute path via `which` (security: Windows would otherwise search `cwd`
-/// before PATH for a bare `"git"`, so a repository that commits its own `git.exe` could run
-/// instead of the real one -- `which` only ever searches `PATH`, never the child's `cwd`), once
-/// per process: `which_global` walks every PATH directory on each call, and git's own location
-/// never changes mid-process, so every call after the first reuses the cached result (success or
-/// failure, including the exact original error message) instead of re-walking PATH.
+// Resolved once via `which` (PATH only): a bare "git" on Windows searches `cwd` first, so a
+// repo-committed `git.exe` could otherwise run. Cached, failure included.
 static GIT_PATH: LazyLock<Result<PathBuf, String>> =
     LazyLock::new(|| which::which_global("git").map_err(|err| err.to_string()));
 
-/// Builds a `git <args>` `Command` ready to run in `cwd` -- shared by `git_raw` and
-/// `git_raw_with_stdin` so the security-relevant setup (resolved git path, stripped env vars,
-/// `CREATE_NO_WINDOW`, `kill_on_drop`) exists in exactly one place. Returns the already-built
-/// `GitRawResult` failure directly when git's own path could not be resolved, since neither
-/// caller can usefully run a `Command` without one.
+/// Builds a `git <args>` `Command` for `cwd`; the one place security setup lives. `Err` when
+/// git's path could not be resolved.
 fn build_git_command(cwd: &Path, args: &[&str]) -> Result<Command, GitRawResult> {
     let git_path = match GIT_PATH.as_ref() {
         Ok(path) => path,
@@ -158,9 +128,7 @@ fn build_git_command(cwd: &Path, args: &[&str]) -> Result<Command, GitRawResult>
         .args(args)
         .current_dir(cwd)
         .creation_flags(CREATE_NO_WINDOW);
-    // Perf: a timed-out `output_future` below is dropped, not awaited to completion; without
-    // this the child (and its pipes) would keep running as an orphan. `kill_on_drop` makes
-    // tokio reap it the moment the future is dropped, matching Node's `execFile` timeout.
+    // A timed-out future is dropped; kill_on_drop stops the child orphaning.
     command.kill_on_drop(true);
     command.env_clear();
     for (key, value) in std::env::vars_os() {
@@ -211,14 +179,8 @@ pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> Gi
     }
 }
 
-/// Runs `git <args>` with no shell in `cwd`, writing `stdin_data` to the child's stdin and
-/// closing it (EOF) before awaiting output -- for `git commit -F -` (the git-changes panel's
-/// commit path, spec 018 FR-011): the message is piped on stdin rather than passed as an argv
-/// `-m`, which has both a platform argument-length ceiling and a quoting/escaping surface for a
-/// multi-line message (spec 018 research.md decision 4). Additive alongside `git_raw` (same
-/// security posture via the shared `build_git_command`, never changes `git_raw`'s own signature
-/// or behaviour, so every existing caller is unaffected). Never fails on a non-zero exit;
-/// callers branch on `.code`, same as `git_raw`.
+/// Runs `git <args>` with `stdin_data` piped and closed. Stdin avoids argv length and quoting
+/// limits for `git commit -F -`. Never fails on non-zero exit; branch on `.code`.
 pub async fn git_raw_with_stdin(
     cwd: &Path,
     args: &[&str],
@@ -253,8 +215,7 @@ pub async fn git_raw_with_stdin(
                 code: 1,
             };
         }
-        // Dropping the handle closes the pipe's write end (EOF) -- `git commit -F -` reads to
-        // EOF before acting, so this must happen before the output is awaited below.
+        // Close stdin (EOF) before awaiting output; `git commit -F -` reads to EOF.
         drop(stdin);
     }
 
@@ -287,8 +248,7 @@ pub async fn git_raw_with_stdin(
     }
 }
 
-/// Runs `git <args>` and returns trimmed stdout; fails with `GitError::GitFailed` on a non-zero
-/// exit.
+/// Runs `git <args>` and returns stdout; `GitError::GitFailed` on non-zero exit.
 pub async fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
     let result = git_raw(cwd, args, None).await;
     if result.code != 0 {
@@ -310,8 +270,7 @@ pub struct RepoInfo {
     pub path: String,
 }
 
-/// Validates that `repo_path` is a git repository with at least one commit, per T011:
-/// `not-a-repo` when `rev-parse --show-toplevel` fails, `no-commits` when `rev-parse HEAD` fails.
+/// Validates `repo_path` is a git repo with a commit (`not-a-repo` / `no-commits` otherwise).
 pub async fn repo_info(repo_path: &Path) -> Result<RepoInfo, GitError> {
     let top = git_raw(repo_path, &["rev-parse", "--show-toplevel"], None).await;
     if top.code != 0 {
@@ -333,8 +292,8 @@ pub async fn repo_info(repo_path: &Path) -> Result<RepoInfo, GitError> {
     Ok(RepoInfo { path: toplevel })
 }
 
-/// Git for Windows prints toplevel paths with forward slashes; normalise to the platform
-/// separator and uppercase drive letter so later comparisons only need `.to_lowercase()`.
+/// Normalises git's forward-slash paths and uppercases the drive letter for `.to_lowercase()`
+/// comparisons.
 pub fn normalize_git_path(p: &str) -> String {
     let with_platform_seps = p.replace('/', std::path::MAIN_SEPARATOR_STR);
     let bytes = with_platform_seps.as_bytes();

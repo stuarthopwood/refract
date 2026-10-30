@@ -1,7 +1,5 @@
-// Spec 060 (S1-07): incremental ingest of one OMP session `.jsonl`. The stored byte offset only
-// ever stops on a line boundary, so a line OMP is still writing is read again next pass. Rows are
-// deduped by `(session_file, entry id)`; a re-read adds nothing. Prompt text is scored for
-// frustration and dropped: only counts and lengths reach the database.
+// Incremental ingest of one OMP session `.jsonl`. The stored offset only stops on a line boundary,
+// so a half-written line is re-read next pass. Prompt text is scored and dropped.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
@@ -436,8 +434,7 @@ impl Pass<'_> {
     }
 }
 
-/// Ingests the new complete lines of `path` in one transaction. `agent_type` is `main` or
-/// `subagent`. Errors are strings for the caller to log; a failed file keeps its old offset.
+/// Ingests the new complete lines of `path` in one transaction; a failed file keeps its old offset.
 pub fn ingest_file(
     conn: &mut Connection,
     path: &Path,
@@ -461,9 +458,7 @@ pub fn ingest_file(
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut state = load_state(&tx, &key).map_err(|e| e.to_string())?;
-    // A shrunk file or a changed head means the file was replaced: restart from byte 0. Rows
-    // already stored stay (they are real usage) and a re-read dedupes on (file, entry id), so
-    // nothing is counted twice.
+    // A shrunk or re-headed file was replaced: restart from byte 0. Re-read rows dedupe on (file, entry id).
     let head_changed = state.head_len > 0
         && head_fingerprint(&mut file, state.head_len)
             .map_err(|e| format!("read {key}: {e}"))?

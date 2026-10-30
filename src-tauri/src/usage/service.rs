@@ -1,7 +1,5 @@
-// Spec 060 (S1-10): the Usage ingest service. One lazily started `std::thread` owns the writer
-// connection to `usage.db`; it runs a full scan on `start`, again every five minutes while
-// started, and ingests a single file on `nudge`. Nothing here blocks the IPC thread or the tokio
-// pool. The IPC layer wires `emit` to the `usage.progress` event and `projects` to the registry.
+// The Usage ingest service: one lazily started thread owns the writer connection to `usage.db`.
+// It scans on start and every five minutes, and ingests single files on `nudge`.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -101,8 +99,7 @@ impl UsageService {
         self.send(Msg::Scan);
     }
 
-    /// Stops periodic scans and nudges; a scan in flight stops between files, and the worker then
-    /// releases its connection and sleeps.
+    /// Stops periodic scans and nudges; an in-flight scan stops between files.
     pub fn stop(&self) {
         self.inner.started.store(false, Ordering::SeqCst);
         if let Some(tx) = lock(&self.tx).as_ref() {
@@ -177,8 +174,7 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
     let mut conn: Option<Connection> = None;
     let mut next_scan = Instant::now() + SCAN_INTERVAL;
     loop {
-        // Idle (stopped): block without a timer so nothing rescans. While started, even without a
-        // connection, the timer retries open_db and fires the periodic rescan.
+        // Idle: block with no timer so nothing rescans. Started: the timer retries open_db.
         let msg = if inner.started.load(Ordering::SeqCst) {
             match rx.recv_timeout(next_scan.saturating_duration_since(Instant::now())) {
                 Ok(msg) => msg,
@@ -300,8 +296,7 @@ fn nudge_one(inner: &Inner, conn: &mut Connection, path: &Path) {
     }
 }
 
-/// Recomputes each file's Project label from its stored `cwd` (a Project was added, renamed or
-/// removed) and moves the rollups of every file whose label changed.
+/// Recomputes Project labels after a Project is added, renamed or removed; moves changed rollups.
 fn relabel_all(
     conn: &mut Connection,
     root: &Path,

@@ -1,9 +1,4 @@
-// The `gh` surface behind the Issues view (issue #504, spec 051): list one repository's issues
-// for a Filter tab, State, label and search text, and read one issue's body. Same safety model as
-// `gh_issues.rs` (spec 049): the owner/repo comes from the repository's own remote via
-// `owner_repo_for`, every call is an argv array, and user text reaches `gh` only as a single
-// `--flag=value` entry so a leading dash can never be read as a flag. Everything GitHub returns is
-// untrusted text; the issue URL is checked against the scoped repository before it is handed on.
+// Issues view surface: list issues and read one body. Same safety model as `gh_issues.rs`.
 
 use std::path::Path;
 
@@ -122,8 +117,7 @@ struct RawIssue {
     updated_at: String,
 }
 
-/// One row of the Issues list. `repository_id` and `repository_name` are filled in by the IPC
-/// handler, which knows the registry; this module only knows the owner/repo.
+/// One row of the Issues list; the IPC handler fills `repository_id` and `repository_name`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueRow {
@@ -165,9 +159,8 @@ fn comment_count(value: &Value) -> u64 {
     }
 }
 
-/// The only issue URL shape accepted is `https://github.com/<owner>/<repo>/issues/<n>` for the
-/// repository the call was scoped to; anything else is dropped so the renderer never opens or
-/// copies an address GitHub text could have steered elsewhere.
+/// Only `https://github.com/<owner>/<repo>/issues/<n>` for the scoped repository is accepted, so
+/// the renderer never opens an address GitHub text could have steered elsewhere.
 pub fn issue_url_matches(url: &str, owner: &str, repo: &str, number: u64) -> bool {
     let expected = format!("https://github.com/{owner}/{repo}/issues/{number}");
     url.eq_ignore_ascii_case(&expected)

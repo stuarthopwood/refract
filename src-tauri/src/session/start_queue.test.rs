@@ -1,7 +1,5 @@
-// Unit tests for `session::start_queue` (lane R3, issue #786): the typed start-stage transition
-// table (issues #706/#709's own "illegal transitions unrepresentable" requirement), the wire
-// serialisation of each stage, and the spawned-count RAII guard. `#[path]`-loaded sibling of
-// `start_queue.rs` (excluded from `check:file-size` by its own `.test.rs` name).
+// Unit tests for `session::start_queue`: transition table, wire shape, spawned-count guard.
+// `#[path]`-loaded sibling of `start_queue.rs`.
 use super::*;
 
 #[test]
@@ -18,9 +16,7 @@ fn illegal_to_jump_straight_to_a_later_stage_from_nothing() {
 
 #[test]
 fn legal_starting_points_include_memory_deferred_and_cancelled() {
-    // A start can begin already under memory pressure with its slot granted immediately (no
-    // `Queued` stage at all), and a cancel can land in that same narrow window before any stage
-    // was ever set.
+    // A start may begin already memory-deferred, and a cancel may land before any stage is set.
     assert!(validate_transition(None, StartStage::MemoryDeferred).is_ok());
     assert!(validate_transition(None, StartStage::Cancelled).is_ok());
 }
@@ -42,8 +38,7 @@ fn a_stage_may_legally_repeat_itself_for_the_ready_wait_ticker() {
 
 #[test]
 fn illegal_to_skip_backwards_from_extended_to_prompt() {
-    // "Keep waiting" dismisses the prompt permanently; the ready-wait ticker must never revert
-    // an already-extended Session back to a dismissable prompt.
+    // "Keep waiting" is permanent; an extended start must never revert to a dismissable prompt.
     assert!(validate_transition(Some(StartStage::Extended), StartStage::Prompt).is_err());
 }
 
@@ -91,9 +86,7 @@ fn to_wire_is_none_while_nothing_is_in_flight() {
 
 #[test]
 fn to_wire_never_puts_cancelled_on_the_wire() {
-    // Security/correctness gate-fix: `SessionStartProgress` (`src/shared/model.ts`) has no
-    // `'cancelled'` variant at all -- a cancelled start must read exactly like "nothing in
-    // flight" to the wire, the same `None` as a Session that was never starting.
+    // A cancelled start must read as "nothing in flight" on the wire.
     let state = State {
         stage: Some(StartStage::Cancelled),
         elapsed_ms: 42,
@@ -136,9 +129,7 @@ fn to_wire_matches_the_shared_sessionstartprogress_shape() {
     }
 }
 
-/// `cargo test` runs tests in parallel threads by default; `SPAWNED_COUNT` is a single
-/// process-wide static, so the two tests below must never interleave their own increments with
-/// each other (any other test in this crate never touches it).
+/// Serialises the tests that touch the process-wide `SPAWNED_COUNT`.
 static SPAWNED_COUNT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
@@ -167,15 +158,7 @@ fn spawned_guard_count_is_independent_per_guard() {
 
 #[test]
 fn validate_transition_matches_the_full_expected_legal_set_exhaustively() {
-    // Issue #706/#709's own acceptance criterion: "every illegal start transition is rejected".
-    // Gate-fix (test review HIGH, round 6): the hand-picked tests above only ever asserted 11 of
-    // this table's illegal pairs one at a time; this checks ALL 42 `(current, next)` pairs this
-    // type can represent against one literal, independently-written expected-legal table (not
-    // derived from `validate_transition` itself, so a change to one without the other fails
-    // here). Note: this table has 23 illegal pairs, not 22 -- `Waiting -> Extended` is illegal
-    // too (`Waiting`'s own legal set is `{Waiting, Prompt, Cancelled}`) and was missing from
-    // every hand-picked test above as well as this fix's own illegal-pair count; this exhaustive
-    // form catches it regardless.
+    // Checks all 42 `(current, next)` pairs against an independent expected table.
     use StartStage::{Cancelled, Extended, MemoryDeferred, Prompt, Queued, Waiting};
     let all_stages = [Queued, MemoryDeferred, Waiting, Prompt, Extended, Cancelled];
     let expected_legal = |current: Option<StartStage>, next: StartStage| -> bool {

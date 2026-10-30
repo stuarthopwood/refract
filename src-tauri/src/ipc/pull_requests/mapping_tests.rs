@@ -1,25 +1,5 @@
-// Fixture-based tests for `mapping.rs`'s pure gh-wire-shape -> renderer-shape mapping functions
-// (lane R9, issue #792's own named ask: "write fixtures from recorded `gh` output for list,
-// detail, review submit and merge"). Split from `mapping.rs` itself (`#[path = "mapping_tests.rs"]`
-// at its tail) to stay under the 600-line-per-file cap (issue #806), the same pattern
-// `session/agent` already uses for splitting a module by concern, applied test-only here.
-//
-// `GhRestFile` (REST, single-word field names) and, as of this round, `GhPrListEntry`,
-// `GhSearchEntry`, and `GhPrViewDetail` (all now `#[serde(rename_all = "camelCase")]`) are each
-// deserialised from a JSON string via `serde_json::from_str` -- the most faithful stand-in for
-// recorded `gh pr list --json`/`gh search prs --json`/`gh pr view --json` output, and the
-// regression test for the HIGH finding (code review, 2026-10-14) that a Team review request (no
-// `login` key at all in real `gh` output) used to fail to map to `login: "unknown"`. Those three
-// JSON-fixture tests live in a further child module, `mapping_fixtures_tests.rs`, to stay under
-// this file's own 600-line cap.
-//
-// `gh_mutations`'s GraphQL wire shapes (`GhThreadsAndTimeline`/`GhTimelineNode`/
-// `GhReviewThreadNode` and friends) are still constructed directly as Rust struct literals below,
-// even though they too now carry `#[serde(rename_all = "camelCase")]`: a faithful JSON fixture for
-// them would have to hand-maintain the full nested GraphQL response envelope
-// (`{"data":{"repository":{"pullRequest":{...}}}}`) `THREADS_AND_TIMELINE_QUERY` actually returns,
-// for no behavioural gain over directly constructing the already-unwrapped inner shape these
-// mapping functions read -- struct-literal construction says exactly what's varied per test case.
+// Fixture tests for `mapping.rs`'s gh-wire-shape -> renderer-shape mapping (#792); split out for
+// the file-size cap (#806). GraphQL shapes are built as struct literals, not nested JSON envelopes.
 
 use super::*;
 use crate::github::gh_mutations::{
@@ -46,9 +26,8 @@ fn map_pull_request_state_maps_draft_open_closed_merged() {
         map_pull_request_state("MERGED", false),
         PullRequestState::Merged
     ));
-    // Gate round 1 fix (#568 decision 6): a draft that was closed without being marked ready
-    // still carries `isDraft: true` on GitHub's own search surface, so `is_draft` alone must
-    // not override a non-OPEN state.
+    // A closed draft still carries `isDraft: true` on the search surface; it must not override a
+    // non-OPEN state (#568).
     assert!(matches!(
         map_pull_request_state("CLOSED", true),
         PullRequestState::Closed
@@ -192,9 +171,8 @@ fn map_review_verdict_covers_none_and_every_submitted_state() {
         map_review_verdict(Some("COMMENTED")),
         Some(ReviewVerdict::Comment)
     );
-    // Gate round 2 fix (#568 decision 10 amendment): DISMISSED is a real, submitted review
-    // state, not a not-yet-submitted one like PENDING -- it keeps its own place in the
-    // Overview timeline with its own verdict.
+    // DISMISSED is a submitted review state (unlike PENDING), so it keeps its Overview timeline
+    // place and verdict (#568).
     assert_eq!(
         map_review_verdict(Some("DISMISSED")),
         Some(ReviewVerdict::Dismissed)
@@ -202,8 +180,7 @@ fn map_review_verdict_covers_none_and_every_submitted_state() {
     assert_eq!(map_review_verdict(Some("PENDING")), None);
 }
 
-/// `GhPrViewDetail` has no `Default`; this fills every field with a plausible value so each test
-/// only needs to vary the one field (`files`) `map_changed_files`'s fallback path reads.
+/// `GhPrViewDetail` has no `Default`; this fills every field so tests vary only `files`.
 fn sample_pr_view_detail(files: Vec<GhRestFileLite>) -> GhPrViewDetail {
     GhPrViewDetail {
         title: "Add README".to_string(),
@@ -242,9 +219,8 @@ fn map_changed_files_prefers_rest_files_and_preserves_patch_presence() {
         r#"{"filename":"src/lib.rs","additions":12,"deletions":3,"patch":"@@ -1,3 +1,4 @@\n+use foo;\n","status":"modified"}"#,
     )
     .expect("GhRestFile fixture parses");
-    // GitHub's REST files API omits `patch` entirely once a file exceeds its per-file size
-    // threshold -- the truncation signal `map_changed_files` must preserve, never read as "no
-    // changes".
+    // The REST files API omits `patch` past a size threshold; that truncation signal must be
+    // preserved, not read as "no changes".
     let truncated: GhRestFile = serde_json::from_str(
         r#"{"filename":"assets/image.png","additions":0,"deletions":0,"status":"modified"}"#,
     )
@@ -353,9 +329,7 @@ fn gh_timeline_node_review(
 
 #[test]
 fn build_timeline_sorts_commit_review_comment_and_thread_chronologically() {
-    // Deliberately out of order in the fixture (comment, commit, review, with the thread's own
-    // comment latest of all) to prove `build_timeline` actually sorts rather than happening to
-    // preserve input order.
+    // Fixture is deliberately out of order to prove `build_timeline` sorts.
     let data = GhThreadsAndTimeline {
         id: "PR_kwFOAbc".to_string(),
         review_threads: GhReviewThreadsNodes {
@@ -439,9 +413,7 @@ fn build_timeline_sorts_commit_review_comment_and_thread_chronologically() {
 
 #[test]
 fn build_timeline_maps_team_actor_to_unknown_login() {
-    // A team review request/comment author has no `login` key at all in real `gh`/GraphQL output
-    // (`gh.rs`'s own `GhActor` doc comment) -- `map_actor` must fall back to `"unknown"`, not
-    // panic or misread `name` as the login.
+    // A team review request has no `login` key; `map_actor` must fall back to `"unknown"`.
     let data = GhThreadsAndTimeline {
         id: "PR_kwFOTeam".to_string(),
         review_threads: GhReviewThreadsNodes { nodes: vec![] },
@@ -478,9 +450,7 @@ fn build_timeline_maps_team_actor_to_unknown_login() {
 
 #[test]
 fn build_timeline_skips_unknown_typename_node() {
-    // `build_timeline`'s `__typename` match has a catch-all `_ => {}` arm (any future
-    // `timelineItems` kind this build doesn't yet render): confirms it's silently skipped rather
-    // than erroring or being mistaken for one of the three handled kinds.
+    // An unknown `__typename` hits the catch-all arm and is skipped, not an error.
     let data = GhThreadsAndTimeline {
         id: "PR_kwFOUnknown".to_string(),
         review_threads: GhReviewThreadsNodes { nodes: vec![] },
@@ -515,8 +485,7 @@ fn build_timeline_skips_unknown_typename_node() {
 
 #[test]
 fn build_timeline_tie_break_preserves_relative_order_for_identical_timestamps() {
-    // `[T]::sort_by` is a documented stable sort: two entries with an identical timestamp keep
-    // their original relative order rather than swapping unpredictably or panicking.
+    // `sort_by` is stable: equal timestamps keep their original order.
     let data = GhThreadsAndTimeline {
         id: "PR_kwFOTie".to_string(),
         review_threads: GhReviewThreadsNodes { nodes: vec![] },
@@ -551,7 +520,6 @@ fn build_timeline_tie_break_preserves_relative_order_for_identical_timestamps() 
     assert_eq!(bodies, vec!["First.", "Second."]);
 }
 
-// `GhPrListEntry`/`GhSearchEntry`/`GhPrViewDetail` JSON-string fixtures: split out to stay under
-// this file's own 600-line cap (issue #806).
+// JSON-string fixtures live in a child module to stay under the file-size cap (#806).
 #[path = "mapping_fixtures_tests.rs"]
 mod mapping_fixtures_tests;

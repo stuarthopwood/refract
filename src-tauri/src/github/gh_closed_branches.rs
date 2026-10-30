@@ -1,8 +1,5 @@
-// The `gh` surface behind the Home view's Tidy-up list (issue #869, spec 059): your recently
-// merged or closed pull requests in one repository, so the renderer can match them to Session
-// branches. Same safety model as `gh_issue_list.rs`: owner/repo comes from the repository's own
-// remote via `owner_repo_for`, the call is an argv array, and every returned field is untrusted
-// text; a pull request URL is kept only when it points at the scoped repository.
+// Recently merged or closed pull requests for the Home Tidy-up list. Owner/repo come from
+// the repo's own remote; a pull request URL is kept only for the scoped repository.
 
 use std::path::Path;
 

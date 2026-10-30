@@ -1,17 +1,4 @@
-// Test module for `registry.rs`, split into this sibling file to stay under the 600-line
-// soft cap (`pnpm check:file-size`) -- included via `#[path = "registry_tests.rs"] mod tests;`
-// in `registry.rs` itself, so this is still logically `store::registry::tests`.
-//
-// Port of `src/main/store/registry.test.ts` (issue #480/#510 quality-gate coverage). Scratch
-// dirs are left in the OS temp folder (never removed), the same deliberate choice the TS
-// file's own header makes under the destructive-delete guard.
-//
-// The TS suite's two `vi.mock`-based "does not clobber a faster concurrent call" race tests
-// are not ported: they exist to prove a single-threaded JS event loop can interleave two
-// `async` calls sharing one mutable `RegistryStore` object between an await point and its
-// resolution. Every mutator here takes `&mut self`, so the borrow checker already makes that
-// interleaving impossible -- two calls can never both hold a live `&mut RegistryStore` at
-// once, with or without a test for it.
+// Scratch dirs are left in the OS temp folder. No race tests: `&mut self` prevents interleaving.
 
 use super::*;
 
@@ -55,12 +42,8 @@ fn make_session(id: &str, repository_id: &str) -> Session {
     }
 }
 
-/// Forces the NEXT write to `dir/registry.json` to fail with a real I/O error (no mocking
-/// framework in this build): swaps the file for a same-named directory, so
-/// `write_json_file`'s own final `tokio::fs::rename(tmp, file)` cannot rename a file onto an
-/// existing directory (`EPERM` on Windows, confirmed empirically). Returns the pre-failure
-/// bytes so the caller can restore them with `restore_write` once the rollback assertion is
-/// done.
+/// Makes the NEXT write to `dir/registry.json` fail by swapping the file for a same-named
+/// directory (rename onto a directory fails). Returns the old bytes for `restore_write`.
 async fn break_next_write(dir: &Path) -> Vec<u8> {
     let file = dir.join("registry.json");
     let backup = tokio::fs::read(&file)
@@ -75,9 +58,7 @@ async fn break_next_write(dir: &Path) -> Vec<u8> {
     backup
 }
 
-/// Undoes `break_next_write`: removes the stand-in directory (still empty -- the write
-/// attempt in between only ever touched a differently-named `.tmp` sibling) and restores the
-/// pre-failure bytes, so a later `RegistryStore::open`/write sees a real file again.
+/// Undoes `break_next_write`: removes the stand-in directory and restores the old bytes.
 async fn restore_write(dir: &Path, backup: Vec<u8>) {
     let file = dir.join("registry.json");
     tokio::fs::remove_dir(&file)

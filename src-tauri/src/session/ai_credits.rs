@@ -1,4 +1,4 @@
-//! Issue #1238 (spec 004 FR-050): the Session's AI credits for the Context usage readout.
+//! The Session's AI credits for the Context usage readout.
 
 use serde_json::{json, Value};
 
@@ -6,8 +6,8 @@ use super::agent::SessionAgent;
 
 const AI_CREDITS_TIMEOUT_MS: u64 = 3_000;
 
-/// OMP's session cost in dollars times 100 (1 credit = $0.01), only for a GitHub Copilot model.
-/// `Some(None)` = clear (not a Copilot model); `None` = the read failed, keep the last value.
+/// OMP's session cost in credits (1 credit = $0.01), for GitHub Copilot models only.
+/// `Some(None)` clears the value; `None` keeps the last value after a failed read.
 pub(super) async fn fetch_ai_credits(agent: &SessionAgent, state: &Value) -> Option<Option<f64>> {
     let provider = state.get("model")?.get("provider")?.as_str()?;
     if provider != "github-copilot" {

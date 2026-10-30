@@ -1,5 +1,4 @@
-// IPC handler for `settings.setCodeLigatures` (issue #1246). Its own file to keep `settings.rs`
-// under the 600-line cap (issue #806).
+// IPC handler for `settings.setCodeLigatures`. Own file to respect the 600-line cap (#806).
 use serde_json::Value;
 
 use super::settings::require_bool;

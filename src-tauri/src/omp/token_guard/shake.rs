@@ -1,17 +1,15 @@
-// Post-turn shake decisions (#1212, spec 021 FR-011, FR-012, FR-019). RPC `compact` cannot pick a
-// method (research.md section 3), so Refract sends `{"type":"prompt","message":"/shake"}` once a
-// turn has fully settled and the Session's context is above the threshold. Pure logic only; the
-// Session-bound orchestration lives in `session::token_guard`.
+// Post-turn shake decisions (#1212). RPC `compact` cannot pick a method, so Refract sends
+// `{"type":"prompt","message":"/shake"}` once a turn settles above the threshold. Pure logic only.
 
 use serde_json::Value;
 
 pub const SHAKE_COMMAND: &str = "/shake";
-/// Context size above which a settled turn is followed by a shake (FR-011).
+/// Context size above which a settled turn is followed by a shake.
 pub const SHAKE_CONTEXT_THRESHOLD: u64 = 60_000;
 /// How long the `/shake` reply frame is awaited after the RPC is accepted before the swallow
 /// window closes, so a later unrelated `command_output` is never hidden.
 pub const SHAKE_REPLY_WINDOW_MS: u64 = 2_000;
-/// Upper bound the next user prompt waits for an in-flight shake (FR-012).
+/// Upper bound the next user prompt waits for an in-flight shake.
 pub const SHAKE_PROMPT_WAIT_MS: u64 = 10_000;
 /// After a shake, the context must grow by this many tokens before another one is attempted, so
 /// a shake that cannot get below the threshold does not re-run on every turn.

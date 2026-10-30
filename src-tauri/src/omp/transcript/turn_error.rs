@@ -1,6 +1,5 @@
-// Issue #1284 (spec 040 FR-001): an assistant message OMP ended with `stopReason: "error"`
-// carries the provider's own `errorMessage`; that becomes the `turn-error` row at the end of the
-// turn. The text is agent/provider-authored and untrusted: bounded here, rendered as plain text.
+// An assistant message ending with `stopReason: "error"` becomes a `turn-error` row (#1284). The
+// provider `errorMessage` is untrusted: bounded here, rendered as plain text.
 use std::sync::Arc;
 
 use serde_json::Value;

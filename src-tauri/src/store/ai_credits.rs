@@ -1,7 +1,5 @@
-// Issue #1238 (spec 004 FR-053): Settings > Chat display "Show AI credits". A
-// child module of `settings.rs` (not inline there) to keep that file under this build's 600-line
-// cap (issue #806). The setting shows or hides the AI credits chip and stops the plan-usage
-// lookup; it is independent of the Context usage chip (issue #1268).
+// "Show AI credits" (#1238); split out for the file-size cap (#806).
+// Hides the chip and stops the plan-usage lookup; independent of the Context usage chip (#1268).
 use serde_json::{json, Map, Value};
 
 use super::{Settings, SettingsStore};
@@ -18,8 +16,7 @@ pub(super) fn write(map: &mut Map<String, Value>, enabled: bool) {
 }
 
 impl SettingsStore {
-    /// `settings.setShowContextUsageBar(enabled)` (issue #1082): moved here from `settings.rs`
-    /// unchanged to keep that file under the cap; same plain-boolean shape.
+    /// `settings.setShowContextUsageBar    (enabled)` (#1082): plain boolean.
     pub async fn set_show_context_usage_bar(&mut self, enabled: bool) -> std::io::Result<Settings> {
         let next = Settings {
             show_context_usage_bar: enabled,
@@ -28,7 +25,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setShowAiCredits(enabled)`: plain boolean, same shape as the other chat toggles.
+    /// `settings.setShowAiCredits(enabled)`: plain boolean.
     pub async fn set_show_ai_credits(&mut self, enabled: bool) -> std::io::Result<Settings> {
         let next = Settings {
             show_ai_credits: enabled,

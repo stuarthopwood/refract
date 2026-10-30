@@ -1,6 +1,4 @@
-// Spec 060 (S1-11, part 2): the table queries behind `usage.breakdown`, `usage.topSessions` and
-// `usage.calls`. Sort keys and group-by choices map to fixed column names here; the renderer's
-// strings only ever select among them or become bound parameters.
+// Sort keys and group-by choices map to fixed column names; renderer strings never reach SQL.
 
 use rusqlite::types::Value;
 use rusqlite::Connection;
@@ -35,8 +33,7 @@ impl BreakdownBy {
     }
 }
 
-/// One row of the by-Project, by-model (with reasoning) or by-tool table. Tool rows carry
-/// `errors`, `result_chars` and `cost_share` (USD attributed to the tool's calls).
+/// One row of the breakdown tables.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BreakdownRow {
@@ -142,8 +139,7 @@ fn tool_breakdown(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// A top-ten session. `session_file` is for the IPC layer to look up the Conversation
-/// (`conversationKnown`); it is never serialised.
+/// A top-ten session row.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopSession {
@@ -174,7 +170,7 @@ pub fn top_sessions(
     f: &Filters,
     ctx: &QueryCtx,
 ) -> QueryResult<Vec<TopSession>> {
-    // The per-session rollup has no time, model or agent columns, so it answers only "all time".
+    // The per-session rollup has no time columns, so it answers only "all time".
     let from_rollup =
         f.range == "all" && f.model.is_none() && f.reasoning.is_none() && f.agent_type.is_none();
     let (w, body) = if from_rollup {
@@ -251,7 +247,7 @@ pub struct CallsPage {
     pub total: i64,
 }
 
-/// Renderer sort key to column. Anything else is `invalid-argument`.
+/// Maps a renderer sort key to its column; anything else is `invalid-argument`.
 fn sort_column(key: &str) -> QueryResult<&'static str> {
     Ok(match key {
         "ts" => "ts",

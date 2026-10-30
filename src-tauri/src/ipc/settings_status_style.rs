@@ -1,5 +1,4 @@
-// IPC handler for `settings.setStatusStyle` (issue #482). Its own file to keep `settings.rs`
-// under the 600-line cap (issue #806).
+// IPC handler for `settings.setStatusStyle`. Own file to respect the 600-line cap (#806).
 use serde_json::Value;
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture};

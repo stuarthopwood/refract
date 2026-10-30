@@ -1,6 +1,4 @@
-// Rust port of `src/main/fs/` (file watcher, preview, path containment): the File Explorer and
-// file-security slice (lane R7, issue #790, #729/#768). Owned exclusively by this lane (issue
-// #784, "Pre-declare per-lane Rust files").
+// File explorer and file-security modules.
 
 pub mod explorer_watch_state;
 pub mod git_changes_watch_state;

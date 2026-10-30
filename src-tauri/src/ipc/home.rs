@@ -1,5 +1,4 @@
-// `home.*` (issue #869, spec 059: the Home view). Thin handlers: the Session and repository are
-// always resolved from the registry, never from a renderer-supplied path.
+// Thin handlers; the Session and repository always come from the registry, never a renderer path.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,8 +35,7 @@ fn string_array(args: &[Value], usage: &str) -> Result<Vec<String>, super::IpcEr
         .ok_or_else(|| invalid_argument(usage))
 }
 
-/// `home.lastMessages(sessionIds)`: the last user prompt of each Session's contained current
-/// Conversation, one line, or null. At most 8 ids.
+/// The last user prompt of each Session's current Conversation, one line, or null.
 fn home_last_messages(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let ids = string_array(&args, "home.lastMessages expects (sessionIds)")?;
@@ -93,8 +91,7 @@ struct ClosedResult {
     fetched_at: String,
 }
 
-/// `home.closedBranches(repositoryIds)`: one `gh pr list` per Project, so Projects sharing a
-/// remote each get the rows. A Project that fails (no GitHub remote, rate limit) is reported in `skipped`, never as a blank.
+/// One `gh pr list` per Project; a failing Project is reported in `skipped`, not blank.
 fn home_closed_branches(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let ids = string_array(&args, "home.closedBranches expects (repositoryIds)")?;

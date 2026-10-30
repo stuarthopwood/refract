@@ -1,24 +1,6 @@
-// Unit tests for `session::agent::launch_support` (lane R3, issue #786, gate round 2 finding):
-// `#[path]`-loaded sibling of `launch_support.rs` (excluded from `check:file-size` by its own
-// `.test.rs` name), mirroring the `ipc::sessions_agent.rs` -> `sessions_agent.test.rs` split.
-//
-// Ports `verify_reattach`'s own 4 cases from `reattachVerification.test.ts`'s `describe('verifyReattach', ...)`
-// block, `reattach_rebaseline_notice`'s own 3 cases from that same file's `describe(
-// 'reattachRebaselineNotice', ...)` block, and all 19 `fetchAllMessages.test.ts` cases against
-// `fetch_all_messages_core`/`fallback_to_get_messages_core` (the generic `_core` functions
-// `MessagesPageRequester` makes testable without a real spawned `omp` process -- see
-// `launch_support.rs`'s own doc comment on that trait for the refactor this required).
-// Ports `assert_conversation_file_exists`'s own 2 cases from `reattachVerification.test.ts`'s
-// `describe('assertConversationFileExists', ...)` block (gate round 4, test review MEDIUM --
-// extracted out of `launch.rs`'s own inline `attach_and_verify` check so it is directly
-// unit-testable, matching this file's own split for `verify_reattach`/`reattach_rebaseline_notice`).
+// Unit tests for `launch_support`, loaded via `#[path]` from `launch_support.rs`.
 use super::*;
 use std::sync::Mutex as StdMutex;
-
-// ---------------------------------------------------------------------------------------------
-// assert_conversation_file_exists -- port of reattachVerification.test.ts's own
-// `describe('assertConversationFileExists', ...)`
-// ---------------------------------------------------------------------------------------------
 
 #[tokio::test]
 async fn assert_conversation_file_exists_resolves_for_a_file_that_exists() {
@@ -49,20 +31,14 @@ async fn assert_conversation_file_exists_throws_naming_the_path_for_a_missing_fi
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// verify_reattach -- port of reattachVerification.test.ts's own `describe('verifyReattach', ...)`
-// ---------------------------------------------------------------------------------------------
-
 #[test]
 fn verify_reattach_passes_a_matching_file_with_a_positive_message_count() {
     let state = json!({ "sessionFile": "C:/sessions/swift-otter/conv.jsonl", "messageCount": 446 });
     assert!(verify_reattach("C:/sessions/swift-otter/conv.jsonl", &state).is_ok());
 }
 
-/// TS case: "passes even when messageCount dropped below lastMessageCount (compaction, slice
-/// 5)". `verify_reattach` never sees `lastMessageCount` at all (the rebaseline decision lives
-/// elsewhere -- see this file's final report), so the only portable half of that case is that a
-/// lower-but-still-positive `messageCount` is not itself a failure.
+/// A `messageCount` dropping below the last count (compaction) is not a failure here.
+/// The rebaseline decision lives outside `verify_reattach`.
 #[test]
 fn verify_reattach_passes_with_a_message_count_lower_than_before() {
     let state = json!({ "sessionFile": "C:/sessions/swift-otter/conv.jsonl", "messageCount": 300 });
@@ -83,11 +59,6 @@ fn verify_reattach_fails_on_a_zero_message_count() {
     let err = verify_reattach("C:/sessions/swift-otter/conv.jsonl", &state).unwrap_err();
     assert!(err.contains("messageCount is 0"), "{err}");
 }
-
-// ---------------------------------------------------------------------------------------------
-// reattach_rebaseline_notice -- port of reattachVerification.test.ts's own
-// `describe('reattachRebaselineNotice', ...)` block
-// ---------------------------------------------------------------------------------------------
 
 fn make_session_for_notice(last_message_count: Option<i64>) -> crate::store::registry::Session {
     crate::store::registry::Session {
@@ -142,18 +113,12 @@ fn reattach_rebaseline_notice_names_both_counts_when_compaction_lowers_the_obser
     assert!(notice.contains("446"), "{notice}");
 }
 
-// ---------------------------------------------------------------------------------------------
-// fetch_all_messages_core / fallback_to_get_messages_core -- port of fetchAllMessages.test.ts
-// ---------------------------------------------------------------------------------------------
-
 fn user_message(text: &str) -> Value {
     json!({ "role": "user", "content": [{ "type": "text", "text": text }] })
 }
 
-/// Port of `fetchAllMessages.test.ts`'s own `fakeServer`: paginates a fixed in-memory message
-/// array exactly the way the real server was observed to (FINDINGS item 47) -- `limit` honoured,
-/// `cursor` a plain opaque offset-as-string this fake itself issues and expects back verbatim --
-/// and also answers a plain `get_messages` the same fallback path needs.
+/// Paginates a fixed message array the way the real server does: `limit` honoured,
+/// `cursor` an opaque offset string. Also answers `get_messages` for the fallback path.
 fn fake_server_response(messages: &[Value], cmd: &Value) -> Value {
     let cmd_type = cmd.get("type").and_then(Value::as_str).unwrap_or("");
     if cmd_type == "get_messages" {
@@ -223,11 +188,8 @@ async fn follows_next_cursor_across_multiple_pages_and_assembles_them_in_order()
     assert_eq!(result_messages, messages);
 }
 
-/// Port of "never sends the offset field (confirmed-dead parameter, FINDINGS item 47)". The
-/// Rust `fetch_all_messages_core` command literal structurally never includes an `offset` key
-/// at all (unlike the TS source, which has to actively avoid spreading one in); this spy keeps
-/// the regression guard in place as a behavioural assertion rather than relying on that being
-/// forever true by construction.
+/// Records the commands sent, so a test can assert none carries an `offset` field.
+/// Keeps the regression guard behavioural rather than relying on the literal's shape.
 struct OffsetSpy {
     messages: Vec<Value>,
     saw_offset: StdMutex<bool>,
@@ -257,9 +219,7 @@ enum FlakyFailure {
     MalformedMissingMessages,
 }
 
-/// Port of the "flaky" fake both LATER-page cases (throws / malformed) share: answers for real
-/// via `fake_server_response` on every call except the `fail_at`-th, where it fails the
-/// configured way instead.
+/// Answers for real on every call except the `fail_at`-th, which fails as configured.
 struct FlakyAtCall {
     messages: Vec<Value>,
     calls: StdMutex<u32>,
@@ -330,9 +290,7 @@ enum BrokenFirstPageKind {
     MissingTotalMessages,
 }
 
-/// Port of the "broken first page, fallback succeeds" fakes (quality-gate cycle 2/3 cases):
-/// fails the very first `get_messages_page` the configured way, answers every other command
-/// (including the `get_messages` fallback) for real via `fake_server_response`.
+/// Fails the first page request as configured, and answers every other command for real.
 struct BrokenFirstPage {
     messages: Vec<Value>,
     kind: BrokenFirstPageKind,
@@ -528,9 +486,7 @@ async fn stops_once_the_accumulated_count_reaches_total_messages_even_if_next_cu
     assert_eq!(result_messages, messages);
 }
 
-/// Port of "reports incomplete when nextCursor disappears before totalMessages is reached":
-/// claims 450 total but stops offering a cursor after the first page of `MESSAGES_PAGE_SIZE` --
-/// a server bug, or (hypothetically) a Conversation that shrank mid-fetch.
+/// Claims 450 total but stops offering a cursor after the first page: the fetch must report incomplete.
 struct DroppedCursor {
     page1: Vec<Value>,
     calls: StdMutex<u32>,

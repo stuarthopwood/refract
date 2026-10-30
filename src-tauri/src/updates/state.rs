@@ -1,33 +1,5 @@
-// Port of `src/main/store/updateState.ts` (lane R11b, issue #794): holds `updateState.json`,
-// specs/006-installer-and-updates/data-model.md's "UpdateState" entity -- the spec.md Key Entity
-// "Update" (notified -> downloaded and checksum-verified -> installed), persisted so it survives
-// a crash or an unexpected shutdown between steps (Edge Cases: "resumes the next time Refract
-// quits"). Same atomic-write helper (`store::atomic_json`) and per-field-patch discipline as
-// `registry.json`/`settings.json`.
-//
-// data-model.md's own phase-transition table, reproduced here since every caller
-// (`updates::checker`, the not-yet-landed installer/quit modules) must respect it when it calls
-// `update`:
-//
-// ```
-// idle --check()--> checking --(no update)--> idle
-//                            --(update found)--> available
-//                            --(gh unavailable/offline)--> idle, unavailableReason set
-// available --install()--> downloading --(checksum ok)--> downloaded
-//                                       --(checksum fails / download fails)--> failed
-// downloaded --(before-quit, normal quit)--> installing
-// installing --(next app start, version matches)--> idle
-//            --(next app start, version does not match)--> failed
-// failed --check()--> checking (retrying is always available; failed is not a dead end)
-// ```
-//
-// Quality-gate remediation (Medium "UpdateStateStore.open has no shape validation", ported from
-// `updateState.ts`'s own header comment): the TS port hand-wrote `isValidUpdateState` because
-// `readJsonFile<T>`'s generic cast trusts whatever JSON happens to parse. `serde`'s
-// `Deserialize` derive already performs that same rejection structurally -- an unknown `phase`
-// or `unavailableReason` string, or a wrong-shaped field, fails to parse as `UpdateState` and
-// `store::atomic_json::read_json_file` already quarantines and falls back to the default on any
-// parse failure -- so this port has no second manual validator to write or keep in sync.
+// Persists `updateState.json` so an update survives a crash mid-install.
+// Serde rejects unknown phases; `read_json_file` then falls back to the default.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -37,17 +9,10 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::store::atomic_json::{read_json_file, write_json_file};
 
-/// The one `UpdateStateStore` instance for the process lifetime (lane R11b, issue #794):
-/// `.manage()`d by `lib.rs`'s `setup` closure, reached through the live `AppHandle` from an IPC
-/// handler (`ipc::updates::store_handle`) or held directly by `lib.rs`'s own startup/exit hooks.
-/// Every function that mutates the store (`checker::check_for_updates`, `installer::
-/// download_update`, `install_on_quit::resolve_startup_state`) takes this shared handle, not
-/// an already-locked `&mut UpdateStateStore`, and locks/unlocks internally around each
-/// persisted transition -- never holding the lock across a `gh`/network call (gate finding, PR
-/// #829 round 1, perf HIGH: the lock used to be held by the caller across the whole call).
+/// The one store for the process lifetime, locked per transition, never across a network call.
 pub type SharedUpdateState = Arc<AsyncMutex<UpdateStateStore>>;
 
-/// data-model.md's `phase` column (default `'idle'`).
+/// The `phase` column; defaults to `idle`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdatePhase {
@@ -60,9 +25,7 @@ pub enum UpdatePhase {
     Failed,
 }
 
-/// data-model.md's `unavailableReason` column: set instead of advancing past `'checking'` when
-/// GitHub access is unavailable (FR-017); cleared on the next check that can actually reach
-/// GitHub.
+/// Why an update check could not reach GitHub.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum UnavailableReason {
@@ -71,34 +34,29 @@ pub enum UnavailableReason {
     Offline,
 }
 
-/// data-model.md's "UpdateState (persisted: `updateState.json`, `src/main/store/updateState.ts`)"
-/// table, field for field.
+/// Persisted `updateState.json` shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateState {
-    /// Schema version, matching `registry.json`/`settings.json`'s own `version: 1` convention.
-    /// Always `1` in this build; `UpdateStateStore::update` re-asserts it on every write so a
-    /// caller's patch closure can never accidentally change it.
+    /// Always `1`; `UpdateStateStore::update` re-asserts it on every write.
     pub version: u32,
     pub phase: UpdatePhase,
-    /// Set once `phase` reaches `'available'`; the `Release.version` found by `UpdateChecker`.
+    /// Set once `phase` reaches `available`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available_version: Option<String>,
-    /// Set alongside `available_version` (FR-013).
+    /// Set alongside `available_version`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes_url: Option<String>,
-    /// Set once `phase` reaches `'downloaded'`: the verified installer's path under
-    /// `app.getPath('userData')/updates/`.
+    /// Set once `phase` reaches `downloaded`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installer_path: Option<String>,
-    /// ISO timestamp, updated on every `check()` call, successful or not.
+    /// ISO timestamp, updated on every `check()` call.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_checked_at: Option<String>,
-    /// Set on `phase: 'failed'`: an actionable reason (FR-018); cleared on the next successful
-    /// phase transition.
+    /// Set on `phase: failed`; cleared on the next successful transition.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
-    /// Set instead of advancing past `'checking'` when GitHub access is unavailable (FR-017).
+    /// Set instead of advancing past `checking` when GitHub is unreachable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unavailable_reason: Option<UnavailableReason>,
 }
@@ -118,20 +76,15 @@ impl Default for UpdateState {
     }
 }
 
-/// Holds `updateState.json` and the current in-memory `UpdateState`, the same shape every other
-/// `*Store` in `src-tauri/src/store` uses: `open` reads once at startup, every subsequent
-/// mutation goes through `update` so the on-disk file and the in-memory value never drift apart.
+/// Holds `updateState.json` and the in-memory state; every mutation goes through `update`.
 pub struct UpdateStateStore {
     file: PathBuf,
     data: UpdateState,
 }
 
 impl UpdateStateStore {
-    /// Reads `<dir>/updateState.json`, falling back to `UpdateState::default()` for a missing or
-    /// unparseable file (`store::atomic_json::read_json_file`'s own quarantine-and-default
-    /// behaviour, which already covers an unknown `phase`/`unavailableReason` string via
-    /// `UpdateState`'s `Deserialize` derive -- see this file's header comment). Never panics,
-    /// never blocks launch.
+    /// Reads `<dir>/updateState.json`, falling back to the default on a missing or bad file.
+    /// Never panics, never blocks launch.
     pub async fn open(dir: &Path) -> Self {
         let file = dir.join("updateState.json");
         let data = read_json_file::<UpdateState, _>(&file, UpdateState::default)
@@ -145,11 +98,8 @@ impl UpdateStateStore {
         self.data.clone()
     }
 
-    /// Applies `mutate` to a clone of the current state, forces `version` back to `1` (so a
-    /// caller's patch closure can never drift the schema version), persists the result, and
-    /// stores it as the new current state. A write failure is logged, never propagated or
-    /// panicked on -- matches `updateState.ts`'s own `update()`, which never let a disk error
-    /// stop the in-memory state (and every caller awaiting it) from advancing.
+    /// Applies `mutate`, pins `version` to `1`, persists, then stores the result. A write
+    /// failure is logged, never propagated, so in-memory state still advances.
     pub async fn update(&mut self, mutate: impl FnOnce(&mut UpdateState)) -> UpdateState {
         let mut next = self.data.clone();
         mutate(&mut next);

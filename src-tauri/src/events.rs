@@ -1,10 +1,4 @@
-// Tauri event names, ported 1:1 from `src/shared/ipc.ts`'s `IPC_EVENTS` (FR-008): the Rust
-// backend emits under these exact string values, with the same JSON payload shapes the Electron
-// build sends on the matching channel, so `src/renderer` (unchanged) subscribes identically
-// against either backend. Milestone 1 (spec.md FR-013) only ever emits the eight constants a
-// later slice's own module (`session`, `omp`) actually calls `emit` with; every other constant
-// below exists only so a later slice never has to re-derive the exact string from
-// `src/shared/ipc.ts` by hand.
+// Values must match `src/shared/ipc.ts`'s `IPC_EVENTS` exactly, or the renderer stops receiving them.
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -35,25 +29,20 @@ pub const SIDE_CHAT_INTERRUPTED: &str = "side-chat:interrupted";
 pub const SIDE_CHAT_CONVERSATION_CHANGED: &str = "side-chat:conversation-changed";
 pub const FILE_EXPLORER_PATCH: &str = "file-explorer:patch";
 pub const FILE_EXPLORER_RESET: &str = "file-explorer:reset";
-// Spec 018 (issue #464): the Git changes panel's own watcher-driven refresh ping (FR-015b) --
-// no diff content, matching `FILE_EXPLORER_RESET`'s own minimal payload; the renderer always
-// calls `gitChanges.list` again itself rather than applying a patch.
+// Payload-free ping; the renderer re-lists changes itself.
 pub const GIT_CHANGES_REFRESH: &str = "git-changes:refresh";
 pub const ACCOUNTS_GITHUB_CHANGED: &str = "accounts:github-changed";
 pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
-// Lane R11b (issue #794, spec 006 "Installer and updates").
 pub const READINESS_INSTALL_PROGRESS: &str = "readiness:install-progress";
 pub const READINESS_CHANGED: &str = "readiness:changed";
 pub const UPDATES_STATE_CHANGED: &str = "updates:state-changed";
-/// Spec 060 (#1331): `usage.progress`, emitted straight through `emit` by `ipc::usage`.
+/// `usage:progress`, emitted by `ipc::usage`.
 pub const USAGE_PROGRESS: &str = "usage:progress";
 
-/// Spec 054 (#867): Clone from GitHub progress/terminal events, `{ cloneId, phase, ... }`.
+/// Clone progress and terminal events, `{ cloneId, phase, ... }`.
 pub const REPOSITORIES_CLONE_PROGRESS: &str = "repositories:clone-progress";
 
-/// Wire-identical to `transcript:patch`'s payload shape (`{ sessionId, ops }`), borrowed instead
-/// of built through `serde_json::Value` (performance finding, 2026-10-13): lets `app.emit`
-/// serialise straight from `ops` in one pass instead of two extra `Value`-tree copies first.
+/// Borrowed so `app.emit` serialises `ops` in one pass, with no `serde_json::Value` copy.
 #[derive(Clone, Serialize)]
 struct TranscriptPatchPayload<'a> {
     #[serde(rename = "sessionId")]
@@ -61,19 +50,12 @@ struct TranscriptPatchPayload<'a> {
     ops: &'a [TranscriptOp],
 }
 
-/// The milestone-1 event fan-out (tasks.md T027, `src/main/ipc/register.ts`'s own
-/// `forwardEvent` plus `broadcast.ts`'s `broadcastSettingsChanged`): one typed emit method per
-/// event this build actually fires, each a thin wrapper over `emit` below. Cheap to clone (one
-/// `Arc`), so every `session::agent::SessionAgent`/`session::manager::SessionManager` instance
-/// holds its own copy instead of threading an `&AppHandle` through every method signature --
-/// `app_handle` is `None` until `lib.rs`'s `setup` closure runs; every method here silently
-/// no-ops until then, the same "no window yet, drop it" stance `forwardEvent` takes.
+/// One typed emit method per event this build fires. Cheap to clone, so each holder keeps its own
+/// copy. Emits no-op until `lib.rs`'s `setup` fills `app_handle`.
 #[derive(Clone)]
 pub struct EventSink {
     app_handle: std::sync::Arc<std::sync::Mutex<Option<AppHandle>>>,
-    // Lane R10b, issue #793: `shell::notifications::on_session_status` (called from
-    // `emit_session_status` below) needs a live Session's display name, which lives only in the
-    // registry -- `EventSink` otherwise has no reason to know about any store.
+    // OS notifications resolve a Session's display name from the registry.
     registry: std::sync::Arc<tokio::sync::Mutex<RegistryStore>>,
 }
 
@@ -99,12 +81,8 @@ impl EventSink {
         }
     }
 
-    /// `session:status`: `payload` is a `session::agent::SessionStatusEvent` already serialised
-    /// to `Value` by the caller (kept generic here so `events.rs` never needs to depend on
-    /// `session`, avoiding a module cycle). Also the one hook OS notifications fire from (issue
-    /// #793): every status transition already flows through this exact method, the Rust
-    /// equivalent of the chokepoint Electron's own `SessionManager.onEvent` gives
-    /// `registerNotifications` for free.
+    /// `session:status`. Also the OS-notification hook; `payload` is pre-serialised to avoid a
+    /// module cycle with `session`.
     pub fn emit_session_status(&self, payload: &serde_json::Value) {
         self.send(SESSION_STATUS, payload.clone());
         crate::shell::notifications::on_session_status(
@@ -114,9 +92,7 @@ impl EventSink {
         );
     }
 
-    /// `session:activity` (issue #526, FR-108/FR-109): one Session row's Activity line inputs,
-    /// `null` when the Session is not working. Throttled by `session::readout`'s activity
-    /// emitter; the payload carries agent text, so it is never logged.
+    /// `session:activity`: `activity` is `null` when the Session is idle. Carries agent text, so never log it.
     pub fn emit_session_activity(&self, session_id: &str, activity: serde_json::Value) {
         self.send(
             SESSION_ACTIVITY,
@@ -124,19 +100,13 @@ impl EventSink {
         );
     }
 
-    /// `session:list-changed`: no payload, matching `window.webContents.send(IPC_EVENTS.
-    /// SESSION_LIST_CHANGED)`'s own no-argument call. Also the hook `shell::notifications`'
-    /// `LAST_STATUS` map prunes stale Session ids from (gate fix, issue #793): archive, restore,
-    /// delete and recreate all already fire this event.
+    /// `session:list-changed`, no payload. Also prunes stale Session ids from the notification status map.
     pub fn emit_session_list_changed(&self) {
         self.send(SESSION_LIST_CHANGED, ());
         crate::shell::notifications::prune_deleted_sessions(self.registry.clone());
     }
 
-    /// Serialises `ops` directly from a borrowed `TranscriptPatchPayload` (performance finding,
-    /// 2026-10-13): the caller used to build a `serde_json::Value` tree via `to_value(&ops)` and
-    /// this method then rewrapped that `Value` through another `json!()` call -- two extra full
-    /// copies of the patch on top of the one `app.emit` itself must do to reach the webview.
+    /// Serialises `ops` from a borrowed payload, avoiding a `serde_json::Value` copy.
     pub fn emit_transcript_patch(&self, session_id: &str, ops: &[TranscriptOp]) {
         self.send(TRANSCRIPT_PATCH, TranscriptPatchPayload { session_id, ops });
     }
@@ -166,35 +136,27 @@ impl EventSink {
         );
     }
 
-    /// `settings:changed` (`ipc/broadcast.ts`'s own `broadcastSettingsChanged`): the whole
-    /// `Settings` row, already serialised by the caller.
+    /// `settings:changed`: the whole serialised `Settings` row.
     pub fn emit_settings_changed(&self, settings: &serde_json::Value) {
         self.send(SETTINGS_CHANGED, settings.clone());
     }
 
-    /// `readiness:install-progress` (lane R11b, issue #794): drives the Install button's
-    /// progress and outcome text on the first-run readiness screen.
+    /// `readiness:install-progress`: drives the first-run Install button.
     pub fn emit_readiness_install_progress(&self, progress: &serde_json::Value) {
         self.send(READINESS_INSTALL_PROGRESS, progress.clone());
     }
 
-    /// `readiness:changed` (lane R11b, issue #794): pushed after
-    /// `readiness.installDependency` finishes its own automatic re-check, so the caller does
-    /// not need to call `readiness.check()` itself to pick up the result.
+    /// `readiness:changed`: pushed after the automatic re-check, so callers need not re-check.
     pub fn emit_readiness_changed(&self, readiness: &serde_json::Value) {
         self.send(READINESS_CHANGED, readiness.clone());
     }
 
-    /// `updates:state-changed` (lane R11b, issue #794): drives the update badge in the status
-    /// bar. The whole `UpdateState` row, already serialised and already stripped of its
-    /// main-only `installerPath` by the caller (`ipc::updates`'s own `to_renderer_state`).
+    /// `updates:state-changed`: drives the status-bar update badge. The caller strips `installerPath`.
     pub fn emit_updates_state_changed(&self, state: &serde_json::Value) {
         self.send(UPDATES_STATE_CHANGED, state.clone());
     }
 
-    /// `memory:warning` (lane R5, issue #788): `shell::memory`'s own low-memory sampler, pushed
-    /// only on a low/not-low state change or once a minute while it stays low (never every
-    /// sample). Mirrors `memory.ts`'s own `window.webContents.send(IPC_EVENTS.MEMORY_WARNING, ...)`.
+    /// `memory:warning`: sent on a low-state change, or once a minute while low.
     pub fn emit_memory_warning(&self, low: bool, free_bytes: u64, live_agents: usize) {
         self.send(
             MEMORY_WARNING,
@@ -202,8 +164,7 @@ impl EventSink {
         );
     }
 
-    /// `token-guard:launch-warning` (#1212): the overlay or rules file could not be written, so
-    /// this launch runs without the failed argument.
+    /// `token-guard:launch-warning`: the overlay or rules file failed to write, so this launch runs without it.
     pub fn emit_token_guard_warning(&self, session_id: &str, reason: &str) {
         self.send(
             TOKEN_GUARD_LAUNCH_WARNING,
@@ -211,7 +172,7 @@ impl EventSink {
         );
     }
 
-    /// `token-guard:calls` (#1212): the model-call count of a Session's current Conversation.
+    /// `token-guard:calls`: model-call count for the current Conversation.
     pub fn emit_token_guard_calls(&self, session_id: &str, conversation_id: &str, calls: u32) {
         self.send(
             TOKEN_GUARD_CALLS,
@@ -223,8 +184,7 @@ impl EventSink {
         );
     }
 
-    /// `readout:update` (lane R5, issue #788): the chip row's live `SessionReadout` bundle
-    /// (`session::readout`'s own `assemble_readout`), debounced/single-flight there.
+    /// `readout:update`: the chip row's `SessionReadout` bundle.
     pub fn emit_readout_update(&self, session_id: &str, readout: serde_json::Value) {
         self.send(
             READOUT_UPDATE,
@@ -232,10 +192,7 @@ impl EventSink {
         );
     }
 
-    /// `advisor:update` (issue #937): the composer status line's Advisor chip on/off state,
-    /// session-scoped (`session::advisor`'s own state, sourced from `/advisor on|off`'s own
-    /// reply text plus a silent `/advisor status` probe at attach/resume -- see that module's
-    /// own header for why `/advisor status`'s own reply is not trusted the same way).
+    /// `advisor:update`: the Advisor chip state. Set from `/advisor` replies, not `/advisor status`.
     pub fn emit_advisor_update(&self, session_id: &str, advisor_on: bool) {
         self.send(
             ADVISOR_UPDATE,
@@ -243,8 +200,7 @@ impl EventSink {
         );
     }
 
-    /// `session:health` (issue #561): the Session's degraded-only health readouts. A field is
-    /// `null` while that measure is healthy; both `null` means nothing to show.
+    /// `session:health`: degraded-only readouts; a `null` field is healthy.
     pub fn emit_session_health(
         &self,
         session_id: &str,
@@ -261,9 +217,7 @@ impl EventSink {
         );
     }
 
-    /// `subagents:update` (lane R5, issue #788): the Session's current `SubagentSummary[]`
-    /// (`session::subagents`'s own list, which -- unlike the ported-fixed-not-the-bug Electron
-    /// heuristic, issue #712 -- persists across turns until a new Conversation starts).
+    /// `subagents:update`: the Session's `SubagentSummary[]`, kept until a new Conversation starts.
     pub fn emit_subagents_update(&self, session_id: &str, subagents: serde_json::Value) {
         self.send(
             SUBAGENTS_UPDATE,
@@ -271,9 +225,7 @@ impl EventSink {
         );
     }
 
-    /// `subagent:patch` (lane R5, issue #788): live `TranscriptOp[]` for the ONE subagent
-    /// `chat.setVisibleSubagent` currently selects (`session::subagents`'s own per-id stream
-    /// diff), mirroring `transcript:patch`'s own `{ sessionId, ops }` shape plus the subagent id.
+    /// `subagent:patch`: live `TranscriptOp[]` for the one visible subagent.
     pub fn emit_subagent_patch(&self, session_id: &str, subagent_id: &str, ops: serde_json::Value) {
         self.send(
             SUBAGENT_PATCH,
@@ -281,9 +233,7 @@ impl EventSink {
         );
     }
 
-    /// `side-chat:patch` (lane R6, issue #789): a `btw_delta` (`delta`/`recordId` set -- gated on
-    /// visibility by the caller, `session::side_chat`'s own `on_frame`, the same discipline every
-    /// other live-stream patch follows).
+    /// `side-chat:patch`: a streamed delta, gated on visibility by the caller.
     pub fn emit_side_chat_patch_delta(&self, session_id: &str, delta: &str, record_id: &str) {
         self.send(
             SIDE_CHAT_PATCH,
@@ -291,9 +241,7 @@ impl EventSink {
         );
     }
 
-    /// `side-chat:patch` (lane R6, issue #789): a terminal `btw_record` (`record` set) --
-    /// gate-fix round 2 Verif2 LOW: forwarded regardless of visibility, by the caller never
-    /// gating this one.
+    /// `side-chat:patch`: a terminal record, always forwarded regardless of visibility.
     pub fn emit_side_chat_patch_record(&self, session_id: &str, record: &serde_json::Value) {
         self.send(
             SIDE_CHAT_PATCH,
@@ -301,8 +249,7 @@ impl EventSink {
         );
     }
 
-    /// `side-chat:patch` (lane R6, issue #789): a `btw-history` save-failure notice (`notice`
-    /// set) -- gate-fix round 4 Code4 Medium: forwarded regardless of visibility.
+    /// `side-chat:patch`: a save-failure notice, always forwarded.
     pub fn emit_side_chat_patch_notice(&self, session_id: &str, notice: &str) {
         self.send(
             SIDE_CHAT_PATCH,
@@ -310,8 +257,7 @@ impl EventSink {
         );
     }
 
-    /// `side-chat:interrupted` (lane R6, issue #789): fired unconditionally on every process
-    /// exit (`session::side_chat`'s own `on_exit`), regardless of visibility.
+    /// `side-chat:interrupted`: fired on every process exit, regardless of visibility.
     pub fn emit_side_chat_interrupted(&self, session_id: &str) {
         self.send(
             SIDE_CHAT_INTERRUPTED,
@@ -319,9 +265,7 @@ impl EventSink {
         );
     }
 
-    /// `side-chat:conversation-changed` (lane R6, issue #789): fired from
-    /// `session::side_chat::on_conversation_reset`, regardless of visibility -- any side-chat
-    /// topic/history the renderer is still showing belongs to the PREVIOUS Conversation.
+    /// `side-chat:conversation-changed`: any side-chat history shown belongs to the old Conversation.
     pub fn emit_side_chat_conversation_changed(&self, session_id: &str) {
         self.send(
             SIDE_CHAT_CONVERSATION_CHANGED,
@@ -330,10 +274,7 @@ impl EventSink {
     }
 }
 
-/// Emits `event` with `payload` to every window, mirroring the Electron build's own
-/// `webContents.send(channel, payload)` broadcasts (FR-008). Logs rather than panics on
-/// failure -- a dropped event (for example, no window yet) must never crash the backend, the
-/// same defensive stance the dispatcher (`ipc::Dispatcher::dispatch`) takes for a handler error.
+/// Emits to every window. Logs rather than panics, so a dropped event never crashes the backend.
 pub fn emit<P: Serialize + Clone>(app: &AppHandle, event: &str, payload: P) {
     if let Err(err) = app.emit(event, payload) {
         log::warn!("refract-tauri: failed to emit {event}: {err}");
@@ -344,10 +285,7 @@ pub fn emit<P: Serialize + Clone>(app: &AppHandle, event: &str, payload: P) {
 mod tests {
     use super::*;
 
-    /// Lane R8 (#791) gate-fix: `emit_settings_changed`'s one real behaviour this lane depends on
-    /// is reaching `send` with the exact `SETTINGS_CHANGED` event name and an unchanged clone of
-    /// its payload -- the "no window yet" branch inside `send` (no `AppHandle` set) must never
-    /// panic, since a settings setter can run before `lib.rs`'s `setup` closure has filled one in.
+    /// Must not panic before the `setup` closure has set an `AppHandle`.
     #[tokio::test]
     async fn emit_settings_changed_does_not_panic_before_a_window_exists() {
         let dir =

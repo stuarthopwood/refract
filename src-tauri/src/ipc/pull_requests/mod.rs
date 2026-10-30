@@ -1,13 +1,5 @@
-// IPC handlers for `pullRequests.*` (specs/003-pull-request-management/contracts/ipc.md, lane R9
-// issue #792). The renderer never touches `gh`, the file system, or git directly (constitution
-// V); every GitHub read/write here goes through `github::gh`/`github::gh_pull_requests`/
-// `github::gh_mutations`. Maintains an in-memory staleness cache (data-model.md "Staleness
-// (FR-021)") keyed by `(repositoryId, number)`: every mutating request re-fetches just
-// `updatedAt`/`headSha` first and refuses with `'stale'` if either has moved since the last
-// successful `detail()` call for that same pull request.
-//
-// Wire shapes and gh-wire-shape -> renderer-shape mapping live in the sibling `mapping.rs`
-// (issue #806, keeps this file under the 600-line cap).
+// The renderer never touches `gh`; all GitHub access goes through `github::gh*`. Mutations
+// refuse with `'stale'` if `updatedAt`/`headSha` moved since the last `detail()` (cache key above).
 
 mod checks;
 mod extra_handlers;
@@ -99,12 +91,7 @@ pub(super) fn parse_filter_tab(value: &str) -> Option<FilterTab> {
     }
 }
 
-/// "Also fix" remediation (ported from `pullRequests.ts`): `number` must be a positive integer
-/// representable without precision loss, never `NaN`/negative/non-integer straight through to
-/// `gh` argv construction. Capped at `i32::MAX`, not just "any `u64`": every mutation that needs
-/// this number as a GraphQL variable sends it as an `Int` (`GraphqlValue::Int(number as i64)`),
-/// GraphQL's own 32-bit signed integer type -- a number above that bound would silently wrap
-/// when cast, never reaching `gh` as the value the renderer actually asked for.
+/// Caps `number` at `i32::MAX`: GraphQL `Int` is 32-bit, so a larger value would wrap silently.
 pub(super) fn valid_pull_request_number(args: &[Value], index: usize) -> Option<u64> {
     args.get(index)
         .and_then(Value::as_u64)
@@ -125,13 +112,7 @@ pub(super) async fn repo_path_for(
     ))
 }
 
-// ---------------------------------------------------------------------------
-// List (FR-001 to FR-006)
-// ---------------------------------------------------------------------------
-
-/// High remediation (ported): a non-Open tab used to spawn one `gh pr view` process per row
-/// sequentially (up to ~30 per tab switch) just to backfill the check-state the search surface
-/// doesn't carry. Bounded to `CHECK_STATE_CONCURRENCY` concurrent spawns instead of unbounded.
+/// Bounds the per-row `gh pr view` spawns to `CHECK_STATE_CONCURRENCY`.
 const CHECK_STATE_CONCURRENCY: usize = 8;
 
 async fn with_bounded_concurrency<T, R, F, Fut>(items: Vec<T>, limit: usize, worker: F) -> Vec<R>
@@ -216,8 +197,7 @@ pub(in crate::ipc::pull_requests) async fn list_pull_requests(
     };
     let entries =
         gh_pull_requests::search_pull_requests(repo_path, qualifier, gh_state_arg, query).await?;
-    // The search surface has no `statusCheckRollup`; fetched per-row for these smaller, non-All
-    // tab result counts. `owner/repo` is resolved ONCE here, not per row.
+    // The search surface has no `statusCheckRollup`, so it is fetched per row.
     let (owner, repo) = gh::owner_repo_for(repo_path).await?;
     let owner_repo = format!("{owner}/{repo}");
     let numbers_and_updated_at: Vec<(u64, String)> = entries
@@ -246,9 +226,7 @@ pub(in crate::ipc::pull_requests) async fn list_pull_requests(
         .map(|(entry, check_state)| PullRequestSummary {
             number: entry.number,
             title: entry.title,
-            // Search results now carry `isDraft` directly (issue #529/#568 decision 6): a draft
-            // pull request maps to `PullRequestState::Draft` here exactly as it does on the All
-            // tab, instead of silently showing as `Open`.
+            // Search results carry `isDraft`, so drafts map to `Draft` rather than `Open`.
             state: map_pull_request_state(&entry.state, entry.is_draft),
             check_state: map_check_state(check_state.as_deref()),
             repository: repo_label.to_string(),
@@ -257,10 +235,6 @@ pub(in crate::ipc::pull_requests) async fn list_pull_requests(
         })
         .collect())
 }
-
-// ---------------------------------------------------------------------------
-// Detail (FR-007 to FR-011) and the staleness cache (FR-021)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 struct StalenessEntry {
@@ -275,9 +249,7 @@ fn cache_key(repository_id: &str, number: u64) -> String {
     format!("{repository_id}:{number}")
 }
 
-/// `requireCacheEntry` flips the no-cache-entry default for approve/merge specifically: those
-/// two mutations are pinned to a cached commit (`headSha`/`id`), so a missing cache entry means
-/// there is nothing to pin against and must be treated as stale rather than silently proceeding.
+/// Approve and merge are pinned to a cached commit, so a missing entry counts as stale.
 pub(super) async fn check_not_stale(
     repository_id: &str,
     repo_path: &Path,
@@ -299,10 +271,7 @@ pub(super) async fn check_not_stale(
     Ok((stale, fresh))
 }
 
-/// The FR-021 stale/not-stale decision itself, pulled out of `check_not_stale` as a pure
-/// function so it is unit-testable without a `gh` process: `check_not_stale` has no fixture
-/// seam (it calls `gh_pull_requests::view_staleness_check`, which spawns a real `gh`), but this
-/// decision has no network dependency once the fresh staleness check's result is in hand.
+/// Pure stale decision, split out so it can be unit-tested without spawning `gh`.
 fn decide_stale(
     cached: Option<&StalenessEntry>,
     fresh_updated_at: &str,
@@ -333,11 +302,7 @@ pub(super) fn remember_fresh(
         );
 }
 
-/// "Also fix" remediation (ported): the cache used to be re-seeded with the PRE-mutation `fresh`
-/// values right after a successful mutating call -- stale the instant that same action succeeded.
-/// Deleting the entry instead forces the next `check_not_stale` to see "no cache entry" (lenient
-/// for comment/reply/resolve/unresolve, strict-stale for approve/merge above); every mutating
-/// handler's renderer caller already re-calls `detail()` immediately after success.
+/// Deletes rather than re-seeds: re-seeding with pre-mutation values would be stale at once.
 pub(super) fn forget_cache(repository_id: &str, number: u64) {
     STALE_CACHE
         .lock()
@@ -356,12 +321,7 @@ pub(super) async fn build_detail(
     let owner_repo_fut = gh::owner_repo_for(repo_path);
     let viewer_fut = viewer_login(repo_path);
 
-    // Perf finding (code review, 2026-10-14): `files_fut` (an REST `--paginate` call, often the
-    // slowest of the five) used to run only after every other detail call had already finished,
-    // adding a full extra `gh` spawn plus API round trip to detail latency. It cannot join the
-    // `GhError`-typed futures above directly (`get_changed_files_with_patch` never fails the
-    // caller -- it resolves to `None` instead, so every caller falls back to the porcelain
-    // `files` field), so the two futures run under a plain `tokio::join!` instead.
+    // Runs under a plain `tokio::join!`: its failure resolves to `None`, not a `GhError`.
     let (result, files_with_patch, viewer) = tokio::join!(
         async { tokio::try_join!(view_fut, threads_fut, methods_fut, owner_repo_fut) },
         files_fut,
@@ -436,11 +396,7 @@ mod tests {
 
     #[test]
     fn map_gh_error_preserves_redaction_for_a_token_shaped_message() {
-        // `map_gh_error` is a pure passthrough that trusts `GhError.message` is already
-        // redacted (`gh::map_gh_failure`'s own job) -- this proves it never re-exposes a
-        // secret-shaped substring that was already stripped before reaching this layer. Split
-        // across fragments (same convention as `omp/redact_tests.rs`) so no single literal in
-        // this source file reads as a real live credential.
+        // Fragments are split so no single literal reads as a live credential.
         let token = format!("{}{}", "ghp_", "1234567890abcdef");
         let raw = format!("some unexpected gh error: {token}");
         let redacted_message = crate::omp::redact::redact_secrets(&raw);
@@ -463,8 +419,7 @@ mod tests {
 
     #[test]
     fn valid_pull_request_number_rejects_above_i32_max_and_u64_max() {
-        // GraphQL's `Int` is a 32-bit signed integer; every value above `i32::MAX` is rejected
-        // here rather than silently wrapping when later cast to `i64` for a GraphQL variable.
+        // GraphQL `Int` is 32-bit; larger values must be rejected, not wrapped.
         assert_eq!(
             valid_pull_request_number(&[serde_json::json!(i32::MAX as u64 + 1)], 0),
             None
@@ -548,9 +503,7 @@ mod tests {
         ));
     }
 
-    /// Round-trips `remember_fresh`/`forget_cache`/`cache_key` against the real `STALE_CACHE`
-    /// static. Unique, UUID-like `repository_id`s so this never collides with another test's
-    /// key under parallel execution.
+    /// Uses unique repository ids so parallel tests do not share cache keys.
     #[test]
     fn remember_fresh_and_forget_cache_are_independent_per_repository() {
         let repo_a = "11111111-1111-4111-8111-111111111111";

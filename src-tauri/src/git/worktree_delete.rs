@@ -1,15 +1,5 @@
-// Port of `src/main/git/worktrees.ts`'s issue #599 safe-delete path (folded into lane R2, #785):
-// `removeSessionWorktree`. Decides purely from live git/filesystem state, idempotent (a retry
-// re-reads state from scratch), never deletes anything outside `worktrees_root(repo)` nor
-// anything `git worktree list` does not account for. `deleteCheck`/`deleteCheckForMissingWorktree`
-// /`deleteCheckForSession` live in the sibling `worktree_delete_check.rs` (600-line cap split).
-//
-// Path comparisons use `worktree_validity`'s lexical `comparable_path` EXCEPT
-// `is_repo_readable`/`dot_git_points_to`/`find_admin_entry_for`'s own gitdir match, which
-// canonicalize via `canonical_comparable_path` (gate round 2 CI fix: GitHub Actions' Windows
-// runners alias `%TEMP%` through an 8.3 short name `git rev-parse` never reports; issue #891
-// gate round S3: the same alias risk applies to a worktree reached through a junction whose
-// admin entry's own `gitdir` file was recorded against a different alias of the same path).
+// Safe worktree delete: idempotent, never removes anything outside `worktrees_root(repo)`.
+// gitdir matches canonicalize paths because Windows 8.3 short names / junctions alias the same path.
 
 use std::path::{Path, PathBuf};
 
@@ -19,16 +9,12 @@ use super::git::{git, git_raw, normalize_git_path, GitError, GitErrorCode};
 use super::worktree_validity::{
     canonical_comparable_path, comparable_path, worktree_registration_state, RegistrationState,
 };
-// Only `worktree_delete_tests.rs`'s own `use super::*;` needs this directly any more --
-// `remove_session_worktree` itself uses `worktree_registration_state` exclusively (issue #891
-// gate S4). Gated so a non-test build never sees it as an unused import.
+// Test-only import; gated to avoid an unused-import warning.
 #[cfg(test)]
 use super::worktree_validity::is_worktree_registered;
 use super::worktrees::{branch_exists, worktrees_root};
 
-/// Issue #891 trimmed this to only the two reasons still reachable: both `remove_orphaned_
-/// worktree_folder` and the registered path now remove a non-empty folder themselves (via
-/// `fs::remove_tree`) rather than refusing on sight of its contents.
+/// Reasons an orphaned folder is refused rather than removed.
 enum OrphanRefusalReason {
     IsALink,
     NotADirectory,
@@ -67,17 +53,12 @@ fn admin_entry_refusal_message(worktree_path: &Path) -> String {
     format!("Refract did not delete anything. It could not safely identify {}'s own git admin entry. Remove that folder yourself, then choose Retry.", worktree_path.display())
 }
 
-/// Issue #891 gate round (S4): shown whenever `worktree_registration_state` reads `Unknown` at
-/// a point that would otherwise have to GUESS registered-vs-not -- a slow `git worktree list`
-/// (disk, antivirus) must never be silently read as "not registered" and misroute a
-/// destructive branch.
+// A slow `git worktree list` must never be read as "not registered" and misroute a destructive branch.
 fn registration_unknown_message(worktree_path: &Path) -> String {
     format!("Refract did not delete anything. It could not confirm with git whether {} is still a registered worktree (a slow response). Nothing was touched. Try again, then choose Retry.", worktree_path.display())
 }
 
-/// Mirrors `worktrees.ts`'s own `isLockLikeError`/`wrapFsError`: a Windows sharing violation
-/// (`ERROR_SHARING_VIOLATION`, 32) or access-denied (`ERROR_ACCESS_DENIED`, 5) gets dedicated
-/// wording naming the worktree path; any other I/O error is wrapped generically.
+// Windows sharing violation (32) and access-denied (5) get dedicated wording.
 fn wrap_fs_error(err: std::io::Error, worktree_path: &Path) -> GitError {
     let wt = worktree_path.display();
     match err.raw_os_error() {
@@ -96,16 +77,8 @@ fn wrap_fs_error(err: std::io::Error, worktree_path: &Path) -> GitError {
     }
 }
 
-/// Issue #891 gate round 3 (M3): `RemoveTreeError::Io`'s own `path` is the worktree ROOT being
-/// removed, never a specific failing sub-path -- `std::fs::remove_dir_all` gives no handle on
-/// WHICH entry inside the tree it stopped at, only the top-level call's own `io::Error` (the
-/// previous version of this comment claimed otherwise; it did not match what the struct is
-/// actually constructed with in `remove_tree.rs`). By the time this is reached, H2's own
-/// bounded retry has already run out against a real raw-OS error, and `remove_dir_all` had
-/// already walked (and very likely partially removed) a real directory tree before failing --
-/// `wrap_fs_error`'s own "Refract could not remove X because another program is using it"
-/// wording would falsely imply nothing was touched, so this path gets its own honest wording
-/// instead, naming the remaining (still-present) folder.
+// `Io.path` is the worktree root, not the failing entry; the tree was likely partly removed,
+// so `wrap_fs_error`'s "nothing touched" wording would be false here.
 fn partial_removal_message(err: &std::io::Error, worktree_path: &Path) -> String {
     let wt = worktree_path.display();
     let reason = match err.raw_os_error() {
@@ -118,8 +91,6 @@ fn partial_removal_message(err: &std::io::Error, worktree_path: &Path) -> String
     format!("Some files may already have been deleted. Refract could not finish removing {wt}: {reason}. Close any terminal or editor open in that folder, then choose Retry.")
 }
 
-/// Maps `fs::remove_tree`'s own error into the same `GitError` shape every other refusal in
-/// this file uses.
 fn map_remove_tree_error(err: RemoveTreeError, worktree_path: &Path) -> GitError {
     match err {
         RemoveTreeError::OutsideBoundary => GitError::new(
@@ -159,10 +130,7 @@ async fn git_common_dir(repo: &Path) -> Result<PathBuf, GitError> {
     Ok(PathBuf::from(normalize_git_path(&abs.to_string_lossy())))
 }
 
-/// See this file's own header: resolves both sides through `canonical_comparable_path` before
-/// comparing -- a relative `gitdir:` record resolved lexically against `dir` would otherwise
-/// never match `expected` whenever `dir` is reached through an alias (a junction, or a Windows
-/// 8.3 short name such as `RUNNER~1`, the gate round 2 CI failure this fixes).
+// Canonicalize both sides: a lexical match fails when `dir` is reached via a junction or 8.3 name.
 async fn dot_git_points_to(dir: &Path, expected: &str) -> bool {
     let dot_git_path = dir.join(".git");
     let Ok(meta) = tokio::fs::symlink_metadata(&dot_git_path).await else {
@@ -190,10 +158,7 @@ async fn dot_git_points_to(dir: &Path, expected: &str) -> bool {
         == canonical_comparable_path(Path::new(expected)).await
 }
 
-/// Verifies `repo` is its own git toplevel (never an ancestor repository) and that git's own
-/// `--absolute-git-dir`/`--git-common-dir` answers tie back to `repo`'s own `.git` entry, not
-/// merely to each other. Canonicalizes every comparison for the same reason `dot_git_points_to`
-/// above does.
+/// Verifies `repo` is its own git toplevel (not an ancestor repo) and its git dirs tie back to `repo/.git`.
 pub(crate) async fn is_repo_readable(repo: &Path) -> bool {
     let toplevel_result = git_raw(repo, &["rev-parse", "--show-toplevel"], None).await;
     if toplevel_result.code != 0 {
@@ -262,11 +227,8 @@ enum RootContainment {
     OutsideMissing,
 }
 
-/// Shared by both the registered and orphan removal paths: a corrupted or hand-edited registry
-/// entry naming a path outside this repository's own worktrees can never reach either removal
-/// path. `OutsideMissing` is returned (rather than letting the call continue) when the path is
-/// outside the root AND does not exist -- the caller must never force-remove a path outside the
-/// root that git still has registered (e.g. a disconnected drive), destroying another worktree.
+// A bad registry entry must never reach removal. `OutsideMissing` (outside root and absent) lets the
+// caller avoid force-removing a registered path on e.g. a disconnected drive.
 async fn assert_within_worktrees_root(
     repo: &Path,
     worktree_path: &Path,
@@ -293,12 +255,8 @@ async fn assert_within_worktrees_root(
     }
 }
 
-/// Issue #599 step 3, split by issue #891 (git metadata contract: "resolve the admin entry
-/// BEFORE any file is deleted"): finds, but does not remove, the one admin directory under
-/// `<gitCommonDir>/worktrees/` whose `gitdir` file canonicalises to `<worktreePath>/.git` --
-/// never a repo-wide `git worktree prune`, which would drop every OTHER stale admin entry too.
-/// Refuses (nothing removed, nothing even looked at on disk yet) if the entry is locked, or if
-/// zero or more than one candidate matches.
+// Resolved before any file is deleted; not `git worktree prune`, which would drop other stale entries.
+/// Finds the single admin entry for `worktree_path`; refuses if locked or not exactly one match.
 async fn find_admin_entry_for(repo: &Path, worktree_path: &Path) -> Result<PathBuf, GitError> {
     let admin_root = git_common_dir(repo).await?.join("worktrees");
     let wanted_git_file = canonical_comparable_path(&worktree_path.join(".git")).await;
@@ -360,20 +318,15 @@ async fn find_admin_entry_for(repo: &Path, worktree_path: &Path) -> Result<PathB
     Ok(admin_entry)
 }
 
-/// Removes an already-resolved admin entry (see `find_admin_entry_for`, which performs every
-/// committed match/locked/containment check above before this ever runs).
 async fn remove_admin_entry(admin_entry: &Path, worktree_path: &Path) -> Result<(), GitError> {
     tokio::fs::remove_dir_all(admin_entry)
         .await
         .map_err(|e| wrap_fs_error(e, worktree_path))
 }
 
-/// Issue #599 step 3, rewritten by issue #891: removes an UNREGISTERED worktree folder, never a
-/// registered one. Returns `true` if it actually removed something. A real directory's entire
-/// contents are removed via `fs::remove_tree` (long-path-safe, never follows a link) regardless
-/// of what is in it -- this folder lives inside Refract's own exclusive worktrees root, so
-/// anything found there is leftover Refract-generated content (node_modules, build output, a
-/// stale `.git` pointer), never used by anything else.
+// Anything inside Refract's exclusive worktrees root is leftover generated content, so it is
+// removed wholesale (long-path-safe, never follows links).
+/// Removes an unregistered worktree folder; returns whether anything was removed.
 async fn remove_orphaned_worktree_folder(
     repo: &Path,
     worktree_path: &Path,
@@ -400,10 +353,7 @@ async fn remove_orphaned_worktree_folder(
     Ok(true)
 }
 
-/// `git branch -D`'s own "used by worktree at '<path>'" message names the OTHER checkout as
-/// DISPLAY TEXT ONLY -- never read, never `lstat`'d, never passed to any further git/fs call.
-/// ASCII-only lowercasing (`to_ascii_lowercase`, never `to_lowercase`) keeps the search offset
-/// byte-identical to the original string so slicing it afterwards cannot land mid-character.
+// The path is display text only, never touched. ASCII lowercasing keeps byte offsets valid for slicing.
 fn extract_used_by_worktree_path(stderr: &str) -> Option<String> {
     let marker = "used by worktree at '";
     let lower = stderr.to_ascii_lowercase();
@@ -466,10 +416,7 @@ async fn delete_branch_if_requested(
     ))
 }
 
-/// Removes a Session's worktree however it currently stands (issue #599): the single entry
-/// point `sessions.delete` calls instead of picking its own path with `fs.stat`. Idempotent by
-/// construction: whatever step a previous call threw on, this re-reads live git/filesystem state
-/// from scratch rather than trusting anything cached.
+/// Removes a Session's worktree however it stands; idempotent, re-reads live state each call.
 pub async fn remove_session_worktree(
     repo: &Path,
     worktree_path: &Path,
@@ -535,19 +482,10 @@ pub async fn remove_session_worktree(
     }
 
     if registration == RegistrationState::Registered {
-        // Issue #891 git metadata contract: resolve the ONE admin entry this removal will
-        // touch BEFORE any file is deleted -- an ambiguous, locked, or unresolvable entry
-        // refuses here, with every file still in place, rather than after they are already
-        // gone.
+        // Resolve the admin entry before deleting files so a refusal leaves everything in place.
         let admin_entry = find_admin_entry_for(repo, worktree_path).await?;
 
-        // Covers all three shapes a "registered" worktree can be in today: a live checkout full
-        // of real files, one hand-emptied of its `.git` pointer with files left behind, and one
-        // whose folder is missing entirely (git still lists it, but there is nothing on disk --
-        // the "registered, folder missing" case the git metadata contract calls out explicitly).
-        // `fs::remove_tree` is long-path-safe and never follows a link, so a full `node_modules`
-        // tree is removed exactly like an empty one; `git worktree remove --force` is never
-        // called at all any more.
+        // Folder may be live, hand-emptied, or missing while still registered; `remove_tree` handles all.
         let folder_present = lstat_optional(worktree_path).await?.is_some();
         if folder_present {
             let root = worktrees_root(repo);
@@ -558,10 +496,7 @@ pub async fn remove_session_worktree(
 
         remove_admin_entry(&admin_entry, worktree_path).await?;
 
-        // Verify with `git worktree list --porcelain` (never `git worktree prune`, which would
-        // also drop every OTHER stale admin entry): if git still lists this path after its own
-        // admin entry is gone, something is wrong with git's own cache -- stop here rather than
-        // delete the branch out from under a worktree git still thinks exists.
+        // If git still lists the path, stop rather than delete the branch under a live worktree.
         match worktree_registration_state(repo, worktree_path).await {
             RegistrationState::Unknown => {
                 return Err(GitError::new(

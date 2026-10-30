@@ -1,12 +1,5 @@
-// IPC handlers for `sideChat.*` (contracts/ipc.md "Side chat", spec 014) and
-// `chat.predictWord`/`chat.predictWordFeedback` (lane R6, issue #789) -- the IPC-facing sibling
-// of `session/side_chat.rs`'s own frame handling and RPC calls. `ask`/`cancel`/`getHistory` all
-// drive an already-attached process exactly like `chat.send`/`chat.stop` do, never a Conversation
-// reattach, so `map_agent_error` (`ipc::mod`'s own `AgentError` -> `IpcError` mapper, shared by
-// every other agent-backed channel) covers their failures the same way. `settings.setWordPrediction
-// Enabled` (#772's off switch) moved to `ipc/settings.rs` (every other `settings.*` channel's own
-// home); `store::settings::SettingsStore::word_prediction_enabled()` is what this file's own
-// `chat.predictWord*` gate reads.
+// IPC handlers for `sideChat.*` and `chat.predictWord`/`chat.predictWordFeedback` (#789). They
+// drive an already-attached process like `chat.send`, so `map_agent_error` covers failures.
 
 use serde_json::Value;
 
@@ -16,20 +9,16 @@ use super::{
     arg_str, invalid_argument, map_agent_error, not_found, AppState, Dispatcher, HandlerFuture,
 };
 
-/// No OMP-documented limit exists for `btw`'s `question` field (`contracts/ipc.md` has no stated
-/// maximum). 10,000 characters comfortably covers any realistic side question while still
-/// bounding a pathological paste before it ever reaches OMP (main-side validation, Main's remit).
-const MAX_QUESTION_LENGTH: usize = 10_000;
-/// `recordId` is OMP's own opaque record id (observed live as a short hex string, FINDINGS item
-/// 14); 200 characters is a generous upper bound that still catches a malformed/oversized value
+/// OMP documents no limit for `btw`'s `question`; 10,000 characters bounds a pathological paste
 /// before it reaches OMP.
+const MAX_QUESTION_LENGTH: usize = 10_000;
+/// `recordId` is OMP's opaque record id (a short hex string); 200 characters catches a
+/// malformed or oversized value.
 const MAX_RECORD_ID_LENGTH: usize = 200;
-/// Ghost-text's own `text` field has no OMP-documented limit either (`rpc.md` "Word prediction"):
-/// mirrors `MAX_QUESTION_LENGTH` above, same reasoning.
+/// Ghost-text `text` has no OMP limit either; it mirrors `MAX_QUESTION_LENGTH`.
 const MAX_PREDICT_TEXT_LENGTH: usize = 10_000;
 
-/// `cursor` is a UTF-16 offset into `text` (`frames.ts`'s own `PredictWordCommand` doc comment) --
-/// anything negative or past the text's own UTF-16 length cannot be a real caret position.
+/// `cursor` is a UTF-16 offset into `text`; a negative or past-the-end value is not a caret.
 fn validate_predict_cursor(text: &str, cursor: i64) -> Result<(), super::IpcError> {
     if text.len() > MAX_PREDICT_TEXT_LENGTH {
         return Err(invalid_argument(format!(
@@ -62,11 +51,8 @@ async fn session_exists(state: &AppState, session_id: &str) -> bool {
         .is_some()
 }
 
-/// `sideChat.ask` (contracts/ipc.md "Side chat", spec 014 tasks.md T011-T013). A blank `question`
-/// is rejected locally with `invalid-argument` before ever reaching OMP (one of `btw`'s own
-/// documented failure cases); `recordId` omitted starts a fresh topic (FR-003), given, continues
-/// one. These four messages reach the renderer's own toast verbatim -- plain English, never the
-/// internal IPC channel name a developer never asked about.
+/// `sideChat.ask`: a blank `question` is `invalid-argument`; `recordId` omitted starts a fresh
+/// topic. The messages reach the renderer toast verbatim, so they stay plain English.
 pub fn side_chat_ask(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         const SHAPE_MESSAGE: &str = "sideChat.ask expects (sessionId, question, recordId?) strings";
@@ -107,9 +93,7 @@ pub fn side_chat_ask(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `sideChat.cancel` (contracts/ipc.md): a no-op (not an error) if nothing is running -- mirrors
-/// `subagents.cancel`'s own idempotent shape; `session::side_chat::cancel` itself no-ops with no
-/// live process instead of returning an error.
+/// `sideChat.cancel`: a no-op, not an error, when nothing is running.
 pub fn side_chat_cancel(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = arg_str(&args, 0) else {
@@ -126,10 +110,8 @@ pub fn side_chat_cancel(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `sideChat.getHistory` (contracts/ipc.md, FR-004): every side-chat record OMP has for this
-/// Session's saved session file. Called once per Session per app run by the renderer store, not
-/// polled. A Session with no live process yet still returns the `agent-not-running` error code
-/// (not a silent empty list), so the store can retry once the Session actually starts.
+/// `sideChat.getHistory`: every side-chat record OMP has for this Session. No live process
+/// returns `agent-not-running`, not an empty list, so the store can retry.
 pub fn side_chat_get_history(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = arg_str(&args, 0) else {
@@ -146,10 +128,8 @@ pub fn side_chat_get_history(state: AppState, args: Vec<Value>) -> HandlerFuture
     })
 }
 
-/// `chat.predictWord` (T103, FR-058): ghost-text composer completion. Never rejects. Issue #772:
-/// the off switch is checked HERE, before ever reaching the live process -- when disabled,
-/// `predict_word` is never sent at all (best-effort, no visible error; the renderer already
-/// treats `null` as "no suggestion").
+/// `chat.predictWord`: ghost-text completion; never rejects. The off switch is checked here, so
+/// a disabled feature never sends `predict_word` (#772).
 pub fn chat_predict_word(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         const SHAPE_MESSAGE: &str = "chat.predictWord expects (sessionId, text, cursor)";
@@ -175,8 +155,7 @@ pub fn chat_predict_word(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `chat.predictWordFeedback`: same silent-degradation contract as `chat.predictWord` above, and
-/// the same off-switch gate.
+/// `chat.predictWordFeedback`: same silent-degradation contract and off-switch gate.
 pub fn chat_predict_word_feedback(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         const SHAPE_MESSAGE: &str =

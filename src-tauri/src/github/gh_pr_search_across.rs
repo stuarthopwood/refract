@@ -1,6 +1,4 @@
-// `gh search prs` across many repositories in ONE call (issue #874, spec 057): the cross-Project
-// Pull requests view passes one `--repo` per distinct owner/repo instead of spawning one search
-// per Project, and checks the search rate limit first (search has its own, much smaller, budget).
+// One `gh search prs` for many repos, after checking search's own small rate limit (#874).
 
 use std::path::Path;
 
@@ -45,8 +43,7 @@ struct RateLimitBucket {
     remaining: u64,
 }
 
-/// Refuses before searching when the search budget is spent. A failure of this probe is not an
-/// error: the search itself reports `rate-limited` through `gh`'s own message if it truly is.
+/// Refuses before searching when the search budget is spent; a probe failure is not an error.
 pub async fn ensure_search_budget(cwd: &Path) -> Result<(), GhError> {
     let Ok(limits) = gh_json::<RateLimitResponse>(cwd, &["api", "rate_limit"]).await else {
         return Ok(());
@@ -60,8 +57,7 @@ pub async fn ensure_search_budget(cwd: &Path) -> Result<(), GhError> {
     Ok(())
 }
 
-/// One `gh search prs` with a `--repo` per slug. Every flag is pushed before `--`; the free text
-/// is the final argv entry after it, as in `search_pull_requests`.
+/// One `gh search prs` with a `--repo` per slug; free text goes after `--`.
 pub async fn search_across(
     cwd: &Path,
     slugs: &[String],

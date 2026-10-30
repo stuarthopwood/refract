@@ -1,9 +1,4 @@
-// Shared SHA-256 streaming/verification for the update installer (lane R11b, issue #794): used
-// by both `installer.rs` (after download) and `install_on_quit.rs` (re-verified at quit). Gate
-// finding (PR #829 round 1, perf MEDIUM): hashing used to `tokio::fs::read` the whole ~146MB
-// installer into memory before hashing it, in both places -- streams through 64 KiB chunks
-// inside `spawn_blocking` instead, so peak memory drops to 64 KiB and the hashing's own CPU work
-// never blocks a tokio runtime thread.
+// Streams the ~146 MB installer in 64 KiB chunks on a blocking thread, so it is never fully in memory.
 
 use std::fs::File;
 use std::io::Read;
@@ -38,10 +33,7 @@ pub(super) async fn hex_digest_file(path: &Path) -> Result<String, String> {
     .map_err(|err| format!("hashing task panicked: {err}"))?
 }
 
-/// Case-insensitive comparison, treating an empty/missing `expected` value as never-matching
-/// (mirrors the mined TS's own `!expected || actual !== expected` check -- `actual` here is
-/// always already-lower-case hex from `hex_digest_file`, so only `expected` needs
-/// case-insensitive handling).
+/// Case-insensitive match; an empty `expected` never matches.
 pub(super) fn checksum_matches(actual_hex: &str, expected: &str) -> bool {
     !expected.is_empty() && actual_hex.eq_ignore_ascii_case(expected)
 }
@@ -74,7 +66,7 @@ mod tests {
             .await
             .expect("create temp dir");
         let file_path = dir.join("sample.bin");
-        // Larger than one 64 KiB chunk, so the loop actually iterates more than once.
+        // Larger than one chunk so the read loop runs more than once.
         let data = vec![0xABu8; 200 * 1024];
         tokio::fs::write(&file_path, &data)
             .await

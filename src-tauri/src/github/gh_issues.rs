@@ -1,9 +1,5 @@
-// The `gh` surface behind "Report an issue" (issue #503, spec 049): list a repository's labels,
-// search its issues for duplicates, and create an issue. Every call goes through the user's own
-// `gh` CLI with an argv array (never a shell string), scoped to the owner/repo parsed and
-// validated from the repository's own remote by `owner_repo_for`. User text reaches `gh` only as
-// a single `--flag=value` argv entry (title, label, search) or on stdin (body), so a leading dash
-// or a shell metacharacter in it can never be read as a flag or a command.
+// Report-an-issue surface. Calls use an argv array scoped to the repo's own remote; user
+// text is one `--flag=value` entry or stdin, so it can never be read as a flag.
 
 use std::path::Path;
 use std::time::Duration;

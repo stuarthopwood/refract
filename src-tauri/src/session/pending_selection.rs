@@ -1,23 +1,5 @@
-// Queued role / model / reasoning changes (lane RM, issue #766 part A).
-//
-// While a Session is working or stopped, `model.setModel`/`cycleModel`/`applyRole`/
-// `setThinkingLevel` no longer refuse: they store the choice in the Session's own pending slots
-// and return `queued: true`. Nothing is ever sent to OMP mid-turn. The slots are drained at the
-// next idle (`session::model::on_frame`'s settle hook, `SessionAgent::send` just before a prompt
-// goes out) and right after the agent starts (`launch()`), role/model first, then reasoning.
-//
-// - One slot for the role/model choice (a role to apply or a concrete model to pin) and one for
-//   the reasoning level. The last choice wins. `cycleModel` is never queued (it refuses
-//   `not-idle` while not idle).
-// - A per-Session async drain guard (`State.drain_guard`) is held across take()+RPC by every drain
-//   and every idle-path apply, and `SessionAgent::send` drains (so awaits it) before a prompt,
-//   so a prompt never overtakes an in-flight apply. The idle-vs-queue decision and the store
-//   happen under one `state` lock (`store_pending_unless_idle`).
-// - Choosing the value that is already applied while not idle clears the slot ("Keep current").
-// - Pending state is in memory only: an app restart drops it (same as `State.pinned`'s own
-//   non-persisted reads before #741).
-// - A drain that fails for any reason other than the Session being busy/not running again drops
-//   the value and posts an Error notice in the transcript; a busy/not-running failure keeps it.
+// Queued role/model/reasoning changes drain at idle, never mid-turn (#766).
+// The drain guard keeps a prompt from overtaking an in-flight apply.
 
 use serde_json::{json, Value};
 use tokio::sync::OwnedMutexGuard;
@@ -59,8 +41,7 @@ impl PendingSelection {
         }
     }
 
-    /// `SessionSummary.pendingSelection` (`src/shared/ipc.ts`): `None` when nothing is pending.
-    /// A pending role/model choice has exactly one of `role`/`model` non-null.
+    /// Wire form of `SessionSummary.pendingSelection`; `None` when nothing is pending.
     fn to_wire(&self) -> Option<Value> {
         if self.target.is_none() && self.thinking.is_none() {
             return None;
@@ -79,7 +60,7 @@ impl PendingSelection {
     }
 }
 
-/// `SessionSummary.pendingSelection` for `SessionAgent::summary_fields`.
+/// Pending selection for the session summary.
 pub(super) async fn wire(agent: &SessionAgent) -> Option<Value> {
     agent.with_model_state(|s| s.pending.to_wire()).await
 }
@@ -88,8 +69,7 @@ fn changed(agent: &SessionAgent) {
     agent.events().emit_session_list_changed();
 }
 
-/// Shared with `model::apply_role`: an unknown role is refused before anything is sent or queued
-/// (OMP's own `/switch @<role>` silently no-ops on one it cannot resolve, FINDINGS item 53).
+/// Refuses unknown roles up front: OMP's `/switch @<role>` silently no-ops on one.
 pub(super) fn validate_known_role(role: &str, known_roles: &[String]) -> Result<(), AgentError> {
     if known_roles.iter().any(|r| r == role) {
         return Ok(());
@@ -150,8 +130,7 @@ enum Slot {
     Thinking(Option<String>),
 }
 
-/// Stores `slot` only while the Session is not idle (one `state` lock, no gap a settle could land
-/// in). `false`: idle, the caller applies the choice now.
+/// Stores `slot` under the same lock as the idle check. `false` means idle: apply now.
 async fn store_unless_idle(agent: &SessionAgent, slot: Slot) -> bool {
     let stored = agent
         .store_pending_unless_idle(|s| match slot {
@@ -165,8 +144,7 @@ async fn store_unless_idle(agent: &SessionAgent, slot: Slot) -> bool {
     stored
 }
 
-/// The Session turned non-idle between the idle check and the apply (retryable failure): store
-/// the choice and drain, so it never sits pending on a Session that is actually idle.
+/// Turned busy mid-apply: store and drain, so the value never sits on an idle Session.
 async fn store_and_drain(agent: &SessionAgent, slot: Slot, guard: OwnedMutexGuard<()>) {
     match slot {
         Slot::Target(target) => set_target(agent, target).await,
@@ -183,9 +161,7 @@ fn queued(mut result: Value, is_current: bool) -> Value {
     result
 }
 
-/// `model.setModel`. Idle: applied now (pins the Session). Otherwise queued, or a no-op that
-/// clears the slot when this model is already the pinned one. A queued result carries the
-/// requested `{provider, id}` as `model`.
+/// `model.setModel`: applied now when idle, otherwise queued (or cleared if already pinned).
 pub async fn choose_model(
     agent: &SessionAgent,
     provider: &str,
@@ -237,16 +213,13 @@ pub async fn choose_model(
     }
 }
 
-/// `model.cycleModel`. Never queued (its target is only known once applied): applied now when
-/// idle, otherwise refuses `not-idle`. Takes the drain guard so it cannot interleave with a drain.
+/// `model.cycleModel`: never queued, since its target is known only once applied.
 pub async fn choose_cycle(agent: &SessionAgent) -> Result<Value, AgentError> {
     let _guard = lock_drain(agent).await;
     model::cycle_model(agent).await
 }
 
-/// `model.applyRole`. Idle: applied now (un-pins). Otherwise queued, or a no-op that clears the
-/// slot when this role is already the applied one. `model` is the model known to be applied now
-/// (`null` if never read); `role` is the requested role.
+/// `model.applyRole`: applied now when idle, otherwise queued (or cleared if already applied).
 pub async fn choose_role(
     agent: &SessionAgent,
     role: &str,
@@ -281,8 +254,7 @@ pub async fn choose_role(
     }
 }
 
-/// `model.setThinkingLevel`. Idle: applied now. Otherwise queued (`thinkingLevel` is the
-/// requested level), or a no-op that clears the slot when it is already the stored level.
+/// `model.setThinkingLevel`: applied now when idle, otherwise queued (or cleared if stored).
 pub async fn choose_thinking_level(agent: &SessionAgent, level: &str) -> Result<Value, AgentError> {
     thinking_level::validate_level(level)?;
     let guard = lock_drain(agent).await;
@@ -315,8 +287,7 @@ pub async fn choose_thinking_level(agent: &SessionAgent, level: &str) -> Result<
     }
 }
 
-/// Applies the pending role/model, then the pending reasoning level, if the Session is idle.
-/// Never sends anything while it is not. Run at settle, after agent start, and before a prompt.
+/// Applies the pending role/model, then reasoning, only while idle.
 pub(super) async fn drain(agent: &SessionAgent) {
     let _guard = lock_drain(agent).await;
     if !is_idle(agent).await {

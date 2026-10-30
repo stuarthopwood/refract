@@ -1,15 +1,8 @@
-// Named Todo-phase parsing and the "Up next" readout transform (issue #941), split out of the
-// parent `readout` module (#806 file-size discipline: `readout.rs` sits at its own 600-line
-// cap with no headroom for a brand-new field) -- mirrors `subagents.rs`'s own
-// `subagents_progress` sibling split (issue #784's "if you truly need a core change, keep it to
-// one line" pattern, applied to a sibling module instead).
+// Todo-phase parsing and the "Up next" transform, split out of `readout.rs` to stay under the cap.
 use serde_json::{json, Value};
 
-/// FINDINGS item 62's own five live-probed status literals -- the renderer's own
-/// `TodoTaskStatus` union (`src/shared/todo.ts`) names exactly these. Gate round 1 fix (Main
-/// P4): a future OMP status this slice has never seen must never reach the renderer as an
-/// arbitrary string the glyph table has no entry for; normalised here, at the one place every
-/// wire read of a task's own status already goes through.
+/// Matches the renderer's `TodoTaskStatus` union. Unknown statuses normalise to `pending`
+/// so the glyph table never meets an unseen value.
 const KNOWN_STATUSES: [&str; 5] = [
     "pending",
     "in_progress",
@@ -20,29 +13,21 @@ const KNOWN_STATUSES: [&str; 5] = [
 
 #[derive(Debug, Clone)]
 pub(super) struct TodoTaskState {
-    /// Issue #700/#701 slice (a): retained (FINDINGS item 62) so the pinned panel can show each
-    /// task's own text, not just its status -- `compute_up_next` below never needed it (Up next
-    /// shows only a phase's own name and outstanding count).
+    /// Shown in the pinned panel.
     pub(super) content: String,
     pub(super) status: String,
-    /// Present only on a `"blocked"` task (FINDINGS item 62: live-probed, never `null`/empty on
-    /// any other status) -- the pinned panel's own "Blocked: <blocker>" second line.
+    /// Set only on `"blocked"` tasks.
     pub(super) blocker: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct TodoPhaseState {
-    /// The phase's own name (OMP `todoPhases[].name`), shown by the Subagent chain's **Up
-    /// next** list (issue #941): "<name> · n tasks" for every phase with at least one task
-    /// not yet `completed`/`abandoned`. Never shown for a reopened Conversation (live state
-    /// only, `state_synced` already gates that the same way `contextUsage` does).
+    /// Phase name for the **Up next** list. Live state only.
     pub(super) name: String,
     pub(super) tasks: Vec<TodoTaskState>,
 }
 
-/// Port of `readout.rs`'s own original `parse_todo_phases`, now also reading each phase's own
-/// `name` (issue #941) plus each task's own `content` and `blocker` (issue #700/#701 slice a,
-/// FINDINGS item 62).
+/// Parses phases, names, and task content and blockers from the wire value.
 pub(super) fn parse_todo_phases(value: &Value) -> Option<Vec<TodoPhaseState>> {
     let phases = value.as_array()?;
     Some(
@@ -85,12 +70,8 @@ pub(super) fn parse_todo_phases(value: &Value) -> Option<Vec<TodoPhaseState>> {
     )
 }
 
-/// Issue #700/#701 slice (a): the pinned panel's own wire field, `todoTree` -- the full retained
-/// tree (every phase, every task's own `content`/`status`/`blocker`), never the filtered "only
-/// pending" shape `compute_up_next` below builds for Up next. `null` when there is no todo list
-/// at all (`phases` is `None`); an empty array is left AS an empty array (never collapsed to
-/// `null`) so the renderer's own "no plan" check (every phase has zero tasks) stays one single
-/// rule shared with a genuinely absent list, rather than this file inventing a second one.
+/// Full `todoTree` for the pinned panel. `null` when there is no list. An empty array stays
+/// empty so the renderer applies one "no plan" rule.
 pub(super) fn build_todo_tree(phases: Option<&Vec<TodoPhaseState>>) -> Value {
     match phases {
         None => Value::Null,
@@ -112,10 +93,7 @@ pub(super) fn build_todo_tree(phases: Option<&Vec<TodoPhaseState>>) -> Value {
     }
 }
 
-/// Issue #941 "Up next": the agent's own pending Todo phases (name and outstanding task count),
-/// shown after a turn's Stages; `null` when there is no todo list, or every phase is fully
-/// `completed`/`abandoned`. A brand-new, Rust-only field (Electron's own frozen `readout.ts`
-/// never named phases either -- `contract_replay.rs`'s own `scrub_known_divergences` drops it).
+/// Pending phases with their outstanding task counts. `null` when none are pending.
 pub(super) fn compute_up_next(phases: Option<&Vec<TodoPhaseState>>) -> Value {
     let up_next = phases.map(|phases| {
         phases

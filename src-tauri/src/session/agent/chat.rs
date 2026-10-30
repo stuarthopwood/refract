@@ -1,5 +1,4 @@
-// Prompt / stop / remove-queued (`chat.send`/`.stop`/`.removeQueued`). See `mod.rs`'s own header
-// for this module's place in the `agent/` split and the lane extension contract.
+// Prompt, stop and remove-queued commands for a session agent.
 
 use serde_json::{json, Value};
 
@@ -9,9 +8,8 @@ use super::{
 };
 
 impl SessionAgent {
-    /// `chat.send` (contracts/omp-usage.md "Send a message"): `message`, never `text`
-    /// (constitution II). `images` is only attached when non-empty, matching `streamingBehavior`
-    /// only being set while the turn is already `working`/`needs-you` (a steer/follow-up).
+    /// Sends a prompt, or holds it while the session is paused.
+    /// OMP expects `message`, not `text`.
     pub async fn send(
         &self,
         text: String,
@@ -23,9 +21,8 @@ impl SessionAgent {
         self.send_unheld(text, images, false).await
     }
 
-    /// The send path proper, without the pause gate (`resume` drains held messages through it).
-    /// `force_follow_up` marks every message after the first of a drain, which can race the
-    /// status update from the turn the first one starts.
+    /// Sends without the pause gate, so `resume` can drain held messages.
+    /// `force_follow_up` avoids racing the status update of the first message in a drain.
     pub(super) async fn send_unheld(
         &self,
         text: String,
@@ -38,15 +35,12 @@ impl SessionAgent {
                 let state = self.state.lock().await;
                 state.status == SessionStatus::Idle && state.process.is_some()
             };
-            // #766 part A: a queued role/model/reasoning choice lands before the next prompt.
+            // A queued role, model or reasoning choice applies before the next prompt.
             if idle_with_process {
                 crate::session::pending_selection::drain(self).await;
             }
             let mut state = self.state.lock().await;
-            // Port of `SessionAgent.ts`'s own `send()`: marks the user as having acted before
-            // anything else (code-review finding, 2026-10-13 -- this was never called, so every
-            // notice/`command_output` kept the `startup-notice:` id and stayed hidden,
-            // `Transcript.tsx:423`).
+            // Marks the user as having acted first, so startup notices stay visible.
             state.transcript.mark_user_acted();
             let proc = state.process.clone().ok_or_else(|| {
                 AgentError::new(
@@ -89,22 +83,14 @@ impl SessionAgent {
         Ok(json!({ "queued": working }))
     }
 
-    /// `chat.stop` (contracts/omp-usage.md "Stop"): sends `abort_and_restore_queue` (falling back
-    /// to `abort`) and returns the withdrawn queued messages, then waits for the turn to
-    /// fully settle before the Session accepts another prompt. A no-op while idle or with no
-    /// live process.
+    /// Aborts the turn and returns withdrawn queued messages.
+    /// Waits for the turn to settle. A no-op while idle or with no live process.
     pub async fn stop(&self) -> Result<Value, AgentError> {
         let (proc, status) = {
             let mut state = self.state.lock().await;
             let proc = state.process.clone();
             let status = state.status;
-            // Issue #911 (gate-fix, Main 2026-10-18): only set while a turn is genuinely in
-            // flight -- `Working`/`NeedsYou` AND `turn_generation` odd (mid-turn, not yet
-            // settled by `handle_turn_settled`) -- never merely "not Idle" (which also covers
-            // `Stopped` mid-launch, where there is no live turn to cut short). Set BEFORE the
-            // `abort` RPC goes out (same lock the no-op checks below also read `process`/
-            // `status` under), so a `tool_execution_end` this abort cuts short can never race a
-            // flag not yet true.
+            // Set only mid-turn, before the abort RPC, so a late tool event cannot race the flag.
             let turn_in_flight = matches!(status, SessionStatus::Working | SessionStatus::NeedsYou)
                 && state.turn_generation % 2 == 1;
             if proc.is_some() && turn_in_flight {
@@ -118,8 +104,7 @@ impl SessionAgent {
         if status == SessionStatus::Idle {
             return Ok(empty_restored_queue());
         }
-        // Spec 030 (#517): withdraw the queue and abort in one call; an older runtime rejects the
-        // command, so fall back to a plain `abort` (the queue then behaves as it always did).
+        // Older runtimes reject this command, so fall back to a plain `abort`.
         let mut restored = empty_restored_queue();
         let abort_result = match proc
             .request(
@@ -132,8 +117,7 @@ impl SessionAgent {
                 restored = parse_restored_queue(res.get("data").unwrap_or(&Value::Null));
                 Ok(res)
             }
-            // Intentional (FR-003): any rejection falls back to plain `abort`, so an older runtime
-            // that does not know the command and a real failure both still stop the turn.
+            // Any rejection falls back to plain `abort`, so the turn still stops.
             Ok(_) => {
                 proc.request(json!({ "type": "abort" }), DEFAULT_REQUEST_TIMEOUT_MS)
                     .await
@@ -143,8 +127,7 @@ impl SessionAgent {
         match abort_result {
             Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true) => {}
             Ok(res) => {
-                // Issue #911 (gate-fix): the abort did not actually take effect -- never leave
-                // the flag set for a stop that never happened.
+                // The abort did not take effect, so clear the flag.
                 self.state.lock().await.turn_abort_requested = false;
                 let err_message = res
                     .get("error")
@@ -155,7 +138,7 @@ impl SessionAgent {
                     .await;
             }
             Err(_) => {
-                // Issue #911 (gate-fix): request timeout/transport error -- same reasoning.
+                // Timeout or transport error: clear the flag, as above.
                 self.state.lock().await.turn_abort_requested = false;
             }
         }
@@ -177,7 +160,7 @@ impl SessionAgent {
         .await
         .is_err()
         {
-            // The queue is already withdrawn from OMP: never drop it with the error (#517 gate).
+            // The queue is already withdrawn, so return it rather than the error.
             let has_restored = restored["messages"]
                 .as_array()
                 .is_some_and(|messages| !messages.is_empty());
@@ -201,12 +184,8 @@ impl SessionAgent {
         Ok(restored)
     }
 
-    /// Shared by `remove_queued`/`send_now` (gate-fix, Medium: DRY, same request/success/notice
-    /// shape repeated verbatim in both). Sends `cmd`, requires a live process (erroring with
-    /// `no_process_detail` if none), maps a non-success response to a `prompt-failed`
-    /// `AgentError` labelled with `action` (posted as a transcript notice too, matching both
-    /// callers' own prior behaviour), and returns the response's `data` object on success for
-    /// the caller to pull its own field out of.
+    /// Shared request for queue commands. Returns the response's `data` on success.
+    /// A failed response is posted as a transcript notice and returned as an error.
     pub(super) async fn queue_op(
         &self,
         cmd: Value,
@@ -238,8 +217,7 @@ impl SessionAgent {
         Ok(res.get("data").cloned().unwrap_or(Value::Null))
     }
 
-    /// `chat.removeQueued` (issue #540): `queue` is the chip's own queue (`'followUp'` or
-    /// `'steering'`) -- OMP's `remove_queued_message` only matches within the exact queue given.
+    /// Removes a queued message. OMP only matches within the queue named by `queue`.
     pub async fn remove_queued(&self, text: String, queue: &str) -> Result<Value, AgentError> {
         if self.remove_held(&text).await {
             return Ok(json!({ "removed": true }));
@@ -258,15 +236,8 @@ impl SessionAgent {
         Ok(json!({ "removed": removed }))
     }
 
-    /// `chat.sendNow` (contracts/omp-usage.md "Send now (steer)", issue #540): a single atomic
-    /// `promote_queued_message` call -- OMP moves the existing queued follow-up (attachments and
-    /// any contiguous hidden companions included) to the end of the steering queue, with no
-    /// reprocessing and no duplicate, replacing a hand-made remove-then-steer that could leave a
-    /// message removed from the queue but never steered if the steer half failed. Only ever
-    /// called for a follow-up chip (the renderer offers "Send now" on follow-up chips only,
-    /// matching `promote_queued_message`'s own semantics: it never matches a steering-queue
-    /// message). `promoted: false` means it was no longer pending at dispatch time (e.g.
-    /// already delivered).
+    /// Promotes a queued follow-up to steering in one atomic call, so it cannot be lost.
+    /// `promoted: false` means it was already delivered.
     pub async fn send_now(&self, text: String) -> Result<Value, AgentError> {
         let data = self
             .queue_op(

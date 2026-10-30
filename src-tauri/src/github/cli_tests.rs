@@ -1,8 +1,4 @@
-// Unit tests for `cli.rs`'s pure parsing/classification logic: `GhAuthStatusJson` deserialisation
-// and flattening, `classify_account_problem`, `handle_line`'s device-code extraction/validation,
-// `on_stderr_tail_data`'s char-boundary safety, and `on_exit`'s idempotence. Split from `cli.rs`
-// itself (`#[path = "cli_tests.rs"]` at its tail) to stay under the 600-line-per-file cap (issue
-// #806), the same pattern `ipc/pull_requests/mapping.rs` already uses.
+// Tests for `cli.rs`'s parsing/classification; split out to stay under the 600-line cap (#806).
 
 use super::*;
 
@@ -139,10 +135,8 @@ fn handle_line_drops_malformed_codes_silently() {
 #[test]
 fn on_stderr_tail_data_never_panics_on_multibyte_boundary() {
     let (shared, _events_rx, _exit_rx) = new_flow_shared();
-    // A 4-byte emoji (U+1F600, "😀") at the very front of the chunk, followed by ASCII filler
-    // long enough that the appended total crosses STDERR_TAIL_BYTES by 1 byte -- the trim start
-    // (`len - STDERR_TAIL_BYTES` == 1) then lands squarely inside the emoji's byte 1 (a UTF-8
-    // continuation byte), which is exactly the panic this guards against.
+    // A 4-byte emoji at the front plus filler puts the trim start inside its UTF-8 bytes, which
+    // used to panic.
     let filler_len = STDERR_TAIL_BYTES - 3;
     let mut chunk = "😀".to_string();
     chunk.push_str(&"a".repeat(filler_len));

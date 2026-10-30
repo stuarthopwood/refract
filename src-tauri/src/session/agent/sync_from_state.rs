@@ -1,9 +1,4 @@
-// Split out of `launch.rs` (round 3, 2026-10-15, issue #564, #806 600-line cap): the round-3
-// code-reviewer fix below grew `launch.rs` to 615 lines. `sync_from_state` is a single, cohesive
-// method with no other caller in this file, so it moves to its own sibling module rather than
-// trimming something else -- same pattern `thinking_level.rs` already established for splitting
-// one `SessionAgent` method out of a file that would otherwise cross the cap (`launch_support.rs`
-// itself was split out of `launch.rs` the same way, round 4, 2026-10-14).
+// Split out of `launch.rs` to keep it under the 600-line cap. `sync_from_state` has no other caller in that file.
 
 use serde_json::Value;
 
@@ -13,11 +8,8 @@ use super::launch_support::truncate;
 use super::{SessionAgent, MAX_MODEL_FIELD_LENGTH};
 
 impl SessionAgent {
-    /// Runs after the initial `get_state` and after every `session_settled` (port of
-    /// `SessionAgent.ts`'s own `syncFromState`): persists `sessionDir`/`currentConversation`/
-    /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`. `stale_if`
-    /// (settle-time callers) is checked by `settle_is_stale` both here and again right before the
-    /// write below, so a later settle/reset landing in the gap can never write stale data over it.
+    /// Runs after `get_state` and each settle, persisting session fields once `messageCount > 0`.
+    /// `stale_if` is re-checked before the write, so a later settle cannot be overwritten.
     pub(super) async fn sync_from_state(&self, state: &Value, stale_if: Option<(u64, u64)>) {
         if self.settle_is_stale(stale_if).await {
             return;
@@ -73,20 +65,13 @@ impl SessionAgent {
                         .as_deref()
                         .is_some_and(|v| v != "inherit")
                     {
-                        // Gate round 3 fix (code-reviewer HIGH): a model/role switch (or a
-                        // relaunch after one) that leaves `thinkingLevel` OUT of this `get_state`
-                        // must clear a stale CONCRETE level (e.g. "high") the new model/role no
-                        // longer reports -- only an explicitly-persisted "inherit" survives an
-                        // absent report (thinking_level.rs's own comment above: omp leaves the
-                        // field out only for `inherit` itself or a model with no effort control,
-                        // so a concrete value stored next to an absent one is always stale).
-                        // Never touches a Session where nothing was ever stored.
+                        // An absent `thinkingLevel` must clear a stale concrete level, but keep an explicit "inherit".
                         patch.last_thinking_level = Some(None);
                     }
                 }
             }
         }
-        // Gate-fix (#856, round 2): re-checked again, right before the write -- the entry check's only remaining gap.
+        // Re-checked right before the write, closing the gap after the entry check.
         if self.settle_is_stale(stale_if).await {
             return;
         }

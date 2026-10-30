@@ -1,20 +1,6 @@
-// Theme IPC channels (lane R8, issue #791): `theme.preview`/`theme.set`, port of
-// `src/main/ipc/theme.ts` (the synchronous `theme:bootstrap` channel is already done, wired
-// directly in `lib.rs`'s own `setup` closure via an initialization script -- see that file's own
-// FR-010/FR-011 comment; nothing here duplicates it).
-//
-// Not ported: Electron's `applyTitleBarOverlay` (`src/main/titleBarOverlay.ts`,
-// `BrowserWindow.setTitleBarOverlay`). This build's one window uses plain native OS decorations
-// (`lib.rs`: "no custom caption parity in milestone 1") rather than Electron's merged/hidden
-// title bar, so there is no title-bar-overlay colour subsystem to update here at all -- every
-// other surface already repaints from the renderer's own CSS theme class with no IPC round trip
-// (`theme.ts`'s own comment), which is why `theme.preview` below is otherwise a pure validate-
-// and-succeed no-op: there is nothing left for it to apply once the overlay call is gone.
-//
-// Quality-gate correction (code review, 2026-10-14): a bad id is `invalid-theme`
-// (`theme.ts:24,48`, `shared/ipc.ts:79,815`), not `invalid-argument` -- the shared contract gives
-// this family its own error code specifically so the renderer can tell a malformed theme id apart
-// from any other malformed argument.
+// Theme IPC channels `theme.preview`/`theme.set` (#791). `theme.preview` only validates: the
+// window uses native decorations, so there is no title-bar overlay to update.
+// A bad id is `invalid-theme`, not `invalid-argument`, so the renderer can tell them apart.
 
 use serde_json::Value;
 
@@ -31,8 +17,7 @@ fn parse_theme_id(value: &str) -> Option<ThemeId> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
-/// Caps an echoed caller value to a bounded length before it reaches an error message (security
-/// finding, LOW): the renderer should never be handed an unbounded string back verbatim.
+/// Caps an echoed caller value to a bounded length before it reaches an error message.
 fn describe_value(value: &Value) -> String {
     let text = value.to_string();
     if text.chars().count() > 200 {
@@ -42,11 +27,8 @@ fn describe_value(value: &Value) -> String {
     }
 }
 
-/// Pure validation for `theme.preview`'s one argument, split out for direct unit testing. A
-/// MISSING argument is rejected too, matching Electron parity exactly: `theme.ts`'s own check is
-/// `themeId !== null && !isThemeId(themeId)`, and a call with no argument at all arrives there as
-/// `undefined`, which is `!== null` and so fails `isThemeId` -- only an EXPLICIT `null` is the
-/// accepted "revert" case.
+/// Validates `theme.preview`'s argument. A missing argument is rejected too (Electron parity);
+/// only an explicit `null` means "revert".
 fn validate_preview_arg(arg: Option<&Value>) -> Result<(), IpcError> {
     match arg {
         Some(Value::Null) => Ok(()),
@@ -65,9 +47,7 @@ fn validate_preview_arg(arg: Option<&Value>) -> Result<(), IpcError> {
     }
 }
 
-/// `theme.preview(themeId | null)` (FR-003 to FR-005, FR-017): validates the id (or `null`, which
-/// reverts a preview) and succeeds -- see the module header for why there is no live window
-/// effect to apply in this build. Never persisted.
+/// `theme.preview(themeId | null)`: validates the id (or `null` to revert); never persisted.
 pub fn theme_preview(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         validate_preview_arg(args.first())?;
@@ -75,10 +55,7 @@ pub fn theme_preview(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `theme.set(themeId)` (FR-004): persists the choice (the one and only place allowed to turn
-/// `SettingsStore`'s own `raw_theme` into a real, developer-saved value) and broadcasts
-/// `settings:changed` so every open window/pane picks it up immediately -- matches
-/// `settings.setApprovalMode`'s own persist-then-broadcast pattern.
+/// `theme.set(themeId)`: persists the choice and broadcasts `settings:changed` to every window.
 pub fn theme_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let theme = match arg_str(&args, 0).and_then(parse_theme_id) {
@@ -130,8 +107,7 @@ mod tests {
         let mut store = open_scratch_store().await;
         let next = store.set_theme(ThemeId::Obsidian).await.unwrap();
         assert!(matches!(next.theme, ThemeId::Obsidian));
-        // The synchronous bootstrap (`lib.rs`'s own init script) reads `settings.get().theme`
-        // straight off a freshly-opened store -- this is that same contract, one level down.
+        // The synchronous bootstrap reads `settings.get().theme` off a freshly-opened store.
         assert!(matches!(store.get().theme, ThemeId::Obsidian));
     }
 
@@ -153,8 +129,7 @@ mod tests {
                 .code,
             "invalid-theme"
         );
-        // Electron parity: a MISSING argument (`undefined` in JS) is rejected, not treated the
-        // same as an explicit `null`.
+        // A missing argument is rejected, unlike an explicit `null`.
         assert_eq!(
             validate_preview_arg(None).unwrap_err().code,
             "invalid-theme"

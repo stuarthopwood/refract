@@ -1,6 +1,5 @@
-// Token guard channels (#1212, spec 021, contracts/ipc.md): `tokenGuard.get/set/reset` over the
-// Refract-owned overlay values. Plain JSON in and out; no path or file content comes from the
-// renderer. A change applies to the next launched Session (the overlay is rewritten per launch).
+// `tokenGuard.get/set/reset`. No path or file content comes from the renderer.
+// A change applies to the next launched Session.
 
 use serde_json::{json, Value};
 
@@ -15,8 +14,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("tokenGuard.handoff", token_guard_handoff);
 }
 
-/// `tokenGuard.handoff` (#1212): `{ ok: true }` or `{ ok: false, reason }` (a refused or failed
-/// Hand off is an outcome the renderer shows in text, not an IPC error).
+/// `tokenGuard.handoff`: a refused or failed hand-off is a result, not an IPC error.
 fn token_guard_handoff(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str).map(str::to_string) else {

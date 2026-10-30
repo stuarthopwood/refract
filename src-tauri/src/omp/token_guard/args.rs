@@ -1,6 +1,4 @@
-// The extra `omp` launch arguments (FR-001, FR-010, FR-017): `--config <overlay>` and
-// `--append-system-prompt <rules file>`. A file that cannot be written is left out (the Session
-// still launches) and a warning is returned with the arguments for the caller to surface.
+// Extra `omp` launch arguments. An unwritable file is left out and reported as a warning; the session still launches.
 
 use std::path::Path;
 

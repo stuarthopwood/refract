@@ -1,6 +1,4 @@
-// Issue #1300: Settings > Appearance "Chat row spacing", the gap between consecutive bookkeeping
-// rows in the transcript. A child module of `settings.rs` to keep that file under the 600-line
-// cap (issue #806).
+// "Chat row spacing" setting (#1300).
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -40,7 +38,7 @@ pub(super) fn write(map: &mut Map<String, Value>, value: ChatRowDensity) {
 }
 
 impl SettingsStore {
-    /// `settings.setChatRowDensity(value)`: plain-replace shape, as `set_status_style` uses.
+    /// `settings.setChatRowDensity(value)`: plain replace.
     pub async fn set_chat_row_density(
         &mut self,
         value: ChatRowDensity,

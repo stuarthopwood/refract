@@ -1,15 +1,6 @@
-// IPC handler for `readiness.check` (contracts/ipc.md "Readiness", tasks.md T017/T020 scope
-// note). Ports `src/main/readiness.ts`'s `checkGit`/`checkOmp`/`checkOmpSignedIn` faithfully:
-// `checkGit` is one `git --version` call, `checkOmp` resolves `omp` on PATH and runs
-// `omp --version`, and `checkOmpSignedIn` spins up a scratch, non-Session `OmpProcess` (temp-dir
-// cwd, `--no-session`) purely to confirm the default model from `get_state` also appears in
-// `get_available_models` (docs/spike/signed-in-probe.mjs, FINDINGS item 15; contracts/ipc.md
-// "ompSignedIn is ok when get_state's current model also appears in get_available_models" -- that
-// checks the default model can actually run, not merely that some credential is authenticated).
-// Wired here (tasks.md T030 live verification) once `omp::process` (Phase 2(a)) landed: the
-// Electron port's own gate-fix comments (issue #512: shared start-queue/memory-defer starvation)
-// do not apply -- this build has no start queue or memory defer to starve behind in the first
-// place (`omp::process`'s own module header), so only the ready-wait ceiling itself is ported.
+// IPC handler for `readiness.check`: git, omp on PATH, and a scratch-process probe that the
+// default model from `get_state` also appears in `get_available_models` (usable, not merely authed).
+// No start queue or memory defer exists in this build, so only the ready-wait ceiling is bounded.
 
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex as StdMutex};
@@ -41,36 +32,26 @@ struct Check {
     warning: Option<bool>,
 }
 
-/// contracts/ipc.md "Readiness": the fixed hint shown whenever the sign-in probe cannot confirm
-/// that OMP's default model is actually usable, whatever the underlying reason.
+/// The fixed hint shown whenever the sign-in probe cannot confirm OMP's default model is usable.
 const SIGNED_IN_HINT: &str = "Run omp, complete /login, then Re-check.";
 
-/// contracts/omp-usage.md's version rule (amended 2026-10-11, spec 014): the minimum supported
-/// OMP version is 18.6.3. Only `omp` 18.8.x was directly probed live; any `18.6.3` or later
-/// `18.x.y` still passes, but surfaces a warning unless its minor is the specifically re-probed
-/// one (18.8.x).
+/// Minimum supported OMP is 18.6.3; later 18.x passes but warns unless minor is the probed 18.8.x.
 const OMP_MINIMUM_MAJOR: u32 = 18;
 const OMP_MINIMUM_MINOR: u32 = 6;
 const OMP_MINIMUM_PATCH: u32 = 3;
 
-// Gate-fixes Medium finding (issue #512, ported from `readiness.ts`/`loginProviders.ts`): this
-// scratch probe used to share the Electron build's process-wide start queue with real Sessions;
-// this build has neither a start queue nor a memory defer (`omp::process`'s own module header),
-// so only the ready-wait ceiling itself needs a shorter-than-Session bound.
+// The scratch probe needs a shorter ready-wait bound than real Sessions (#512).
 const PROBE_READY_PROMPT_AFTER_MS: u64 = 30_000;
 const PROBE_READY_CEILING_MS: u64 = 60_000;
 const PROBE_REQUEST_TIMEOUT_MS: u64 = 60_000;
 
-/// Perf: `omp --version` had no bound at all (gate finding), unlike every other `omp`/`git`
-/// child this build spawns. A hung PATH-resolved binary must not hang `readiness.check` forever.
+/// `omp --version` is bounded: a hung PATH-resolved binary must not hang `readiness.check`.
 const OMP_VERSION_PROBE_TIMEOUT_MS: u64 = 10_000;
 pub fn readiness_check(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move { Ok(compute_readiness().await) })
 }
 
-/// Shared by the `readiness.check` handler above and `readiness_install_dependency`'s own
-/// post-install re-check below (contracts/ipc.md: "On success, main re-runs `readiness.check()`
-/// and emits `readiness:changed` itself").
+/// Shared by the `readiness.check` handler and the post-install re-check.
 async fn compute_readiness() -> Value {
     let (git, omp, omp_signed_in, github) = tokio::join!(
         check_git(),
@@ -99,8 +80,7 @@ async fn check_git() -> Check {
     }
 }
 
-/// Extracts the first `\d+\.\d+\.\d+` run from `stdout` without a `regex` crate dependency (not
-/// in this build's `Cargo.toml`): a manual scan for three dot-separated ASCII-digit runs.
+/// Extracts the first `\d+\.\d+\.\d+` run from `stdout` by manual scan (no `regex` dependency).
 fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
     let bytes = stdout.as_bytes();
     let mut i = 0;
@@ -152,8 +132,7 @@ async fn check_omp() -> Check {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = tokio::process::Command::new(&omp_path);
     command.arg("--version").creation_flags(CREATE_NO_WINDOW);
-    // Perf: a timed-out probe below is dropped, not awaited to completion; `kill_on_drop` stops
-    // it from running on as an orphan (matches `git::git_raw`'s own timeout handling).
+    // A timed-out probe is dropped, not awaited; `kill_on_drop` stops it running on as an orphan.
     command.kill_on_drop(true);
     let output = match tokio::time::timeout(
         Duration::from_millis(OMP_VERSION_PROBE_TIMEOUT_MS),
@@ -241,11 +220,8 @@ async fn check_omp() -> Check {
     }
 }
 
-/// Port of `readiness.ts`'s own `checkOmpSignedIn`: spins up a scratch, non-Session `OmpProcess`
-/// (temp-dir cwd, `--no-session`) purely to confirm the default model from `get_state` also
-/// appears in `get_available_models` (docs/spike/signed-in-probe.mjs, FINDINGS item 15). Never
-/// panics on a probe failure: every branch below resolves to a `Check` instead, same as the TS
-/// port's own blanket `try`/`catch`.
+/// Spins up a scratch, non-Session `OmpProcess` to confirm the default model is available.
+/// Never panics: every probe failure resolves to a `Check`.
 async fn check_omp_signed_in() -> Check {
     let scratch_dir = std::env::temp_dir().join(format!(
         "refract-readiness-probe-{}-{}",
@@ -384,11 +360,8 @@ async fn probe_signed_in(proc: &OmpProcess) -> Check {
     }
 }
 
-/// Port of `readiness.ts`'s own `signedInFailureHint`/`loginProviders.ts`'s own
-/// `requestLoginProviders`: enriches `SIGNED_IN_HINT` with up to 3 unauthenticated provider ids,
-/// when available, reusing the still-running probe process rather than spinning up a second
-/// scratch `omp`. Failures are swallowed since the base hint is already correct without this
-/// enrichment.
+/// Enriches `SIGNED_IN_HINT` with up to 3 unauthenticated provider ids, reusing the probe
+/// process. Failures are swallowed: the base hint is already correct.
 async fn signed_in_failure_hint(proc: &OmpProcess) -> String {
     let Ok(res) = proc
         .request(
@@ -425,10 +398,8 @@ async fn signed_in_failure_hint(proc: &OmpProcess) -> String {
     )
 }
 
-/// contracts/ipc.md "Readiness": `gh --version` resolves on PATH and `gh auth status` reports a
-/// signed-in account; never required for `allPass` (FR-008, data-model.md "Dependency") --
-/// missing or signed-out GitHub CLI only blocks updates (spec 006) and pull-request access
-/// (spec 003 FR-027), never Add repository/readiness itself.
+/// `gh --version` resolves on PATH and `gh auth status` is signed in; never required for `allPass`
+/// (a missing `gh` only blocks updates and pull-request access).
 async fn check_github_cli() -> Check {
     match gh_client::github_cli_status(&std::env::temp_dir()).await {
         GithubCliStatus::Ok => Check {
@@ -445,12 +416,8 @@ async fn check_github_cli() -> Check {
         },
         GithubCliStatus::NotSignedIn => Check {
             ok: false,
-            // Gate finding (round 2, Medium): this `gh` may have just been installed via the
-            // portable-zip Install action (`dependency_install::install_github_cli`), not onto
-            // PATH a user's own terminal resolves to -- "Run gh auth login" could sign a
-            // DIFFERENT `gh` in, or fail to find a terminal at all. Refract already has its own
-            // sign-in flow (Manage accounts' "Sign in to GitHub…"), which always drives this
-            // exact binary -- point there instead.
+            // A portable-zip-installed `gh` may not be on the user's terminal PATH; point at
+            // Refract's own sign-in flow, which drives this exact binary.
             hint: Some(
                 "gh is installed but not signed in. Sign in via Manage accounts, then Re-check."
                     .to_string(),
@@ -465,12 +432,9 @@ async fn check_github_cli() -> Check {
     }
 }
 
-/// contracts/ipc.md "Readiness": starts `dependency`'s vendor installer in the background and
-/// awaits the whole install before resolving, so the caller can show a spinner from one `await`;
-/// progress also arrives incrementally on `readiness:install-progress`. On success, re-runs
-/// `readiness.check()` and emits `readiness:changed` itself -- the caller never needs to poll. A
-/// failed install never leaves the checklist stuck: this handler always resolves (never
-/// rejects), reporting `dependency-install-failed` instead (FR-010).
+/// Runs `dependency`'s vendor installer and resolves when done (progress on
+/// `readiness:install-progress`), then re-runs the check and emits `readiness:changed`.
+/// Always resolves, reporting `dependency-install-failed` on failure.
 fn readiness_install_dependency(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(raw) = args.first().and_then(Value::as_str) else {
@@ -491,11 +455,8 @@ fn readiness_install_dependency(state: AppState, args: Vec<Value>) -> HandlerFut
             }
         };
 
-        // Quality-gate remediation (ported from the mined `ipc/readiness.ts`'s own
-        // `installsInFlight` guard, Medium "no per-dependency lock stops two Install clicks
-        // overlapping"): a second call for a dependency already installing returns a busy error
-        // Result instead of starting a second concurrent install (and a second download to a
-        // second temp file) for the same dependency.
+        // A second call for a dependency already installing returns a busy error rather than
+        // starting a concurrent install and download.
         static IN_FLIGHT: LazyLock<StdMutex<HashSet<String>>> =
             LazyLock::new(|| StdMutex::new(HashSet::new()));
         let key = raw.to_string();

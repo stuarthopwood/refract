@@ -1,11 +1,5 @@
-// Read-only/diagnostic Session handlers split out of the parent `sessions_lifecycle.rs` (#806
-// "No god files"): `sessions.diffStat` (T068) and `sessions.revealWorktree` (T068) never touch
-// a Session's own lifecycle (create/archive/restore/delete/recreate) -- both only look an
-// existing worktree up by Session id and either diff it or hand it to Explorer -- so they split
-// cleanly out of the file that otherwise owns every lifecycle transition, the same way
-// `omp/transcript.rs`'s own `file_attachment_markers` submodule splits out one self-contained
-// concern (#926). `pub(super)` throughout: registered by the parent's own `register()`, never a
-// second direct entry point in `ipc/mod.rs`.
+// Read-only Session handlers split from `sessions_lifecycle.rs` (#806): `sessions.diffStat` and
+// `sessions.revealWorktree`. `pub(super)`: registered by the parent's `register()` only.
 
 use serde_json::Value;
 use std::path::Path;
@@ -15,9 +9,8 @@ use crate::process::executables::explorer_exe_path;
 
 use super::super::{arg_str, invalid_argument, not_found, AppState, HandlerFuture, IpcError};
 
-/// `sessions.diffStat` (T068): read-only, so `diff_stat` itself never throws past its own
-/// boundary -- this handler's own `Result` is always `Ok`, carrying `null` for a timeout, a
-/// missing worktree, a missing Base branch, or any git failure.
+/// `sessions.diffStat`: always `Ok`, with `null` for a timeout, missing worktree, missing Base
+/// branch or any git failure.
 pub(super) fn sessions_diff_stat(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -36,13 +29,8 @@ pub(super) fn sessions_diff_stat(state: AppState, args: Vec<Value>) -> HandlerFu
     })
 }
 
-/// `sessions.revealWorktree` (T068): looks the worktree up by Session id in the registry, never
-/// a path handed in by the renderer (constitution V). No `tauri_plugin_opener`/`shell.openPath`
-/// equivalent is called from Rust elsewhere in this crate yet, so this spawns Windows'
-/// `explorer.exe` via its fixed `%SystemRoot%` path (`process::executables::explorer_exe_path`),
-/// never the bare name `"explorer"` -- same PATH/cwd-search-avoidance reasoning `git::git`'s own
-/// `which` doc comment documents. This build is Windows-only, per `git::git`'s own
-/// `CREATE_NO_WINDOW` comment.
+/// `sessions.revealWorktree`: looks the worktree up by Session id, never a renderer path. Spawns
+/// `explorer.exe` by its fixed `%SystemRoot%` path, avoiding PATH/cwd search; Windows-only build.
 pub(super) fn sessions_reveal_worktree(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {

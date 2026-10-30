@@ -1,15 +1,5 @@
-// Issue #1238 (spec 004 FR-051): the user's INDIVIDUAL Copilot plan usage, one read-only
-// `GET https://api.github.com/copilot_internal/user` with the ACTIVE github.com `gh` account's
-// token (`cli::auth_token`), mirroring `profile::fetch_profile`'s discipline: the token lives only
-// in this function's local scope for that one request (header marked sensitive), is never logged,
-// stored or sent to the renderer; a non-github.com account is refused before its token is read;
-// redirects are never followed (`profile::HTTP_CLIENT`), the body is size-capped and the request
-// times out at 10 s. Any failure reads as "unavailable" (`None`), never an error the UI shows.
-//
-// The result is cached (per login) so a chip re-mounting or a busy Session never re-calls GitHub
-// more than once per window: `CACHE_TTL` after a figure, the shorter `FAILURE_CACHE_TTL` after an
-// unavailable result so a flaky network recovers soon without hammering GitHub. Concurrent callers
-// share one request (`FETCH_LOCK`).
+// The token is never logged or stored, and non-github.com accounts are refused first.
+// Concurrent callers share one request (`FETCH_LOCK`).
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -49,9 +39,8 @@ impl Outcome {
     }
 }
 
-/// Spec 060 (S1-13): the figures of the same cached response `plan_percent_used` reads. The
-/// entitlement and remaining count are in the same unit as AI credits (`omp usage --json` reports
-/// the identical 2,000,000 limit); either is `None` when the response omits it.
+/// Figures of the same cached response; entitlement and remaining are in AI-credit units.
+/// Either is `None` when the response omits it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlanSnapshot {
     pub percent_used: f64,
@@ -80,9 +69,8 @@ pub fn parse_snapshot(body: &Value) -> Option<PlanSnapshot> {
 static CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
 static FETCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Percent of the individual premium allowance used (0-100), or `None` when the account has no
-/// metered allowance (unlimited, missing snapshot, or unreadable figures). Prefers the precise
-/// `1 - quota_remaining / entitlement`; falls back to `100 - percent_remaining`.
+/// Percent of the premium allowance used (0-100), or `None` when unmetered or unreadable.
+/// Prefers `1 - quota_remaining / entitlement`, else `100 - percent_remaining`.
 pub fn parse_percent_used(body: &Value) -> Option<f64> {
     let snapshot = body.get("quota_snapshots")?.get("premium_interactions")?;
     if snapshot.get("unlimited").and_then(Value::as_bool) == Some(true) {
@@ -102,8 +90,7 @@ pub async fn plan_percent_used() -> Option<f64> {
     plan_snapshot().await.map(|s| s.percent_used)
 }
 
-/// Same cache and single request as `plan_percent_used`, with the entitlement and remaining
-/// figures alongside the percent (spec 060 `usage.budget`).
+/// Same cache and single request as `plan_percent_used`, plus entitlement and remaining.
 pub async fn plan_snapshot() -> Option<PlanSnapshot> {
     let login = auth_status()
         .await

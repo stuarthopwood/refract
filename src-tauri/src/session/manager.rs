@@ -1,13 +1,4 @@
-// Port of `src/main/SessionManager.ts` (tasks.md T023): owns `store::registry` + `store::settings`,
-// the live `agents: HashMap<SessionId, SessionAgent>` map, `summaries()` (completing `sessions.
-// list`'s registry-only placeholder Phase 2(b) left with live-runtime fields), `get_or_create_
-// agent`, `set_visible`, and `stop_all` (the app-exit path, `lib.rs`'s `ExitRequested` handler).
-//
-// The event fan-out itself (`src/main/ipc/register.ts`'s own `forwardEvent`) is not a separate
-// listener loop here: each `SessionAgent` already holds its own `events::EventSink` clone and
-// calls it directly (see `events.rs`'s own doc comment). `SessionManager` itself only owns the
-// `visible_ids` set every agent's `EventSink`-backed patch coalescer reads to decide whether to
-// forward a patch.
+// Owns the live `SessionAgent` map and the registry-backed session summaries.
 
 use crate::events::EventSink;
 use crate::git::worktree_validity::{
@@ -21,8 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
-/// Owns every live `SessionAgent` (one per Session opened this run) plus the shared registry/
-/// settings stores every agent and every registry-only IPC handler already uses.
+/// Owns every live `SessionAgent` and the shared registry and settings stores.
 pub struct SessionManager {
     pub registry: SharedRegistry,
     pub settings: SharedSettings,
@@ -31,23 +21,12 @@ pub struct SessionManager {
     visible_ids: Arc<StdMutex<HashSet<String>>>,
 }
 
-/// Gate round 1 HIGH perf finding (#826): at most this many repositories' `git worktree list
-/// --porcelain` calls run concurrently when `summaries()` needs to check several repositories'
-/// no-live-agent Sessions at once. Unbounded concurrency here would still spike `git`/antivirus-
-/// scanner load the same way the old per-Session loop did, just across repositories instead of
-/// Sessions.
+/// Caps concurrent `git worktree list` calls across repositories.
+/// Unbounded concurrency would spike git and antivirus load.
 const WORKTREE_LIST_CONCURRENCY: usize = 4;
 
-/// Gate round 1 HIGH perf finding: the old no-live-agent branch in `summaries()` called
-/// `worktree_is_valid` (and so ran `git worktree list --porcelain`) once PER SESSION, serially,
-/// with no concurrency cap and no timeout -- a repository with many Sessions re-listed the SAME
-/// repository's worktrees over and over, and a single hung `git` could block the whole
-/// `sessions.list` response. This issues `list_registered_worktrees` at most once per DISTINCT
-/// repository id in `repo_ids` (each call already bounded by its own ~3s timeout, see
-/// `worktree_validity.rs`), capped at `WORKTREE_LIST_CONCURRENCY` concurrent calls. A repository
-/// id with no matching `Repository` row is silently skipped: `summaries()`'s own per-Session
-/// loop already treats that case as `Invalid` directly, with no repository to even ask git
-/// about.
+/// Lists each distinct repository's worktrees once, not once per Session.
+/// Each call has its own timeout, and a repository id with no row is skipped.
 async fn fetch_worktree_lists(
     repo_ids: &[String],
     repositories: &[Repository],
@@ -98,9 +77,7 @@ impl SessionManager {
             .cloned()
     }
 
-    /// Every live `SessionAgent` this run, a snapshot clone (lane RM, issue #740: the role-
-    /// change propagation sweep below needs to touch each one without holding the `agents`
-    /// lock across an `.await`).
+    /// Every live `SessionAgent`, as a snapshot clone taken without holding the lock.
     pub fn live_agents(&self) -> Vec<Arc<SessionAgent>> {
         self.agents
             .lock()
@@ -110,21 +87,8 @@ impl SessionManager {
             .collect()
     }
 
-    /// Issue #740 (lane RM): called by `ipc::model_roles::model_roles_set` after a role's
-    /// config value changes, AWAITED before that IPC call replies (gate-fix: an earlier
-    /// comment/PR-body wording implied this runs "off the reply path" -- it does not; only the
-    /// sweep's OWN work across Sessions is concurrent and bounded, the whole sweep still
-    /// completes before `modelRoles.set`'s response is sent). Moves every live, non-pinned,
-    /// non-stopped Session whose tracked role is `role` onto its freshly-resolved model --
-    /// immediately if idle (concurrently, bounded, gate-fix MEDIUM/perf), queued for its own
-    /// next settle if working (Stuart's decision, 2026-10-13: "automatic at the next idle
-    /// moment", no prompt, never refused); a Session pinned by `/switch`/the composer picker
-    /// (#454) is skipped. A Session with NO entry at all in `self.agents` (never opened or
-    /// probed this run) is invisible to `live_agents()` and so is not counted in ANY bucket --
-    /// it simply resumes its own saved model on its own next start. A Session that DOES have an
-    /// agent entry (e.g. a prior open, or a `model.listRoles` probe) but whose live status is
-    /// `Stopped` lands in `skipped_stopped` instead, rather than being counted as failed
-    /// (gate-fix, HIGH/tests).
+    /// Moves each live, unpinned Session on `role` to its new model: now if idle, else at its next idle.
+    /// A Session with no agent entry is not counted, and resumes its saved model on next start.
     pub async fn apply_role_change(
         &self,
         role: &str,
@@ -140,17 +104,11 @@ impl SessionManager {
         }
 
         let mut summary = RoleChangeSummary::default();
-        // Gate-fix (round 10, MEDIUM): the caller already read this map in its own
-        // `set_model_role` write -- re-reading raced a second `modelRoles.set` mid-sweep.
-        // Shared via `Arc` for cheap cloning across every spawned task below. `stale_retry`
-        // (round 11): a shared `OnceCell`, so at most ONE re-read happens for the WHOLE sweep
-        // if a cached-map mismatch fires, not one per mismatching Session.
+        // Shared via `Arc` so every spawned task can clone it cheaply.
         let shared_model_roles = Arc::new(model_roles);
         let stale_retry: Arc<tokio::sync::OnceCell<std::collections::HashMap<String, String>>> =
             Arc::new(tokio::sync::OnceCell::new());
-        // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
-        // one at a time -- each makes up to three RPCs, so a serial sweep's worst case grows
-        // with the Session count.
+        // Idle Sessions are applied concurrently and bounded, not one at a time.
         const CONCURRENCY: usize = 4;
         let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
         let mut idle_tasks = Vec::new();
@@ -164,9 +122,7 @@ impl SessionManager {
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| agent.session_id().to_string());
 
-            // Gate-fix (MEDIUM): check which role this Session is ON before checking whether it
-            // is Stopped, not the other way around -- checking Stopped first put EVERY Stopped
-            // Session in `skipped_stopped` for ANY role change, including one it was never on.
+            // Check the role before Stopped, so Stopped Sessions on other roles are not skipped.
             let (pinned, current_role) = current_selection(&agent).await;
             let effective = current_role.as_deref().unwrap_or("default");
             if effective != role {
@@ -180,9 +136,7 @@ impl SessionManager {
                 summary.skipped_pinned.push(name);
                 continue;
             }
-            // Atomic with the status read above being stale by now is fine: this re-checks
-            // `status` itself (gate-fix, HIGH, race) and sets `pending_role_reapply` under the
-            // SAME lock acquisition, so a settle landing in the gap can never lose the reapply.
+            // Re-checks `status` under the same lock that sets `pending_role_reapply`, so no settle is lost.
             if agent.queue_role_reapply_or_ready(role).await {
                 summary.queued.push(name);
                 continue;
@@ -201,23 +155,14 @@ impl SessionManager {
                 let outcome = match apply_role_now(&agent, &role, true, roles_ref, retry).await {
                     Ok(_) => RoleApplyOutcome::Moved,
                     Err(err) if err.code == "not-idle" => {
-                        // Gate-fix (MEDIUM): became working between the atomic
-                        // queue-or-ready check and this task's own `send_if_idle` call.
-                        // Re-run the SAME atomic decision now instead of waiting for the
-                        // sequential loop to notice minutes later.
+                        // Became working after the ready check; re-run the same atomic decision.
                         if agent.queue_role_reapply_or_ready(&role).await {
                             RoleApplyOutcome::Queued
                         } else {
                             match apply_role_now(&agent, &role, true, roles_ref, retry).await {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
-                                    // Gate-fix (round 6, HIGH): became working again between the
-                                    // ready-check above and this retry's own send -- OMP is
-                                    // still mid-turn even though Refract's OWN status already
-                                    // looked idle. `queue_role_reapply_or_ready` does NOT set
-                                    // `pending_role_reapply` for a `false` result, so if THIS
-                                    // retry also failed not-idle, set it directly ourselves --
-                                    // never report `Queued` unless something is actually queued.
+                                    // Still mid-turn after the retry failed, so queue it directly.
                                     if !agent.queue_role_reapply_or_ready(&role).await {
                                         agent
                                             .with_model_state(|s| {
@@ -244,9 +189,7 @@ impl SessionManager {
                 Ok((name, RoleApplyOutcome::Queued)) => summary.queued.push(name),
                 Ok((name, RoleApplyOutcome::Failed)) => summary.failed.push(name),
                 Err(join_err) => {
-                    // Gate-fix (MEDIUM): a panicked task used to be silently dropped, with the
-                    // affected Session absent from every bucket and the Settings page none the
-                    // wiser.
+                    // A panicked task is reported, not dropped from every bucket.
                     log::error!("apply_role_change: a role-reapply task panicked: {join_err}");
                 }
             }
@@ -254,9 +197,7 @@ impl SessionManager {
         summary
     }
 
-    /// `SessionManager.ts`'s own `getOrCreateAgent`: a brand-new instance on first access,
-    /// returning the existing one for every later call -- never starts it (callers start a
-    /// `stopped` agent explicitly).
+    /// Returns the existing agent, or creates one on first access. Never starts it.
     pub fn get_or_create_agent(&self, session_id: &str) -> Arc<SessionAgent> {
         let mut agents = self.agents.lock().expect("agents mutex poisoned");
         if let Some(existing) = agents.get(session_id) {
@@ -281,9 +222,7 @@ impl SessionManager {
         self.events.emit_settings_changed(settings);
     }
 
-    /// Lane R11b (issue #794): pass-throughs so `ipc::readiness`/`ipc::updates` (and `lib.rs`'s
-    /// own install-on-quit/startup hooks) can broadcast without reaching into `events::EventSink`
-    /// directly -- the same shape every other IPC-triggered broadcast in this file already uses.
+    /// Pass-throughs so IPC and startup hooks broadcast without touching `EventSink` directly.
     pub fn emit_readiness_install_progress(&self, progress: &Value) {
         self.events.emit_readiness_install_progress(progress);
     }
@@ -296,14 +235,7 @@ impl SessionManager {
         self.events.emit_updates_state_changed(state);
     }
 
-    /// `sessions.list()`'s live-runtime fields, merged over the registry-only `Session` row
-    /// (data-model.md: "absent until the first `get_state`" for a Session with no agent this
-    /// run, matching `SessionManager.summaries()`'s own no-runtime branch exactly). Lane R3
-    /// (issue #786, gate-fix): `terminatedUnexpectedly`/`pendingToolNames` are now derived for
-    /// every `stopped` row here, not left permanently absent -- a FRESH
-    /// `resolve_termination()`/`resolve_termination_for` call either way, same as `ipc::
-    /// sessions_agent`'s own attach/resume paths, so a list row's own crash badge is correct
-    /// even for a Session nothing has opened yet this run.
+    /// Merges live-runtime fields over the registry row. `stopped` rows get fresh termination info.
     pub async fn summaries(&self) -> Vec<Value> {
         let snapshot = self.registry.lock().await.snapshot();
         let sessions = snapshot.sessions;
@@ -311,9 +243,7 @@ impl SessionManager {
         let launched_mode = serde_json::to_value(self.settings.lock().await.get().approval_mode)
             .expect("ApprovalMode is always JSON-serialisable");
 
-        // Gate round 1 HIGH perf finding (#826): collect the distinct repository ids actually
-        // needed (every Session with no live agent) BEFORE touching git at all, so the `git
-        // worktree list` fetch below runs once per repository, not once per Session.
+        // Collect the needed repository ids first, so git runs once per repository.
         let mut repos_needed: Vec<String> = Vec::new();
         for session in &sessions {
             if self.get_agent(&session.id).is_some() {
@@ -344,13 +274,7 @@ impl SessionManager {
                     }
                 }
                 None => {
-                    // Issue #729 (lane R2, #785): registered with git AND has its own `.git`
-                    // pointer, not merely `fs::metadata` succeeding -- a hand-emptied or
-                    // orphaned-but-still-present folder both satisfied the old `exists()` check
-                    // while being unusable. Gate round 1 (#826): the repository's registered-
-                    // worktree list was already fetched once above (`fetch_worktree_lists`), so
-                    // this is a cheap local `.git` stat plus a lookup, no `git` process per
-                    // Session.
+                    // Valid only if registered with git and its own `.git` pointer exists.
                     let has_repository = repositories.iter().any(|r| r.id == session.repository_id);
                     let validity = if !has_repository {
                         WorktreeValidity::Invalid
@@ -369,11 +293,7 @@ impl SessionManager {
                             registered_validity(Path::new(&session.worktree_path), registered).await
                         }
                     };
-                    // Gate round 1: a timed-out registry check must never read as a confirmed-
-                    // missing worktree (a slow disk/antivirus scan is not proof the worktree is
-                    // gone) -- `Unknown` is mapped the SAME as `Valid` here, optimistically
-                    // assuming the worktree is still there rather than reporting the harsher
-                    // `worktree-missing` on a mere timeout.
+                    // A timed-out check is `Unknown`, treated as valid, not as missing.
                     let stop_reason = match validity {
                         WorktreeValidity::Valid | WorktreeValidity::Unknown => "not-started",
                         WorktreeValidity::Invalid => "worktree-missing",
@@ -410,10 +330,7 @@ impl SessionManager {
         summaries
     }
 
-    /// `sessions.delete` (issue #785, lane R2): drops the live agent from the map once its
-    /// Session is removed from the registry, so a later `get_or_create_agent` call for the same
-    /// (now-deleted) id can never resurrect a process over a worktree `sessions.delete` just
-    /// removed. Callers stop the agent (`shutdown()`) themselves first; this only forgets it.
+    /// Drops the agent once its Session is deleted, so a later call cannot resurrect it.
     pub fn remove_agent(&self, session_id: &str) {
         self.agents
             .lock()
@@ -421,12 +338,7 @@ impl SessionManager {
             .remove(session_id);
     }
 
-    /// `sessions.setVisible` (T036/T037, spec 005 Decision 2): selects which Sessions' patches
-    /// are forwarded (`SessionAgent`'s own `PatchCoalescer` flush closure reads `visible_ids`
-    /// directly). For each NEWLY-visible Session, clears `unread` and flushes a full transcript
-    /// snapshot (`emit_patch_reset`) -- its patches were silently dropped by the coalescer's own
-    /// gate while hidden, so the renderer needs a full catch-up snapshot the moment it becomes
-    /// visible, exactly as the single-id form already did.
+    /// Sets which Sessions forward patches. A newly visible Session gets a full snapshot flush.
     pub async fn set_visible(&self, session_ids: Vec<String>) {
         let next: HashSet<String> = session_ids.into_iter().take(2).collect();
         let newly_visible: Vec<String> = {
@@ -443,8 +355,7 @@ impl SessionManager {
         }
     }
 
-    /// Stops every live agent concurrently (`lib.rs`'s `RunEvent::ExitRequested` handler, port
-    /// of `src/main/index.ts`'s own `before-quit` stop-all).
+    /// Stops every live agent concurrently, for the app-exit path.
     pub async fn stop_all(&self) {
         let agents: Vec<Arc<SessionAgent>> = self
             .agents
@@ -511,16 +422,8 @@ mod tests {
         }
     }
 
-    /// Gate round 1 HIGH perf finding (#826): proves `summaries()`'s batched per-repository
-    /// worktree check (`fetch_worktree_lists`) still reports the right `stopReason` for every
-    /// Session in a repository with 3 registry-only Sessions sharing it -- one healthy, one
-    /// with its `.git` pointer hand-deleted, one whose worktree folder was removed entirely
-    /// (the same three states the old per-Session `worktree_is_valid` call covered). The
-    /// call-count claim ("once per repository, not once per Session") is enforced by this
-    /// file's own structure, not re-proved here: `fetch_worktree_lists` calls
-    /// `list_registered_worktrees` exactly once per distinct repository id (see its own doc
-    /// comment) -- all 3 Sessions below share one repository id, so this test proves the single
-    /// shared fetch result was looked up correctly for all three, never re-fetched or mixed up.
+    /// Checks that batched worktree validity still reports the right `stopReason` per Session.
+    /// Covers healthy, broken `.git`, and missing folder, all sharing one repository.
     #[tokio::test]
     async fn summaries_reports_the_right_stop_reason_for_every_session_sharing_one_repository() {
         let repo = init_repo().await;

@@ -1,24 +1,11 @@
-// Image caps (#771) and image-only send (#744), part of the chat send path (lane R4, issue
-// #787). Port of `src/shared/images.ts` (the one module the renderer's own paste-time check and
-// this build's independent re-check both derive from, constitution Principle V): magic-byte
-// sniffing, header-only dimension parsing (no decode, no image library) and the two caps OMP
-// attachments must never exceed.
-//
-// Extension beyond the straight port (#771, "the Rust validator enforces the cap too, not only
-// the renderer"): `src/main/omp/images.ts`'s own `validateImageAttachment` (the Electron
-// equivalent of this module's `validate_image_attachment`) never calls `readImageDimensions` at
-// all -- only `attachments.ts`'s file-path reader does. That is a real gap in the Electron build
-// itself, not something #787 is asked to leave alone (port the FIXED behaviour, not the bug):
-// `validate_image_attachment` below also enforces `MAX_IMAGE_PIXELS` against the fully decoded
-// buffer, closing the same decompression-bomb class of risk for the base64/clipboard-paste path
-// (`chat.send`'s `images` array) that `attachments.ts` already closed for the file-path read.
+// Image caps and magic-byte/header-only dimension parsing for chat attachments (#771, #744).
+// The decoded validator also enforces `MAX_IMAGE_PIXELS` to close the decompression-bomb path.
 
-/// OMP's own cap (research.md Decision 3): a decoded image over this is rejected, never shrunk.
+/// OMP's own cap: a decoded image over this is rejected, never shrunk.
 pub const MAX_IMAGE_INPUT_BYTES: u64 = 20 * 1024 * 1024;
 
-/// Decompression-bomb guard (#771): a tiny file can still declare an enormous pixel count, which
-/// would allocate a canvas/bitmap far larger than the byte-size cap alone would catch. 40 MP is
-/// comfortably larger than any real screenshot/photo while still bounding worst-case memory.
+/// Decompression-bomb guard (#771): a tiny file can declare an enormous pixel count that the
+/// byte cap alone would not catch.
 pub const MAX_IMAGE_PIXELS: u64 = 40_000_000;
 
 pub const SUPPORTED_IMAGE_MIME_TYPES: &[&str] =
@@ -28,8 +15,7 @@ pub fn is_supported_mime_type(value: &str) -> bool {
     SUPPORTED_IMAGE_MIME_TYPES.contains(&value)
 }
 
-/// Decoded byte length of a base64 string, computed from the string's own length -- never a live
-/// decode: 3 bytes per 4 base64 characters, minus 1 or 2 for trailing `=` padding.
+/// Decoded byte length of a base64 string, computed from its length without decoding.
 pub fn decoded_base64_byte_length(data: &str) -> u64 {
     let len = data.len() as u64;
     if len == 0 {
@@ -45,17 +31,8 @@ pub fn decoded_base64_byte_length(data: &str) -> u64 {
     (len * 3 / 4).saturating_sub(padding)
 }
 
-/// A plain, dependency-free, STRICT base64 decoder (no `base64` crate in this build's
-/// `Cargo.toml`). Gate-fix (Medium, security): a PRIOR version stopped silently at the first
-/// character outside the alphabet, truncating rather than rejecting -- the bytes this function
-/// checked (and the dimensions/pixel-count derived from them) could then differ from whatever
-/// OMP's own, possibly more lenient, base64 decoder makes of the SAME string once it is
-/// forwarded on unchanged, letting a crafted payload hide an over-cap image after a single
-/// invalid byte. This decoder instead REJECTS the whole string (`None`) on: any character
-/// outside the base64 alphabet (other than ASCII whitespace, which is always ignored), or `=`
-/// padding appearing anywhere but the final one-or-two characters of the last four-character
-/// group -- so what this module checks is always exactly the bytes a well-formed, non-lenient
-/// decoder would also produce from the same string.
+/// Dependency-free STRICT base64 decoder: rejects (`None`) any non-alphabet character (ASCII
+/// whitespace aside) or misplaced `=` padding, so a lenient downstream decoder cannot see other bytes.
 pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
     fn value(byte: u8) -> Option<u8> {
         match byte {
@@ -67,11 +44,8 @@ pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
             _ => None,
         }
     }
-    // Gate-fix (perf): a single pass over `data`'s own bytes, no intermediate whitespace-
-    // stripped copy -- `group`/`pad_in_group` track the current (at most 4-wide) group as we
-    // go; padding is only ever valid as the last 1-2 characters of the LAST group (tracked via
-    // `seen_any_padding`: once a padded group closes, no further non-whitespace byte of any
-    // kind may follow).
+    // Single pass, no whitespace-stripped copy; padding is only valid as the last 1-2 chars of
+    // the last group.
     let mut out = Vec::with_capacity(data.len() / 4 * 3 + 3);
     let mut group = [0u8; 4];
     let mut group_len = 0usize; // real (non-padding) characters filled so far
@@ -125,9 +99,7 @@ pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Standard base64 (with `=` padding), used by `ipc::attachments`'s own `readImageFile` to
-/// encode the validated file bytes for the wire -- the one direction `base64_decode` above never
-/// needs, so kept separate rather than folded into one bidirectional helper.
+/// Standard base64 (with `=` padding) for encoding validated file bytes onto the wire.
 pub fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
@@ -160,8 +132,7 @@ pub fn base64_encode(data: &[u8]) -> String {
     out
 }
 
-/// Port of `shared/images.ts`'s own `matchesImageSignature`: checks only the first few bytes of
-/// `bytes` against the declared type's real magic-byte signature, never the whole payload.
+/// Checks only the first few bytes of `bytes` against the declared type's magic-byte signature.
 pub fn matches_image_signature(bytes: &[u8], mime_type: &str) -> bool {
     match mime_type {
         "image/png" => {
@@ -183,8 +154,7 @@ pub fn matches_image_signature(bytes: &[u8], mime_type: &str) -> bool {
     }
 }
 
-/// #514/#432: identifies a buffer's real image type purely by content, never by filename
-/// extension -- tries each supported type's magic-byte signature in turn.
+/// #514/#432: identifies a buffer's real image type by magic bytes, never by filename extension.
 pub fn sniff_image_mime_type(bytes: &[u8]) -> Option<&'static str> {
     SUPPORTED_IMAGE_MIME_TYPES
         .iter()
@@ -225,10 +195,8 @@ fn read_png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((be_u32(bytes, 16)?, be_u32(bytes, 20)?))
 }
 
-/// Port of `shared/images.ts`'s own GIF branch: walks every Image Descriptor in the buffer
-/// (never stopping at the first) and reports `max(screen, every frame's own left+width and
-/// top+height)` -- the worst-case canvas size a non-strict decoder could actually allocate
-/// across every frame, not only the Logical Screen Descriptor's own nominal size.
+/// GIF dimensions: the max of the screen size and every frame's left+width / top+height, the
+/// worst-case canvas a decoder could allocate.
 fn read_gif_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() < 13 {
         return None;
@@ -300,9 +268,7 @@ fn read_gif_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-/// Port of `shared/images.ts`'s own JPEG branch: scans marker segments looking for a Start Of
-/// Frame marker (0xFFC0-0xFFCF, excluding the DHT/JPG/DAC reserved codes), skipping any number of
-/// 0xFF fill bytes real encoders legitimately emit between markers (ITU-T T.81 B.1.1.2).
+/// JPEG dimensions from the Start Of Frame marker, skipping 0xFF fill bytes (ITU-T T.81 B.1.1.2).
 fn read_jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     let mut offset = 2usize;
     while offset + 2 <= bytes.len() {
@@ -343,9 +309,7 @@ fn read_jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
-/// Port of `shared/images.ts`'s own WebP branch: 12-byte "RIFF"+size+"WEBP" container header,
-/// then one chunk whose fourCC picks the lossy/lossless/extended dimension layout (WebP
-/// container spec, "Simple File Format"/"Extended File Format").
+/// WebP dimensions: the RIFF header, then one chunk whose fourCC picks the lossy/lossless/extended layout.
 fn read_webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() < 21 {
         return None;
@@ -384,10 +348,8 @@ fn read_webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
-/// Port of `shared/images.ts`'s own `readImageDimensions`: parses width/height straight out of a
-/// supported format's own header bytes -- no decode, no image library. Returns `None` on a
-/// buffer too short or too malformed to contain a header; every caller REFUSES (fail-closed) a
-/// `None` result rather than treating it as "could not verify, allow it".
+/// Parses width/height from a supported format's header bytes. `None` on a short or malformed
+/// buffer; callers must refuse (fail-closed) a `None`.
 pub fn read_image_dimensions(bytes: &[u8], mime_type: &str) -> Option<(u32, u32)> {
     match mime_type {
         "image/png" => read_png_dimensions(bytes),
@@ -398,11 +360,8 @@ pub fn read_image_dimensions(bytes: &[u8], mime_type: &str) -> Option<(u32, u32)
     }
 }
 
-/// Port of `shared/images.ts`'s own `ImageValidationResult` (bare classification; the caller
-/// builds whatever message it wants, matching `chat.ts`'s own call-site messages). Split into
-/// two over-size reasons (gate-fix, #771): a single `ImageTooLarge` variant used to collapse the
-/// byte-size cap and the pixel-count cap into one message ("Image exceeds the 20 MiB limit"),
-/// which is wrong and confusing for a tiny file that fails only the pixel check.
+/// Bare classification of an image check; the caller builds its own message. The two over-size
+/// reasons stay separate so a pixel-cap failure is not reported as a byte-size one (#771).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageValidationError {
     UnsupportedImageType,
@@ -410,11 +369,8 @@ pub enum ImageValidationError {
     PixelCountTooLarge,
 }
 
-/// Port of `omp/images.ts`'s own `validateImageAttachment` cheap half (FR-018, constitution
-/// Principle V): mime-type and declared-byte-length only, no decode -- gate-fix (perf): callers
-/// run this on the BORROWED `&str` before ever cloning into an owned `String` for
-/// `validate_image_attachment_decoded`'s spawn_blocking call, so a mime-type or over-declared
-/// size rejection never pays for an allocation it doesn't need.
+/// Cheap half: mime type and declared byte length only, no decode, so callers can reject on the
+/// borrowed `&str` before cloning.
 pub fn validate_image_attachment_shape(
     data: &str,
     mime_type: &str,
@@ -428,16 +384,13 @@ pub fn validate_image_attachment_shape(
     Ok(())
 }
 
-/// The expensive half: full decode plus the magic-byte/header/pixel-cap walk. MUST only be
-/// called once `validate_image_attachment_shape` has already passed (bounds the decode to
-/// `MAX_IMAGE_INPUT_BYTES`); run this on a blocking-pool thread since it is CPU, not I/O, work.
-/// See this file's own header for the #771 pixel-cap extension beyond the Electron build.
+/// Expensive half: full decode plus magic-byte/header/pixel-cap walk. Call only after
+/// `validate_image_attachment_shape` passed; run on a blocking-pool thread (CPU-bound).
 pub fn validate_image_attachment_decoded(
     data: &str,
     mime_type: &str,
 ) -> Result<(), ImageValidationError> {
-    // A strict-decode failure (gate-fix: invalid characters or misplaced padding) is refused the
-    // same way an unsupported type is -- malformed base64 is never a valid image either way.
+    // A strict-decode failure is refused like an unsupported type.
     let Some(bytes) = base64_decode(data) else {
         return Err(ImageValidationError::UnsupportedImageType);
     };
@@ -453,9 +406,7 @@ pub fn validate_image_attachment_decoded(
     Ok(())
 }
 
-/// Convenience wrapper running both halves in sequence; kept for callers (and this file's own
-/// tests) that do not need the shape/decoded split itself. `ipc::chat`'s `parse_images_argument`
-/// calls the two halves separately instead (see their own doc comments for why).
+/// Runs both halves in sequence, for callers that do not need the shape/decoded split.
 pub fn validate_image_attachment(data: &str, mime_type: &str) -> Result<(), ImageValidationError> {
     validate_image_attachment_shape(data, mime_type)?;
     validate_image_attachment_decoded(data, mime_type)

@@ -1,7 +1,4 @@
-// Split out of `changes_status.rs` (issue #806, "no god files" -- rustfmt's own line-wrapping
-// pushed that file back over the 600-line cap): the Git changes panel's own numstat-parsing and
-// untracked-file-scoring helpers (spec 018 slice 1, issue #464, FR-019), following `git/mod.rs`'s
-// established split convention -- a behaviour-preserving move, not a redesign.
+// Split from changes_status.rs to keep it under the 600-line cap (#806).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,7 +9,7 @@ use crate::fs::resolve::{
     canonicalize_root, normalize_lexical, resolve_in_worktree_with_root, ResolveReason,
 };
 
-/// Port of `diff_stat.rs`'s own `count_lines`.
+/// Counts lines, treating a trailing newline as the end of the last line.
 fn count_lines(text: &str) -> i64 {
     if text.is_empty() {
         return 0;
@@ -25,20 +22,7 @@ fn count_lines(text: &str) -> i64 {
     trimmed.split('\n').count() as i64
 }
 
-/// Parses `git diff [--cached] --no-renames --numstat -z` output into a path -> (additions,
-/// deletions) map (gate round 1 item 10, issue #464): records are NUL-terminated, not
-/// newline-terminated, in the shape `<added>\t<deleted>\t<path>\0` -- `-z` disables git's own
-/// C-style quoting of a path with unusual bytes (a literal `[id].txt`, or a non-ASCII name), so
-/// the raw bytes between NULs ARE the real path verbatim; the path field is therefore never
-/// `.trim()`ed here (the whole point of `-z` would otherwise be defeated). A genuine `-z`
-/// RENAME numstat record has a SECOND NUL-terminated field (`<old-path>\0`) right after the
-/// first -- but every caller of this function already passes `--no-renames`, so that second-field
-/// shape can never occur; this parser trusts that convention rather than defensively sniffing
-/// for it, same as `--no-renames`'s own existing doc comment below. `--no-renames` means a
-/// rename/copy always reports as a plain delete (old path) plus add (new path) rather than an
-/// `old => new` arrow notation -- a path this map has no entry for (e.g. the discarded old half
-/// of a rename) simply scores 0/0/not-partial, same as any other path git's numstat happens not
-/// to mention.
+/// Parses `--numstat -z` output into a path to (additions, deletions) map, never trimming paths.
 pub(super) fn parse_numstat_map(stdout: &str) -> HashMap<String, (i64, i64)> {
     let mut map = HashMap::new();
     for record in stdout.split('\0') {
@@ -67,66 +51,20 @@ pub(super) fn parse_numstat_map(stdout: &str) -> HashMap<String, (i64, i64)> {
     map
 }
 
-/// #1111 gate round 2 HIGH 1: one untracked path's own containment-proven classification,
-/// shared by `changes_diff.rs::untracked_file_patch` and `score_untracked_file` below (gate
-/// round 2 MEDIUM 6: the duplicated block in both files is now written and fixed in exactly one
-/// place). Never constructed outside this module's own `resolve_untracked_entry`.
+/// One untracked path's classification, shared by the diff and score paths.
 pub(super) enum UntrackedEntry {
-    /// The leaf itself doesn't exist (vanished between the status scan that produced this path
-    /// and this read, or any other reason the final `symlink_metadata` failed) -- a benign race,
-    /// not a security event.
+    /// The leaf is gone, or its metadata could not be read. Treated as a benign race.
     Missing,
-    /// The leaf IS a symlink/junction -- `target_text` is its own unresolved target string,
-    /// exactly git's own view of an untracked symlink's blob. Never read through.
+    /// The leaf is a symlink or junction. Its target text is shown, and it is never read through.
     Symlink { target_text: String },
-    /// The leaf exists but is not a regular file (a directory, FIFO, device node, ...).
+    /// The leaf exists but is not a regular file (directory, FIFO, device).
     NotAFile,
-    /// The leaf is a genuine regular file; `resolved` is its real, already-contained path --
-    /// safe to pass to `fs::read_preview::read_preview` or any other direct file read.
+    /// A regular file whose canonical, containment-checked path is safe to read.
     File { resolved: PathBuf },
 }
 
-/// #1111 gate round 2 HIGH 1 + MEDIUM 6: resolves `path` against `worktree_path`, proving
-/// containment, and classifies its own LEAF (symlink vs regular file vs missing) WITHOUT ever
-/// resolving through a symlink at the leaf itself.
-///
-/// Gate round 1's own fix (`resolve_in_worktree` on the WHOLE path, then `symlink_metadata` on
-/// its result) was dead code: `resolve_in_worktree`'s own walk (`dunce::canonicalize`-based)
-/// fully resolves every symlink in the chain INCLUDING the final segment, so its result can never
-/// itself be a link -- an in-worktree symlink was silently read straight through on every diff/
-/// score pass, regressing #1101's own "never read through a symlink" promise and leaving #1110
-/// unmet. Fixed: only `path`'s PARENT folder is resolved through the containment walk; the
-/// (never independently resolved) LEAF name is then joined onto that real, canonical parent --
-/// `symlink_metadata` on THAT joined path classifies the leaf for what it itself is on disk,
-/// never for what following a chain through it would resolve to.
-///
-/// `path` is normalised to `/`-only BEFORE either `.git` check or the parent/leaf split (gate
-/// round 3 CRITICAL, falsified live by both Code's harness and Sec's planted-token read):
-/// `rsplit_once('/')` alone let a backslash-separated token (`<escaping-junction>\secret.txt`,
-/// `GIT~1\config`) skip the parent containment walk entirely -- `parent` came back empty, `leaf`
-/// was the whole raw token, and `Path::join` then honoured the embedded `\` as a real separator
-/// on Windows, walking straight through an escaping junction/short-name alias with no proof at
-/// all, even though `validate_pathspec` allows `\` and git's own `ls-files -z` happily confirms
-/// the backslash form as untracked.
-///
-/// `.git` is refused both as a raw segment of the as-typed (now slash-normalised) `path` (before
-/// any resolution) and again on the final joined path relative to the canonicalized worktree
-/// root (catches a Windows 8.3 short name that only resolves to `.git` after the fact) --
-/// `fs::list_directory::resolve_list_target`'s own two-step check, mirrored here. A THIRD check
-/// re-runs both of those against the FINAL FILE case's own canonicalized form (gate round 3
-/// CRITICAL defence in depth, Code's MEDIUM): a leaf like `.git.` (trailing dot) never matches
-/// either as-typed check, since the string genuinely isn't `.git` -- but Windows' Win32 layer
-/// silently strips a trailing dot/space before ever touching the filesystem, so the REAL entry
-/// `symlink_metadata`/`read_preview` would open is the gitfile itself. Canonicalizing the file
-/// (not just its parent) and re-checking against what the filesystem actually resolved it to,
-/// rather than what its name merely looks like, closes that gap; `resolved` is replaced by the
-/// canonical form so the eventual read opens exactly what was vetted. Gate round 2 MEDIUM 6: the
-/// worktree root is canonicalized exactly ONCE per call (`canonicalize_root`, then
-/// `resolve_in_worktree_with_root` for the parent -- never a second, redundant canonicalize for
-/// the same containment proof), and a `strip_prefix` failure REFUSES (`OutsideWorktree`) instead
-/// of the previous `unwrap_or_default()`, which silently produced an EMPTY relative path on any
-/// such failure -- trivially passing the `.git`-segment check and skipping the whole
-/// post-resolution guard, a fail-OPEN bug.
+/// Resolves `path` under `worktree_path` with containment proof. Classifies the leaf without
+/// resolving through a symlink there. Backslashes are normalised first, and `.git` is refused.
 pub(super) async fn resolve_untracked_entry(
     worktree_path: &Path,
     path: &str,
@@ -157,17 +95,8 @@ pub(super) async fn resolve_untracked_entry(
         Err(_) => return Ok(UntrackedEntry::Missing),
     };
     if link_metadata.file_type().is_symlink() {
-        // #1111 gate round 3 HIGH (falsified live, verify-1101 Check 4b): classifying the leaf
-        // via `symlink_metadata` above without ever resolving THROUGH it is what fixes the
-        // #1110/#1101-gate-round-1 dead-code bug (resolving the full path first made this branch
-        // unreachable) -- but on its own it stops proving the symlink's OWN target stays inside
-        // the worktree, so an escaping symlink's target text would otherwise render
-        // unconditionally instead of being refused. A SECOND, full-chain resolution of the WHOLE
-        // token (parent *and* leaf, walking through the symlink as `resolve_in_worktree` always
-        // does) re-proves that containment; its resolved value is used ONLY for this proof, never
-        // for reading -- `target_text` below always comes from the single-hop, unresolved
-        // `read_link` instead (git's own view of the symlink, never the far end of a multi-hop
-        // chain).
+        // Never read through the link (its target can be a UNC path, i.e. an NTLM/SMB request);
+        // `read_link` is single-hop text only.
         resolve_in_worktree_with_root(&root_real, &unresolved_root, &path).await?;
         return Ok(match tokio::fs::read_link(&resolved).await {
             Ok(target) => UntrackedEntry::Symlink {
@@ -193,32 +122,15 @@ pub(super) async fn resolve_untracked_entry(
     })
 }
 
-/// Scores one untracked file directly from its own content (there is no index/HEAD side to diff
-/// against): every line counts as an addition, 0 deletions, `partial: true` instead of reading
-/// the content at all once its size exceeds the shared 1 MiB cap. Called on EVERY status
-/// refresh (file-watcher-triggered, not just when a diff is opened), unlike
-/// `changes_diff.rs::untracked_file_patch` (only called when a diff is actually opened) -- issue
-/// #1110: this used to be the one read path in the Git changes panel `untracked_file_patch`'s own
-/// #1101 gate-round-1 containment fix never touched, so `tokio::fs::metadata`/`::read` here still
-/// followed a symlink/junction straight through with no containment check at all, on every single
-/// refresh, purely to compute a `+N` line-count badge (a real risk on Windows: an untracked
-/// symlink's target can be a UNC path, triggering an SMB/NTLM round trip against whatever host it
-/// names, just to paint a badge). Fixed to share `resolve_untracked_entry`'s own containment
-/// proof and leaf classification: a symlink scores one line (git's own view) without ever being
-/// read through; a genuine file is then read through the SAME shared, bounded
-/// `fs::read_preview::read_preview` reader `changes_diff.rs::untracked_file_patch` uses, instead
-/// of this module's own now-removed second hand-rolled `is_binary`/`MAX_FILE_BYTES` copy of that
-/// exact logic.
+/// Scores an untracked file as all-additions, capped at 1 MiB (`partial` above it). Never reads
+/// through a symlink, via the shared `resolve_untracked_entry`.
 pub(super) async fn score_untracked_file(
     worktree_path: &Path,
     relative_path: &str,
 ) -> (i64, i64, bool) {
     let entry = match resolve_untracked_entry(worktree_path, relative_path).await {
         Ok(entry) => entry,
-        // A resolve/containment failure (an escape, a vanished parent, ...) degrades the same
-        // way either way: 0/0, not partial -- the row itself still came from a real status entry
-        // and stays operable, and an escape is never read to produce a real count regardless of
-        // why resolution failed.
+        // A resolve or containment failure scores 0/0, not partial, so an escape is never read.
         Err(_) => return (0, 0, false),
     };
     match entry {
@@ -231,10 +143,7 @@ pub(super) async fn score_untracked_file(
                     (count_lines(&preview.content.unwrap_or_default()), 0, false)
                 }
                 FilePreviewKind::TooLarge => (0, 0, true),
-                // Binary, a vanished-mid-read race, a read error, or an image: scores
-                // 0/0/not-partial, the same "nothing countable" degrade the pre-existing binary/
-                // vanished cases already used -- this is a badge count, not the diff-reason
-                // surface `changes_diff.rs` exposes.
+                // Binary, race, error, or image: nothing countable, so 0/0 and not partial.
                 FilePreviewKind::Binary
                 | FilePreviewKind::Deleted
                 | FilePreviewKind::ReadError

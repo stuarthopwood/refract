@@ -1,14 +1,6 @@
-// Unit tests for `omp::images` (lane R4, issue #787; gate-fix round 1): base64 round trips, the
-// byte and pixel caps at their exact boundaries, and the PNG/GIF/JPEG/WebP header parsers
-// including truncated/corrupt input. `#[path]`-loaded sibling of `images.rs` (excluded from
-// `check:file-size` by its own `.test.rs` name, matching the project's TS `*.test.ts` convention)
-// so the parent file never approaches the 600-line cap.
+// Unit tests for `omp::images`: base64, the size caps, and the image header parsers.
 
 use super::*;
-
-// ---------------------------------------------------------------------------
-// base64
-// ---------------------------------------------------------------------------
 
 #[test]
 fn base64_round_trips_arbitrary_bytes() {
@@ -59,10 +51,7 @@ fn decoded_base64_byte_length_matches_real_decode() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Fixture builders: the smallest buffer each format's own parser actually needs, every
-// non-dimension field filled with an arbitrary (but spec-legal) placeholder value.
-// ---------------------------------------------------------------------------
+// Smallest buffers each parser accepts; non-dimension fields are placeholders.
 
 fn fake_png(width: u32, height: u32) -> Vec<u8> {
     let mut bytes = vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]; // signature
@@ -113,10 +102,6 @@ fn fake_webp_vp8x(width: u32, height: u32) -> Vec<u8> {
     bytes
 }
 
-// ---------------------------------------------------------------------------
-// matches_image_signature / sniff_image_mime_type
-// ---------------------------------------------------------------------------
-
 #[test]
 fn matches_image_signature_true_for_every_supported_format() {
     assert!(matches_image_signature(&fake_png(10, 8), "image/png"));
@@ -147,10 +132,6 @@ fn sniff_image_mime_type_identifies_by_content_only() {
     assert_eq!(sniff_image_mime_type(b"plain text, not an image"), None);
 }
 
-// ---------------------------------------------------------------------------
-// read_image_dimensions: each format, plus truncated/corrupt input (fail-closed -> None)
-// ---------------------------------------------------------------------------
-
 #[test]
 fn read_png_dimensions_reads_real_header() {
     assert_eq!(
@@ -175,8 +156,7 @@ fn read_gif_dimensions_reads_real_header() {
 
 #[test]
 fn read_gif_dimensions_falls_back_to_the_larger_of_screen_and_frame_size() {
-    // Screen declares 1x1, but the real frame is bigger -- the worst-case size must win, not the
-    // nominal screen size (the same decompression-bomb-shaped crafting #771 is guarding against).
+    // The frame can exceed the declared screen size; the larger value must win (#771).
     assert_eq!(
         read_image_dimensions(&fake_gif(500, 400), "image/gif"),
         Some((500, 400))
@@ -254,10 +234,6 @@ fn read_image_dimensions_none_for_unsupported_mime_type() {
     assert_eq!(read_image_dimensions(&fake_png(1, 1), "image/bmp"), None);
 }
 
-// ---------------------------------------------------------------------------
-// validate_image_attachment: byte cap and pixel cap at their exact boundaries (#771)
-// ---------------------------------------------------------------------------
-
 #[test]
 fn validate_image_attachment_rejects_unsupported_mime_type() {
     let data = base64_encode(&fake_png(1, 1));
@@ -273,8 +249,7 @@ fn validate_image_attachment_byte_cap_boundary_n_minus_1_n_n_plus_1() {
     let exact = base64_encode(&vec![0u8; MAX_IMAGE_INPUT_BYTES as usize]);
     let over = base64_encode(&vec![0u8; (MAX_IMAGE_INPUT_BYTES + 1) as usize]);
 
-    // Neither N-1 nor N trips the byte cap (they fail later, on signature, since these are
-    // zero-filled, not a real image) -- only N+1 must report ByteSizeTooLarge specifically.
+    // Only N+1 may trip the byte cap; N-1 and N fail later on signature.
     assert_ne!(
         validate_image_attachment(&under, "image/png"),
         Err(ImageValidationError::ByteSizeTooLarge)
@@ -319,8 +294,7 @@ fn validate_image_attachment_rejects_malformed_base64() {
 
 #[test]
 fn validate_image_attachment_rejects_a_renamed_non_image_file() {
-    // Declares image/png but the real bytes are plain text -- the magic-byte check, not the
-    // declared type, is the real gate.
+    // The magic-byte check, not the declared type, is the real gate.
     let data = base64_encode(b"this is not an image, just text pretending to be one");
     assert_eq!(
         validate_image_attachment(&data, "image/png"),

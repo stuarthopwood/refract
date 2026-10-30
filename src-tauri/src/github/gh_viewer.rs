@@ -1,6 +1,4 @@
-// `PullRequestDetail.viewerLogin` (spec 038, FR-012): the signed-in `gh` user, so the renderer can
-// tell the viewer's own comments from everyone else's. Never fails the caller -- a lookup error
-// resolves to `None` and the renderer simply shows no "You" treatment.
+// Signed-in `gh` user for `PullRequestDetail.viewerLogin`. A lookup error resolves to `None`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -11,8 +9,7 @@ use serde::Deserialize;
 
 use super::gh::gh_json;
 
-/// Short, so switching `gh` accounts is picked up within minutes without a `gh api user` spawn
-/// on every detail load.
+/// Short so account switches are picked up quickly without a spawn per detail load.
 const VIEWER_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
 static VIEWER_CACHE: LazyLock<StdMutex<HashMap<PathBuf, (Instant, String)>>> =

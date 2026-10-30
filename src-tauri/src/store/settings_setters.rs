@@ -1,5 +1,4 @@
-// Plain-replace setters of `SettingsStore`, moved out of `settings.rs` unchanged (issue #1258,
-// the #806 600-line cap). A child module of `settings.rs`, so it reads the store's private fields.
+// Plain-replace setters of `SettingsStore`; child module of `settings.rs` for the size cap (#806).
 use super::{
     clamp_pull_requests_list_width_px, ChatWidth, HolidayTouches, SessionListCollapse, Settings,
     SettingsStore,
@@ -14,8 +13,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setHolidayTouches(value)` (issue #1048): plain-replace shape, as `set_chat_width`
-    /// above uses -- no raw/lazy-correction tracking needed.
+    /// Plain-replace setter (#1048).
     pub async fn set_holiday_touches(
         &mut self,
         value: HolidayTouches,
@@ -27,8 +25,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setDetectImagePathsOnPaste(enabled)` (#514): no raw/lazy-correction tracking
-    /// needed, the same plain-boolean migration shape `set_transcript_display` above uses.
+    /// Plain boolean setter (#514).
     pub async fn set_detect_image_paths_on_paste(
         &mut self,
         enabled: bool,
@@ -40,9 +37,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setWordPredictionEnabled(enabled)` (issue #772, lane R6): no raw/lazy-correction
-    /// tracking needed, the same plain-boolean migration shape `set_detect_image_paths_on_paste`
-    /// above uses.
+    /// Plain boolean setter (#772).
     pub async fn set_word_prediction_enabled(
         &mut self,
         enabled: bool,
@@ -54,10 +49,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setSessionListCollapse(value)` (#735, data-model.md): persists the whole
-    /// `SessionListCollapse` row -- the renderer's `session-list-store.ts` is the sole writer
-    /// and never reads a broadcast back (its own doc comment explains why), so there is no
-    /// raw/lazy-correction tracking here, the same plain-replace shape `set_split` uses.
+    /// Persists the whole `SessionListCollapse` row; the renderer is its sole writer (#735).
     pub async fn set_session_list_collapse(
         &mut self,
         value: SessionListCollapse,
@@ -69,7 +61,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setPullRequestsListWidth(px)` (#930): plain-replace shape, as `set_split` uses.
+    /// Plain-replace setter (#930).
     pub async fn set_pull_requests_list_width_px(
         &mut self,
         width_px: i64,

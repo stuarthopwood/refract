@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-/// Calls at which the Status line shows "Long conversation" with a Hand off button (FR-014).
+/// Calls at which the Status line shows "Long conversation" with a Hand off button.
 pub const LONG_CONVERSATION_CALLS: u32 = 300;
 
 #[derive(Default)]

@@ -1,14 +1,5 @@
-// Port of `src/main/github/gh.ts`: GitHub CLI (`gh`) access for pull request management
-// (specs/003-pull-request-management), lane R9 issue #792. Mirrors `git/git.rs`'s `execFile`
-// discipline: no shell, argument arrays only, an absolute resolved path (security: Windows would
-// otherwise search `cwd` before PATH for a bare name). Every command shape and field name below
-// is cited to research.md / docs/spike/FINDINGS.md rows 37 to 41 (live-probed against gh 2.102.0
-// in the Electron build), except where noted as a reasonable, documented-gh-CLI addition beyond
-// the literal probe set.
-//
-// Distinct from `github/pr_lookup.rs` (spec 004's read-only `pullRequestForBranch`, which keeps
-// its own small `gh`/owner-repo plumbing rather than share this module's, matching the TS file
-// layout this ports).
+// `gh` access for pull request management: no shell, argument arrays, and an absolute resolved
+// path (Windows would otherwise search `cwd` before PATH). `pr_lookup.rs` keeps its own plumbing.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,8 +10,7 @@ use serde::Deserialize;
 
 use crate::git::git::git_raw;
 
-/// Windows-only: `CREATE_NO_WINDOW` (same flag `git_raw`/`OmpProcess` already apply) -- no
-/// console window flashes for a `gh` child process.
+/// Windows-only: `CREATE_NO_WINDOW` so no console flashes for the `gh` child.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,22 +69,12 @@ pub struct GhRawResult {
     pub stdout: String,
     pub stderr: String,
     pub code: i32,
-    /// `true` when the 15s timeout aborted the process -- distinguishes a hang from an ordinary
-    /// non-zero exit.
+    /// `true` when the 15s timeout aborted the process (a hang, not a non-zero exit).
     pub timed_out: bool,
 }
 
-/// Resolves `gh`: checks the fixed per-user portable-install path
-/// (`%LOCALAPPDATA%\refract\tools\gh\gh.exe`, where lane R11b's `updates::dependency_install::
-/// install_github_cli` copies the portable zip's `gh.exe`) FIRST, every call -- a plain
-/// `Path::is_file` check, cheap enough to never cache, so an install that just completed is
-/// found immediately with no relaunch needed and no stale-cache problem to reason about. Falls
-/// back to `PATH` (honouring `PATHEXT`), cached for the process lifetime like
-/// `process::executables::resolve_omp` (that branch alone is safe to cache: a system-wide PATH
-/// install already needs a relaunch for this process to see it, same as `resolve_omp`).
-/// `pub(crate)`: lane R11b's `updates::gh_client` shares this one resolver (gate finding, PR
-/// #829 round 1: two independent resolvers that both only checked PATH meant a fresh portable
-/// install was never found by either).
+/// Resolves `gh`: the portable install is rechecked every call (no relaunch needed); the `PATH`
+/// fallback is cached. Shared with `updates::gh_client` (#829).
 pub(crate) fn resolve_gh() -> Result<std::path::PathBuf, ()> {
     if let Some(dir) = dirs::data_local_dir() {
         let candidate = dir.join("refract").join("tools").join("gh").join("gh.exe");
@@ -107,13 +87,8 @@ pub(crate) fn resolve_gh() -> Result<std::path::PathBuf, ()> {
     CACHE.clone()
 }
 
-/// Runs `gh <args>` with no shell in `cwd`. Never fails on a non-zero exit; callers branch on
-/// `.code`/`.timed_out`. Fails only when `gh` itself cannot be found on PATH --
-/// `not_found_code` lets `cli.rs`'s account commands keep their own `gh-not-found` vocabulary
-/// while sharing this one timed/resolved runner; every pull-request call site below passes
-/// `None` and keeps today's `gh-unavailable` behaviour. `timeout` lets lane R11b's
-/// `updates::gh_client` share this one runner with its own, longer download timeout rather than
-/// forking a second spawn-with-timeout implementation (gate finding, PR #829 round 2).
+/// Runs `gh <args>` with no shell in `cwd`; fails only when `gh` is not found.
+/// `not_found_code` and `timeout` are overridable for `cli.rs` and `updates::gh_client` (#829).
 pub async fn gh_raw(
     cwd: &Path,
     args: &[&str],
@@ -157,10 +132,8 @@ pub async fn gh_raw(
     }
 }
 
-/// Research.md "Polling interval and rate-limit headroom": the rate-limited signal is `gh`'s own
-/// `HTTPError.Error()` format ("HTTP 403/429: <GitHub message> (<url>)"), sourced from cli/go-gh's
-/// published error formatting, not reproduced live (forbidden -- real shared-account quota risk).
-/// `gh-unavailable` covers not-signed-in and offline.
+/// Rate-limit detection keys off `gh`'s `HTTPError` format ("HTTP 403/429: ..."), not reproduced
+/// live to spare shared quota. `gh-unavailable` covers not-signed-in and offline.
 pub(super) fn map_gh_failure(stderr: &str, stdout: &str) -> GhError {
     let text = format!("{stderr}\n{stdout}").to_lowercase();
     if text.contains("rate limit") {
@@ -192,13 +165,8 @@ pub(super) fn map_gh_failure(stderr: &str, stdout: &str) -> GhError {
     )
 }
 
-/// Security finding (code review, 2026-10-14): every string this returns can reach the renderer
-/// (`GhError.message`, surfaced via `ipc::pull_requests`'s own error mapping) or a debug log
-/// (`ipc::accounts::map_gh_error`) -- `gh`'s own stderr/stdout can echo back a `--body`/`--user`
-/// argument the caller passed in, which in turn could contain a credential-shaped substring a
-/// user pasted into a comment or branch name. Redacted before it ever leaves this function
-/// (`crate::omp::redact::redact_secrets`, ported from `src/main/omp/redact.ts`); the fixed
-/// `fallback` string never needs it.
+/// Returned strings reach the renderer and logs, and `gh` stderr can echo a pasted credential, so
+/// they are redacted here; the fixed `fallback` needs none.
 pub(crate) fn non_empty_or(stderr: &str, stdout: &str, fallback: &str) -> String {
     let stderr = stderr.trim();
     if !stderr.is_empty() {
@@ -238,9 +206,8 @@ struct GraphqlError {
     message: String,
 }
 
-/// `gh api graphql -f query=<query> [-f k=v | -F k=v]...`. Variables are passed as `-f`/`-F`
-/// fields, never interpolated into the query string, so no caller-supplied text (a comment body,
-/// a thread id) can ever need hand-escaping or risk breaking/injecting into the query.
+/// `gh api graphql -f query=<query> [-f k=v | -F k=v]...`. Variables are `-f`/`-F` fields, never
+/// interpolated into the query, so caller text cannot inject into it.
 pub async fn gh_graphql<T: serde::de::DeserializeOwned>(
     cwd: &Path,
     query: &str,
@@ -298,17 +265,8 @@ pub enum GraphqlValue<'a> {
     Int(i64),
 }
 
-/// `owner/repo`, inferred from the repository's `origin` remote URL. Handles both the HTTPS
-/// (`https://github.com/<owner>/<repo>.git`) and SSH (`git@github.com:<owner>/<repo>.git`)
-/// forms; `.git` suffix and any trailing slash are stripped.
-///
-/// Perf finding (code review, 2026-10-14): cached per `repo_path`, keyed by the owning
-/// `PathBuf` -- every caller (`list`, every non-Open-tab row, `detail`, every mutation) used to
-/// spawn a fresh `git remote get-url` process plus re-parse the result for a value that never
-/// changes for a given repository while this process runs. A repository's `origin` remote
-/// changing mid-session (rare) is not detected until the next process restart; this matches the
-/// same "worth caching, acceptable to go stale until restart" trade-off `resolve_gh`/
-/// `resolve_gh_for_spawn` already make for the `gh` binary path.
+/// `owner/repo` from the `origin` remote (HTTPS or SSH, `.git` and trailing slash stripped).
+/// Cached per `repo_path`; a mid-session remote change is not seen until restart.
 pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhError> {
     static CACHE: LazyLock<StdMutex<HashMap<PathBuf, (String, String)>>> =
         LazyLock::new(|| StdMutex::new(HashMap::new()));
@@ -339,11 +297,8 @@ pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhErro
     Ok(owner_repo)
 }
 
-/// `owner`/`repo` segments only ever contain what GitHub itself allows in a repository's
-/// owner/name (LOW finding, code review 2026-10-14): rejects `.`/`..` outright (which would
-/// otherwise build a path-traversal-shaped `gh api repos/../x/...` argument) and anything
-/// outside `[A-Za-z0-9._-]`. The request this builds still only ever reaches `api.github.com`
-/// with the developer's own `gh` session, so this is defence in depth, not a live exploit.
+/// Segments may only hold GitHub's owner/name characters (`[A-Za-z0-9._-]`); `.`/`..` are rejected
+/// to avoid a traversal-shaped `gh api repos/../x` argument (defence in depth).
 pub(super) fn is_valid_owner_or_repo_segment(segment: &str) -> bool {
     !segment.is_empty()
         && segment != "."
@@ -353,9 +308,8 @@ pub(super) fn is_valid_owner_or_repo_segment(segment: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
-/// Parses `owner/repo` out of a `github.com` HTTPS or SSH remote URL, case-insensitively on the
-/// host, anchored (no extra path segments, query string, or fragment) the same way the ported
-/// TS regexes were.
+/// Parses `owner/repo` from a `github.com` HTTPS or SSH remote URL; host is case-insensitive and
+/// extra path segments, query or fragment are refused.
 fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
     if let Ok(url) = tauri::Url::parse(remote_url) {
         let scheme_ok =
@@ -387,9 +341,7 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
         return None;
     }
     const SSH_PREFIX: &str = "git@github.com:";
-    // `.get(..)` rather than `remote_url[..]` indexing (LOW finding, code review 2026-10-14): a
-    // crafted remote with non-ASCII text at exactly byte 15 would otherwise panic by slicing
-    // inside a multi-byte character instead of simply failing this prefix match.
+    // `.get(..)`, not indexing: non-ASCII text at byte 15 would panic mid-character.
     let prefix = remote_url.get(..SSH_PREFIX.len())?;
     if prefix.eq_ignore_ascii_case(SSH_PREFIX) {
         let rest = remote_url[SSH_PREFIX.len()..].trim_end_matches('/');
@@ -405,14 +357,7 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
     None
 }
 
-// ---------------------------------------------------------------------------
-// Shared wire primitives (used by `gh_pull_requests.rs` and `gh_mutations.rs` alike)
-// ---------------------------------------------------------------------------
-
-/// `login` is absent when the actor is a Team (`gh`/GraphQL sends `{"__typename":"Team","name":
-/// ...,"slug":...}` for a team review request or assignee, with no `login` field at all) --
-/// `map_actor` falls back to `'unknown'` for that case, exactly like the ported TS's own
-/// `actor?.login ?? 'unknown'` (a plain optional-chain, not a runtime-validated shape).
+/// `login` is absent for a Team actor (`__typename: "Team"`); `map_actor` falls back to `'unknown'`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GhActor {
     #[serde(default)]
@@ -462,8 +407,6 @@ pub struct GhCheckRun {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- parse_owner_repo ---
 
     #[test]
     fn parses_https_with_git_suffix() {
@@ -532,12 +475,9 @@ mod tests {
 
     #[test]
     fn ssh_prefix_check_never_panics_on_non_ascii_boundary() {
-        // Byte 15 (`SSH_PREFIX.len()`) falls inside this multi-byte character; `.get(..)` must
-        // return `None` instead of panicking on a non-char-boundary slice.
+        // Byte 15 falls inside this multi-byte character; `.get(..)` must return `None`.
         assert_eq!(parse_owner_repo("git@github.co\u{1F600}wner/repo"), None);
     }
-
-    // --- map_gh_failure ---
 
     #[test]
     fn maps_rate_limit() {
@@ -579,8 +519,7 @@ mod tests {
 
     #[test]
     fn map_gh_failure_redacts_a_github_token_found_in_stderr() {
-        // Split across fragments (same convention as `omp/redact_tests.rs`) so no single
-        // literal in this source file reads as a real live credential.
+        // Split into fragments so no source literal reads as a live credential.
         let token = format!("{}{}", "ghp_", "1234567890abcdef");
         let stderr = format!("some unexpected gh error: {token}");
         let err = map_gh_failure(&stderr, "");

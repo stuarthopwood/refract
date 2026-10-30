@@ -1,15 +1,5 @@
-// Fixture-based tests for `redact.rs`'s `redact_secrets` pure text transform (lane R9, issue
-// #792's own acceptance: "no secret appears in any log"). Split from `redact.rs` itself
-// (`#[path = "redact_tests.rs"]` at its tail) to stay under the 600-line-per-file cap (issue
-// #806), the same pattern `ipc/pull_requests/mapping_tests.rs` already uses for splitting a
-// module by concern, applied test-only here. One test per `src/main/omp/redact.ts` pattern
-// group, plus the two named false-positive guards and the cycle-4/5/6/7 regressions its own
-// comments call out by name.
-//
-// A handful of fixtures below assemble a credential-shaped string from two or more literal
-// fragments via `format!` instead of one contiguous string literal -- deliberately, so no
-// single literal in this source file itself reads as a real live credential; the fragments
-// only form the shape `redact_secrets` targets once concatenated at test-run time.
+// Fixture tests for `redact_secrets` (#792, split out of `redact.rs` for the file-size cap).
+// Credential-shaped fixtures are built from fragments so no literal reads as a live secret.
 
 use super::*;
 
@@ -46,8 +36,7 @@ fn bare_jwt_is_redacted() {
 
 #[test]
 fn provider_token_shapes_are_redacted() {
-    // AWS access key ID: `AKIA`/`ASIA` prefix + exactly 16 chars, split across the natural
-    // prefix/body boundary so the whole shape never appears as one literal in this file.
+    // AWS access key ID, split so the whole shape is never one literal.
     let aws_key = format!("{}{}", "AKIA", "IOSFODNN7EXAMPLE");
     assert_eq!(redact_secrets(&aws_key), "[redacted]");
     // Bare Google/Gemini API key: `AIza` + exactly 35 chars.
@@ -55,7 +44,7 @@ fn provider_token_shapes_are_redacted() {
         redact_secrets(&format!("AIza{}", "A".repeat(35))),
         "[redacted]"
     );
-    // Slack bot token: `xoxb-` prefix + body, same split rationale as the AWS key above.
+    // Slack bot token, split like the AWS key.
     let slack_token = format!("{}{}", "xoxb-", "1234567890-abcdefghijklmnop");
     assert_eq!(redact_secrets(&slack_token), "[redacted]");
     // GitLab PAT, npm token, Hugging Face token.
@@ -66,8 +55,7 @@ fn provider_token_shapes_are_redacted() {
 
 #[test]
 fn full_private_key_block_is_redacted() {
-    // BEGIN/END markers assembled from split fragments (see module doc comment) so the full
-    // PEM block shape never appears as one literal in this file.
+    // BEGIN/END markers split so the PEM block shape is never one literal.
     let begin = format!("{}{}", "-----BEGIN PRIVATE", " KEY-----");
     let end = format!("{}{}", "-----END PRIVATE", " KEY-----");
     let block = format!("{begin}\nc29tZWJhc2U2NGJvZHk=\n{end}");
@@ -76,8 +64,7 @@ fn full_private_key_block_is_redacted() {
 
 #[test]
 fn truncated_tail_with_no_begin_marker_is_still_redacted() {
-    // Cycle 7: a read window that starts PARTWAY through a key block (BEGIN already scrolled
-    // out) must still redact the remaining base64 body up to and including the END marker.
+    // A window starting partway through a key block must still redact up to the END marker.
     let tail = "c29tZWJhc2U2NGJvZHk=\n-----END PRIVATE KEY-----";
     assert_eq!(redact_secrets(tail), "[redacted private key]");
 }
@@ -97,9 +84,8 @@ fn key_value_pairs_redact_the_value_and_keep_the_key_name() {
 
 #[test]
 fn escaped_nested_json_value_still_redacts() {
-    // Cycle 3: a value escaped a level deeper (an outer-quoted log field embedding a provider's
-    // own JSON error body) must still redact -- an escaped closing quote (`\"`) is treated as
-    // escaped content inside the value, not a terminator.
+    // A value escaped a level deeper (JSON error body inside a quoted log field) still redacts;
+    // an escaped closing quote is content, not a terminator.
     let input = r#"error=\"{\"api_key\":\"abc123\"}\""#;
     let result = redact_secrets(input);
     assert_eq!(result, r#"error=\"{\"api_key\":[redacted]"#);
@@ -111,9 +97,7 @@ fn escaped_nested_json_value_still_redacts() {
 
 #[test]
 fn unterminated_value_does_not_swallow_the_next_line() {
-    // Cycle 3/4: a value with no closing quote at all (a truncated line) still redacts instead
-    // of passing through untouched -- but must stop at the newline rather than swallowing the
-    // next, unrelated line.
+    // An unterminated value still redacts, but stops at the newline.
     let input = "token=\"abc\nnext line unrelated text";
     assert_eq!(
         redact_secrets(input),
@@ -125,8 +109,7 @@ fn unterminated_value_does_not_swallow_the_next_line() {
 fn bare_key_false_positive_guards_do_not_redact() {
     // "monkey": bare lowercase `key` as the tail of an ordinary word is not a secret.
     assert_eq!(redact_secrets("monkey"), "monkey");
-    // "OAuth: failed to refresh": bare `auth` inside "OAuth:" is not the `auth` key-name
-    // pattern (cycle 6's `(?<![A-Za-z])` guard).
+    // "OAuth: failed to refresh": bare `auth` inside "OAuth:" is not the `auth` key pattern.
     assert_eq!(
         redact_secrets("OAuth: failed to refresh"),
         "OAuth: failed to refresh"
@@ -135,7 +118,7 @@ fn bare_key_false_positive_guards_do_not_redact() {
 
 #[test]
 fn camel_case_key_names_still_redact() {
-    // Cycle 4: restored after cycle 3's lookbehind wrongly blocked every camelCase form.
+    // camelCase key forms must redact.
     assert_eq!(
         redact_secrets(r#"sessionToken="abc""#),
         "sessionToken=[redacted]"
@@ -148,9 +131,7 @@ fn camel_case_key_names_still_redact() {
 
 #[test]
 fn bare_cased_key_name_regressions_still_redact() {
-    // Cycle 4: bare upper-case `KEY` (underscore-prefixed, as in `PRIVATE_KEY`) and bare
-    // camelCase `Key` right after a lowercase letter (`secretKey`) both go through the
-    // explicitly-cased bare-`key` pattern, not the shared key=value group above.
+    // Bare upper-case `KEY` (`PRIVATE_KEY`) and camelCase `Key` (`secretKey`) use the bare-`key` pattern.
     assert_eq!(
         redact_secrets("PRIVATE_KEY=secret123"),
         "PRIVATE_KEY=[redacted]"
@@ -177,7 +158,7 @@ fn authorization_and_json_quoted_cookie_header_values_are_redacted() {
         redact_secrets(r#"{"Cookie":"sid=abc"}"#),
         r#"{"Cookie":[redacted]}"#
     );
-    // Cycle 4: `SET-COOKIE:` (upper case) must redact too, not just `Cookie:`/`cookie:`.
+    // Upper-case `SET-COOKIE:` must redact too.
     assert_eq!(
         redact_secrets("SET-COOKIE: sid=abc123"),
         "SET-COOKIE: [redacted]"
@@ -194,9 +175,8 @@ fn non_http_url_userinfo_is_redacted_and_host_is_preserved() {
         redact_secrets("redis://:pw@host"),
         "redis://[redacted]@host"
     );
-    // Cycle 6: a raw `@` inside the password itself (not just the URL-vs-email ordering case
-    // below) must not truncate the match early -- redaction stops at the LAST unescaped `@`
-    // before the host, so `@host/db` is never swallowed.
+    // A raw `@` inside the password must not truncate the match; redaction stops at the last
+    // unescaped `@` before the host.
     assert_eq!(
         redact_secrets("postgres://u:p@ss@host/db"),
         "postgres://[redacted]@host/db"
@@ -210,9 +190,7 @@ fn email_address_is_redacted() {
 
 #[test]
 fn url_userinfo_pattern_runs_before_email_pattern() {
-    // Cycle 6: the email pattern used to run first and would match
-    // `<rest-of-password>@host.tld` inside the URL login, consuming the `@` the URL pattern
-    // needed. The userinfo must be redacted, not a false email match.
+    // The email pattern must not consume the `@` the URL userinfo pattern needs.
     assert_eq!(
         redact_secrets("redis://:Abc#def@cache.example.com"),
         "redis://[redacted]@cache.example.com"
@@ -229,12 +207,8 @@ fn plain_diagnostic_text_passes_through_unchanged() {
 
 #[test]
 fn token_immediately_after_a_non_ascii_letter_is_still_redacted() {
-    // The TS source has no `/u` flag, so its `\b` is ASCII-only: a non-ASCII letter is never a
-    // "word" character there, so a boundary still exists between it and an immediately
-    // following token. `fancy_regex`'s `\b` is Unicode-aware by default, which would treat
-    // `Ω` and `s` as the SAME word-char class and find no boundary at all between them --
-    // silently passing the token through unredacted. Built via `format!` from split fragments
-    // (see module doc comment) so the token shape never appears as one literal in this file.
+    // The TS `\b` is ASCII-only but `fancy_regex`'s is Unicode-aware; a token after a non-ASCII
+    // letter must still redact. Split fragments keep the token from being one literal.
     let token = format!("{}{}", "sk-ant-api03-", "1234567890abcdef");
     let input = format!("Ω{token}");
     assert_eq!(redact_secrets(&input), "Ω[redacted]");
@@ -243,26 +217,20 @@ fn token_immediately_after_a_non_ascii_letter_is_still_redacted() {
 #[test]
 fn bound_to_tail_bytes_caps_length_and_respects_char_boundaries() {
     assert_eq!(super::bound_to_tail_bytes("short", 100), "short");
-    // No newline anywhere in the truncated window: nothing survives past the cut at all, since
-    // there is no line boundary to cut at -- the whole window is "maybe mid-token".
+    // No newline in the window: nothing survives the cut ("maybe mid-token").
     assert_eq!(
         super::bound_to_tail_bytes(&"a".repeat(20), 5),
         "[truncated]"
     );
-    // "é" is a 2-byte UTF-8 character; a byte-only cut at its midpoint would panic when
-    // slicing. Bounding to 3 of this 6-byte string's bytes would land inside "é" (bytes 2-3);
-    // the cut must advance past it to the next char boundary before looking for a newline.
+    // "é" is 2 bytes; a cut at byte 3 lands inside it and must advance to the next char boundary.
     let multi_byte = "abécd";
     assert_eq!(multi_byte.len(), 6);
     let bounded = super::bound_to_tail_bytes(multi_byte, 3);
     assert_eq!(bounded, "[truncated]"); // "cd" alone has no newline to cut at either
 }
 
-/// Security regression (gate round 3, 2026-10-14): a plain byte-offset cut (even one already
-/// moved to a UTF-8 char boundary) used to land MID-TOKEN, leaving an unrecognisable fragment
-/// of a credential (`hunter2…`, `sk-ant-…`) on the surviving side of the cut -- no pattern
-/// matches a partial token, so it passed through completely unredacted. The fix drops
-/// everything up to the first newline inside the bounded window instead.
+/// A cut landing mid-token must not leave a credential fragment: everything up to the first
+/// newline in the bounded window is dropped.
 #[test]
 fn truncation_never_splits_a_credential_mid_token() {
     let token = format!("sk-{}", "a".repeat(40));
@@ -276,22 +244,9 @@ fn truncation_never_splits_a_credential_mid_token() {
 
 #[test]
 fn backtrack_limit_exhaustion_fails_closed_with_the_placeholder() {
-    // The bare-`key` pattern is one of the three lookaround-bearing patterns `redact.rs`'s own
-    // module doc names (key=value, bare-`key`, URL-userinfo) that run through `fancy_regex`'s
-    // slower backtracking engine. Repeating a dense near-miss shape -- `key` with neither a
-    // preceding/following ASCII letter to clear its guards, nor a `:`/`=` separator ever
-    // following -- forces its three lookaround alternatives to be tried at every position
-    // across the whole string with no match ever completing.
-    //
-    // This needs tens of KB to actually exceed `fancy_regex`'s default 1,000,000-step
-    // backtrack budget (each failed position costs a small, bounded amount of work; these
-    // patterns are deliberately written to avoid the unbounded nested-quantifier blowup that
-    // would make a much smaller input dangerous -- see their own "ReDoS-bounded" comments).
-    // That's comfortably past `redact_secrets`'s own 8 KiB bound (`MAX_REDACTION_INPUT_BYTES`):
-    // the bound alone already protects every caller long before this limit would ever bite, so
-    // there is no adversarial input that both fits inside the bound and trips the limit. This
-    // test instead drives `apply_patterns`, the unbounded inner step, directly -- the escape
-    // hatch this function was factored out for -- to prove the fail-closed fallback is real.
+    // A dense near-miss `key` shape forces the lookaround patterns to be tried at every position.
+    // It needs tens of KB to exceed the default backtrack budget, past the 8 KiB input bound, so
+    // this drives `apply_patterns` directly to prove the fail-closed fallback.
     let adversarial = "xkeyx".repeat(12_800); // 64,000 bytes: well past the 8 KiB bound
     assert!(
         adversarial.len() > super::MAX_REDACTION_INPUT_BYTES,
@@ -301,9 +256,7 @@ fn backtrack_limit_exhaustion_fails_closed_with_the_placeholder() {
         super::apply_patterns(&adversarial).is_err(),
         "expected this input to exceed fancy_regex's backtrack limit"
     );
-    // The exact fallback expression `redact_secrets` itself evaluates on an `Err`, proving it
-    // really does substitute the fixed placeholder rather than a partially-redacted or
-    // unredacted string.
+    // The fallback expression `redact_secrets` evaluates on an `Err`: a fixed placeholder.
     let result = super::apply_patterns(&adversarial)
         .unwrap_or_else(|()| super::REDACTION_FAILURE_PLACEHOLDER.to_string());
     assert_eq!(result, "[diagnostic withheld]");

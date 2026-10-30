@@ -1,14 +1,8 @@
-// `session::agent`'s own narrow error/status/pending-request types, split out of `mod.rs` itself
-// (code-review finding, 2026-10-14: `mod.rs` was exactly 600 lines with no headroom left for the
-// `session_id()` lane accessor). `mod.rs` re-exports all three
-// (`pub use types::{AgentError, PendingRequest, SessionStatus}`), so every existing
-// `crate::session::agent::{AgentError, SessionStatus}` (from `session/mod.rs`) and
-// `super::{AgentError, PendingRequest, SessionStatus}` import across `session/agent/*` keeps
-// resolving unchanged.
+// Error, status, and pending-request types for `session::agent`. `mod.rs` re-exports them.
 
 use serde::Serialize;
 
-/// `src/shared/model.ts`'s own `SessionStatus` union.
+/// Mirrors the renderer's `SessionStatus` union.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionStatus {
@@ -18,37 +12,12 @@ pub enum SessionStatus {
     Stopped,
 }
 
-/// Port of `exitVerdictGuard.ts`'s own `shouldApplyCrashExitVerdict`, narrowed to the
-/// `statusNow !== 'stopped'` half of its two-part guard. Used by `mod.rs`'s own
-/// `set_stopped_unless_already_stopped` (`handle_exit`'s crash branch): skips the verdict once
-/// something more authoritative (a synchronous `launch()` failure path) already moved the
-/// Session to `stopped` for this same life.
-///
-/// Gate-fix (round 2, 2026-10-14): this doc comment previously claimed the other half of TS's
-/// guard (`lifeEpochNow === epochAtExit`) was a scope cut -- "this build does not implement
-/// restart()/mode-change-respawn, so there is no lifeEpoch concept to compare". That framing
-/// went stale the moment this SAME lane's own round-6 epoch work landed: `handle_exit`
-/// (`frame.rs`) now computes `is_current` -- an `Arc::as_ptr` identity check of its own `proc`
-/// argument against `state.process` -- and returns early, before this function (or
-/// `set_stopped_unless_already_stopped`) is EVER called, for any exit belonging to an
-/// already-superseded life. That is the TS "newer life" guard's equivalent: not a missing
-/// feature, just a differently-shaped one. There is no literal 3-argument Rust twin of
-/// `shouldApplyCrashExitVerdict` to write (TS compares two integers passed INTO a pure
-/// function; this port compares a pointer INSIDE the stateful `handle_exit`, before this
-/// function is even reached), so `status_now` staying this function's only parameter is
-/// correct, not an oversight. `is_current`'s own "stale exit never applies a crash verdict"
-/// behaviour has no test yet anywhere in this tree (confirmed: no test references
-/// `handle_exit`/`is_current`) -- that coverage belongs in a `frame.rs`-owned test module
-/// (`frame.test.rs`, sibling convention `commands.rs`/`requests.rs` already use), not here.
+/// Skips the crash verdict when the Session already moved to `stopped` for this life.
+/// The stale-life check lives in `handle_exit` (`is_current`), not here.
 pub(super) fn should_apply_crash_exit_verdict(status_now: SessionStatus) -> bool {
     status_now != SessionStatus::Stopped
 }
 
-/// `should_apply_crash_exit_verdict`'s own doc comment explains why TS's two "newer life" cases
-/// (`shouldApplyCrashExitVerdict('idle', 4, 3)` / `('stopped', 4, 3)`) have no equivalent case
-/// in this module: the guard they prove now lives in `frame.rs`'s `handle_exit` (`is_current`),
-/// not in this 1-argument function, so there is nothing this module's pure-function style can
-/// assert for them.
 #[cfg(test)]
 mod exit_verdict_guard_tests {
     use super::{should_apply_crash_exit_verdict, SessionStatus};
@@ -74,9 +43,7 @@ mod exit_verdict_guard_tests {
     }
 }
 
-/// Errors a `SessionAgent` method can produce; `code` matches one of `src/shared/ipc.ts`'s
-/// `IpcErrorCode` values (`ipc::chat::map_chat_error`/`ipc::map_session_thrown`-equivalent
-/// mapping happens at the IPC layer, not here).
+/// Errors a `SessionAgent` method can produce. `code` matches an `IpcErrorCode` value.
 #[derive(Debug)]
 pub struct AgentError {
     pub code: &'static str,
@@ -100,9 +67,7 @@ impl std::fmt::Display for AgentError {
 
 impl std::error::Error for AgentError {}
 
-/// `src/shared/model.ts`'s own `PendingRequest` union (`dialogs.ts`'s `classifyDialog` output).
-/// `rename_all_fields` (not `rename_all`, which only renames variants) gives the camelCase field
-/// names the renderer matches on (`requestId`, `optionDetails`, `inputKind`).
+/// Mirrors the renderer's `PendingRequest` union. `rename_all_fields` gives camelCase fields.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AskOption {
@@ -111,7 +76,7 @@ pub struct AskOption {
     pub description: Option<String>,
 }
 
-/// `src/shared/model.ts`'s own `AskQuestion` (one entry of `PendingRequest::Ask`'s `questions`).
+/// One question of a `PendingRequest::Ask`.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AskQuestion {
@@ -134,7 +99,7 @@ pub enum PendingRequest {
         tool: String,
         target: String,
         details: Vec<String>,
-        /// #1140: the `select` frame's own option labels, in OMP's order, answered verbatim.
+        /// Option labels in OMP's order; answered verbatim (#1140).
         options: Vec<String>,
     },
     #[serde(rename = "question")]
@@ -158,9 +123,7 @@ pub enum PendingRequest {
 }
 
 impl PendingRequest {
-    // `pub(super)` (not private): `types` is now a sibling module of `frame`/`requests` rather
-    // than the same module they used to share, so this needs to stay visible to all of
-    // `session::agent` and its descendants, same reach it already had before the split.
+    // `pub(super)`: sibling modules of `session::agent` need access.
     pub(super) fn request_id(&self) -> &str {
         match self {
             Self::Approval { request_id, .. }

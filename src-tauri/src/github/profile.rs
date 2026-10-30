@@ -1,16 +1,5 @@
-// Port of `src/main/github/profile.ts`: per-account GitHub profile/avatar fetch (research.md
-// decisions 3-5, contracts/ipc.md), lane R9 issue #792. `fetch_profile` reads a short-lived token
-// for one account via the GitHub CLI (`cli::auth_token`), makes one bounded HTTPS request to
-// GitHub's REST API with it, and discards the token immediately -- it lives only in this
-// function's local scope for that one request, never logged, never written to disk, never sent
-// over IPC to the renderer (FR-012, constitution Principle V). `fetch_avatar` makes a second
-// bounded request that validates and inlines that account's avatar as a `data:` URL (FR-007,
-// decision 4) so the renderer never loads a remote image, or makes the request, itself.
-//
-// `HTTP_CLIENT` below is built with `redirect::Policy::none()`: `reqwest`'s own automatic
-// redirect following is never enabled. `fetch_avatar` implements its own redirect loop so every
-// hop can be re-validated against the avatar host allowlist before it is ever requested
-// (SSRF-via-redirect), matching the ported TS's own manual loop byte for byte.
+// Per-account profile/avatar fetch. The token is read for one bounded HTTPS request, then
+// dropped; never logged, written to disk, or sent over IPC. Redirects are re-validated per hop.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -25,22 +14,17 @@ use super::cli::auth_token;
 use super::gh::GhError;
 
 const API_HOST: &str = "api.github.com";
-// GateSec008 HIGH / GateCode008 CRITICAL: the REST call below is hard-coded to `API_HOST`, so a
-// token for any other host (GitHub Enterprise, say) must never even be read, let alone sent
-// there. `fetch_profile` enforces this before `auth_token` is ever called.
+// Only github.com tokens are ever read: the REST call is hard-coded to `API_HOST`.
 const SUPPORTED_AUTH_HOST: &str = "github.com";
 const AVATAR_HOST: &str = "avatars.githubusercontent.com";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-// A GitHub user profile JSON document is a few hundred bytes; generously bounded so a buggy or
-// malicious response can never be buffered in full.
+// Profile JSON is a few hundred bytes; the cap stops a malicious response being buffered.
 const MAX_PROFILE_RESPONSE_BYTES: usize = 64 * 1024;
-// research.md decision 4: comfortably above GitHub's own largest served avatar size.
+// Comfortably above GitHub's largest served avatar.
 const MAX_AVATAR_BYTES: usize = 256 * 1024;
 const MAX_AVATAR_REDIRECTS: u32 = 5;
 
-/// Built once: redirects are NEVER followed automatically (`fetch_avatar` re-validates every hop
-/// against `AVATAR_HOST` itself before requesting it), and a blanket 10s timeout matches both
-/// callers' own `REQUEST_TIMEOUT`.
+/// Built once; redirects are never auto-followed (`fetch_avatar` re-validates each hop).
 pub(super) static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -106,8 +90,7 @@ impl std::fmt::Display for AvatarFetchError {
 
 impl std::error::Error for AvatarFetchError {}
 
-/// Describes a `reqwest` transport failure for an error message, without ever including response
-/// body content (there may not be one yet at this point in either caller).
+/// Describes a transport failure without including response body content.
 pub(super) fn describe_request_error(err: &reqwest::Error, context: &str) -> String {
     if err.is_timeout() {
         format!("{context} request timed out")
@@ -116,10 +99,8 @@ pub(super) fn describe_request_error(err: &reqwest::Error, context: &str) -> Str
     }
 }
 
-/// Reads `response`'s body up to `max_bytes`, chunk by chunk, erroring once exceeded so a huge or
-/// malicious response can never be buffered in full. Deliberately uses `Response::chunk()` rather
-/// than `.bytes()`/`.text()`, which buffer the whole body unconditionally before any cap could
-/// ever apply.
+/// Reads `response`'s body up to `max_bytes`, erroring once exceeded. Uses `chunk()` because
+/// `.bytes()`/`.text()` buffer the whole body before any cap applies.
 pub(super) async fn collect_bounded(
     mut response: reqwest::Response,
     max_bytes: usize,
@@ -138,15 +119,10 @@ pub(super) async fn collect_bounded(
     Ok(body)
 }
 
-/// Reads `host`/`login`'s GitHub profile (research.md decision 3): `auth_token` reads that
-/// account's token without switching the real active account, held only in the local `token`
-/// binding below for the one request it makes, then dropped -- never retained, never passed
-/// anywhere else. Callers fall back to the previously cached entry on any `Err` (data-model.md
-/// "a failed or skipped fetch... leaves the previous entry untouched").
+/// Reads `host`/`login`'s profile; the token is read without switching the active account, held
+/// for one request, then dropped. Callers keep the cached entry on any `Err`.
 pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, ProfileFetchError> {
-    // Checked BEFORE auth_token is ever called (GateSec008 HIGH / GateCode008 CRITICAL): this
-    // request always goes to the fixed API_HOST below, so a non-github.com account's token must
-    // never be read at all, let alone sent to the wrong server.
+    // Checked before `auth_token`: the request goes to `API_HOST`, so other hosts' tokens are never read.
     if host != SUPPORTED_AUTH_HOST {
         return Err(ProfileFetchError::new(format!(
             "profile fetch is only supported for {SUPPORTED_AUTH_HOST}, not {host}"
@@ -154,10 +130,7 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
     }
     let token = auth_token(host, login).await?;
 
-    // Built explicitly (not via `.header(_, format!(...))`) so `set_sensitive(true)` can be
-    // applied before it is ever attached to the request builder: defence in depth so the token
-    // is also excluded from reqwest's own debug/trace logging of outgoing headers, never just
-    // this codebase's own logging.
+    // `set_sensitive(true)` keeps the token out of reqwest's own header debug/trace logging.
     let mut auth_header = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
         .map_err(|_| ProfileFetchError::new("GitHub token contained an invalid header value"))?;
     auth_header.set_sensitive(true);
@@ -222,8 +195,7 @@ struct AvatarResponse {
     body: Vec<u8>,
 }
 
-/// Parses `value` and asserts it is an `https:` URL on `AVATAR_HOST` -- applied to the initial
-/// URL and to every redirect target before it is ever requested.
+/// Parses `value` and asserts an `https:` URL on `AVATAR_HOST`; applied to every redirect target.
 fn parse_avatar_url(value: &str) -> Result<Url, AvatarFetchError> {
     let url = Url::parse(value)
         .map_err(|_| AvatarFetchError::new(format!("avatar URL \"{value}\" is not a valid URL")))?;
@@ -250,9 +222,8 @@ fn resolve_avatar_mime_type(content_type: Option<&str>) -> Option<&'static str> 
     }
 }
 
-/// Matches `shared/images.ts`'s own `matchesImageSignature`: checks only the first few bytes of
-/// `body` against `mime_type`'s real magic-byte signature, never the whole payload. Also used by
-/// `images.rs` for the pull request image allow-list (ADR 0004).
+/// Checks only the first bytes of `body` against `mime_type`'s magic number. Also used by
+/// `images.rs` (ADR 0004).
 pub(super) fn matches_image_signature(body: &[u8], mime_type: &str) -> bool {
     match mime_type {
         "image/png" => {
@@ -298,13 +269,8 @@ async fn request_avatar_once(url: &Url) -> Result<AvatarResponse, AvatarFetchErr
     })
 }
 
-/// Fetches `avatar_url` and returns it as a validated `data:image/png;base64,...` or
-/// `data:image/jpeg;base64,...` string (FR-007, research.md decision 4). Every URL this function
-/// actually requests -- the one passed in, and the target of any redirect -- is bounded to
-/// `AVATAR_HOST` before it is ever requested, so a redirect can never be trusted into fetching
-/// some other host (SSRF-via-redirect); the response must also declare `Content-Type: image/png`
-/// or `image/jpeg` AND its first bytes must match that format's real magic number, and the body
-/// is capped at `MAX_AVATAR_BYTES`. Callers fall back to initials (FR-007) on any `Err`.
+/// Fetches `avatar_url` as a validated PNG/JPEG `data:` URL; every hop must be on `AVATAR_HOST`.
+/// Callers fall back to initials on `Err`.
 pub async fn fetch_avatar(avatar_url: &str) -> Result<String, AvatarFetchError> {
     let mut current = parse_avatar_url(avatar_url)?;
     let mut response = request_avatar_once(&current).await?;
@@ -354,8 +320,6 @@ pub async fn fetch_avatar(avatar_url: &str) -> Result<String, AvatarFetchError> 
 mod tests {
     use super::*;
 
-    // --- parse_avatar_url ---
-
     #[test]
     fn accepts_https_on_avatar_host() {
         assert!(parse_avatar_url("https://avatars.githubusercontent.com/u/123").is_ok());
@@ -394,8 +358,6 @@ mod tests {
         assert!(parse_avatar_url("https://user:pass@avatars.githubusercontent.com/u/123").is_err());
     }
 
-    // --- resolve_avatar_mime_type ---
-
     #[test]
     fn resolves_plain_png() {
         assert_eq!(
@@ -429,8 +391,6 @@ mod tests {
     fn rejects_missing_content_type() {
         assert_eq!(resolve_avatar_mime_type(None), None);
     }
-
-    // --- matches_image_signature ---
 
     fn png_bytes() -> Vec<u8> {
         let mut bytes = vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];

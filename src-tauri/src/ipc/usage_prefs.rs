@@ -1,5 +1,4 @@
-// Spec 060 (#1331) `usage.getPrefs` / `usage.setPrefs`: the jokes toggle and the last-used
-// filters, stored in the `prefs` table of `usage.db`. Only whitelisted keys are accepted.
+// `usage.getPrefs`/`usage.setPrefs`. Only whitelisted keys in the `prefs` table are accepted.
 
 use serde_json::{json, Value};
 

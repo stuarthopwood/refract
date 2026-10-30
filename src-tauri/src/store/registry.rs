@@ -1,7 +1,4 @@
-// Port of `src/main/store/registry.ts`: holds `registry.json`, every Repository and Session
-// Refract knows about (data-model.md "registry.json", tasks.md T014). Enforces the two
-// uniqueness rules from data-model.md: `worktreePath` is unique across all Sessions, and
-// `branch` is unique within a Repository.
+// `registry.json` store; `worktreePath` is unique across Sessions, `branch` within a Repository.
 
 use std::path::{Path, PathBuf};
 
@@ -9,10 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::atomic_json::{read_json_file, write_json_file};
 
-/// Same shape as `src/shared/model.ts`'s `Repository`, minus `remote`: that field is computed on
-/// demand (`git/remote.ts` in the Electron build; not ported here, `repositories.remotes` is a
-/// `later`-milestone channel per `parity.md`) and, per that file's own doc comment, "NEVER read
-/// from or written to `registry.json`" -- so the persisted shape never carries it at all.
+/// A persisted Repository; `remote` is computed on demand and never stored in `registry.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Repository {
@@ -21,14 +15,12 @@ pub struct Repository {
     pub name: String,
     pub default_branch: String,
     pub added_at: String,
-    /// Issue #887: the Project colour shown on its Session list header. Absent until chosen; an
-    /// old registry without the field loads unchanged.
+    /// Project colour for its Session list header (#887); absent until chosen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<ProjectColor>,
 }
 
-/// Issue #887: a Project colour, either one of the ten named presets (resolved to a per-theme
-/// token in the renderer) or a custom hex stored exactly as the user typed it.
+/// A Project colour: a named preset or a custom hex stored as typed (#887).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ProjectColor {
@@ -36,13 +28,8 @@ pub enum ProjectColor {
     Custom { hex: String },
 }
 
-/// Same shape as `src/shared/model.ts`'s `Session`. `stopped_on_request_conversation`/
-/// `stopped_on_request_at_size` are simplified from the TS `string | null | undefined` (three
-/// states: absent, null, or a real value) down to a plain `Option<String>`/`Option<i64>` (two
-/// states: absent/null collapsed together, or a real value) -- both fields are written only by
-/// `SessionAgent.onExit`'s requested-stop branch (Phase 3, not yet ported), so no milestone-1
-/// handler in this slice ever sets or reads the "explicitly null" state the extra level would
-/// preserve.
+/// A persisted Session. The stopped-on-request fields collapse absent/null into `None`: nothing
+/// reads the "explicitly null" state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
@@ -62,8 +49,7 @@ pub struct Session {
     pub created_at: String,
     pub last_activity_at: String,
     pub archived_at: Option<String>,
-    /// #748: hide-from-list view flag, independent of `archived_at`. Absent in a pre-#748
-    /// registry reads as `None` (visible); omitted when unset so old readers see no change.
+    /// Hide-from-list flag, independent of `archived_at` (#748).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,18 +58,11 @@ pub struct Session {
     pub stopped_on_request_conversation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped_on_request_at_size: Option<i64>,
-    /// Lane RM (#741 decision 1): persisted mirror of `session::model::State.pinned` -- the
-    /// in-memory flag alone reset to `false` on every restart, so a hand-picked model
-    /// (`set_model`/`cycle_model`/a direct `/switch <model>` token) read back as the `default`
-    /// role (and a later Settings role change could move it) the moment the app relaunched.
-    /// `#[serde(default)]` only (no `skip_serializing_if`): an old `registry.json` written
-    /// before this field existed deserialises it as `false` ("not pinned"), and every write
-    /// from here on always includes it explicitly.
+    /// Persisted `State.pinned`, so a hand-picked model survives a restart (#741).
+    /// Old registries without the field read as `false`.
     #[serde(default)]
     pub pinned_model: bool,
-    /// Pause mode (#477, spec 056): `Some` while the Session is paused, holding the queued message
-    /// texts (text only) that send again on Resume. Persisted so a pause survives restarts and
-    /// never auto-resumes.
+    /// `Some` while paused: queued message texts to resend on Resume; never auto-resumes (#477).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paused_held: Option<Vec<String>>,
 }
@@ -97,14 +76,8 @@ pub struct LastModel {
     pub name: Option<String>,
 }
 
-/// A partial update to one `Session` (port of `registry.ts`'s own `updateSession(id, patch:
-/// Partial<Session>)`, used by `session::agent`'s `syncFromState`/`startNewConversation`/the
-/// stopped-Session Conversation switch, Phase 3). `current_conversation`/`last_message_count`/
-/// `archived_at` are tri-state (`None` = leave unchanged, `Some(None)` = clear to `null`,
-/// `Some(Some(v))` = set) since their callers need to explicitly clear them (a brand new
-/// Conversation, or `sessions.restore` un-archiving a Session, lane R2 #785); every other field
-/// here is only ever set, never cleared, by its callers, so a plain `Option<T>` (`None` = leave
-/// unchanged) is enough.
+/// A partial update to one `Session`. Tri-state fields: `None` = unchanged, `Some(None)` = clear,
+/// `Some(Some(v))` = set; other fields are only ever set, so `None` = unchanged.
 #[derive(Debug, Clone, Default)]
 pub struct SessionPatch {
     pub last_activity_at: Option<String>,
@@ -113,20 +86,15 @@ pub struct SessionPatch {
     pub last_message_count: Option<Option<i64>>,
     pub last_model: Option<LastModel>,
     pub last_thinking_level: Option<Option<String>>,
-    // Lane R3 (issue #786): tri-state like `current_conversation` above -- both
-    // `clear_stopped_on_request_marker` (every `launch()` attempt) and
-    // `record_stopped_on_request_marker` (a requested-stop `onExit`) need to explicitly set
-    // these back to `null`, not merely leave them unchanged.
+    // Tri-state: launch must be able to reset these to `null` (#786).
     pub stopped_on_request_conversation: Option<Option<String>>,
     pub stopped_on_request_at_size: Option<Option<i64>>,
     pub archived_at: Option<Option<String>>,
-    /// #748: tri-state like `archived_at` (`Some(None)` = unhide).
+    /// Tri-state (`Some(None)` = unhide) (#748).
     pub hidden_at: Option<Option<String>>,
-    /// Lane RM (#741 decision 1): set on every `set_model`/`cycle_model`/`handle_switch_text`
-    /// pin and every `apply_role_now` un-pin -- a plain `Option<bool>` (no tri-state) since a
-    /// bool has no "unset" state to preserve across patches.
+    /// Set on every model pin and role un-pin (#741).
     pub pinned_model: Option<bool>,
-    /// Pause mode (#477): tri-state (`Some(None)` = resume).
+    /// Tri-state (`Some(None)` = resume) (#477).
     pub paused_held: Option<Option<Vec<String>>>,
 }
 
@@ -192,12 +160,8 @@ impl std::error::Error for RegistryError {}
 pub const REPOSITORY_HAS_SESSIONS_MESSAGE: &str =
     "Delete this project's Sessions before removing it.";
 
-/// Any error a `RegistryStore` method can produce: either a business-rule `RegistryError`
-/// (duplicate/not-found/has-sessions) or an unexpected I/O failure writing `registry.json`.
-/// Mirrors `registry.ts`'s own methods, which throw either a `RegistryError` or let a plain
-/// `writeJsonFile` rejection propagate -- `ipc/util.ts`'s `mapStoreThrown` catches both the same
-/// way at the IPC boundary (`Io` maps to the same `git-failed` fallback code the TS catch-all
-/// uses for any error it does not recognise as a typed `GitError`/`RegistryError`).
+/// Any error a `RegistryStore` method can produce: a business-rule `RegistryError` or an I/O
+/// failure writing `registry.json`.
 #[derive(Debug)]
 pub enum RegistryStoreError {
     Registry(RegistryError),
@@ -258,9 +222,7 @@ impl RegistryStore {
         Ok(())
     }
 
-    /// Issue #480: display-name-only edit. No uniqueness check on `name`. Rolls back on a failed
-    /// write, the same discipline `remove_repository` below already uses: memory must not keep a
-    /// name the disk copy never got.
+    /// Display-name-only edit (#480); rolls back on a failed write so memory matches disk.
     pub async fn update_repository_name(
         &mut self,
         id: &str,
@@ -287,8 +249,7 @@ impl RegistryStore {
         Ok(self.data.repositories[index].clone())
     }
 
-    /// Issue #887: sets or clears (`None`) a Repository's Project colour, rolling back the
-    /// in-memory value when the write fails, the same as `update_repository_name`.
+    /// Sets or clears a Repository's Project colour; rolls back on a failed write (#887).
     pub async fn update_repository_color(
         &mut self,
         id: &str,
@@ -335,9 +296,8 @@ impl RegistryStore {
         }
         let removed = self.data.repositories.remove(index);
         if let Err(err) = self.persist().await {
-            // Put the repository back if nothing else removed it meanwhile (a concurrent write
-            // this call did not expect), then make one best-effort attempt to save the restored
-            // data -- a write queued earlier may already have saved the removal.
+            // Restore unless a concurrent call removed it; best-effort save, as an earlier
+            // queued write may already have persisted the removal.
             if !self.data.repositories.iter().any(|r| r.id == removed.id) {
                 let insert_at = index.min(self.data.repositories.len());
                 self.data.repositories.insert(insert_at, removed);
@@ -370,9 +330,7 @@ impl RegistryStore {
             )
             .into());
         }
-        // Security remediation (Medium, ported from registry.ts): closes the race where a
-        // Repository is removed while this Session's worktree/branch creation was still in
-        // flight.
+        // Closes the race where the Repository is removed while worktree creation is in flight.
         if !self
             .data
             .repositories
@@ -423,11 +381,7 @@ impl RegistryStore {
         Ok(self.data.sessions[index].clone())
     }
 
-    /// `registry.ts`'s own `updateSession(id, patch)`: applies every `Some` field of `patch`,
-    /// leaves every `None` field untouched, persists, and rolls back to the pre-patch Session on
-    /// a failed write (same discipline every other mutator here already uses). Used by
-    /// `session::agent` (Phase 3) after `get_state` (`syncFromState`), `new_session`
-    /// (`startNewConversation`), and the stopped-Session Conversation switch.
+    /// Applies every `Some` field of `patch`, persists, and rolls back on a failed write.
     pub async fn update_session(
         &mut self,
         id: &str,
@@ -492,10 +446,8 @@ impl RegistryStore {
         Ok(self.data.sessions[index].clone())
     }
 
-    /// Removes the Session with `id` from the registry (`registry.ts`'s own `removeSession`,
-    /// lane R2 #785's `sessions.delete`). Follows the exact same rollback-on-failed-write
-    /// discipline as `remove_repository` above, adapted to Sessions and returning the removed
-    /// `Session` by value (the caller still needs it -- `session_dir` -- after this call).
+    /// Removes the Session and returns it (callers still need `session_dir`); rolls back on a
+    /// failed write.
     pub async fn remove_session(&mut self, id: &str) -> Result<Session, RegistryStoreError> {
         let index = self
             .data
@@ -510,9 +462,8 @@ impl RegistryStore {
             })?;
         let removed = self.data.sessions.remove(index);
         if let Err(err) = self.persist().await {
-            // Put the Session back if nothing else removed it meanwhile (a concurrent write
-            // this call did not expect), then make one best-effort attempt to save the restored
-            // data -- a write queued earlier may already have saved the removal.
+            // Restore unless a concurrent call removed it; best-effort save, as an earlier
+            // queued write may already have persisted the removal.
             if !self.data.sessions.iter().any(|s| s.id == removed.id) {
                 let insert_at = index.min(self.data.sessions.len());
                 self.data.sessions.insert(insert_at, removed.clone());
@@ -532,16 +483,12 @@ impl RegistryStore {
     }
 }
 
-/// Case- and drive-letter-insensitive path comparison for Windows (T011 rule): a lexical
-/// resolve-and-normalise (never touches the filesystem, so it works for a worktree path that may
-/// not exist yet) followed by a lowercase compare.
+/// Case-insensitive lexical path comparison; never touches the filesystem, so unborn worktrees work.
 pub(crate) fn same_path(a: &str, b: &str) -> bool {
     resolve_path_lexical(a).to_lowercase() == resolve_path_lexical(b).to_lowercase()
 }
 
-/// The Rust equivalent of Node's `path.resolve(p)`: joins a relative path onto the current
-/// working directory, then lexically collapses `.`/`..` components without requiring the path to
-/// exist on disk (unlike `Path::canonicalize`, which would fail for a worktree not yet created).
+/// Joins onto the cwd and lexically collapses `.`/`..`; unlike `canonicalize`, the path need not exist.
 pub(crate) fn resolve_path_lexical(p: &str) -> String {
     use std::path::Component;
 

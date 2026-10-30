@@ -1,11 +1,4 @@
-// `diffStat` for the Session worktree, part of session worktree and lifecycle (lane R2, issue
-// #785). Pre-declared so lane R2 is the only lane that ever edits this file (issue #784,
-// "Pre-declare per-lane Rust files").
-//
-// Port of `src/main/git/diffStat.ts`: committed and uncommitted edits to tracked files since the
-// merge-base with the Session's Base branch, plus new untracked files. Never writes: no `git
-// add`, no index change. Returns `None` on any failure (missing worktree, missing Base branch,
-// git failure, or the overall timeout) so the IPC handler never throws this past itself.
+//! Session worktree diff stat; read-only and `None` on any failure.
 
 use std::path::Path;
 use std::time::Duration;
@@ -19,14 +12,11 @@ const MAX_FILES: i64 = 200;
 #[cfg(test)]
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(3);
-/// Only the first slice of a file is checked for a NUL byte (git's own binary heuristic);
-/// mirrors `diffStat.ts`'s own `BINARY_SNIFF_BYTES`.
+/// Only the first slice of a file is checked for a NUL byte (git's binary heuristic).
 #[cfg(test)]
 const BINARY_SNIFF_BYTES: usize = 8000;
 
-/// Same wire shape as `src/shared/model.ts`'s `DiffStat` (`sessions.diffStat`'s return value,
-/// also `SessionReadout.changes`). Named differently from `git::worktree_delete_check::DeleteCheck`
-/// (a different channel's own return shape) even though both are per-Session git summaries.
+/// Wire shape of `DiffStat` for `sessions.diffStat`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffStatResult {
@@ -36,17 +26,14 @@ pub struct DiffStatResult {
     pub partial: bool,
 }
 
-/// Port of `diffStat.ts`'s own `isBinary`: true the moment a NUL byte appears in the first
-/// `BINARY_SNIFF_BYTES` bytes.
+/// True if a NUL byte appears in the first `BINARY_SNIFF_BYTES` bytes.
 #[cfg(test)]
 fn is_binary(buf: &[u8]) -> bool {
     let len = buf.len().min(BINARY_SNIFF_BYTES);
     buf[..len].contains(&0)
 }
 
-/// Port of `diffStat.ts`'s own `countLines`: counts lines the way a brand-new file's `git diff
-/// --numstat` would -- a trailing newline does not add an extra empty line, but trailing content
-/// without one still counts as a line.
+/// Counts lines like `git diff --numstat` on a new file (trailing newline adds none).
 #[cfg(test)]
 fn count_lines(text: &str) -> i64 {
     if text.is_empty() {
@@ -60,9 +47,7 @@ fn count_lines(text: &str) -> i64 {
     trimmed.split('\n').count() as i64
 }
 
-/// Parses `git diff-index --numstat` output into per-file add/delete counts, applying the
-/// `MAX_FILES` cap (`partial = true` and stop counting once reached). Split out of
-/// `compute_diff_stat` so the cap boundary is unit-testable without a real git repository.
+/// Parses `git diff-index --numstat` output, stopping at `MAX_FILES` (`partial = true`).
 fn count_numstat_lines(stdout: &str) -> (i64, i64, i64, bool) {
     let mut files: i64 = 0;
     let mut additions: i64 = 0;
@@ -92,13 +77,7 @@ fn count_numstat_lines(stdout: &str) -> (i64, i64, i64, bool) {
     (files, additions, deletions, partial)
 }
 
-/// One untracked file's cap/read outcome (additions, newly-set `partial`), computed from
-/// already-read fs state so the size cap and binary sniff are unit-testable without a real
-/// filesystem. `size` over `MAX_FILE_BYTES` always wins (0 additions, `partial`) regardless of
-/// `content` -- the real caller never reads an oversized file's bytes at all, matching
-/// `diffStat.ts`'s own "skip reading" comment; `content: None` with `size` within the cap means
-/// the read itself failed (0 additions, not `partial`); otherwise a binary file (NUL in the
-/// first `BINARY_SNIFF_BYTES`) counts as 0 additions, and everything else is `count_lines`.
+/// Scores one untracked file: oversized is `partial`, unreadable or binary is 0 additions.
 #[cfg(test)]
 fn score_untracked_file(size: u64, content: Option<&[u8]>) -> (i64, bool) {
     if size > MAX_FILE_BYTES {
@@ -128,14 +107,9 @@ async fn compute_diff_stat(worktree_path: &Path, base_branch: &str) -> Option<Di
         return None;
     }
 
-    // Plumbing, not porcelain `git diff`: `diff-index` never refreshes or writes the index, so a
-    // concurrent `git add`/`git commit` in the same worktree cannot race it on `index.lock`.
-    // `--no-ext-diff --no-textconv` stop a diff driver from git config running arbitrary commands.
-    // No data dependency between this call and the untracked-file listing below (neither reads
-    // the other's output; only `merge_base` above feeds into this one), so they run concurrently
-    // via `tokio::join!` rather than one after another -- halves the wall-clock git-spawn cost
-    // for this step without touching the existing overall 3s timeout in `diff_stat` below, which
-    // already wraps the whole of `compute_diff_stat`.
+    // `diff-index` plumbing never writes the index (no `index.lock` race); the --no-* flags stop
+    // config diff drivers running commands. Independent of the untracked listing, so run both
+    // concurrently.
     let diff_index_args = [
         "diff-index",
         "--no-ext-diff",
@@ -169,8 +143,7 @@ async fn compute_diff_stat(worktree_path: &Path, base_branch: &str) -> Option<Di
                 break;
             }
             files += 1;
-            // Containment-proven, never read through a symlink (#1115); same scorer as the Git
-            // changes panel (#1110/#1111). Escape, missing or unreadable all score 0.
+            // Never read through a symlink (#1115); escape/missing/unreadable score 0.
             let (file_additions, _deletions, file_partial) =
                 score_untracked_entry(worktree_path, relative_path).await;
             additions += file_additions;
@@ -186,10 +159,8 @@ async fn compute_diff_stat(worktree_path: &Path, base_branch: &str) -> Option<Di
     })
 }
 
-/// `sessions.diffStat(id)` (contracts/ipc.md): `worktree_path`/`base_branch` come from the
-/// registry, never the renderer (constitution V). `None` when the worktree is missing, the Base
-/// branch no longer exists, git fails, or the 3 s overall budget runs out before completion; the
-/// in-flight git/fs work is dropped, never left running, past that budget.
+/// Diff stat for a Session worktree; paths come from the registry, never the renderer.
+/// `None` on any failure or after the 3 s budget (in-flight work is dropped).
 pub async fn diff_stat(worktree_path: &Path, base_branch: &str) -> Option<DiffStatResult> {
     if tokio::fs::metadata(worktree_path).await.is_err() {
         return None;
@@ -203,8 +174,6 @@ pub async fn diff_stat(worktree_path: &Path, base_branch: &str) -> Option<DiffSt
 mod tests {
     use super::super::git::git;
     use super::*;
-
-    // --- `count_lines` (`diffStat.ts`'s own `countLines`) ---------------------------------
 
     #[test]
     fn count_lines_empty_string_is_zero_lines() {
@@ -226,8 +195,6 @@ mod tests {
         assert_eq!(count_lines("one\r\ntwo\rthree\n"), 3);
     }
 
-    // --- `is_binary` (`diffStat.ts`'s own `isBinary`) ------------------------------------------
-
     #[test]
     fn is_binary_true_when_a_nul_byte_appears_in_the_sniffed_prefix() {
         assert!(is_binary(b"abc\0def"));
@@ -244,8 +211,6 @@ mod tests {
         buf.push(0); // NUL just past the sniffed window
         assert!(!is_binary(&buf));
     }
-
-    // --- `count_numstat_lines` (the `MAX_FILES` cap) ---------------------------------------
 
     #[test]
     fn count_numstat_lines_sums_additions_and_deletions_skipping_dash_sentinels() {
@@ -268,8 +233,6 @@ mod tests {
         assert!(partial);
     }
 
-    // --- `score_untracked_file` (the `MAX_FILE_BYTES` cap, binary sniff, `count_lines`) -----
-
     #[test]
     fn score_untracked_file_within_cap_counts_lines() {
         let (additions, partial) = score_untracked_file(12, Some(b"one\ntwo\n"));
@@ -286,8 +249,7 @@ mod tests {
 
     #[test]
     fn score_untracked_file_over_max_file_bytes_ignores_content_entirely() {
-        // The real caller never reads an oversized file at all (`content: None`); this proves
-        // the cap decision depends only on `size`, never on whatever `content` happens to hold.
+        // Real caller never reads oversized files, so the cap must depend only on `size`.
         let (additions, partial) = score_untracked_file(MAX_FILE_BYTES + 1, None);
         assert_eq!(additions, 0);
         assert!(partial);
@@ -306,8 +268,6 @@ mod tests {
         assert_eq!(additions, 0);
         assert!(!partial);
     }
-
-    // --- `diff_stat` integration (real temp git repo) ---------------------------------------
 
     fn fresh_dir() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("refract-diff-stat-test-{}", uuid::Uuid::new_v4()))

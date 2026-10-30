@@ -1,8 +1,5 @@
-// IPC handlers for `repositories.*` (contracts/ipc.md "Repositories", tasks.md T017). The
-// milestone-1 subset (`parity.md`): `.list`, `.add`, `.remove`, `.branches`, `.pickFolder`,
-// `.userName`, plus `.rename` and `.remotes` (lane R2, issue #785), which port
-// `renameRepository.ts`'s `renameRepositoryCore` and `git/remote.ts`'s `repositoryRemote`
-// respectively.
+// IPC handlers for `repositories.*`: list, add, remove, branches, pickFolder, userName, rename
+// and remotes.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
@@ -34,9 +31,8 @@ pub fn register(d: &mut Dispatcher) {
     d.register("repositories.userName", repositories_user_name);
 }
 
-/// `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
-/// checkout, falling back to the Windows account name when git has none configured; cached per
-/// repository id for the process lifetime so the "Answer:" avatar/name never re-shells out.
+/// `repositories.userName`: `git config user.name` in the checkout, else the Windows account
+/// name; cached per repository id so the avatar/name never re-shells out.
 static USER_NAME_CACHE: LazyLock<StdMutex<HashMap<String, String>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
@@ -66,9 +62,7 @@ async fn resolve_user_name(repository_id: &str, repo_path: &std::path::Path) -> 
     name
 }
 
-/// `os.userInfo().username`'s Rust equivalent: the logged-in Windows account name, read from the
-/// environment rather than a new dependency (`whoami`/`os_info` are not in this build's
-/// `Cargo.toml`) -- `USERNAME` is always set in a Windows process environment.
+/// The logged-in Windows account name from `USERNAME` (no `whoami` dependency).
 fn whoami_username() -> String {
     std::env::var("USERNAME").unwrap_or_else(|_| "unknown".to_string())
 }
@@ -95,10 +89,8 @@ struct BranchEntry {
     kind: BranchEntryKind,
 }
 
-/// Base branch picker entries (FR-002, contracts/ipc.md `repositories.branches`): the default
-/// branch first (when it still exists), then plain branches in git order, then branches owned by
-/// one of this repository's Sessions, labelled with that Session's live display name and sorted
-/// by it.
+/// Base branch picker entries: the default branch, then plain branches, then Session-owned
+/// branches labelled and sorted by the Session's display name.
 fn branch_entries(
     branches: Vec<String>,
     default_name: &str,
@@ -145,9 +137,7 @@ fn branch_entries(
     entries
 }
 
-/// Embeds `remote` into `repository`'s own JSON shape (`Repository` itself has no `remote` field
-/// -- the wire `Repository` type does, per `src/shared/model.ts`). Shared by every handler that
-/// returns a `Repository` alongside a remote value, real or placeholder.
+/// Embeds `remote` into `repository`'s JSON (the wire `Repository` has a `remote` field).
 fn with_remote(repository: &Repository, remote: &RepositoryRemoteKind) -> Value {
     let mut value =
         serde_json::to_value(repository).expect("Repository is always JSON-serialisable");
@@ -183,8 +173,7 @@ pub fn repositories_add(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// The `repositories.add` body, shared with Clone from GitHub (spec 054) so a cloned folder
-/// registers exactly like an added one.
+/// The `repositories.add` body, shared with Clone from GitHub so a clone registers like an add.
 pub(super) async fn add_repository_at(
     state: &AppState,
     repo_path: &str,
@@ -247,18 +236,12 @@ pub fn repositories_remove(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// Issue #480 point 5 validation rules, ported from `src/shared/repositoryName.ts` (no
-/// equivalent exists yet in this crate): "trimmed, not empty, a sensible maximum (60
-/// characters), no control characters." An empty (after trimming) name is not an error here --
-/// the caller resets it to the folder's own basename instead (`resolve_repository_name`).
+/// Name rules (#480): trimmed, at most 60 characters, no control characters. An empty name is not
+/// an error; the caller resets it to the folder basename (`resolve_repository_name`).
 const MAX_REPOSITORY_NAME_LENGTH: usize = 60;
 
-/// `repositoryName.ts`'s own `\p{Cf}` (Unicode "Format") ranges, hand-enumerated since no
-/// Unicode-category crate is a dependency of this build: bidi overrides/isolates, zero-width/
-/// format characters (including the BOM), and the handful of rarer format controls the full
-/// category also covers. `\p{Cc}` (control) is `char::is_control`, which matches it exactly
-/// (`\x00`-`\x1f`, `\x7f`-`\x9f`); `\u2028`/`\u2029` (line/paragraph separator) sit outside both
-/// categories and are checked for explicitly, same as the TS regex.
+/// Hand-enumerated `\p{Cf}` ranges (no Unicode-category crate); `\p{Cc}` is `char::is_control`.
+/// `\u2028`/`\u2029` fall outside both and are checked explicitly.
 fn is_unicode_format_char(c: char) -> bool {
     matches!(c,
         '\u{00AD}'
@@ -285,10 +268,8 @@ fn is_unicode_format_char(c: char) -> bool {
     )
 }
 
-/// Returns an error message for an invalid non-empty name, or `None` when `trimmed` is
-/// acceptable to store as-is (an empty string is always acceptable). ZWNJ/ZWJ (`\u200C`/
-/// `\u200D`) are excluded from the control-character test -- required for legitimate text (emoji
-/// ZWJ sequences, joining letters in Persian/Arabic/Indic scripts), not spoofing/invisible text.
+/// Error message for an invalid non-empty name, else `None`. ZWNJ/ZWJ are allowed: legitimate in
+/// emoji sequences and Persian/Arabic/Indic scripts.
 fn validate_repository_name(trimmed: &str) -> Option<String> {
     if trimmed.chars().count() > MAX_REPOSITORY_NAME_LENGTH {
         return Some(format!(
@@ -305,10 +286,8 @@ fn validate_repository_name(trimmed: &str) -> Option<String> {
     None
 }
 
-/// Point 4: clearing the field and committing resets the display name back to the folder's own
-/// basename. A name made of only ZWNJ/ZWJ, or one of those joiners flanked only by whitespace, is
-/// exactly as blank as an all-whitespace name and resets the same way (`repositoryName.ts`'s own
-/// `resolveRepositoryName`, quality-gate cycles 3 and 5).
+/// Clearing the field resets the name to the folder basename; a name of only ZWNJ/ZWJ joiners
+/// and whitespace counts as blank.
 fn resolve_repository_name(trimmed: &str, basename: &str) -> String {
     let visible: String = trimmed
         .chars()
@@ -339,10 +318,8 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 ))
             }
         };
-        // Quality-gate fix (ported from `repositories.ts`'s own handler, security-auditor Low,
-        // 2026-10-08): rejected before `trim()` -- Tauri's own IPC payload has no size cap this
-        // build enforces elsewhere, so this is defence in depth, not the real guard (that is
-        // `validate_repository_name`'s own length check below, after trimming).
+        // Rejected before `trim()` as defence in depth: IPC payloads have no size cap here; the
+        // real guard is `validate_repository_name`'s length check.
         if name.chars().count() > 4 * MAX_REPOSITORY_NAME_LENGTH {
             return Err(invalid_argument("repositories.rename name too long"));
         }
@@ -354,8 +331,7 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 .clone()
         };
         let trimmed = name.trim();
-        // Quality-gate fix (cycle 2, ported): no channel-name prefix on this message -- it is
-        // shown inline in the rename field's own alert text, never a toast.
+        // No channel prefix: the message shows inline in the rename field's alert, never a toast.
         if let Some(validation_error) = validate_repository_name(trimmed) {
             return Err(invalid_argument(validation_error));
         }
@@ -372,10 +348,8 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(map_registry_error)?;
         state.session_manager.notify_list_changed();
-        // Issue #528 parity: `repositories.ts`'s own `.rename` recomputes the real remote
-        // inline the same way `.add` does, rather than returning the `unknown` placeholder
-        // `repositories.list` uses for every entry -- `None` (this call's own 3s timeout fired)
-        // falls back to `unknown`, same as the Electron handler's `?? { kind: 'unknown' }`.
+        // Recompute the real remote inline like `.add` (#528); a 3s timeout (`None`) falls back
+        // to `unknown`.
         let remote = repository_remote(std::path::Path::new(&updated.path))
             .await
             .unwrap_or(RepositoryRemoteKind::Unknown);
@@ -383,25 +357,14 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `repositories.remotes`'s own concurrency cap (`repositories.ts`'s `REMOTE_CONCURRENCY`):
-/// however many repositories are registered, at most this many `git` child processes ever run
-/// at once for one sweep.
+/// Cap on concurrent `git` child processes in one `repositories.remotes` sweep.
 const REMOTE_CONCURRENCY: usize = 8;
 
-/// `repositories.remotes`'s own deadline for the WHOLE sweep (`repositories.ts`'s
-/// `REMOTE_DEADLINE_MS`), not per repository -- each `repository_remote` call already has its
-/// own 3s cap; this bounds the aggregate regardless of how many repositories are registered.
+/// Deadline for the WHOLE `repositories.remotes` sweep, on top of each call's own 3s cap.
 const REMOTE_DEADLINE: Duration = Duration::from_secs(10);
 
-/// Issue #528 gate round 3/4 fix, ported from `repositories.ts`'s own `remotesBounded`: every
-/// repository's remote check runs concurrently, capped at `REMOTE_CONCURRENCY` simultaneous `git`
-/// spawns via the semaphore below, all sharing one `REMOTE_DEADLINE` for the whole sweep. A
-/// repository the deadline cuts off mid-flight is left OUT of the result entirely -- never
-/// backfilled with the `unknown` placeholder -- so a slow sweep can never overwrite an
-/// already-confirmed `has`/`none` with a wrong `unknown` (gate round 4 fix); whatever already
-/// settled before the deadline is kept. Checks still running past the deadline are aborted
-/// outright (`JoinHandle::abort`) so no orphaned `git` child lingers once the response has gone
-/// out -- `git_raw`'s own `kill_on_drop` then reaps it the moment its future is dropped.
+/// Runs remote checks concurrently under one semaphore and deadline. A check cut off is omitted
+/// (never an `unknown` overwriting a confirmed value) and aborted so `kill_on_drop` reaps it (#528).
 async fn remotes_bounded(repositories: Vec<Repository>) -> Value {
     let semaphore = Arc::new(Semaphore::new(REMOTE_CONCURRENCY));
     let remotes = Arc::new(StdMutex::new(serde_json::Map::new()));
@@ -415,8 +378,7 @@ async fn remotes_bounded(repositories: Vec<Repository>) -> Value {
                 Err(_) => return,
             };
             let path = std::path::Path::new(&repository.path);
-            // Only a genuinely settled check (`Some`) is recorded -- `None` means this
-            // repository's own 3s timeout fired, so it is left out, same as a sweep-deadline cut.
+            // Only a settled check (`Some`) is recorded; `None` (3s timeout) is left out.
             if let Some(kind) = repository_remote(path).await {
                 let value = serde_json::to_value(kind)
                     .expect("RepositoryRemoteKind is always JSON-serialisable");
@@ -430,8 +392,7 @@ async fn remotes_bounded(repositories: Vec<Repository>) -> Value {
 
     let wait_all = async {
         for handle in &mut handles {
-            // A `JoinError` (panic or abort) just means that one repository contributes nothing;
-            // every other handle is still awaited.
+            // A `JoinError` only means that repository contributes nothing; keep awaiting the rest.
             let _ = handle.await;
         }
     };
@@ -448,15 +409,8 @@ async fn remotes_bounded(repositories: Vec<Repository>) -> Value {
     Value::Object(collected)
 }
 
-/// Gate round 4 fix (Low, security-auditor), ported from `repositories.ts`'s own
-/// `remotesInFlight`: a second `repositories.remotes` call that arrives while a sweep is already
-/// running shares that SAME sweep's result instead of starting a second full pool of `git` spawns
-/// concurrently with the first. This crate has no `futures::FutureExt::shared()` dependency to
-/// reach for (`futures` is not in `Cargo.toml`); `tokio::sync::OnceCell` gives the same "whoever
-/// gets there first runs the init future, every other caller awaits that same run and gets its
-/// result" semantics with no new dependency. `StdMutex`, not an async `tokio::sync::Mutex`: the
-/// guarded section below never awaits while holding the lock, so the cheaper std primitive is
-/// enough (same convention as this file's own `USER_NAME_CACHE`).
+/// A second `repositories.remotes` call during a sweep shares its result via `OnceCell`.
+/// `StdMutex` suffices: the lock is never held across an await.
 static REMOTES_IN_FLIGHT: LazyLock<StdMutex<Option<Arc<OnceCell<Value>>>>> =
     LazyLock::new(|| StdMutex::new(None));
 
@@ -479,8 +433,7 @@ pub fn repositories_remotes(state: AppState, _args: Vec<Value>) -> HandlerFuture
         let result = cell
             .get_or_init(|| async move {
                 let computed = remotes_bounded(repositories).await;
-                // Clear the slot once settled so the NEXT distinct call starts its own fresh
-                // sweep rather than reusing this (now-stale) one forever.
+                // Clear the slot once settled so the next call starts a fresh sweep.
                 *REMOTES_IN_FLIGHT
                     .lock()
                     .expect("remotes in-flight mutex poisoned") = None;

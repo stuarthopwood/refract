@@ -1,8 +1,4 @@
-// IPC handler for `images.get` (#513): returns one Message image (a user bubble's image) as a
-// `data:` URL by id. The id is either a 64-hex OMP blob hash (read from the fixed blob folder)
-// or a content id of a live inline image (read from the bounded in-memory store). Nothing the
-// renderer sends is ever used as a path: the id is shape-checked first, then used only as a
-// lookup key or as a file name inside the fixed folder (constitution Principle V).
+// Returns a Message image as a `data:` URL. The id is shape-checked and never used as a path (Principle V).
 
 use serde_json::{json, Value};
 
