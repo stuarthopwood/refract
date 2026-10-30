@@ -3,6 +3,7 @@
 // render as plain text only.
 import { ProgressStrip } from '@/components/ProgressStrip'
 import { ScreenSection } from '@/components/ScreenSection'
+import { Card, CardContent } from '@/components/ui/card'
 import type { UsageBudget } from '../../../shared/ipc-usage'
 import { formatInt, formatPercent } from './format'
 
@@ -41,27 +42,29 @@ export function BudgetCard({ budget, jokes }: { budget: UsageBudget | null; joke
       empty={budget && empty ? `Budget unavailable${budget.unavailable ? `: ${budget.unavailable}` : ''}.` : null}
     >
       {budget && !empty && (
-        <div className="flex flex-col gap-4 rounded-lg border p-4">
-          {budget.copilot && <CopilotRow copilot={budget.copilot} jokes={jokes} />}
-          {budget.unavailable && <p className="text-xs text-muted-foreground">Budget unavailable for some providers: {budget.unavailable}.</p>}
-          {budget.providers.map((provider) => (
-            <div key={`${provider.provider}-${provider.label}`} className="flex flex-col gap-1">
-              {provider.limit !== null ? (
-                <ProgressStrip
-                  value={provider.used}
-                  max={provider.limit}
-                  label={`${provider.label}: ${formatInt(provider.used)} of ${formatInt(provider.limit)} ${provider.unit}`}
-                  doneText={`${provider.label} is fully used.`}
-                />
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {provider.label}: {formatInt(provider.used)} {provider.unit} used
-                </p>
-              )}
-              {provider.resetsAt !== null && <p className="text-xs text-muted-foreground">Resets {dateOnly(provider.resetsAt)}.</p>}
-            </div>
-          ))}
-        </div>
+        <Card>
+          <CardContent className="flex flex-col gap-4">
+            {budget.copilot && <CopilotRow copilot={budget.copilot} jokes={jokes} />}
+            {budget.unavailable && <p className="text-xs text-muted-foreground">Budget unavailable for some providers: {budget.unavailable}.</p>}
+            {budget.providers.map((provider) => (
+              <div key={`${provider.provider}-${provider.label}`} className="flex flex-col gap-1">
+                {provider.limit !== null ? (
+                  <ProgressStrip
+                    value={provider.used}
+                    max={provider.limit}
+                    label={`${provider.label}: ${formatInt(provider.used)} of ${formatInt(provider.limit)} ${provider.unit}`}
+                    doneText={`${provider.label} is fully used.`}
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {provider.label}: {formatInt(provider.used)} {provider.unit} used
+                  </p>
+                )}
+                {provider.resetsAt !== null && <p className="text-xs text-muted-foreground">Resets {dateOnly(provider.resetsAt)}.</p>}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
     </ScreenSection>
   )

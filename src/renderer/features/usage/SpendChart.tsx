@@ -1,7 +1,8 @@
 // Spec 060 S2-11: spend over time stacked by model (top four models plus "Other"), with a
 // day or hour toggle built from the shared Filter tabs.
 import { FilterTabs } from '@/components/FilterTabs'
-import { StackedBarChart } from '@/components/ui/chart'
+import { ScreenSection } from '@/components/ScreenSection'
+import { StackedBarChart, useChartView } from '@/components/ui/chart'
 import type { UsageTimeBucket } from '../../../shared/ipc-usage'
 import { formatBucketLabel, formatUsd } from './format'
 
@@ -11,17 +12,20 @@ const OTHER = 'Other'
 export function SpendChart({
   buckets,
   bucket,
-  onBucketChange
+  onBucketChange,
+  loading
 }: {
   buckets: UsageTimeBucket[]
   bucket: 'day' | 'hour'
   onBucketChange(bucket: 'day' | 'hour'): void
+  loading?: boolean
 }) {
+  const view = useChartView()
   const totals = new Map<string, number>()
   for (const b of buckets) for (const m of b.byModel) totals.set(m.model, (totals.get(m.model) ?? 0) + m.usd)
   const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([model]) => model)
   const top = ranked.slice(0, TOP_MODELS)
-  const series = [...top, ...(ranked.length > TOP_MODELS ? [OTHER] : [])].map((name) => ({ name }))
+  const series = [...top, ...(ranked.length > TOP_MODELS ? [OTHER] : [])].map((name) => ({ name, muted: name === OTHER && !top.includes(OTHER) }))
   const rows = buckets.map((b) => {
     const values = series.map(() => 0)
     for (const m of b.byModel) {
@@ -32,24 +36,34 @@ export function SpendChart({
     return { label: formatBucketLabel(b.bucketStart, bucket), values }
   })
   return (
-    <div className="flex flex-col gap-2">
-      <FilterTabs
-        ariaLabel="Spend bucket"
-        tabs={[
-          { value: 'day', label: 'By day' },
-          { value: 'hour', label: 'By hour' }
-        ]}
-        value={bucket}
-        onValueChange={onBucketChange}
-      />
+    <ScreenSection
+      title="Spend over time"
+      loading={loading}
+      empty={buckets.length === 0 ? 'No spend in this range.' : null}
+      actions={
+        <>
+          <FilterTabs
+            ariaLabel="Spend bucket"
+            tabs={[
+              { value: 'day', label: 'By day' },
+              { value: 'hour', label: 'By hour' }
+            ]}
+            value={bucket}
+            onValueChange={onBucketChange}
+          />
+          {view.toggle}
+        </>
+      }
+    >
       <StackedBarChart
         title="Spend over time"
+        view={view}
         summary={`Spend per ${bucket}, stacked by model. ${series.map((s) => s.name).join(', ')}.`}
         series={series}
         buckets={rows}
         formatValue={formatUsd}
         bucketHeader={bucket === 'day' ? 'Day' : 'Hour'}
       />
-    </div>
+    </ScreenSection>
   )
 }

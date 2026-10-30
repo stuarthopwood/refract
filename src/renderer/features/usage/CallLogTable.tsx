@@ -19,12 +19,12 @@ const COLUMNS: SortableColumn<UsageCallRow>[] = [
   { key: 'duration', header: 'Duration', align: 'right', sortValue: (r) => r.durationMs ?? 0, render: (r) => formatDuration(r.durationMs) }
 ]
 
-export function CallLogTable() {
+export function CallLogTable({ loading }: { loading?: boolean }) {
   const calls = useUsageStore((s) => s.calls)
   const setSort = useUsageStore((s) => s.setCallsSort)
   const setPage = useUsageStore((s) => s.setCallsPage)
   return (
-    <ScreenSection title="Call log" count={calls.total}>
+    <ScreenSection title="Call log" count={calls.total} loading={loading}>
       <SortableTable
         caption="Model calls, one row per call"
         columns={COLUMNS}

@@ -128,9 +128,11 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     void get().refresh()
   },
   async setJokes(jokes) {
+    const previous = get().jokes
     set({ jokes })
     const result = await window.refract.usage.setPrefs({ jokes })
     if (result.ok) set({ jokes: result.value.jokes })
+    else set({ jokes: previous })
   },
   setBucket(bucket) {
     set({ bucket })

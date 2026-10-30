@@ -56,10 +56,15 @@ const TOOL_COLUMNS: SortableColumn<UsageBreakdownRow>[] = [
   }
 ]
 
-function BreakdownTable({ title, columns, rows, emptyText }: { title: string; columns: SortableColumn<UsageBreakdownRow>[]; rows: UsageBreakdownRow[]; emptyText: string }) {
+interface BreakdownProps {
+  rows: UsageBreakdownRow[]
+  loading?: boolean
+}
+
+function BreakdownTable({ title, columns, rows, emptyText, loading }: BreakdownProps & { title: string; columns: SortableColumn<UsageBreakdownRow>[]; emptyText: string }) {
   const table = useTable(columns, rows, { key: columns.some((c) => c.key === 'usd') ? 'usd' : 'calls', dir: 'desc' })
   return (
-    <ScreenSection title={title} count={rows.length}>
+    <ScreenSection title={title} count={rows.length} loading={loading}>
       <SortableTable
         caption={title}
         columns={columns}
@@ -73,14 +78,14 @@ function BreakdownTable({ title, columns, rows, emptyText }: { title: string; co
   )
 }
 
-export const ProjectTable = ({ rows }: { rows: UsageBreakdownRow[] }) => (
-  <BreakdownTable title="By Project" columns={PROJECT_COLUMNS} rows={rows} emptyText="No Projects in this range." />
+export const ProjectTable = ({ rows, loading }: BreakdownProps) => (
+  <BreakdownTable title="By Project" columns={PROJECT_COLUMNS} rows={rows} loading={loading} emptyText="No Projects in this range." />
 )
-export const ModelTable = ({ rows }: { rows: UsageBreakdownRow[] }) => (
-  <BreakdownTable title="By model and reasoning level" columns={MODEL_COLUMNS} rows={rows} emptyText="No model calls in this range." />
+export const ModelTable = ({ rows, loading }: BreakdownProps) => (
+  <BreakdownTable title="By model and reasoning level" columns={MODEL_COLUMNS} rows={rows} loading={loading} emptyText="No model calls in this range." />
 )
-export const ToolTable = ({ rows }: { rows: UsageBreakdownRow[] }) => (
-  <BreakdownTable title="By tool" columns={TOOL_COLUMNS} rows={rows} emptyText="No tool calls in this range." />
+export const ToolTable = ({ rows, loading }: BreakdownProps) => (
+  <BreakdownTable title="By tool" columns={TOOL_COLUMNS} rows={rows} loading={loading} emptyText="No tool calls in this range." />
 )
 
 /** Opens the Session when Refract knows it; otherwise the label is plain text (FR-014). */
@@ -111,10 +116,10 @@ const TOP_COLUMNS: SortableColumn<UsageTopSession>[] = [
   { key: 'credits', header: 'AI credits', align: 'right', sortValue: (r) => r.credits, render: (r) => credits(r.credits) }
 ]
 
-export function TopSessionsTable({ rows }: { rows: UsageTopSession[] }) {
+export function TopSessionsTable({ rows, loading }: { rows: UsageTopSession[]; loading?: boolean }) {
   const table = useTable(TOP_COLUMNS, rows, { key: 'usd', dir: 'desc' })
   return (
-    <ScreenSection title="Top ten sessions" count={rows.length}>
+    <ScreenSection title="Top ten sessions" count={rows.length} loading={loading}>
       <SortableTable
         caption="Top ten sessions by spend"
         columns={TOP_COLUMNS}
