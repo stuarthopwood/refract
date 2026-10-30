@@ -23,6 +23,9 @@ const buttonVariants = cva(
         // Outlined at rest so the surface's one filled button stays the primary action; confirm dialogs use filled `destructive`.
         "destructive-outline":
           "border-destructive bg-background text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:bg-input/30 dark:hover:bg-muted",
+        // Borderless, red label: a destructive action that must not compete with the surface's one filled button (#1387).
+        "ghost-destructive":
+          "text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:hover:bg-muted/50 font-normal",
         link: "text-primary underline underline-offset-4 font-normal",
         // Non-primary action beside an `outline` primary (#746); underlines on hover and focus, with a ring since it has no border.
         text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",

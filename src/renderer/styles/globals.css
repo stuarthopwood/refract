@@ -2206,11 +2206,11 @@ samp {
  * the left nav header and the chat header as the window's draggable area; `.no-drag-region`
  * carves out their own interactive children (buttons, inputs, menus) so dragging still works
  * everywhere else in that row, matching Electron's `-webkit-app-region` contract. */
-/* Chrome band (#682, CONTEXT.md): every drag-region row paints the per-theme `--titlebar` surface with the one
- * soft `--divider` line along its bottom edge (an inset shadow, so the row stays exactly 40px). The menu bar
- * shares it, so there is no line between them. In High contrast dark `--divider` is the solid `--border`. */
+/* Drag-region rows paint nothing: each takes its column's own background, with no line under it (#1385,
+ * supersedes #682). Dark high contrast keeps the --divider edge (4.5:1, accessibility.md). */
 @layer components {
-  .titlebar-surface { background-color: var(--titlebar); box-shadow: inset 0 -1px 0 var(--divider); }
+  .titlebar-surface { background-color: transparent; }
+  .theme-dark-high-contrast .titlebar-surface { box-shadow: inset 0 -1px 0 var(--divider); }
 }
 .drag-region { -webkit-app-region: drag; }
 .no-drag-region { -webkit-app-region: no-drag; }

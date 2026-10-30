@@ -2,9 +2,10 @@
 // trigger shows `summary`; each option is a shared `CheckboxItem` with an optional leading adornment.
 import type { ReactNode } from 'react'
 import { ChevronDownIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { CHECKBOX_BOX_CLASS, CHECKBOX_LIST_ITEM_CLASS, CheckboxIndicator, CheckboxItem } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { POPOVER_PANEL_MIN_WIDTH_CLASS, SELECT_CHEVRON_CLASS, SELECT_ITEM_BOX_CLASS, SELECT_TRIGGER_CLASS } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 
 export interface ChecklistOption {
   value: string
@@ -28,17 +29,17 @@ export function MultiSelectChecklist({ label, summary, options, selected, onChan
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" aria-label={`${label}: ${summary}`} className={className}>
+        <button type="button" aria-label={`${label}: ${summary}`} className={cn(SELECT_TRIGGER_CLASS, className)}>
           <span className="min-w-0 flex-1 truncate text-left">{summary}</span>
-          <ChevronDownIcon aria-hidden />
-        </Button>
+          <ChevronDownIcon aria-hidden className={SELECT_CHEVRON_CLASS} />
+        </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="flex w-72 flex-col gap-1 p-2">
+      <PopoverContent align="start" className={cn(POPOVER_PANEL_MIN_WIDTH_CLASS, "flex w-max max-w-80 flex-col gap-1 p-1")}>
         <div role="group" aria-label={label} className="flex max-h-64 flex-col gap-1 overflow-y-auto">
           {options.map((option) => (
             <CheckboxItem
               key={option.value}
-              className={CHECKBOX_LIST_ITEM_CLASS}
+              className={cn(CHECKBOX_LIST_ITEM_CLASS, SELECT_ITEM_BOX_CLASS, "px-2")}
               checked={selected.includes(option.value)}
               onCheckedChange={() => toggle(option.value)}
             >

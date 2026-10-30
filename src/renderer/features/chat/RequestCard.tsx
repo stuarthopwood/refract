@@ -338,7 +338,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
             </Alert>
           </CardContent>
         )}
-        <CardFooter className="gap-2">
+        <CardFooter>
           <ApprovalActions options={request.options} busy={busy} onAnswer={(value, kind, detail) => void answer(value, kind, detail)} />
         </CardFooter>
       </Card>

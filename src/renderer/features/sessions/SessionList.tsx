@@ -1,6 +1,5 @@
 import { useEffect, useId, useRef } from 'react'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
-import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -11,12 +10,11 @@ import { AddProjectMenu } from '@/features/sessions/AddProjectMenu'
 import { ViewsNavGroup } from './ViewsNavGroup'
 import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
-import { useHolidayStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore } from '@/state'
+import { useRepositoriesStore, useSessionListStore, useSessionsStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 import { ShowHiddenToggle } from './ShowHiddenToggle'
 import type { SessionSummary } from '../../../shared/ipc'
-import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { searchSessions, showingCountLabel } from './sessionDisplay'
 import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
 import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
@@ -25,10 +23,6 @@ import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
 export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
-  // Sidebar accessory beside the wordmark (#1048).
-  const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
-  const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
-  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   // `restored` gates the toolbar and groups so nothing paints open then snaps shut once persisted state loads (#735).
   const restored = useSessionListStore((state) => state.restored)
   const query = useSessionListStore((state) => state.query)
@@ -128,13 +122,6 @@ export function SessionList() {
       tabIndex={-1}
       className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
-      {/* No double-click handler: the OS already maximises/restores a `.drag-region` (HTCAPTION). */}
-      <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
-        <img src={refractHero} alt="" aria-hidden className="size-4 shrink-0" />
-        <span className="text-sm font-medium">Refract</span>
-        {/* Decorative holiday accessory (#1048). */}
-        {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-4 shrink-0 text-muted-foreground" />}
-      </div>
       <ViewsNavGroup />
       {restored && (
         <>
@@ -245,9 +232,12 @@ export function SessionList() {
           </ScrollArea>
         </>
       )}
-      {/* The one persistent footer for adding a repository; one soft `border-divider` spans it and `ProfileItem.tsx` (#447, #567). */}
-      <div className="shrink-0 border-t border-divider p-2">
-        <AddProjectMenu variant="footer" />
+      {/* The one persistent footer for adding a repository; its divider is inset like the Views separator (#1385). */}
+      <div className="shrink-0">
+        <div role="separator" className="mx-2 border-t border-divider" />
+        <div className="p-2">
+          <AddProjectMenu variant="footer" />
+        </div>
       </div>
     </nav>
   )

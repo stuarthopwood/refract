@@ -10,7 +10,7 @@ type Resolved = 'approved' | 'denied'
 
 /** The approval card's footer (#1140, #496): a split Approve whose main part answers OMP's plain
  * approve option and whose "More approve options" menu holds the session item and any file or
- * folder grants the request carries, then Deny. Every answer names OMP's exact option label. */
+ * folder grants the request carries, to the right of Deny (#1387). Every answer names OMP's exact option label. */
 export function ApprovalActions({
   options,
   busy,
@@ -50,17 +50,17 @@ export function ApprovalActions({
 
   return (
     <>
-      <SplitButton menu={menu} menuLabel="More approve options" disabled={busy} onClick={() => approveWith(parsed.plain)}>
-        {parsed.plain}
-      </SplitButton>
       <Button
         size="sm"
-        variant="destructive"
+        variant="outline"
         disabled={busy}
         onClick={() => onAnswer(exact ? { approve: false, option: parsed.deny } : { approve: false }, 'denied')}
       >
         Deny
       </Button>
+      <SplitButton menu={menu} menuLabel="More approve options" disabled={busy} onClick={() => approveWith(parsed.plain)}>
+        {parsed.plain}
+      </SplitButton>
     </>
   )
 }
