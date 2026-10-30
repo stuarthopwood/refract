@@ -97,9 +97,9 @@ export interface ProfileMenuContentProps {
  *  (`h-3 w-5 rounded-[3px] border-border`, decorative, a `--background`/`--primary` gradient
  *  split, never a round shape that could read as a second radio), the same swatch-by-data
  *  approach ThemePicker.tsx uses (each theme's own real `--background` and `--primary` values,
- *  not an invented accent); "Current" is
- *  dropped -- the checked radio's filled dot plus the screen reader's own "checked" state carry
- *  that now. Gate round 5/6 history (`agent://Arch877`): in a DROPDOWN MENU specifically, the
+ *  not an invented accent); "Current" is dropped -- the checked radio's filled dot plus the
+ *  screen reader's own "checked" state carry that now. Gate round 5/6 history
+ *  (`agent://Arch877`): in a DROPDOWN MENU specifically, the
  *  2px `--active-indicator` bar follows focus, never selection (Stuart, 2026-10-15) -- unchanged by
  *  this fix, still `DropdownMenuRadioItem`'s own `focus:shadow-[...]`, never a current-theme
  *  cue. Choosing a DIFFERENT preset saves it immediately via `useThemeStore.getState().save` (a
@@ -147,7 +147,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
         <PaletteIcon aria-hidden />
         Theme
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent ref={subContentRef} sideOffset={4} alignOffset={-4} collisionPadding={8}>
+      <DropdownMenuSubContent ref={subContentRef} className="max-w-64" sideOffset={4} alignOffset={-4} collisionPadding={8}>
         <DropdownMenuRadioGroup
           value={activeId}
           onValueChange={(value) => {

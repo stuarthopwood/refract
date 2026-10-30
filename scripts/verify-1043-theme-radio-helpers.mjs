@@ -130,6 +130,8 @@ export async function openReasoningPicker(cdp) {
     timeoutMs: 10_000,
     label: 'Reasoning picker open with every level listed'
   });
+  // Let the open transition finish so a screenshot never catches the popover mid-fade.
+  await sleep(300);
 }
 
 /** Navigates an already-open `[role="menuitemradio"]` group by keyboard from WHEREVER focus
@@ -180,9 +182,9 @@ export async function navigateRadioGroupByKeyboardTo(cdp, labels, targetLabel) {
   await pressEnterKey(cdp);
 }
 
-/** Focuses the active radio row's own leading ring, reads its computed `border-color`
- * (`group-data-[state=checked]/radio-item:border-primary` only applies while checked) so the
- * forced-colors claim is at least STRUCTURALLY grounded (the `forced-colors:` utility class
+/** Focuses the active radio row's own leading ring and reads its `className` (the checked token
+ *  is `group-data-[state=checked]/radio-item:border-foreground`, applied only while checked) so
+ *  the forced-colors claim is at least STRUCTURALLY grounded (the `forced-colors:` utility class
  * really is on the element the browser would repaint) -- matches `verify-tauri-567.mjs`'s own
  * established fallback for a WebView2 CDP forced-colors limitation: "falls back to a static
  * check that the fix's own CSS rule exists" (full OS forced-colors MEDIA rendering is not
@@ -226,8 +228,8 @@ export async function ringCarriesForcedColorsOverride(cdp) {
  * own two defining substrings -- `group-data-[state=checked]/radio-item` (the group-variant
  * key) and `border-[Highlight]` (the arbitrary value) -- rather than reconstructing Tailwind's
  * exact compiled selector syntax by hand (which differs across versions and which group/media-
- * variant nesting order it picks). Confirms via brace-depth counting (from the nearest `@media`
- * before the match to the match itself) that it is genuinely NESTED inside a forced-colors
+ * variant nesting order it picks). Confirms via brace-depth counting (walking back from the match
+ * to the blocks that enclose it) that it is genuinely NESTED inside a forced-colors
  * media block, and that the matched rule's own declaration body actually sets
  * `border-color: highlight` (CSS colour keywords are case-insensitive; Lightning CSS lowercases
  * them), not just that a rule with a matching selector exists with some unrelated declaration. */
@@ -245,20 +247,30 @@ export function forcedColorsRuleCompiled(repoRoot) {
   if (cssFiles.length === 0) {
     return { error: `no .css file found under ${assetsDir}`, selectorFound: false, insideForcedColorsMedia: false, declaresHighlightBorder: false };
   }
-  const { file, full } = cssFiles[0];
-  const raw = readFileSync(full, 'utf8');
-  const normalized = raw.replace(/\\(.)/g, '$1');
   const targetSelector = '.forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]';
+  // Vite may split the CSS output, so scan every file and use the one that holds the rule.
+  const scanned = cssFiles.map(({ file, full }) => ({ file, normalized: readFileSync(full, 'utf8').replace(/\\(.)/g, '$1') }));
+  const { file, normalized } = scanned.find((entry) => entry.normalized.includes(targetSelector)) ?? scanned[0];
   const selIdx = normalized.indexOf(targetSelector);
   if (selIdx === -1) {
     return { cssFile: file, totalChars: normalized.length, selectorFound: false, insideForcedColorsMedia: false, declaresHighlightBorder: false };
   }
-  const mediaIdx = normalized.lastIndexOf('@media', selIdx);
-  const mediaHeader = mediaIdx === -1 ? '' : normalized.slice(mediaIdx, mediaIdx + 40);
-  const between = mediaIdx === -1 ? '' : normalized.slice(mediaIdx, selIdx);
-  const opens = (between.match(/\{/g) || []).length;
-  const closes = (between.match(/\}/g) || []).length;
-  const insideForcedColorsMedia = mediaIdx !== -1 && /forced-colors/i.test(mediaHeader) && opens - closes >= 1;
+  // Walk back from the match collecting the headers of every block that ENCLOSES it (a closed
+  // sibling `@media` before the match must not count, and an unrelated nested one must not hide
+  // the real forced-colors parent).
+  const enclosingHeaders = [];
+  for (let i = selIdx - 1, depth = 0; i >= 0; i--) {
+    const ch = normalized[i];
+    if (ch === '}') depth++;
+    else if (ch === '{') {
+      if (depth === 0) {
+        const headerStart = Math.max(normalized.lastIndexOf('}', i - 1), normalized.lastIndexOf('{', i - 1), normalized.lastIndexOf(';', i - 1)) + 1;
+        enclosingHeaders.push(normalized.slice(headerStart, i).trim());
+      } else depth--;
+    }
+  }
+  const mediaHeader = enclosingHeaders.find((h) => /^@media[^{]*forced-colors/i.test(h)) ?? enclosingHeaders.find((h) => h.startsWith('@media')) ?? '';
+  const insideForcedColorsMedia = /^@media[^{]*forced-colors/i.test(mediaHeader);
   const bodyStart = normalized.indexOf('{', selIdx);
   const bodyEnd = normalized.indexOf('}', bodyStart);
   const body = bodyStart !== -1 && bodyEnd !== -1 ? normalized.slice(bodyStart, bodyEnd) : '';
@@ -332,7 +344,7 @@ export function dotIsVisuallyVisible(dotState) {
 export async function readSwatchGradient(cdp, themeName) {
   return cdp.evaluate(`
     (() => {
-      const row = Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.textContent.trim().startsWith(${JSON.stringify(themeName)}));
+      const row = Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)});
       const chip = row ? row.children[2] : null;
       if (!chip) return { present: false };
       return { present: true, backgroundImage: getComputedStyle(chip).backgroundImage };

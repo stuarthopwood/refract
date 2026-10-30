@@ -63,6 +63,13 @@ Health check; What's new; About; Help center; and Sign out in red).
   in Obsidian and Nordic Frost). `RADIO_RING_CLASS` is now the single ring for the dropdown and
   context menus, the Ask card and the Merge dialog, so FR-030's "matching the Ask card's radio
   look" means the shared ring, not a `--primary` ring.
+- Q: The Approval pill and the Model picker still showed the current choice with a trailing
+  check/"Current" text -- align them? -> A: Yes. They use the same leading ring-and-dot mark as the
+  Reasoning and Theme menus: the Approval pill is a `DropdownMenuRadioGroup`, and the Model
+  picker's option rows draw the shared `RadioMark` (`radio-group.tsx`). Menu rows get a
+  `forced-colors` outline when focused, and the Theme and Reasoning menus cap at `max-w-64` so a
+  long label truncates. Radix moves DOM focus on pointer hover, so the focus bar also paints on
+  hover; that is accepted, not scoped to `:focus-visible`.
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See who you are and reach Settings (Priority: P1)
@@ -390,8 +397,9 @@ a session, confirming each action's confirmation names what will be lost.
   a leading ring-and-dot radio indicator using the shared `RADIO_RING_CLASS` and `RADIO_DOT_CLASS`
   from `radio-group.tsx` (a `--foreground` ring, filled with a dot when checked; the Ask card and
   Merge dialog use the same ring), never a trailing check
-  standing in for a radio. The Theme submenu (FR-019) and the composer's Reasoning picker are its
-  two current callers.
+  standing in for a radio. The Theme submenu (FR-019), the composer's Reasoning picker and the
+  Approval pill are its current callers; the Model picker's listbox rows draw the same mark through
+  `RadioMark`.
 
 ### Key Entities
 
