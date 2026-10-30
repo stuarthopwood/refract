@@ -2,6 +2,7 @@
 import { createTwoFilesPatch } from 'diff'
 import { type FileData, isDelete, isInsert, parseDiff } from 'react-diff-view'
 
+// Caps the synchronous per-row diff cost; a large, very different pair would otherwise block render.
 const MAX_EDIT_LENGTH = 100_000
 
 export function buildUnifiedDiff(path: string, oldText: string, newText: string): string | undefined {

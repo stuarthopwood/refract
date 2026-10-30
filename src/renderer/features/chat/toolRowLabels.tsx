@@ -25,6 +25,7 @@ export function joinMetaParts(parts: Array<React.ReactNode | undefined>): React.
   )
 }
 
+// `diffStat` re-diffs per render; keyed on `item.edit`, which is stable for a TranscriptItem's life.
 const diffStatCache = new WeakMap<NonNullable<ToolItem['edit']>, { added: number; removed: number } | undefined>()
 function cachedDiffStat(edit: NonNullable<ToolItem['edit']>): { added: number; removed: number } | undefined {
   if (diffStatCache.has(edit)) return diffStatCache.get(edit)

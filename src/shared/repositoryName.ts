@@ -4,6 +4,7 @@ export function validateRepositoryName(trimmed: string): string | undefined {
   if ([...trimmed].length > MAX_REPOSITORY_NAME_LENGTH) {
     return `name too long (max ${MAX_REPOSITORY_NAME_LENGTH} characters)`;
   }
+  // Rejects bidi overrides and zero-width spoofing; ZWJ/ZWNJ are exempt so emoji and Persian/Indic names work.
   if (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(trimmed.replace(/[\u200C\u200D]/g, ''))) {
     return 'name must not contain control characters';
   }

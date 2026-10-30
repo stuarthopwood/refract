@@ -132,6 +132,7 @@ describe('sanitiseForClipboard', () => {
     expect(sanitiseForClipboard(nested)).toBe('');
   });
 
+  // The C0/bidi pass must run first: it makes \uDB40+\uDC69 adjacent so the tag pass strips them as U+E0069.
   it('strips a C0 control sandwiched between unpaired surrogate halves (pass-order regression)', () => {
     const spliced = '\uDB40' + '\u0001' + '\uDC69';
     expect(sanitiseForClipboard(spliced)).toBe('');

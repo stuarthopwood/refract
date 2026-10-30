@@ -1,6 +1,7 @@
 
 import type { SlashCommandDescriptor } from './frames';
 
+// Free-form args stay refused until a fresh probe verifies them (`/add-dir <path>` would widen file-system access).
 /** Allowlist of OMP slash commands verified by probe; the bare name is always allowed, an empty list means bare only. */
 export const SUPPORTED_OMP_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   fast: ['on', 'ultra', 'off', 'status'],
@@ -120,6 +121,7 @@ export function classifySlashInvocation(
   const descriptor = commands.find((c) => matchesName(c, parsed.name));
   if (!descriptor) return 'unknown-command';
   if (parsed.rest === '') return 'supported';
+  // Scan the whole list: a file/skill command must never inherit free-form args from a same-name or alias builtin (#760).
   const shadowedBuiltin = commands.find((c) => matchesName(c, parsed.name) && isBuiltinSource(c.source));
   if (shadowedBuiltin) return classifyAgainstBuiltin(shadowedBuiltin, parsed.rest);
   if (!isBuiltinSource(descriptor.source)) return 'supported';

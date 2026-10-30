@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
+// One shared timer for the whole app; never add a timer per row.
 let tick = 0
 const listeners = new Set<() => void>()
 let timeoutHandle: number | undefined

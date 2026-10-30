@@ -31,8 +31,7 @@ function makeResumeResult(status: SessionStatus, stopReason: SessionRuntimeView[
 }
 
 describe('stillEligibleAfterResume', () => {
-  // Every other hard failure never started anything, so the Session's own resumability is
-  // unchanged.
+  // prompt-failed means agent.start() already succeeded; every other hard failure never started anything.
   it('reports NOT eligible for prompt-failed, but eligible for every other hard failure, regardless of archived', () => {
     const promptFailed: Result<SessionSnapshot> = { ok: false, error: { code: 'prompt-failed', message: 'network blip' } };
     expect(stillEligibleAfterResume(promptFailed, false)).toBe(false);
