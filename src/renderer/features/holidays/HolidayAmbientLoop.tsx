@@ -215,7 +215,6 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
   // never a flicker" promise forbids. `document.getAnimations()` is empty between flights (no
   // `.persist()` call, so the browser auto-removes the finished Animation), and
   // `will-change: transform` is set only for that one flight's own duration, never ambiently.
-  // block the next one).
   useEffect(() => {
     if (!active) {
       remainingFlightDelayMsRef.current = null
