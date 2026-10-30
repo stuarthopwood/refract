@@ -314,7 +314,10 @@ pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlit
             &rollup_messages_of_file(label),
             params![new, sign, session_file],
         )?;
-        conn.execute(&rollup_tools_of_file(label), params![new, sign, session_file])?;
+        conn.execute(
+            &rollup_tools_of_file(label),
+            params![new, sign, session_file],
+        )?;
     }
     for table in ["messages", "tool_calls", "user_messages"] {
         conn.execute(

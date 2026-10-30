@@ -86,8 +86,7 @@ pub async fn budget() -> Budget {
         Ok(value) => (parse_usage(&value), None),
         Err(reason) => (ParsedUsage::default(), Some(reason)),
     };
-    let copilot =
-        snapshot.map(|s| copilot_row(&s, parsed.copilot_resets_at, burn, now));
+    let copilot = snapshot.map(|s| copilot_row(&s, parsed.copilot_resets_at, burn, now));
     let result = Budget {
         copilot,
         providers: parsed.providers,
