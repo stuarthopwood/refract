@@ -77,6 +77,11 @@ notify = { version = "8.1.0", default-features = false }
 # its published `.sha256` asset (research.md decision 4, spec 006).
 sha2 = "0.10.8"
 
+# Spec 060 (#1331, ADR 0006): Refract's own `usage.db`. `bundled` only (no `backup`, `serde_json`,
+# `chrono` or `vtab`); the ingest worker is a plain `std::thread`, so the blocking API never
+# runs on the IPC thread or the tokio pool.
+rusqlite = { version = "0.41.1", default-features = false, features = ["bundled"] }
+
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
 # Windows-only anyway (spec.md Assumptions), but there is no reason to pull Win32 bindings into a
