@@ -7,6 +7,7 @@ import { ArrowUpIcon, SquareIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ComposerContextMenu } from '@/components/ComposerContextMenu'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 
@@ -33,7 +34,11 @@ const COMPOSER_TEXTAREA_CLASS =
  * `icon-sm` button plus its gap is 2.5rem), so text never runs under them. */
 export function ComposerTextarea({ className, actionCount = 2, ...props }: ComponentProps<'textarea'> & { actionCount?: 0 | 1 | 2 }) {
   const reservedPadding = actionCount === 0 ? undefined : actionCount === 1 ? 'pr-10' : 'pr-20'
-  return <Textarea className={cn(COMPOSER_SELECTION_CLASS, COMPOSER_TEXT_CLASS, COMPOSER_TEXTAREA_CLASS, reservedPadding, className)} {...props} />
+  return (
+    <ComposerContextMenu>
+      <Textarea className={cn(COMPOSER_SELECTION_CLASS, COMPOSER_TEXT_CLASS, COMPOSER_TEXTAREA_CLASS, reservedPadding, className)} {...props} />
+    </ComposerContextMenu>
+  )
 }
 
 /** The box: border, radius and fill from the per-theme composer tokens. The ring shows only on the

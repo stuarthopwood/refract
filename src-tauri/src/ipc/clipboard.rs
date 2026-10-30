@@ -11,6 +11,26 @@ use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
     d.register("clipboard.writeText", clipboard_write_text);
+    d.register("clipboard.readText", clipboard_read_text);
+}
+
+/// Composer menu Paste (#471): the sandboxed renderer may refuse `navigator.clipboard.readText`.
+pub fn clipboard_read_text(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let app_handle = state
+            .app_handle
+            .lock()
+            .expect("app_handle mutex poisoned")
+            .clone();
+        let Some(app_handle) = app_handle else {
+            return Err(IpcError::new("clipboard-failed", "No window yet"));
+        };
+        let text = tokio::task::spawn_blocking(move || app_handle.clipboard().read_text())
+            .await
+            .map_err(|err| IpcError::new("clipboard-failed", err.to_string()))?
+            .map_err(|_| IpcError::new("clipboard-failed", "The clipboard has no text"))?;
+        Ok(Value::String(text))
+    })
 }
 
 pub fn clipboard_write_text(state: AppState, args: Vec<Value>) -> HandlerFuture {

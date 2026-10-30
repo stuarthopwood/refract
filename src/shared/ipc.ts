@@ -30,7 +30,7 @@ import type {
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames'; import type { ModelApi, RoleChangeSummary } from './ipc-model';
-import type { AttachmentsApi } from './ipc-attachments'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
+import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi } from './ipc-issues'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
 import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
@@ -332,6 +332,7 @@ export const IPC_REQUESTS = {
   ATTACHMENTS_RECORD_DROPPED_PATHS: 'attachments.recordDroppedPaths',
   IMAGES_GET: 'images.get',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
+  CLIPBOARD_READ_TEXT: 'clipboard.readText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
@@ -581,12 +582,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
    * keep this file at its own file-size baseline (issue #806). */
   attachments: AttachmentsApi;
 
-  clipboard: {
-    /** Fallback for a sandboxed renderer where `navigator.clipboard.writeText` is refused
-     * (`session.setPermissionRequestHandler` denies every permission): writes through main's own
-     * `electron.clipboard` instead, which needs no renderer permission. */
-    writeText(text: string): Promise<Result<void>>;
-  };
+  clipboard: ClipboardApi;
 
   conversations: {
     list(sessionId: string): Promise<Result<ConversationInfo[]>>;

@@ -309,6 +309,7 @@ const REQUEST_LANES = {
   SESSIONS_REVEAL_FILE: 'R7', // #790, ipc/files.rs (file security, not session lifecycle)
   ATTACHMENTS_READ_IMAGE_FILE: 'R4', // #787, ipc/attachments.rs
   CLIPBOARD_WRITE_TEXT: 'R1', // scaffold; clipboard.rs not reassigned to a later lane
+  CLIPBOARD_READ_TEXT: 'R1',
   CONVERSATIONS_LIST: 'R1', // scaffold; conversations.rs not reassigned
   CONVERSATIONS_START_NEW: 'R1',
   CONVERSATIONS_OPEN: 'R1',
