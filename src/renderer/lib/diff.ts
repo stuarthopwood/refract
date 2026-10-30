@@ -1,27 +1,10 @@
-// Builds a git-style unified diff string for one file, for react-diff-view's `parseDiff`
-// (DiffView.tsx, T025). Plain `diff` package (jsdiff) output starts with an `Index:` header that
-// gitdiff-parser (which `parseDiff` wraps) cannot read, so this wraps it in a minimal
-// `diff --git a/<path> b/<path>` header instead. `oldText === ''` is treated as a new file
-// (`--- /dev/null`) so `parseDiff` infers `type: 'add'` rather than `'modify'`.
+// jsdiff output starts with an `Index:` header gitdiff-parser cannot read, so wrap it in a `diff --git` header.
 import { createTwoFilesPatch } from 'diff'
 import { type FileData, isDelete, isInsert, parseDiff } from 'react-diff-view'
 
-// Gate round 1 (code-reviewer High, H2): diffing a large, very different old/new pair is
-// unbounded computational cost run synchronously on every render of every `edit` tool-call row
-// (`ToolRow.tsx`'s `callMeta`) -- capped here so the algorithm gives up and `createTwoFilesPatch`
-// returns `undefined` (the `CreatePatchOptionsAbortable` overload) rather than ever blocking the
-// render on a pathological input.
 const MAX_EDIT_LENGTH = 100_000
 
-// Gate round 1 (Main, D4): `undefined` (this input genuinely aborted past `MAX_EDIT_LENGTH`) and
-// `''` (the patch computed fine but carries no real diff -- malformed or truly identical input)
-// used to both collapse to `''`, so `DiffView.tsx` showed the exact same "No changes" text for
-// "nothing changed" and "this diff is too big to compute" -- `undefined` now stays `undefined`
-// the whole way through so callers can tell the two apart.
 export function buildUnifiedDiff(path: string, oldText: string, newText: string): string | undefined {
-  // Security remediation (Low, PR #597): a crafted file path with embedded CR/LF could
-  // otherwise inject extra header lines into the diff text this function returns, which is
-  // both parsed for display (DiffView.tsx) and put on the clipboard verbatim by its Copy button.
   const safePath = path.replace(/[\r\n]/g, '')
   const isAdd = oldText === ''
   const oldName = isAdd ? '/dev/null' : `a/${safePath}`
@@ -37,10 +20,7 @@ export function buildUnifiedDiff(path: string, oldText: string, newText: string)
   return header + body + (body.endsWith('\n') ? '' : '\n')
 }
 
-// Gate round 1 (code-reviewer High, H2): the added/removed line count used to be hand-rolled
-// twice -- once here, once in `DiffView.tsx`'s own `stats` -- which could disagree the moment
-// either copy drifted. One function, shared by both: `DiffView`'s expanded body and the row's
-// own "+N -M" stat (#632) can never show a different count for the identical diff again.
+// Shared so `DiffView` and the row's "+N -M" stat never disagree (#632).
 export function countChanges(file: Pick<FileData, 'hunks'>): { added: number; removed: number } {
   let added = 0
   let removed = 0
@@ -53,12 +33,6 @@ export function countChanges(file: Pick<FileData, 'hunks'>): { added: number; re
   return { added, removed }
 }
 
-// #632: the "+N -M" one-line stat a collapsed/expanded `edit` call shows in its own row (never
-// a wrong count: `undefined` when the two texts parse to no hunks at all, e.g. an unreadable or
-// identical pair, or when `buildUnifiedDiff` gave up above) -- shares `buildUnifiedDiff`/
-// `parseDiff`/`countChanges` with `DiffView.tsx`'s own expanded diff body instead of a second
-// hand-rolled line-count, so the row's stat and the dialog's own header stat (#630) can never
-// disagree.
 export function diffStat(path: string, oldText: string, newText: string): { added: number; removed: number } | undefined {
   const patch = buildUnifiedDiff(path, oldText, newText)
   const parsed = patch ? parseDiff(patch)[0] : undefined

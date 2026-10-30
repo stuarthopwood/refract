@@ -1,7 +1,3 @@
-// Spec 060 (#1331) contracts/ipc.md: the Usage view's `usage.*` channels. Kept out of `ipc.ts`,
-// which is at its file-size cap: `RefractApi` gains `usage` by module augmentation below, and
-// `check-parity.mjs` reads `IPC_USAGE_REQUESTS` / `IPC_USAGE_EVENTS` from this file. Every result
-// is aggregate or labelled metadata; none carries prompt prose.
 import type { Result } from './ipc'
 
 export const IPC_USAGE_REQUESTS = {
@@ -31,7 +27,6 @@ export interface UsageFilters {
   /** Milliseconds since the epoch; `custom` only. */
   from?: number
   to?: number
-  /** Project label. */
   project?: string | null
   model?: string | null
   reasoning?: string | null
@@ -92,7 +87,6 @@ export interface UsageTopSession {
   usd: number
   credits: number
   calls: number
-  /** True when the file is the Conversation of a Refract Session. */
   conversationKnown: boolean
 }
 
@@ -147,16 +141,11 @@ export interface UsagePrefs {
 }
 
 /**
- * `tzOffsetMinutes` is the value of `new Date().getTimezoneOffset()` (minutes WEST of UTC, so
- * UTC+1 is -60). It decides where "today" and the day buckets start. The Rust handler negates it
- * once (`ipc::usage::query_ctx`) into the minutes-east value `usage::queries::QueryCtx` uses.
- * Every query channel takes it as an optional last argument (absent or null means UTC); `today`
- * and day buckets are wrong without it. Allowed range: -840 to 840.
+ * Every query channel takes it as an optional last argument (absent or null means UTC); `today` and
+ * day buckets are wrong without it.
  */
 export interface UsageApi {
-  /** Starts the backfill and the five-minute rescan; idempotent. */
   start(): Promise<Result<UsageStatus>>
-  /** Ends the rescan (the view closed); a running pass finishes. */
   stop(): Promise<Result<null>>
   status(): Promise<Result<UsageStatus>>
   summary(filters: UsageFilters, tzOffsetMinutes?: number): Promise<Result<UsageSummary>>
@@ -183,7 +172,6 @@ export interface UsageApi {
   budget(): Promise<Result<UsageBudget>>
   getPrefs(): Promise<Result<UsagePrefs>>
   setPrefs(patch: { jokes?: boolean; filters?: UsageFilters }): Promise<Result<UsagePrefs>>
-  /** Emitted at most once a second while an ingest runs, and once when it ends. */
   onProgress(handler: (status: UsageStatus) => void): () => void
 }
 

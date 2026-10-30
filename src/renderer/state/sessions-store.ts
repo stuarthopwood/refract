@@ -9,64 +9,34 @@ import { useSessionListStore } from './session-list-store'
 
 interface SessionsState {
   sessions: SessionSummary[]
-  /** Session ids with an `open()` call in flight (bug report point 4): lets a row/ChatPane show
-   * "Starting the agent..." feedback and ignore a second click while the first is still opening. */
   openingIds: Set<string>
-  /** Issue #1205 (FR-106): Sessions with a forced `open(id, true)` in flight -- the only open
-   * that starts an agent, so the only one the "Starting agent" notice may cover. */
+  /**
+   * Issue #1205: Sessions with a forced `open(id, true)` in flight -- the only open that starts an
+   * agent, so the only one the "Starting agent" notice may cover.
+   */
   startingIds: Set<string>
-  /** Issue #1205 (FR-104): bumped when a forced open begins, so a pane already showing that
-   * Session re-fetches its snapshot (joining the forced call) and swaps saved history for the
-   * live transcript. */
   startSeq: Record<string, number>
-  // Issue #620, UX consult item 2 decision 6: per-repository in-flight guard, shared by every
-  // `create()` caller (the header "+", the row's "New session from {branch}" menu item, and
-  // `NewSessionDialog`) -- previously `SessionList.tsx`'s own `RepositoryGroup` kept this as a
-  // private ref/state pair that only the header "+" button could see, so a second caller (the
-  // menu item) had no way to know a create was already running for that repository (the #102
-  // class of double-create bug). `create()` below both enforces and owns this set, so every
-  // caller's disabled state stays correct without re-implementing the guard itself.
   creatingRepositoryIds: Set<string>
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
   /** #526: patches only this row's `activity` from `session:activity`; never refetches the list. */
   applyActivity(sessionId: string, activity: SessionActivity | null): void
   refresh(): Promise<void>
-  /** `userAction` true starts a stopped Session's agent (Start agent, a typed send, an advisory
-   * Ask). Omitted (every passive path: the pane's own mount-time open) never starts it: a
-   * stopped Session opens history-only (issue #1205, FR-103). */
+  /**
+   * Omitted (every passive path: the pane's own mount-time open) never starts it: a stopped Session
+   * opens history-only.
+   */
   open(id: string, userAction?: boolean): Promise<SessionSnapshot | null>
   create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
-  /** Post-build review fix (Phase7PostBuild/code-reviewer, Medium): resolves `result.ok` so a
-   * caller only announces (or runs a focus fallback for) a genuine success, never a failure
-   * already reported through `notify`'s own toast. */
   archive(id: string): Promise<boolean>
   restore(id: string): Promise<boolean>
-  /** Matches `archive`/`restore`'s own pattern above: resolves `result.ok` so a caller can
-   * announce a genuine success -- never a failure already reported through `notify`'s own
-   * toast (#560 gate round-2 fix: a caller awaiting this unconditionally previously announced
-   * "Stopped" even when `result.ok` was false). */
   stopAgent(id: string): Promise<boolean>
-  /** Issue #748: Hide/Unhide; resolves `result.ok` like `archive`. */
   setHidden(id: string, hidden: boolean): Promise<boolean>
 }
 
-// Callers that arrive while an `open(id)` is already in flight JOIN that call instead of getting
-// `null`: without this, A -> B -> A (A cold-starting) left BOTH the second `open(A)` (returns
-// null because `openingIds.has(id)`) and the first (resolves with a now-stale token, also
-// returns null) applying no snapshot at all, so ChatPane's stop-banner/`chat.commands` fetch and
-// MessageInput's send-after-open were silently skipped.
 const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
 
-// The session list (contracts/ipc.md "Sessions"). Spec 005 (tasks.md T012): which Session(s) the
-// chat area shows is owned entirely by `split-store.ts` now -- this store only starts/reattaches
-// an agent and returns its snapshot; it never sets visibility itself. Round 3 (code-reviewer,
-// Low): `App.tsx`'s own rendered-panes effect is the SOLE caller of `sessions.setVisible` now,
-// and it runs AFTER this store's `open()` resolves (not before, as split-store/init-stores used
-// to), reacting to the resulting state change like every other `useEffect` dependency (preserving
-// `src/main/ipc/sessions.ts`'s existing rule: "Visibility is NOT set here... set solely by the
-// explicit `sessions.setVisible` IPC").
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
   openingIds: new Set(),
@@ -85,26 +55,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           ? {
               ...session,
               status: event.status,
-              // Quality-gate fix (2026-10-08): `stopReason` and `terminatedUnexpectedly` used to
-              // be dropped here, so the row's "Terminated unexpectedly" text (and `stopReason`
-              // itself) only ever updated on the next unrelated `sessions.list()` refresh, never
-              // on the live crash this event actually reports.
               stopReason: event.stopReason,
-              // Quality-gate fix (cycle 2, 2026-10-08): an explicit value on the event is always
-              // authoritative. Otherwise, a still-`stopped` transition (for example
-              // `clearUnread()`'s own status re-emit, which carries no `terminatedUnexpectedly`
-              // at all) must keep whatever this row already had -- main's own main-process flag
-              // genuinely did not change just because an UNRELATED field did -- never silently
-              // wipe a real crash/Resume-eligible row back to `false` until the next unrelated
-              // `sessions.list()` refresh happens to correct it. A transition to a LIVE status
-              // does reset to `false`: a working/idle Session is definitely not "terminated".
               terminatedUnexpectedly:
                 event.terminatedUnexpectedly !== undefined
                   ? event.terminatedUnexpectedly
                   : event.status === 'stopped'
                     ? (session.terminatedUnexpectedly ?? false)
                     : false,
-              // Issue #512: live while this Session's start is in flight; absent once it settles.
               startProgress: event.startProgress,
               unread: event.unread,
               pause: event.pause,
@@ -118,37 +75,16 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     const result = await window.refract.sessions.list()
     if (result.ok) {
       set({ sessions: result.value })
-      // FR-016: a session only ever leaves this list via `sessions.delete` (archiving keeps it
-      // listed); prune any pane still pointing at an id that is now gone.
+      // a session only ever leaves this list via `sessions.delete` (archiving keeps it listed);
+      // prune any pane still pointing at an id that is now gone.
       useSplitStore.getState().pruneDeleted(new Set(result.value.map((session) => session.id)))
-      // Gate round 3 fix (#1076 MEDIUM 3): the one place either a Session delete (it drops out
-      // of this list entirely) or an archive (it stays listed but `archivedAt` is now set) is
-      // already observed -- drops any `commitDraft` for a session that is neither currently
-      // listed nor active, so a half-typed commit message is never kept forever for a Session
-      // that can no longer be reopened the ordinary way.
       useGitChangesStore.getState().pruneCommitDrafts(new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id)))
     } else {
       notify(result.error)
     }
   },
   open: (id, userAction) => {
-    // Quality-gate fix (cycle 2, 2026-10-08): keyed by `id:userAction`, not just `id` -- a
-    // passive, in-flight mount-time open (no `userAction`) must never be silently joined by a
-    // concurrent EXPLICIT one (MessageInput's typed-send, `userAction: true`): the passive call
-    // may resolve with a still-stopped snapshot (`canAutoStart` said no) that the forced caller's
-    // own `chat.send` would then fail against, having dropped its own `userAction: true` on the
-    // floor entirely. Both keys still dedupe their own kind of call exactly as before.
     const key = `${id}:${userAction === true}`
-    // Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): a passive, in-flight open
-    // (no `userAction`) should join an already-in-flight FORCED open for the same session
-    // instead of starting a redundant second IPC round-trip -- the forced call's own result is
-    // always a safe answer for a passive caller too.
-    //
-    // Quality-gate fix (cycle 7, 2026-10-08, code-reviewer, Low): reworded -- the reverse must
-    // never happen: a forced open must never join a passive one, whose result may be a
-    // still-stopped snapshot (the passive caller's own `canAutoStart` check said no) that would
-    // silently drop the forced caller's own `userAction: true` intent, exactly the hazard the
-    // cycle-2 comment above this dedupe key was introduced to avoid.
     const forcedKey = `${id}:true`
     if (key !== forcedKey) {
       const inFlightForced = openPromises.get(forcedKey)
@@ -182,20 +118,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     openPromises.set(key, promise)
     return promise
   },
-  // The one create path for every entry point (the header's one-click + and the Base branch
-  // picker): creates the Session, refreshes the list so its row exists, then shows it in the
-  // focused pane (split-store's `replaceFocused`, the same ordinary single-target action a plain
-  // row click uses -- creating a Session is never itself an "Open in split" gesture), which
-  // ChatPane's per-pane effect turns into an open. Returns the result so each caller reports a
-  // failure its own way (a toast for one-click, inline text in the picker).
   create: async (repositoryId, baseBranch) => {
     // Issue #620, UX consult item 2 decision 6: a caller that fires while this repository's own
-    // create is already in flight gets turned away here instead of issuing a second IPC
-    // round-trip / worktree. The header "+" is only `aria-disabled` (still clickable), and the
-    // row menu item and `NewSessionDialog`'s Create button both use a real Radix/HTML
-    // `disabled` (unselectable, keyboard-skipped) -- this synchronous check-and-set, run before
-    // the first `await` on the single renderer thread, is the one race-proof gate every caller
-    // actually depends on.
+    // create is already in flight gets turned away here instead of issuing a second IPC round-trip
+    // / worktree.
     if (get().creatingRepositoryIds.has(repositoryId)) {
       return { ok: false, error: { code: 'invalid-argument', message: 'A session is already being created for this project.' } }
     }
@@ -204,18 +130,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const result = await window.refract.sessions.create({ repositoryId, baseBranch })
       if (result.ok) {
         await get().refresh()
-        // Issue #1205 (FR-104): creating a Session is an explicit action, so it starts the agent;
-        // started before the pane mounts so the pane's passive open joins this forced one.
+        // Issue #1205: creating a Session is an explicit action, so it starts the agent; started
+        // before the pane mounts so the pane's passive open joins this forced one.
         void get().open(result.value.id, true)
         useSplitStore.getState().replaceFocused(result.value.id)
-        // #735 decision 20, with an accepted departure (recorded on the issue): every create
-        // caller (the header "+", the branch picker, Ctrl+N, the row menu's "New session from
-        // {branch}") funnels through this one action, so opening the Repository's own group
-        // here covers all four at once -- but the same action also runs from the Manage
-        // sessions screen, where focus does not move into this group the way decision 20
-        // otherwise requires. Moving this call to each focus-moving caller individually would
-        // touch `useSessionRowActions.ts`'s own ~21-line headroom under its file-size cap
-        // (#811), judged out of proportion for this Low departure.
         useSessionListStore.getState().openRepositoryGroup(repositoryId)
       }
       return result
@@ -235,9 +153,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     return result.ok
   },
   restore: async (id) => {
-    // #735 decision 20, same accepted departure as `create()` above: captured before the call
-    // -- the Session is still in `sessions` (archived or not) either way, and its
-    // `repositoryId` never changes across a restore.
+    // #735 decision 20, same accepted departure as `create()` above: captured before the call --
+    // the Session is still in `sessions` (archived or not) either way, and its `repositoryId` never
+    // changes across a restore.
     const repositoryId = get().sessions.find((session) => session.id === id)?.repositoryId
     const result = await window.refract.sessions.restore(id)
     if (!result.ok) notify(result.error)

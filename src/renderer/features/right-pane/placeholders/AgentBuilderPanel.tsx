@@ -1,10 +1,3 @@
-// Agent Builder placeholder panel (spec 013 FR-018 to FR-022, issue://393). Same two-state shape
-// as `FdbKnowledgePanel.tsx` (T027, research.md decision 6): off (default) renders the honest
-// three-part empty state; on renders believable, clearly labelled sample cloud-agent content
-// instead, each row carrying its own visible "Sample data" badge (`SampleDataRow.tsx`, shared
-// with `FdbKnowledgePanel.tsx`, FR-021, SC-006). Inert for the same reason `FdbKnowledgePanel.tsx`
-// documents -- nothing real exists behind this panel yet. Sample names are kept short (A11y1
-// gate Low) so they fit the default 320px pane width without truncating.
 import { BotIcon, CloudIcon, HammerIcon } from 'lucide-react'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { useSettingsStore } from '@/state'
