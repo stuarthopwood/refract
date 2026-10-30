@@ -907,6 +907,8 @@ Also filed 2026-10-30: **#1422** (`p1`), Session list: project header hover fill
 
 Also filed 2026-10-30: **#1424** (`p1`), Settings > Appearance: remove the Save and Cancel row so Theme and Chat width autosave like every other Settings control (drops the preview-then-commit state in `AppearanceSection.tsx` and `ChatWidthPicker.tsx`); placed as an index line after #1422's line.
 
+Also filed 2026-10-30: **#1426** (`feature`, `p1`), Composer clock: clicking the clock opens a popover for one-shot alarms with create, edit and delete; alarms fire an OS notification plus an in-app toast when focused, and persist in `settings.json`; placed as an index line after #1424's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
