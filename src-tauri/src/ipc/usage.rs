@@ -11,14 +11,12 @@ use serde_json::{json, Value};
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, HandlerResult, IpcError};
 use crate::usage::project_label::{normalise_path, ProjectIndex};
-use crate::usage::queries::{self, Filters, QueryCtx, QueryError};
+use crate::usage::queries::{self, Filters, QueryCtx, QueryError, MAX_TZ_MINUTES};
 use crate::usage::queries_tables::{self, BreakdownBy, Page, Sort, MAX_PAGE_SIZE};
 use crate::usage::{budget, UsageService, UsageStatus};
 
 const MAX_FILTER_TEXT: usize = 200;
-const MAX_TZ_MINUTES: i64 = 14 * 60;
 const MAX_PAGE_INDEX: i64 = 1_000_000;
-const RANGES: [&str; 5] = ["today", "7d", "30d", "all", "custom"];
 
 static SERVICE: OnceLock<Arc<UsageService>> = OnceLock::new();
 
@@ -105,17 +103,7 @@ fn usage_status(state: AppState, _args: Vec<Value>) -> HandlerFuture {
 /// Checks the text bounds and the range and agent-type allowlists; the SQL layer parameterises
 /// the rest.
 pub(super) fn validate_filters(filters: &Filters) -> Result<(), IpcError> {
-    if !RANGES.contains(&filters.range.as_str()) {
-        return Err(invalid_argument(format!(
-            "usage filters: unknown range {:?}",
-            filters.range
-        )));
-    }
-    if let Some(agent) = filters.agent_type.as_deref() {
-        if agent != "main" && agent != "subagent" {
-            return Err(invalid_argument("usage filters: unknown agentType"));
-        }
-    }
+    filters.validate().map_err(query_error)?;
     let texts = [&filters.project, &filters.model, &filters.reasoning];
     if texts.iter().any(|t| {
         t.as_deref()
