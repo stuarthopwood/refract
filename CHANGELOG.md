@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.14.0 (2026-10-30)
+
+### Features
+
+- feat(session-list): hide a Session without archiving it (#748) (https://github.com/stuarthopwood/refract/pull/1329)
+- feat(chat): degraded-only RPC slow and agent memory readouts (https://github.com/stuarthopwood/refract/pull/1334)
+- feat(session-list): agents button with a running count on each Session row (#507) (https://github.com/stuarthopwood/refract/pull/1336)
+- feat(chat): non-agent row verb emphasis and Tight/Compact/Comfy row density (#1300) (https://github.com/stuarthopwood/refract/pull/1340)
+- feat(session-list): report an issue from the repository menu (#503) (https://github.com/stuarthopwood/refract/pull/1342)
+- feat(chat): live Markdown styling in the composer (#1170) (https://github.com/stuarthopwood/refract/pull/1344)
+- feat(chat): shake actions on the Context usage readout (#506) (https://github.com/stuarthopwood/refract/pull/1345)
+- feat(session-list): issues page and GitHub tools block (#504) (https://github.com/stuarthopwood/refract/pull/1346)
+- feat(chat): theme tokens for Markdown, syntax and Mermaid from each theme's accent (https://github.com/stuarthopwood/refract/pull/1348)
+- feat(chat): ghost Copy button and context menus on chat links (https://github.com/stuarthopwood/refract/pull/1350)
+- feat(session-list): add project flyout and clone from GitHub (#867) (https://github.com/stuarthopwood/refract/pull/1352)
+- feat(session-list): rename Repository to Project in UI text (#867) (https://github.com/stuarthopwood/refract/pull/1355)
+
+### Fixes
+
+- fix(chat): retune watermark and Halloween opacity to 1.6:1, show Compacting for manual /compact (https://github.com/stuarthopwood/refract/pull/1338)
+
 ## v0.13.0 (2026-10-29)
 
 ### Features
