@@ -18,12 +18,19 @@ export interface AddProjectMenuProps {
   className?: string
 }
 
+const TRIGGER_STYLE: Record<AddProjectMenuProps['variant'], { variant: 'ghost' | 'outline' | 'default'; size?: 'sm'; className: string }> = {
+  footer: { variant: 'ghost', className: cn(SIDEBAR_NAV_BUTTON_CLASS, 'w-full text-muted-foreground hover:text-foreground') },
+  toolbar: { variant: 'outline', size: 'sm', className: '' },
+  'first-run': { variant: 'default', className: 'flex-1' }
+}
+
 export function AddProjectMenu({ variant, side, disabled = false, className }: AddProjectMenuProps) {
   const [localOpen, setLocalOpen] = useState(false)
   const [cloneOpen, setCloneOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const openingDialogRef = useRef(false)
   const footer = variant === 'footer'
+  const style = TRIGGER_STYLE[variant]
   const menuSide = side ?? (footer ? 'top' : 'bottom')
   const Chevron = menuSide === 'top' ? ChevronUpIcon : ChevronDownIcon
 
@@ -39,18 +46,12 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
         <DropdownMenuTrigger asChild>
           <Button
             ref={triggerRef}
-            variant={footer ? 'ghost' : variant === 'toolbar' ? 'outline' : 'default'}
+            variant={style.variant}
+            size={style.size}
             disabled={disabled}
             aria-disabled={disabled}
             data-readiness-primary={variant === 'first-run' ? '' : undefined}
-            className={cn(
-              footer
-                ? cn(SIDEBAR_NAV_BUTTON_CLASS, 'w-full text-muted-foreground hover:text-foreground')
-                : variant === 'toolbar'
-                  ? ''
-                  : 'flex-1',
-              className
-            )}
+            className={cn(style.className, className)}
           >
             {footer && <FolderPlusIcon aria-hidden className="size-4" />}
             <span className={cn(footer && 'min-w-0 flex-1 truncate text-left')}>Add project</span>

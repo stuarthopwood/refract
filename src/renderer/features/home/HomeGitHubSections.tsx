@@ -50,26 +50,26 @@ export function MyPullRequestsSection({ hasGithubProjects }: { hasGithubProjects
       }
     >
       <ul className="flex flex-col gap-2">
-          {section.items.map((item) => (
-            <li key={`${item.repositoryId}-${item.number}`}>
-              <ListCardButton
-                ariaLabel={`Open pull request ${item.number}, ${item.title}, ${item.repositoryName}, ${item.state.toLowerCase()}, updated ${formatRelativeTime(item.updatedAt)}`}
-                onClick={() => {
-                  openPullRequest(item.repositoryId, item.number)
-                  openPullRequests()
-                }}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 truncate font-medium">{item.title}</span>
-                  <RelativeTime value={item.updatedAt} focusable={false} className="ml-auto shrink-0 text-xs text-muted-foreground" />
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {item.repositoryName} · #{item.number} · {item.state.toLowerCase()}
-                </span>
-              </ListCardButton>
-            </li>
-          ))}
-        </ul>
+        {section.items.map((item) => (
+          <li key={`${item.repositoryId}-${item.number}`}>
+            <ListCardButton
+              ariaLabel={`Open pull request ${item.number}, ${item.title}, ${item.repositoryName}, ${item.state.toLowerCase()}, updated ${formatRelativeTime(item.updatedAt)}`}
+              onClick={() => {
+                openPullRequest(item.repositoryId, item.number)
+                openPullRequests()
+              }}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 truncate font-medium">{item.title}</span>
+                <RelativeTime value={item.updatedAt} focusable={false} className="ml-auto shrink-0 text-xs text-muted-foreground" />
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {item.repositoryName} · #{item.number} · {item.state.toLowerCase()}
+              </span>
+            </ListCardButton>
+          </li>
+        ))}
+      </ul>
     </ScreenSection>
   )
 }
@@ -98,26 +98,26 @@ export function MyIssuesSection({ hasGithubProjects }: { hasGithubProjects: bool
       }
     >
       <ul className="flex flex-col gap-2">
-          {section.items.map((item) => (
-            <li key={`${item.repositoryId}-${item.number}`}>
-              <ListCardButton
-                ariaLabel={`Open issue ${item.number}, ${item.title}, ${item.repositoryName}, updated ${formatRelativeTime(item.updatedAt)}`}
-                onClick={() => {
-                  select({ repositoryId: item.repositoryId, number: item.number })
-                  openIssues()
-                }}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 truncate font-medium">{item.title}</span>
-                  <RelativeTime value={item.updatedAt} focusable={false} className="ml-auto shrink-0 text-xs text-muted-foreground" />
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {item.repositoryName} · #{item.number}
-                </span>
-              </ListCardButton>
-            </li>
-          ))}
-        </ul>
+        {section.items.map((item) => (
+          <li key={`${item.repositoryId}-${item.number}`}>
+            <ListCardButton
+              ariaLabel={`Open issue ${item.number}, ${item.title}, ${item.repositoryName}, updated ${formatRelativeTime(item.updatedAt)}`}
+              onClick={() => {
+                select({ repositoryId: item.repositoryId, number: item.number })
+                openIssues()
+              }}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 truncate font-medium">{item.title}</span>
+                <RelativeTime value={item.updatedAt} focusable={false} className="ml-auto shrink-0 text-xs text-muted-foreground" />
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {item.repositoryName} · #{item.number}
+              </span>
+            </ListCardButton>
+          </li>
+        ))}
+      </ul>
     </ScreenSection>
   )
 }

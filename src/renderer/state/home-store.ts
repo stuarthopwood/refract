@@ -66,7 +66,8 @@ function toSection<T, U>(settled: Settled<T>, previous: HomeSection<U>, map: (va
 }
 
 /** `allSettled` wraps the `null` "no Projects, no call" placeholders as fulfilled nulls; unwrap them. */
-function unwrap<T>(entry: PromiseSettledResult<Result<T> | null>): Settled<T> {
+function unwrap<T>(entry: PromiseSettledResult<Result<T> | null> | undefined): Settled<T> {
+  if (!entry) return null
   return entry.status === 'fulfilled' && entry.value === null ? null : (entry as PromiseSettledResult<Result<T>>)
 }
 
