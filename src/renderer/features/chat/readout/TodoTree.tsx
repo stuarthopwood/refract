@@ -1,25 +1,13 @@
-// Issue #700/#701 slice (a)'s `PinnedTodoPanel.tsx` and slice (b)'s Todo hover-focus card both
-// render the SAME task tree (phases, tasks with a status glyph plus word, a blocked task's own
-// second "Blocked: <blocker>" line, an abandoned task's strike-through) -- extracted here
-// (2026-10-21, issue #700/#701 slice (b)) so neither ever drifts onto a second, slightly
-// different rendering of one task row. The panel still owns its OWN scroll-follow/collapse/
-// focus-restore machinery; this file only ever owns the pure "how does one phase/task look".
+// One task tree shared by `PinnedTodoPanel.tsx` and the Todo hover-focus card; the panel owns scroll-follow/collapse/focus-restore (#700, #701).
 import type { LucideIcon } from 'lucide-react'
 import { CheckCircle2Icon, CircleAlertIcon, CircleDotIcon, CircleIcon, CircleSlashIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TodoPhase, TodoTask, TodoTaskStatus } from '../../../../shared/todo'
 import { derivePhaseTotals, isPhaseFinished } from './todoDerive'
 
-// Decision item 5's own status-icon table: In progress/Blocked/Abandoned show a visible word
-// (`srOnly: false`); Pending/Done show the SAME word to a screen reader only (`srOnly: true`),
-// since their icon+position already reads clearly for a sighted user. No icon is named for
-// `pending` in the decision record (only in progress/done/abandoned/blocked are); a plain empty
-// `Circle`, muted, is the only one of the five states left needing a shape of its own.
-// Gate round (Stuart 2026-10-21, grilled): a completed task is a named exception to "done is
-// grey" -- both the icon and the task text read `text-severity-success`, the same token
-// Stage/subagent `finished` already uses (`subagentStatus.tsx:29-35`, #941); the icon SHAPE
-// (CheckCircle2Icon) stays the non-colour cue, "Done" stays sr-only. See
-// `docs/design/foundations-icons.md`'s matching exception entry.
+// In progress/Blocked/Abandoned show a visible word; Pending/Done show it to screen readers only.
+// A completed task reads `text-severity-success` (same token as a finished Stage/subagent, #941); the
+// icon shape stays the non-colour cue (`docs/design/foundations-icons.md`).
 const TASK_STATUS_GLYPH: Record<TodoTaskStatus, { Icon: LucideIcon; className: string; word: string; srOnly: boolean; muteText: boolean }> = {
   pending: { Icon: CircleIcon, className: 'text-muted-foreground', word: 'Pending', srOnly: true, muteText: false },
   in_progress: { Icon: CircleDotIcon, className: 'text-state-working', word: 'In progress', srOnly: false, muteText: false },
@@ -28,11 +16,7 @@ const TASK_STATUS_GLYPH: Record<TodoTaskStatus, { Icon: LucideIcon; className: s
   abandoned: { Icon: CircleSlashIcon, className: 'text-muted-foreground', word: 'Abandoned', srOnly: false, muteText: true }
 }
 
-/** Gate round 1 fix (Main P4): an unrecognised or missing status (a future OMP status this
- * slice has never seen) must never crash the render -- falls back to the quiet `pending` glyph
- * rather than throwing on an `undefined` table lookup. `readout_todo.rs`'s own `parse_todo_phases`
- * already normalises an unknown wire value to `"pending"` before this ever runs; this is the
- * renderer's own independent backstop, not a duplicate of that validation. */
+/** Falls back to the `pending` glyph for an unrecognised or missing status instead of throwing on an `undefined` lookup. */
 export function statusGlyph(status: TodoTaskStatus) {
   return TASK_STATUS_GLYPH[status] ?? TASK_STATUS_GLYPH.pending
 }
@@ -52,18 +36,10 @@ export function TodoPhaseGroup({
   phaseIndex: number
   showHeader: boolean
   currentTaskKey: string | null
-  /** Gate round 1 fix 7 (#700/#701 slice b): the pinned panel (slice a) folds a finished phase
-   * to one line; the Todo hover-focus card instead keeps every phase fully expanded at all
-   * times (a momentary glance has no persistent collapsed state to restore), so it passes
-   * `false` here. Defaults `true`, preserving the pinned panel's own existing behaviour
-   * unchanged. */
+  /** The pinned panel folds a finished phase to one line; the hover-focus card passes `false` to keep every phase expanded. Defaults `true`. */
   foldFinished?: boolean
 }) {
-  // Decision item 5: "Finished phases fold to one line and the current phase stays open. A
-  // single phase gets no header" -- `showHeader` is `false` for the single-phase case, so
-  // `finished` folding never applies there either (nothing to fold a header line DOWN to). A
-  // phase WITH the current `in_progress` task can never be "finished" (an in-progress task is
-  // neither done nor abandoned), so it never folds, with no extra check needed here.
+  // Finished phases fold to one line and the current phase stays open; a single phase has no header, so never folds.
   const folded = foldFinished && showHeader && isPhaseFinished(phase)
   const phaseTotals = derivePhaseTotals(phase)
   return (
@@ -79,11 +55,7 @@ export function TodoPhaseGroup({
       {!folded && (
         <ul className="space-y-1">
           {phase.tasks.map((task, taskIndex) => (
-            // Gate round 2 fix (Main, security-reviewer concern): the key must never derive
-            // solely from agent-controlled text (`task.content`) -- two tasks can legitimately
-            // share wording (same name in two phases, or a repeated step), and `phaseIndex`
-            // alone does not disambiguate within a phase either. `phaseIndex`+`taskIndex` is
-            // stable and unique regardless of task content, immune to any content collision.
+            // Key by index, not agent-controlled `task.content`, which can repeat across or within phases.
             <TodoTaskRow key={`${phaseIndex}-${taskIndex}`} task={task} isCurrent={currentTaskKeyOf(phaseIndex, taskIndex) === currentTaskKey} />
           ))}
         </ul>

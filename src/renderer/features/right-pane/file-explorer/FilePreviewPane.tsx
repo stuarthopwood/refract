@@ -1,11 +1,5 @@
-// Spec 015 Slice 2 (T020) / Slice 3 (T025): the preview region for the File explorer's bottom
-// split pane (FR-012 to FR-015, FR-021, FR-023), plus the preview-toolbar's own Open in VS Code/
-// Reveal in File Explorer/Copy path button group (T025) -- the same three actions
-// `TreeNodeRow`'s own context menu offers, duplicated here per tasks.md's own explicit wording
-// ("a preview-toolbar button group offering" the same three) rather than folded away as
-// redundant, since the preview pane is reachable without ever opening the tree row's menu.
-// `FileExplorerPanel.tsx` still owns the Session/store wiring and the three handler functions
-// themselves -- this stays a presentational component, just no longer prop-free for them.
+// Preview region for the File explorer's bottom split, with Open in VS Code/Reveal/Copy path buttons (also in the tree row menu,
+// since the preview is reachable without opening it). `FileExplorerPanel.tsx` owns the Session/store wiring and handlers.
 import { useEffect, useState } from 'react'
 import { FileIcon, FileWarningIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -23,19 +17,13 @@ interface FilePreviewPaneProps {
   onCopyPath: (path: string, confirm?: boolean) => Promise<boolean>
 }
 
-/** Last path segment, `FileTreeNode.path`'s own POSIX-`/`-separated convention -- never a raw
- * OS-separator split, since every path this component ever sees came straight from main's own
- * `FileTreeNode`/`FilePreview` shapes. */
+/** Last path segment of a POSIX-`/`-separated `FileTreeNode.path`; never split on the OS separator. */
 function fileName(path: string): string {
   const index = path.lastIndexOf('/')
   return index === -1 ? path : path.slice(index + 1)
 }
 
-// T020: `CodeBlock` gained an opt-in `lineNumbers` prop (PR #671 gate round 4 fix, High, FR-012)
-// specifically for this caller -- every other `CodeBlock` caller in the app keeps its own exact
-// rendering (`lineNumbers` defaults `false`). Not exhaustive -- common source extensions only,
-// matching Shiki's own bundled grammar ids; an unrecognised extension (or none) falls back to
-// `null`, which `CodeBlock` already renders as plain, unhighlighted text rather than failing.
+// Common source extensions only, matching Shiki's grammar ids; an unrecognised one maps to `null` (plain text).
 const EXTENSION_LANGUAGES: Record<string, string> = {
   ts: 'typescript',
   tsx: 'tsx',
@@ -101,20 +89,12 @@ const PREVIEW_KIND_LABELS: Record<'binary' | 'too-large', string> = {
 export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onReveal, onCopyPath }: FilePreviewPaneProps) {
   const [wrap, setWrap] = useState(false)
   const [showSource, setShowSource] = useState(false)
-  // PR #671 gate round 4 fix (Medium, Code4): the previous comment here CLAIMED a reset already
-  // happened ("a local reset inside the two toggle handlers") -- it did not; `useState(false)`
-  // only ever runs its initializer ONCE, on this component's first mount, so a Wrap/Source toggle
-  // left on from one file carried straight over to the next, regardless of file kind. An effect
-  // keyed on the selected file's own path resets both on every real selection change, without
-  // remounting the whole pane (which a `key={preview?.path}` approach would have forced, dropping
-  // focus on every single click).
+  // `useState(false)` only initialises once, so reset Wrap/Source on each selection change; a `key` remount would drop focus.
   useEffect(() => {
     setWrap(false)
     setShowSource(false)
   }, [preview?.path])
-  // Same transient, non-toast "VS Code not found" treatment `TreeNodeRow`'s own context menu
-  // uses (FR-017) -- this call site is independent of that one's own state, since the two
-  // triggers (a tree row's menu vs this toolbar) can fire for different files/moments.
+  // Same transient "VS Code not found" treatment as the tree row menu, with independent state.
   const [vscodeNotFound, setVscodeNotFound] = useState(false)
   useEffect(() => {
     if (!vscodeNotFound) return
@@ -123,15 +103,10 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
   }, [vscodeNotFound])
 
   const regionLabel = preview ? `Preview of ${fileName(preview.path)}` : 'File preview'
-  // T025: offered for any EXISTING file (every kind except `'deleted'`, which has nothing left
-  // to open/reveal/copy) -- including `binary`/`too-large`/`read-error`, whose content cannot
-  // render here but whose path is still perfectly actionable. Hidden while a new selection is
-  // still loading, so these three actions never fire against a stale `preview.path` left over
-  // from the PREVIOUS selection mid-fetch.
+  // Offered for any existing file (all kinds but `'deleted'`), hidden while a new selection loads so actions
+  // never fire against a stale `preview.path`.
 
-  // The header stays mounted while a new selection loads (actions disabled), so the row never
-  // flickers and the actions never fire against a stale `preview.path`. Hidden for no selection
-  // and for a deleted file, which has nothing to open/reveal/copy.
+  // The header stays mounted while loading (actions disabled) to avoid flicker; hidden for no selection or a deleted file.
   const showHeader = previewLoading || (!!preview && preview.kind !== 'deleted')
   const actionsDisabled = previewLoading || !preview
   const path = preview?.path ?? ''
@@ -147,12 +122,8 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
     copyPath: (confirm) => onCopyPath(path, confirm)
   }
 
-  // FR-023: the content is always the one labelled, keyboard-scrollable region, reachable by Tab
-  // from the tree, regardless of what is currently showing inside it -- `tabIndex={0}` rather than
-  // relying on a scrollable-region-with-no-focusable-descendant implicitly becoming tabbable,
-  // since several of the states below (the image, the empty states) have no focusable
-  // descendant of their own to fall back on. The header sits OUTSIDE that scroll region, one
-  // fixed single row (ghost buttons, no divider; #756 amendment 2026-10-21).
+  // The content is always the one labelled, keyboard-scrollable region (`tabIndex={0}`), since some states have no
+  // focusable descendant. The header sits outside it as one fixed row (#756).
   return (
     <div className="flex h-full flex-col">
       {showHeader && (
@@ -167,7 +138,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
           )}
           <PathActionButtons handlers={handlers} disabled={actionsDisabled} />
           {preview?.kind === 'markdown' && (
-            // `aria-pressed` alone carries the toggle state: the accessible name stays constant ("Source"), never flipping with its own pressed state (gate remediation, Medium).
+            // `aria-pressed` alone carries the toggle state; the accessible name stays "Source".
             <Button type="button" variant="ghost" size="sm" className="shrink-0" disabled={previewLoading} aria-pressed={showSource} onClick={() => setShowSource((v) => !v)}>
               Source
             </Button>
@@ -224,11 +195,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
           </EmptyHeader>
         </Empty>
       ) : preview.kind === 'read-error' ? (
-        // PR #671 gate round 4 fix (Medium, Code4/Sec4): `readPreview`'s own TOCTOU fix (fs.open/
-        // stat/read on one handle) now distinguishes "gone" (ENOENT, handled by the `'deleted'`
-        // branch above) from "exists but couldn't be read" (EACCES/EBUSY -- an agent has it open
-        // for writing, a permissions problem) -- these need their own, different message: the
-        // file is still there, nothing was "removed or renamed".
+        // Exists but unreadable (EACCES/EBUSY), unlike `'deleted'`: the file is still there.
         <Empty className="h-full">
           <EmptyHeader>
             <EmptyMedia variant="icon">

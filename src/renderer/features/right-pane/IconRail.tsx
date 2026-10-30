@@ -1,15 +1,5 @@
-// The permanent icon rail (spec 013 FR-001, issue://538): one button per available panel, always
-// visible at the window's right edge whether the pane is open or collapsed. Mounted in App.tsx as
-// a fixed sibling of the `ResizablePanelGroup`, not inside the pane's own content, so it never
-// disappears when the pane collapses.
-//
-// PR2: roving-tabindex arrow-key navigation (the standard ARIA toolbar pattern,
-// `aria-orientation="vertical"` so ArrowUp/ArrowDown move focus, Home/End jump to the first/last
-// button) -- not built in PR1, when there was exactly one button and nothing to rove between.
-// Only the "active" button (the one last focused, defaulting to the first) carries `tabIndex={0}`;
-// every other button is `-1` and reachable only via the arrow keys, so Tab moves past the whole
-// toolbar in one stop, matching every other composite widget in this codebase (`PanelTabBar.tsx`'s
-// own tabs).
+// The permanent icon rail: one button per panel, a fixed sibling of the `ResizablePanelGroup` so it stays visible when the pane collapses.
+// Roving tabindex (vertical toolbar): only the active button has `tabIndex={0}`, so Tab passes the toolbar in one stop.
 import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react'
@@ -29,8 +19,7 @@ import { toggleHostedPanelFromRail } from './hosted-panel-actions'
 import { toggleRightPane } from './toggle-right-pane'
 
 interface IconRailProps {
-  /** The focused chat pane's Session -- the default target a rail click binds a per-Session
-   * panel to when opening it (FR-008's existing ambiguous-click rule, generalised). */
+  /** The focused chat pane's Session: the default target a rail click binds a per-Session panel to. */
   sessionId: string | null
 }
 
@@ -72,8 +61,7 @@ export function IconRail({ sessionId }: IconRailProps) {
       className="flex shrink-0 flex-col items-center border-l border-divider bg-sidebar-right"
       style={{ width: RAIL_WIDTH_PX }}
     >
-      {/* Stuart, 2026-10-10: the rail starts below a spacer matching the window's own
-          `titleBarOverlay` height, so its top button never sits under the caption buttons. */}
+      {/* Spacer matching the `titleBarOverlay` height so the top button never sits under the caption buttons. */}
       <div aria-hidden className="titlebar-surface w-full shrink-0" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />
       <Tooltip>
         <TooltipTrigger asChild>
@@ -140,10 +128,8 @@ interface RailButtonProps {
 function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonRef, onFocus, onKeyDown }: RailButtonProps) {
   const Icon = panel.icon
   const count = railCountLabel(usePanelCount(panel.id, sessionId))
-  // Gate remediation (Medium): a toggle button's accessible name must not change with its
-  // own pressed state (the repeated anti-pattern this codebase already fixed once in
-  // ChatPane.tsx) -- `aria-pressed` alone carries the state. Spec 024 FR-010: the count is part
-  // of the name, so it is announced while the pane is collapsed.
+  // The accessible name must not change with pressed state (`aria-pressed` carries it); the count is
+  // in the name so it is announced while the pane is collapsed.
   const label = `${panel.name} panel${count ? `, ${count.phrase}` : ''}`
   return (
     <Tooltip>

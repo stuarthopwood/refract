@@ -57,34 +57,18 @@ function AlertDialogContent({
         data-slot="alert-dialog-content"
         data-size={size}
         className={cn(
-          // Issue #498: `md` is a wider variant (448px from the `sm` breakpoint, versus the
-          // default's 384px) for a dialog whose content needs more room; `MergeDialog.tsx` uses
-          // it for its merge-method radiogroup list.
-          // Quality-gate remediation (accessibility-auditor, High, WCAG 1.4.10/2.4.11): at 400%
-          // zoom (a 1280x800 window becomes a 320x200 CSS viewport) this fixed, vertically
-          // centred dialog had no height cap and no scroll, so a tall variant (the `md` radiogroup
-          // list, but any future content too) clipped its title and footer buttons off-screen
-          // with nothing able to scroll them into view. `max-h` leaves a 1rem margin top and
-          // bottom at any viewport height (matching the dialog's own corner-radius visual
-          // breathing room) and applies to every size, since the root cause was shared, not
-          // `md`-specific.
+          // `md` is wider (448px from `sm`, vs 384px). `max-h` keeps a 1rem margin and the dialog scrolls, so at
+          // 400% zoom the title and footer buttons are never clipped off-screen (WCAG 1.4.10/2.4.11).
           "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl bg-popover p-4 text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=md]:max-w-xs data-[size=default]:sm:max-w-sm data-[size=md]:sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         onOpenAutoFocus={(event) => {
           onOpenAutoFocus?.(event)
           if (event.defaultPrevented) return
-          // Quality-gate remediation (accessibility-auditor, High, WCAG 2.4.11/2.4.7): Radix's
-          // own default autofocus calls `cancelRef.current?.focus({ preventScroll: true })` --
-          // deliberately not scrolling, which left the focused Cancel button outside the visible
-          // area of this component's own new `overflow-y-auto` scroll container (added above for
-          // 1.4.10) whenever the dialog's content is taller than the viewport (e.g. at 400%
-          // zoom). Takes over entirely (`preventDefault`) and does the same focus Radix would
-          // have, plus the missing scroll.
+          // Radix's default autofocus uses `preventScroll`, leaving Cancel outside the scrolling dialog at
+          // high zoom; take over and focus it with scroll (WCAG 2.4.11/2.4.7).
           event.preventDefault()
-          // Radix dispatches this as a plain DOM `Event` (not a React SyntheticEvent), so
-          // `currentTarget` is only loosely typed as `EventTarget`; it is always the real
-          // `AlertDialogContent` element this handler is attached to.
+          // Radix dispatches a plain DOM `Event`, so `currentTarget` is typed loosely; it is the `AlertDialogContent` element.
           const container = event.currentTarget as HTMLElement
           const cancel = container.querySelector<HTMLElement>('[data-slot="alert-dialog-cancel"]')
           cancel?.focus()

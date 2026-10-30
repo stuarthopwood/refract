@@ -1,12 +1,6 @@
-// The pull request detail view (specs/003-pull-request-management FR-007 to FR-011, FR-012,
-// FR-015 to FR-022, T015, T019, T022, T026): header (title, number, state, branches, reviewers,
-// assignees, labels -- FR-007), the description through `Markdown.tsx`, an Overview/Changes
-// `Tabs` pair, the check-status header chip (FR-010, polled per research.md "Polling interval"
-// while a check is pending -- FR-010, FR-028), the header action row (New session, Review,
-// merge/checks status), and a top-level comment composer (FR-012). Every action result (success
-// or the exact failure, including `stale`) is shown inline (FR-018); draft/closed/merged pull
-// requests show `reviewDisabledReason`/`mergeDisabledReason` next to each disabled action
-// (FR-019), and a not-mergeable pull request shows that reason instead of offering Merge (FR-020).
+// The pull request detail view: header, description, Overview/Changes tabs, check-status chip (polled while pending),
+// action row and comment composer. Action results show inline; disabled actions show their reason, and a
+// not-mergeable pull request shows that reason instead of Merge.
 import { useEffect, useRef, useState } from 'react'
 import { ExternalLinkIcon } from 'lucide-react'
 import {
@@ -47,10 +41,7 @@ const PR_DETAIL_TAB_TRIGGER_CLASS = cn(
   TAB_ACTIVE_UNDERLINE_CLASS
 )
 
-// research.md "Polling interval and rate-limit headroom": re-calls `detail()` every 15s while
-// `checkState === 'pending'`, stops once checks finish or this view closes; `list()` is never
-// polled (FR-006, FR-028). Confirmed a small fraction (4.8%) of the account's rate-limit budget
-// (docs/spike/FINDINGS.md row 40).
+// Re-calls `detail()` every 15s while `checkState === 'pending'`; `list()` is never polled (4.8% of the rate-limit budget, docs/spike/FINDINGS.md).
 const POLL_INTERVAL_MS = 15_000
 
 interface PullRequestDetailProps {
@@ -77,20 +68,10 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const reviewButtonRef = useRef<HTMLButtonElement>(null)
   const mergeButtonRef = useRef<HTMLButtonElement>(null)
   const newSessionButtonRef = useRef<HTMLButtonElement>(null)
-  // High remediation (code-reviewer): `load()`'s own closure-captured `repositoryId`/`number`
-  // can't detect that the user has since selected a DIFFERENT pull request by the time its
-  // `await` resolves -- selecting A then quickly B could let A's slower response overwrite B's
-  // already-rendered data. This ref is reassigned every render (`DeleteDialog.tsx`'s own
-  // `sessionIdRef` pattern), so a stale response is recognised and dropped instead of applied.
+  // Reassigned every render so a response for a previously selected pull request is recognised and dropped.
   const identityRef = useRef({ repositoryId, number })
   identityRef.current = { repositoryId, number }
-  // Medium remediation (round 3, code-reviewer): `identityRef` alone only tells apart responses
-  // for a DIFFERENT pull request -- it says nothing about which of several overlapping requests
-  // FOR THE SAME pull request is newest. The 15s poll, the manual refresh button, and a
-  // post-mutation reload (`onMerged`/`onSubmitted` below) can all be in flight at once; without
-  // this, a slower poll response landing after a faster manual refresh could silently roll the
-  // view back to stale data. Matches `pull-requests-store.ts`'s own `refreshSequence` pattern,
-  // scoped per-component instead of per-repository since this component already owns one PR.
+  // Orders overlapping requests for the same pull request (poll, manual refresh, post-mutation reload) so a slower, older response cannot roll the view back.
   const loadSequenceRef = useRef(0)
   async function load(): Promise<void> {
     const requestedFor = { repositoryId, number }
@@ -102,10 +83,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
     if (identityRef.current.repositoryId !== requestedFor.repositoryId || identityRef.current.number !== requestedFor.number) {
       return
     }
-    // See `loadSequenceRef`'s own doc comment above: a response that is no longer the newest
-    // in-flight request for this exact pull request is dropped, even though it's for the right
-    // one -- an older, slower poll tick can resolve after a newer manual refresh or post-mutation
-    // reload already landed.
+    // Drop a response that is no longer the newest request for this pull request.
     if (loadSequenceRef.current !== sequence) return
     setLoading(false)
     if (!result.ok) {
@@ -138,8 +116,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.checkState, repositoryId, number])
 
-  // FR-022: creates a Session on the pull request's head branch, then switches to it exactly as
-  // the existing "created and opened" convention does (sessions-store.ts's own `create()`).
+  // Creates a Session on the pull request's head branch and switches to it, like `sessions-store.ts`'s `create()`.
   async function handleNewSession(): Promise<void> {
     setNewSessionBusy(true)
     setNewSessionError(null)
@@ -155,9 +132,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   }
 
   function handleNewSessionClick(): void {
-    // Security remediation (Medium-but-must-fix): a fork pull request's head branch runs
-    // whatever code (and AGENTS.md/prompt content) its author wrote -- starting a Session on it
-    // used to happen with no warning at all.
+    // A fork pull request's head branch runs its author's code and AGENTS.md/prompt content, so warn first.
     if (detail?.isFork) {
       setForkWarningOpen(true)
       return
@@ -180,18 +155,13 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const title = `pull request #${detail.number}`
   const check = CHECK_STATE_DISPLAY[detail.checkState]
   const CheckIcon = check.icon
-  // "Also fix" remediation: `mergeableState === 'unknown'` (GitHub still computing mergeability)
-  // used to collapse into the same "not mergeable" message as a real conflict; it gets its own
-  // "still checking" text instead, and only disables Merge when nothing else already explains why.
+  // `mergeableState === 'unknown'` (GitHub still computing) gets its own "still checking" text and only
+  // disables Merge when nothing else explains why.
   const mergeStillChecking = detail.mergeDisabledReason === null && detail.mergeableState === 'unknown'
   const mergeDisabledReason = detail.mergeDisabledReason ?? (mergeStillChecking ? 'GitHub is still checking whether this pull request can merge.' : null)
   const mergeBlocked = detail.mergeDisabledReason !== null || detail.mergeableState !== 'mergeable'
-  // Issue #1131 (2026-10-21 decision): a state-only disable (draft, closed, merged) already
-  // shows its reason via the solid StatePill above this line -- a separate muted reason line
-  // would just repeat it. Keep the line only while the pull request is actually open
-  // (`reviewDisabledReason === null`) but blocked by a real conflict, a blocked merge, or GitHub
-  // still computing mergeability; the Merge/Review buttons' own tooltips keep every reason
-  // regardless (decision 3), unchanged.
+  // A state-only disable already shows its reason via the StatePill; keep this line only while the pull
+  // request is open but blocked by a conflict, a blocked merge, or mergeability still computing (#1131).
   const showMergeReasonLine = detail.reviewDisabledReason === null && mergeDisabledReason !== null
 
   return (
@@ -209,23 +179,14 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             </p>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {/* High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged
-                was never visibly conveyed in the detail header at all. Issue #568 decision 5:
-                solid StatePill (not the outline Badge this used to be). */}
             <StatePill state={detail.state} />
-            {/* Issue #1121 (2026-10-21 decision): check status now carries its own severity
-                colour, on both the icon and the word -- supersedes #568 decision 5's "turning
-                red only on failure" for PR checks only (`CHECK_STATE_DISPLAY.colorClass`, shared
-                with `PullRequestRow.tsx` so the two surfaces can't drift apart). */}
+            {/* Check status carries its own severity colour (`CHECK_STATE_DISPLAY.colorClass`, shared with `PullRequestRow.tsx`) (#1121). */}
             <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
               <CheckIcon aria-hidden className={cn('size-4', detail.checkState === 'pending' && 'animate-spin')} />
               {check.label}
             </span>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
-            {/* Issue #1132 (2026-10-21 decision): ghost icon-only link beside Refresh, reusing
-                the existing `detail.url` and `Button asChild` as a real anchor (correct link
-                role) so it opens in the system browser, matching `ChangesTab.tsx`'s own
-                plain-external-link pattern -- no new IPC. */}
+            {/* A real anchor (`Button asChild`) so it opens in the system browser (#1132). */}
             <Tooltip>
               <TooltipTrigger asChild aria-describedby={undefined}>
                 <Button asChild variant="ghost" size="icon-sm" aria-label="Open on GitHub (opens in browser)" className={COMPOSER_BUTTON_FOCUS_CLASS}>
@@ -278,9 +239,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           </p>
         )}
         {error && detail && (
-          // "Also fix" remediation: a `stale` (or any other) detail-level failure used to have no
-          // recovery short of navigating away and back -- the refresh button above now covers
-          // this, but the failure itself still needs to be shown.
+          // The refresh button covers recovery, but the failure itself still needs showing.
           <p role="alert" className="mt-1 text-xs text-destructive">
             {error}
           </p>
@@ -366,14 +325,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
       <AlertDialog open={forkWarningOpen} onOpenChange={setForkWarningOpen}>
         <AlertDialogContent
           onCloseAutoFocus={(event) => {
-            // Medium remediation (round 3, a11y: new regression introduced alongside this
-            // round's security fix): this dialog only called `preventDefault()` with no actual
-            // focus target, unlike `MergeDialog`/`ReviewDialog`'s identical sibling dialogs
-            // (correctly fixed this same round) -- dropping focus to `<body>` on every close,
-            // Cancel or "Start Session anyway" alike. Restores to the "New session" button that
-            // opened it, falling back to the detail heading if that button is now disabled
-            // (e.g. the pull request closed while this was open), matching `MergeDialog`'s
-            // exact pattern.
+            // Restore focus to the "New session" button (or the detail heading if it is now disabled), like `MergeDialog`.
             event.preventDefault()
             const button = newSessionButtonRef.current
             if (button && !button.disabled) button.focus()
