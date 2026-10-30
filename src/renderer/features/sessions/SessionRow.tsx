@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useEnterOnAppear } from '@/components/useEnterOnAppear'
 import { HiddenMarker } from './HiddenMarker'
 import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
@@ -109,6 +110,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
     commitRename, handleNameKeyDown, handleOpenButtonKeyDown,
     actions, handleMenuCloseAutoFocus
   } = useSessionRowActions(session, repository)
+  useEnterOnAppear(rowRef, session.createdAt)
 
   // #567 decision 11: one shared app-level tick instead of a timer per row -- this row's own
   // time text (`formatRelativeTimeShort` below) is recomputed on every render, and this is the

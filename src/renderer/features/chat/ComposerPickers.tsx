@@ -36,6 +36,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ClockIcon, Loader2Icon, PaperclipIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
+import { ValueCrossfade } from '@/components/ValueCrossfade'
 import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
 import { notify, useSessionsStore } from '@/state'
@@ -99,7 +100,7 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
               ) : (
                 <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-4" />
               )}
-              <span>{triggerLabel}</span>
+              <ValueCrossfade scope={sessionId} value={triggerLabel} />
               {nextLabel && pendingLabel === null && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}
             </button>
           </DropdownMenuTrigger>

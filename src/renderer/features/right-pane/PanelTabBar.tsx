@@ -98,6 +98,7 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { cn } from '@/lib/utils'
 import { useRightPaneStore } from '@/state'
 import { DiffStatCounts } from '../sessions/sessionDisplay'
@@ -130,6 +131,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   // this one's `[data-panel-close]` query. Shared by both render branches below.
   const wrapperRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const tabListRef = useEnterOnSwitch<HTMLDivElement>(activePanelId, 'tabs')
 
   // Round 3: every open tab draws its own close button, so every tab's own position is tracked
   // (restoring round 1's map, which round 2 had narrowed to just the active tab). Round 4 gate
@@ -281,7 +283,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
           this row's own padding) to itself. */}
       <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 px-2">
         <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
-          <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
+          <div ref={tabListRef} role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
             {openPanelIds.map((id) => (
               <TabButton
                 key={id}
