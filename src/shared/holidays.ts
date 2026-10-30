@@ -17,17 +17,16 @@ export type HolidayId = 'halloween' | 'bonfire-night' | 'christmas' | 'new-year'
  * that has been live-verified end to end is switched on in production. Every window below still
  * participates in the pure calendar (adding a verified holiday later is a one-line change here,
  * never a calendar change), but `activeHoliday` never returns one this table does not mark
- * `true` -- Bonfire Night, Christmas, New Year, Star Wars Day and Pi Day stay off until their
- * own follow-up live-verifies them (PLAN.md, specs/017-holiday-touches/tasks.md Phase 6). A
+ * `true`. All six are on as of slice 2 (spec 017 FR-013, live-verified). A
  * static, exhaustive lookup table (every `HolidayId` present), not a `Set` -- no runtime
  * insertion, no iteration order needed. */
 export const VERIFIED_HOLIDAYS: Record<HolidayId, boolean> = {
   halloween: true,
-  'bonfire-night': false,
-  christmas: false,
-  'new-year': false,
-  'star-wars-day': false,
-  'pi-day': false
+  'bonfire-night': true,
+  christmas: true,
+  'new-year': true,
+  'star-wars-day': true,
+  'pi-day': true
 };
 
 interface MonthDay {
