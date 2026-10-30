@@ -108,9 +108,10 @@ if (a[0] === 'usage' && a.includes('--json')) {
       { label: 'Weekly', window: { resetsAt: reset }, amount: { used: 12, limit: 100, unit: 'percent' } } ] } ] }));
   process.exit(0);
 }
-if (a.includes('--version')) { process.stdout.write('omp 0.0.0-fake\\n'); process.exit(0); }
-process.stderr.write('fake omp 1331: unsupported ' + JSON.stringify(a) + '\\n');
-process.exit(1);
+if (a.includes('--version')) { process.stdout.write('omp/18.10.1\\n'); process.exit(0); }
+// Everything else (readiness RPC, sessions) is the shared recorded-frame fake omp.
+const r = require('node:child_process').spawnSync('node', [${JSON.stringify(path.join(__dirname, 'verify-tauri-fake-omp.mjs'))}, ...a], { stdio: 'inherit' });
+process.exit(r.status ?? 1);
 `;
 
 const GH_LOGIC = (logPath) => `

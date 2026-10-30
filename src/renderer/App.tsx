@@ -14,6 +14,7 @@ import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { IssuesView } from '@/features/issues/IssuesView'
+import { UsageView } from '@/features/usage/UsageView'
 import { toast } from 'sonner'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import {
@@ -118,7 +119,6 @@ export function App() {
   // case (it fires on every mount, not just drags/later changes), so the `useState` initial
   // value only matters for the one frame before that first mount emit lands.
   const [liveDividerPercent, setLiveDividerPercent] = useState(dividerPercent)
-
   const isSplit = paneSessionIds.length === 2
   const canShowSplit = chatWidthPx !== null && chatWidthPx >= MIN_SPLIT_WIDTH_PX
   const showSplit = isSplit && canShowSplit
@@ -144,7 +144,6 @@ export function App() {
   // Quality-gate remediation (code-reviewer, LOW, PR #634): was called inline inside the JSX
   // below; moved up with the other hooks, which is where a hook call belongs.
   const chatAreaAnnouncement = useChatAreaAnnouncer((s) => s.text)
-
   // Spec 005 (FR-007, research.md Decision 8): Ctrl+Shift+\ moves focus to the other pane while
   // a split is open, active window-wide (same pattern MessageInput.tsx's Ctrl+Shift+X listener
   // uses); `event.code` (not `event.key`) targets the physical backslash key regardless of what
@@ -256,7 +255,6 @@ export function App() {
       // Quality-gate remediation pattern (see `OVERLAY_OPEN_SELECTOR`'s own comment above).
       if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
       event.preventDefault()
-
       // Quality-gate fix (round 2, Code/Verif Low): read the live session list here instead of
       // closing over the `sessions` prop, so that value no longer needs to sit in this effect's
       // own dependency array -- every session-status update used to re-attach this listener.
@@ -548,6 +546,8 @@ export function App() {
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : view === 'issues' ? (
                   <IssuesView reservesWindowControls={!paneShown} />
+                ) : view === 'usage' ? (
+                  <UsageView reservesWindowControls={!paneShown} />
                 ) : view === 'home' || paneSessionIds.length === 0 ? (
                   // #869: Home is the no-pane screen and the nav's Home item.
                   <HomeView reservesWindowControls={!paneShown} />
