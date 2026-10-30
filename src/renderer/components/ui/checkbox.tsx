@@ -36,6 +36,11 @@ function CheckboxIndicator({
 
 export const CHECKBOX_LIST_ITEM_CLASS =
   "min-h-6 flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 hover:bg-transparent data-[state=checked]:border-none data-[state=checked]:bg-transparent"
+// Question-card option row (#1434): a fill, not a border; the dot or tick shows the pick. Transparent border keeps a forced-colors edge.
+export const OPTION_ROW_CLASS =
+  "grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 min-h-9 py-1 border-transparent bg-muted hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] data-[state=checked]:border-transparent focus-visible:border-transparent forced-colors:data-[state=checked]:border-[Highlight]"
+/** Mark column for an option row: centred on the whole row, spanning label and description. */
+export const OPTION_MARK_CLASS = "row-span-2 self-center"
 export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center rounded-sm border border-muted-foreground"
 
 export { CheckboxItem, CheckboxIndicator }

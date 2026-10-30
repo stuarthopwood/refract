@@ -410,7 +410,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                   variant="outline"
                   disabled={busy}
                   data-choice-item
-                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal bg-transparent py-1 text-left hover:bg-muted dark:border-border dark:bg-transparent dark:hover:bg-muted"
+                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal border-transparent bg-muted py-1 text-left hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] dark:border-transparent dark:bg-muted dark:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
                   onClick={() => void answer({ value: option }, 'answered', displayLabel)}
                 >
                   <span className="w-full min-w-0 break-words text-sm">
@@ -448,7 +448,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
       </CardContent>
       <CardFooter>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+        <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
           Cancel
         </Button>
       </CardFooter>
