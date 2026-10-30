@@ -29,6 +29,7 @@ pub mod file_explorer;
 pub mod files;
 pub mod git_changes;
 pub mod home;
+pub mod image_save;
 pub mod images;
 pub mod issues;
 pub mod model;
@@ -170,6 +171,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     chat_pause::register(dispatcher);
     subagents::register(dispatcher);
     clipboard::register(dispatcher);
+    image_save::register(dispatcher);
     spellcheck::register(dispatcher);
     file_explorer::register(dispatcher);
     git_changes::register(dispatcher);
