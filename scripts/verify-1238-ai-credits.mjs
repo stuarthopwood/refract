@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1238 (Context usage chip shows session AI credits + plan usage).
-// Drives a REAL built Tauri debug exe over CDP against the FAKE `omp` shim (`ai-credits-1238`
-// scenario: a github-copilot model, 12k/200k context, get_session_stats cost 0.1234), never a
-// real `omp`. The plan lookup uses the real `gh` token, so the tooltip may legitimately say
-// either "Plan: N% used" or "Plan usage unavailable"; the check accepts both and records which.
-//
-// Usage (after `pnpm exec tauri build --debug --no-bundle` on this head, shared target dir set):
-// CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1238-ai-credits.mjs
+// Live CDP check that the context-usage chip shows session AI credits and plan usage.
+// The plan lookup uses the real `gh` token, so the tooltip may say "Plan: N% used" or "Plan usage unavailable"; both pass.
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1238-ai-credits.mjs
 
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -102,7 +97,6 @@ async function main() {
       label: 'Session composer enabled'
     });
 
-    // (a) The credits are their own chip (a button) in the same status line as the figures.
     let creditsSeen = true;
     try {
       await cdp.waitFor(`!!${CREDITS}`, { timeoutMs: 30_000, label: 'AI credits chip shown' });
@@ -122,15 +116,12 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '1-chip.png'));
     check(creditsSeen && chip.sameChip && chip.isButton && /(^|\s)12 credits$/.test(chip.creditsText ?? ''), '(a) AI credits chip shows "12 credits" beside the context usage chip', chip);
 
-    // (e) Keyboard reachable.
     const tabIndex = await cdp.evaluate(`${CREDITS} ? ${CREDITS}.tabIndex : null`);
     check(tabIndex === 0, '(e) [data-ai-credits] is keyboard reachable (tabIndex 0)', { tabIndex });
 
-    // (c) Screen-reader name.
     const sr = await cdp.evaluate(`${CREDITS} ? ${CREDITS}.getAttribute('aria-label') : null`);
     check(typeof sr === 'string' && sr.includes('12 credits'), '(c) aria-label includes "12 credits"', { sr });
 
-    // (b) Tooltip via keyboard focus plus a real mouse move over the element.
     await cdp.evaluate(`${CREDITS}.focus()`);
     const rect = await cdp.evaluate(`(() => { const r = ${CREDITS}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
@@ -142,7 +133,6 @@ async function main() {
         label: 'Tooltip with the plan line'
       });
     } catch {
-      // Recorded below as a failed check with the observed text.
     }
     tooltipText = await cdp.evaluate(`(() => {
       const t = document.querySelector('[role="tooltip"]') || document.querySelector('[data-slot="tooltip-content"]');
@@ -153,7 +143,6 @@ async function main() {
     check(!!planMatch, `(b) Tooltip shows a plan line (observed: ${planMatch ? planMatch[0] : 'none'})`, { tooltipText });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 
-    // (d) Settings > Chat > "Show AI credits" off removes the credits only.
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: 'Settings screen opened' });
     await cdp.clickByText('Chat', { tag: 'button' });

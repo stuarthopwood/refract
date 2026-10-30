@@ -1,32 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #565 (connected-log spine), gate requirement.
-//
-// No fake-omp tape produces a 2+ call tool group with one call failing (every existing tape has
-// at most one `tool` item), and AGENTS.md forbids adding a new fixture while prototyping -- so
-// this drives a REAL `omp` (resolved from PATH, ambient already-signed-in default profile, no
-// `OMP_PROFILE` override), the same isolation posture `verify-563-subagent-gate1.mjs` and this
-// repo's own `docs/spike/*-probe.mjs` scripts already use: scratch cwd/worktree/`REFRACT_DATA_DIR`
-// never touch Stuart's real Session list. Spends real model tokens, tiny echo-only prompts only.
-//
-// Root cause of earlier runs never building a multi-call group (G906Tests finding): default
-// Approval mode is "Ask", and `groupToolItems.ts` (decision 14) treats a call waiting for
-// approval as its own grouping boundary -- TWO bash calls, each needing its own approval card,
-// can therefore NEVER land in one `ToolGroup` no matter how they are prompted or how fast they
-// are approved. Fix: switch the SCRATCH Session's own Approval mode to Auto through the real
-// Approval pill before turn (a), so bash runs with no approval row at all.
-//
-// Two turns, one scratch Session:
-//   (a) two separate bash calls, the second deliberately failing -> a multi-call `ToolGroupRow`
-//       (status "error", "N others, 1 failed"), collapsed by default, expands onto a `SpineList`.
-//   (b) a second turn, exactly one bash call -> a solo `ToolGroupRow` (decision 13: no Spine, no
-//       `<ol>`, same element type as the multi branch at this tree position).
-//
-// Reuses the shared `CARGO_TARGET_DIR` debug exe this session's own `node scripts/ci-local.mjs`
-// (or a prior `pnpm tauri build --debug --no-bundle`) already produced, rebuilding it fresh here
-// too (cheap once Rust is unchanged) and copying it to a PRIVATE scratch dir immediately,
-// confirmed byte-unchanged through the copy. The copy's own sha256, and the checked-out git HEAD,
-// are both logged and asserted right after CDP attaches -- the "this is really #565's own code"
-// proof every finding below depends on.
+// Live CDP check for #565 (connected-log spine): multi-call and solo bash tool groups.
+// Drives a REAL omp in a scratch Session, because no fake-omp tape yields a 2+ call group with one failure.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';
@@ -39,7 +13,6 @@ import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = path.join(tmpdir(), 'refract-565-shots');
 
@@ -49,16 +22,8 @@ const TURN_B_PROMPT =
   "Make exactly ONE bash tool call: run exactly `echo spine-solo`. Then reply with exactly the single word 'spine565b' and nothing else.";
 const TURN_A_SENTINEL = 'spine565a';
 const TURN_B_SENTINEL = 'spine565b';
-// #565-only DOM marker (gate finding): matches a `ToolGroupRow` header by its EXACT label text
-// ("bash"), never a substring match against a button's whole textContent -- a streaming Thinking
-// row's own trigger can contain the word "bash" in its preview text and sits earlier in the DOM,
-// which a loose `.includes('bash')` match would click or measure instead.
-// Gate round 1 (test-reviewer High, H1): #632 renamed a multi-call group's own label from the
-// bare tool name to "bash ×N" -- the exact-match regex below now matches both forms. M2 (this
-// same gate round) then drops the label ENTIRELY for a solo `bash` row (its own summary already
-// names the tool) -- a live run of THIS fixed finder still found only 1 header after turn (b)'s
-// new solo bash call, confirming the fix needed here too: a label-less button is also accepted
-// when its own summary span starts with the command-style grammar ($ `commandRowText` uses).
+// Exact label match only: a streaming Thinking row can contain "bash" in its preview and sits earlier in the DOM.
+// A solo bash row has no label, so a label-less button whose summary starts with the `$` command grammar also matches.
 const BASH_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
     const label = el.querySelector('[data-slot="collapsed-line-label"]');
@@ -177,15 +142,9 @@ async function clickBashHeaderAt(cdp, index) {
   await cdp.click(`(${BASH_HEADER_FINDER}).at(${index})`);
 }
 
-/** Expands or collapses the bash header at `index` ONLY if its current `aria-expanded` state
- * differs from `wantOpen` -- gate finding: a blind toggle click can accidentally re-close a
- * header this run never actually opened (or double-open one already open), corrupting every
- * later geometry read. Waits for the matching `<ol>`/no-`<ol>` state under THIS header's own
- * `[data-slot="collapsible"]` root, not the whole transcript (there can be several headers). */
+/** Sets the bash header at `index` to `wantOpen` only when it differs; a blind toggle could re-close a header and corrupt later geometry reads. */
 async function setBashHeaderExpanded(cdp, index, wantOpen) {
-  // Bug fix: bracket indexing (`arr[-1]`) is ALWAYS `undefined` in JS for a negative index --
-  // only `.at(-1)` resolves "last" -- so this must match `clickBashHeaderAt`'s own `.at()` call
-  // or a negative `index` (turn b's solo header) can never be read back correctly here.
+  // `.at()` not bracket indexing: `arr[-1]` is undefined, and a negative index must resolve like `clickBashHeaderAt`.
   const isOpen = await cdp.evaluate(`(${BASH_HEADER_FINDER}).at(${index})?.getAttribute('aria-expanded') === 'true'`);
   if (isOpen === wantOpen) return;
   await clickBashHeaderAt(cdp, index);
@@ -205,22 +164,11 @@ async function getAccessibleNameAndRole(cdp, selectorExpr) {
   return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
 }
 
-// Root-cause fix round 2 (Main): `settings.setApprovalMode` only ever sets `pendingMode`, applied
-// at each Session's next settle (contracts/ipc.md) -- the pill update this script tried to await
-// by driving the UI would never land before this script's own next step, since nothing settles a
-// scratch Session that was never mid-turn in the first place. Seeding the scratch data dir's own
-// `settings.json` with `approvalMode: "auto"` BEFORE the Session is ever created instead makes
-// `omp` launch already in Auto (`--approval-mode=yolo`, data-model.md), with no settle to wait
-// for and nothing to click.
+// Auto mode must be seeded in settings.json: `setApprovalMode` only sets `pendingMode`, applied at the next settle,
+// which never happens for a Session that is not mid-turn. Ask mode would split the two bash calls into separate groups.
 
-/** Drives the REAL Profile-menu UI (gate finding H1: `window.refract.theme.preview(id)` only
- * moves the title-bar overlay colour, never the renderer's `<html>` class the CSS tokens key off
- * -- `theme-store.ts`'s own CRITICAL-remediation comment). A real `mouseMoved` hover before the
- * click matches how Radix's own `DropdownMenuSub` actually opens (pointer-enter, not just a bare
- * click), which the previous attempt's click-only sequence apparently missed. #1043 fix: each
- * theme row is a real `role="menuitemradio"` (`DropdownMenuRadioItem`), never `role="menuitem"`
- * -- the two row-finding selectors below match only that role; the submenu TRIGGER itself
- * (`themeTriggerFinder`) is untouched, still `role="menuitem"`. */
+/** Drives the real Profile-menu UI: `theme.preview(id)` only moves the title-bar overlay, not the `<html>` class the CSS tokens key off.
+ * A real `mouseMoved` hover is needed to open Radix's `DropdownMenuSub`; theme rows are `role="menuitemradio"` (#1043). */
 async function switchTheme(cdp, themeId, themeName) {
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile dropdown menu open' });
@@ -259,9 +207,7 @@ async function main() {
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-565-exe-'));
     launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-565-launcher-'));
     mkdirSync(SHOTS_DIR, { recursive: true });
-    // Seeded BEFORE launch (never driven through the pill, which only sets `pendingMode` --
-    // Main's diagnosis): `omp` then launches already in Auto (`--approval-mode=yolo`), so no
-    // approval-card grouping boundary ever exists for either scripted turn.
+    // Seeded before launch so omp starts in Auto and no approval card splits a tool group.
     writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
     const port = await getFreePort();
     gitHeadSha = gitHead();
@@ -317,8 +263,7 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // Sanity check (Main): confirm the seeded settings.json actually took effect before relying
-    // on it -- the pill's own accessible name is the one user-visible proof.
+    // The pill's accessible name is the one user-visible proof that the seeded mode took effect.
     const approvalPillLabel = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').endsWith(', approval mode')); return b ? b.getAttribute('aria-label') : null; })()`);
     if (!approvalPillLabel || !approvalPillLabel.startsWith('Auto')) {
       throw new Error(`verify-565-spine: seeded settings.json approvalMode:"auto" did not take effect -- the Approval pill reads "${approvalPillLabel}", expected to start with "Auto".`);
@@ -357,8 +302,7 @@ async function main() {
       throw new Error(`verify-565-spine: expected at least 1 bash ToolGroupRow header after turn (a), found ${headerCountAfterA} -- see turn-a-transcript.html`);
     }
 
-    // Up-front #565 marker (Main's instruction): assert the FIRST header's icon slot is 16px
-    // wide before judging anything else -- the one measurement every other check depends on.
+    // Every later check depends on the first header's icon slot being 16px wide.
     const firstIconWidth = await cdp.evaluate(`(() => { const h = (${BASH_HEADER_FINDER})[0]; const icon = h ? h.querySelector('span') : null; return icon ? icon.getBoundingClientRect().width : null; })()`);
     if (firstIconWidth == null || firstIconWidth < 15 || firstIconWidth > 17) {
       failures.push(`FIRST bash header's icon slot measured ${firstIconWidth}px wide, required 16px (decision 7, size-4) -- this is the #565 marker; the build under test may not actually contain #565's own code.`);
@@ -366,14 +310,11 @@ async function main() {
       findings.push(`First bash header's icon slot measured ${firstIconWidth}px (decision 7 marker confirmed).`);
     }
 
-    // Decision 14: a call waiting for approval is its own grouping boundary, so Auto mode (set
-    // above) is REQUIRED for the two calls to land in one ToolGroup; with it, exactly 1 header.
+    // A call awaiting approval is its own grouping boundary, so Auto mode is required for one group.
     if (headerCountAfterA !== 1) {
       failures.push(`Expected exactly 1 bash ToolGroupRow header after turn (a) (Auto mode set, no approval boundary), found ${headerCountAfterA} -- the two calls did not merge into one multi-call group; see turn-a-transcript.html.`);
     }
-    // Gate round 1 (test-reviewer High, H1): #632 dropped the "+ N other(s)" summary text
-    // entirely (the group header now folds the count into its own label, "bash ×2") -- a
-    // multi-call group is detected by that "×N" suffix on the label instead.
+    // The header folds the count into its label ("bash ×2", #632), so a multi-call group is detected by the "×N" suffix.
     const multiGroupIndex = await cdp.evaluate(`(${BASH_HEADER_FINDER}).findIndex((el) => /\\u00d7\\d+$/.test(el.querySelector('[data-slot="collapsed-line-label"]')?.textContent.trim() ?? ''))`);
     const groupExercised = multiGroupIndex !== -1;
     if (!groupExercised) {
@@ -419,8 +360,7 @@ async function main() {
       if (geometry.olLeft == null || geometry.headerIconLeft == null) {
         failures.push(`Could not measure Spine geometry -- header icon or <ol> missing (${JSON.stringify(geometry)}).`);
       } else {
-        // Gate finding (test-reviewer/code-reviewer HIGH, corroborated by ui-architect-v3): the
-        // Spine's own x is the header icon's CENTRE, not its left edge.
+        // The Spine's x is the header icon's centre, not its left edge.
         const iconCentre = geometry.headerIconLeft + geometry.headerIconWidth / 2;
         const lineToIconCentre = geometry.olLeft - iconCentre;
         if (Math.abs(lineToIconCentre) > 3) {
@@ -504,10 +444,7 @@ async function main() {
       const read = (el) => { if (!el) return null; const s = getComputedStyle(el); return { transitionDuration: s.transitionDuration, animationName: s.animationName }; };
       return { spine: read(ol), member: read(member) };
     })()`);
-    // `globals.css`'s own `prefers-reduced-motion: reduce` block collapses every
-    // transition/animation to a single 0.01ms iteration (foundations-motion.md), not literally
-    // 0s -- `getComputedStyle` reports that as `1e-05s`. Accept anything <=1ms as "no motion",
-    // never literal "0s" only (a test bug the first run of this fix caught).
+    // The reduced-motion block sets 0.01ms, which getComputedStyle reports as `1e-05s`, so accept <=1ms rather than only "0s".
     const motionOk = (m) => !!m && m.transitionDuration.split(',').every((d) => parseFloat(d) <= 0.001) && m.animationName === 'none';
     if (!spineMotion.spine) notExercised.push('Could not measure the Spine <ol> transition/animation under reduced motion (element not found, likely collapsed).');
     else if (!motionOk(spineMotion.spine)) failures.push(`Spine <ol> computed transitionDuration=${spineMotion.spine.transitionDuration}, animationName=${spineMotion.spine.animationName} under reduced motion -- decision 27 expects none.`);

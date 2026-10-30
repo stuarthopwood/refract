@@ -1,33 +1,8 @@
 #!/usr/bin/env node
-// `pnpm release [patch|minor|major] [--dry-run]`: the one-command release. Stops at the first
-// failure with a clear message, and -- for any failure before the commit -- restores
-// `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`
-// to the exact bytes they had before this run touched them (never via `git`).
-//
-// Steps, in order:
-//   a. Preconditions: on `main`, a fully clean tree (no tracked changes, no untracked files),
-//      `git fetch origin`, and `HEAD` == `origin/main`.
-//   b. Work out the next version. The last tag is the highest semver `v*` tag reachable from
-//      HEAD. An explicit level bumps from the current manifest version (asserted to equal the
-//      last tag's version, or there is no tag yet). With no level: no tag yet means ship the
-//      current manifest version as-is; otherwise infer a level from every commit subject (and
-//      `BREAKING CHANGE` footer) since the last tag -- `type!:`/footer => major, `feat` =>
-//      minor, `fix`/`perf` => patch, anything else (including legacy, non-conventional subjects)
-//      doesn't bump. Nothing bumps => stop, naming the last tag and listing every subject.
-//   c. Update the version in all four manifests together (Cargo.lock via `cargo update -p
-//      refract-tauri --offline`, never a text replace), then re-read and assert all four agree.
-//   d. Prepend a `## vX.Y.Z (YYYY-MM-DD)` section to CHANGELOG.md, built from GitHub's own
-//      generated release notes for this version, grouped by each entry's conventional type.
-//   e. Run `pnpm ci:local` on the edited tree.
-//   f. Commit exactly the four version files plus CHANGELOG.md as `chore: release vX.Y.Z`, tag
-//      `vX.Y.Z` (annotated), push `main` then the tag.
-//   g. Run `node scripts/release-local.mjs --notes-from-changelog` to build, sign, verify and
-//      publish. If this fails, the commit/tag/push already happened -- print the exact resume
-//      command instead of trying to undo any of it.
-//
-// `--dry-run`: runs step a, step b, a PRINTED (never written) changelog preview, and step e on
-// the CURRENT, unmodified tree. Writes nothing, commits nothing, tags nothing, pushes nothing,
-// publishes nothing.
+// `pnpm release [patch|minor|major] [--dry-run]`: the one-command release. Any failure before the
+// commit restores the four manifests (package.json, tauri.conf.json, Cargo.toml, Cargo.lock) byte-for-byte, never via `git`.
+// With no level, the bump is inferred from conventional-commit subjects since the last tag.
+// `--dry-run` runs the preconditions, version choice, a printed changelog preview and `ci:local`, writing nothing.
 //
 // Usage: node scripts/release.mjs [patch|minor|major] [--dry-run]  (or `pnpm release ...`)
 
@@ -58,8 +33,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const REPO_SLUG = 'stuarthopwood/refract';
 const CHANGELOG_PATH = path.join(repoRoot, 'CHANGELOG.md');
 
-// Exactly the files `release.mjs` ever stages or commits -- also what gets unstaged on a
-// failed `git add`/`git commit` (see the restore `try` in `main`).
+// The release files this script stages or commits; also what gets unstaged on a failed `git add`/`git commit`.
 const TRACKED_RELEASE_FILES = [
   'package.json',
   'src-tauri/tauri.conf.json',
@@ -68,18 +42,9 @@ const TRACKED_RELEASE_FILES = [
   'CHANGELOG.md',
 ];
 
-// Set by the SIGINT/SIGTERM handler installed right before the first write. Registering a
-// handler at all overrides Node's own default disposition (immediate termination) -- without
-// one, Ctrl+C during a long child process (`cargo update`, `pnpm ci:local`) would kill this
-// script outright, as everyone pressing Ctrl+C in a console sends the break to the whole
-// process group (parent AND child), leaving the manifests and CHANGELOG.md mid-edit with no
-// restore ever running. With a handler installed, the child still dies from the same signal,
-// `spawnSync` returns a non-zero/killed status, and the existing catch block below restores the
-// files exactly as it would for any other failure. Because `main()` is otherwise fully
-// synchronous, this flag alone is not enough to reliably flip the exit code/message to the
-// interrupt-specific one at the exact moment a catch block runs (see `checkInterrupted` below) --
-// every catch site that needs to tell "the user asked to stop" apart from an ordinary failure
-// also awaits one more event-loop tick itself before reading this flag.
+// Set by the SIGINT/SIGTERM handler installed before the first write. Without a handler Ctrl+C
+// (sent to the whole process group) would kill this script mid-edit with no restore; with one, the
+// child still dies, `spawnSync` returns non-zero and the catch block restores the files.
 let interrupted = false;
 
 function installInterruptHandlers() {
@@ -91,18 +56,12 @@ function installInterruptHandlers() {
   process.on('SIGTERM', onSignal);
 }
 
-// Thrown by `checkInterrupted` so every catch site can tell "the user asked to stop" apart from
-// an ordinary failure, without re-reading the `interrupted` flag a second time.
+// Thrown by `checkInterrupted` so catch sites can tell a user stop from an ordinary failure.
 class InterruptedError extends Error {}
 
-// `main()` is otherwise fully synchronous, so the signal handler registered above can only ever
-// run on an actual event-loop tick -- a synchronous catch block running immediately after a
-// failed `spawnSync` can read `interrupted` as still `false` even when a real SIGINT already
-// arrived (confirmed empirically: a genuine `GenerateConsoleCtrlEvent` mid `cargo test` still
-// reported the generic ci:local failure, not the interrupt one, because nothing yielded between
-// the failure and the check). Awaiting a `setImmediate` here gives the queued handler callback
-// one real tick to run before this checks the flag -- called immediately before every
-// irreversible step (`git add`, `commit`, `tag`, `push`, the `release-local.mjs` publish step).
+// `main()` is synchronous, so the signal handler only runs on a real event-loop tick: a catch block
+// right after a failed `spawnSync` can still see `interrupted === false` after a real SIGINT. Awaiting
+// `setImmediate` lets the queued handler run; called before every irreversible step.
 async function checkInterrupted() {
   await new Promise((resolve) => setImmediate(resolve));
   if (interrupted) {
@@ -110,9 +69,7 @@ async function checkInterrupted() {
   }
 }
 
-// Unstages the five tracked release files -- best-effort and never throws, since this only ever
-// runs from inside an already-failing path (a reset failure here must never mask or replace the
-// real error being reported). A no-op if `git add` never ran yet.
+// Best-effort and never throws: it runs inside an already-failing path and must not mask the real error.
 function unstageTrackedFiles() {
   spawnSync('git', ['reset', '--quiet', 'HEAD', '--', ...TRACKED_RELEASE_FILES], {
     cwd: repoRoot,
@@ -173,11 +130,8 @@ function lastTag() {
   return parsed[0];
 }
 
-// `{ subject, body }` for every commit in `tag..HEAD`, oldest first. `--first-parent` follows
-// only `main`'s own mainline: this repo squash-merges every PR into one commit on `main`, so a
-// feature branch's own in-progress commits (`feat: wip`, etc.) must never be walked individually
-// and a PR merged with a merge commit must still contribute exactly the one mainline commit's
-// subject/body, matching what the CHANGELOG (built from PR titles, not raw commits) also sees.
+// `--first-parent` follows only `main`'s mainline: PRs are squash-merged, so a feature branch's WIP
+// commits must never be walked, and a merge commit still counts once (matching the PR-title CHANGELOG).
 function commitsSince(tag) {
   const SEP = '\x1f';
   const REC = '\x1e';
@@ -197,12 +151,9 @@ function commitsSince(tag) {
 
 const LEVEL_RANK = { patch: 1, minor: 2, major: 3 };
 
-// `type!:` or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer => major; `feat` => minor;
-// `fix`/`perf` => patch; every other conventional type and every non-conventional (legacy)
-// subject doesn't bump. The type is matched case-insensitively (`Feat:`, `FEAT:`, `feat:` all
-// count) -- Conventional Commits itself is case-insensitive on the type, only the literal
-// `BREAKING CHANGE`/`BREAKING-CHANGE` footer keyword stays uppercase per spec. Returns the
-// highest level any commit in the range triggers, or null if none did.
+// `type!:` or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer => major; `feat` => minor; `fix`/`perf` =>
+// patch; anything else doesn't bump. The type is case-insensitive per Conventional Commits; the
+// footer keyword stays uppercase. Returns the highest level triggered, or null.
 function inferLevel(commits) {
   let level = null;
   for (const c of commits) {
@@ -222,12 +173,8 @@ function dateStamp() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// `targetCommitish` is the literal branch name `main`, never a raw commit SHA: GitHub's
-// generate-notes endpoint was observed (release pipeline build, 2026-10-14) to reject a SHA
-// that was only just pushed on a non-default branch with "Invalid target_commitish parameter"
-// even though the same SHA resolves fine via plain git, while the branch name always worked --
-// `checkPreconditions` already guarantees HEAD equals `origin/main`, so `main` names the exact
-// same commit.
+// `targetCommitish` is the branch name `main`, not a SHA: generate-notes rejected a just-pushed SHA on a
+// non-default branch ("Invalid target_commitish parameter"); `checkPreconditions` ensures HEAD == origin/main.
 function buildChangelogPreview(nextVersion, tag) {
   const notes = fetchGeneratedNotes({
     repo: REPO_SLUG,
@@ -244,13 +191,9 @@ function runCiLocal() {
   if (result.status !== 0) fail('pnpm ci:local failed');
 }
 
-// Writes the three text-editable manifests, then lets cargo itself sync Cargo.lock's own-crate
-// version entry -- `cargo update -p refract-tauri --offline` is EXPECTED to touch only that one
-// package's version line (verified by hand against `cargo update -w`/`cargo generate-lockfile`,
-// both of which also bumped unrelated transitive dependencies), but `assertCargoLockOnlyVersionChanged`
-// re-checks that expectation on every real run, not just by memory of a one-off manual test --
-// any other Cargo.lock change, however small, fails the release rather than riding along into
-// the release commit silently.
+// `cargo update -p refract-tauri --offline` should touch only that package's version line (`-w` and
+// `generate-lockfile` bump unrelated deps); `assertCargoLockOnlyVersionChanged` re-checks every run so
+// no other Cargo.lock change rides into the release commit.
 function writeManifestsAndLock(paths, raw, nextVersion) {
   const updated = writeManifestVersions(raw, nextVersion);
   writeFileSync(paths.packageJson, updated.packageJson);
@@ -345,13 +288,9 @@ async function main() {
   installInterruptHandlers();
 
   try {
-    // HIGH gate fix: the very first release (no tag yet, no explicit level) ships the CURRENT
-    // manifest version as-is -- `nextVersion === manifestVersion`, so there is nothing for the
-    // four manifests or `cargo update` to change. Running them anyway left `Cargo.lock`
-    // completely unchanged, which `assertCargoLockOnlyVersionChanged` then correctly treated as
-    // a failure ("expected the version line to change"), aborting every first release. Only
-    // touch the manifests/lock -- and only re-check they still agree -- when a real bump is
-    // happening; CHANGELOG.md, ci:local, and the commit/tag/push below all still run either way.
+    // The first release (no tag, no level) ships the current version, so there is nothing for the
+    // manifests or `cargo update` to change; running them left Cargo.lock unchanged, which
+    // `assertCargoLockOnlyVersionChanged` rejected. Only touch them when a real bump happens.
     if (nextVersion !== manifestVersion) {
       writeManifestsAndLock(paths, raw, nextVersion);
 
@@ -366,19 +305,15 @@ async function main() {
 
     runCiLocal();
 
-    // `git add`/`git commit` stay inside this same restore `try`: a hook, missing identity, or a
-    // lock file failing either of them is still a failure BEFORE the commit exists, so it must
-    // unstage and restore exactly like every earlier failure in this block, never leave the five
-    // files edited-and-staged with nothing to show for it.
+    // `git add`/`git commit` stay in this restore `try`: a hook or missing identity still fails BEFORE
+    // the commit exists, so it must unstage and restore rather than leave files edited and staged.
     await checkInterrupted();
     gitInherit(['add', ...TRACKED_RELEASE_FILES]);
     await checkInterrupted();
     gitInherit(['commit', '-m', `chore: release v${nextVersion}`]);
   } catch (err) {
-    // One more event-loop tick before reading `interrupted`: a signal that killed `cargo`/`git`
-    // directly (rather than being caught by `checkInterrupted()` before that step even started)
-    // surfaces here as a generic ci:local/git failure, not `InterruptedError` -- this gives the
-    // queued SIGINT/SIGTERM handler a chance to run and set the flag before the check below.
+    // One more tick before reading `interrupted`: a signal that killed `cargo`/`git` directly surfaces
+    // as a generic failure unless the queued handler gets to set the flag first.
     await new Promise((resolve) => setImmediate(resolve));
     unstageTrackedFiles();
     restoreOriginals(originals);
@@ -395,13 +330,9 @@ async function main() {
     fail(err.message);
   }
 
-  // The commit above now exists: restoring file bytes from here on would contradict real
-  // history, so a tag or push failure is handled differently -- never restore, never `git
-  // reset`/`git tag -d` automatically, only print the exact commands for Stuart to run himself.
-  // Tag creation and the push are two SEPARATE try blocks (not one): the recovery text must
-  // match which one actually failed -- if the tag itself was never created (for example a
-  // leftover local tag from an earlier aborted attempt), telling Stuart to push or delete a tag
-  // that doesn't exist would be actively wrong.
+  // The commit exists, so restoring file bytes would contradict history: never restore or reset
+  // automatically, only print the commands to run. Tag and push are separate `try` blocks so the
+  // recovery text matches which one failed (don't tell the user to push/delete a tag never created).
   try {
     await checkInterrupted();
     gitInherit(['tag', '-a', `v${nextVersion}`, '-m', `v${nextVersion}`]);
@@ -417,9 +348,7 @@ async function main() {
       );
       process.exit(130);
     }
-    // One more tick: `git tag -a` itself could have been killed mid-run by a signal that never
-    // reached `checkInterrupted()` above (which only guards the moment BEFORE the command
-    // starts) -- same resume path applies either way, since a killed `git tag -a` leaves no tag.
+    // One more tick: a signal can kill `git tag -a` after `checkInterrupted()` passed; a killed run leaves no tag.
     await new Promise((resolve) => setImmediate(resolve));
     if (interrupted) {
       console.error(

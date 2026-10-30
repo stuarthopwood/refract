@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #471 (chat-links slice, spec 055). Drives a REAL built Tauri debug exe
-// over CDP against the FAKE `omp` shim (`chat-links-055` scenario), never a real `omp`. External
-// effects are stubbed at `window.__TAURI_INTERNALS__.invoke` (opener open_url and the
-// sessions.revealFile request are RECORDED and answered, never forwarded), so no browser or
-// Explorer window ever opens.
+// Live CDP check for #471 (chat-links, spec 055) against the FAKE `omp` shim (`chat-links-055` scenario).
+// External effects are stubbed at `window.__TAURI_INTERNALS__.invoke` and recorded, so no browser or Explorer window opens.
 //
 // Usage (after `pnpm exec tauri build --debug --no-bundle` on this head, shared target dir set):
 // CARGO_TARGET_DIR=<shared target dir> REFRACT_055_SHOTS_DIR=<dir> node scripts/verify-055-chat-link-menus.mjs
@@ -158,7 +155,6 @@ async function main() {
     await park();
     await shot('01-transcript.png');
 
-    // 1. Ghost Copy button: hidden at rest, not a Tab stop, appears on hover, copies.
     for (const [name, expr, label, expected] of [['web', WEB, 'Copy link', 'https://example.com/docs'], ['file', FILE, 'Copy path', 'src/app.ts']]) {
       const rest = await btnState(expr, label);
       check(!!rest && rest.opacity === '0' && rest.pe === 'none' && rest.tab === -1, `${name}: Copy button hidden at rest, inert, tabIndex -1`, rest);
@@ -175,7 +171,6 @@ async function main() {
       await park();
     }
 
-    // 2. Keyboard focus reveals it, and Tab never lands on it.
     await key('Tab', 'Tab', 9);
     await cdp.evaluate(`(${WEB}).focus()`);
     await park();
@@ -190,7 +185,6 @@ async function main() {
     }
     check(!tabbed.some((t) => t === 'Copy link' || t === 'Copy path'), 'Copy buttons are never Tab stops', tabbed);
 
-    // 3. Right-click and Shift+F10 menus, web link.
     await rightClick(await centre(WEB));
     await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'web menu' }).catch(() => {});
     let items = await menuItems();
@@ -217,7 +211,6 @@ async function main() {
     const refocused = await cdp.evaluate(`document.activeElement === (${WEB})`);
     check(refocused, 'web: focus returns to the link after the menu closes', refocused);
 
-    // 4. File link menu.
     await rightClick(await centre(FILE));
     await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'file menu' }).catch(() => {});
     items = await menuItems();
@@ -240,7 +233,6 @@ async function main() {
     await shot('08-file-shift-f10.png');
     if (items.length) await closeMenu();
 
-    // 5. Streaming message: links inert, no Copy button, no menu.
     const streamState = await cdp.evaluate(`(() => { const m = ${STREAM_MSG}; return { copyButtons: m.querySelectorAll('button[aria-label^="Copy"]').length, anchors: m.querySelectorAll('a[href]').length, fileButtons: m.querySelectorAll('button[aria-label^="Show in File Explorer"]').length }; })()`);
     check(streamState.copyButtons === 0 && streamState.anchors === 0 && streamState.fileButtons === 0, 'streaming: links are inert (no anchor, file button or Copy button)', streamState);
     const live = await cdp.evaluate(`(() => { const m = ${STREAM_MSG}; const s = Array.from(m.querySelectorAll('span')).find((x) => x.textContent.trim() === 'Live link'); const r = s.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);

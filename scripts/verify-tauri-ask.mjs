@@ -1,29 +1,6 @@
 #!/usr/bin/env node
-// Ask card (issue #572) live check against the scratch Tauri debug build. Standalone script
-// (same precedent as `scripts/verify-tauri-side-chat.mjs`: duplicates the small build/copy/
-// launch glue rather than importing `verify-tauri.mjs`, reuses `scripts/verify-tauri-cdp.mjs`'s
-// CDP primitives) -- `scripts/fixtures/omp-frames/README.md`'s own "Scenario selection" section
-// calls for exactly this: a lane selecting its own fixture (`ask.jsonl`) directly via
-// `REFRACT_FAKE_OMP_SCENARIO`, never through `pnpm verify:tauri`'s two committed scenarios.
-//
-// Drives the WHOLE repository-add / session-create / compose-and-send flow through real DOM
-// input, the same way `verify-tauri.mjs`'s own `proveUs4` does (never `window.refract.*` as a
-// shortcut for any of it) -- the point of this check is proving the rendered Ask card UI itself
-// works (tab row, radio rows, tick-box rows, Other input, footer, answered summary) against real
-// mouse clicks and real typed keystrokes, not just that the IPC round trip resolves.
-//
-// Scripted answer (must match `ask.jsonl`'s own `tool_execution_end.result.details.results[]`
-// exactly, contracts/omp-usage.md "Chat line wire shapes"): "Postgres" on the single-choice
-// Database question (the recommended option is SQLite, deliberately NOT the one clicked, so the
-// proof exercises a real user choice rather than accepting the default), and "Auth" + "Search" +
-// an Other answer of "Beta" on the multiple-choice Features question.
-//
-// Not covered here (left for a future round): a real, signed-in `omp`'s own `ask.timeout`
-// handling (`ask.jsonl` carries no `timeout` key, matching `docs/spike/FINDINGS.md` item 59's
-// live probe at its disabled default), and keyboard-only operation of the radio/tab groups
-// themselves (every pick above is a mouse click or typed text) -- gate round 3 adds real
-// keyboard Tab+Enter for ONLY the final Submit step, to prove the D17 focus-ring target is not
-// clipped, not as a stand-in for full keyboard coverage of the whole card.
+// Live check of the Ask card against the scratch Tauri debug build, driven by real DOM input.
+// Scripted answers must match `ask.jsonl`'s `details.results[]`; the click deliberately avoids the recommended option.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync, writeFileSync } from 'node:fs';
@@ -39,15 +16,10 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 
-// Default under `os.tmpdir()` (gate round 2, code review/Low: a literal path under Stuart's own
-// user directory tied this harness to one machine), overridable via `REFRACT_ASK_SHOT_DIR` for
-// a run that needs its own evidence dir (e.g. a gate-fix re-run).
 const ASK_SHOT_DIR = process.env.REFRACT_ASK_SHOT_DIR || path.join(tmpdir(), 'refract-572-ask-shots');
 
 const PROMPT_MESSAGE = 'Please ask me the batch of questions now.';
-// The assistant's own streamed reply token, deliberately absent from PROMPT_MESSAGE above (same
-// reasoning as `verify-tauri.mjs`'s own REPLY_TOKEN: a check against it must only ever match the
-// reply, never the user's own echoed prompt).
+// Deliberately absent from PROMPT_MESSAGE so a match can only be the reply, not the echoed prompt.
 const REPLY_TOKEN = 'askdone9';
 
 function nowStamp() {
@@ -58,9 +30,7 @@ function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
-/** Best-effort recursive delete: a Windows file handle from the just-stopped process tree can
- * still be closing asynchronously for a moment, so EPERM/EBUSY here must never mask the proof's
- * own pass/fail result -- it is logged and otherwise ignored, never thrown. */
+// Windows handles from the stopped process tree may still be closing; EPERM/EBUSY must not mask the result.
 async function safeRmSync(dir) {
   if (!dir) return;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -121,8 +91,7 @@ function copyBuiltExe(destDir) {
   const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
   if (!existsSync(src)) throw new Error(`copyBuiltExe: built exe not found at ${src}`);
   copyFileSync(src, dest);
-  // Gate round 3: logged so a reviewer can confirm two runs built different code rather than
-  // silently reusing a stale cached binary (a sibling lane's gate once found exactly that).
+  // Logged so two runs can be shown not to reuse a stale cached binary.
   const hash = createHash('sha256').update(readFileSync(dest)).digest('hex');
   console.log(`verify-tauri-ask: copied exe sha256 ${hash} (${dest})`);
   return dest;
@@ -155,8 +124,7 @@ function withEvidenceDir(name) {
   return dir;
 }
 
-/** A minimal scratch git repository to add as a Repository: one commit on `main`, nothing else.
- * Never under C:/Repos/personal (AGENTS.md: never seed a repo there); always a fresh mkdtemp. */
+// Never seed a repo under C:/Repos/personal.
 function makeScratchRepo(dir) {
   mkdirSync(dir, { recursive: true });
   const run = (args) => {
@@ -165,11 +133,7 @@ function makeScratchRepo(dir) {
     return result;
   };
   run(['init', '-q', '-b', 'main']);
-  // Persistent repo-local config (not a one-off `-c` flag): `repositories.userName`
-  // (`ipc/repositories.rs`) shells out to `git config user.name` in THIS checkout, falling back
-  // to the machine's own global config when the repo has none set -- a one-off `-c` flag on the
-  // `commit` call below never writes that, so the "Answer:" row's own name would otherwise vary
-  // by whichever machine happens to run this script.
+  // Repo-local config: the app reads `git config user.name`, which a one-off `-c` flag never writes.
   run(['config', 'user.name', 'Verify Tauri Ask']);
   run(['config', 'user.email', 'verify-tauri-ask@example.invalid']);
   run(['commit', '-q', '--allow-empty', '-m', 'init']);
@@ -193,11 +157,7 @@ function assert(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
 }
 
-/** Finds a `[role="radio"]`/`[role="checkbox"]` row by its own option label, reading the
- * label text from the row's `.flex-1.break-words` span's FIRST child text node only -- never the whole
- * element's `textContent`, which for a described option (e.g. "Postgres"/"Relational") or the
- * recommended option (the " (Recommended)" suffix lives in a sibling span inside the same
- * `.flex-1.break-words` element) would otherwise concatenate unrelated text onto the label. */
+// Reads only the first child text node: `textContent` would append descriptions and the " (Recommended)" suffix.
 function roleLabelFinder(role, label) {
   return `(() => {
     const els = Array.from(document.querySelectorAll('[role="${role}"]'));
@@ -221,10 +181,7 @@ async function getRoleLabelInfo(cdp, role, label) {
   })()`);
 }
 
-// Gate-fix (round 1, accessibility): the tab trigger no longer carries a native `title`
-// attribute (D7 -- a real Tooltip replaces it), so a tab is found by its own label span's text
-// instead -- the FIRST `span` child in document order is always the truncating label span
-// (`AskCard.tsx`'s own `TabsTrigger` renders it before the answered-state CheckIcon/sr-only span).
+// Tabs have no native `title`; the first `span` is always the label span (rendered before the CheckIcon).
 function tabFinder(label) {
   return `Array.from(document.querySelectorAll('[role="tab"]')).find((el) => { const span = el.querySelector('span'); return !!span && span.textContent.trim() === ${JSON.stringify(label)}; })`;
 }
@@ -240,9 +197,7 @@ function askRowTriggerFinder() {
   return `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.includes('Asked user'))`;
 }
 
-/** Gate round 3: the REAL computed accessible name of `document.activeElement` via CDP
- * Accessibility domain -- never `textContent`, which has no separator and is not what a screen
- * reader announces. `null` for both fields when nothing is focused or there is no AX node. */
+// Uses the CDP Accessibility domain: `textContent` has no separators and is not what a screen reader announces.
 async function getActiveElementAccessibleName(cdp) {
   await cdp.send('Accessibility.enable');
   const evalResult = await cdp.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false });
@@ -253,18 +208,13 @@ async function getActiveElementAccessibleName(cdp) {
   return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
 }
 
-/** Gate round 3 (architect M-1): a real keyboard Tab, used to drive Submit via keyboard instead
- * of a mouse click -- Chromium suppresses `:focus-visible` after a mouse-driven focus. */
+// Chromium suppresses `:focus-visible` after mouse focus, so the focus ring needs a real keyboard Tab.
 async function pressTab(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
 }
 
-/** Polls `[aria-label="Transcript"]`'s own trailing text until it ends with `finalToken`, only
- * accepting that final state if an EARLIER poll already observed a strict, non-empty, proper
- * prefix of it first (same reasoning as `verify-tauri.mjs`'s own helper of the same name: proves
- * the reply streamed in rather than painting in one shot). Also fails loudly on a "prompt
- * failed" notice. */
+// Requires an earlier poll to see a proper prefix of finalToken, proving the reply streamed rather than painted at once.
 async function waitForStreamedReply(cdp, { finalToken, timeoutMs = 60_000, intervalMs = 250 }) {
   const deadline = Date.now() + timeoutMs;
   let sawPartialPrefix = false;
@@ -292,9 +242,6 @@ async function waitForStreamedReply(cdp, { finalToken, timeoutMs = 60_000, inter
   throw new Error(`waitForStreamedReply: timed out after ${timeoutMs}ms waiting for a streamed reply ending in "${finalToken}" (partial prefix observed: ${sawPartialPrefix}; last: ${JSON.stringify(lastValue)})`);
 }
 
-/** The Ask card live check itself: real repository-add / session-create / compose-and-send flow
- * (never `window.refract.*` as a shortcut), then real mouse clicks and typed keystrokes against
- * the rendered Ask card. */
 async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
   try {
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
@@ -333,22 +280,17 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
       { timeoutMs: 30_000, label: 'Sent message rendered in transcript' },
     );
 
-    // --- The Ask card itself: wait for the two-question tab row. ---
     await cdp.waitFor(`document.querySelectorAll('[role="tab"]').length === 2`, { timeoutMs: 30_000, label: 'Ask card tab row rendered (2 tabs)' });
     const tabTitles = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).map((el) => { const span = el.querySelector('span'); return span ? span.textContent.trim() : null; })`);
     assert(JSON.stringify(tabTitles) === JSON.stringify(['Database', 'Features']), `tab row should read Database, Features in request order: ${JSON.stringify(tabTitles)}`);
     const databaseTab = await getTabInfo(cdp, 'Database');
-    // Gate-fix (round 1): `data-state` is unreliable on this element (Tooltip's own asChild
-    // merge overwrites it with its own open/closed value), so the active tab is read from
-    // `aria-selected` instead, which Tabs sets independently and Tooltip never touches.
+    // Tooltip's asChild merge overwrites `data-state`, so read the active tab from `aria-selected`.
     assert(databaseTab && databaseTab.ariaSelected === 'true', `Database tab should be active by default (first question, never-opened tab row): ${JSON.stringify(databaseTab)}`);
     const sqliteRow = await getRoleLabelInfo(cdp, 'radio', 'SQLite');
-    // D11/D31 (gate round 1): the muted marker is a comma-separated word, "SQLite, Recommended" --
-    // never "(Recommended)" in parentheses.
+    // The muted marker is comma-separated ("SQLite, Recommended"), never parenthesised.
     assert(sqliteRow && sqliteRow.text.includes(', Recommended'), `SQLite row should read ", Recommended" (recommended:1 on the Database question): ${JSON.stringify(sqliteRow)}`);
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '01-tab-row-database-active.png'));
 
-    // Click Postgres (NOT the recommended SQLite) -- a genuine user choice, not accepting the default.
     await clickRoleLabel(cdp, 'radio', 'Postgres');
     await cdp.waitFor(
       `(() => { const el = ${roleLabelFinder('radio', 'Postgres')}; return !!el && el.getAttribute('aria-checked') === 'true'; })()`,
@@ -356,14 +298,12 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     );
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '02-postgres-selected.png'));
 
-    // Switch to the Features tab.
     await cdp.click(tabFinder('Features'));
     await cdp.waitFor(`(() => { const el = ${tabFinder('Features')}; return !!el && el.getAttribute('aria-selected') === 'true'; })()`, {
       timeoutMs: 15_000,
       label: 'Features tab becomes active',
     });
 
-    // Tick Auth and Search (not Billing), tick Other and type "Beta" into its Other input.
     await clickRoleLabel(cdp, 'checkbox', 'Auth');
     await cdp.waitFor(
       `(() => {
@@ -398,16 +338,11 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     });
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '03-features-tab-ticked.png'));
 
-    // Both questions are now complete: the primary button reads Submit, not Next.
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Submit')`,
       { timeoutMs: 15_000, label: 'Primary button reads Submit (both questions complete)' },
     );
-    // Gate round 3 (architect M-1): drive Submit via REAL keyboard (Tab, Tab, Enter) from the
-    // Other input's own focus, not a mouse click -- Chromium suppresses `:focus-visible` after a
-    // mouse-driven focus (which is exactly why the earlier mouse-click screenshot showed no
-    // ring, expected there but not proof either way for the keyboard path this decision record
-    // actually cares about). Tab order: Other input -> Cancel -> Submit.
+    // Submit via real keyboard (Tab order: Other input -> Cancel -> Submit); a mouse click would hide the focus ring.
     await pressTab(cdp)
     await pressTab(cdp)
     const focusedIsSubmitButton = await cdp.evaluate(
@@ -416,9 +351,6 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     assert(focusedIsSubmitButton, 'Tab, Tab from the Other input did not land keyboard focus on the Submit button');
     await cdp.pressEnter();
 
-    // The card resolves: its own Cancel/Submit footer is gone (no tab row, no Submit/Next button
-    // left anywhere), and the transcript's own `ask` tool item supersedes it with the collapsed
-    // "Asked user:" summary row.
     await cdp.waitFor(`document.querySelectorAll('[role="tab"]').length === 0`, { timeoutMs: 30_000, label: 'Ask card footer/tab row gone after Submit' });
     await cdp.waitFor(
       `!Array.from(document.querySelectorAll('button')).some((el) => { const t = el.textContent.trim(); return t === 'Submit' || t === 'Next' || t === 'Cancel'; })`,
@@ -431,27 +363,16 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     const summaryRowText = await cdp.evaluate(`(() => { const el = ${askRowTriggerFinder()}; return el ? el.textContent.replace(/\\s+/g, ' ').trim() : null; })()`);
     assert(summaryRowText && summaryRowText.includes('Asked user') && summaryRowText.includes('Which database? and 1 more'), `collapsed summary row text unexpected: ${JSON.stringify(summaryRowText)}`);
 
-    // D17 (gate round 2): focus must land on the collapsed "Asked user:" row's own trigger, not
-    // fall to <body> -- proves the ask-focus-intent handoff (AskCard -> ResolvedRequestSummary/
-    // AskQuestionRow) actually fires on a REAL unmount, not just by reading the source.
-    //
-    // Gate round 3 (test review L-b): the earlier version checked `textContent.includes('Asked
-    // user:')`, which would ALSO pass if focus had landed on the transcript viewport (the user's
-    // own echoed prompt plus "Asked user:" both sit inside it) -- this now asserts strict element
-    // identity against the same `askRowTriggerFinder()` the rest of this script already uses.
+    // Focus must land on the "Asked user:" trigger, not <body>; assert element identity, since a
+    // textContent match would also pass for the transcript viewport.
     const focusIsTheRow = await cdp.evaluate(`document.activeElement === ${askRowTriggerFinder()}`);
     const focusedTextContent = await cdp.evaluate(
       `(() => { const a = document.activeElement; return a ? a.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80) : null; })()`,
     );
     assert(focusedTextContent !== null, `focus fell to <body> after Submit (D17 regression): textContent ${JSON.stringify(focusedTextContent)}`);
     assert(focusIsTheRow, `focus after Submit landed on an element other than the "Asked user:" row's own trigger: textContent ${JSON.stringify(focusedTextContent)}`);
-    // Gate round 3 (architect M-3, code review): `textContent` joins adjacent spans with no
-    // separator and is NOT the accessible name despite round 2's field calling it that -- read
-    // the real, computed accessible name through the CDP Accessibility domain instead.
     const focusedAxName = await getActiveElementAccessibleName(cdp);
-    // Gate round 3 (architect M-1): is the focus ring actually visible, and if not, why -- taken
-    // HERE (focus already confirmed on the row), not right after pressEnter, since the earlier
-    // screenshot could race the backend round trip and capture a transitional frame.
+    // Taken after focus is confirmed: a shot right after pressEnter could race the backend round trip.
     const ringDiag = await cdp.evaluate(`(() => {
       const el = document.activeElement;
       if (!el) return null;
@@ -460,9 +381,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     })()`);
     console.log(`verify-tauri-ask: focus after Submit -- element is the Asked-user row: ${focusIsTheRow}; textContent: ${JSON.stringify(focusedTextContent)}; real accessible name (AX tree): ${JSON.stringify(focusedAxName)}; focus-ring diagnostic: ${JSON.stringify(ringDiag)}`);
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '04-submit-clicked.png'));
-    // Gate round 3 (architect M-1): a tight `clip` around the row's own bounding rect, scaled up
-    // -- the full-window screenshot above renders this row at under 30px tall, too small for a
-    // 2px ring to read reliably by eye even when the computed style above confirms it is there.
+    // Tight scaled clip: the row is under 30px tall in the full screenshot, too small to see a 2px ring.
     const rowRect = await cdp.evaluate(
       `(() => { const el = ${askRowTriggerFinder()}; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
     );
@@ -472,7 +391,6 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     });
     writeFileSync(path.join(ASK_SHOT_DIR, '04b-submit-focus-ring-closeup.png'), Buffer.from(closeUpData, 'base64'));
 
-    // Expand it and assert both questions' own Answer rows.
     await cdp.click(askRowTriggerFinder());
     await cdp.waitFor(`document.body.textContent.includes('Answer: Verify Tauri Ask: Postgres')`, {
       timeoutMs: 15_000,
@@ -484,9 +402,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     });
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '05-resolved-summary-expanded.png'));
 
-    // The turn itself completes after the Ask card resolves: the assistant's own streamed reply
-    // (ask.jsonl's own distinct token) still arrives, proving the structured-dialog answer let the
-    // rest of the turn proceed normally, not just that the dialog's own round trip resolved.
+    // The reply still arriving proves the answer let the rest of the turn proceed.
     await waitForStreamedReply(cdp, { finalToken: REPLY_TOKEN, timeoutMs: 30_000 });
 
     console.log('PASS: Ask card tab row, radio rows, tick-box rows, Other input, footer, and the resolved/expanded answered summary all verified against real DOM input.');
@@ -506,8 +422,7 @@ async function main() {
   try {
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-ask-shim-'));
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-ask-data-'));
-    // Isolation (refract-tauri-live-check-isolation skill): an EMPTY scratch import source, so a
-    // debug build's one-time Electron-registry import never reads Stuart's real `%APPDATA%\pinion`.
+    // Empty scratch import source so the one-time registry import never reads the real `%APPDATA%\pinion`.
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-ask-import-src-'));
     repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-ask-repo-')));
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-ask-exe-'));
@@ -543,12 +458,8 @@ async function main() {
 
     await runAskChecks(cdp, evidenceDir, { repoDir, message: PROMPT_MESSAGE });
 
-    // Gate-fix (round 1, test review Medium): the scripted tape answers with a fixed reply
-    // regardless of what Refract actually sent, so the resolved summary rendering correctly
-    // proves only that `ask.jsonl`'s own scripted `details.results[]` matches what this script
-    // expects -- it does NOT by itself prove the D4 wire payload (`buildAnswers`'s real output).
-    // `REFRACT_FAKE_OMP_DEBUG_LOG` above already logs every RECV'd command verbatim; pull the
-    // real `extension_ui_response` out of it here so the exact payload can be quoted as evidence.
+    // The tape replies with fixed results, so the summary does not prove the wire payload; quote the real
+    // `extension_ui_response` from the debug log instead.
     const debugLogText = readFileSync(debugLogPath, 'utf8');
     const recvAnswerLine = debugLogText
       .split('\n')

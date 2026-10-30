@@ -1,24 +1,6 @@
 #!/usr/bin/env node
-// Static guard for issue #387: this codebase is strictly 2-space indented, so any *odd* leading-
-// space count on a non-blank line is a reliable signature of the write/edit tool's silent
-// whole-file reformatting bug (confirmed root cause: `cfg://lsp`'s `formatOnWrite: true` driving
-// an LSP formatter with the wrong indent width -- see issue #387's own comments). A JSDoc block
-// continuation line (` * text` or a bare `*/` closing delimiter) is legitimately odd-indented by
-// convention and is excluded. Usage: node scripts/check-indent.mjs [rootDir] [--check-nesting]
-// (rootDir default: repo root, excluding node_modules, out, dist and .git). Scans .ts/.tsx/.js/
-// .mjs files. Exits 1 if any unallowed odd-indent line is found, 2 if no matching files were
-// scanned, 0 otherwise.
-//
-// LIMITATION: the core check is PARITY only (odd vs even leading-space count). A file can be
-// 100% even-indented and still have genuinely inverted nesting relative to its own block
-// structure -- e.g. a `try { ... } catch { ... }` body indented LESS than its own `try`/`catch`
-// line, with every indent count still even. A prior restoration pass produced exactly this
-// (doubling only odd-count lines instead of every line uniformly) and this parity check reported
-// it as clean. Pass `--check-nesting` to additionally run a nesting-inversion heuristic (see
-// `findNestingInversions` below); it is off by default because it is noisy on this repo's
-// existing corpus (multi-line template literals and chained call/arrow-function arguments both
-// produce false positives), so treat its output as a prompt for manual diff review, not a hard
-// failure signal, and always manually diff-review any file this script restores.
+// Guard for #387: the codebase is 2-space indented, so an odd indent flags the edit tool's
+// silent reformatting bug. Parity only; `--check-nesting` adds a noisy heuristic, off by default.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -31,11 +13,7 @@ const checkNesting = process.argv.includes('--check-nesting');
 const root = path.resolve(process.cwd(), args[0] ?? repoRoot);
 const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git']);
 
-// Files with known, pre-existing odd-indent damage (issue #387) not fixed by this guard's own
-// introducing change (PLAN.md row A3 named only 4 files; these 4 more were found by the same
-// repo-wide scan but are out of that row's scope). Tracked here, not silently ignored, so this
-// guard still catches any NEW instance of the bug without re-litigating these on every run.
-// Follow-up: fix these and remove the entries (tracked in #593).
+// Known pre-existing odd-indent damage; allowed so new instances still fail. Remove when fixed (#593).
 const ALLOWED_FILES = new Set([
   'src/shared/mermaidTheme.ts',
   'src/renderer/state/theme-store.ts',
@@ -68,14 +46,7 @@ function isDirectory(p) {
   }
 }
 
-// Heuristic only (false positives expected and acceptable, same philosophy as the parity check
-// above): tracks the indent of the most recent line that opened a block (ended with a net-
-// unmatched `{`, `(` or `[`, by naive per-line bracket counting with `//` line comments stripped)
-// and flags any later line, before that block's own closer brings the count back down, whose
-// indent is LESS than the opener line's indent -- the exact `try {` / `} catch {` inversion
-// pattern found in a prior restoration pass. Not string/regex-aware, so bracket characters inside
-// multi-line template literals or string content are miscounted; callers should expect noise
-// there.
+// Heuristic: not string/regex-aware, so brackets in template literals are miscounted; expect noise.
 export function findNestingInversions(lines) {
   const violations = [];
   const stack = [];
@@ -105,8 +76,7 @@ export function findNestingInversions(lines) {
   return violations;
 }
 
-// The odd-indent parity check itself, extracted for unit testing. Same JSDoc-continuation
-// exclusion as the script's header describes.
+// JSDoc continuation lines (` * text`, `*/`) are legitimately odd-indented and excluded.
 export function findOddIndentLines(lines) {
   const bad = [];
   for (let i = 0; i < lines.length; i++) {

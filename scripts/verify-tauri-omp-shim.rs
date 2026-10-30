@@ -1,20 +1,8 @@
-// PATH shim for the recorded-frame fake `omp` (issue #795 part 1/2, R12a). Compiled on demand by
-// scripts/verify-tauri.mjs (`rustc --edition 2021 -O verify-tauri-omp-shim.rs -o <scratch>/omp.exe`,
-// a single-file build with no Cargo project and no dependency on the shared CARGO_TARGET_DIR) and
-// placed first on PATH for the spawned dev instance, so `which::which_global("omp")`
-// (src-tauri/src/process/executables.rs) resolves to this binary instead of the real one.
+// PATH shim for the fake `omp`, compiled on demand by scripts/verify-tauri.mjs so `which::which_global("omp")` resolves to it.
+// A native exe, not a `.cmd`: `std::process::Command` doesn't reliably run batch files on Windows without `cmd /c`,
+// and `Stdio::inherit()` passes the pipe handles from `OmpProcess::connect` straight through to the Node process.
 //
-// Why a native shim and not a `.cmd`/`.bat` file: `std::process::Command` (what
-// `omp::process::OmpProcess` and the readiness probe both use) does not reliably execute a batch
-// file directly on Windows without an explicit `cmd /c` wrapper, and resolving `omp` to anything
-// other than a real executable would otherwise need a Rust-side code change this lane does not
-// own. A tiny native exe sidesteps that: `CreateProcess` runs it exactly like the real `omp.exe`,
-// and `Stdio::inherit()` here passes the three pipe handles `OmpProcess::connect` created straight
-// through to the Node process underneath, unchanged.
-//
-// `REFRACT_FAKE_OMP_SCRIPT` (absolute path to verify-tauri-fake-omp.mjs) and
-// `REFRACT_FAKE_OMP_NODE` (the node executable to run it with, defaults to `node` on PATH) are
-// set by the harness on the dev process's own environment before this shim is ever reached.
+// `REFRACT_FAKE_OMP_SCRIPT` (path to verify-tauri-fake-omp.mjs) and `REFRACT_FAKE_OMP_NODE` (defaults to `node`) are set by the harness.
 
 use std::env;
 use std::process::{Command, Stdio};

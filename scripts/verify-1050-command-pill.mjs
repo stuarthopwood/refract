@@ -1,32 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1050 (composer command pill, no spelling underline). Decided
-// (Skippy, delegated by Stuart 2026-10-19, away mode); FR-092, spec 001 Phase 71.
-//
-// Gate round 1 HIGH remediation: the ORIGINAL design painted an opaque pill overlay ON TOP of the
-// real textarea, hiding the caret/selection/IME inside the token (all four reviewers found it,
-// confirmed from `02-pill-btw.png`). Fixed with the "highlight-within-textarea" technique
-// (`CommandPillOverlay.tsx`'s own header comment has the full design). This script's own checks
-// below are the round-1 superset: everything the original script asserted, plus pixel-level caret
-// visibility, a real selection-highlight check, slash-menu completion, an unrecognised-edit drop,
-// a long wrapping token, and a pasted-text chip beside the pill.
-//
-// Modelled on `verify-997-notice-severity.mjs` (single launch, fake-omp tape, five-theme loop).
-// Reuses a tape-provided `source: 'skill'` descriptor (not an ambient real omp, unlike
-// `verify-947-938-slash-menu.mjs`'s pattern): see `scripts/fixtures/omp-frames/README.md`'s own
-// row for why that's a faithful stand-in here, not a fabricated builtin allow-list entry.
-//
-// Checks, in order: (1) `/zzz hi` unrecognised -- no pill, spellcheck on. (2) `/btw hi` --
-// pill text, spellcheck off, the overlay's own structure proves arguments stay plain, geometry,
-// pixel-visible caret at offset 0 and mid-token (blink-safe), a real Ctrl+A selection highlight.
-// (3) Height/caret identity between `/btw hi` and `/zzz hi` (both 7 chars). (4)
-// `/skill:demo-review do it` -- whole-prefix pill, arguments plain. (5) Completing `/bt` via a
-// real slash-menu click produces the pill. (6) `/btw` -> `/btwx` (an edit into an unrecognised
-// name) drops it. (7) The leading slash deleted -> spellcheck returns. (8) A long wrapping
-// skill name still pills correctly across two visual lines. (9) A pasted-text chip renders
-// beside the pill (ghost text is NOT exercised together with it -- see the `notExercised` entry).
-// (10) The pill stays aligned, with its own computed fill/text colour equal to
-// `--command-pill-bg`/`--command-pill-fg` resolved live, across all five theme presets. (11) A
-// scrolled multi-line draft's overlay `scrollTop` tracks the textarea's own.
+// Live CDP check for #1050: the composer command pill renders without a spelling underline,
+// with a visible caret, selection and slash-menu completion across all five themes.
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -61,19 +35,8 @@ function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
-/** Gate round 3 fix, remediated gate round 4: parses a resolved colour string into its real
- * OKLCH hue (degrees, 0-360). A direct `oklch(...)`-declared token (e.g. `--command-pill-fg`)
- * now resolves through `getComputedStyle()` AS `oklch(...)`, not `rgb()` (CSS Color 4: Chromium
- * preserves a colour's own declared notation rather than always downgrading to legacy `rgb()`,
- * confirmed live: `expectedColor` read the literal string `'oklch(0.695 0.162 279)'`, which the
- * original `rgba?\(...\)`-only regex never matched, silently returning `null`) -- so `oklch()`
- * is parsed FIRST and its own hue read directly, no sRGB round-trip needed (also more accurate:
- * zero precision loss). `rgb()`/`rgba()` (e.g. `--accent-text`, declared as a hex literal, which
- * DOES still serialize as legacy `rgb()`) falls back to the standard sRGB -> linear -> OKLab ->
- * OKLCH pipeline (Bjorn Ottosson's reference matrices) -- the same direction `contrast-math.mjs`
- * doesn't need (it only ever composites OKLab/OKLCH INTO linear sRGB for luminance, never back
- * out a hue), so this stays local to the one caller that needs it instead of growing that shared
- * module for a single use. */
+/** Parses a resolved colour string into its OKLCH hue (degrees). Chromium keeps `oklch(...)` notation
+ * through getComputedStyle, so parse that directly and fall back to sRGB -> OKLab -> OKLCH for `rgb()`. */
 function rgbStringToOklchHue(colorStr) {
   const str = typeof colorStr === 'string' ? colorStr.trim() : '';
   const oklchMatch = str.match(/^oklch\(\s*[\d.]+%?\s+[\d.]+\s+([\d.]+)/);
@@ -264,8 +227,7 @@ async function main() {
 
     await assertCaretVisible(cdp, sleep, 0, '/btw hi: caret pixel-visible at offset 0 (start of the pilled token)', report);
     await assertCaretVisible(cdp, sleep, 2, '/btw hi: caret pixel-visible at offset 2 (mid-token, inside the pill)', report);
-    // Gate round 3 fix: the resting (unselected) shot now comes BEFORE Ctrl+A below, not after --
-    // the previous order left the draft already selected by the time this frame was captured.
+    // Shoot the resting frame before Ctrl+A, which leaves the draft selected.
     await cdp.screenshot(path.join(SHOTS_DIR, '02-pill-btw.png'));
     await assertSelectionHighlightVisible(cdp, pressKey, resolveCssVarColor, report, SHOTS_DIR);
     await assertSelectedGlyphsInkVisible(cdp, pressKey, report);
@@ -336,9 +298,7 @@ async function main() {
       return { taWidth: ta.getBoundingClientRect().width, pillLineCount: pillRects.length, pillRects: Array.from(pillRects).map((r) => ({ left: r.left, top: r.top, width: r.width })) };
     })()`);
     assertTrue(wrappingGeom.pillLineCount >= 2, `long skill name: the pill's own [box-decoration-break:clone] rounding renders across ${wrappingGeom.pillLineCount} visual line fragment(s), confirming it actually wrapped`, wrappingGeom);
-    // Gate round 3 fix: every earlier caret check landed on the FIRST (unwrapped) line -- offset
-    // 150 sits well past the ~90-char first line this token wraps at, proving caret alignment
-    // survives onto a SECOND/THIRD wrapped visual line too, not just the simple unwrapped case.
+    // Offset 150 is past the ~90-char first line, proving caret alignment on wrapped lines.
     await assertCaretVisible(cdp, sleep, 150, 'long skill name: caret pixel-visible mid-token on a wrapped visual line', report);
     await cdp.screenshot(path.join(SHOTS_DIR, '07-wrapping-token.png'));
 
@@ -358,14 +318,8 @@ async function main() {
       label: 'chip+pill: the large paste collapsed into a pending text chip'
     });
     assertTrue(await cdp.evaluate(`${PILL} !== null`), 'chip+pill: the leading command pill is still shown alongside the new pasted-text chip');
-    // Gate round 5 fix (#1050, UI review): the ORIGINAL check here targeted the real, ABOVE-
-    // composer `AttachmentStrip` (`[role="group"][aria-label="Pending attachments"] button`) --
-    // nothing in the composer ever occludes that strip, so passing there proved nothing about
-    // the pill. The IN-COMPOSER chip MIRROR (`ChipOverlaySegments`, `AttachmentStrip.tsx:178-
-    // 182`, a `span[role="button"]` -- the real strip only ever renders real `<button>`s, so
-    // this selector is unambiguous) sits directly beside the pill, at real risk of being
-    // covered by its own fake-padding shadow or z-index -- that is the one worth proving
-    // reachable, with BOTH a synthetic `elementFromPoint` check AND a real dispatched click.
+    // Target the in-composer chip mirror (span[role="button"]) beside the pill, which its shadow or z-index could
+    // cover; the real above-composer strip is never occluded. Check by elementFromPoint and a real click.
     const chipHit = await cdp.evaluate(`(() => {
       const chip = document.querySelector('span[role="button"]');
       if (!chip) return null;
@@ -380,11 +334,7 @@ async function main() {
       timeoutMs: 5_000,
       label: 'chip+pill: a real click on the in-composer chip mirror opens its preview dialog'
     });
-    // `TextPreviewModal`'s own `restoreFocusTo={textareaRef}` (AttachmentStrip.tsx) means focus
-    // is still inside the dialog's content when this fires (`onOpenAutoFocus` redirect), so
-    // Escape here reaches Radix's own dialog dismiss, not the composer's `onKeyDown` (which
-    // would otherwise clear the whole draft -- the same documented focus-dependent gap the
-    // theme-loop tooltip dismiss below this already works around).
+    // Focus stays in the dialog, so Escape reaches Radix's dismiss, not the composer's onKeyDown (which clears the draft).
     await pressKey(cdp, 27, 'Escape', 'Escape');
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 5_000, label: 'chip+pill: preview dialog closed before continuing' });
     assertTrue(await cdp.evaluate(`${PILL} !== null`), 'chip+pill: the pill is still shown after the dialog closes and focus returns to the textarea');
@@ -396,26 +346,8 @@ async function main() {
     for (const theme of THEMES) {
       if (theme.id !== 'dark') {
         await switchTheme(cdp, theme.id, theme.name);
-        // Gate round 3 fix, remediated gate round 4: the Profile name button this menu opens
-        // from ALSO carries its own Tooltip ("Stuart Hopwood"), which can stay open afterward.
-        // Gate round 4: a PURE `mouseMoved` dispatch is not enough to close it -- this is the
-        // SAME documented CDP/Radix limitation `verify-937-advisor-chip.mjs`'s own gate round 5
-        // already found (confirmed there via a 3s poll of the tooltip's own `data-state`):
-        // Radix's open/close state is driven by a REAL `pointerleave`/blur DOM event on the
-        // trigger, which `Input.dispatchMouseEvent`'s synthetic `mouseMoved` does not reliably
-        // produce. Escape (Radix's own documented dismiss key for every DismissableLayer-based
-        // primitive, including Tooltip) plus a real click elsewhere (a genuine focus change, not
-        // just a pointer co-ordinate) are the two REAL dismiss paths Radix actually listens for,
-        // tried together for the best realistic chance; the wait itself stays best-effort
-        // (`.catch`), matching `verify-741-role-chip-helpers.mjs`'s own identical precedent -- a
-        // tooltip that survives both real dismiss attempts is this same pre-existing CDP
-        // limitation, not a product bug, and must never fail the whole run over a cosmetic
-        // screenshot detail. Scoped to the `switchTheme` branch ONLY (gate round 4 fix, found by
-        // this exact run): Dark is the one theme `switchTheme` never runs for (it is already the
-        // live theme when the loop starts), so the textarea is STILL FOCUSED there -- Escape
-        // dispatched in that state hits the composer's OWN `onKeyDown` handler instead of
-        // Radix's tooltip, clearing the whole draft (`/skill:demo-review do it` -> ''), which is
-        // exactly why "Dark: pill found" failed once this was run unconditionally.
+        // The Profile button's tooltip can stay open; CDP mouseMoved doesn't fire Radix's pointerleave, so use Escape plus
+        // a real click, best-effort. Escape only in the switchTheme branch: in Dark the textarea is still focused and Escape would clear the draft.
         await pressKey(cdp, 27, 'Escape', 'Escape');
         const neutralPoint = await cdp.evaluate(`(() => { const r = ${TEXTAREA}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
         await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: neutralPoint.x, y: neutralPoint.y });
@@ -428,10 +360,7 @@ async function main() {
             );
           });
       }
-      // Gate round 1 LOW remediation (item 6): `switchTheme` itself returns once the real
-      // `<html>` class has applied, but the Profile dropdown's own Radix close animation and
-      // any still-open tooltip can still be mid-transition at that exact instant -- wait for
-      // the menu to be genuinely gone and let any transition settle before measuring/shooting.
+      // The Profile dropdown's close animation and any tooltip can still be mid-transition; wait before measuring.
       await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: `${theme.name}: profile menu fully closed before measuring` });
       await sleep(300);
       const themeGeom = await measurePillGeometry(cdp);
@@ -445,12 +374,7 @@ async function main() {
       assertEqual(pillColors.color, expectedColor, `${theme.name}: pill text colour equals --command-pill-fg resolved live`);
       const pageBg = await resolveCssVarColor(cdp, '--background', 'background-color');
       assertTrue(pillColors.bg !== pageBg, `${theme.name}: pill fill is a visibly different colour from the plain page background (fill-vs-composer, measured live)`);
-      // Gate round 3 fix: `--command-pill-fg` must read as "the SAME accent hue, just lightened",
-      // never a visibly different colour -- Dark/Obsidian's own hue had drifted 15-25 degrees off
-      // `--accent-text`'s real hue before this round. Computed live from the two RESOLVED colours
-      // (never the source CSS, which could itself drift unnoticed) via the standard sRGB ->
-      // linear -> OKLab -> OKLCH pipeline, same formulas `contrast-math.mjs` already uses for the
-      // forward direction.
+      // --command-pill-fg must keep the accent hue; compare hues of the live resolved colours, not the source CSS.
       const accentTextColor = await resolveCssVarColor(cdp, '--accent-text', 'color');
       const pillHue = rgbStringToOklchHue(expectedColor);
       const accentHue = rgbStringToOklchHue(accentTextColor);
@@ -469,29 +393,16 @@ async function main() {
       timeoutMs: 3_000,
       label: 'scrolled draft: command-pill overlay scrollTop synced to the textarea after scrolling to the bottom'
     });
-    // Gate round 3 fix: proves caret alignment survives scrolling, not just wrapping -- the end
-    // of the draft is now the last visible line after scrolling to the bottom, so a caret placed
-    // there must still land at its own correct, currently-ON-SCREEN pixel position.
+    // Caret must still land on-screen after scrolling to the bottom.
     const endOffset = await cdp.evaluate(`${TEXTAREA}.value.length`);
     await assertCaretVisible(cdp, sleep, endOffset, 'scrolled draft: caret pixel-visible at the end of the draft after scrolling to the bottom', report);
     await cdp.screenshot(path.join(SHOTS_DIR, '05-scrolled-multiline.png'));
     await cdp.evaluate(`${TEXTAREA}.scrollTop = 0`);
     await cdp.waitFor(`${OVERLAY}.scrollTop === 0`, { timeoutMs: 3_000, label: 'scrolled draft: overlay scrollTop synced back to 0 after scrolling to the top' });
 
-    // ---- 12. Send/Stop clickable while a pill shows (gate round 3 CRITICAL fix) ------------
-    // The code reviewer proved this live: the composer textarea's own `relative z-[1]` (added
-    // ONLY while a pill shows) used to paint ABOVE the Send/Stop button container, which had no
-    // z-index at all -- `elementFromPoint` at Send's own centre resolved to the textarea, so a
-    // real pointer click there never reached the button. Run LAST (not alongside the earlier
-    // checks above): a real click genuinely sends through the fake-omp tape's own single
-    // scripted `prompt` reply, which nothing after this point depends on. Gate round 4 fix:
-    // `/btw ...` is NOT a plain forwarded message -- `MessageInput.tsx`'s own `handleSend` gives
-    // it special native handling (it opens the Side chat panel and asks there instead of calling
-    // `chat.send`), and refuses outright with a toast (draft left untouched) while that panel's
-    // own history has never loaded, which this harness never does -- confirmed live: the draft
-    // never cleared within 5s. `/skill:demo-review hi` still pills (proving the exact same
-    // z-index scenario) but has no special-cased handling in `handleSend`, so it reaches the
-    // real `window.refract.chat.send` -> fake-omp `prompt` path and clears normally on success.
+    // ---- 12. Send/Stop clickable while a pill shows ------------
+    // The textarea's z-index (only while a pill shows) once painted over Send/Stop. Run last: a real click sends.
+    // Use /skill, not /btw: /btw opens the Side chat panel and refuses the send, leaving the draft.
     await clearAndType(cdp, pressKey, '/skill:demo-review hi');
     await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'Send/Stop clickability: pill shown before the click' });
     const sendHit = await cdp.evaluate(`(() => {

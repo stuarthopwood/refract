@@ -1,41 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for issue #938's remaining items (2, 3, 5) after PR #954 shipped items 1 and 4;
-// item 6 was resolved by static code audit (research.md decision 18, spec.md Clarifications) --
-// re-read against the real OMP session log after gate round 1 corrected the first draft's cause
-// -- not a live probe, and is only recorded here, never asserted.
-//
-// Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
-// override -- only Refract's OWN data, `REFRACT_DATA_DIR`, is scratch), the same isolation
-// posture as `verify-917-advisor-command.mjs`/`verify-947-938-slash-menu.mjs`. The fake-omp
-// shim's own recorded fixtures (`scripts/fixtures/omp-frames/*.jsonl`) are deliberately NOT used
-// here: none of them lists a builtin command with verified subcommands at all (`session.jsonl`'s
-// own `available_commands_update` offers only `new`/`tools`, neither of which has one), and
-// AGENTS.md forbids adding a new fixture to manufacture one -- its own "fall back to a real omp
-// only for a flow the fixtures do not cover yet" clause is exactly this case, and is the same
-// reason #954's own `verify-947-938-slash-menu.mjs` (the sibling script for this same issue
-// family) drove a real ambient `/advisor` rather than the shim.
-//
-// Checks, in order:
-//   FR-083 (item 5): Settings > Model roles' Advisor row description mentions `/advisor on`.
-//   FR-081 (item 2): typing an unverified `/advisor` subcommand and sending it produces a
-//     refusal toast listing the REAL verified subcommands this ambient install reports (read via
-//     `window.refract.chat.commands`, resolved the same way Rust's own `resolve_matched_descriptor`
-//     does -- a builtin-sourced match first, else the first match at all -- never a bare
-//     `.find(name)`), in that install's own order -- not the old generic "doesn't support
-//     arguments yet" wording. Also checks the OTHER refusal wording (gate round 1 decision): a
-//     valid subcommand with extra text after it (`/advisor on now`) refuses as "doesn't take
-//     more text yet", never the "takes one of" listing. `/advisor` missing entirely from this
-//     install is a hard FAILURE for this check and FR-082 below (both depend on a real
-//     `/advisor off` round trip), not a quiet skip -- gate round 1 decision.
-//   FR-082 (item 3): `/advisor off`'s own short, deterministic "Advisor disabled." reply renders
-//     as a `NoticeRow` whose summary span REALLY wraps once the window is narrow enough to force
-//     it (`textOverflow !== 'ellipsis'`, `scrollWidth <= clientWidth`, height over one 20px line)
-//     -- gate round 1 fix: a bare className check alone was not proof it visibly wraps. Falls
-//     back to a className-only check (`whitespace-normal`, never `truncate`) plus a disclosed
-//     `notExercised` only if no width in the probed range actually forces more than one line.
-//     Screenshotted across Dark, Obsidian, and Dark (high contrast) either way.
-//   Item 6: not reasserted live (resolved by static audit); recorded in `findings` only, citing
-//     `research.md` decision 18.
+// Live CDP check of #938 items 2, 3 and 5 against a REAL ambient `omp` (only `REFRACT_DATA_DIR` is scratch):
+// no recorded fixture lists a builtin command with verified subcommands, and AGENTS.md forbids adding one.
+// FR-083: the Advisor row description mentions `/advisor on`.
+// FR-081: an unverified `/advisor` subcommand refuses with the real subcommand list; `/advisor on now` refuses as "doesn't take more text yet".
+// FR-082: the "Advisor disabled." notice really wraps in a narrow window (measured, not just a className check).
+// A missing `/advisor` fails FR-081/082 hard. Item 6 was resolved by static audit (research.md decision 18) and is only recorded.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -77,20 +46,12 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// One real text line's own height (CollapsedLine's row, `text-xs`/13px line-height-ish content at
-// a 20px row box, per the shared baseline T080 establishes) -- a measured height over this means
-// the summary span genuinely grew a second line, not just a generous single-line box.
+// A measured height over this means the summary span genuinely grew a second line.
 const ONE_LINE_HEIGHT_PX = 20;
-// Narrowing attempts for forcing the short "Advisor disabled." notice to wrap (gate round 1,
-// Test MEDIUM): widest first, so the evidence screenshot is still a realistic window size if a
-// narrower one is never actually needed.
+// Widest first, so the screenshot stays a realistic window size if a narrower one is not needed.
 const NARROW_WIDTHS = [480, 360, 300, 260, 220, 190, 160, 140, 120];
 
-// Same two-parent-climb pattern `verify-917-advisor-command.mjs`/`verify-947-938-helpers.mjs`
-// use: `CollapsedLine` renders the icon-slot span and the summary span as direct siblings of
-// either a plain `<div>` (a short notice) or a `<CollapsibleTrigger>` button (a long one); the
-// sr-only "Info:" label's own icon-slot span, then that span's row container, lands on the right
-// element either way.
+// `CollapsedLine` puts the icon-slot span and summary span under a plain `<div>` or a `<CollapsibleTrigger>`; two parent climbs from "Info:" reach the row either way.
 const NOTICE_FINDER =
   `Array.from(document.querySelectorAll('span.sr-only')).filter((el) => (el.textContent ?? '').trim() === 'Info:').map((el) => el.parentElement?.parentElement).filter(Boolean)`;
 
@@ -102,10 +63,8 @@ async function countNotices(cdp) {
   return cdp.evaluate(`(${NOTICE_FINDER}).length`);
 }
 
-/** Finds the notice row whose own summary matches `/Advisor disabled\./` specifically (gate
- * round 1, Test MEDIUM: the LAST Info notice is not necessarily this one -- an unrelated system
- * notice can mount after it), and measures the geometry/style FR-082 cares about in one shot (an
- * element handle cannot cross a `returnByValue` CDP call, so find-and-measure happens together). */
+// Matches "Advisor disabled." specifically: an unrelated notice can mount after it. Find and measure happen in
+// one call because an element handle cannot cross `returnByValue`.
 async function measureAdvisorOffNotice(cdp) {
   return cdp.evaluate(`(() => {
     const rows = (${NOTICE_FINDER});
@@ -125,11 +84,7 @@ async function measureAdvisorOffNotice(cdp) {
   })()`);
 }
 
-/** Real Backspace keydown/keyup pairs, one per character currently in the composer -- clears a
- * controlled React textarea the way a user would. Clicks the field first (gate round 3, live
- * finding): a prior `clickByLabel('Send message')` leaves real browser focus on the Send BUTTON
- * (no `onMouseDown` preventDefault guards it), so raw `Backspace` key events dispatched without
- * refocusing the textarea first land on the button (a no-op) and the composer never empties. */
+// Click the field first: after clicking Send, focus stays on the button (no `onMouseDown` preventDefault), so Backspace would be a no-op.
 async function clearComposer(cdp) {
   await cdp.click(`document.querySelector('[aria-label="Message"]')`);
   const current = await cdp.evaluate(`document.querySelector('[aria-label="Message"]')?.value ?? ''`);
@@ -139,10 +94,7 @@ async function clearComposer(cdp) {
   await cdp.waitFor(`(document.querySelector('[aria-label="Message"]')?.value ?? '') === ''`, { timeoutMs: 5_000, label: 'Composer cleared' });
 }
 
-/** Sends `command` (via the real Send button, bypassing the slash menu's own Enter/Tab
- * completion routing entirely), then waits for a NEWLY-mounted notice whose text matches
- * `expectedPattern`. Same polling-past-an-unrelated-notice reasoning as
- * `verify-917-advisor-command.mjs`'s own `sendSlashCommand`. */
+// Sends via the Send button to bypass the slash menu's Enter/Tab routing; polls past unrelated notices.
 async function sendSlashCommand(cdp, command, expectedPattern) {
   await clearComposer(cdp);
   const before = await countNotices(cdp);
@@ -171,23 +123,15 @@ async function closeSettings(cdp) {
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
 }
 
-/** Resolves the `/advisor` descriptor the same way Rust's own `resolve_matched_descriptor`
- * does (`commands.rs`, issue #938 gate round 1, item 7): a builtin-sourced match (by name or
- * alias) first regardless of list order, else the first match at all. `null` when nothing in
- * `commands` matches `advisor` at all. Previously a bare `.find((c) => c.name === 'advisor')`,
- * which could pick a shadowing non-builtin entry Rust itself would never classify against. */
+// Mirrors Rust's `resolve_matched_descriptor`: a builtin-sourced match first, else the first match; a bare `.find` could pick a shadowing non-builtin.
 function resolveAdvisorDescriptor(commands) {
   const isBuiltinSource = (source) => source !== 'file' && source !== 'skill';
   const matchesAdvisor = (c) => c.name === 'advisor' || (c.aliases ?? []).includes('advisor');
   return commands.find((c) => matchesAdvisor(c) && isBuiltinSource(c.source)) ?? commands.find((c) => matchesAdvisor(c)) ?? null;
 }
 
-// The refusal toast (`notify.ts` -> `toast.error`, Sonner): newest toast PREPENDS in DOM order
-// (`verify-980-toast-send.mjs`'s own header comment records this), so the first match is the
-// most recent. `before` (gate round 1, item 7) is the toast count sampled BEFORE sending, so the
-// wait below can never read a STALE toast left over from an earlier step as this command's own.
-// `:not([data-removed="true"])` (gate round 2, Test LOW) excludes a toast still mid-exit
-// animation from both the count and the read -- it is not this command's own reply either.
+// Sonner prepends the newest toast, so the first match is the latest. `before` is the pre-send count, so a stale toast is never read;
+// `:not([data-removed="true"])` skips toasts mid-exit-animation.
 async function sendAndReadToast(cdp, command) {
   const selector = `document.querySelectorAll('[data-sonner-toast]:not([data-removed="true"])')`;
   const before = await cdp.evaluate(`${selector}.length`);
@@ -274,7 +218,6 @@ async function main() {
     const sessionId = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? (r.value.find((s) => !s.archived)?.id ?? null) : null)`);
     if (!sessionId) throw new Error('verify-938: could not read the created Session\'s own id via window.refract.sessions.list()');
 
-    // ==== FR-083 (item 5): Settings > Model roles' Advisor description mentions `/advisor on` ====
     await openSettingsModelRoles(cdp);
     const advisorDescription = await cdp.evaluate(`document.getElementById('model-role-advisor-description')?.textContent ?? null`);
     const expectedDescription = "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow.";
@@ -286,10 +229,7 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '00-settings-advisor-description.png'));
     await closeSettings(cdp);
 
-    // ==== FR-081/FR-082 prerequisite: does this ambient install even offer `/advisor`? ====
-    // Gate round 1 decision: a missing `/advisor` is a hard FAILURE for both checks below (not a
-    // quiet skip) -- both depend on a real `/advisor off` round trip, and #917's own live check
-    // already established this ambient install is expected to offer it.
+    // Both checks below need a real `/advisor off` round trip, so a missing `/advisor` fails hard.
     const commandsResult = await cdp.evaluate(`window.refract.chat.commands(${JSON.stringify(sessionId)})`);
     let advisorCommand = null;
     if (!commandsResult?.ok) {
@@ -303,7 +243,6 @@ async function main() {
       }
     }
     if (advisorCommand) {
-      // ==== FR-081 (item 2): refusal wording ====
       const subNames = advisorCommand.subcommands?.map((s) => s.name) ?? [];
       if (subNames.length === 0) {
         notExercised.push(
@@ -318,7 +257,6 @@ async function main() {
           findings.push(`FR-081: "/advisor 000bogus000" refused with the real subcommand list: ${JSON.stringify(toastText)}.`);
         }
         await cdp.screenshot(path.join(SHOTS_DIR, '01-refusal-toast.png'));
-        // ---- The extra-text-after-a-valid-subcommand wording (gate round 1 decision) ----
         if (subNames.includes('on')) {
           const extraTextToast = await sendAndReadToast(cdp, '/advisor on now');
           const expectedExtraText = '/advisor on doesn\'t take more text yet. Try /advisor on on its own.';
@@ -333,7 +271,6 @@ async function main() {
         await clearComposer(cdp);
       }
 
-      // ==== FR-082 (item 3): the short "/advisor off" notice really wraps ====
       await sendSlashCommand(cdp, '/advisor off', /Advisor disabled\./);
       let forcedWrapWidth = null;
       let forcedMeasurement = null;
@@ -368,10 +305,7 @@ async function main() {
         }
         notExercised.push('FR-082: real multi-line wrapping could not be forced in this run at any probed window width -- className-only evidence recorded above instead.');
       }
-      // Gate round 2 fix (Test MEDIUM): `switchTheme` clicks the profile name button, which can
-      // sit off-screen at a width narrow enough to force wrapping -- clear the override before
-      // switching, then re-apply the SAME width (the one actually measured above, or none if
-      // wrapping was never forced) only for the screenshot itself.
+      // `switchTheme` clicks the profile button, which can sit off-screen at a wrapping width: clear the override, switch, then re-apply.
       for (const theme of THEMES) {
         await cdp.send('Emulation.clearDeviceMetricsOverride', {});
         await switchTheme(cdp, theme.id, theme.name);
@@ -384,7 +318,6 @@ async function main() {
       await cdp.send('Emulation.clearDeviceMetricsOverride', {});
     }
 
-    // ==== Item 6 (possible duplicate render): resolved by static code audit, not a live probe ====
     findings.push(
       'Item 6 (possible duplicate render) was investigated by static code audit, not a live probe -- corrected gate round 1 after re-reading the real OMP session logs. ' +
       '`build_assistant_items`/`apply_message_snapshot`/`replace_message_items` (src-tauri/src/omp/transcript.rs) apply every assistant message snapshot as a full ' +

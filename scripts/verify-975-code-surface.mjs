@@ -1,27 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for issue #975 (a fenced code block's background follows each theme's own
-// `--card` colour, not whatever bundled Shiki theme is chosen): renders one deterministic
-// JavaScript fence via a fake `omp` reply (`scripts/fixtures/omp-frames/code-surface-975.jsonl`,
-// modelled on `verify-439-history-truncate.mjs`'s own fixture-driven pattern -- a real model's
-// free-form reply could not guarantee the exact token colours this check measures run over
-// run), then for every built-in preset asserts by COMPUTED STYLE that the code block's header
-// and body share one literal background, that it equals the theme's own live-resolved `--card`
-// (read off a throwaway probe element carrying the same `bg-card` Tailwind class, never a
-// hand-copied hex), and that the rendered comment token (the binding case per research.md
-// decision 25: the lowest-margin colour across the four `github-dark-default` presets -- Dark,
-// Obsidian, Nordic Frost, Cyber Amber; Dark high contrast's own `github-dark-high-contrast`
-// comment colour clears with far more margin) clears 4.5:1 against that same background,
-// measured live, not recomputed from CSS source. Screenshots every preset (Dark, Obsidian,
-// Nordic Frost, Cyber Amber, Dark (high contrast)); Cyber Amber is the headline shot (research.md
-// decision 25/issue #975's own motivating case -- the colour-family clash between a warm header
-// and a cool `github-dark` body was most visible there).
+// Live CDP check: a fenced code block's background follows each built-in theme's `--card`
+// colour and its comment token clears 4.5:1 against it. Uses a fixed fake `omp` reply so token
+// colours are deterministic; uses scratch dirs and spends no model turn.
 //
-// Drives a fake `omp` (REFRACT_FAKE_OMP_SCENARIO=code-surface-975), scratch cwd/worktree/
-// REFRACT_DATA_DIR -- never touches Stuart's real Session list or spends a real model turn.
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
-// scripts/verify-975-code-surface.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
-// the same convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs` script documents).
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-975-code-surface.mjs
+// (needs a prior `pnpm tauri build --debug --no-bundle`).
 
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -50,10 +33,8 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const SHOTS_DIR =
   process.env.REFRACT_975_SHOTS_DIR || path.join(tmpdir(), `refract-975-code-surface-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 
-// Cyber Amber is the headline shot (research.md decision 25): the colour-family clash the issue
-// reports was most visible there. Dark (high contrast) reuses `github-dark-high-contrast`,
-// unaffected by the syntaxTheme swap -- included anyway so the acceptance criteria's "every
-// built-in preset" is checked, not assumed from the other four.
+// Dark (high contrast) uses a different Shiki theme; it is included so every built-in preset is
+// checked, not assumed.
 const THEMES = [
   { id: 'dark', name: 'Dark', shot: '01-code-surface-dark.png' },
   { id: 'obsidian', name: 'Obsidian', shot: '02-code-surface-obsidian.png' },
@@ -65,23 +46,10 @@ const SHOT_NAMES = [...THEMES.map((t) => t.shot), 'report.json', 'app.log', 'fak
 
 const COMMENT_TEXT = 'a short comment line';
 
-/** Reads the code block's own header/body/`<pre>` computed backgrounds, the header's language
- * label, a live-resolved `--card` probe (a throwaway `div.bg-card`, never a hand-copied hex),
- * and the comment token's own computed colour. `.not-prose` is the one wrapper `CodeBlock`
- * renders (`Markdown.tsx`); this fixture's assistant reply carries exactly one fenced block, so
- * exactly one match is expected -- more than one, or none, is itself a failure the caller
- * reports.
- *
- * Gate round 1 fix (Main, Code1 High): the comment token's own LEAF span is `span.line > span`
- * with no child `<span>` (Shiki wraps each styled run in its own span, nested directly under
- * the line wrapper, never deeper) -- the OUTER `span.line` wrapper also carries the comment text
- * in its own `textContent` (this fixture's comment is the only token on its line) but has no
- * inline colour of its own, so `querySelectorAll('span').find(...)` previously matched that
- * outer wrapper FIRST (document order: ancestor before descendant) and read the `<pre>`'s own
- * INHERITED default foreground instead of the comment's real, dimmer colour. Also reads the raw
- * `<pre>`'s own computed `background-color`/`color` so the caller can hard-fail if Shiki's own
- * background was never actually neutralised (gate round 1, Code2 High) and cross-check the
- * comment span's colour genuinely differs from the `<pre>`'s inherited default. */
+/** Reads the code block's header/body/`<pre>` backgrounds, a live `--card` probe, and the
+ * comment token's colour. Exactly one `.not-prose` match is expected (one fence in the fixture).
+ * The comment token is the leaf `span.line > span`: the outer `span.line` has the same text but
+ * only inherits the `<pre>` colour. */
 async function readCodeSurfaceEvidence(cdp) {
   return cdp.evaluate(`(() => {
     const wrappers = Array.from(document.querySelectorAll('.not-prose'));
@@ -243,11 +211,7 @@ async function main() {
         } else {
           findings.push(`${theme.name}: code block background equals this theme's own live-resolved --card (${evidence.cardProbe}).`);
         }
-        // Gate round 1 fix (Main, Code2 High): the previous check above only read the WRAPPER
-        // div, which carries `bg-card` itself regardless of whether Shiki's own neutralisation
-        // actually worked -- a hard, separate check that the raw `<pre>` Shiki injected is
-        // itself transparent is the only way to prove the neutralisation, not just the div's
-        // own class.
+        // The wrapper div carries `bg-card` regardless, so check the Shiki `<pre>` is transparent.
         if (!evidence.preFound) {
           failures.push(`${theme.name}: Shiki's own <pre> element not found inside the body.`);
         } else if (evidence.preBg !== 'rgba(0, 0, 0, 0)') {

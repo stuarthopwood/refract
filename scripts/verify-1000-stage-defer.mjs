@@ -1,92 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1000 (UI polish: Stage rows defer running auto-open to the chain
-// row once a turn has two or more Stages; FR-087, amends FR-067). ui-architect-v3 ruling at
-// PR #999's own gate, recorded on #1000 and in research.md decision 22: once a turn has two or
-// more Stages, a Stage row's own `running` state no longer auto-opens it by itself -- only
-// `failed`/`cancelled`/`exited` still do, so a turn's running agents are no longer shown
-// expanded TWICE over (once in the Stage row in place, once again in the per-turn Subagent
-// chain row at the end of the turn). A turn with only one Stage so far (the second has not
-// started streaming) keeps today's single-Stage running auto-open; #991's own upward-only
-// disclosure rule is unchanged and still governs every row here (`StageGroupRow`'s own
-// `isOpenByDefault`/`useStickyDisclosure`, `SubagentChainRow.tsx`).
-//
-// Reuses the recorded-frame fake `omp` harness and the SAME `stages-941.jsonl` fixture and
-// `verify-941-stage-naming-helpers.mjs` STAGE*_TITLE/titleSelector/stageContentSelector/
-// stageTriggerSelector exports every `verify-941-*`/`verify-991-*` script already shares
-// (AGENTS.md: no new fixtures). The fixture already carried one additive `{"__delay__": 1500}`
-// after Stage 1's own assistant-message echo (issue #991); this issue adds a SECOND, identical
-// additive delay after Stage 2's own echo (Main-approved 2026-10-18, fixture's own header has
-// the full note) -- the only window in this fixture where a Stage is genuinely, observably
-// running WHILE the turn already has two or more Stages (Stage 1, settled; Stage 2, running).
-// Without that second delay, Stage 2 (and every other non-Stage-1 Stage here) arrives unpaced,
-// inside the renderer's own 50ms patch-batching window, so whether it was ever observably
-// running before settling is not reliably reproducible (the same reason Stage 2/7's own
-// expand-cycle checks in `verify-941-stage-naming-expand-helpers.mjs` accept either boolean).
-//
-// Five things proved, in this order (each needs the state the previous one left, so they run
-// once, not per theme -- a theme pass takes a screenshot only, at the very end):
-//   1. While Stage 2 is genuinely still running (the additive delay window) and this turn
-//      already has two Stages, Stage 2's own trigger is CLOSED (`aria-expanded="false"`) --
-//      THE ONE RED/GREEN DISCRIMINATOR in this whole script (see the `failures.push`/
-//      `findings.push` pair that says so explicitly in `main()`). MUST fail on `origin/main`:
-//      there, `isOpenByDefault` auto-opens any multi-agent Stage whenever it is running, with
-//      no Stage-count exception, so Stage 2 would read "true" here -- and the additive delay
-//      makes this deterministically observable, unlike every other non-Stage-1 Stage (gate
-//      round 1 fix, item 1, Critical: read from the trigger's own `aria-label`, never the
-//      collapsible content, which Radix does not render while closed). Stage 1 (auto-opened
-//      earlier while it was this turn's ONLY Stage) stays open throughout
-//      (`aria-expanded="true"`) -- upward-only, unaffected by the turn later growing past it;
-//      true on both `origin/main` and the fix (not itself a red/green discriminator), included
-//      to prove "nothing closes itself" holds across the transition. If this window is ever
-//      missed, Phase 2 stops outright (gate round 2 fix, item 1: never falls through into the
-//      chain-row/Stage-1/manual-open/focus checks below against a Stage that already quietly
-//      settled) and the run is NOT allowed to claim DONE/exit 0 -- see the NOT-PROVEN verdict
-//      at the bottom of `main()`.
-//   2. The per-turn Subagent chain row is already rendered (`stages.length >= 2`) and OPEN
-//      (`isUnsettled`, Stage 2 still running), its own visible summary naming "2 stages" and
-//      the live "Running" word -- the chain row carries the live overview while a Stage itself
-//      stays collapsed, exactly the behaviour #1000 asks for. A screenshot is taken
-//      immediately after this point, BEFORE anything below ever touches Stage 2 by hand, so it
-//      genuinely shows the closed-while-running state.
-//   3. Once the whole ten-Stage turn settles: Stage 3 (two agents, Zeta/Omega, both finished,
-//      and NEVER touched anywhere in this script) stays CLOSED (`aria-expanded="false"`) --
-//      the clean "settled and never touched stays closed" proof, on a Stage this run never
-//      manually opens (unlike Stage 2, used below for the manual-open/focus proof instead, so
-//      its own post-settle state is no longer a "never touched" witness). Gate round 2 fix
-//      (item 4): this is a REGRESSION GUARD against the fixed code on HEAD, not a guaranteed
-//      red/green discriminator against `origin/main` -- Stage 3's own frames are unpaced, the
-//      same renderer 50ms patch-batching window every other non-Stage-1/non-Stage-2 Stage here
-//      sits inside, so whether React ever commits an observable intermediate "running" render
-//      for it at all (the precondition the OLD bug needs to latch open) is not reliably
-//      reproducible either way on `origin/main`; item 1 above is the only check in this script
-//      with a guaranteed red/green split. Stage 5 (its own FailAgent member failed) is OPEN
-//      (`aria-expanded="true"`) -- the one exception the new rule keeps, auto-opening
-//      regardless of Stage count.
-//   4. A user's OWN manual expand on Stage 2 (exempted from auto-open by the new rule, but
-//      never exempt from the user's own choice) survives it settling and the rest of the turn
-//      streaming in behind it -- keyboard focus placed inside Stage 2's own content while it is
-//      still genuinely running stays there once settled, never dropping to `<body>` (WCAG
-//      2.4.3, the same guarantee #991 proved for auto-opened Stage 1, now re-proved for a
-//      manually-opened, auto-open-exempted Stage). Gate round 2 fix (items 2/3): both halves
-//      (manual-open-survives, focus-survives) are gated on their own `manuallyOpened`/
-//      `focusPlaced` flags, set only when the corresponding action genuinely succeeded earlier
-//      in the same pass -- never merely on `phase2Exercised`, which says nothing about whether
-//      either action itself happened.
-//   5. (Code-level, not independently exercised by this fixture) `StageGroupRow`'s own
-//      `isOpenByDefault` reads `hasBadMember` -- the raw failed/cancelled/exited COUNTS, not
-//      the Stage's own overall `status` -- so a Stage opens the instant any ONE member goes
-//      bad, even while a sibling member is still running, rather than waiting for the whole
-//      Stage to settle (Decided, Skippy, delegated by Stuart, UI architect's suggested fix).
-//      This fixture's own Stage 5 settles both members in a single frame with no live split,
-//      so it cannot discriminate this specific timing on its own; recorded here for the code
-//      review trail, not claimed as a live-proven item.
-//
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
-// plus a real `import()` load-check are the only commands that have actually been run against
-// this file. Every DOM/class-name selector reused here was already grep-verified by the
-// `verify-941-*`/`verify-991-*` scripts that share them; the one new finder expression (the
-// Story559 member trigger scoped to Stage 2's own content) is built the same, already-proven way
-// (`g923CodeTriggerExpr` in `verify-991-stage-focus.mjs`).
+// Live CDP check: once a turn has two or more Stages, a running Stage stays closed (the chain row
+// shows the live overview) while failed/cancelled/exited Stages still auto-open, and a manual open
+// plus focus survive settling. Needs the fixture's additive delay window; if it is missed the run
+// reports NOT PROVEN (exit 2), never DONE.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -143,18 +59,11 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// The chain row's own label is always the literal string "Subagents" (`SubagentChainRow.tsx`),
-// never duplicated elsewhere -- same constant every `verify-941-*`/`verify-991-*` script shares.
+// Always the literal "Subagents" (`SubagentChainRow.tsx`).
 const CHAIN_TRIGGER = `document.querySelector('[title="Subagents"]')?.closest('[data-slot="collapsible-trigger"]')`;
 
-// Gate round 1 fix (issue #1000, item 1, Critical, code-reviewer/test-reviewer): "is this Stage
-// genuinely running" must be read from the TRIGGER's own `aria-label` (built at
-// `SubagentChainRow.tsx`'s `triggerAriaLabel`, which states the live status word while
-// running), never from the collapsible CONTENT -- Radix does not render `CollapsibleContent`
-// at all while a row is closed, and under this fix Stage 2 stays CLOSED while running (that is
-// the very behaviour under test), so a content-based check could never see it and would
-// silently time out, masking the whole discriminating proof. The trigger itself always
-// renders, open or closed, so this is reliable in both states.
+// Read "running" from the trigger's aria-label: Radix does not render closed content, and Stage 2
+// is deliberately closed while running.
 function stageIsRunningExpr(titleText) {
   return `((${stageTriggerSelector(titleText)})?.getAttribute('aria-label') ?? '').includes('Running')`;
 }
@@ -231,11 +140,7 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
 
-    // Shim-confirmed check (same pattern as `verify-941-part2.mjs`/`verify-991-stage-focus.mjs`):
-    // without this, a silently-wrong fake-omp shim (a stale PATH entry shadowing it, or the shim
-    // crashing before its first `debugLog` call) could still let the whole run "pass" on UI
-    // state alone. `exeDir` is freshly `mkdtemp`'d above, so this log can never be a stale one
-    // left over from an earlier run (fresh-log guard).
+    // Guards against a silently-wrong fake-omp shim; `exeDir` is fresh, so the log can't be stale.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-1000: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
@@ -256,9 +161,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
 
-    // ---- Phase 1: Stage 1 settles and stays open (single-Stage-so-far auto-open, unaffected
-    // by #1000) before Stage 2 ever starts; wait past it so Phase 2 begins from a clean,
-    // known state (Stage 1 done, Stage 2 about to start). ----
+    // Phase 1: wait for Stage 1 to settle so Phase 2 starts from a known state.
     await cdp.waitFor(
       `(() => { const c = (${stageContentSelector(STAGE1_TITLE)}); return !!c && !c.textContent.includes('Running'); })()`,
       { timeoutMs: 15_000, label: 'Stage 1 settled (its own additive delay window closed)' }
@@ -270,13 +173,7 @@ async function main() {
       findings.push('Stage 1 settled and stayed open (single-Stage-so-far auto-open, #991 upward-only) before Stage 2 ever started.');
     }
 
-    // ---- Phase 2: Stage 2 is genuinely running WHILE this turn already has two Stages (the
-    // second additive delay window) -- Stage 2 itself stays CLOSED, the chain row is already
-    // open and shows the live overview, and Stage 1 (opened earlier) has not closed itself
-    // (issue #1000, FR-087). "Running" is read from the TRIGGER's own `aria-label`
-    // (`stageIsRunningExpr`), never the collapsible content -- Radix does not render content at
-    // all while Stage 2 stays closed, which is exactly the state under test (gate round 1 fix,
-    // item 1, Critical). ----
+    // Phase 2: Stage 2 runs while the turn already has two Stages; it must stay closed.
     let phase2Exercised = true;
     let manuallyOpened = false;
     let focusPlaced = false;
@@ -289,12 +186,7 @@ async function main() {
       phase2Exercised = false;
       notExercised.push(`Stage 2 never showed as genuinely running within the 15s window -- the additive fixture delay may have already elapsed, or the turn settled unusually fast; the defer-auto-open proof (issue #1000) could not run as designed this pass (${err.message}).`);
     }
-    // Gate round 2 fix (issue #1000, item 1, Medium): re-check `stillRunning` in its OWN gate,
-    // separate from every check below -- a miss here must stop Phase 2 outright (straight to
-    // the not-exercised screenshot path), never fall through into the chain-row/Stage-1/manual-
-    // open/focus checks below, which would otherwise run against a Stage that has already
-    // quietly settled and could spuriously FAIL (reporting FAILED/1) instead of leaving this
-    // pass as NOT PROVEN/2, since nothing in that case would have genuinely exercised anything.
+    // A missed window must stop Phase 2 (NOT PROVEN), not run the checks against a settled Stage.
     if (phase2Exercised) {
       const stillRunning = await cdp.evaluate(stageIsRunningExpr(STAGE2_TITLE));
       if (!stillRunning) {
@@ -335,25 +227,16 @@ async function main() {
         findings.push("Stage 1 stayed open once this turn grew to two Stages -- #991's own upward-only latch holds regardless of the later Stage-count reclassification, confirming nothing closes itself.");
       }
 
-      // Gate round 1 fix (issue #1000, item 3, Medium): this screenshot is taken HERE, right
-      // after the closed-while-running checks above and BEFORE `expandByFinder` below ever
-      // touches Stage 2 by hand -- previously taken after the manual open, so it could never
-      // actually show the closed state it claims to.
+      // Taken before the manual open so it actually shows the closed state.
       await cdp.screenshot(path.join(SHOTS_DIR, '01-stage2-running-chain-open-stage2-closed.png'));
 
-      // ---- Manual-open proof: a user's own choice on an auto-open-exempt Stage still opens
-      // it, and that choice -- plus keyboard focus placed inside it -- survives Stage 2
-      // settling and the remaining Stages streaming in behind it (WCAG 2.4.3). ----
+      // Manual open and focus inside it must survive Stage 2 settling (WCAG 2.4.3).
       await expandByFinder(cdp, stageTriggerSelector(STAGE2_TITLE));
       const stage2TriggerAfterManualOpen = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
       const stillRunningAfterManualOpen = await cdp.evaluate(stageIsRunningExpr(STAGE2_TITLE));
       if (stage2TriggerAfterManualOpen !== 'true') {
         failures.push(`Manually clicking Stage 2's own trigger did not open it (aria-expanded is ${JSON.stringify(stage2TriggerAfterManualOpen)}, expected "true") -- a user's own choice must still open an auto-open-exempt Stage.`);
       } else {
-        // Gate round 2 fix (issue #1000, item 2, Medium): `manuallyOpened` records that the
-        // click itself genuinely succeeded -- Phase 3's own "survived settling" check below is
-        // gated on this, not merely on `phase2Exercised`, so a failed click here cannot also
-        // produce a second, misleading failure downstream.
         manuallyOpened = true;
         if (!stillRunningAfterManualOpen) {
           notExercised.push('Stage 2 settled before the manual-open-plus-focus check could place focus while it was still genuinely running; the keyboard-focus-survives-settling proof did not run as designed this pass.');
@@ -363,10 +246,6 @@ async function main() {
           if (!focusedInStage2) {
             failures.push("Could not place keyboard focus on Stage 2's own Story559 member row trigger while Stage 2 was still genuinely running.");
           } else {
-            // Gate round 2 fix (issue #1000, item 3, Medium): `focusPlaced` records that focus
-            // genuinely landed -- Phase 3's own "focus survived settling" check below is gated
-            // on this, not merely on `phase2Exercised`, so a failed placement here cannot also
-            // produce a second, misleading failure downstream.
             focusPlaced = true;
             findings.push("Keyboard focus placed on Stage 2's own Story559 member row trigger, inside Stage 2's own manually-opened content, while Stage 2 was still genuinely running.");
           }
@@ -374,28 +253,18 @@ async function main() {
       }
       await cdp.screenshot(path.join(SHOTS_DIR, '02-stage2-manually-opened-focus-inside.png'));
     } else {
-      // Gate round 1 fix (issue #1000, item 3): still capture both named shots even on the
-      // not-exercised path, so `clearKnownOutputFiles`'s own known-file list stays accurate and
-      // a missing file is never mistaken for a tool crash.
+      // Capture both shots anyway so the known-file list stays accurate.
       await cdp.screenshot(path.join(SHOTS_DIR, '01-stage2-running-chain-open-stage2-closed.png'));
       await cdp.screenshot(path.join(SHOTS_DIR, '02-stage2-manually-opened-focus-inside.png'));
     }
 
-    // ---- Phase 3: once the whole ten-Stage turn settles: Stage 2 (manually opened above)
-    // stays open with focus preserved (never drops to <body>); Stage 3 (two agents, Zeta/
-    // Omega, never touched by this script) stays CLOSED -- the clean "settled and never
-    // touched stays closed" proof, since Stage 2 itself is no longer a "never touched" witness
-    // once manually opened above; Stage 5 (its own FailAgent member failed) is open regardless
-    // of Stage count (issue #1000's one kept exception) ----
+    // Phase 3: after the whole turn settles, a never-touched Stage 3 stays closed and failed Stage 5 is open.
     await cdp.waitFor(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && !t.textContent.includes('Running'); })()`,
       { timeoutMs: 30_000, label: 'All ten Stages and the plain tool row settled' }
     );
     await cdp.screenshot(path.join(SHOTS_DIR, '03-all-stages-settled.png'));
 
-    // Gate round 2 fix (issue #1000, item 2, Medium): gated on `manuallyOpened` (set only when
-    // the click at Phase 2's own `expandByFinder` genuinely succeeded) -- not merely on
-    // `phase2Exercised`, which says nothing about whether the manual open itself ever happened.
     if (manuallyOpened) {
       const stage2TriggerAfterSettle = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
       if (stage2TriggerAfterSettle !== 'true') {
@@ -406,9 +275,6 @@ async function main() {
     } else {
       notExercised.push("Stage 2 was never manually opened this pass, so its own manual-open-survives-settling proof did not run.");
     }
-    // Gate round 2 fix (issue #1000, item 3, Medium): gated on `focusPlaced` (set only when
-    // focus genuinely landed inside Stage 2's content) -- not merely on `phase2Exercised`,
-    // which says nothing about whether focus placement itself ever succeeded.
     if (focusPlaced) {
       const activeAfterSettle = await cdp.evaluate(`(() => {
         const active = document.activeElement;
@@ -454,12 +320,8 @@ async function main() {
       findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}) -- no colour-dependent assertion in this check, every proof above is structural (aria-expanded, document.activeElement, visible text).`);
     }
 
-    // Gate round 1 fix (issue #1000, item 2, Medium): the defer-auto-open discriminator
-    // (Phase 2's closed-while-running check) is the ONE proof that actually distinguishes this
-    // fix from `origin/main` -- if the additive delay window was missed (`!phase2Exercised`),
-    // this run must NEVER claim DONE/exit 0, since nothing here has genuinely proven the fix;
-    // it gets its own distinct NOT-PROVEN verdict and exit code (2), separate from a real
-    // FAILED (1) or a true DONE (0).
+    // Only the closed-while-running check separates the fix from `origin/main`; if it was
+    // skipped, the run must not claim DONE.
     const verdict = failures.length > 0 ? 'FAILED' : !phase2Exercised ? 'NOT PROVEN (critical check skipped)' : 'DONE';
     const exitCode = failures.length > 0 ? 1 : !phase2Exercised ? 2 : 0;
     const report = {
@@ -491,7 +353,7 @@ async function main() {
         JSON.stringify({ gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2)
       );
     } catch {
-      // best-effort only
+      // best-effort
     }
     console.error('verify-1000: FAILED:', err?.stack ?? err);
     process.exitCode = 1;

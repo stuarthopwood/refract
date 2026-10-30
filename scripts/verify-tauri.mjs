@@ -1,43 +1,9 @@
 #!/usr/bin/env node
-// `pnpm verify:tauri` (issue #795 part 1, R12a): CDP-driven proof for the Tauri/WebView2 build.
-// Builds once with `pnpm exec tauri build --debug --no-bundle` (no dev server, so no shared
-// Vite port 5174 -- a live-run convention all Phase R lanes share, since only one lane can hold
-// that port at a time and `cargo run`'s own exe under the shared CARGO_TARGET_DIR can otherwise
-// be overwritten mid-run by another lane's build), copies the resulting
-// `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to a scratch dir, and runs THAT COPY directly
-// against a scratch data directory and a scratch git repository, with the recorded-frame fake
-// `omp` (scripts/verify-tauri-fake-omp.mjs) first on PATH by default. Drives:
-//
-//   US1 (window, readiness): the window paints, the readiness checklist goes green, "Add
-//       repository" becomes enabled.
-//   US4 (chat that streams): add the scratch repository, create a Session, send a message, and
-//       read the streamed reply back out of the transcript DOM (asserts the content changes
-//       over more than one poll before settling, not just a single final render).
-//
-// `--real-omp` runs US1 only, against a REAL `omp` resolved from PATH (no fake, no PATH shim) --
-// the one real-omp proof this lane's assignment calls for. It does not spend a model turn: the
-// readiness checklist only calls `omp --version` and a scratch, no-session `get_state`/
-// `get_available_models`/`get_login_providers` round trip (ipc/readiness.rs), never `prompt`.
-//
-// Not covered by this harness (left for R12b, issue #795 part 3 onward): ported Rust test cases,
-// the transcript golden tests, the cross-shell contract replay, generated frame types, and the
-// performance/footprint proof. Only `readiness` and `session` (US1/US4) are ever driven here;
-// `side-chat`/`subagents`/`failure`/`exit` are fixtures for the R3/R5/R6 lanes to drive once they
-// port those channels (`scripts/fixtures/omp-frames/README.md`), not exercised by this script.
-//
-// Every process this script starts runs inside `scripts/verify-tauri-launcher.rs`'s own
-// kill-on-close Win32 Job Object (gate-fix, security review HIGH, round 2): tearing down the
-// whole tree (WebView2, the fake-omp PATH shim, its own node child) is a single OS-level job
-// termination, never a Win32_Process snapshot or a `taskkill` of a computed pid -- see
-// `verify-tauri-cdp.mjs`'s own `stopLauncher`/`launchViaJobObject` doc comments. Never a kill by
-// name, per AGENTS.md's destructive-operations rule applied to processes.
-//
-// Shared disk note (issue #946): `CARGO_TARGET_DIR` is required, enforced by
-// `requireSharedCargoTarget` below -- this script refuses to run rather than letting cargo fall
-// back to its own default (a worktree-local `src-tauri/target`, which has filled a worktree's
-// disk before). Every cargo/tauri invocation here uses the shared dir; its build step briefly
-// uses that target dir's own lock (builds serialise there machine-wide) -- only the copied exe
-// runs concurrently with others.
+// `pnpm verify:tauri`: CDP-driven proof (US1 readiness, US4 streamed chat) for the Tauri/WebView2 build.
+// Runs a scratch copy of the debug exe: no dev server (Vite port 5174 is shared), and the shared target exe can be overwritten mid-run.
+// `--real-omp` runs US1 only against a real `omp`; readiness never calls `prompt`, so no model turn is spent.
+// Everything runs in the launcher's kill-on-close Job Object, never a kill by name or computed pid.
+// `CARGO_TARGET_DIR` is required (#946): a worktree-local `src-tauri/target` has filled the disk before.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync } from 'node:fs';
@@ -51,10 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-// The scripted prompt deliberately never mentions the reply token below (gate-fix, tests review
-// round 2 MEDIUM): the two must be independent strings, or a check against the token could pass
-// merely because the user's own echoed prompt contains it, never actually observing the
-// assistant's own reply.
+// Independent of REPLY_TOKEN: otherwise the echoed prompt could satisfy a token check.
 const PROMPT_MESSAGE = 'Please respond now.';
 // A token the fake omp's assistant reply ends with; absent from `PROMPT_MESSAGE` above.
 const REPLY_TOKEN = 'xyzzy9';
@@ -63,10 +26,7 @@ function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
-/** Best-effort recursive delete: a Windows file handle from the just-stopped process tree
- * (the built exe, WebView2, the fake-omp Node child) can still be closing asynchronously for a
- * moment after `stopProcess` returns, so EPERM/EBUSY here must never mask the proof's own
- * pass/fail result -- it is logged and otherwise ignored, never thrown. */
+// Windows handles from the stopped process tree may still be closing; EPERM/EBUSY must not mask the result.
 async function safeRmSync(dir) {
   if (!dir) return;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -83,9 +43,7 @@ async function safeRmSync(dir) {
   }
 }
 
-/** Compiles the native PATH shim (scripts/verify-tauri-omp-shim.rs) into `<dir>/omp.exe` with a
- * bare `rustc` call -- no Cargo project, so it never touches `CARGO_TARGET_DIR` or any shared
- * lock. Takes well under a second (a ~40-line, dependency-free single file). */
+// Bare `rustc` (no Cargo project) so it never touches the shared `CARGO_TARGET_DIR` lock.
 function buildOmpShim(dir) {
   mkdirSync(dir, { recursive: true });
   const src = path.join(__dirname, 'verify-tauri-omp-shim.rs');
@@ -97,8 +55,6 @@ function buildOmpShim(dir) {
   return out;
 }
 
-/** Compiles the Win32 Job Object launcher (scripts/verify-tauri-launcher.rs) into
- * `<dir>/verify-tauri-launcher.exe` the same way: a bare `rustc` call, std only. */
 function buildLauncher(dir) {
   mkdirSync(dir, { recursive: true });
   const src = path.join(__dirname, 'verify-tauri-launcher.rs');
@@ -114,11 +70,7 @@ function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
-/** A minimal scratch git repository to add as a Repository: one commit on `main`, nothing else.
- * Never under C:/Repos/personal (AGENTS.md: never seed a repo there); always a fresh mkdtemp.
- * Throws with `git`'s own stderr on either command failing (gate-fix, code review MEDIUM: a
- * silently-ignored git failure used to surface only as a vague "repository added" timeout much
- * later, with no clue the repo itself was never valid). */
+// Never seed a repo under C:/Repos/personal. Throws on git failure so it does not surface as a vague timeout later.
 function makeScratchRepo(dir) {
   mkdirSync(dir, { recursive: true });
   const run = (args) => {
@@ -133,30 +85,18 @@ function makeScratchRepo(dir) {
   return dir;
 }
 
-/** The scratch worktree a Session's creation leaves next to the scratch repo (`git/worktrees.rs`:
- * `<repo>/../pinion-worktrees/<repoName>/<name>`) -- deleted alongside the repo itself in
- * `safeRmSync` cleanup (gate-fix, security review LOW: this was previously left behind on every
- * US4 run since only `repoDir` itself was ever removed). */
+// Session creation leaves `<repo>/../pinion-worktrees/<repoName>/<name>`; cleanup must remove it too.
 function worktreesDirFor(repoDir) {
   return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
 }
 
-/** Builds the Rust app once with no dev server (the live-run convention, 2026-10-13): `tauri
- * build --debug --no-bundle` runs the renderer's own production build plus `cargo build`
- * (never `cargo run`), so it never touches Vite's shared port 5174 and finishes with a plain
- * exe under the shared `CARGO_TARGET_DIR` (issue #946: always set, enforced above), not a
- * running process. Takes a few minutes the first time; a shared target dir makes a rebuild fast
- * once most crates are already compiled. */
+// `tauri build --debug --no-bundle`, never `cargo run`, so Vite's shared port 5174 is untouched (#946).
 function buildTauriDebugNoBundle() {
-  // A shared `CARGO_TARGET_DIR` means another lane's own running exe (built from the same
-  // crate) can transiently hold `debug/refract-tauri.exe` open, so `cargo build`'s own rename-
-  // over-the-old-binary step fails with "Access is denied" until that lane's process exits.
-  // Retried, not treated as this run's own failure.
+  // Another lane's running exe can hold `debug/refract-tauri.exe`, making cargo's rename fail with
+  // "Access is denied"; retried rather than treated as this run's failure.
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // Shared-disk note (Main broadcast, 2026-10-14): the shared target dir's disk hit 100% and
-    // broke builds once already; CARGO_INCREMENTAL=0 travels with CARGO_TARGET_DIR so every
-    // lane building against the shared cache keeps its incremental-artifact footprint down.
+    // The shared target dir's disk hit 100% once; CARGO_INCREMENTAL=0 keeps incremental artifacts small.
     const env = { ...process.env, CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR, CARGO_INCREMENTAL: '0' };
     const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
       cwd: REPO_ROOT,
@@ -174,8 +114,7 @@ function buildTauriDebugNoBundle() {
   }
 }
 
-/** Copies the just-built exe to its own scratch dir, so two lanes' own runs (and a later build
- * overwriting the shared target dir's own copy) never collide with a process already running. */
+// Own scratch dir so a later build overwriting the shared exe never collides with a running process.
 function copyBuiltExe(destDir) {
   mkdirSync(destDir, { recursive: true });
   const dest = path.join(destDir, 'refract-tauri.exe');
@@ -187,15 +126,8 @@ function copyBuiltExe(destDir) {
   return dest;
 }
 
-/** Runs the already-built, already-copied exe inside `verify-tauri-launcher.exe`'s own
- * kill-on-close Job Object (gate-fix, security review HIGH, round 2) -- see
- * `verify-tauri-cdp.mjs`'s own `launchViaJobObject` doc comment. `WEBVIEW2_USER_DATA_FOLDER` (a
- * documented WebView2 env var) gets its own scratch subfolder next to the copied exe: WebView2's
- * default user-data-folder resolution can collide across concurrently running instances sharing
- * an identity, surfacing as `HRESULT(0x8007139F)` ("the group or resource is not in the correct
- * state") -- seen live when another lane's own Tauri instance was running at the same time.
- * Returns `{ child, targetPid }`: `child` is the launcher's own process (what `stopLauncher`
- * takes), `targetPid` is the real app's pid (for `isTargetOwningPort` only). */
+// Own `WEBVIEW2_USER_DATA_FOLDER`: the default can collide across concurrent instances (HRESULT 0x8007139F).
+// `child` is the launcher (for `stopLauncher`); `targetPid` is the app (for `isTargetOwningPort` only).
 async function launchBuiltExe(launcherExe, exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
   const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
   mkdirSync(webview2DataDir, { recursive: true });
@@ -223,8 +155,6 @@ function withEvidenceDir(name) {
   return dir;
 }
 
-/** US1: readiness goes green and "Add repository" becomes enabled. Works against either the fake
- * or a real `omp`: the readiness checklist is the same RPC round trip either way. */
 async function proveUs1(cdp, evidenceDir) {
   try {
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
@@ -249,18 +179,8 @@ async function proveUs1(cdp, evidenceDir) {
   console.log('US1 PASS: window painted, readiness green, Add repository enabled.');
 }
 
-/** Polls `[aria-label="Transcript"]`'s own trailing text until it ends with `finalToken`, but
- * only accepts that final state if an EARLIER poll already observed the same trailing text
- * ending with a strict, non-empty, proper prefix of `finalToken` (gate-fix, tests review round
- * 2 MEDIUM: a plain "more than one distinct state" check could pass for a reply that streamed
- * something else entirely before happening to paint the whole token in one go -- requiring a
- * real prefix of THIS token proves the token itself arrived incrementally). The streaming
- * assistant message is always the last thing appended to the transcript's own trailing text
- * while a turn is in flight (nothing else renders after it until the turn settles), so checking
- * the tail of the whole region's `textContent` -- rather than a dedicated per-message selector,
- * which does not exist in the renderer yet -- reliably scopes this to that message. Also fails
- * loudly (not silently) if a "prompt failed" notice appears, which a missing `response` ack to
- * `prompt` would otherwise cause (gate-fix, code review HIGH, fixed in the fixtures themselves). */
+// Requires an earlier poll to see a proper prefix of finalToken, proving this token streamed incrementally.
+// The streaming message is always the transcript's tail, so the tail scopes to it; fails on a "prompt failed" notice.
 async function waitForStreamedReply(cdp, { finalToken, timeoutMs = 60_000, intervalMs = 250 }) {
   const deadline = Date.now() + timeoutMs;
   let sawPartialPrefix = false;
@@ -292,7 +212,6 @@ async function waitForStreamedReply(cdp, { finalToken, timeoutMs = 60_000, inter
   );
 }
 
-/** US4: add the scratch repository, create a Session, send a message, read the streamed reply. */
 async function proveUs4(cdp, evidenceDir, { repoDir, message }) {
   await cdp.click(`document.querySelector('[data-readiness-primary]')`);
   await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
@@ -390,10 +309,7 @@ async function runFakeOmpProof() {
 
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
     cdp = await CdpSession.connect(wsUrl);
-    // Belt-and-braces (gate-fix, security review MEDIUM/round 2): `getFreePort()` already
-    // removes the usual collision window, but confirms the pid actually listening on the port is
-    // the app this run launched (or its own direct WebView2 child), not some other instance that
-    // raced onto the same port between the free-port check and this connect.
+    // Confirms the port's listener is this run's app, not another instance that raced onto the port.
     if (!isTargetOwningPort(port, targetPid)) {
       throw new Error(`verify-tauri: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid}) -- refusing to drive it`);
     }
@@ -411,7 +327,6 @@ async function runFakeOmpProof() {
   }
 }
 
-/** The one real-omp proof: US1 only, no model turn (ipc/readiness.rs never calls `prompt`). */
 async function runRealOmpProof() {
   let dataDir, exeDir, evidenceDir;
   let child;

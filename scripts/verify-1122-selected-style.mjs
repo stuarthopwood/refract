@@ -1,50 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1122 (one selected-item style: square corners, a flush full-height
-// 2px left bar, the accent fill, via the new shared `ActiveIndicatorBar` component) and issue
-// #1119 (Explorer name/icon tone). Ported pattern from `verify-700-pill-cards.mjs`/
-// `verify-1074-text-opacity.mjs` (`verify-tauri-cdp.mjs`'s `CdpSession`, `verify-tauri-scratch-
-// helpers.mjs`'s scratch/launch/theme helpers). Reuses the pre-existing `subagents.jsonl` fake-
-// omp tape (`REFRACT_FAKE_OMP_SCENARIO=subagents`) rather than adding a new fixture (AGENTS.md:
-// no new fixtures) -- its one Session plus two-subagent Stage batch gives real rows for
-// SessionRow and the Subagent panel's tree.
+// Live CDP check: one selected-item style (square corners, flush 2px left bar, accent fill) and Explorer name/icon tone,
+// across Dark, Obsidian and Dark (high contrast); other themes are covered by `check-theme-contrast.mjs`.
+// Forced-colours: CDP cannot emulate `forced-colors` in WebView2, so Tailwind's compiled
+// `@media (forced-colors: active)` rule is read from the built CSS on disk (CSSOM scans 0 rules).
 //
-// Flow: Readiness -> add a scratch repo seeded with 2 real files (so FileExplorerPanel has more
-// than a bare root to pick from) -> create session -> send the tape's prompt -> for each of
-// Dark, Obsidian and Dark (high contrast) (the acceptance's own named themes; Nordic Frost and
-// Cyber Amber are covered mathematically by `check-theme-contrast.mjs`'s 962/962 pairs, so
-// visual screenshot coverage is only required for these three):
-//   - Session row (`SessionRow.tsx`): selected, square (`data-choice-item`), the shared bar+fill.
-//   - Collapsed group header (`GroupHeader.tsx`): collapses the open Session's group, square
-//     (`data-choice-item`), the shared bar, NO fill (#735 decision 22), then re-expands.
-//   - "Pull requests" nav (`SessionList.tsx`): click, `aria-current="page"`, square
-//     (`data-choice-item`), the shared bar+fill, then returns to chat.
-//   - Settings nav (`SettingsScreen.tsx`): default section selected (square, bar, `bg-accent`
-//     fill); clicks "Appearance" (now selected) then Shift+Tab's focus back to "Session readout"
-//     (now focused but NOT selected) -- proves keyboard focus stays visible and distinct from
-//     selection on two DIFFERENT rows at once, the cleanest site for this (a plain `<ul>` of
-//     individually tab-stoppable buttons, not a roving-tabindex tree where focus and selection
-//     are the SAME row by design -- Explorer/Subagent panel, noted under `notExercised`).
-//   - Explorer row (`FileExplorerPanel.tsx`): square (`role="treeitem"` now joins the selector),
-//     the shared bar+fill, AND #1119's own name/icon tone (real computed colour resolves to
-//     `--chat-foreground`/`--muted-foreground`, not the bare `--foreground` it inherited before).
-//   - Subagent panel row (`SubagentPanel.tsx`): square (`role="treeitem"`), the shared bar+fill
-//     (decision 13's bar-only exception superseded).
-//   - Manage sessions row (`ManageSessionRow.tsx`): the open session's own row is `isVisible`;
-//     square (no rounding class at all), the shared bar+fill.
-//   - PR list row (`PullRequestRow.tsx`): attempts the real GitHub PR list (no GitHub account in
-//     this scratch profile) -- if no real rows render in time, records `notExercised` with the
-//     SAME established wording `verify-tauri-499-930.mjs`/`verify-tauri-568.mjs` already use.
-// Forced-colours: WebView2's CDP endpoint has no working `Emulation.setEmulatedMedia` for
-// `forced-colors` (`verify-tauri-567.mjs`/`verify-1043-theme-radio.mjs`'s own documented
-// limitation) -- confirms `ActiveIndicatorBar`'s own `forced-color-adjust-none`/
-// `forced-colors:bg-[Highlight]` classes are literally rendered on every converted site AND that
-// Tailwind genuinely compiled a matching `@media (forced-colors: active)` rule for it (reading
-// the built CSS bundle off disk, the same technique `verify-1043-theme-radio-helpers.mjs`'s own
-// `forcedColorsRuleCompiled` uses -- the CDP/CSSOM route scans 0 rules for a Tauri-served
-// stylesheet, a WebView2 restriction unrelated to whether the CSS works).
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 node
-// scripts/verify-1122-selected-style.mjs (rebuilds the debug exe fresh into its own scratch copy).
+// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 node scripts/verify-1122-selected-style.mjs
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -136,9 +96,7 @@ async function main() {
   const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-1122-launcher-'));
   const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-1122-shim-'));
 
-  // Seeds 2 real files (never 0 -- `makeScratchRepo`'s own commit is `--allow-empty`, so the
-  // repo starts with no tracked files at all), so the Explorer tree has more than a bare empty
-  // root to select a row from.
+  // Seeds 2 files: `makeScratchRepo`'s commit is --allow-empty, so the Explorer would have no row to select.
   writeFileSync(path.join(repoDir, 'README.md'), '# verify-1122-selected-style scratch repo\n');
   writeFileSync(path.join(repoDir, 'notes.txt'), 'scratch file for the Explorer tree row selection check\n');
   spawnSync_('git', ['-C', repoDir, 'add', 'README.md', 'notes.txt']);
@@ -180,10 +138,7 @@ async function main() {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
     assertExeUnchanged(exePath, exeHash, 'post-launch', LOG);
-    // Gate round 1 fix (two reviewers): without this, a scratch window that never actually has
-    // OS foreground focus never satisfies `:focus-visible` on a real Tab/Shift+Tab move -- the
-    // same emulation `verify-tauri-569.mjs`/`verify-1043-theme-radio.mjs`/`verify-558-blocker-
-    // callout.mjs` already use before any keyboard-focus assertion.
+    // Without emulated focus, a window lacking OS foreground never satisfies `:focus-visible`.
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
 
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
@@ -226,15 +181,12 @@ async function main() {
         await switchTheme(cdp, theme.id, theme.name);
         await sleep(250);
 
-        // Gate round 1 fix (two reviewers): real per-theme token colours, fetched once, so
-        // every site below can assert its own fill/bar colour against the ACTUAL resolved
-        // value for this theme, not just a className/shape match.
+        // Real per-theme token colours, so sites assert against resolved values, not just class names.
         const barBg = await tokenColor(cdp, '--active-indicator', 'background-color');
         const accentBg = await tokenColor(cdp, '--accent', 'background-color');
         const sidebarAccentBg = await tokenColor(cdp, '--sidebar-accent', 'background-color');
 
-        // ---- Session row (SessionRow.tsx) -- the square-choice `data-choice-item` sits on the
-        // outer <li>, but the sidebar-accent fill paints on its inner content <div>. ----
+        // Session row: `data-choice-item` is on the outer <li>, the accent fill on its inner <div>.
         const sessionRow = await readSelectedSite(
           cdp,
           `document.querySelector('nav[aria-label="Sessions"] li[data-choice-item]')`,
@@ -245,7 +197,7 @@ async function main() {
         pushShot(shotNames, `${theme.id}-01-session-row-selected.png`);
         await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 
-        // ---- Collapsed group header (GroupHeader.tsx) -- bar only, no fill (#735 decision 22) ----
+        // Collapsed group header: bar only, no fill (#735 decision 22).
         const groupHeader = await checkCollapsedGroupHeader(cdp, theme.name, {
           barBg,
           screenshot: async () => {
@@ -259,15 +211,14 @@ async function main() {
           failures.push(`${theme.name}: Collapsed group header -- expected no selected fill (bar only, #735 decision 22), measured ${groupHeader.fillBackgroundColor}.`);
         }
 
-        // ---- "Pull requests" nav entry (SessionList.tsx) ----
+        // "Pull requests" nav entry.
         await cdp.clickByLabel('Pull requests');
         await cdp.waitFor(`document.querySelector('[aria-label="Pull requests"]')?.getAttribute('aria-current') === 'page'`, {
           timeoutMs: 10_000,
           label: `${theme.name}: Pull requests nav selected`
         });
-        // The pointer rests on the entry after the click, and its own `hover:bg-sidebar-accent`
-        // paints the same token as the selected fill -- move it off first, then wait out the
-        // Button's `transition-all` (a mid-transition read measured ~70% alpha).
+        // The resting pointer's `hover:bg-sidebar-accent` paints the selected-fill token: move it
+        // off, then wait out the `transition-all` (a mid-transition read measured ~70% alpha).
         await movePointerOffAndSettle(cdp, `document.querySelector('[aria-label="Pull requests"]')`, `${theme.name}: Pull requests nav`);
         const prNav = await readSelectedSite(cdp, `document.querySelector('[aria-label="Pull requests"]')`);
         assertSite(failures, findings, theme.name, 'Pull requests nav entry', prNav, { barBg, fillBg: sidebarAccentBg, fillTokenName: '--sidebar-accent' });
@@ -275,7 +226,7 @@ async function main() {
         pushShot(shotNames, `${theme.id}-02-pull-requests-nav-selected.png`);
         await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 
-        // ---- Real GitHub PR list row (PullRequestRow.tsx) -- attempted, gracefully degrades ----
+        // Real GitHub PR list row: attempted, degrades gracefully.
         const prRowsAppeared = await cdp
           .waitFor(`document.querySelectorAll('[data-pr-row]').length > 0 || !!document.querySelector('[role="alert"]')`, {
             timeoutMs: 15_000,
@@ -298,7 +249,7 @@ async function main() {
         pushShot(shotNames, `${theme.id}-08-pull-request-row-attempt.png`);
         await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 
-        // ---- Return to chat before the rest of this theme's checks ----
+        // Return to chat before the rest of this theme's checks.
         await cdp.click(`document.querySelector('[data-repository-id] .session-open-button, li[data-choice-item] .session-open-button')`);
         await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 15_000, label: `${theme.name}: back in chat` });
 
@@ -369,9 +320,8 @@ function pushShot(shotNames, name) {
   shotNames.push(name);
 }
 
-/** Asserts the three #1122 facts every converted site must show: a square row (`border-radius:
- * 0px`), the shared bar (exact-className match, not a loose substring), and that bar genuinely
- * flush against the row's own top AND bottom edges (`inset-y-0`, not the old `inset-y-1` inset). */
+/** Asserts the #1122 facts for a converted site: square row, the exact shared bar className, and
+ * a bar flush with the row's top and bottom (`inset-y-0`, not the old `inset-y-1`). */
 function assertSite(failures, findings, themeName, label, read, expected = {}) {
   if (!read) {
     failures.push(`${themeName}: ${label} -- row not found at all.`);
@@ -389,9 +339,7 @@ function assertSite(failures, findings, themeName, label, read, expected = {}) {
     if (typeof read.barWidthPx === 'number' && Math.abs(read.barWidthPx - 2) > 0.5) {
       failures.push(`${themeName}: ${label} -- bar width measured ${read.barWidthPx}px, expected 2px.`);
     }
-    // Gate round 1 fix (two reviewers): the bar's own real background colour must equal
-    // `--active-indicator`'s own resolved value at every site -- a className match alone (above)
-    // cannot catch a token typo/override that still happens to render SOME colour.
+    // The bar's real colour must equal `--active-indicator`: a className match cannot catch a token typo.
     if (expected.barBg && read.barBackgroundColor !== expected.barBg) {
       failures.push(`${themeName}: ${label} -- bar background measures ${read.barBackgroundColor}, expected --active-indicator (${expected.barBg}).`);
     }
@@ -434,13 +382,8 @@ async function runSettingsChecks(cdp, theme, { failures, findings, notExercised,
   );
   assertSite(failures, findings, theme.name, 'Settings nav (Appearance, after click)', appearanceSection, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
 
-  // ---- Keyboard focus distinct from selection: after the screen's own focus-the-heading
-  // effect fires (`SettingsScreen.tsx`'s `useEffect` on `settingsSection`, which moves real
-  // focus to the new section's own content heading, not the clicked nav button), Shift+Tab
-  // (bounded, not a hardcoded single keystroke -- robust to exactly how many tab stops sit
-  // between wherever focus actually lands and the nav list, the same `tabUntilFocused`
-  // precedent `verify-700-pill-cards.mjs` uses) walks backward until "Session readout" itself
-  // is focused, with Appearance still selected elsewhere. ----
+  // Keyboard focus distinct from selection: the screen focuses the new section's heading, so
+  // Shift+Tab walks back (bounded) until "Session readout" is focused with Appearance selected.
   let sessionReadoutFocused = false;
   for (let i = 0; i < 20 && !sessionReadoutFocused; i++) {
     await pressKey(cdp, 9, 'Tab', 'Tab', 8);
@@ -468,11 +411,8 @@ async function runSettingsChecks(cdp, theme, { failures, findings, notExercised,
       sessionReadoutBorderColor: style ? style.borderColor : null
     };
   })()`);
-  // Gate round 1 fix (two reviewers): Tailwind v4's `ring-*` utilities always compose a
-  // 5-layer `box-shadow` even when every layer is a transparent/zero-geometry no-op, so a bare
-  // `!== 'none'` check (the round-1 version here) passes unconditionally -- `hasVisibleShadow`
-  // (`contrast-math.mjs`, the same helper `verify-927-928-quiet-composer.mjs` uses) measures
-  // each layer's real blur/spread radius and colour alpha instead.
+  // Tailwind v4 `ring-*` always composes a 5-layer box-shadow, even all-transparent, so a bare
+  // `!== 'none'` always passes; `hasVisibleShadow` measures each layer's blur/spread and alpha.
   const realRingVisible = hasVisibleShadow(focusState.sessionReadoutBoxShadow);
   if (!focusState.focusedIsSessionReadout) {
     failures.push(`${theme.name}: the bounded Shift+Tab search never landed on Session readout within 20 presses.`);
@@ -487,9 +427,7 @@ async function runSettingsChecks(cdp, theme, { failures, findings, notExercised,
   } else {
     findings.push(`${theme.name}: keyboard focus (Session readout, real bounded Shift+Tab, :focus-visible matched, a REAL visible ring box-shadow measured) is distinct from selection (Appearance, square+bar+fill) -- two different rows, each its own real state.`);
   }
-  // Gate round 1 fix: screenshot taken WITHOUT `settleForScreenshot`'s own pointer-move/blur
-  // (which would blur this exact focus away before the shot fires) -- captured immediately,
-  // while the real keyboard focus from the Shift+Tab search above is still live.
+  // No `settleForScreenshot`: its pointer-move/blur would drop the live keyboard focus.
   shotNames.push(`${theme.id}-04-settings-appearance-selected-focus-on-session-readout.png`);
   await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 
@@ -555,8 +493,7 @@ async function runManageSessionsChecks(cdp, theme, { failures, findings, shotNam
   });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Manage sessions')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: `${theme.name}: Manage sessions screen opened` });
-  // The open session's own row, found by `ManageSessionRow.tsx`'s existing sr-only "Shown in
-  // chat" marker (rendered only while `isVisible`), not by a styling class.
+  // The open session's row, found by its sr-only "Shown in chat" marker (only while `isVisible`).
   const visibleRow = `Array.from(document.querySelectorAll('li .sr-only')).find((s) => s.textContent.trim() === 'Shown in chat')?.closest('li')`;
   await cdp.waitFor(`!!${visibleRow}`, { timeoutMs: 15_000, label: `${theme.name}: the open session's own row is visible-selected` });
   const manageRow = await readSelectedSite(cdp, visibleRow);

@@ -1,42 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for issue #554 (Settings: chat reading width -- full width by default, or a
-// centred reading column), amending spec 001 FR-049 and adding FR-073.
-//
-// Drives a REAL `omp` (ambient signed-in profile, no `OMP_PROFILE` override), the same isolation
-// posture `verify-927-928-quiet-composer.mjs`/`verify-570-tool-colours.mjs` use: scratch cwd/
-// worktree/`REFRACT_DATA_DIR` never touch Stuart's real Session list. No prompt is ever sent --
-// every assertion is a static `getBoundingClientRect()`/computed-style read, so this spends no
-// model tokens.
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node
-// scripts/verify-554-chat-width.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
-// the same convention every `verify-5xx-*.mjs` script documents).
-//
-// Checks (ui-architect-v3 roundtable decision record, issue #554, Decided, Skippy, delegated by
-// Stuart 2026-10-18):
-//   1. Default "Full": the transcript column (`[data-slot="message-scroller-content"]`) fills its
-//      pane's own width at 1280 and 1920px windows -- no cap, no centring.
-//   2. Switching to "Reading column" via the REAL Settings UI, by MOUSE click, live-previews the
-//      capped, centred column BEFORE Save (no reload) at 1280/1920/2560px: measured width is
-//      64rem (1024px at the default root font size), left/right margins equal within a few px;
-//      the preview tile beside the radiogroup (`[data-chat-width-preview-bars]`, H2 gate fix)
-//      narrows live too, before that Save.
-//   3. Switching back toward "Full" and then to "Reading column" again via the REAL keyboard
-//      (Tab into the radiogroup, Arrow keys, Enter on Save) live-previews the same way.
-//   4. The composer (`[aria-label="Message"]`'s own box) never changes width between Full and
-//      Reading column at the same window size -- transcript only (FR-073); a missing composer
-//      element is a hard failure here, not a silent skip.
-//   5. A narrow window (360px) shows no horizontal scroll under Reading column (WCAG 1.4.4/
-//      1.4.10 -- the cap is a maximum, never a minimum). Escape mid-preview (back toward "Full")
-//      discards instead of persisting -- the radiogroup reverts to the saved "Reading column"
-//      and the transcript stays capped afterward (M2 gate fix).
-//   6. Reading column survives a full relaunch of the same built exe against the same scratch
-//      `REFRACT_DATA_DIR` -- confirmed twice: `settings.json` read straight off disk before the
-//      stop/relaunch (H3 gate fix), and the rendered column measured again after it.
-//
-// The exe under test is tied to the commit two ways: rebuilt immediately before this script runs
-// (never a reused, possibly sibling-lane-clobbered exe), and a #554-only marker (`max-w-[64rem]`)
-// asserted present in the built renderer bundle first.
+// Live CDP check for #554 (Settings: chat reading width, full by default or a centred 64rem column).
+// Uses ambient-profile `omp` with scratch data and sends no prompt. The exe is tied to this commit by
+// rebuilding first and asserting the `max-w-[64rem]` marker in the built bundle.
+// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node scripts/verify-554-chat-width.mjs
+// (needs a prior `pnpm tauri build --debug --no-bundle`).
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -81,17 +48,13 @@ async function pressArrowUp(cdp) {
 
 const TRANSCRIPT_COLUMN_FINDER = `document.querySelector('[data-slot="message-scroller-content"]')`;
 const COMPOSER_BOX_FINDER = `document.querySelector('[aria-label="Message"]')?.closest('.bg-composer-background')`;
-// Gate round 2 (L1): the group now carries `aria-labelledby="chat-width-heading"` (pointing at
-// `AppearanceSection.tsx`'s own `<h3>`) instead of a bare `aria-label="Chat width"` string.
+// The group uses `aria-labelledby="chat-width-heading"` rather than a bare `aria-label`.
 const CHAT_WIDTH_RADIOGROUP_FINDER = `document.querySelector('[role="radiogroup"][aria-labelledby="chat-width-heading"]')`;
 const CHAT_WIDTH_READING_COLUMN_RADIO_FINDER = `(${CHAT_WIDTH_RADIOGROUP_FINDER})?.querySelector('[role="radio"][aria-checked]:nth-of-type(2)') ?? Array.from((${CHAT_WIDTH_RADIOGROUP_FINDER})?.querySelectorAll('[role="radio"]') ?? []).find((el) => el.textContent.includes('Reading column'))`;
 const CHAT_WIDTH_FULL_RADIO_FINDER = `Array.from((${CHAT_WIDTH_RADIOGROUP_FINDER})?.querySelectorAll('[role="radio"]') ?? []).find((el) => el.textContent.trim().startsWith('Full'))`;
 
-// Ties the exe under test to the actual commit, not merely to a comment's own assertion --
-// `max-w-[64rem]` (the Reading column cap, literally present in `Transcript.tsx`'s `className`
-// string) exists only from this story's own commits onward -- grepping the just-built renderer
-// bundle for it is a real, cheap proof that THIS build really contains #554's code, independent
-// of git log reasoning about timing.
+// `max-w-[64rem]` exists only from this story onward, so finding it in the just-built bundle
+// proves the build contains #554's code.
 function assertBundleContainsStory554Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory554Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
@@ -108,8 +71,7 @@ function assertBundleContainsStory554Marker() {
   console.log("verify-554: confirmed #554-only marker 'max-w-[64rem]' present in the built renderer bundle.");
 }
 
-/** Opens Settings, navigates to the Appearance section (not necessarily the screen's default
- * section), and waits for the Chat width radiogroup to mount. */
+/** Opens Settings, goes to Appearance, and waits for the Chat width radiogroup to mount. */
 async function openSettingsAppearance(cdp) {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings screen opened' });
@@ -122,13 +84,9 @@ async function closeSettings(cdp) {
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
 }
 
-/** Tab from the currently-focused radio to the Save button, a REAL Enter keypress to commit.
- * Uses `cdp.pressEnter()` (sends `text`/`unmodifiedText: '\r'` alongside the keycode), NOT the
- * bare `pressKey` helper (keycode only) -- a native `<button>`'s own default "Enter activates the
- * focused button" behaviour needs those text fields to fire in this WebView2 build, the exact
- * gap this codebase already documents at `verify-tauri-560-helpers.mjs`'s own `pressRealEnter`
- * doc comment and `verify-tauri-567.mjs`'s own Delete-dialog Enter press (`pressKey` alone "does
- * not reliably trigger it"). No fallback click: a hard failure here is real, not swallowed. */
+/** Tabs from the focused radio to Save and presses a real Enter. `cdp.pressEnter()` is needed
+ * because a native button's Enter activation requires the `text` fields in this WebView2 build;
+ * bare `pressKey` does not reliably trigger it. No click fallback, so failures stay visible. */
 async function saveViaKeyboard(cdp, { findings, label }) {
   await pressTab(cdp);
   await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Save'`, { timeoutMs: 5_000, label: `Tab reached the Save button (${label})` });
@@ -137,9 +95,8 @@ async function saveViaKeyboard(cdp, { findings, label }) {
   findings.push(`Keyboard Save committed "${label}" via a real Tab + Enter (Save disabled afterward, matching the Theme picker's own isDirty gate).`);
 }
 
-/** Reads the transcript column's own measured rect, the pane viewport's rect (its direct
- * scrollable ancestor), and the composer box's rect, all in one round trip so they describe the
- * exact same render (two separate `evaluate()` calls could straddle a resize/re-render). */
+/** Reads the transcript, pane viewport and composer rects in one round trip so they describe the
+ * same render (separate `evaluate()` calls could straddle a re-render). */
 async function measureLayout(cdp) {
   return cdp.evaluate(`(() => {
     const column = ${TRANSCRIPT_COLUMN_FINDER};
@@ -203,7 +160,7 @@ async function main() {
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
 
-    // ---- Launch 1: through readiness, add the scratch repo, create a Session. ----
+    // Launch 1: through readiness, add the scratch repo, create a Session.
     let launched = await launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, logFile: path.join(exeDir, 'app-1.log') });
     child = launched.child;
     let targetPid = launched.targetPid;
@@ -241,7 +198,7 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree). No prompt sent -- every check below is a static computed-style read.');
 
-    // ---- Check 1: default "Full" at 1280 and 1920 -- no cap, column fills its viewport. ----
+    // Check 1: default "Full" at 1280 and 1920, no cap, column fills its viewport.
     for (const width of [1280, 1920]) {
       await setWindowWidth(cdp, width);
       const layout = await measureLayout(cdp);
@@ -253,13 +210,9 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, `01-full-${width}.png`));
     }
 
-    // ---- Check 2: switch to "Reading column" via MOUSE, Save (same Settings mount -- closing
-    // Settings without saving unmounts AppearanceSection, which reverts any open preview per
-    // FR-005, matching Theme's own contract; the chat transcript is also not even mounted while
-    // Settings is open, so the ONLY place to observe the capped column is after a real Save, not
-    // mid-preview). The live-preview MECHANISM itself (no IPC round trip needed to flip the
-    // choice) is proven instead by the radio's own aria-checked flipping immediately on click/
-    // Arrow, both checked below and in Check 3. ----
+    // Check 2: switch to "Reading column" by mouse and Save. The transcript is not mounted while
+    // Settings is open and closing without saving reverts the preview, so the capped column is
+    // observable only after a real Save; the preview itself is proven by aria-checked flipping.
     await setWindowWidth(cdp, 1280);
     await openSettingsAppearance(cdp);
     const beforeMouseClick = await cdp.evaluate(`(${CHAT_WIDTH_FULL_RADIO_FINDER})?.getAttribute('aria-checked')`);
@@ -268,8 +221,7 @@ async function main() {
     await cdp.click(CHAT_WIDTH_READING_COLUMN_RADIO_FINDER);
     await cdp.waitFor(`(${CHAT_WIDTH_READING_COLUMN_RADIO_FINDER})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Reading column" radio checked (mouse)' });
     findings.push('Mouse: clicked the "Reading column" radio -- aria-checked flipped immediately (live local-store preview, no IPC round trip).');
-    // H2 gate fix: the preview tile narrows live, BEFORE Save -- proves it tracks the preview
-    // store (`useActiveChatWidth()`), not just the eventually-saved value.
+    // The preview tile narrows before Save, proving it tracks the preview store.
     const previewBarsWidthReadingColumn = await cdp.evaluate(`document.querySelector('[data-chat-width-preview-bars]')?.getBoundingClientRect().width`);
     if (previewBarsWidthFull == null || previewBarsWidthReadingColumn == null) {
       failures.push('Chat width preview tile: `[data-chat-width-preview-bars]` not found before/after selecting "Reading column" -- cannot confirm the H2 preview tile tracks the live choice.');
@@ -294,15 +246,13 @@ async function main() {
       const leftMargin = layout.column.left - layout.viewport.left;
       const rightMargin = rightEdge - layout.column.right;
       if (width === 1280) {
-        // This window's own chat pane content width is narrower than 64rem (session list + nav
-        // eat the rest of a 1280px window) -- the cap CANNOT bind here, so the column must
-        // simply equal the pane's own content width (no cap, no centring), same as "Full".
+        // The pane is narrower than 64rem at 1280px, so the cap cannot bind: the column equals
+        // the pane's content width.
         assertClose(`Reading column at 1280px (cap cannot bind, pane narrower than 64rem): column width equals pane content width`, layout.column.width, layout.viewport.clientWidth, 'FR-073: the cap is a maximum, never a minimum.', 4);
         assertClose(`Reading column at 1280px: left vs right margin (no cap in effect)`, leftMargin, rightMargin, 'no cap bound, so both margins should read ~0.', 4);
       } else {
-        // 1920/2560: the pane is comfortably wider than 64rem -- the cap MUST bind, exactly, and
-        // the column MUST be centred within 1px, not just "close enough" (so a broken cap or a
-        // broken centring could not pass this by accident at these two widths).
+        // 1920/2560: the cap must bind exactly and centre within 1px, so a broken cap or
+        // centring cannot pass by accident.
         assertClose(`Reading column at ${width}px: column width equals the 64rem cap exactly`, layout.column.width, READING_COLUMN_PX, '64rem cap, FR-073.', 2);
         assertClose(`Reading column at ${width}px: centred within 1px (left vs right margin)`, leftMargin, rightMargin, 'mx-auto must centre the capped column.', 1);
       }
@@ -312,10 +262,8 @@ async function main() {
         failures.push(`Composer at ${width}px (Reading column): \`[aria-label="Message"]\`'s \`.bg-composer-background\` ancestor was not found -- cannot confirm the composer stayed unaffected by the transcript cap.`);
       }
       if (width === 1920) {
-        // M1 gate fix: the padding ladder moved from viewport media queries to container
-        // queries (`@min-[Xrem]:` keyed off the chat pane's own `[container-type:size]`
-        // ancestor, not the window) -- confirm the top breakpoint's computed value actually
-        // applies at a pane comfortably wider than 64rem, not just that the cap/centring held.
+        // The padding ladder uses container queries keyed off the pane, not the window; confirm
+        // the top breakpoint applies at a pane wider than 64rem.
         const paddingLeft = await cdp.evaluate(`getComputedStyle(${TRANSCRIPT_COLUMN_FINDER}).paddingLeft`);
         if (paddingLeft !== '64px') {
           failures.push(`Reading column at 1920px: computed padding-left is ${paddingLeft}, expected 64px (\`@min-[64rem]:px-16\`, M1 gate fix).`);
@@ -327,19 +275,10 @@ async function main() {
     }
     findings.push('Saved via mouse, applied with NO app reload/restart (same running process throughout) at 1280/1920/2560px.');
 
-    // ---- Check 3: toggle to "Full" via KEYBOARD (same mount), Save, confirm the transcript
-    // actually uncaps -- "Reading column" is already the saved value from Check 2, so a keyboard
-    // round trip that lands back on it would be a documented no-op (ThemePicker's own FR-002/
-    // FR-006 deviation note: choosing the already-saved entry never re-fires a save), not a real
-    // Save exercise. Ending on "Full" here, then saving back to "Reading column" below, exercises
-    // two REAL keyboard-driven Save round trips, each committing a value that differs from
-    // whatever was persisted a moment before.
-    //
-    // M2 gate fix: measured at 1920px, not 1280 -- at 1280 the cap cannot bind regardless of
-    // which value is actually persisted (Check 2's own 1280 branch), so a keyboard round trip
-    // that silently saved the WRONG value would still measure identically to a correct one;
-    // 1920 is wide enough that "Full" (~viewport width) and "Reading column" (exactly 1024px)
-    // are unambiguous. ----
+    // Check 3: toggle to "Full" by keyboard, Save, confirm the transcript uncaps. Reading column
+    // is already saved, so landing back on it would be a no-op (choosing the saved entry never
+    // re-fires a save). Measured at 1920px: at 1280 the cap cannot bind, so a wrong saved value
+    // would measure the same.
     await setWindowWidth(cdp, 1920);
     await openSettingsAppearance(cdp);
     const readingColumnRadio = CHAT_WIDTH_READING_COLUMN_RADIO_FINDER;
@@ -357,8 +296,7 @@ async function main() {
       failures.push('Full (keyboard-saved): transcript column or viewport not found after closing Settings.');
     }
 
-    // ---- Back to "Reading column" via KEYBOARD, a second real Save, leaving it as the
-    // persisted value the narrow-window and relaunch checks below exercise. ----
+    // Back to "Reading column" by keyboard: a second real Save, left persisted for later checks.
     await openSettingsAppearance(cdp);
     await cdp.click(fullRadio); // focuses the currently-checked "Full" radio
     await pressArrowDown(cdp); // moves to "Reading column" (index 1), live-previews it immediately
@@ -368,23 +306,16 @@ async function main() {
     await closeSettings(cdp);
     const keyboardSavedLayout = await measureLayout(cdp);
     if (keyboardSavedLayout.column && keyboardSavedLayout.viewport) {
-      // 1920px (same reasoning as above): the pane's content width is comfortably wider than
-      // 64rem here, so the cap MUST bind if "Reading column" really is what the keyboard Save
-      // round trip persisted -- unlike 1280, this actually distinguishes a correct save from a
-      // silently-wrong one.
+      // At 1920px the cap must bind if the keyboard Save persisted "Reading column"; 1280 could
+      // not tell a correct save from a wrong one.
       assertClose('Reading column (keyboard-saved, second round trip) at 1920px: column width equals the 64rem cap exactly', keyboardSavedLayout.column.width, READING_COLUMN_PX, 'via a real keyboard Save round trip, FR-073.', 2);
     } else {
       failures.push('Reading column (keyboard-saved): transcript column or viewport not found after closing Settings.');
     }
 
-    // ---- Check 3b (gate fix M2, Main's build-slot request): Escape must DISCARD an unsaved
-    // preview, not persist it -- arrow back to "Full" (previewing, Save enabled) then press a
-    // real Escape, and confirm the radiogroup reverts to the ACTUAL saved value ("Reading
-    // column") with Save disabled again, and the transcript is still capped at 1920px afterward
-    // (the discarded "Full" preview must never reach settings.json). Also confirms H1's
-    // "already on a radio, leave it" focus-restoration branch: Escape never moves focus away
-    // from the radio in the first place, so it must still read back as the checked radio
-    // afterward, not yanked to the heading or anywhere else. ----
+    // Check 3b: Escape must discard an unsaved "Full" preview, not persist it. The radiogroup
+    // reverts to "Reading column", Save is disabled, the transcript stays capped, and focus stays
+    // on the checked radio (Escape never moved it).
     await openSettingsAppearance(cdp);
     await cdp.click(readingColumnRadio); // focuses the currently-checked radio
     await pressArrowUp(cdp); // previews "Full" again, without saving
@@ -411,11 +342,8 @@ async function main() {
       failures.push('After Escape: transcript column or viewport not found.');
     }
 
-    // ---- Check 3c (Main's build-slot request): Cancel -- the BUTTON, not Escape -- must also
-    // discard rather than persist, and exercises the OTHER H1 focus-restoration branch: clicking
-    // Cancel moves focus onto the button itself (not a radio), so H1's `lastDirtyGroupRef` must
-    // route focus back onto the correct GROUP's checked radio (Chat width, the only group
-    // previewed here) afterward, never onto Theme's. ----
+    // Check 3c: the Cancel button must also discard. Clicking it moves focus onto the button, so
+    // focus must be routed back to the checked radio of the previewed group (Chat width, not Theme).
     await openSettingsAppearance(cdp);
     await cdp.click(readingColumnRadio); // focuses the currently-checked radio
     await pressArrowUp(cdp); // previews "Full" again, without saving
@@ -438,7 +366,7 @@ async function main() {
       failures.push('After Cancel button: transcript column or viewport not found.');
     }
 
-    // ---- Check 4: narrow window (360px) -- no horizontal scroll under Reading column. ----
+    // Check 4: narrow window (360px), no horizontal scroll under Reading column.
     await setWindowWidth(cdp, NARROW_WIDTH);
     const narrowOverflow = await cdp.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth + 2`);
     if (narrowOverflow) failures.push(`A horizontal scrollbar appeared at ${NARROW_WIDTH}px width under Reading column -- the cap must be a maximum, never a minimum (WCAG 1.4.4/1.4.10).`);
@@ -450,11 +378,8 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '03-narrow-360.png'));
     await setWindowWidth(cdp, 1280);
 
-    // ---- H3 gate fix: read `settings.json` straight off disk BEFORE stopping/relaunching the
-    // app, same "prove it on disk, not just in the DOM" pattern `verify-tauri-559.mjs`/
-    // `verify-tauri-735.mjs` already use -- confirms the real IPC round trip persisted
-    // `chatWidth: "reading-column"` to the scratch data dir itself, independent of whatever the
-    // relaunch below measures visually. ----
+    // Read `settings.json` off disk before relaunch to prove the IPC round trip persisted
+    // `chatWidth: "reading-column"`, independent of the later visual check.
     const settingsBeforeRelaunch = JSON.parse(readFileSync(path.join(dataDir, 'settings.json'), 'utf8'));
     if (settingsBeforeRelaunch.chatWidth !== 'reading-column') {
       failures.push(`settings.json before relaunch: chatWidth is ${JSON.stringify(settingsBeforeRelaunch.chatWidth)}, expected "reading-column" (the last keyboard Save above).`);
@@ -462,7 +387,7 @@ async function main() {
       findings.push('settings.json on disk (before relaunch) has chatWidth: "reading-column" -- the real IPC round trip persisted it, not just the DOM.');
     }
 
-    // ---- Stop the app, relaunch the SAME exe against the SAME dataDir -- persistence check. ----
+    // Stop the app and relaunch the same exe against the same dataDir to check persistence.
     cdp.close();
     cdp = null;
     await stopLauncher(child).catch(() => {});
@@ -477,21 +402,16 @@ async function main() {
       throw new Error(`verify-554: relaunch CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid})`);
     }
     assertExeUnchanged(exePath, exeHash, 'post-relaunch', 'verify-554');
-    // Refract does NOT auto-reopen the last-viewed Session's chat pane on a cold relaunch (it
-    // shows the session list/Home); the same `[data-session-open]` row-click step every other
-    // relaunch check in this repo already uses (`verify-555-user-message-time.mjs`'s own
-    // precedent) is required here too, only one Session exists in this scratch registry.
+    // A cold relaunch shows the session list, not the last chat, so click the session row
+    // (only one Session exists in this scratch registry).
     await cdp.waitFor(`!!document.querySelector('[data-session-open]')`, { timeoutMs: 60_000, label: 'Relaunch: existing session row rendered' });
     await cdp.click(`document.querySelector('[data-session-open]')`);
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
       timeoutMs: 90_000,
       label: 'Relaunch: Session reattached, composer enabled'
     });
-    // 1920px, not 1280px: at 1280 the cap cannot bind regardless of which value persisted (the
-    // pane content itself is narrower than 64rem, Check 2/3's own 1280 branch already proves
-    // this), so measuring there could not actually distinguish "Reading column survived" from
-    // "silently reverted to Full" -- at 1920 the two are unambiguous: 1024px (capped) vs ~1445px
-    // (Full, Check 1's own measured value).
+    // 1920px, not 1280: the cap cannot bind at 1280, so it could not distinguish a persisted
+    // Reading column (1024px) from a silent revert to Full (~1445px).
     await setWindowWidth(cdp, 1920);
     const relaunchLayout = await measureLayout(cdp);
     if (!relaunchLayout.column || !relaunchLayout.viewport) {

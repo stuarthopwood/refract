@@ -1,75 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #439 (the Conversation history dialog: a title or preview wider than
-// the dialog must truncate to one line with an ellipsis, full text still available via a `title`
-// attribute, and the dialog must never gain a horizontal scrollbar at any width).
-//
-// Modelled directly on `verify-862-conversation-history.mjs`'s own fixture-driven pattern (same
-// recorded-frame fake `omp` harness, `user-message-time.jsonl`'s scripted startup needs no chat
-// prompt at all, and the SAME trick of pre-populating `conversations.list`'s own scanned
-// directory with real, hand-built `.jsonl` Conversation files before the app launches) and on
-// `verify-937-advisor-chip.mjs`'s own themed-screenshot loop (`switchTheme`, Dark/Obsidian/Dark
-// high contrast).
-//
-// Two real Conversation files are seeded in the directory `conversations.list` scans:
-//   - "normal": short title, short preview -- the control case (must NOT need to clip; its own
-//     title/preview spans' `scrollWidth` must stay <= `clientWidth`).
-//   - "long": a deliberately very long title (the one the issue's own design notes call out as
-//     having "to cope with a long title and the Current badge beside it" -- this file is the
-//     SESSION's own current Conversation, via the `user-message-time.jsonl` scenario's
-//     `$conversationFile` sentinel) and a preview padded to EXACTLY 120 characters,
-//     `conversations.rs`'s own `PREVIEW_MAX_LENGTH` cap -- wider than the `sm:max-w-md` dialog at
-//     `text-xs`, so it must clip too.
-//
-// Issue #1012 item 5 fixes (follow-ups from this #439 gate, PR #1011):
-//   - The Current badge beside the long row is now actually exercised: this script sends one
-//     real prompt through the composer and approves `user-message-time.jsonl`'s own scripted
-//     tool call, settling the turn so `sync_from_state.rs`'s `if message_count > 0` guard marks
-//     the long Conversation current BEFORE the history dialog is ever opened, rather than only
-//     recording the gap as `notExercised` with an overstated "not a product bug" claim.
-//   - Every dialog-presence/content read is now scoped to the KNOWN Conversation history dialog
-//     (its own `DialogTitle` text, "Conversation history"), never any element that merely has
-//     `role="dialog"`.
-//   - Row-level truncation (title/preview `scrollWidth`/`clientWidth` overflow) is re-measured in
-//     every theme in the themed-screenshot loop, not only once on the initial theme.
-//   - A new check confirms the full-title/preview Tooltip (issue #1012 item 1) actually opens
-//     when the long row receives keyboard focus, and proves exactly how Escape then behaves:
-//     Radix's own nested-`DismissableLayer` stacking (the SAME mechanism `@radix-ui/react-menu`
-//     uses for every `DropdownMenu` in this codebase) means the first Escape closes only the
-//     Tooltip -- the topmost layer -- and a second closes the Dialog; the dialog's own Close
-//     button is confirmed as an equally valid, independent dismissal path too.
-//   - Gate round 2 (Main): the native `title` attributes on the title/preview spans are removed
-//     (decided, item 3 -- the focus-visible Tooltip from item 1 is now the one source of the
-//     full text); the Tooltip is kept on-screen under narrow windows (`max-w-[min(20rem,var(
-//     --radix-tooltip-content-available-width))]`, `collisionPadding={8}`, a wider
-//     `sideOffset={22}` clearing the dialog's own padding/scrollbar/Close button) and re-checked
-//     at a ~960px window width, not only the default size; `disableHoverableContent` (added in
-//     round 1) is removed again, since it violates WCAG 1.4.13 (`docs/design/accessibility.md`,
-//     `components.md`, `foundations-icons.md` all forbid it for this exact reason).
-//
-// Decided (Skippy, delegated by Stuart 2026-10-18, issue #439, docs/PLAN.md): ellipsis only, no
-// fade -- this script asserts the `truncate` utility's three CSS properties
-// (`overflow: hidden; text-overflow: ellipsis; white-space: nowrap`) are in effect and that the
-// long row's spans genuinely overflow (`scrollWidth > clientWidth`), never a gradient mask.
-//
-// What this script does NOT prove (recorded in its own `notExercised`):
-//   - Windows forced-colors/high-contrast MEDIA rendering of the ellipsis itself: WebView2's own
-//     CDP endpoint has no working `Emulation.setEmulatedMedia` for `forced-colors`
-//     (`verify-tauri-567.mjs`'s own header comment records the same CDP limitation) -- the
-//     "Dark (high contrast)" theme screenshot below is Refract's own in-app preset, not the OS
-//     forced-colors media feature.
-//   - Opening an earlier Conversation from this dialog (`handleOpenConversation`): out of this
-//     issue's scope, matching `verify-862-conversation-history.mjs`'s own stated scope (it also
-//     only opens the dialog and reads the rows, never switches).
-//   - 200%+ zoom: the dialog itself is centred and unconstrained by the app window's own width
-//     (`fixed` positioning, `max-w-[calc(100%-2rem)]`), so this specific case was not re-run at
-//     another zoom level. (A ~960px-wide window IS re-run below, item 2 gate round 2 -- the
-//     DIALOG'S own width does not depend on the window, but the TOOLTIP'S available room to its
-//     right genuinely shrinks as the window narrows, which an earlier version of this comment
-//     had backwards.)
-//
-// Live-verified across multiple gate rounds against a real built app (most recently 50 findings,
-// 0 failures at head `b2906c93`, issue #1012's own gate process); this round's own changes are
-// pending the next live run under the granted build slot.
+// Live CDP check for #439: Conversation history rows truncate to one line with an ellipsis (no fade,
+// per docs/PLAN.md), full text shows in a focus-visible Tooltip, and the dialog never gains a horizontal scrollbar.
+// Not covered: OS forced-colors media (WebView2 CDP lacks Emulation.setEmulatedMedia for it, see
+// verify-tauri-567.mjs) and opening an earlier Conversation.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -171,14 +104,8 @@ async function main() {
       }
     ]);
 
-    // Points the fake Session at this file (REFRACT_FAKE_OMP_CONVERSATION_FILE below). In
-    // principle this makes it the Session's own current Conversation (so its row would also
-    // render the Current badge beside the truncating long title -- the combination the issue's
-    // design notes call out), but see the `notExercised` note below: this scenario's own first
-    // `get_state` reports `messageCount: 0` (a genuinely fresh attach, no prompt sent), and
-    // `sync_from_state.rs`'s own `if message_count > 0` guard only sets
-    // `Session.current_conversation` once a turn has actually completed, so no row is ever
-    // marked current in this run without sending a prompt through the scripted tape.
+    // Points the fake Session at this file. Its row only gets the Current badge once a turn completes
+    // (sync_from_state.rs's `message_count > 0` guard), which happens below.
     const longFile = writeConversationFile(conversationFileDir, '2026-10-18T10:05:00.000Z', 'sess439b', [
       { type: 'title', title: LONG_TITLE },
       { type: 'session', version: 3, id: 'sess439-b', timestamp: '2026-10-18T10:05:00.000Z', cwd: repoDir },
@@ -213,11 +140,8 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_SCENARIO: 'user-message-time',
-        // `user-message-time.jsonl`'s own `get_state` responses use the `$conversationFile`
-        // sentinel for `sessionFile` -- pointing it at the LONG file makes
-        // `session_dir = dirname(sessionFile)` (sync_from_state.rs) resolve to
-        // `conversationFileDir`, the real directory `conversations.list` scans (which also holds
-        // the "normal" file seeded above), and marks the long Conversation as current.
+        // The `$conversationFile` sentinel makes `session_dir` (sync_from_state.rs) resolve to the
+        // directory `conversations.list` scans, and marks the long Conversation current.
         REFRACT_FAKE_OMP_CONVERSATION_FILE: longFile,
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log')
       }
@@ -237,8 +161,7 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
 
-    // Shim-confirmed guard (same pattern as verify-862/941/991): without this, a silently-wrong
-    // fake-omp shim could still let the whole run "pass" on UI state alone.
+    // Shim-confirmed guard: otherwise a silently-wrong fake-omp shim could still pass on UI state alone.
     const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
     if (!existsSync(debugLogPath)) {
       throw new Error(`verify-439: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
@@ -253,13 +176,8 @@ async function main() {
     await createSessionViaQuickCreate(cdp, repoName);
     findings.push('Session created in the scratch repo, agent attached (fake omp, user-message-time.jsonl scenario).');
 
-    // ---- Issue #1012 item 5: exercise the Current badge beside the long truncating title.
-    // Sends one real prompt through the composer (the SAME user-message-time.jsonl tape already
-    // in use -- AGENTS.md: no new fixtures) and approves its one scripted tool call, so the turn
-    // settles, get_state reports messageCount: 2, and sync_from_state.rs's own
-    // `if message_count > 0` guard marks the long Conversation (this Session's sessionFile, via
-    // REFRACT_FAKE_OMP_CONVERSATION_FILE above) current BEFORE the history dialog is ever opened
-    // below -- replacing the previous notExercised gap with a real assertion. ----
+    // Send one real prompt and approve the scripted tool call so the turn settles and the long
+    // Conversation is marked current before the history dialog opens (Current badge beside the long title).
     await cdp.typeIntoByLabel('Message', PROMPT_TEXT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, {
@@ -291,14 +209,8 @@ async function main() {
       findings.push('Conversation history dialog shows exactly 2 rows: the normal and the long Conversation.');
     }
 
-    // ---- Issue #1012 item 1: the full-title/preview Tooltip opens on keyboard focus ----
-    // Gate follow-up (Code/A11y/UI, Main round 1): reach the long row via REAL keyboard Tab
-    // presses, never a scripted `.focus()` -- a bare `.focus()` call does not reliably set
-    // Chromium's `:focus-visible` (same reasoning `verify-927-928-quiet-composer.mjs` and
-    // others in this codebase already document for a `<button>`), so the earlier version here
-    // never actually proved item 2's focus-visible ring renders at all. Bounded to a small N
-    // (3 focusable items in this dialog: 2 rows + Close) so a DOM-order change fails loudly
-    // instead of hanging.
+    // Reach the long row via real Tab presses: a bare `.focus()` doesn't reliably set Chromium's
+    // `:focus-visible`. Bounded (2 rows + Close) so a DOM-order change fails loudly instead of hanging.
     const MAX_TAB_PRESSES_TO_LONG_ROW = 10;
     const reachedLongRowViaTab = await reachRowViaRealTab(cdp, LONG_TITLE, MAX_TAB_PRESSES_TO_LONG_ROW);
     if (!reachedLongRowViaTab) {
@@ -307,9 +219,7 @@ async function main() {
       findings.push("Reached the long row's button via real keyboard Tab presses (never a scripted .focus()).");
     }
 
-    // Gate follow-up (A11y/UI, Main round 1): the row button's own `focus-visible:outline-hidden`
-    // (Windows High Contrast) plus `focus-visible:ring-3` (item 2) must actually render once
-    // reached by a real Tab chain -- not just assumed from the class list.
+    // The focus ring must actually render after a real Tab chain, not be assumed from the class list.
     const longRowFocusStyle = await readRowFocusStyle(cdp, LONG_TITLE);
     if (!longRowFocusStyle || !longRowFocusStyle.matchesFocusVisible) {
       failures.push(`Long row button does not match :focus-visible after real Tab presses (got ${JSON.stringify(longRowFocusStyle)}) -- item 2's focus ring has no real keyboard-focus proof.`);
@@ -330,17 +240,11 @@ async function main() {
       findings.push('Full-title Tooltip appears on keyboard focus of the long row, carrying the complete, un-truncated title and preview text (issue #1012 item 1).');
     }
 
-    // Gate follow-up (UI, Main round 2): a read mid-entrance-transition could pass or fail the
-    // position assertion below by accident -- wait for the Tooltip's own Web Animations to
-    // settle to zero first, so its rect is read only once it has genuinely stopped moving.
+    // Wait for the Tooltip's animations to settle so a mid-transition rect can't pass or fail by accident.
     await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
 
-    // Gate follow-up (UI, Main round 1): the tooltip opens to the RIGHT of the row (`side="right"`,
-    // never covering the dialog heading or the row above) and its lines are stacked vertically,
-    // not laid out side by side in `TooltipContent`'s own default `inline-flex` row direction.
-    // Gate round 2 (Main): no slop -- `sideOffset={22}` already clears the dialog's own padding
-    // and scrollbar gutter by design, so the tooltip's left edge must be at or past the row's
-    // own right edge exactly, not merely "close enough".
+    // Tooltip opens to the right (not over the heading or row above) with stacked lines, and its
+    // left edge is exactly at or past the row's right edge: `sideOffset={22}` clears the dialog padding.
     const tooltipPositionEvidence = await readTooltipPositionEvidence(cdp, LONG_TITLE);
     if (!tooltipPositionEvidence) {
       failures.push('Could not read the Tooltip/row geometry for the position check (row or tooltip not found).');
@@ -364,11 +268,8 @@ async function main() {
       }
     }
 
-    // Gate round 2 (Main): re-check the SAME position/reachability guarantee at a ~960px window
-    // width -- the dialog itself does not depend on the window (fixed, max-w-[calc(100%-2rem)]),
-    // but the Tooltip's own available room to its right genuinely shrinks as the window narrows,
-    // and `collisionPadding`/`max-w-[min(20rem,...)]` must keep it fully inside the viewport
-    // rather than flipping side or spilling off-screen.
+    // Re-check at ~960px: the dialog is window-independent but the Tooltip's room to the right
+    // shrinks, and it must stay inside the viewport rather than flip or spill off-screen.
     const NARROW_WINDOW_WIDTH_PX = 960;
     await setWindowWidth(cdp, NARROW_WINDOW_WIDTH_PX);
     await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
@@ -393,52 +294,29 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '00-focus-tooltip.png'));
     findings.push('Screenshot captured: the full-title/preview Tooltip visibly open to the right of the long row while it holds real keyboard focus, with a visible focus-visible ring (00-focus-tooltip.png).');
 
-    // Root cause of the earlier "Escape never closes the dialog" finding (gate follow-up,
-    // Main): NOT a bug -- confirmed from the installed library source, no build needed.
-    // `src/renderer/components/ui/tooltip.tsx`'s `TooltipContent` renders Radix's own
-    // `TooltipPrimitive.Content` unmodified; that primitive's `TooltipContentImpl` wraps its
-    // popup in a `DismissableLayer` with `onDismiss: onClose` (node_modules/.pnpm/@radix-ui+
-    // react-tooltip@1.2_.../node_modules/@radix-ui/react-tooltip/dist/index.mjs:334-342).
-    // `DismissableLayer` itself only attaches its own Escape `keydown` listener while it is the
-    // topmost layer in the shared stack (`isHighestLayer` gate, .../@radix-ui/react-
-    // dismissable-layer/dist/index.mjs:90-107) -- a lower layer (here, the Dialog) has NO
-    // Escape listener registered at all while a higher layer (the just-opened Tooltip) exists.
-    // This is the EXACT SAME mechanism `@radix-ui/react-menu` uses for every `DropdownMenu` in
-    // this codebase (.../@radix-ui/react-menu/dist/index.mjs:271-279, same `DismissableLayer`
-    // wrapping) -- a menu opened inside a Dialog elsewhere in this app requires the identical
-    // two separate Escape presses (one per nested layer, topmost first), so this is Radix's own
-    // shared, intentional nested-dismissable-layer convention, not something unique to the new
-    // Tooltip. The Dialog is never trapped: a second Escape (or any other dismissal) always
-    // reaches it once the Tooltip is gone. Proven live below instead of just asserted.
+    // Two Escapes are expected, not a bug: Radix DismissableLayer only listens for Escape on the
+    // topmost layer, so the open Tooltip eats the first and the Dialog gets the second (same as
+    // DropdownMenu inside a Dialog).
 
-    // ---- Issue #1012 item 1 gate follow-up: Escape from a focused row, proven precisely ----
-    // First Escape: the long row's Tooltip (the topmost DismissableLayer) closes; the Dialog
-    // does NOT (confirms the dialog has no Escape listener registered while the tooltip is the
-    // highest layer, per the citations above).
+    // First Escape closes only the Tooltip (topmost layer); the Dialog stays open.
     await pressEscape(cdp);
     await cdp.waitFor(`!(${tooltipFinder(LONG_TITLE)})`, {
       timeoutMs: 5_000,
       label: 'First Escape (tooltip open): Tooltip closes'
     });
-    // Gate follow-up (Test Low, Main round 1): asserts the dialog's own `data-state` attribute
-    // is genuinely "open", not merely that a `[role="dialog"]` node still exists (which could be
-    // true mid-close-animation too).
+    // `data-state` must be "open": a `[role="dialog"]` node can still exist mid-close-animation.
     const dialogStateAfterFirstEscape = await cdp.evaluate(`(${HISTORY_DIALOG_FINDER})?.getAttribute('data-state') ?? null`);
     if (dialogStateAfterFirstEscape !== 'open') {
       failures.push(`First Escape (tooltip open): expected the Conversation history dialog's data-state to still be "open" (only the Tooltip should have closed), got ${JSON.stringify(dialogStateAfterFirstEscape)}.`);
     } else {
       findings.push('First Escape while the long row\'s Tooltip is open closes ONLY the Tooltip; the Conversation history dialog\'s own data-state stays "open" (Radix\'s own nested-DismissableLayer stacking, item 1 gate follow-up -- see the code comment above for the exact library citations).');
     }
-    // Re-confirmed again right before the second Escape (Test Low, Main round 1): the dialog
-    // must still genuinely be open at the exact moment the press that is expected to close it
-    // is sent, not just at some earlier point.
+    // Re-confirm still open at the moment the closing press is sent.
     const dialogStateJustBeforeSecondEscape = await cdp.evaluate(`(${HISTORY_DIALOG_FINDER})?.getAttribute('data-state') ?? null`);
     if (dialogStateJustBeforeSecondEscape !== 'open') {
       failures.push(`Just before the second Escape: expected the Conversation history dialog's data-state to still be "open", got ${JSON.stringify(dialogStateJustBeforeSecondEscape)}.`);
     }
-    // Second Escape: the Tooltip is gone, so the Dialog is the topmost layer again and its own
-    // Escape listener is now registered -- this press closes it, matching pre-#1012 behaviour
-    // (and every other focus target in this dialog, which has no Tooltip to contend with).
+    // Second Escape: the Tooltip is gone, so the Dialog is topmost again and closes.
     await pressEscape(cdp);
     await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
       timeoutMs: 5_000,
@@ -446,24 +324,13 @@ async function main() {
     });
     findings.push('A second Escape then closes the Conversation history dialog itself, once the Tooltip layer above it is gone -- the dialog is never keyboard-trapped, just reached one nested layer at a time, same as a DropdownMenu opened inside any Dialog in this codebase.');
 
-    // ---- Confirms the dialog's own visible Close button is an equally valid, independent
-    // dismissal path (not only Escape) -- reopen, then close this way before the per-theme loop.
-    // Scoped to the known history dialog specifically (Test Low, Main round 1), not any element
-    // that merely has `role="dialog"`. ----
+    // The Close button is an equally valid dismissal path: reopen, then close this way before the theme loop.
     await cdp.clickByLabel('Conversation history');
     await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 15_000, label: 'Conversation history dialog reopened for the Close-button check' });
     const historyDialogCloseButtonFinder = `(() => { const dialog = ${HISTORY_DIALOG_FINDER}; if (!dialog) return null; return Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Close') ?? null; })()`;
-    // Gate follow-up (live-run finding, Main round 2): the Close button's own `getBoundingClientRect()`
-    // can transiently read zero-size right at mount (before Radix's entrance transform/layout
-    // settles), and `cdp.click()`'s own waitFor only checks truthiness of the computed rect
-    // object -- a `{x:0,y:0}` degenerate click (the window's own top-left corner) is still
-    // truthy, so it was accepted and silently missed the button entirely. A non-zero size alone
-    // is not enough either: a still-animating entrance transform can report a non-zero but
-    // MOVING rect. Waits until either the dialog itself reports zero running Web Animations (the
-    // entrance transition has genuinely finished), or the button's own rect reads identical on
-    // two consecutive polls (persisted on `window` between polls, since each poll is a fresh,
-    // stateless `cdp.evaluate` call) -- so `cdp.click()` only ever reads coordinates once the
-    // button is actually where it will stay.
+    // The Close button's rect can read zero-size or still moving during Radix's entrance transition,
+    // and a degenerate {0,0} click is truthy yet misses. Wait for zero running animations or two
+    // identical consecutive rects (kept on `window`, since each poll is stateless).
     await cdp.evaluate('window.__verify439CloseRect = null;');
     await cdp.waitFor(`(() => {
       const dialog = ${HISTORY_DIALOG_FINDER};
@@ -481,14 +348,9 @@ async function main() {
     await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 5_000, label: 'Close button closes the Conversation history dialog' });
     findings.push("The dialog's own visible Close button also closes it, independent of Escape.");
 
-    // ---- Themed screenshots (Dark, Obsidian, Dark high contrast), re-confirming the dialog's
-    // own no-horizontal-overflow guarantee AND row-level truncation hold under every theme, not
-    // just the one open above (issue #1012 item 5) ----
+    // Re-check overflow and truncation under every theme.
     for (const theme of THEMES) {
-      // The dialog is a modal (Radix `Dialog`, `dialog.tsx`): its overlay blocks pointer events
-      // everywhere outside the dialog content, so `[data-profile-name-button]` (outside the
-      // dialog) cannot be clicked while it is open. Close it first, switch, then reopen for the
-      // per-theme overflow/truncation checks and screenshot.
+      // The modal overlay blocks clicks outside it, so close the dialog before switching theme.
       await pressEscape(cdp);
       await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
         timeoutMs: 10_000,

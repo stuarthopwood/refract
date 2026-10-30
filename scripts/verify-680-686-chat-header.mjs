@@ -1,15 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for issues #680 (the Close chat pane button now shows lucide `MessageSquareX`,
-// not the sidebar-collapse `PanelRightClose`) and #686 (the "New conversation" button is a ghost
-// button: no border or fill at rest, a hover tint, a focus-visible ring on keyboard focus).
-//
-// Does NOT build: build once, copy the exe, then run
+// Live CDP check: Close chat pane shows `MessageSquareX` (#680); "New conversation" is a ghost
+// button with hover tint and focus-visible ring (#686). Does NOT build; run with
 //   REFRACT_680_686_EXE=<copied exe> REFRACT_680_686_SHA256=<its sha256> CARGO_TARGET_DIR=<shared> \
 //   node scripts/verify-680-686-chat-header.mjs
-// Flow: Readiness -> add scratch repo -> one Session (single pane, three themes) -> a second
-// Session, Ctrl+click the first row to open a split (two panes, three themes). Every check goes
-// through `check()`, which records a failure when its condition is false; the exit code is 1 on
-// any failure or when nothing ran.
+// Exit code is 1 on any failed check or when nothing ran.
 
 import { mkdtempSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';

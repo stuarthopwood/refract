@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #934 (Manage sessions renders the shared Session row). Drives a REAL
-// built Tauri debug exe over CDP with a fake `omp` and a fake `gh` (real exes first on PATH, every
-// call logged), a scratch REFRACT_DATA_DIR and its own remote-debugging port. It never touches
-// %APPDATA%\refract-tauri or an installed Refract.
-//
-// Usage (after `pnpm exec tauri build --debug --no-bundle` on this head, shared target dir set):
-// CARGO_TARGET_DIR=<shared target dir> REFRACT_934_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-934.mjs
+// Live CDP check that Manage sessions renders the shared Session row, against a real built Tauri debug exe with fake
+// `omp`/`gh`, a scratch REFRACT_DATA_DIR and its own debugging port (never %APPDATA%\refract-tauri).
+// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_934_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-934.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';

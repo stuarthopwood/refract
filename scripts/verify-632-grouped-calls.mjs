@@ -1,31 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for issue #632 (borderless thread for grouped tool calls and bash/grep/glob/
-// read calls; supersedes #430). Modeled on `verify-570-tool-colours.mjs`/`verify-565-spine.mjs`:
-// a REAL `omp` (ambient already-signed-in default profile, no `OMP_PROFILE` override), scratch
-// cwd/worktree/`REFRACT_DATA_DIR`, never touching Stuart's real Session list.
-//
-// #632's own structural acceptance (no border, hover tints one row, the Error line under a
-// collapsed failed row, no Arguments/Output on expand) was already live-checked by #565/#570
-// (#628 landed no live-check script of its own, so it is not cited here) -- not re-proven from
-// scratch, except two cheap direct assertions gate round 1 added (no command text in the
-// collapsed header, hover tints one row only). Proves everything THIS story added:
-//   (a) a group's header reads "<tool> ×N" (never a call's command), failed/interrupted counts
-//       AND the group's own total time (summed from every member) in the meta slot;
-//   (b) `bash` reads "$ <command>", `grep` reads `grep "<pattern>" <path>`;
-//   (c) a row's command text wraps once expanded, no code-block element, no output text (H6);
-//   (d) an `edit` call's own row shows its "+N −M" stat alongside duration;
-//   (e) the SAME grammar renders inside the Subagents panel (shared `ToolGroupRow`);
-//   (f) hover tints only the hovered row, never a nested ancestor, collapsed AND expanded (M8, D10);
-//   (g) an expanded two-bash group is about 4 lines tall (M8, measured);
-//   (h) keyboard Tab/Shift+Tab reaches the header with a visible focus outline, each member's
-//       own accessible name includes its tool and command (M8);
-//   (i) hostile output (ANSI byte, a very long line) renders inert and bounded, in BOTH the
-//       Error line and the row's own summary text, collapsed and expanded (M8, D9).
-//
-// Six turns, one scratch Session (Approval mode seeded to Auto, no approval-card boundary):
-// (a) two bash, #2 failing. (b) grep. (c) read -- UNCHANGED. (d) edit -- the stat. (e) one
-// `task()` subagent, two bash (one failing), read from the Subagents panel. (f) one bash with
-// an ANSI byte and a very long line, failing.
+// Live CDP check for #632: borderless thread for grouped tool calls and bash/grep/glob/read rows.
+// Uses a REAL `omp` (ambient signed-in profile) with scratch cwd/worktree/`REFRACT_DATA_DIR`. #565/#570
+// already cover the structural acceptance; this proves what #632 added: "<tool> ×N" group headers with
+// failed counts and summed time, `$ <command>` / `grep "<pattern>"` row text, edit "+N −M" stats,
+// the same grammar in the Subagents panel, single-row hover tint, keyboard focus names, and inert
+// bounded rendering of hostile output. Six turns in one scratch Session (Approval mode Auto).
 
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -52,10 +31,8 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_632_SHOTS_DIR || path.join(tmpdir(), 'refract-632-grouped-calls-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// #632-only source text: `commandRowText`'s grep branch builds `grep "<pattern>"` -- the literal
-// `grep "` substring does not exist anywhere else in this codebase, so its presence in the
-// built, non-minified dev renderer bundle cheaply proves this exe contains #632's own code
-// (same pattern `verify-570-tool-colours.mjs`'s own marker check established).
+// The literal `grep "` substring appears only in #632's `commandRowText`, so its presence in the
+// non-minified dev bundle cheaply proves this exe contains #632's code.
 function assertBundleContainsStory632Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory632Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
@@ -80,24 +57,16 @@ const TURN_D_PROMPT =
   "Make exactly ONE edit tool call on the file `t632-edit-target.txt` in the repository root, changing its line `one` to `one-edited`, then reply with exactly the single word 't632d' and nothing else.";
 const TURN_E_PROMPT =
   "Use the task tool to start exactly ONE background subagent (a single entry in `tasks`) whose own prompt instructs it to make exactly TWO bash tool calls, the second one deliberately failing with `exit 9`, then reply with exactly the single word 't632e'. Then, once the subagent has finished, reply with exactly the single word 't632e-done' and nothing else.";
-// A REAL ESC byte (U+001B) embedded directly in the prompt text -- `echo` emits it verbatim, no
-// shell-side escape interpretation (a prior `printf '\033[...'` attempt never reached `item.output`).
+// A REAL ESC byte (U+001B) in the prompt: `echo` emits it verbatim; a `printf '\033[...'` attempt never reached `item.output`.
 const HOSTILE_LONG_LINE = 'X'.repeat(250);
 const TURN_F_PROMPT =
   `Make exactly ONE bash tool call that runs exactly this, byte for byte, with no retyping or reinterpreting: \`echo '\x1b[31mHostile\x1b[0m ${HOSTILE_LONG_LINE}'; exit 5\` (deliberately fails; its output has a real ANSI colour escape byte and a very long line). Then reply with exactly the single word 't632f' and nothing else.`;
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
-// Every top-level TOOL-call group header button. A label matching issue #632's own closed tool
-// identifiers (OMP's own `tool` field, optionally with a " \u00d7N" multi-call suffix) excludes
-// a Thought run or Stage/subagent entry, which share the same `CollapsedLine` markup and
-// `[data-slot="collapsed-line-label"]` span (a real run showed `Thought for 1s` hijacking `.at(0)`). M2 (this same
-// gate round) then drops the label for a solo `bash`/`grep` row -- accepted too when its own
-// summary starts with the command-style grammar (`$ `/`grep "`), confirmed live: without this,
-// `.at(-1)` fell back to the multi-call group's own empty spacer span for turn (b)'s grep row.
-// Gate round 2 (Main, D8): excludes any button inside a Spine `ol.border-l` -- an EXPANDED
-// group's own member buttons (`ToolCallRow`) match the exact same label-less `$ `/`grep "`
-// fallback this finder needs for a solo header, so without this exclusion a header index/count
-// could silently resolve to a member row once a group is expanded.
+// Top-level TOOL-call group header buttons. The label filter excludes Thought runs and Stage entries
+// that share `CollapsedLine` markup ("Thought for 1s" once hijacked `.at(0)`); a solo `bash`/`grep` row
+// has no label, so it is accepted by its `$ `/`grep "` summary. Buttons inside a Spine `ol.border-l`
+// are excluded: an expanded group's member rows match the same label-less fallback.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   if (el.closest('ol.border-l')) return false;
   const l = el.querySelector('[data-slot="collapsed-line-label"]');
@@ -108,9 +77,7 @@ const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filt
 })`;
 const BASH_GROUP_LABEL = /^Ran\s*\u00d72$/;
 
-// Gate round 1 (test-reviewer Medium, M7): now also reads the header's own SUMMARY span (never
-// just label/meta) so a caller can assert it is empty -- #632's own acceptance is that a
-// multi-call group's collapsed header never shows any call's own command text.
+// Also reads the header's SUMMARY span so callers can assert a multi-call group's collapsed header shows no command text.
 function groupHeaderInfo(index) {
   return `(() => {
     const h = (${GROUP_HEADERS}).at(${index});
@@ -165,10 +132,8 @@ async function main() {
     mkdirSync(SHOTS_DIR, { recursive: true });
     writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
 
-    // Scratch targets turns (b)/(c)/(d) read or edit, COMMITTED (not merely written to `repoDir`'s
-    // own working copy) so `grep`/`read`/`edit` all see a real, tracked file: Refract creates a
-    // brand-new `git worktree` per Session (`src-tauri/src/git/worktrees.rs`), which only ever
-    // materialises committed content -- an uncommitted file here would read "not found" there.
+    // Targets are COMMITTED: Refract makes a fresh `git worktree` per Session (worktrees.rs), which only
+    // has committed content, so an uncommitted file would read "not found".
     writeFileSync(path.join(repoDir, 't632-read-target.txt'), 'one\ntwo\nthree\n');
     writeFileSync(path.join(repoDir, 't632-edit-target.txt'), 'one\ntwo\nthree\n');
     appendFileSync(path.join(repoDir, 'README-t632grep.txt'), 'line containing t632GrepMarker here\n');
@@ -236,7 +201,7 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- Turn (a): 2 bash calls, #2 fails -- the group header's own "<tool> ×N" grammar ----
+    // ---- Turn (a): 2 bash calls, #2 fails: the "<tool> ×N" header ----
     await cdp.typeIntoByLabel('Message', TURN_A_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(
@@ -253,8 +218,7 @@ async function main() {
     } else {
       findings.push(`Turn (a) group header label reads "${headerA.labelText}" (tool + count, not a call's own command).`);
     }
-    // Gate round 1 (test-reviewer Medium, M7): the header's own summary span must be EMPTY --
-    // #632's own acceptance is that the collapsed header never shows any call's own command.
+    // The collapsed header's summary span must be empty.
     if (headerA.summaryText) {
       failures.push(`Turn (a) group header's own summary text is "${headerA.summaryText}", expected empty (no call's own command shown in the header).`);
     } else {
@@ -269,9 +233,8 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '00-turn-a-collapsed-group.png'));
 
-    // Gate round 1 (ui-architect-v3 High, M8): hover tints ONLY the hovered row -- the Collapsible
-    // ROOT (an ancestor of the trigger the hover class lives on) must show the SAME background
-    // before and after, while the trigger's own background changes (#430's own regression class).
+    // Hover tints only the hovered row: the Collapsible ROOT (an ancestor of the trigger) must keep
+    // the same background while the trigger's changes (#430 regression class).
     const hoverAncestorBefore = await cdp.evaluate(
       `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; return root ? getComputedStyle(root).backgroundColor : null; })()`,
     );
@@ -291,12 +254,11 @@ async function main() {
       findings.push(`Hover tints only the trigger itself (${hoverTriggerBefore} -> ${hoverTriggerAfter}); its own Collapsible-root ancestor stayed ${hoverAncestorAfter} (#430's own regression class, not reintroduced).`);
     }
 
-    // Expand the group (this click also gives the header DOM focus).
+    // Expand the group (the click also gives the header DOM focus).
     await cdp.click(`(${GROUP_HEADERS}).at(0)`);
     await cdp.waitFor(`(${GROUP_HEADERS}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Turn (a) group expanded' });
 
-    // Gate round 1 (accessibility-auditor Medium, M8): the click gave mouse-acquired focus (no
-    // :focus-visible); Tab away then Shift+Tab back forces a genuine keyboard refocus.
+    // The click gave mouse-acquired focus (no :focus-visible); Tab away then Shift+Tab back forces a keyboard refocus.
     await pressTab(cdp);
     await pressTab(cdp, { shift: true });
     const keyboardFocusCheck = await cdp.evaluate(`(() => {
@@ -314,8 +276,7 @@ async function main() {
       findings.push(`Keyboard Tab/Shift+Tab reaches the group header with a visible focus outline (${keyboardFocusCheck.outlineStyle} ${keyboardFocusCheck.outlineWidth}).`);
     }
 
-    // Gate round 1 (ui-architect-v3 Medium, M8): expanded group (members collapsed) measured
-    // against its own line-height -- the issue's own "about 4 lines, against about 20 today".
+    // Expanded group (members collapsed) measured against its line-height: about 4 lines, against about 20 before.
     const heightCheck = await cdp.evaluate(`(() => {
       const h = (${GROUP_HEADERS}).at(0);
       const root = h ? h.closest('[data-slot="collapsible"]') : null;
@@ -332,16 +293,14 @@ async function main() {
       findings.push(`Expanded group (members collapsed) measured ${heightCheck.lines.toFixed(1)} lines tall -- matches the issue's own "about 4 lines, against about 20 today".`);
     }
 
-    // Gate round 1 (test-reviewer Medium, M7): scoped to THIS group's own <ol>, not every <li>
-    // in the whole transcript (a future group's own members would otherwise be picked up too).
+    // Scoped to THIS group's <ol>, not every <li> in the transcript.
     const memberButtons = `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; const ol = root ? root.querySelector('ol.border-l') : null; return ol ? Array.from(ol.querySelectorAll('li button')) : []; })()`;
     const memberCount = await cdp.evaluate(`(${memberButtons}).length`);
     if (memberCount !== 2) failures.push(`Expected 2 member rows inside the expanded group, found ${memberCount}.`);
     else findings.push('Expanded group shows both members down the shared Spine.');
 
-    // Gate round 2 (Main, D10): hovering a MEMBER of an expanded group must tint only that
-    // member -- never the group's own trigger background nor add a border to any ancestor
-    // (#430's regression class, re-checked here: the member sits in a different ancestor chain).
+    // Hovering a MEMBER of an expanded group must tint only that member (#430 regression class; the
+    // member sits in a different ancestor chain).
     const memberHoverState = `(() => {
       const h = (${GROUP_HEADERS}).at(0);
       const b = (${memberButtons}).at(0);
@@ -350,8 +309,7 @@ async function main() {
       for (let node = b.parentElement; node && node !== document.body; node = node.parentElement) ancestorBorders.push(getComputedStyle(node).borderTopWidth);
       return { triggerBg: getComputedStyle(h).backgroundColor, ancestorBorders };
     })()`;
-    // The expand click above leaves the real cursor on the header (CDP's click moves it there
-    // first) -- reset off it first, or the header's own stale hover tint reads as a false change.
+    // The expand click leaves the cursor on the header (CDP moves it there); reset off it or its stale hover tint reads as a change.
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
     const memberHoverBefore = await cdp.evaluate(memberHoverState);
     const memberHoverRect = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
@@ -368,8 +326,7 @@ async function main() {
       findings.push(`Hovering an expanded group's own member leaves the trigger (${memberHoverAfter.triggerBg}) and every ancestor's borderTopWidth unchanged (#430's class, not reintroduced).`);
     }
 
-    // Gate round 1 (test-reviewer Medium, M7): the header's own total time must equal the SUM of
-    // the member durations (parsed and added, not just "has a trailing duration").
+    // The header's total time must equal the SUM of the member durations.
     const memberMetaTexts = await cdp.evaluate(`(${memberButtons}).map((b) => { const m = b.querySelector('span.tabular-nums'); return m ? m.textContent.replace(/^,\\s*/, '').trim() : null; })`);
     const memberDurationsMs = memberMetaTexts.map(parseDurationMs);
     const headerTotalMatch = (headerA.metaText ?? '').match(/(\d+(?:\.\d+)?(?:ms|s))$/);
@@ -388,8 +345,7 @@ async function main() {
       }
     }
 
-    // Gate round 1 (accessibility-auditor Medium, M8): each member's accessible name must
-    // include its tool and command, not just the browser's own content-based concatenation.
+    // Each member's accessible name must include its tool and command.
     const member0Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(0)`);
     const member1Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(1)`);
     if (!member0Ax.name || !member0Ax.name.includes('Ran') || !member0Ax.name.includes('t632-one')) {
@@ -411,8 +367,7 @@ async function main() {
     }
     await cdp.click(`(${memberButtons}).at(0)`);
     await cdp.waitFor(`(${memberButtons}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'First member expanded' });
-    // Gate round 1 (test-reviewer High, M7): reads the COMPUTED `white-space` (not just absence
-    // of a class name) and asserts no code-block element and no output text at all (H6).
+    // Reads the COMPUTED `white-space` and asserts no code-block element and no output text.
     const member0ExpandedCheck = await cdp.evaluate(`(() => {
       const b = (${memberButtons}).at(0);
       const s = b ? b.querySelector('span.min-w-0.flex-1') : null;
@@ -431,9 +386,7 @@ async function main() {
     } else {
       findings.push("Expanded first member's own command text computed white-space is \"normal\" (wraps, not truncate).");
     }
-    // Gate round 2 (Main, D8): `content` missing entirely used to fall through to the SAME
-    // "no code block, no output" finding as a genuinely clean expansion -- a vacuous pass that
-    // never actually looked at anything. Checked explicitly first, as its own failure.
+    // Missing `content` is its own failure: it would otherwise fall through to the clean-expansion finding, a vacuous pass.
     if (!member0ExpandedCheck?.hasContent) {
       failures.push("Expanded first member's own collapsible-content region was not found -- cannot confirm no code-block/output element (no vacuous pass).");
     } else if (member0ExpandedCheck.hasCodeBlock) {
@@ -445,7 +398,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-turn-a-expanded-member.png'));
 
-    // ---- Turn (b): one grep call -- the command-style row text `grep "<pattern>" <path>` ----
+    // ---- Turn (b): one grep call: `grep "<pattern>" <path>` row text ----
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632b/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (b) finished' });
@@ -457,7 +410,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '02-turn-b-grep.png'));
 
-    // ---- Turn (c): one read call -- row text UNCHANGED (still just the path) ----
+    // ---- Turn (c): one read call: row text unchanged (just the path) ----
     await cdp.typeIntoByLabel('Message', TURN_C_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632c/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (c) finished' });
@@ -469,7 +422,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '03-turn-c-read.png'));
 
-    // ---- Turn (d): one edit call -- the row's own "+N −M" stat ----
+    // ---- Turn (d): one edit call: the "+N −M" stat ----
     await cdp.typeIntoByLabel('Message', TURN_D_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632d/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (d) finished' });
@@ -481,22 +434,18 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '04-turn-d-edit.png'));
 
-    // ---- Turn (e): the Subagents panel reuses the exact same grammar ----
+    // ---- Turn (e): the Subagents panel reuses the same grammar ----
     await cdp.typeIntoByLabel('Message', TURN_E_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632e-done/g) ?? []).length >= 2; })()`, { timeoutMs: 240_000, label: 'Turn (e) finished (subagent done, main agent replied)' });
-    // `SubagentChainRow`'s own "Show subagents panel" button only renders for TWO+ Stages
-    // (FR-065); this turn starts one subagent, so the readout bar's own `SubagentsReadout` opens
-    // it instead, with a dynamic accessible name -- "Open subagents panel (1 finished)".
+    // "Show subagents panel" renders only for TWO+ Stages (FR-065), so this single-subagent turn opens
+    // the panel via the readout bar's `SubagentsReadout` ("Open subagents panel (1 finished)").
     await cdp.clickByLabel('Open subagents panel', { prefix: true });
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel open' });
     await cdp.click(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"], [role="tree"][aria-label="Subagents"] button')`);
-    // `SubagentPanel.tsx`'s own stream pane has no `[role="tabpanel"]`/`<aside>` wrapper --
-    // scoped to the stable `#right-pane-active-panel` host every hosted panel renders inside.
+    // The stream pane has no `[role="tabpanel"]`/`<aside>` wrapper; scope to the `#right-pane-active-panel` host.
     const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('#right-pane-active-panel button')).filter((el) => el.querySelector('[data-slot="collapsed-line-label"]'))`;
-    // A plain one-shot `evaluate` right after the click raced the stream pane's own render in
-    // two prior live runs (the screenshot a moment later always showed the row already there) --
-    // polled instead, same as every other post-click assertion in this file.
+    // Polled: a one-shot `evaluate` right after the click raced the stream pane's render in live runs.
     let panelHeaderInfo = null;
     try {
       panelHeaderInfo = await cdp.waitFor(
@@ -518,11 +467,8 @@ async function main() {
       failures.push(`Subagents panel's own bash group header reads "${panelHeaderInfo.labelText}", expected the same "bash ×2" grammar the main transcript uses (design point 4, one row component used everywhere).`);
     } else {
       findings.push(`Subagents panel's own bash group header reads "${panelHeaderInfo.labelText}" -- the SAME grammar as the main transcript (shared \`ToolGroupRow\`).`);
-      // Gate round 1 (test-reviewer Medium, M7): also assert the meta slot's own failed count,
-      // not just the label. A live run showed the subagent's own group with NO trailing total
-      // time ("1 failed" bare) -- M6's own "omit a partial sum, never guess" rule applies here
-      // too, so a missing total is not itself a defect; only a missing "1 failed" is a hard
-      // failure. Presence or correct omission of the total is reported as a finding either way.
+      // Also assert the meta slot's failed count. The subagent group can show no total time ("1 failed"
+      // bare; a partial sum is omitted, never guessed), so only a missing "1 failed" is a hard failure.
       if (!panelHeaderInfo.metaText || !panelHeaderInfo.metaText.includes('1 failed')) {
         failures.push(`Subagents panel's own bash group header meta text is "${panelHeaderInfo.metaText}", expected it to contain "1 failed", matching the main transcript's own grammar.`);
       } else if (/\d+(\.\d+)?(ms|s)$/.test(panelHeaderInfo.metaText)) {
@@ -535,9 +481,7 @@ async function main() {
 
     // ---- Turn (f): hostile output renders inert, bounded ----
     await cdp.typeIntoByLabel('Message', TURN_F_PROMPT);
-    // Gate round 2 (Main, D9): whether `Input.insertText` preserves a raw ESC byte through the
-    // `<textarea>` is a fact about this TOOL, not #632 -- recorded honestly; the checks below
-    // rely only on the X run either way.
+    // Whether `Input.insertText` preserves a raw ESC byte is a fact about the tool, not #632; the checks rely only on the X run.
     const typedEscSurvived = await cdp.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); return el ? /\\x1b/.test(el.value ?? '') : null; })()`);
     findings.push(`Turn (f): Input.insertText ${typedEscSurvived ? 'preserved' : 'did NOT preserve'} the raw ESC byte in the Message textarea (tool fact, not a #632 finding either way).`);
     await cdp.clickByLabel('Send message');
@@ -547,11 +491,8 @@ async function main() {
     const hasColourMarkup = (html) => /color\s*:\s*red|style="[^"]*color/i.test(html);
     const noOverflow = (s) => s.transcriptScrollWidth != null && s.transcriptScrollWidth <= s.transcriptClientWidth + 2;
     const isHostile = (text) => HOSTILE_RE.test(text) && X_RUN_RE.test(text);
-    // Gate round 2 (Main's correction): the Error line showing OMP's own exit-code footer
-    // instead of the hostile stdout is the out-of-scope errorLine()/OMP line-order gap (#650) --
-    // recorded as a finding, never asserted pass/fail here. Only when it DOES happen to show the
-    // hostile output is the inert/bounded assertion actually run against it (real signal either
-    // way, never a vacuous pass).
+    // The Error line may show OMP's exit-code footer instead of the hostile stdout (out-of-scope
+    // errorLine()/OMP line-order gap, #650): recorded as a finding, asserted only when hostile output shows.
     const hostileCheck = await cdp.evaluate(`(() => {
       const h = (${GROUP_HEADERS}).at(-1);
       const id = h ? h.getAttribute('aria-describedby') : null;
@@ -583,9 +524,8 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '06-turn-f-hostile-output.png'));
 
-    // Gate round 2 (Main, D9): the row's own SUMMARY span (`commandRowText`) carries the raw
-    // command, including the ×250 X run -- unlike the Error line, OMP's own ARGS transcript
-    // reliably carries it, checked both collapsed (truncates) and expanded (must wrap).
+    // The row's SUMMARY span carries the raw command incl. the ×250 X run (OMP's ARGS transcript
+    // reliably has it): truncated collapsed, wrapped expanded.
     const readSummaryState = `(() => {
       const h = (${GROUP_HEADERS}).at(-1);
       const s = h ? h.querySelector('span.min-w-0.flex-1') : null;
@@ -617,9 +557,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '07-turn-f-hostile-output-expanded.png'));
 
-    // Gate round 1 (test-reviewer High, M7): a genuine skip must fail the run, not be silently
-    // reported as a footnote -- otherwise a drifted selector could stop testing a real acceptance
-    // criterion forever while every run still prints DONE.
+    // A genuine skip must fail the run: a drifted selector could otherwise stop testing a criterion while every run prints DONE.
     const hasNotExercised = notExercised.length > 0;
     const exitCode = failures.length > 0 || hasNotExercised ? 1 : 0;
     const report = {

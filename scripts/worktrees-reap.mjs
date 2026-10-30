@@ -1,23 +1,8 @@
-// Post-merge worktree reap (issue #658). Dry run by default; `--apply` acts; `--check` is the
-// start-of-wave guard. See `.omp/skills/worktree-reap/SKILL.md` for the lane lifecycle.
-//
-// Usage: node scripts/worktrees-reap.mjs [--apply | --check] [--repo <path>] [--root <path>]
-//          [--registry <path>] [--no-registry]
-//   --check exits 1 when the worktrees folder holds more than MAX_WORKTREES worktrees or its
-//   drive has under MIN_FREE_GB free; it never deletes anything.
-//   --apply refuses (exit 2) when the registry file is absent, unless --no-registry is passed.
-// Exit codes: 0 success; 1 --check problem, or --apply finished with at least one failure
-//   (busy/locked removal, husk still present, branch delete failure, husk error); 2 bad usage,
-//   refused, or crashed.
-// Test-only: --pr-fixture <json file mapping branch -> {state, headRefOid} (or an array of
-//   those)> replaces the `gh` lookup. Honoured only when both --root and --repo are under the OS
-//   temp directory; see scripts/worktrees-reap-fixture.mjs.
-// --apply first deletes <worktree>\node_modules with `rmdir /s /q` on a \\?\ path, because git
-//   cannot delete pnpm's directory junctions (#1181); a worktree git deregistered but could not
-//   fully delete is finished with the guarded husk deleter.
-// Ignored files: a worktree is skipped when it holds an ignored path other than node_modules/
-//   (any depth), dist/, out/, .vite/, src-tauri/target/, src-tauri/gen/ or a top-level
-//   *.tsbuildinfo, because removal would delete it.
+// Post-merge worktree reap (#658). Dry run by default; `--apply` acts; `--check` guards wave start.
+// Usage: node scripts/worktrees-reap.mjs [--apply | --check] [--repo <path>] [--root <path>] [--registry <path>] [--no-registry]
+// Exit: 0 ok; 1 --check problem or --apply failure; 2 bad usage, refused (--apply needs a registry unless --no-registry), or crash.
+// --pr-fixture <json> replaces the `gh` lookup; honoured only when --root and --repo are under the OS temp dir.
+// node_modules goes first via `rmdir /s /q` on a \\?\ path because git cannot delete pnpm junctions (#1181).
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'

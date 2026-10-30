@@ -1,30 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issues #947 (fuzzy slash-command search, FR-074) and #938 items 1 and 4 (slash
-// subcommand step; a command reply no longer stretching the previous turn's own shown time),
-// required before the draft PR. Modelled on `verify-917-advisor-command.mjs`'s own structure and
-// isolation posture.
-//
-// Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
-// override -- only Refract's OWN data, `REFRACT_DATA_DIR`, is scratch). Checks, in order:
-// (0) typing a bare `/` lists every command Refract offers (FR-032, FR-074's own "An empty query
-// matches every command" rule) -- asserted against the two commands Refract ALWAYS lists itself
-// (`new`, `btw`), not a hardcoded total, since the real ambient install's own command set is not
-// under this script's control; (1) fuzzy ranking order (FR-074): queries are built
-// ALGORITHMICALLY from whatever commands this real install actually offers (never hardcoded
-// names), one per tier this scorer recognises (prefix, word-start, substring, subsequence), and
-// the full rendered order is asserted against an independent JS port of
-// `src/shared/slashCommandSearch.ts`'s own algorithm run over the SAME real command list; the
-// winning query's own top match is also asserted to carry a `<b>` span whose COMPUTED font-weight
-// actually outweighs the surrounding plain text (not just tag presence); (1b) a `skill:<name>`
-// entry matches with or without the `skill:` prefix, if this install offers any (genuine
-// `notExercised` otherwise, never faked); (2) the subcommand step -- selecting `/advisor` leaves
-// the composer reading `/advisor ` instead of sending, the menu's own accessible name becomes
-// "/advisor subcommands", and its first row is `status` with nothing typed yet (FR-074);
-// selecting that subcommand completes `/advisor status ` without sending; (3) a real turn's own
-// total-time line (the "`Turn took <N>`" sr-only text) does not change after a command reply
-// (`/advisor status`, this story's #938 item 4 fix) arrives once that turn has already settled --
-// asserted by reading the SAME line's text before and after the command, not merely that the
-// command's own reply arrived.
+// Live CDP check for #947 (fuzzy slash-command search, FR-074) and #938 items 1 and 4 (slash subcommand step; a command reply must not stretch the previous turn's time).
+// Drives a REAL `omp` on the ambient profile; only `REFRACT_DATA_DIR` is scratch. Queries are built from the install's real command list (not hardcoded),
+// ranked against an independent JS port of `src/shared/slashCommandSearch.ts`.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -132,17 +109,12 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- (0) Bare "/" lists every command (FR-032, FR-074 "empty query matches every command")
-    // ---- also the one place this script reads the REAL command list, which every later section
-    // reuses to build its own queries, rather than a hardcoded name.
+    // ---- (0) Bare "/" lists every command (FR-032, FR-074); also reads the real command list that later sections reuse. ----
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp.send('Input.insertText', { text: '/' });
     await cdp.waitFor(`!!document.querySelector('ul[aria-label="Slash commands"]')`, { timeoutMs: 15_000, label: 'Slash menu mounted for bare "/"' });
     const bareMenu = await readSlashMenu(cdp);
-    // Each rendered option's own text is the literal "/" plus the underlying command.name
-    // (the "/" is never part of command.name itself -- it's the composer's own leading
-    // character, confirmed by `parseSlashMenuState`); strip it here so every query/comparison
-    // below operates on the SAME bare name the real scorer (`slashCommandSearch.ts`) does.
+    // Option text is "/" plus command.name; strip the "/" to compare against the scorer's bare names.
     const realCommands = (bareMenu?.options ?? []).map((o) => ({ name: o.name.replace(/^\//, ''), description: o.description }));
     const names = new Set(realCommands.map((c) => c.name));
     if (realCommands.length < 2 || !names.has('new') || !names.has('btw')) {
@@ -154,9 +126,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '00-bare-slash-lists-every-command.png'));
 
-    // ---- (1) Fuzzy ranking order (#947, FR-074): queries built algorithmically from the REAL
-    // command list above, one per tier (prefix, word-start, substring, subsequence), each
-    // asserted against an independent JS port of the real scorer, not a hardcoded expectation ----
+    // ---- (1) Fuzzy ranking (#947, FR-074): one algorithmic query per tier, checked against an independent port of the scorer ----
     const tierQueries = buildTierQueries(realCommands);
     for (const [tierName, query] of Object.entries(tierQueries)) {
       if (!query) {
@@ -177,12 +147,7 @@ async function main() {
       const rendered = await readSlashMenu(cdp);
       const expectedOrder = rankCommandsJs(query.needle, realCommands).map((c) => c.name);
       const renderedOrder = (rendered?.options ?? []).map((o) => o.name.replace(/^\//, ''));
-      // Hard requirement (always fails the run): the TOP-ranked option matches the independently
-      // computed ranking's own top entry. Compared against `expectedOrder[0]`, NOT the tier
-      // target this query was built around (`query.name`) -- a different real command can
-      // legitimately outrank that target at a BETTER tier for the very same needle (for example
-      // a word-start target losing to an unrelated command that happens to PREFIX-match the same
-      // query), which is correct tier-precedence behaviour, not a failure.
+      // Compare against `expectedOrder[0]`, not the tier target: another command can legitimately outrank it at a better tier (e.g. a prefix match beating a word-start target).
       if (renderedOrder[0] !== expectedOrder[0]) {
         failures.push(
           `"${tierName}" tier query "/${query.needle}": top-ranked option "${renderedOrder[0]}" does not match the independently computed top "${expectedOrder[0]}" (query built around "${query.name}" at the "${tierName}" tier).`
@@ -192,11 +157,7 @@ async function main() {
           `"${tierName}" tier query "/${query.needle}" (built around "${query.name}" at the "${tierName}" tier): top-ranked option "${renderedOrder[0]}" matches the independently computed top exactly.`
         );
       }
-      // Gate round 1 (H3): restored as a HARD failure, not informational -- H1/H2 fixed the two
-      // real bugs (the wrong re-scored tier, and subsequence descriptions matching almost
-      // everything) that were the actual cause of every full-list mismatch seen before those
-      // fixes landed; a real discrepancy now is a real regression, not an unavoidable gap in this
-      // script's own independent port.
+      // The full-order match is a hard failure: the tier-rescoring and subsequence-description bugs behind earlier mismatches are fixed.
       if (JSON.stringify(renderedOrder) === JSON.stringify(expectedOrder)) {
         findings.push(`"${tierName}" tier query "/${query.needle}": full rendered order also exactly matches the independently computed ranking (${renderedOrder.length} entries).`);
       } else {
@@ -204,8 +165,7 @@ async function main() {
           `"${tierName}" tier query "/${query.needle}": full rendered order ${JSON.stringify(renderedOrder)} does not match the independently computed order ${JSON.stringify(expectedOrder)} (${renderedOrder.length} vs ${expectedOrder.length} entries).`
         );
       }
-      // Computed-font-weight bold check on the TOP (best-ranked) option's own name span, for the
-      // tier whose match is a genuine NAME hit (every tier query here is, by construction).
+      // Computed-font-weight bold check on the top option's name span (every tier query here is a name hit).
       const top = rendered?.options?.[0];
       if (!top || !top.hasBold || top.boldWeight == null || top.normalWeight == null) {
         failures.push(`"${tierName}" tier query "/${query.needle}": top option "${top?.name}" has no bolded match span (or its computed weight could not be read) -- FR-074 decision 5.`);
@@ -222,15 +182,8 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01-fuzzy-tier-ordering.png'));
     await clearComposer(cdp);
 
-    // ---- (1a) Fixed hard probes (gate round 1, H3): specific, hand-picked queries proving the
-    // exact H1/H2 regressions directly, not only the algorithmically-discovered tier queries
-    // above -- "/co" (a skill matched by its bare-name PREFIX must rank above "extended-context",
-    // a mere word-start match: H1's re-scoring bug ranked both as word-start instead), "/model"
-    // (an EXACT alias match, issue #762's "switch") must rank top instead of falling to
-    // TIER_DESCRIPTION whenever the command has a description: H1's other half), a description-
-    // only needle (must rank below every genuine name match: decision 4), a needle guaranteed to
-    // match nothing at all ("No matching commands"), and "/ana"'s own RENDERED RANK (not merely
-    // that it is listed, which proves nothing about ordering) ----
+    // ---- (1a) Fixed probes for the H1/H2 regressions: "/co" (skill prefix beats word-start "extended-context"), "/model" (exact alias beats description tier),
+    // a description-only needle (ranks below name matches), a no-match needle, and "/ana"'s rendered rank ----
     await cdp.send('Input.insertText', { text: '/co' });
     await cdp.waitFor(`!!document.querySelector('ul[aria-label="Slash commands"] li[role="option"]')`, { timeoutMs: 15_000, label: 'Slash menu mounted for "/co"' });
     const renderedCo = ((await readSlashMenu(cdp))?.options ?? []).map((o) => o.name.replace(/^\//, ''));
@@ -326,9 +279,7 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01a-fixed-hard-probes.png'));
     await clearComposer(cdp);
 
-    // ---- (1b) A skill:<name> entry matches with or without the "skill:" prefix (FR-074 decision
-    // 2) -- only if this real ambient install actually offers one; a genuine environment gap is
-    // reported as notExercised, never faked ----
+    // ---- (1b) A skill:<name> entry matches with or without the "skill:" prefix; notExercised if the install offers none ----
     const skillCommands = realCommands.filter((c) => c.name.toLowerCase().startsWith('skill:'));
     if (skillCommands.length === 0) {
       notExercised.push('This real ambient omp install offers no skill:<name> commands -- the skill-prefix-optional match (FR-074 decision 2) was not exercised.');
@@ -360,13 +311,10 @@ async function main() {
     }
     await clearComposer(cdp);
 
-    // ---- (2) Subcommand step (#938 item 1, FR-074/FR-075, round 2 gate findings H/M1) --
-    // extracted to `runSubcommandStepChecks` (verify-947-938-helpers.mjs) solely to keep this
-    // file under the repo's 600-line soft cap; no behaviour change from the inline version ----
+    // ---- (2) Subcommand step (#938 item 1), in `runSubcommandStepChecks` (verify-947-938-helpers.mjs) for the 600-line cap ----
     await runSubcommandStepChecks(cdp, { SHOTS_DIR, findings, failures, notExercised });
 
-    // ---- (3) A real turn, then a command reply that must NOT stretch its own turn-total-time
-    // line (#938 item 4, amended FR-046) ----
+    // ---- (3) A command reply must not stretch the previous turn's total-time line (#938 item 4, FR-046) ----
     await clearComposer(cdp);
     await cdp.typeIntoByLabel('Message', "Reply with exactly the single word 't947turn' and nothing else.");
     await cdp.clickByLabel('Send message');
@@ -377,15 +325,8 @@ async function main() {
     let elapsedBefore = null;
     try {
       await cdp.waitFor(`(${TURN_TOTAL_FINDER}).length > 0`, { timeoutMs: 30_000, label: 'Turn-total-time line mounted' });
-      // The sentinel turn's own content can appear in the transcript slightly before the
-      // backend's session status actually flips back to idle (real async IPC lag) -- reading
-      // elapsedBefore while the line is still the LIVE, ticking value (component's own
-      // `aria-hidden={running || undefined}` wrapper div still carrying `aria-hidden="true"`)
-      // would legitimately show growth by the next read with NO bug involved at all
-      // (`computeTurnEnd` is a pure function of settled item timestamps, so once genuinely
-      // frozen it can never drift again regardless of when it's read). Wait for the row's own
-      // `aria-hidden` to be gone (true settle, `frozenEndRef` now set) before sampling the
-      // baseline, so only a REAL re-stretch caused by the later command reply can fail this.
+      // Transcript content can land before the status flips to idle; sampling while the line is still live (`aria-hidden="true"`) would show growth with no bug,
+      // so wait for `aria-hidden` to clear (settled, `frozenEndRef` set) before taking the baseline.
       await cdp.waitFor(
         `(() => { const rows = (${TURN_TOTAL_FINDER}); const row = rows[rows.length - 1]; return !!row && row.getAttribute('aria-hidden') !== 'true'; })()`,
         { timeoutMs: 30_000, label: 'Turn-total-time line has genuinely settled (not still live-ticking)' }
@@ -430,11 +371,7 @@ async function main() {
       }
     }
 
-    // ---- (4) Round 4 gate finding H1/M1 live probe: the turn-total-time line keeps ticking
-    // across a REAL remount mid-turn (switching Sessions away and back while a long-running
-    // bash command is still genuinely in flight), and the final settled value still stays put
-    // after a post-settle command reply -- extracted to `runRemountDuringCommandCheck`
-    // (verify-947-938-helpers.mjs) for the same file-size reason as `runSubcommandStepChecks` ----
+    // ---- (4) The turn-total-time line keeps ticking across a real remount mid-turn and stays put after a post-settle command reply; in `runRemountDuringCommandCheck` (verify-947-938-helpers.mjs) ----
     await runRemountDuringCommandCheck(cdp, { repoName: path.basename(repoDir), SHOTS_DIR, findings, failures, notExercised });
     const report = { gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length > 0 ? 1 : 0 };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));

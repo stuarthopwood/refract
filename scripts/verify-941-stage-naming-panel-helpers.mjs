@@ -1,11 +1,5 @@
-// Split out of `verify-941-stage-naming-helpers.mjs` (gate round 4, #806 file-size discipline:
-// the main helpers file grew past the 600-line cap once items 8/9 and the P1 tab-switch-remount
-// check landed). This file's one assertion concerns a Stage's own "Uses:" dependency line and
-// what clicking it does to the Subagent panel (real-agent selection, exactly-one-selected
-// disambiguation, and selection surviving a tab-switch remount) -- a cohesive slice distinct
-// from naming/metadata/chain-row/context-brief-overflow, matching the same precedent
-// `verify-941-stage-naming-overflow-helpers.mjs` already set (gate round 2) rather than an
-// arbitrary line-count split.
+// Split from `verify-941-stage-naming-helpers.mjs` for the #806 file-size cap: Stage "Uses:"
+// dependency lines and what clicking them does to the Subagent panel.
 import {
   expandRow,
   assertExpandCycleByFinder,
@@ -24,21 +18,10 @@ async function assertExpandCycle(cdp, titleText, findings, failures, themeName, 
   await assertExpandCycleByFinder(cdp, stageTriggerSelector(titleText), findings, failures, themeName, label, firstPassExpectedBefore);
 }
 
-/** Issue #941 grill item 5: Stage 2's real "Uses: G923Code (Stage 1)" dependency, the dropped
- * unmatched `agent://NoSuchAgent` reference, Stage 1/Stage 3's own absence of any "Uses:" line
- * (gate round 2 fix, item 11c: both are now EXPANDED first -- `CollapsedLine.tsx`'s own comment
- * confirms Radix unmounts `CollapsibleContent` while closed, so checking an unexpanded row's
- * content for an absent "Uses:" line was a guaranteed-trivial pass, never a real negative),
- * Stage 7's own SELF-reference drop, Stage 6 (solo)'s real "Uses:" resolving the repeated name
- * "Story559" to the LATEST earlier Stage (Stage 5, by its own distinct duration "4s"), and
- * clicking the real `G923Code`/`Story559` buttons to open the Subagent panel with that agent
- * selected (`aria-selected`, re-grep-verified against `SubagentPanel.tsx`, unchanged from gate
- * round 1 -- see this file's own header for why duration remains the only available
- * disambiguator for a repeated name's two panel rows). */
+/** Asserts Stage "Uses:" lines (resolved, dropped self/unmatched references) and that clicking a
+ * dependency button selects exactly the right Subagent panel row, including across a tab remount. */
 export async function assertDependencies(cdp, findings, failures, themeName, isFirstThemePass) {
-  // Issue #991 final-delta fix: Stage 2's own frames are unpaced (no fixture delay), so whether
-  // it was ever observably open before settling is not reliably reproducible -- accept either
-  // known boolean (see `assertExpandCycleByFinder`'s own doc comment for the full rationale).
+  // Stage 2's frames are unpaced, so whether it was ever observed open is not reproducible; accept either.
   await assertExpandCycle(cdp, STAGE2_TITLE, findings, failures, themeName, 'Stage 2', undefined);
   await cdp.waitFor(`${stageContentSelector(STAGE2_TITLE)}?.textContent.includes('Uses:') ?? false`, {
     timeoutMs: 10_000,
@@ -61,8 +44,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
     ['Stage 1', STAGE1_TITLE],
     ['Stage 3', STAGE3_TITLE]
   ]) {
-    // Gate round 2 fix (item 11c): expand first -- a collapsed row's own `CollapsibleContent`
-    // is unmounted (not merely `hidden`), so without this an absent "Uses:" line proves nothing.
+    // Radix unmounts a closed row's content, so an absent "Uses:" only proves something once expanded.
     await expandRow(cdp, titleText);
     const text = await cdp.evaluate(`${stageContentSelector(titleText)}?.textContent ?? ''`);
     if (text.includes('Uses:')) {
@@ -72,8 +54,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
     }
   }
 
-  // Fixture item e: Stage 7's own self-reference (agent://LongCtxA, one of its OWN agents) is
-  // dropped -- no other, non-self dependency exists there, so "Uses:" must not render at all.
+  // Stage 7's self-reference is dropped, so "Uses:" must not render at all.
   await expandRow(cdp, STAGE7_TITLE);
   const stage7ContentText = await cdp.evaluate(`${stageContentSelector(STAGE7_TITLE)}?.textContent ?? ''`);
   if (stage7ContentText.includes('Uses:')) {
@@ -82,12 +63,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
     findings.push(`[${themeName}] Stage 7 shows no "Uses:" line -- its own self-reference to agent://LongCtxA (one of its own agents) was correctly dropped.`);
   }
 
-  // Clicking the real G923Code button opens the Subagent panel with that agent selected.
-  // Gate round 4 fix (issue #941, item 8, HIGH): the real rendered `aria-label` is
-  // `"<id>, open in Subagents panel"` (`StageDependencies.tsx`'s own `aria-label={\`${dep.agentId}, open in Subagents panel\`}\`),
-  // id FIRST, lowercase "open" -- this call used the wrong, never-matching
-  // "Open <id> in Subagents panel" text, so `clickByLabel`'s own default EXACT match
-  // (`verify-tauri-cdp.mjs`) found nothing and the click silently no-opped.
+  // The real aria-label is "<id>, open in Subagents panel" (StageDependencies.tsx); clickByLabel matches exactly.
   await clickByLabelScrolled(cdp, 'G923Code, open in Subagents panel');
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: `[${themeName}] Subagent panel opened from Stage 2's Uses: button` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   const selectedRowText = await cdp.evaluate(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]')?.textContent ?? null`);
@@ -99,9 +75,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
   await clickScrolled(cdp, `document.querySelector('[data-panel-close]')`).catch(() => {});
   await cdp.waitFor(`!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: `[${themeName}] Subagent panel closed` }).catch(() => {});
 
-  // Fixture items f/g: Stage 6 (solo) depends on "Story559", resolved to Stage 5 (the LATEST
-  // earlier occurrence, not Stage 2's) -- a real "Uses:" line on a SOLO Stage, proving it is no
-  // longer special-cased.
+  // Stage 6 (solo) resolves "Story559" to the latest earlier occurrence (Stage 5, not Stage 2).
   await expandRow(cdp, STAGE6_SOLO_TITLE);
   const stage6ContentText = await cdp.evaluate(`${stageContentSelector(STAGE6_SOLO_TITLE)}?.textContent ?? ''`);
   const stage6UsesText = stage6ContentText.includes('Uses:') ? stage6ContentText.slice(stage6ContentText.indexOf('Uses:')) : '';
@@ -110,15 +84,9 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
   } else {
     findings.push(`[${themeName}] Stage 6 (solo)'s own "Uses:" line resolves Story559 to (Stage 5), the LATEST earlier occurrence, proving the solo path is no longer special-cased.`);
   }
-  // Gate round 4 fix (issue #941, item 8, HIGH): same real-label fix as G923Code above.
   await clickByLabelScrolled(cdp, 'Story559, open in Subagents panel');
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: `[${themeName}] Subagent panel opened from Stage 6's Uses: button` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
-  // Gate round 4 fix (issue #941, item 9, HIGH): checks exactly ONE row in the whole panel is
-  // selected (not merely "some Story559 row carries 4s", which would silently pass even if
-  // the OLD name-based bug marked BOTH same-named rows selected at once, so long as one of
-  // them happened to include "4s") -- a real regression guard that FAILS the old behaviour:
-  // the pre-#941-gate-round-3 `row.node.id === selectedId` selection marks every row sharing
-  // a name simultaneously, which this assertion catches as `selectedCount !== 1`.
+  // Exactly one row must be selected: name-based selection would mark both same-named rows.
   const assertStory559PanelSelection = async (checkLabel) => {
     const selection = await cdp.evaluate(`(() => {
       const rows = Array.from(document.querySelectorAll('[role="tree"][aria-label="Subagents"] [role="treeitem"]'));
@@ -137,12 +105,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
     }
   };
   await assertStory559PanelSelection('Initial selection');
-  // Gate round 4 fix (issue #941, P1, HIGH): switches the right pane's own ACTIVE tab away to
-  // File explorer (a second open panel, so a real tab bar exists, `RightPaneShell.tsx` --
-  // `isTabBar = openPanelIds.length >= 2`) and back, which genuinely UNMOUNTS and remounts
-  // `SubagentPanel` (`activePanelId === 'subagents' && (...)`, not merely a CSS-hidden tab) --
-  // proving the selection survives a real remount via the STORE's own `selectedKey`
-  // (`subagent-store.ts`), not a component-local `useState` that a remount would have reset.
+  // Switching tabs unmounts SubagentPanel; selection must survive via the store's `selectedKey`, not local state.
   await clickByLabelScrolled(cdp, 'File explorer panel');
   await cdp.waitFor(`!!document.querySelector('[aria-label="File explorer"]')`, { timeoutMs: 10_000, label: `[${themeName}] File explorer panel opened (tab switch away)` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   await clickScrolled(cdp, `document.querySelector('#panel-tab-subagents')`);

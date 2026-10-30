@@ -1,52 +1,9 @@
 #!/usr/bin/env node
-// Verifies every built-in theme's Mermaid diagram colours for real, measured contrast, rendered
-// with the REAL pinned mermaid@11.17.2 package inside a real Chromium renderer (Electron -- the
-// same engine the app itself uses for `MermaidBlock`), not a mock. Companion to
-// check-theme-contrast.mjs (which checks the app's own CSS tokens only): this script exists
-// because Mermaid computes several diagram colours (pie slices, mindmap/timeline section fills,
-// Gantt text-on-bar/overflow, journey/gitGraph fills) from theme variables via its own internal
-// derivation logic, which a static CSS-token check cannot see -- only a real render can.
-//
-// Quality-gate remediation (round 5): this round REPLACES the entire measurement methodology.
-// Round 4's version (182/182 PASS) extracted `fill:`/`stroke:` values by regex-matching Mermaid's
-// generated `<style>` block TEXT, one diagram-specific pattern per check -- it could only read a
-// CSS rule's DECLARED value, never ask which rule actually WINS the cascade for a given element
-// (specificity/`!important`/source order) or what shape is actually underneath a piece of text.
-// Two independent reviewers (code-reviewer, accessibility-auditor) each built their OWN
-// from-scratch harness against the real rendered DOM instead and converged on the same 3 real
-// failures that regex-over-CSS-text methodology could not see (see src/shared/mermaidTheme.ts's
-// own round-5 header comment for the full list and fixes). This script now does what they did:
-// renders every fixture for real, inserts the resulting SVG into a live page, and for every
-// actually-rendered text/shape element reads its colour via `getComputedStyle` (the browser's own
-// cascade resolution) and finds whatever real shape is painted underneath via
-// `document.elementsFromPoint`, alpha-compositing every layer found (see
-// scripts/mermaid-contrast-measure.mjs's own header comment for the full algorithm, including its
-// one documented limitation: only the `brightness()` CSS filter function is modelled).
-//
-// Fixtures were also widened past what round 4's methodology was ever exercised against: Timeline
-// from 4 sections to 12 (Mermaid's own `THEME_COLOR_LIMIT`, reaching `cScale11`/section-10, which
-// 4 sections structurally cannot); gitGraph from 2 branches to 8 (reaching every `git0`-`git7`/
-// `gitBranchLabel0`-`gitBranchLabel7` slot, not just the first two); Gantt's Overflow section
-// gained an active+crit combined row (`.activeCritText*.taskTextOutside*`, the exact combination
-// round 4's own fixture never exercised).
-//
-// Quality-gate remediation (round 6): the round-5 methodology described above (computed style +
-// `elementsFromPoint`) is now used ONLY for shape-vs-background and pie-slice checks. TEXT
-// contrast is measured a different way: render the diagram's glyphs visible, screenshot, hide
-// every glyph (`opacity: 0`), screenshot again, and diff the two real captures to find each
-// glyph's actual painted pixels (`measureTextFromScreenshots` below) -- see that function's own
-// comment for why (round 5's own replacement still missed a real regression: a gitGraph
-// commit-label's semi-opaque background sitting on a bright branch-line STROKE, which
-// `elementsFromPoint`-based compositing cannot see since it only ever reads a hit-tested
-// element's `fill`/`background-color`, never a stroke). `cardColor` (the wrapper's own backdrop,
-// and every pie-slice-vs-card check) now also resolves the app's REAL `--card` CSS token from
-// globals.css instead of reusing Mermaid's own unrelated `primaryColor` theme variable, which
-// had quietly drifted off the real value for the `dark` theme (`#1f1f1f` vs the real `#171717`).
-//
-// Usage: node scripts/check-mermaid-contrast.mjs
-// Exits 1 if any check fails its minimum (or a diagram type resolved fewer checks than its own
-// declared minimum -- see MIN_CHECKS_PER_DIAGRAM), 0 if every check across every theme/diagram
-// passes.
+// Verifies every built-in theme's Mermaid diagram colours with the real pinned mermaid package in a real Chromium (Electron) renderer.
+// Mermaid derives several colours internally, which a static CSS-token check (check-theme-contrast.mjs) cannot see.
+// Shape/pie checks read the computed style plus `elementsFromPoint`; text contrast is measured from visible-vs-hidden glyph screenshots
+// (`measureTextFromScreenshots`) because hit-testing can't see a stroke under a label.
+// Usage: node scripts/check-mermaid-contrast.mjs. Exits 1 if any check fails or a diagram resolves fewer checks than MIN_CHECKS_PER_DIAGRAM.
 
 import { execFile } from 'node:child_process'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, cpSync } from 'node:fs'
@@ -59,32 +16,16 @@ const execFileAsync = promisify(execFile)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
 
-// ---- diagram fixtures: one per diagram type MermaidBlock actually renders ---------------------
-// (round 5: timeline widened 4 -> 12 sections to reach `cScale11`/section-10; gitGraph widened
-// 2 -> 8 branches to reach every `git<N>`/`gitBranchLabel<N>` slot; Gantt's Overflow section
-// gained an active+crit combined overflowing row.)
+// ---- diagram fixtures: one per diagram type MermaidBlock renders ----
+// Timeline uses 12 sections and gitGraph 8 branches to reach every colour-scale / branch-label slot.
 
 const DIAGRAMS = {
   flowchart: `flowchart TD\n  A[Start] --> B{Decision}\n  B -->|Yes| C[Do thing]\n  B -->|No| D[Other thing]\n`,
   sequence: `sequenceDiagram\n  participant Alice\n  participant Bob\n  Alice->>Bob: Hello\n  Note over Alice,Bob: a note\n  Bob-->>Alice: Hi\n`,
   er: `erDiagram\n  CUSTOMER {\n    string name\n    string id\n    string email\n  }\n  CUSTOMER ||--o{ ORDER : places\n`,
-  // Round 5: `excludes` moved off `weekends` onto two specific dates (2024-02-10/11) that fall
-  // only within the Inside section's long, non-overflowing bars, not anywhere near the Overflow
-  // section's deliberately long overflow labels -- `excludes weekends` recurs every 7 days, which
-  // a ~230px-wide overflow label (spanning multiple day-columns) is geometrically guaranteed to
-  // cross for at least one of the five Overflow tasks regardless of start date, compositing the
-  // exclude-range band's own fill UNDER the alternating section-row stripe at that exact pixel --
-  // a real, measured, but purely coincidental LAYOUT collision between two unrelated decorative
-  // bands, not a theme-colour defect (Mermaid attaches no CSS class either one could target based
-  // on what it happens to visually overlap). The dedicated `.exclude-range vs background` check
-  // below still exercises the same real rendered band/colour either way. Round 6: `i1`-`i3` (the
-  // Inside section's short-label-on-long-bar tasks) are also made clickable, via `click <id> href
-  // "<url>"` -- these are the ONLY tasks whose rendered label sits fully INSIDE its own done/
-  // active/crit bar (the Overflow section's labels are deliberately long enough to always spill
-  // OUTSIDE their bar instead, a different Mermaid CSS codepath -- see this file's own header
-  // comment), so this is what actually exercises `.taskText.clickable.activeText*`/
-  // `.taskText.clickable.activeCritText*` (round 6's High fix) rather than just `.doneText*`
-  // (round 5's fix, the only one the Overflow section's own clickable-free fixture ever reached).
+  // `excludes` targets two dates inside the Inside section only: `excludes weekends` always crosses a long Overflow label,
+  // compositing the exclude band under the row stripe (a layout collision, not a theme defect).
+  // `i1`-`i3` are clickable because they are the only tasks whose label sits inside its bar, which exercises `.taskText.clickable.active*Text*`.
   gantt: `gantt\n  title A Gantt Diagram\n  dateFormat YYYY-MM-DD\n  excludes 2024-02-10,2024-02-11\n  section Overflow\n  Done task with a very long label that overflows :done, o1, 2024-01-08, 1d\n  Active task with a very long label that overflows :active, o2, after o1, 1d\n  Critical task with a very long label that overflows :crit, o3, after o2, 1d\n  Active critical task with a very long label that overflows :active, crit, o3b, after o3, 1d\n  Future task with a very long label that overflows :o4, after o3b, 1d\n  section Inside\n  Done :done, i1, 2024-02-01, 20d\n  Active :active, i2, after i1, 20d\n  Crit :crit, i3, after i2, 20d\n  click i1 href "about:blank"\n  click i2 href "about:blank"\n  click i3 href "about:blank"\n`,
   pie: `pie title Twelve\n${Array.from({ length: 12 }, (_, i) => `  "S${i}" : ${i + 1}`).join('\n')}\n`,
   mindmap: `mindmap\n  root((Root))\n${Array.from({ length: 11 }, (_, i) => `    B${i}`).join('\n')}\n`,
@@ -94,11 +35,8 @@ const DIAGRAMS = {
   gitGraph: `gitGraph\n  commit\n${Array.from({ length: 7 }, (_, i) => `  branch b${i}\n  checkout b${i}\n  commit`).join('\n')}\n  checkout main\n  merge b0\n`
 }
 
-// ---- per-diagram-type minimum resolved-check counts: an actual count BELOW this is a hard
-// FAILURE ("insufficient checks resolved"), never a silent skip -- a Mermaid markup-shape change
-// that stops every text leaf/shape selector from matching fails loudly instead of the check table
-// quietly shrinking to zero for that diagram type. Each fixture above is sized to clear its own
-// minimum. -------------------------------------------------------------------------------------
+// ---- per-diagram minimum resolved-check counts: fewer is a hard FAILURE, so a Mermaid markup change
+// that stops selectors matching can't quietly shrink a diagram's checks to zero. ----
 
 const MIN_CHECKS_PER_DIAGRAM = {
   flowchart: 2,
@@ -113,20 +51,8 @@ const MIN_CHECKS_PER_DIAGRAM = {
   gitGraph: 8 // >=1 branch-label check per branch, 8 branches
 }
 
-// ---- real `--card` surface colour per theme, parsed straight from the same CSS tokens
-// check-theme-contrast.mjs verifies (globals.css), NOT Mermaid's own `primaryColor` theme
-// variable -----------------------------------------------------------------------------------
-// Quality-gate remediation (Medium, code-reviewer): this script previously used
-// `themeVariables.primaryColor` (Mermaid's OWN internal diagram-background variable, tuned for
-// its own node/pie/mindmap fills) as a stand-in for "the real card surface a diagram sits on in
-// the app", for the wrapper's own background AND every pie-slice-vs-card check below. For
-// `dark-high-contrast` the two happen to already agree, but for `dark` they do not:
-// `primaryColor` is `#1f1f1f` while the app's own `--card: oklch(0.205 0 0)` is actually
-// `#171717` (verified by converting through the same OKLab<->linear-sRGB matrices
-// check-theme-contrast.mjs uses) -- a visibly different, if close, shade. Parsing the real token
-// here (same regex/conversion approach as check-theme-contrast.mjs) measures every diagram
-// against the surface it is ACTUALLY painted on in the app, not an adjacent Mermaid-internal
-// approximation of it.
+// ---- real `--card` surface colour per theme, parsed from globals.css (as check-theme-contrast.mjs does) ----
+// Mermaid's `primaryColor` drifts from the real card surface for `dark` (#1f1f1f vs #171717), so diagrams are measured against the real token.
 function oklabToLinearSrgb(L, a, b) {
   const l_ = L + 0.3963377774 * a + 0.2158037573 * b
   const m_ = L - 0.1055613458 * a - 0.0638541728 * b
@@ -154,11 +80,7 @@ function linearToHex([r, g, b]) {
 }
 
 const globalsCssPath = path.join(repoRoot, 'src/renderer/styles/globals.css')
-// A11y/quality-gate remediation (HIGH, shared with check-theme-contrast.mjs's own sister fix):
-// the `.theme-<id>` block/property regexes below match raw text with no comment-awareness, so a
-// `--token: value;`-shaped line sitting INSIDE a `/* ... */` CSS comment would otherwise silently
-// parse as if it were live. Strip every comment first, and fail loudly if stripping leaves an
-// unbalanced or unterminated marker behind.
+// The `.theme-<id>` regexes aren't comment-aware, so strip every CSS comment first (failing on an unterminated marker) to keep a commented-out token from parsing as live.
 function stripCssComments(source, label) {
   const stripped = source.replace(/\/\*[\s\S]*?\*\//g, '')
   const openCount = (source.match(/\/\*/g) || []).length
@@ -174,16 +96,8 @@ function stripCssComments(source, label) {
 const globalsCss = stripCssComments(readFileSync(globalsCssPath, 'utf-8'), path.relative(repoRoot, globalsCssPath))
 const OKLCH_RE = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%)?\s*\)$/i
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
-// Quality-gate remediation: `--card` can now be `var(--surface-1)` (the three-layer token model,
-// #550) rather than a literal `oklch()`/hex value. The old version here matched only a literal
-// and silently skipped any theme whose `--card` didn't match, which made the cardColor fallback
-// below (`REAL_CARD_COLORS[themeId] || themeVariables.primaryColor`) quietly substitute Mermaid's
-// own unrelated `primaryColor` stand-in -- exactly the drift round 6's own header comment says
-// this file exists to prevent. This resolves one or more `var(--name)` hops per theme (same
-// algorithm as check-theme-contrast.mjs's own `resolveRawValue`, duplicated rather than shared --
-// see that script's header for why these two one-off scripts don't import from each other) before
-// matching a literal colour, and a theme whose `--card` still can't be resolved is a hard failure
-// below, never a silent fallback.
+// `--card` may be `var(--surface-1)` (#550), so resolve `var(--name)` hops before matching a literal (same as check-theme-contrast.mjs's `resolveRawValue`,
+// duplicated because these one-off scripts don't import each other); an unresolvable `--card` is a hard failure, never a fallback.
 const VAR_RE = /^var\(\s*--([a-z0-9-]+)\s*\)$/i
 function resolveRawValue(name, rawProps, seen = new Set()) {
   const raw = rawProps[name]
@@ -195,11 +109,7 @@ function resolveRawValue(name, rawProps, seen = new Set()) {
   seen.add(refName)
   return resolveRawValue(refName, rawProps, seen)
 }
-// Quality-gate remediation (security review, LOW): `Object.create(null)` rather than `{}`,
-// matching check-theme-contrast.mjs's own sister resolver -- a theme block that writes
-// `var(--constructor)` (or another `Object.prototype` name) the block itself never defines
-// would otherwise return a function from a plain-object lookup, and `.match` on it throws
-// instead of the intended clear "cannot resolve --card" hard failure.
+// `Object.create(null)`: a theme writing `var(--constructor)` would otherwise return a function from the lookup and `.match` would throw instead of the clear "cannot resolve --card" failure.
 const realCardColors = Object.create(null)
 for (const blockMatch of globalsCss.matchAll(/\.theme-([a-z0-9-]+)\s*\{([^}]*)\}/g)) {
   const themeId = blockMatch[1]
@@ -219,9 +129,7 @@ for (const blockMatch of globalsCss.matchAll(/\.theme-([a-z0-9-]+)\s*\{([^}]*)\}
   }
 }
 
-// ---- stage a scratch dir: harness HTML (imports the real installed mermaid package and this
-// repo's own real-DOM measurement module) + a generated Electron main script that renders every
-// diagram/theme pair and dumps JSON -----------------------------------------------------------
+// ---- stage a scratch dir: harness HTML + a generated Electron main script that renders every diagram/theme pair and dumps JSON ----
 
 const workDir = mkdtempSync(path.join(tmpdir(), 'pinion-mermaid-contrast-'))
 try {
@@ -244,20 +152,9 @@ window.__ready = true
 </script></body></html>`
   )
 
-  // Import the app's own real theme-variable AND themeCSS source (src/shared/mermaidTheme.ts) with
-  // Node's built-in TypeScript support: copied to a `.mts` path so Node treats it as ESM+TS
-  // regardless of this package's own `"type": "commonjs"`. This is the SAME module Markdown.tsx's
-  // `MermaidBlock` imports -- not a hand-copied duplicate that could silently drift from it.
-  // Gate-fix (#1074 round 1, discovered live): `mermaidTheme.ts` imports its own per-theme DATA
-  // from a sibling module, `./mermaidThemeData` (extracted out in #551/#806's file-size ratchet
-  // follow-up, after this script was last written) -- Node's native TS-stripping resolver needs
-  // an explicit extension for a relative specifier, so copying only `mermaidTheme.ts` left this
-  // script unable to even IMPORT its own subject (`ERR_MODULE_NOT_FOUND`), the real reason every
-  // `nordic-frost`/`cyber-amber` comment in `mermaidThemeData.ts` has called this check "deferred
-  // to this lane's build slot" ever since -- it was not merely unrun, it could never have run.
-  // `mermaidThemeData.ts` itself has no runtime imports (its two `import type` lines are erased
-  // by TS stripping), so copying it alongside and rewriting `mermaidTheme.mts`'s own specifier to
-  // the copy's real `.mts` extension is enough; no further transitive files are needed.
+  // Import the app's own mermaidTheme.ts (the module MermaidBlock uses) via Node's TS support, copied to `.mts` so it loads as ESM despite `"type": "commonjs"`.
+  // It imports `./mermaidThemeData` and Node needs an explicit extension for relative specifiers, so copy that too
+  // (no runtime imports of its own) and rewrite the specifier to the copy's `.mts` name.
   const tsSourcePath = path.join(repoRoot, 'src/shared/mermaidTheme.ts')
   const mtsPath = path.join(workDir, 'mermaidTheme.mts')
   const mermaidThemeDataSourcePath = path.join(repoRoot, 'src/shared/mermaidThemeData.ts')
@@ -274,10 +171,7 @@ window.__ready = true
     Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(themeId)])
   )
 
-  // Hard failure, not the old `REAL_CARD_COLORS[themeId] || themeVariables.primaryColor`
-  // fallback: every theme `MERMAID_THEME_VARIABLES` declares must have a real, resolvable
-  // `--card` in globals.css, or every pie-slice-vs-card and shape check below is silently
-  // measured against the wrong backdrop.
+  // Hard failure, no `primaryColor` fallback: every declared theme must resolve a real `--card`, or shape and pie checks use the wrong backdrop.
   const unresolvedCardThemes = Object.keys(MERMAID_THEME_VARIABLES).filter((themeId) => !realCardColors[themeId])
   if (unresolvedCardThemes.length > 0) {
     throw new Error(
@@ -287,13 +181,7 @@ window.__ready = true
     )
   }
 
-  // Quality-gate remediation (round 6): `force-device-scale-factor=1` makes every CSS pixel this
-  // harness measures (`getBoundingClientRect`, `window.innerWidth`/`innerHeight`) map 1:1 onto the
-  // real pixel buffer `webContents.capturePage()` returns below, regardless of this host's own OS
-  // display-scaling setting -- verified against a real capture (red square at a known CSS rect
-  // landed at the identical pixel offset in the captured bitmap, with `image.getSize()` matching
-  // `window.innerWidth`/`innerHeight` exactly) before relying on it for the per-pixel glyph/
-  // background diffing `measureTextFromScreenshots` below performs.
+  // `force-device-scale-factor=1` maps CSS pixels 1:1 onto the `capturePage()` bitmap regardless of OS display scaling, which the per-pixel diffing needs.
   const mainScript = `
 const { app, BrowserWindow } = require('electron')
 const fs = require('fs')
@@ -463,14 +351,13 @@ app.whenReady().then(main)
   const mainPath = path.join(workDir, 'main.js')
   writeFileSync(mainPath, mainScript)
 
-  // `require('electron')` resolves to the real electron.exe path on disk (works cross-platform
-  // without a shell, unlike the node_modules/.bin/electron.cmd shim).
+  // `require('electron')` resolves to the real electron.exe path without a shell (unlike the .cmd shim).
   const electronBin = (await import('electron')).default
   await execFileAsync(electronBin, [mainPath, '--no-sandbox'], { cwd: repoRoot, timeout: 90_000 })
 
   const results = JSON.parse(readFileSync(path.join(workDir, 'results.json'), 'utf-8'))
 
-  // ---- assemble the check table + MIN_CHECKS_PER_DIAGRAM gate ---------------------------------
+  // ---- assemble the check table + MIN_CHECKS_PER_DIAGRAM gate ----
 
   const rows = []
   let failCount = 0
@@ -503,7 +390,7 @@ app.whenReady().then(main)
     }
   }
 
-  // ---- print the table -------------------------------------------------------------------------
+  // ---- print the table ----
 
   const header = ['theme', 'diagram', 'check', 'ratio', 'min', 'result']
   const widths = [18, 10, 50, 8, 5, 6]

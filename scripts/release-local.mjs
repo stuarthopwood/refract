@@ -1,53 +1,6 @@
 #!/usr/bin/env node
-// Local release script (lane R11d, follow-up to #794): Stuart decided (2026-10-14) to sign
-// Refract's own installer locally with a self-signed code-signing certificate rather than buy a
-// CA-issued one; the certificate's private key lives only in his own `Cert:\CurrentUser\My`
-// store (RSA 3072, not exportable), so signing can only ever happen on his own workstation --
-// never in CI (`.github/workflows/release.yml` builds and verifies the bundle on every tag push,
-// but never signs or publishes).
-//
-// What this script does, in order:
-// 1. Fails unless the working tree is clean (`git status --porcelain`) -- gate finding, PR #837
-//    round 1, Medium: a release must build exactly what is committed, nothing uncommitted or
-//    untracked riding along.
-// 2. Fails unless the pinned certificate thumbprint is present in `Cert:\CurrentUser\My`.
-// 3. Fails unless the current commit's exact git tag equals `v<version>` from
-//    `src-tauri/tauri.conf.json` (the same check `release.yml` makes against a pushed tag ref;
-//    here against the locally-checked-out HEAD instead).
-// 4. Builds into a FRESH, release-only `CARGO_TARGET_DIR` under `%TEMP%` (gate finding, round 1,
-//    Medium/High: the shared dev `CARGO_TARGET_DIR` persists old bundles across lanes/worktrees
-//    and a concurrent build could overwrite the exe mid-release) -- `pnpm tauri build`, with a
-//    `--config` overlay (merged for this invocation only, never written to the committed
-//    `tauri.conf.json`) that sets `bundle.windows.signCommand` to our own `signtool.exe`
-//    invocation. Tauri's own bundler then signs the main binary BEFORE NSIS packs it, and signs
-//    the generated installer again afterwards, in the one build (gate finding, round 1, High:
-//    the previous version signed both files AFTER they were already built/packed, so the copy
-//    NSIS had already embedded in the installer was never actually signed).
-// 5. Requires the build to have produced exactly `<productName>_<version>_x64-setup.exe` -- any
-//    other name (a stale bundle, an unexpected version string) is a hard failure, never silently
-//    picked.
-// 6. Verifies the installer with `Get-AuthenticodeSignature`, requiring `Status -eq 'Valid'`,
-//    the signer certificate's own SHA-256 to equal the pin (computed from the committed
-//    `certs/refract-codesign.cer`, not a second hardcoded copy), and a trusted timestamp to be
-//    present. The loose build-tree `refract-tauri.exe` is NOT separately re-signed or verified
-//    (gate finding, round 2, Medium): Tauri's own bundler restores it to unsigned once bundling
-//    finishes (by design), and that copy never ships anywhere -- only the copy NSIS already
-//    packed into the installer (signed, per step 4 above) matters.
-// 7. Verifies that SAME embedded copy, not just the installer's own outer signature: if 7-Zip is
-//    present at its fixed default install path, extracts `refract-tauri.exe` from the signed
-//    installer and runs the same `Get-AuthenticodeSignature` check against it; otherwise this
-//    step is skipped (logged, not a failure) and only the installer's own outer signature
-//    (step 6) stands as evidence.
-// 8. Writes a `<asset>.sha256` checksum sidecar for the installer.
-// 9. Unless `--dry-run`, first confirms `origin`'s own `refs/tags/v<version>` points at this
-//    exact `HEAD` commit (`git ls-remote`), then publishes the installer (and its checksum) to a
-//    new GitHub release via `gh release create v<version> --verify-tag`.
-// 10. Deletes the fresh per-release temp directory (which holds the build, the installer, and
-//     any embedded-copy extraction from step 7) by its own literal, hard-guarded path
-//     (`safeRemoveReleaseDir`) -- always, whether this run published, failed, or was
-//     `--dry-run`. There is no `--keep` flag: inspect the installer's own
-//     `Get-AuthenticodeSignature` output this script already prints, or re-run without
-//     `--dry-run` once ready to publish.
+// Local release script: signs Refract's installer with a self-signed cert whose private key lives only in the
+// maintainer's `Cert:\CurrentUser\My` store, so it can never run in CI. Always deletes its temp release dir; no `--keep`.
 
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -63,49 +16,26 @@ const TAURI_CONF_PATH = path.join(REPO_ROOT, 'src-tauri', 'tauri.conf.json');
 const CHANGELOG_PATH = path.join(REPO_ROOT, 'CHANGELOG.md');
 const CERT_PATH = path.join(REPO_ROOT, 'src-tauri', 'certs', 'refract-codesign.cer');
 
-// `certs/refract-codesign.cer`'s SHA-1 thumbprint, used to select the signing certificate in
-// `Cert:\CurrentUser\My` and with `signtool /sha1`. The expected SHA-256 PIN the updater checks
-// against (`src-tauri/src/updates/signature.rs`'s `SIGNING_CERT_SHA256_PINS`) is computed from
-// `CERT_PATH` directly below, rather than hardcoded a second time here.
 const CERT_THUMBPRINT = '31B95999D331BD33210126432FAB3FF18ECA5DBD';
 const TIMESTAMP_URL = 'http://timestamp.digicert.com';
 const DRY_RUN = process.argv.includes('--dry-run');
-// `pnpm release`'s own final step (lane: release pipeline): sources the GitHub release's notes
-// from the `## vX.Y.Z` section `release.mjs` just committed to CHANGELOG.md, instead of `gh
-// release create`'s own `--generate-notes` (which would re-summarise commits/PRs a second,
-// differently-formatted way).
 const NOTES_FROM_CHANGELOG = process.argv.includes('--notes-from-changelog');
 
-// Absolute, never `PATH`-resolved (gate finding, PR #837 round 1, Low): Node's `spawnSync` also
-// searches the current working directory first on Windows, so even a bare command name is not
-// fully PATH-only -- these are the fixed, always-present per-machine locations for each tool.
 const SYSTEM_ROOT = process.env.SystemRoot || 'C:\\Windows';
 const POWERSHELL_EXE = path.join(SYSTEM_ROOT, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const CERTUTIL_EXE = path.join(SYSTEM_ROOT, 'System32', 'certutil.exe');
 const CMD_EXE = path.join(SYSTEM_ROOT, 'System32', 'cmd.exe');
-// Fixed default install path for 7-Zip (gate finding, PR #837 round 2, Medium): used ONLY for
-// the best-effort embedded-copy check -- if it isn't present here, that one check is skipped
-// (logged, not a failure), never resolved via `PATH`.
+// Fixed path, never `PATH`-resolved; only the best-effort embedded-copy check uses it.
 const SEVEN_ZIP_EXE = 'C:\\Program Files\\7-Zip\\7z.exe';
 
-// Restricted `PSModulePath` (observed on Stuart's own workstation, 2026-10-14): when a user
-// profile's `PSModulePath` also lists a PowerShell 7 install's `Modules` directory alongside
-// Windows PowerShell 5.1's own, `powershell.exe` (5.1) fails to autoload
-// `Microsoft.PowerShell.Security` (duplicate `ObjectSecurity` extended type-data between the two
-// copies) -- `Get-AuthenticodeSignature` then errors "command was found... but the module could
-// not be loaded" instead of ever reporting a signature status. Restricting `PSModulePath` to only
-// the two built-in Windows PowerShell module directories for every `powershell.exe` invocation
-// below sidesteps the collision without touching the caller's own environment or profile.
+// A PowerShell 7 `Modules` dir in `PSModulePath` makes powershell.exe 5.1 fail to load
+// `Microsoft.PowerShell.Security` (duplicate type data), breaking `Get-AuthenticodeSignature`.
 const RESTRICTED_PSMODULEPATH = [
   path.join('C:\\Program Files', 'WindowsPowerShell', 'Modules'),
   path.join(SYSTEM_ROOT, 'System32', 'WindowsPowerShell', 'v1.0', 'Modules'),
 ].join(';');
 
-// Throws rather than calling `process.exit` directly (gate finding, PR #837 round 2, Low): a
-// `finally` block does not run after `process.exit`, so a bare exit here would skip `main`'s own
-// release-dir cleanup on every failure path. `main()`'s own caller at the bottom of this file
-// catches the throw, prints it with the same `release-local: ` prefix, and exits 1 -- by then
-// every `finally` between here and there has already run.
+// Throws instead of `process.exit` so `main`'s `finally` cleanup of the release dir still runs.
 function fail(message) {
   throw new Error(message);
 }
@@ -114,9 +44,7 @@ function run(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
-// Windows env names are case-insensitive but a spread `process.env` keeps the inherited key's own
-// case (for example `PSMODULEPATH`), so adding `PSModulePath` alongside it passes both to the
-// child and Windows keeps the inherited one. Drop every case variant before setting it.
+// A spread `process.env` keeps the inherited key's case (e.g. `PSMODULEPATH`), so drop every case variant first.
 function runPowershell(script) {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath'),
@@ -145,10 +73,7 @@ function readTauriConf() {
   return conf;
 }
 
-// Reads the certificate directly from the Windows certificate store via `certutil` (no
-// PowerShell `Cert:` drive dependency, which is not reliably auto-loaded in every non-interactive
-// shell) -- `-store My <thumbprint>` both looks the certificate up AND filters to it, so success
-// here means Stuart's signing certificate is actually present and usable.
+// Uses `certutil` rather than the `Cert:` drive, which is not reliably autoloaded in non-interactive shells.
 function verifyCertInStore(thumbprint) {
   const result = run(CERTUTIL_EXE, ['-user', '-store', 'My', thumbprint]);
   if (result.status !== 0 || !/completed successfully/i.test(result.stdout ?? '')) {
@@ -160,10 +85,7 @@ function verifyCertInStore(thumbprint) {
   }
 }
 
-// Mirrors `release.yml`'s own tag-vs-version guard, but against the locally checked-out HEAD
-// rather than a pushed tag ref: a release built from a commit whose tag doesn't match
-// `tauri.conf.json`'s version would make `install_on_quit.rs`'s own version-match check report
-// every future install as failed, forever.
+// A tag/version mismatch would make `install_on_quit.rs`'s version check report every future install as failed.
 function verifyTagMatchesVersion(version) {
   const result = run('git', ['describe', '--tags', '--exact-match', 'HEAD'], { cwd: REPO_ROOT });
   if (result.status !== 0) {
@@ -183,13 +105,8 @@ function verifyTagMatchesVersion(version) {
   return tag;
 }
 
-// Deliberately NOT `PATH`-resolved: a stale or unrelated `signtool.exe` earlier on `PATH` must
-// never silently sign a release with the wrong tool. Windows SDK installs live under one of
-// these two Program Files roots, one version-numbered directory per installed SDK; picks the
-// candidate whose directory name PARSES to the highest version (gate finding, PR #837 round 1,
-// Low: a lexical sort of full paths put `Program Files (x86)` ahead of `Program Files` by string
-// comparison alone, which can pick a lower-versioned SDK over a higher one installed under the
-// other root).
+// Never `PATH`-resolved, so a stale signtool can't sign a release. Picks the numerically highest SDK version
+// across both roots (a lexical sort could prefer a lower version under the other root).
 function locateSigntool() {
   const roots = [
     'C:\\Program Files (x86)\\Windows Kits\\10\\bin',
@@ -222,25 +139,13 @@ function locateSigntool() {
   return candidates[candidates.length - 1].path;
 }
 
-// A fresh, release-only `CARGO_TARGET_DIR` under `%TEMP%` (gate finding, PR #837 round 1,
-// Medium/High): the shared dev target dir persists old bundles across every lane and worktree
-// (`readdir` over it is not even deterministic across runs), and a concurrent build from another
-// lane could overwrite the exe between this script's own build and sign steps. This directory
-// belongs to this one release only and is deleted by its own literal path when this script exits
-// (`main`'s own `cleanup`), whether or not it published.
+// Fresh per-release dir: the shared dev target dir keeps old bundles and a concurrent build could overwrite the exe mid-release.
 function freshReleaseDir(version) {
   return path.join(tmpdir(), `refract-release-${version}`);
 }
 
-// Hard guards before ANY delete of this script's own release dir (Main addendum, PR #837 gate
-// round 1): resolves to an absolute path, requires it to be a DIRECT child of `os.tmpdir()`
-// whose basename is exactly `refract-release-<this run's own version>` (matching
-// `/^refract-release-\d+\.\d+\.\d+$/`), refuses an empty path, a root, a bare drive, or any
-// path that is the repo or a repo ancestor/descendant, and refuses if the target or any
-// directory between it and `tmpdir()` is a symlink/junction (a redirected `%TEMP%` or release
-// dir must never turn this into a delete of something else). Prints the exact path before
-// deleting; `rmSync` itself does not follow a symlink AT the target path either way (it unlinks
-// the link, never descends through it), but every guard above still runs first regardless.
+// Delete guard: only a direct child of `tmpdir()` named `refract-release-<version>`, never the repo or its
+// ancestors, and never through a symlink/junction (a redirected `%TEMP%` must not redirect the delete).
 function safeRemoveReleaseDir(targetDir, version) {
   const resolved = path.resolve(targetDir);
   const root = path.parse(resolved).root;
@@ -268,8 +173,6 @@ function safeRemoveReleaseDir(targetDir, version) {
   }
 
   let probe = resolved;
-  // Walks from the target up to (and including) `tmpdir()` itself; stops once `dirname` stops
-  // making progress (a filesystem root), which `base` is never equal to by construction above.
   while (true) {
     if (existsSync(probe) && lstatSync(probe).isSymbolicLink()) {
       fail(`refusing to delete: "${probe}" is a symlink/reparse point.`);
@@ -286,18 +189,8 @@ function safeRemoveReleaseDir(targetDir, version) {
 
 function buildRelease(releaseDir, signtoolPath, conf) {
   const configOverlayPath = path.join(releaseDir, 'sign-config-overlay.json');
-  // `bundle.windows.signCommand` merged for THIS invocation only via `--config`, never written
-  // to the committed `tauri.conf.json` -- CI (`pnpm tauri build`, no `--config`) and `pnpm dev`/
-  // `pnpm build` never see this, so there is no signing config for them to pick up by accident.
-  // Tauri's own bundler (`tauri-bundler/src/bundle.rs`, `.../windows/nsis/mod.rs`) calls this
-  // command on the main binary BEFORE NSIS packs it, and again on the generated installer
-  // afterwards, both within this one `tauri build`.
-  //
-  // Built from a deep clone of the COMMITTED `bundle` section (not a bare `{windows:
-  // {signCommand}}` object) so the result is correct regardless of whether `--config` deep-
-  // merges or replaces at the `bundle` key: either way, every other committed bundle setting
-  // (`active`, `targets`, `icon`, `windows.nsis`, `windows.webviewInstallMode`) survives
-  // unchanged, with only `windows.signCommand` added alongside them.
+  // Merged via `--config` for this build only, never written to `tauri.conf.json`, so CI and dev builds never sign.
+  // Cloned from the committed `bundle` so every other bundle setting survives whether `--config` merges or replaces.
   const overlayBundle = structuredClone(conf.bundle ?? {});
   overlayBundle.windows = { ...(overlayBundle.windows ?? {}) };
   overlayBundle.windows.signCommand = {
@@ -328,10 +221,7 @@ function buildRelease(releaseDir, signtoolPath, conf) {
   return cargoTargetDir;
 }
 
-// Requires the EXACT expected name (gate finding, PR #837 round 1, High: a glob/`.find()` over a
-// shared, persistent bundle directory could previously pick a leftover installer from an older
-// version) -- the release dir is fresh per `freshReleaseDir`, so only this build's own output can
-// ever be present, but the exact-name check stays as a hard assertion rather than trusting that.
+// Exact name, not a glob: a leftover installer from an older version must never be picked.
 function locateNsisSetup(cargoTargetDir, productName, version) {
   const dir = path.join(cargoTargetDir, 'release', 'bundle', 'nsis');
   if (!existsSync(dir)) fail(`NSIS bundle directory not found at ${dir}`);
@@ -345,13 +235,7 @@ function locateNsisSetup(cargoTargetDir, productName, version) {
   return path.join(dir, expectedName);
 }
 
-// Best-effort proof that the copy of `refract-tauri.exe` NSIS actually packed inside the signed
-// installer is itself signed (gate finding, PR #837 round 2, Medium) -- not just that the
-// installer's own outer signature is valid. Needs 7-Zip (NSIS archives are a format 7-Zip knows
-// how to list/extract); if it isn't present at its fixed path, this check is skipped (logged,
-// not a failure) and the installer's own signature (checked by the caller just before this) is
-// the only evidence. Extracts into a subdirectory of `extractParentDir` (this script's own
-// per-run release dir), cleaned up by the caller's `safeRemoveReleaseDir` either way.
+// Best-effort: proves the exe NSIS packed into the installer is signed too. Skipped (logged) without 7-Zip.
 function verifyEmbeddedMainExeSignature(installerPath, extractParentDir, expectedPinHex) {
   if (!existsSync(SEVEN_ZIP_EXE)) {
     console.log(
@@ -401,16 +285,12 @@ function findFileRecursive(dir, name) {
   return null;
 }
 
-// Pin computed from the committed certificate file itself, not a second hardcoded copy, so this
-// check can never silently drift from `certs/refract-codesign.cer`.
+// Pin comes from the committed certificate file, so it can't drift from a second hardcoded copy.
 function expectedSignerPin() {
   return createHash('sha256').update(readFileSync(CERT_PATH)).digest('hex');
 }
 
-// Checks `Status -eq 'Valid'`, the signer certificate's own SHA-256 against the pin, AND that a
-// trusted timestamp is present (gate finding, PR #837 round 1, Low: the previous version only
-// checked `Status`, which does not by itself confirm THIS release's signature is the one that
-// matters, or that `/tr` actually took effect).
+// Also requires a trusted timestamp: `Status` alone doesn't confirm `/tr` took effect.
 function verifySignature(assetPath, expectedPinHex) {
   const escaped = assetPath.replace(/'/g, "''");
   const script = [
@@ -454,13 +334,8 @@ function writeChecksum(assetPath) {
   return checksumPath;
 }
 
-// Extra defense beyond `--verify-tag` below (gate finding, PR #837 round 2, Low): `--verify-tag`
-// only confirms the tag EXISTS on `origin`, not that it points at the exact commit this script
-// just built and signed -- a local re-tag of `HEAD` without re-pushing, or the remote tag having
-// moved, would otherwise slip through. Compares `origin`'s own `refs/tags/<tag>` against local
-// `HEAD` directly; for an ANNOTATED tag, `ls-remote` lists both the tag object's own sha and a
-// peeled `^{}` line with the commit it points to -- the peeled line is what must match `HEAD`,
-// a lightweight tag has only the one line, which already names the commit.
+// `--verify-tag` only checks the tag exists on `origin`; compare it to HEAD too, since a local re-tag or moved
+// remote tag would slip through. For an annotated tag the peeled `^{}` line names the commit.
 function verifyRemoteTagMatchesHead(tag) {
   const remote = run('git', ['ls-remote', 'origin', `refs/tags/${tag}`, `refs/tags/${tag}^{}`], {
     cwd: REPO_ROOT,
@@ -490,28 +365,21 @@ function verifyRemoteTagMatchesHead(tag) {
   }
 }
 
-// Resolves what `gh release create` should use for release notes: GitHub's own `--generate-notes`
-// by default, or (with `--notes-from-changelog`) the `## vX.Y.Z` section `release.mjs` already
-// wrote to CHANGELOG.md for this exact version, written out to a scratch file under this run's
-// own `releaseDir` (already cleaned up by `safeRemoveReleaseDir` either way, so no extra cleanup
-// is needed here).
+// Notes come from GitHub's `--generate-notes` by default, or the CHANGELOG.md section for this version.
 function resolveReleaseNotesArgs(version, releaseDir) {
   if (!NOTES_FROM_CHANGELOG) return ['--generate-notes'];
   if (!existsSync(CHANGELOG_PATH)) fail(`--notes-from-changelog: ${CHANGELOG_PATH} does not exist.`);
   const changelog = readFileSync(CHANGELOG_PATH, 'utf8');
   const section = extractChangelogSection(changelog, version);
   if (!section) fail(`--notes-from-changelog: CHANGELOG.md has no "## v${version}" section.`);
-  // Strip the leading `## vX.Y.Z (date)` heading itself -- `gh release create` already shows the
-  // tag/version as the release's own title; the notes file is just the body beneath it.
+  // `gh release create` already shows the tag as the title, so drop the heading.
   const body = section.replace(/^## .+\n+/, '');
   const notesPath = path.join(releaseDir, 'release-notes.md');
   writeFileSync(notesPath, body);
   return ['--notes-file', notesPath];
 }
 
-// `--verify-tag` (gate finding, PR #837 round 1, Medium): aborts instead of creating the tag at
-// the remote default branch's tip if `tag` was never pushed -- the release must point at the
-// EXACT commit this script built and signed, never a different one `gh` created on its own.
+// `--verify-tag` aborts rather than letting `gh` create the tag at the default branch tip.
 function publishRelease(tag, assets, notesArgs) {
   const result = run('gh', ['release', 'create', tag, ...assets, '--verify-tag', ...notesArgs], {
     cwd: REPO_ROOT,
@@ -535,22 +403,14 @@ function main() {
     const cargoTargetDir = buildRelease(releaseDir, signtool, conf);
     const nsisSetup = locateNsisSetup(cargoTargetDir, conf.productName, conf.version);
 
-    // Tauri's own bundler already signed `nsisSetup` (and the main binary copy it packed inside
-    // it) through the `signCommand` overlay above. The loose build-tree `refract-tauri.exe` is
-    // deliberately NOT separately re-signed or verified (gate finding, round 2, Medium): Tauri
-    // restores it to unsigned once bundling finishes, by design, and that copy never ships --
-    // only the installer (verified below) and the copy it actually embeds (verified by
-    // `verifyEmbeddedMainExeSignature`) matter.
+    // The loose build-tree exe is restored to unsigned by Tauri after bundling and never ships, so it is not verified.
     const expectedPin = expectedSignerPin();
     verifySignature(nsisSetup, expectedPin);
     verifyEmbeddedMainExeSignature(nsisSetup, releaseDir, expectedPin);
 
     const nsisChecksum = writeChecksum(nsisSetup);
 
-    // Resolved BEFORE the dry-run return (gate fix, round 2): `pnpm release:local -- --dry-run
-    // --notes-from-changelog` must still exercise the CHANGELOG.md extraction/notes-file write,
-    // not skip it until the one real, unrepeatable release run. Only `publishRelease` itself
-    // (the actual `gh release create`) is gated on `DRY_RUN` below.
+    // Resolved before the dry-run return so `--dry-run --notes-from-changelog` still exercises the extraction.
     const notesArgs = resolveReleaseNotesArgs(conf.version, releaseDir);
 
     if (DRY_RUN) {
@@ -563,10 +423,7 @@ function main() {
 
     verifyRemoteTagMatchesHead(tag);
 
-    // Only the installer (and its checksum) are published: it is the only asset the updater ever
-    // downloads (`src-tauri/src/updates/installer.rs`) or verifies
-    // (`src-tauri/src/updates/signature.rs`) -- `refract-tauri.exe` is signed so the copy NSIS
-    // installs onto disk carries a valid signature too, but it is never its own release asset.
+    // Only the installer and its checksum are published; the updater downloads nothing else.
     publishRelease(tag, [nsisSetup, nsisChecksum], notesArgs);
   } finally {
     safeRemoveReleaseDir(releaseDir, conf.version);

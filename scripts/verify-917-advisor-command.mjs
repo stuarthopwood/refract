@@ -1,26 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #917 (allow `/advisor` on/off/status per Session), required before
-// the draft PR. `/advisor` was never run by `docs/spike/slash-commands-probe.mjs` (its own
-// `DENYLIST` names it), so this script stands in for that probe's own verification bar
-// (FR-032), the same precedent `verify-558-blocker-callout.mjs` already set for the advisor
-// subsystem generally (its own header comment records: "an earlier draft wrongly assumed RPC
-// hosts always start the advisor disabled, filed as #917").
-//
-// Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
-// override, matching #558/#570/#557's own isolation posture: only Refract's OWN data,
-// `REFRACT_DATA_DIR`, is scratch). Checks, in order: the slash-command menu lists `advisor`
-// with a non-empty description (FR-032); `/advisor off` (asserted against its own exact reply
-// text, "Advisor disabled.") then `/advisor on` ("Advisor enabled.") -- each toggle's own
-// confirmation line is a stable, asserted pattern. `/advisor status` is queried after each
-// toggle too, but its own wording turned out NOT to be a stable "Advisor is enabled/disabled"
-// prefix (a live run saw "Advisor is enabled (<model>)...Spend:..." when never explicitly
-// toggled, but "Advisor \"default\" is running." right after an explicit `/advisor off` --
-// status apparently reports per-advisor runtime state, not simply the session override), so
-// this only asserts a distinct, advisor-mentioning reply arrives each time and that the two
-// reported states actually differ, logging the real literal text both times instead of
-// asserting a guessed format. A real turn runs with the advisor left on and is recorded whether
-// a real advisory row arrives (the advisor's own judgement, never forced or guaranteed by this
-// script); `/advisor off` runs once more at the end to leave the Session in a known state.
+// Live CDP check that `/advisor` on/off/status works per Session, driving a real `omp` (ambient signed-in profile;
+// only REFRACT_DATA_DIR is scratch).
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -32,27 +12,16 @@ import { pressKey } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
   process.env.REFRACT_917_SHOTS_DIR || path.join(tmpdir(), 'refract-917-advisor-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 
-// `NoticeRow` (a `command.send` reply becomes a `command_output` -> `notice` transcript item,
-// `ui-architect-v3`'s own correction to this story's brief) is the one `CollapsedLine` consumer
-// whose icon slot carries an sr-only "Info:" label (`NOTICE_LABEL.info`) -- every `command.send`
-// reply observed live renders at `level: Info` (never `Warning`/`Error`), so counting only
-// `Info:` rows avoids ever mismatching an unrelated warning/error notice as an advisor reply.
-// Unlike the whole-transcript textContent length this script used in an earlier draft, counting
-// and reading THESE specific rows survives `react-virtuoso`'s windowing (only mounted, visible
-// rows are ever queried) and whatever reflow an adjacent row's own re-render causes elsewhere.
-// `CollapsedLine` renders the icon-slot span and the summary span as siblings, as DIRECT
-// children of either a plain `<div>` (a short notice, `text.length <= 160` and no `\n`) or a
-// `<CollapsibleTrigger>` `<button>` (a long one, #565's `isLong` branch) -- climbing exactly two
-// parents from the sr-only label (its own icon-slot span, then that span's row container) lands
-// on the right container either way, unlike `.closest('div')`, which skips past a button-rooted
-// long notice to an OUTER wrapper div that does not hold the summary as a direct child.
+// Command replies render as Info notice rows (sr-only "Info:" label); counting only those avoids matching
+// warning/error notices and survives react-virtuoso windowing.
+// Two parents up from the label is the row container for both div and button-rooted long notices;
+// `.closest('div')` would overshoot a button-rooted one.
 const NOTICE_FINDER =
   `Array.from(document.querySelectorAll('span.sr-only')).filter((el) => (el.textContent ?? '').trim() === 'Info:').map((el) => el.parentElement?.parentElement).filter(Boolean)`;
 
@@ -64,10 +33,7 @@ async function allNoticeTexts(cdp) {
   return cdp.evaluate(`(${NOTICE_FINDER}).map((row) => (row.querySelector(':scope > span.min-w-0.flex-1')?.textContent ?? '').trim())`);
 }
 
-/** Real Backspace keydown/keyup pairs, one per character currently in the composer -- clears a
- * controlled React textarea the same way a user would (never a direct DOM/store poke), so a
- * fresh command can be typed into an empty field without racing the click-to-focus cursor
- * position a second `Input.insertText` call would otherwise land at. */
+// Real Backspaces: a controlled React textarea can't be cleared by poking the DOM.
 async function clearComposer(cdp) {
   const current = await cdp.evaluate(`document.querySelector('[aria-label="Message"]')?.value ?? ''`);
   for (let i = 0; i < current.length; i++) {
@@ -76,24 +42,14 @@ async function clearComposer(cdp) {
   await cdp.waitFor(`(document.querySelector('[aria-label="Message"]')?.value ?? '') === ''`, { timeoutMs: 5_000, label: 'Composer cleared' });
 }
 
-/** Sends `command`, then waits for a NEWLY-mounted notice (index >= the pre-send count) whose
- * text matches `expectedPattern` -- a per-command exact pattern for `/advisor on`/`/advisor off`
- * (`/Advisor enabled\./`, `/Advisor disabled\./`) and a loose `/advisor/i` match for `/advisor
- * status` (its own wording is not a stable prefix -- see the call sites below). Not simply the
- * LATEST notice by index, regardless of pattern, because this ambient signed-in profile's
- * own session occasionally mounts an unrelated system notice (e.g. its own MCP tool list) within
- * the same short window, which can race ahead of the real `/advisor` reply and would otherwise
- * be misread as the command's own output. Keeps polling past an unrelated new notice instead of
- * accepting the first growth alone. Throws (rather than returning a wrong match) when the
- * pattern never appears within the deadline. */
+// Waits for a new notice matching `expectedPattern`, not just the latest one: unrelated system notices
+// (e.g. the MCP tool list) can race ahead of the reply.
 async function sendSlashCommand(cdp, command, expectedPattern) {
   await clearComposer(cdp);
   const before = await countNotices(cdp);
   await cdp.typeIntoByLabel('Message', command);
   await cdp.clickByLabel('Send message');
-  // 60s, not 30s: the advisor's own enable/disable is documented as building or tearing down a
-  // full Agent instance (omp://advisor-watchdog.md), so a `status` query sent immediately after
-  // a toggle may genuinely take longer to answer than a command with no such side effect.
+  // 60s: toggling the advisor builds or tears down a full Agent, so a following `status` can be slow.
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     const texts = await allNoticeTexts(cdp);
@@ -101,9 +57,6 @@ async function sendSlashCommand(cdp, command, expectedPattern) {
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  // Diagnostic evidence on failure: every notice actually present (not just the new ones) plus
-  // a screenshot, so a genuine mismatch (unexpected wording) is distinguishable from a genuine
-  // timeout (nothing arrived at all) without having to re-run blind.
   const allTexts = await allNoticeTexts(cdp);
   try {
     await cdp.screenshot(path.join(SHOTS_DIR, `timeout-${command.replace(/[^a-z]+/gi, '-')}.png`));
@@ -184,7 +137,7 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- Slash menu lists `advisor` with a non-empty description (FR-032) ----
+    // ---- Slash menu lists `advisor` ----
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp.send('Input.insertText', { text: '/advisor' });
     const menuResult = await cdp.waitFor(
@@ -204,26 +157,17 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '00-slash-menu.png'));
     await clearComposer(cdp);
 
-    // ---- /advisor off (its own "Advisor disabled." confirmation IS the off-direction evidence
-    // here), then /advisor status logged for the record only (see below, not proof of direction) ----
+    // ---- /advisor off ----
     const offReply1 = await sendSlashCommand(cdp, '/advisor off', /Advisor disabled\./);
     findings.push(`"/advisor off" produced: ${JSON.stringify(offReply1)}`);
     await cdp.screenshot(path.join(SHOTS_DIR, '01-advisor-off.png'));
 
-    // `/advisor status`'s own wording is NOT a stable "Advisor is enabled/disabled" prefix: a
-    // prior run observed it reading "Advisor is enabled (<model>). Context: ...  Spend: ..."
-    // when never explicitly toggled, but "Advisor \"default\" is running." immediately after an
-    // explicit `/advisor off` -- status apparently reports per-advisor runtime state (its own
-    // process alive or not), not simply the session-scoped on/off override FR-032 forwards. A
-    // fixed prefix assumption is not safe; this asserts only that a distinct, advisor-mentioning
-    // reply arrives each time and that the two reported states actually differ, logging each
-    // literal text so the real wording is on record rather than assumed.
+    // `/advisor status` reports per-advisor runtime state, not the session override, so its wording is unstable; assert only that the two states differ.
     const statusAfterOff = await sendSlashCommand(cdp, '/advisor status', /advisor/i);
     findings.push(`"/advisor status" after off: ${JSON.stringify(statusAfterOff)}`);
     await cdp.screenshot(path.join(SHOTS_DIR, '02-advisor-status-after-off.png'));
 
-    // ---- /advisor on (its own "Advisor enabled." confirmation IS the on-direction evidence),
-    // then /advisor status logged for the record only ----
+    // ---- /advisor on ----
     const onReply = await sendSlashCommand(cdp, '/advisor on', /Advisor enabled\./);
     findings.push(`"/advisor on" produced: ${JSON.stringify(onReply)}`);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-advisor-on.png'));
@@ -239,7 +183,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '04-advisor-status-enabled.png'));
 
-    // ---- A real turn, and whether a real advisory row arrives (never forced) ----
+    // ---- A real turn; an advisory row is the advisor's own call, never forced ----
     const ADVISORY_FINDER =
       `Array.from(document.querySelectorAll('[aria-label="Transcript"] button, [aria-label="Transcript"] div[tabindex]')).filter((el) => { const label = el.querySelector('[data-slot="collapsed-line-label"]'); return label && ['Blocker','Concern','Nit'].includes(label.textContent.trim()); })`;
     const advisoriesBefore = await cdp.evaluate(`(${ADVISORY_FINDER}).length`);

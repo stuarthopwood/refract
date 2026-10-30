@@ -1,15 +1,7 @@
-// Shared version-field helpers for `check-versions.mjs` and `release.mjs` (the release
-// pipeline). The canonical release version lives in FOUR places that must always agree:
-// `package.json`'s `"version"`, `src-tauri/tauri.conf.json`'s `"version"`, `src-tauri/Cargo.toml`'s
-// `[package]` `version` (package `refract-tauri`), and `src-tauri/Cargo.lock`'s own
-// `refract-tauri` package entry's `version`.
-//
-// This module only reads/writes those four specific fields with precise, minimal text edits --
-// it never round-trips any file through `JSON.parse`/`JSON.stringify` or a TOML/lockfile writer,
-// so every other byte of each file (formatting, key order, comments, unrelated dependency
-// entries) is left untouched. `Cargo.lock` is READ here but never text-replaced: its own-crate
-// version field is kept in sync by `cargo update -p refract-tauri --offline` (see
-// `release.mjs`), which also verifies no OTHER package in the lockfile moved.
+// Version-field helpers for `check-versions.mjs` and `release.mjs`. The release version must agree in
+// package.json, tauri.conf.json, Cargo.toml and Cargo.lock. Edits are minimal text replacements, never
+// a JSON/TOML round-trip, so other bytes stay untouched. Cargo.lock is read only; it is synced by
+// `cargo update -p refract-tauri --offline` (see release.mjs).
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -17,11 +9,7 @@ import path from 'node:path';
 export const CARGO_PACKAGE_NAME = 'refract-tauri';
 export const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
-// Validates a version string is plain `x.y.z` (no pre-release/build metadata, matching what
-// every one of the four manifests is expected to hold) -- called on every version this module
-// or its callers read before it is used to build a regex, a tag name, or a bump, so a malformed
-// manifest value fails loudly here rather than producing a confusing downstream regex or git
-// error.
+// Plain x.y.z only; fails loudly before a malformed value reaches a regex, tag name, or git call.
 export function assertValidSemver(version, label) {
   if (!SEMVER_RE.test(version)) {
     versionFail(`${label}: "${version}" is not a valid x.y.z semver version`);
@@ -48,8 +36,7 @@ function versionFail(message) {
   throw new Error(message);
 }
 
-// `package.json` and `tauri.conf.json` share the same `"version": "x.y.z"` JSON shape, and each
-// has exactly one such key at its top level -- a single whole-file match is safe for both.
+// package.json and tauri.conf.json each have exactly one top-level "version" key.
 function extractJsonVersion(raw, label) {
   const m = raw.match(/"version"\s*:\s*"([^"]*)"/);
   if (!m) versionFail(`${label}: no "version" field found`);
@@ -62,12 +49,7 @@ function replaceJsonVersion(raw, newVersion, label) {
   return raw.replace(re, `"version": "${newVersion}"`);
 }
 
-// Cargo.toml's own package version lives only inside the `[package]` table. Every dependency
-// version in this manifest is either an inline table (`{ version = "...", ... }`, never at the
-// start of a line) or a bare semver string under a key other than `version`, so a whole-file
-// match would likely still be safe today -- but bounding the search to the `[package]` table's
-// own text keeps this correct even if a future `[dependencies.foo]` block ever added a bare
-// start-of-line `version = "..."` of its own.
+// Bounded to the `[package]` table so a future `[dependencies.foo]` with a bare `version = ` line can't match.
 function packageTableSlice(raw, label) {
   const start = raw.indexOf('[package]');
   if (start === -1) versionFail(`${label}: no [package] table found`);
@@ -91,10 +73,7 @@ function replaceCargoTomlVersion(raw, newVersion, label) {
   return raw.slice(0, start) + slice.replace(re, `version = "${newVersion}"`) + raw.slice(end);
 }
 
-// Cargo.lock's own-crate entry is always `[[package]]` / `name = "refract-tauri"` /
-// `version = "x.y.z"`, in that order (cargo's own lockfile writer never varies it). Bounded to
-// the one block whose `name` matches -- not a whole-file match -- so an unrelated dependency
-// could never collide even if one were ever literally named `refract-tauri` too.
+// Bounded to the block whose `name` matches so another dependency can't collide.
 function extractCargoLockVersion(raw, label) {
   const nameRe = new RegExp(`name = "${CARGO_PACKAGE_NAME}"`, 'g');
   const matches = [...raw.matchAll(nameRe)];
@@ -110,8 +89,7 @@ function extractCargoLockVersion(raw, label) {
   return m[1];
 }
 
-// Reads all four files and their version fields. Returns the raw text too (every original byte,
-// for `release.mjs`'s restore-on-failure path) alongside the extracted version strings.
+// Returns raw text too, for release.mjs's restore-on-failure path.
 export function readAllVersions(repoRoot) {
   const paths = manifestPaths(repoRoot);
   const raw = {
@@ -138,9 +116,7 @@ export function checkVersionsEqual(versions) {
   return { ok: values.size === 1, entries };
 }
 
-// Updates package.json, tauri.conf.json and Cargo.toml's text in memory (Cargo.lock is
-// deliberately excluded: its own-crate version is synced by `cargo update -p refract-tauri
-// --offline` in `release.mjs`, never by a direct text replace here).
+// Cargo.lock is excluded: `cargo update -p refract-tauri --offline` syncs it (see release.mjs).
 export function writeManifestVersions(raw, newVersion) {
   return {
     packageJson: replaceJsonVersion(raw.packageJson, newVersion, MANIFEST_LABELS.packageJson),
@@ -168,17 +144,8 @@ export function bumpVersion(version, level) {
   return `${major}.${minor}.${patch}`;
 }
 
-// Asserts `cargo update -p refract-tauri --offline` touched ONLY the one `version = "..."` line
-// inside `refract-tauri`'s own package entry -- never any other dependency's version, checksum,
-// or dependency list. Compared line-by-line (not a semantic TOML/lockfile diff) so any
-// unexpected extra change, however small, is caught: a line-count change, more than one changed
-// line, or the one changed line not being a bare `version = "..."` line, all fail loudly rather
-// than letting an unrelated lock change ride along silently into the release commit.
-//
-// Both sides are normalised to LF first: cargo's own lockfile writer always writes LF-only,
-// regardless of what line ending the checked-out "before" copy had (CRLF, if `core.autocrlf`
-// converted it on checkout) -- without this, EVERY line would show as "changed" (the trailing
-// `\r` moves), a false positive that has nothing to do with dependency drift.
+// Asserts cargo touched only the refract-tauri `version = "..."` line. Both sides are LF-normalised
+// because cargo writes LF while a CRLF checkout would otherwise flag every line as changed.
 export function assertCargoLockOnlyVersionChanged(before, after, label) {
   const beforeLines = before.replace(/\r\n/g, '\n').split('\n');
   const afterLines = after.replace(/\r\n/g, '\n').split('\n');

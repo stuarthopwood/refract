@@ -1,12 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1235 (a large CRLF paste loses its text after the next keystroke).
-// Drives a REAL built Tauri debug exe over CDP against the FAKE `omp` shim (`session` scenario),
-// never a real `omp`. Pastes a large CRLF block (synthetic ClipboardEvent carrying a CRLF
-// `text/plain` payload), types one more character, sends, and proves the full original text
-// (CRLF intact) reaches the fake omp's `prompt` command.
-//
-// Usage (after `pnpm exec tauri build --debug --no-bundle` on this head, shared target dir set):
-// CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1235-crlf-paste.mjs
+// Live CDP check that a large CRLF paste keeps its full text (CRLF intact) after the next keystroke.
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1235-crlf-paste.mjs
 
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -103,7 +97,6 @@ async function main() {
       label: 'Session composer enabled'
     });
 
-    // Real paste event with a CRLF text/plain payload, as a Windows clipboard produces.
     await cdp.evaluate(`(() => {
       const el = document.querySelector('[aria-label="Message"]');
       el.focus();
@@ -117,7 +110,6 @@ async function main() {
       label: 'Paste collapsed into a chip label'
     });
 
-    // The next keystroke: this is what dropped the chip before the fix.
     await cdp.send('Input.insertText', { text: TYPED });
     const afterType = await cdp.evaluate(`document.querySelector('[aria-label="Message"]').value`);
     check(afterType.includes(chipLabel) && afterType.endsWith(TYPED), 'Label still intact in the draft after typing', { afterType });

@@ -1,25 +1,12 @@
-// Gate round 2 (F1/F2) regression tests for verify-tauri-560.mjs, split out solely to keep that
-// file under the repo's 600-line soft cap (scripts/check-file-size.mjs) -- no behaviour change
-// from running this code inline. See verify-tauri-560.mjs's own header comment for what each
-// proves; this module holds the two regression tests themselves, not the setup/plumbing they
-// run inside (that stays in verify-tauri-560-helpers.mjs). Also holds the Items 7 & 8 Tab-walk
-// / HealthCheckDialog check (moved here for the same line-cap reason, round 3).
+// Regression tests split out of verify-tauri-560.mjs to keep it under the 600-line cap (scripts/check-file-size.mjs).
+// Setup/plumbing stays in verify-tauri-560-helpers.mjs.
 import path from 'node:path';
 import { sleep } from './verify-tauri-cdp.mjs';
 import { assert, axText, pressRealEnter, waitForSessionStatus, latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
 import { createSessionViaQuickCreate, getActiveElementAccessibleName, pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
-/** Gate round 2 F1 regression test: clicking blank space must NOT steal focus back onto an
- *  alert row. The round 1 focus-redirect fix treated `document.activeElement === document.body`
- *  alone as proof a row's focused descendant had been removed from the DOM, but an ordinary
- *  click on a non-focusable target (anywhere with no focusable element under the pointer) causes
- *  the IDENTICAL symptom without removing anything -- the bug redirected focus straight back
- *  onto an alert row's own control every time. Reproduced here with the most direct "blank space
- *  inside a row" target available: the low-memory row's own descriptive label `<span>`, which
- *  has no onClick and is not focusable, so a real click on it blurs whatever was focused without
- *  moving focus anywhere (ordinary browser behaviour) -- it must stay on <body>, never
- *  redirected to the OTHER row's "Check" button (the pre-fix `redirectFocusFrom('memory')`
- *  target, since the omp-version row is still shown at this point in the run). */
+/** Clicking blank space must not steal focus onto an alert row: `document.activeElement === document.body` alone is not proof a
+ *  focused descendant was removed. Clicks the low-memory row's non-focusable label; focus must stay on <body>, not move to the omp-version row's "Check". */
 export async function runFocusTheftRegressionTest(cdp, { TRIAGE_BUTTON, LOW_MEMORY_ROW_SPAN }, log) {
   await cdp.evaluate(`(() => { const el = ${TRIAGE_BUTTON}; el?.focus(); return !!el; })()`);
   const preBlankClickActive = await getActiveElementAccessibleName(cdp);
@@ -37,14 +24,9 @@ export async function runFocusTheftRegressionTest(cdp, { TRIAGE_BUTTON, LOW_MEMO
   log('STEP PASS: clicking blank space inside the low-memory row leaves focus on <body> -- it is never stolen back onto an alert row\'s own action button (F1).');
 }
 
-/** Items 7 & 8: a real keyboard-only Tab walk from the profile name button, through the cog,
- *  through both alert rows -- reading every control's own accessible name off the Accessibility
- *  domain as it goes (never textContent) -- then Enter (not a click) on Check to open the real
- *  HealthCheckDialog, satisfying item 5 (the warning state word, Done, and the focus-return) in
- *  the same pass. Split out of verify-tauri-560.mjs's own `runChecks` solely to keep that file
- *  under the repo's 600-line soft cap (round 3) -- no behaviour change. Returns `nameButtonAx`
- *  (the profile item's own name button accessible name), the one value `runChecks` still needs
- *  afterward (item 6's keyboard-driven Dismiss fallback assertion). */
+/** Items 7 & 8: keyboard-only Tab walk from the profile name button through the cog and both alert rows, reading accessible
+ *  names off the Accessibility domain (never textContent), then Enter on Check to open HealthCheckDialog (item 5).
+ *  Returns `nameButtonAx`, which item 6's Dismiss fallback assertion still needs. */
 export async function runTabWalkAndHealthCheckDialogTest(cdp, { PROFILE_NAME_BUTTON, DIALOG_TITLE, DIALOG, OMP_CHECK_ROW }, evidenceDir, log) {
   await cdp.evaluate(`(() => { const el = ${PROFILE_NAME_BUTTON}; el?.focus(); return !!el; })()`);
   const nameButtonAx = await getActiveElementAccessibleName(cdp);
@@ -99,26 +81,11 @@ export async function runTabWalkAndHealthCheckDialogTest(cdp, { PROFILE_NAME_BUT
   return nameButtonAx;
 }
 
-/** Gate round 3 H1 regression test: a row that clears ON ITS OWN (the real condition resolving
- *  -- memory recovers, the omp version becomes verified -- never a user clicking Dismiss) while
- *  focus was inside it never redirected: the round-2 fix read `event.target.isConnected`
- *  SYNCHRONOUSLY inside `focusout`, but Chromium/WebView2 fires blur/focusout BEFORE the removed
- *  node is actually detached, so `isConnected` always read `true` at that exact moment even for a
- *  genuine removal -- the redirect never ran. The FIX itself (ProfileAlertRows.tsx) matches
- *  `FileExplorerPanel.tsx`'s own already-established `handleFocusOut` pattern exactly (defer the
- *  connectedness check one frame, via the shared `isFocusStranded`), so it is code-verified
- *  against a precedent this repo already trusts without a live-reproduction harness of its own.
- *
- *  Live reproduction needs the real memory/health condition to flip WHILE focus is already
- *  inside the row, with nothing else involved -- `window.__refractStores` (the dev-only map
- *  this repo's own `verify-tauri-569.mjs` already documented as unavailable here: a Tauri debug
- *  build still runs `vite build` in production mode per `tauri.conf.json`'s own
- *  `beforeBuildCommand`, so `import.meta.env.DEV` is false) would be the direct way, but does
- *  not exist in this build; the only OTHER real levers (actually exhausting the shared machine's
- *  free memory below the 2GB threshold, or relaunching with a different fake-omp version) are
- *  either unsafe for a shared machine or do not reproduce "while focus is inside it" at all.
- *  Reports NOT EXERCISED rather than silently skipping or falsely passing, the same honest-gaps
- *  convention this PR already uses for forced-colours rendering. */
+/** A row that clears on its own while focus is inside it must redirect focus. Chromium fires focusout before the removed node
+ *  detaches, so `isConnected` read synchronously is always true; the fix (ProfileAlertRows.tsx) defers the check one frame
+ *  like `FileExplorerPanel.tsx`'s `handleFocusOut`. Live reproduction needs the condition to flip while focus is inside, but
+ *  `window.__refractStores` is absent from a production-mode build and the other levers are unsafe on a shared machine,
+ *  so this reports NOT EXERCISED rather than skipping or falsely passing. */
 export async function runSelfClearingRowFocusRegressionTest(cdp, { TRIAGE_BUTTON, CHECK_BUTTON, LOW_MEMORY_ROW_SPAN, OMPVERSION_ROW_SPAN }, log, notExercised) {
   const devStoresAvailable = await cdp.evaluate(`typeof window.__refractStores !== 'undefined'`);
   if (!devStoresAvailable) {
@@ -133,8 +100,7 @@ export async function runSelfClearingRowFocusRegressionTest(cdp, { TRIAGE_BUTTON
     );
     return;
   }
-  // ---- Memory row clears on its own while Triage has focus -> falls back to the omp-version
-  // row's own Check button. ----
+  // Falls back to the omp-version row's Check button.
   await cdp.evaluate(`(() => { const el = ${TRIAGE_BUTTON}; el?.focus(); return !!el; })()`);
   const preMemorySelfClear = await getActiveElementAccessibleName(cdp);
   assert(
@@ -159,16 +125,13 @@ export async function runSelfClearingRowFocusRegressionTest(cdp, { TRIAGE_BUTTON
   );
   log('STEP PASS: the low-memory row clearing ON ITS OWN (store flipped directly, never Dismiss) while Triage had focus redirects to the omp-version row\'s own Check button, holding at least a second later (H1).');
 
-  // Real condition is still forced low (REFRACT_FORCE_LOW_MEMORY=1); the real sampler re-reports
-  // it within its own 5s SAMPLE_INTERVAL_MS -- restores the row so every later assertion in this
-  // script sees it exactly as before this test ran.
+  // The real sampler re-reports the still-forced low memory within its 5s SAMPLE_INTERVAL_MS; this restores the row for later assertions.
   await cdp.waitFor(LOW_MEMORY_ROW_SPAN + ' !== undefined', {
     timeoutMs: 10_000,
     label: 'low-memory row reappears once the real sampler tick re-reports the still-true condition'
   });
 
-  // ---- omp-version row clears on its own while Check has focus -> falls back to the
-  // low-memory row's own Triage button. ----
+  // Falls back to the low-memory row's Triage button.
   await cdp.evaluate(`(() => { const el = ${CHECK_BUTTON}; el?.focus(); return !!el; })()`);
   const preOmpSelfClear = await getActiveElementAccessibleName(cdp);
   assert(
@@ -193,10 +156,7 @@ export async function runSelfClearingRowFocusRegressionTest(cdp, { TRIAGE_BUTTON
   );
   log('STEP PASS: the omp-version row clearing ON ITS OWN (store flipped directly, never Dismiss) while Check had focus redirects to the low-memory row\'s own Triage button, holding at least a second later (H1).');
 
-  // `readiness.ts`'s own check never re-runs on its own, unlike memory's periodic sampler, so
-  // this row is restored manually to its EXACT original shape/value (fake-omp's hardcoded
-  // 18.10.1) rather than waited for, so the Tab-walk/Health-check/Item-6-Dismiss tests below see
-  // it exactly as readiness.rs's own real check first set it.
+  // `readiness.ts` never re-runs on its own (unlike memory's sampler), so restore the row manually to fake-omp's hardcoded 18.10.1 for the later tests.
   await cdp.evaluate(`window.__refractStores.health.setState({ ompVersionWarning: { ok: true, found: '18.10.1', warning: true } })`);
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' !== undefined', {
     timeoutMs: 5_000,
@@ -204,32 +164,10 @@ export async function runSelfClearingRowFocusRegressionTest(cdp, { TRIAGE_BUTTON
   });
 }
 
-/** Gate round 2 F2 regression tests: a failed Stop must be announced as a failure, never
- *  success, naming the failing Session(s) -- the exact bug the previous version of this fix had
- *  (`stopAgent` resolved `void` unconditionally, so a clean `{ok:false}` response was always
- *  announced as "Stopped"; in bulk, filtering on `status === 'rejected'` never matched a clean
- *  failure either, so a partly-failed bulk stop always reported every target as stopped).
- *
- *  Forced scratch-safely: `window.refract.sessions.stopAgent` (the exact boundary
- *  `sessions-store.ts` calls) is monkey-patched in the renderer to resolve `{ok:false}` for one
- *  specific Session id -- the same established technique verify-tauri-560.mjs's own
- *  `runChecks` already uses to count real calls, applied here to inject a controlled failure
- *  instead. NO process is touched (not the real backend, not any child process, let alone
- *  Stuart's own) -- the real IPC call for the targeted id is never even dispatched, which is
- *  both safer and more deterministic than killing a specific child process to induce the same
- *  symptom.
- *
- *  Single AND bulk both reuse the SAME one Session (sessionC), never a second concurrently-idle
- *  one: this harness forces `REFRACT_FORCE_LOW_MEMORY=1` for the whole run (#560's own
- *  low-memory alert row needs it), and issue #512's real "defer a new agent start while memory
- *  is low AND another agent is already spawned" feature (`start_queue.rs`'s own
- *  `spawned_in_flight() > 0` check) then defers any SECOND concurrently-live Session's start for
- *  up to its own 60s `MEMORY_DEFER_CEILING_MS` -- confirmed live (two separate runs) racing this
- *  script's own 60s wait for the same session to become ready. Not a flake to work around: a
- *  real feature this test would otherwise have to fight. Bulk with a single target (matching the
- *  pre-existing bulk test's own n=1 precedent above) still fully exercises
- *  `handleConfirmBulkStop`'s failure path -- the id-to-name lookup, the per-id outcome mapping,
- *  the notify() toast, and the announce() -- without needing a second live Session at all. */
+/** A failed Stop must be announced as a failure naming the failing Session(s), not "Stopped" (`stopAgent` once resolved void unconditionally).
+ *  `sessions.stopAgent` is monkey-patched in the renderer to resolve `{ok:false}` for one Session id, so no real process is touched.
+ *  Single and bulk both reuse one Session: with `REFRACT_FORCE_LOW_MEMORY=1` for the run, #512's start deferral (`start_queue.rs`
+ *  `spawned_in_flight() > 0`, up to 60s `MEMORY_DEFER_CEILING_MS`) would stall any second concurrently-live Session. */
 export async function runForcedStopFailureRegressionTests(
   cdp,
   { repoName, sessionA, sessionB, evidenceDir, DIALOG_TITLE, ALERT_DIALOG_TITLE, ALERT_DIALOG, DIALOG, TRIAGE_BUTTON, CHAT_AREA_ANNOUNCE_REGION },
@@ -268,19 +206,11 @@ export async function runForcedStopFailureRegressionTests(
   await cdp.waitFor(sessionCRow + ' !== undefined', { timeoutMs: 5_000, label: `Session "${sessionC.name}" must STILL be listed in Triage (the forced failure never actually stopped it)` });
   log(`STEP PASS: a forced single Stop failure is announced truthfully as ${JSON.stringify(announceAfterForcedFailure)} (never success), and the Session stays listed since it was never actually stopped (F2).`);
 
-  // Bulk forced failure: the SAME Session (sessionC, still the only idle one) via "Stop idle"
-  // instead of its own per-row Stop -- proves `handleConfirmBulkStop`'s failure path separately
-  // from `handleConfirmStop`'s (different code, same store call underneath). See this
-  // function's own doc comment above for why this never needs a second concurrently-idle
-  // Session.
-  // Gate round 3 fix (M3): clears the live region FIRST -- the single-failure test above
-  // already left this exact text ("Couldn't stop {sessionC.name}'s agent") sitting there, so
-  // without this, a regressed announce() call here (or none at all) could still read back as a
-  // false pass purely from the leftover text, not from anything this bulk action actually did.
+  // Bulk path exercises `handleConfirmBulkStop`'s failure path, separate from `handleConfirmStop`'s, via the same Session.
+  // Clear the live region first: the single-failure text would otherwise read back as a false pass.
   await cdp.evaluate(`(() => { const el = ${CHAT_AREA_ANNOUNCE_REGION}; if (el) el.textContent = ''; })()`);
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
-  // Gate round 3 (L4): a bulk confirm targeting exactly one Session now reuses the single-stop
-  // wording verbatim, not "Stop 1 idle agent?".
+  // A bulk confirm targeting one Session reuses the single-stop wording.
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionC.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'bulk forced-failure confirmation opened' });
   await sleep(300); // settle-sleep race guard: see verify-tauri-560.mjs's own bulk-confirm comment
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
