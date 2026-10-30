@@ -136,14 +136,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // An inert overlay can't act as a `placeholder` for assistive tech, so its text is exposed via `aria-describedby` (#533).
   const composerHintId = `${sessionId}-composer-hint`
 
-  const statusRef = useRef(status)
-  statusRef.current = status
-  const sessionIdRef = useRef(sessionId)
-  sessionIdRef.current = sessionId
-  // Window-level listener, one per mounted MessageInput: gated so only the focused pane acts in a split (FR-010).
-  const isFocusedPane = useSplitStore((s) => s.paneSessionIds.length < 2 || s.paneSessionIds[s.focusedIndex] === sessionId)
-  const isFocusedPaneRef = useRef(isFocusedPane)
-  isFocusedPaneRef.current = isFocusedPane
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // #897: Chromium fires no blur when a focused element unmounts, so this still reads true after
   // Stop disappears at the end of a turn.
@@ -226,18 +218,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   useLayoutEffect(() => {
     setSlashActiveIndex(0)
   }, [slashMenuKey])
-  // Ctrl+Shift+X stops the running turn, acting only on the focused pane in a split (FR-010).
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (!event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== 'x') return
-      event.preventDefault()
-      if (!isFocusedPaneRef.current) return
-      if (statusRef.current !== 'working') return
-      void stopAndRestore(sessionIdRef.current, () => textareaRef.current?.focus())
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
 
   /** `overrideText` sends that text at once; `text` is this render's stale closure value (#938). */
   async function handleSend(overrideText?: string) {

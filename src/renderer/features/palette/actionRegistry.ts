@@ -13,6 +13,8 @@ export interface PaletteAction {
   icon?: LucideIcon
   chord?: Chord
   aliasChord?: Chord
+  /** Chord fires even with an overlay open or on key repeat, and is swallowed when `when()` is false. */
+  chordUnguarded?: boolean
   /** Extra words the fuzzy search also matches. */
   keywords?: readonly string[]
   /** Read at call time from store state, so the answer is never stale. */

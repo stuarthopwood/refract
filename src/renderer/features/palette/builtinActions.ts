@@ -35,6 +35,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     label: 'Stop',
     group: 'Message box',
     chord: ['Ctrl', 'Shift', 'X'],
+    chordUnguarded: true,
     keywords: ['cancel', 'turn', 'interrupt'],
     when: () => focusedSession()?.status === 'working',
     run: () => {

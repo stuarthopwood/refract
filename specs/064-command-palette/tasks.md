@@ -14,7 +14,7 @@
 - [x] T009 `icon` on menu items and registry actions (FR-11, FR-12).
 - [x] T010 `actionMenuItem` and `textEditItems` builders (FR-10).
 - [ ] T011 Migrate the menus listed in FR-13 to icons and builders (FR-13, FR-14).
-- [ ] T012 Route the window-level chords through the registry (FR-15).
+- [x] T012 Route the window-level chords through the registry (FR-15).
 - [ ] T013 Native context-menu block, repo header menu, one-open-menu (FR-17 to FR-19).
 - [ ] T014 Docs (FR-20); `docs/PLAN.md` row and #1404 and #1405 lines.
 - [ ] T015 `pnpm ci:local`, quality gate, live check (SC-5 to SC-9).
