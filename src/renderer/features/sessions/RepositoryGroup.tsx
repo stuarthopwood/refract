@@ -16,7 +16,7 @@ import { notify, useRepositoriesStore, useSessionListStore, useSessionsStore, us
 import type { SessionSummary } from '../../../shared/ipc'
 import type { ProjectColor, Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
-import { GroupHeaderTrigger } from './GroupHeader'
+import { GroupHeaderRow, GroupHeaderTrigger } from './GroupHeader'
 import { githubRemoteSlug, remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
 import { ProjectColorPopover } from './ProjectColorPopover'
 import { ReportIssueDialog } from './ReportIssueDialog'
@@ -194,7 +194,7 @@ export function RepositoryGroup({
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>
         <ContextMenu>
         <ContextMenuTrigger asChild disabled={renaming}>
-        <div ref={headerRowRef} className="group flex items-center gap-1 px-1">
+        <GroupHeaderRow ref={headerRowRef} plain={renaming}>
           {renaming ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <input
@@ -301,7 +301,7 @@ export function RepositoryGroup({
               <DropdownActionItems actions={actions} />
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+        </GroupHeaderRow>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
           <ContextActionItems actions={actions} />

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 interface CountBadgeProps {
   value: number
-  tone?: 'working' | 'neutral'
+  tone?: 'accent' | 'neutral'
   className?: string
 }
 
@@ -15,7 +15,7 @@ export function CountBadge({ value, tone = 'neutral', className }: CountBadgePro
       aria-hidden
       className={cn(
         'pointer-events-none absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-xs leading-none font-medium tabular-nums forced-colors:border-[CanvasText]',
-        tone === 'working' ? 'border-transparent bg-state-working text-state-working-foreground' : 'border-border bg-muted text-foreground',
+        tone === 'accent' ? 'border-transparent bg-primary text-primary-foreground' : 'border-border bg-muted text-foreground',
         className
       )}
     >

@@ -157,7 +157,7 @@ function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonR
         >
           <Icon aria-hidden />
           {pressed && <ActiveIndicatorBar />}
-          {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'working' : 'neutral'} />}
+          {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'accent' : 'neutral'} />}
         </Button>
       </TooltipTrigger>
       <TooltipContent side="left">{label}</TooltipContent>

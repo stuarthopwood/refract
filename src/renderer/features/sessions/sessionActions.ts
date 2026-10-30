@@ -5,7 +5,6 @@ import {
   CopyIcon,
   EyeIcon,
   EyeOffIcon,
-  FolderOpenIcon,
   PauseIcon,
   PencilIcon,
   PlayIcon,
@@ -15,6 +14,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import type { SessionSummary } from '../../../shared/ipc'
+import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { canTogglePause } from '../chat/pauseActions'
 
 /** A session row menu entry: a separator or an item. */
@@ -62,7 +62,7 @@ export function buildSessionRowActions(
     { kind: 'item', key: 'rename', icon: PencilIcon, label: 'Rename', onSelect: handlers.onRename },
     { kind: 'item', key: 'open-in-split', icon: Columns2Icon, label: 'Open in split', onSelect: handlers.onOpenInSplit },
     { kind: 'item', key: 'copy-path', icon: CopyIcon, label: 'Copy worktree path', onSelect: handlers.onCopyPath },
-    { kind: 'item', key: 'reveal', icon: FolderOpenIcon, label: 'Open worktree folder', onSelect: handlers.onReveal },
+    { kind: 'item', key: 'reveal', icon: RevealActionIcon, label: REVEAL_ACTION_LABEL, onSelect: handlers.onReveal },
     session.hiddenAt
       ? { kind: 'item', key: 'unhide', icon: EyeIcon, label: 'Unhide', onSelect: handlers.onUnhide }
       : { kind: 'item', key: 'hide', icon: EyeOffIcon, label: 'Hide', onSelect: handlers.onHide },
