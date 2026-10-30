@@ -36,7 +36,7 @@ export function ToolRowKebab({ item, open, onOpenChange }: Omit<ToolRowMenuProps
   return (
     <TranscriptKebab
       items={toolRowItems(item, open, onOpenChange)}
-      className="mt-0.5 opacity-0 transition-opacity motion-reduce:transition-none focus-visible:opacity-100 group-focus-within/transcript-menu:opacity-100 group-hover/transcript-menu:opacity-100 data-[state=open]:opacity-100"
+      className="opacity-0 transition-opacity motion-reduce:transition-none focus-visible:opacity-100 group-focus-within/transcript-menu:opacity-100 group-hover/transcript-menu:opacity-100 data-[state=open]:opacity-100"
     />
   )
 }
