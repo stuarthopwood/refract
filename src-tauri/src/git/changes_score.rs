@@ -95,8 +95,8 @@ pub(super) async fn resolve_untracked_entry(
         Err(_) => return Ok(UntrackedEntry::Missing),
     };
     if link_metadata.file_type().is_symlink() {
-        // A symlink's target is re-proven inside the worktree with a full-chain resolution. The
-        // target text comes from a single-hop `read_link`, never the far end of a chain.
+        // Never read through the link (its target can be a UNC path, i.e. an NTLM/SMB request);
+        // `read_link` is single-hop text only.
         resolve_in_worktree_with_root(&root_real, &unresolved_root, &path).await?;
         return Ok(match tokio::fs::read_link(&resolved).await {
             Ok(target) => UntrackedEntry::Symlink {

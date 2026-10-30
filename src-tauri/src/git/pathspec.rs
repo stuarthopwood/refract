@@ -8,7 +8,7 @@ use super::git::{GitError, GitErrorCode};
 
 /// Refuses an unsafe pathspec before it reaches a `git` argv; lexical only, no disk access.
 // Lexical (not canonicalize): the path may not exist yet (deleted-but-staged, or being restored).
-// Untracked-file reads in `changes_diff.rs` add their own symlink-aware check on top.
+// A leading `-` is option injection and `..` is traversal; untracked reads add a symlink check.
 pub(super) fn validate_pathspec(worktree_path: &Path, path: &str) -> Result<(), GitError> {
     let refuse = || {
         GitError::new(

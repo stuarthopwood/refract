@@ -221,6 +221,7 @@ async fn resolve_no_follow(
         rest.append(&mut queue);
         queue = rest;
         current = matched_root_path.to_path_buf();
+        // `current` restarts from `root` below.
         let _ = &current;
         current = root.to_path_buf();
     }
