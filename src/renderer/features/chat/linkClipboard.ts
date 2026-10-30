@@ -6,10 +6,10 @@ import { copyDecision } from '@/lib/clipboard-copy-decision'
 // Same sanitising and try order as `CopyButton` (so the button and the menu put identical text on
 // the clipboard): the renderer's own Clipboard API first, then main's allowlisted clipboard channel
 // when the webview refuses it.
-export async function copyLinkText(text: string, successMessage: string): Promise<void> {
+export async function copyLinkText(text: string, successMessage: string, nothingMessage = 'Nothing to copy: this link only contains hidden characters'): Promise<void> {
   const decision = copyDecision(sanitiseForClipboard(text))
   if (decision.kind === 'nothing') {
-    notify({ code: 'clipboard-failed', message: 'Nothing to copy: this link only contains hidden characters' })
+    notify({ code: 'clipboard-failed', message: nothingMessage })
     return
   }
   try {

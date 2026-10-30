@@ -20,6 +20,8 @@ export interface PaletteAction {
   /** Read at call time from store state, so the answer is never stale. */
   when(): boolean
   run(): void
+  /** Appears in menus only: the caller supplies `onSelect` for its own target, so the palette and chords skip it. */
+  menuOnly?: boolean
 }
 
 const registry = new Map<string, PaletteAction>()
@@ -32,9 +34,9 @@ export function registerActions(actions: readonly PaletteAction[]): () => void {
   }
 }
 
-/** Every registered action in registration order. */
+/** Every palette-visible action in registration order (menu-only actions are left out). */
 export function getActions(): PaletteAction[] {
-  return [...registry.values()]
+  return [...registry.values()].filter((action) => !action.menuOnly)
 }
 
 /** Looks an action up by id. */

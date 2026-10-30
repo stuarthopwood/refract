@@ -82,6 +82,13 @@ export function messagePositionAnnouncement(index: readonly NavMessage[], messag
 
 export type StepDirection = 'previous' | 'next'
 
+/** The nearest `user` message before `messageId`: the prompt an agent reply answers; null when none. */
+export function precedingUserMessageId(index: readonly NavMessage[], messageId: string): string | null {
+  const position = index.findIndex((message) => message.id === messageId)
+  for (let i = position - 1; i >= 0; i -= 1) if (index[i]!.kind === 'user') return index[i]!.id
+  return null
+}
+
 export interface StepTargetInput {
   direction: StepDirection
   /** Navigable message ids in transcript order. */
