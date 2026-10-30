@@ -1,149 +1,71 @@
-// Shared theme metadata (spec 007 data-model.md "New shared types", contracts/ipc.md
-// "Non-IPC: shared theme data"): imported directly by main, preload, and renderer -- the
-// existing shared-module pattern (plan.md "Source code"), never served over IPC (research.md
-// decision 3). The actual colour VALUES stay as CSS custom properties in
-// `src/renderer/styles/globals.css`, one class per theme (`.theme-<id>`, e.g. `.theme-dark`,
-// `.theme-dark-high-contrast`); this file only carries the small, reasoned metadata every
-// process needs: the picker's name/swatch, which Shiki theme a code block uses, and the
-// title-bar overlay colour main applies.
+// Shared theme metadata for main, preload and renderer. Colour values live in globals.css
+// (`.theme-<id>`); this carries the picker name/swatch, Shiki theme and title-bar overlay colour.
 
 /** The one Shiki theme whose colours are CSS custom properties (#456). */
 export const CSS_VARIABLES_SYNTAX_THEME = 'css-variables'
 
-/** Additive: a further dark preset adds a key here, never removes `dark` or
- * `dark-high-contrast` (research.md decision 1). No `mode` field anywhere in this module --
- * every built-in theme is dark-toned, so there is nothing left to distinguish by mode. */
+/** Additive: a further dark preset adds a key; every built-in theme is dark-toned, so there is no `mode`. */
 export type ThemeId = 'dark' | 'dark-high-contrast' | 'obsidian' | 'nordic-frost' | 'cyber-amber'
 
 export interface ThemeDefinition {
   id: ThemeId
-  /** Shown in the picker next to the swatch, e.g. "Dark", "Dark (high contrast)". */
+  /** Shown in the picker next to the swatch. */
   name: string
-  /** A representative CSS colour shown next to `name` in the picker -- each theme's own
-   * `--background` value, so the swatch is literally that theme's real window colour rather
-   * than an arbitrary accent. */
+  /** The theme's own `--background` value, shown next to `name` in the picker. */
   swatch: string
-  /** #1043 (ui-architect-v3 swatch ruling, 2026-10-20): the theme's own `--primary` value,
-   * literal (matches globals.css's `.theme-<id>` block, same hand-conversion precedent `swatch`
-   * above already sets), paired with `swatch` as a two-colour landscape preview chip after the
-   * Theme submenu row's name (`ProfileMenu.tsx`'s `ThemeSubmenu`) -- never a round shape, so it
-   * is never mistaken for the row's own leading radio mark. */
+  /** The theme's `--primary` value (literal, matching globals.css), paired with `swatch` as a landscape chip (#1043). */
   swatchPrimary: string
   /** A Shiki bundled theme id, or `css-variables` (#456): colours then come from the preset's own `--syntax-*` tokens in globals.css (Dark (high contrast) keeps its bundled Shiki theme). */
   syntaxTheme: string
-  /** `BrowserWindow.setTitleBarOverlay` colours (spec 001 T100); `height` is theme-independent
-   * window-chrome geometry, so it stays a constant in `titleBarOverlay.ts`, not here. */
+  /** `BrowserWindow.setTitleBarOverlay` colours; `height` lives in `titleBarOverlay.ts`. */
   titleBarOverlay: {
     color: string
     symbolColor: string
   }
 }
 
-/** Picker order (FR-001): `dark`, `dark-high-contrast`, then any further preset in declaration
- * order -- `Object.values(THEMES)` below preserves insertion order for string keys. */
+/** Picker order: `Object.values(THEMES)` preserves insertion order. */
 export const THEMES: Record<ThemeId, ThemeDefinition> = {
   dark: {
     id: 'dark',
     name: 'Dark',
-    // Matches `.theme-dark`'s own `--background: oklch(0.145 0 0)` (globals.css), converted by
-    // hand the same way `titleBarOverlay.ts` already converts it for Electron's sRGB-only API.
     swatch: '#0a0a0a',
     swatchPrimary: '#e5e5e5',
-    // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
-    // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'css-variables',
-    // #1074 (app-wide text-opacity softening): `--foreground` is now translucent
-    // (`oklch(1 0 0 / 90%)`, globals.css), but `setTitleBarOverlay` takes an opaque hex with no
-    // alpha channel, so this is hand-recomputed to the real composited colour -- white at 90%
-    // alpha over this theme's own `--titlebar` (#682, the Chrome band surface; `color` equals it) -- not the raw pre-alpha value. Verified
-    // against `check-theme-contrast.mjs`'s own `symbolColor` drift check.
+    // setTitleBarOverlay takes opaque hex, so `symbolColor` is `--foreground` (white at 90%) composited over `--titlebar`
+    // (#1074, #682); `check-theme-contrast.mjs` verifies the drift.
     titleBarOverlay: { color: '#171717', symbolColor: '#e8e8e8' }
   },
   'dark-high-contrast': {
     id: 'dark-high-contrast',
     name: 'Dark (high contrast)',
-    // Matches `.theme-dark-high-contrast`'s own `--background` (pure black, globals.css) -- a
-    // deliberately starker background than `dark`'s, maximising the margin above the WCAG AA
-    // contrast floors every built-in theme must clear.
     swatch: '#000000',
     swatchPrimary: '#ffffff',
     syntaxTheme: 'github-dark-high-contrast',
     titleBarOverlay: { color: '#090909', symbolColor: '#ffffff' }
   },
-  // #550 (theme foundation, palette v2): a further dark preset, additive per the module comment
-  // above -- the mock's own Obsidian canvas and palette, taken literally (`.theme-obsidian`,
-  // globals.css): a blue-tinted slate canvas, very slightly lighter than `dark`'s near-black
-  // (`#0a0a0a`), not darker -- `#0F1014`'s relative luminance (~0.0052) is marginally above
-  // `#0a0a0a`'s (~0.0030).
   obsidian: {
     id: 'obsidian',
     name: 'Obsidian',
     swatch: '#0F1014',
     swatchPrimary: '#5A5EEE',
-    // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
-    // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'css-variables',
-    // #1074: see `dark`'s own `titleBarOverlay` comment above -- same rationale, this preset's
-    // own composited colour (white at 90% alpha over `#0F1014`).
     titleBarOverlay: { color: '#1c1f28', symbolColor: '#e8e9e9' }
   },
-  // #551 (Nordic Frost / Cyber Amber dark presets): two further additive dark presets, built
-  // out in full the same way #550 built Obsidian. Shiki theme choice (one of #551's own open
-  // questions) -- **Decided (Skippy, delegated by Stuart 2026-10-18, revised at gate round 1):
-  // both reuse `github-dark`.** Shiki's bundled `nord` theme was tried first for Nordic Frost
-  // (an unambiguous name/palette match), but gate round 1 measured its own comment colour at
-  // only 2.43:1 against this preset's `--card` -- under the 3:1 non-text floor every other
-  // code-block surface in this app clears -- so it is reverted to `github-dark`, the same
-  // "defer precise code-block tuning, Mermaid/Shiki colours are explicitly out of this story's
-  // scope" precedent #550 set for Obsidian. Cyber Amber has no comparably-matching bundled
-  // Shiki theme either, so it reuses `github-dark` too. A follow-up (filed separately as #975)
-  // tracks giving each preset's code blocks their own `--card`-matched background instead of
-  // reusing whatever a bundled Shiki theme ships with.
-  //
-  // #975 (the above follow-up, resolved): every code block's background now follows the
-  // active preset's own `--card` (`Markdown.tsx`'s `CodeBlock`/`CodeBlockHeader`), not
-  // whatever the chosen Shiki theme ships with -- Shiki's own root background is neutralised
-  // via a `colorReplacements` override keyed on the loaded theme's own resolved `.bg` (probed
-  // against the installed `shiki@4.4.3`: `codeToHtml`'s `colorReplacements` option substitutes
-  // any literal colour -- including the root background -- throughout the rendered HTML, the
-  // one documented per-call override Shiki exposes; `structure: 'inline'` was the only other
-  // candidate but drops the `<pre>`/`<code>` wrapper the `[&>pre]:` selectors below depend on).
-  // Keeping only `github-dark`'s own TOKEN colours (never hand-picking one) turned out to be
-  // impossible at the new 4.5:1 floor every token colour must now clear: `github-dark`'s own
-  // comment colour (`#6a737d`, relative luminance ~0.168) caps out at ~4.36:1 against a literal
-  // PURE BLACK background -- below 4.5:1 regardless of how dark any real preset's `--card`
-  // is -- so no amount of retuning any preset's own surface token could ever fix it (the
-  // decision's other listed remedy). Swapped to `github-dark-default` instead (GitHub's own
-  // newer theme, same vendor family/aesthetic): its comment colour (`#8b949e`) clears 4.5:1
-  // against every built-in preset's `--card` with margin (worst case Obsidian, 5.35:1; see
-  // `scripts/check-theme-contrast.mjs`'s own Shiki-token check, added by this issue). Dark and
-  // Obsidian (both `github-dark` too, same under-floor comment colour) move to
-  // `github-dark-default` for the same reason -- this was never scoped to Nordic Frost/Cyber
-  // Amber alone once the background actually changed. `dark-high-contrast`'s own
-  // `github-dark-high-contrast` is untouched: its comment colour (`#bdc4cc`) already clears
-  // 4.5:1 against its own `--card` with large margin (11.31:1).
+  // Code-block backgrounds follow each preset's `--card` (via Shiki `colorReplacements`), and `css-variables` keeps
+  // token colours clearing the 4.5:1 floor, which `github-dark`'s comment colour cannot (#975).
   'nordic-frost': {
     id: 'nordic-frost',
     name: 'Nordic Frost',
-    // Matches `.theme-nordic-frost`'s own `--background` (globals.css): a deep navy canvas.
     swatch: '#060f1e',
     swatchPrimary: '#007a7c',
     syntaxTheme: 'css-variables',
-    // #1074: see `dark`'s own `titleBarOverlay` comment above -- this preset's own composited
-    // colour (white at 90% alpha over `#060f1e`).
     titleBarOverlay: { color: '#101b2b', symbolColor: '#e7e8ea' }
   },
   'cyber-amber': {
     id: 'cyber-amber',
     name: 'Cyber Amber',
-    // Matches `.theme-cyber-amber`'s own `--background` (globals.css): byte-identical to
-    // `.theme-dark`'s own near-black canvas -- a dependency `scripts/check-theme-contrast.mjs`
-    // now enforces (#1256): change Dark's background and that check fails until Cyber Amber's
-    // (and this swatch) follow. (#1039, 2026-10-20: every surface is pure neutral,
-    // chroma 0, no warm tint anywhere; text was retuned softer then fully reverted the same
-    // day -- Stuart moved text softening to a separate, app-wide issue, #1074, which landed it
-    // here instead -- so `--foreground`/`symbolColor` below are byte-identical with Dark's own
-    // again, just at #1074's new alpha/composited values rather than #1039's original ones).
+    // Byte-identical to Dark's background; `check-theme-contrast.mjs` fails until both follow (#1256).
     swatch: '#0a0a0a',
     swatchPrimary: '#c2410c',
     syntaxTheme: 'css-variables',
@@ -151,10 +73,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   }
 }
 
-// Quality-gate remediation (security-auditor, HIGH): the strict own-property check `theme.ts`
-// already used, now shared by every site that validates an untrusted/persisted theme id
-// (`isThemeId`, not the weaker `in` operator, which also matches a name inherited from
-// `Object.prototype` -- e.g. a hand-corrupted settings.json with `"theme": "toString"`).
+/** Strict own-property check for untrusted theme ids; `in` would match inherited names like `toString`. */
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEMES, value)
 }

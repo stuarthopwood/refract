@@ -1,40 +1,18 @@
 import { create } from 'zustand'
 
-// New for #572: picks for the ask card's structured dialog (`PendingRequest` kind `ask`),
-// keyed by sessionId then requestId (decision D27), matching `draft-store.ts`'s own
-// `bySession: Record<string, T>` shape and its reasoning (nothing here is ever pushed from
-// main, only typed/clicked locally). Survives switching Sessions, panes, and Settings; cannot
-// survive an app or OMP restart (`PendingRequest` does not survive a process restart,
-// `src/shared/model.ts:547`) -- a restart simply never restores this store's entry for a
-// requestId that no longer has a live pending request, so there is nothing to clear on restart.
-// Gate-fix (round 1, Medium): `clear` is called from ONE place, `init-stores.ts`'s own
-// `onRequestResolved` handler, the single IPC event Rust emits for every resolution path alike
-// (a user Submit or Cancel, an OMP `cancel` frame, a timeout-triggered auto-answer, a turn
-// settle) -- not from this card's own Submit/Cancel handlers, which would have missed every path
-// that does not go through them.
+// Ask-card picks keyed by sessionId then requestId. Cleared only from init-stores.ts's
+// `onRequestResolved`, the one event emitted for every resolution path (submit, cancel, timeout, settle).
 
 export interface AskDraftQuestion {
-  /** Single choice: at most one label, the chosen real option; empty while Other is the active
-   * pick. Multiple choice: any number of ticked option labels, never including "Other" itself. */
+  /** Single choice: at most one chosen option; empty while Other is active. Multiple: ticked options, never "Other". */
   selectedOptions: string[]
-  /** Free text typed into the always-visible Other input. A single-choice question keeps this
-   * on screen even after a real option is clicked afterwards (decision D12), so it never
-   * silently disappears; only `otherSelected`/`otherTicked` below decide whether it is sent. */
+  /** Other-input text; kept on screen after a real option is picked, but only sent per `otherSelected`/`otherTicked`. */
   customInput: string
-  /** Single choice only (ignored for multiple choice): true once Other is the active pick --
-   * either the user typed into it, or clicked its own radio row directly. Other is what Submit
-   * will send for this question while this is true. */
+  /** Single choice only: Other is the active pick (typed into, or its radio clicked). */
   otherSelected: boolean
-  /** Multiple choice only (ignored for single choice): whether the Other row's own checkbox is
-   * ticked, independent of whether its input already has text. Gate-fix (round 1, High): typing
-   * non-empty text auto-ticks it on the empty-to-non-empty transition (D4 "plus `customInput` if
-   * typed" -- text the user typed must never be silently dropped just because the box itself was
-   * never separately clicked); unticking afterwards still keeps the text on screen but stops it
-   * being sent, and does not re-tick on the next keystroke. */
+  /** Multiple choice only: Other's checkbox is ticked. Typing into an empty input auto-ticks it so text is never dropped; unticking keeps the text but stops sending it. */
   otherTicked: boolean
-  /** True once this question's tab has been opened at least once. A multiple-choice question
-   * counts as complete once viewed, even with nothing ticked (decision D13/D15: an empty
-   * multi-select answer is allowed). */
+  /** The tab has been opened once; a viewed multiple-choice question counts as complete even if empty. */
   viewed: boolean
 }
 
@@ -55,15 +33,13 @@ const EMPTY_ASK_DRAFT: AskDraft = { byQuestionId: {} }
 
 interface AskPicksState {
   bySession: Record<string, Record<string, AskDraft>>
-  /** Marks `questionId` as the open tab and, since opening a tab is the only way to "view" a
-   * multiple-choice question, also marks it viewed. */
+  /** Marks `questionId` as the open tab and viewed. */
   setActiveQuestion(sessionId: string, requestId: string, questionId: string): void
   selectSingleOption(sessionId: string, requestId: string, questionId: string, label: string): void
-  /** Single choice only: clicking the Other row's own radio directly, with no text typed yet. */
+  /** Single choice only: the Other radio clicked with no text yet. */
   selectOther(sessionId: string, requestId: string, questionId: string): void
   toggleMultiOption(sessionId: string, requestId: string, questionId: string, label: string): void
-  /** `multi` decides which precedence field (`otherSelected` vs the auto-tick on `otherTicked`)
-   * typing affects. */
+  /** `multi` picks which Other field typing affects. */
   setCustomInput(sessionId: string, requestId: string, questionId: string, text: string, multi: boolean): void
   toggleOtherTicked(sessionId: string, requestId: string, questionId: string): void
   clear(sessionId: string, requestId: string): void

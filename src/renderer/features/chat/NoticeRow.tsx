@@ -9,35 +9,24 @@ type NoticeLevel = Extract<TranscriptItem, { kind: 'notice' }>['level']
 const NOTICE_ICON = {
   info: InfoIcon,
   warning: TriangleAlertIcon,
-  // Gate round 1 (#997, Low): `components.md`'s own severity table calls the error shape an
-  // octagon (matching the Toaster's `OctagonXIcon`, `sonner.tsx`) -- `CircleAlertIcon` was the
-  // wrong shape for this severity, not just a different icon.
+  // Octagon matches the severity table in components.md and the Toaster.
   error: OctagonAlertIcon
 } as const satisfies Record<NoticeLevel, unknown>
 
 const NOTICE_CLASS = {
-  // Issue #997: these used to alias `--state-needs-you`/`--destructive` directly -- the same
-  // VALUES as `--severity-warning`/`--severity-error` in every theme (see `globals.css`), but
-  // the wrong NAME: a notice's colour is a severity, not a session state, and `ToolRow.tsx`/
-  // `subagentStatus.tsx` already use the `text-severity-*` tokens for the identical colour.
   info: 'text-muted-foreground',
   warning: 'text-severity-warning',
   error: 'text-severity-error'
 } as const satisfies Record<NoticeLevel, string>
 
-// Non-colour cue for severity (DESIGN.md: "including for screen readers"): the icon alone is
-// `aria-hidden` by default, so without this a screen reader hears every notice identically
-// regardless of level. Matches the `sr-only` "Running"/"Done"/"Failed" pattern ToolRow's
-// `StatusIcon` already uses.
+// Non-colour severity cue for screen readers; the icon is aria-hidden.
 const NOTICE_LABEL = {
   info: 'Info:',
   warning: 'Warning:',
   error: 'Error:'
 } as const satisfies Record<NoticeLevel, string>
 
-// Above this length (or any embedded line break), a notice is treated as "long" and rendered
-// expandable instead of one huge inline paragraph -- OMP sends notices like every mounted MCP
-// tool name as a single line of text.
+// Longer notices (or any with a line break) render expandable, e.g. OMP's one-line MCP tool list.
 const LONG_NOTICE_CHARS = 160
 
 interface NoticeRowProps {
@@ -45,15 +34,9 @@ interface NoticeRowProps {
   text: string
 }
 
-// A muted one-line notice on the T080 baseline (docs/DESIGN.md "Chat"); a short notice has
-// nothing to expand, a long one (or any embedded line break) expands to the full text, capped at
-// about 12 lines, so it never floods the transcript between the surrounding answers. The level's
-// icon shape, not colour alone, is the non-colour cue (info/warning/error).
+// A muted one-line notice; a long one expands to the full text, capped at about 12 lines.
 export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
-  // Defense in depth: `text` is typed `string`, but a malformed upstream producer (e.g. a
-  // structured RPC error object slipping past a type error) must never crash the whole chat
-  // pane via `.length`/`.includes` on a non-string -- this is exactly the bug FINDINGS recorded
-  // for `applyPromptResultNotice`, now fixed at the source, but this guard stays cheap insurance.
+  // Guards against a malformed producer sending a non-string, which would crash the pane on `.length`.
   const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText)
   const Icon = NOTICE_ICON[level]
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
@@ -70,10 +53,6 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
         icon={icon}
         summary={text}
         summaryClassName={NOTICE_CLASS[level]}
-        // Issue #938 item 3/FR-082: lets a short notice sitting close to the length threshold
-        // wrap in place instead of losing text to the ellipsis -- no chevron, nothing to expand
-        // (ui-architect-v3 roundtable ruling, 2026-10-18: an expand control that reveals nothing
-        // beyond the same clause re-wrapped would misrepresent the row's own structure).
         summaryWrap
       />
     )
@@ -84,13 +63,8 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       icon={icon}
       summary={text}
       summaryClassName={NOTICE_CLASS[level]}
-      // #565 decision 10/7: the label column moved from 30px to 32px when `CollapsedLine`'s
-      // icon slot widened 14px -> 16px; the column is now `pl-8` (32px) to stay aligned.
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
-       * summary above and the surrounding bookkeeping rows, instead of the ambient `--foreground`
-       * this previously set explicitly, which reads brighter than primary chat prose. */}
       <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</div>
     </CollapsedLine>
   )

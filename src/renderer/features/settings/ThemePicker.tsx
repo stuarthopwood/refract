@@ -1,14 +1,5 @@
-// Spec 007 US2: a keyboard-operable theme picker (FR-001, FR-002, FR-006) -- hand-rolled
-// `role="radiogroup"`/`role="radio"` using the classic roving-tabindex pattern: only the
-// currently-active entry sits in the Tab order, and arrow/Home/End keys move both focus and the
-// live preview together, matching how a native `<input type="radio">` list already behaves
-// (arrowing IS choosing, not just moving focus). Every preset renders in `THEMES`' own
-// declaration order (FR-001).
-// Quality-gate remediation (code-reviewer, Medium, issue #498, cycle 2): a `components/ui/
-// radio-group.tsx` primitive now exists (built for `MergeDialog.tsx`), but this picker is NOT
-// migrated to it -- that primitive's Home/End only move focus (Space selects), while this
-// picker's Home/End also live-previews immediately, same as its arrow keys; migrating would be a
-// user-visible behaviour change outside #498/#500's scope. Left as a follow-up.
+// Hand-rolled radiogroup (roving tabindex): arrows and Home/End both move focus and live-preview.
+// Not migrated to ui/radio-group.tsx, whose Home/End only move focus (#498).
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
@@ -21,9 +12,7 @@ import type { ThemeId } from '../../../shared/themes'
 const THEME_LIST = Object.values(THEMES)
 
 interface ThemePickerProps {
-  /** Issue #554 gate round 2 (L1): the group's accessible name/description now come from
-   * `AppearanceSection.tsx`'s own heading and hint `<p>`, matching `ChatWidthPicker`'s group --
-   * a bare `aria-label="Theme"` string duplicated the heading text instead of pointing at it. */
+  /** Ids of the heading and hint rendered in AppearanceSection. */
   labelledBy: string
   describedBy: string
 }
@@ -33,8 +22,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   const preview = useThemeStore((state) => state.preview)
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
 
-  // FR-002/FR-006 deviation note (2a): choosing the already-active entry is a deliberate no-op
-  // -- it never re-fires `preview` (which would otherwise round-trip over IPC for nothing).
+  // Choosing the active entry is a no-op so `preview` doesn't round-trip over IPC for nothing.
   function choose(id: ThemeId) {
     if (id === activeId) return
     preview(id)
