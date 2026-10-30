@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeftIcon, CheckCircle2Icon, FileWarningIcon, FolderIcon } from 'lucide-react'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { useGitChangesStore } from '@/state'
@@ -135,18 +136,16 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
           for an ACTION failure, and from the Not-available state's own role="alert" below
           (which has nothing else to show at all, so it IS the primary signal there). */}
       {snapshot && sessionEntry?.loadError && (
-        <p role="status" className="px-2 py-1 text-xs text-muted-foreground">
+        <InlineStatus tone="notice" density="compact">
           {sessionEntry.loadError}
-        </p>
+        </InlineStatus>
       )}
       <div className="flex-1 overflow-auto">
         {selected ? (
           <GitChangesDiffPane sessionId={sessionId} selection={selected} onBack={() => setSelected(null)} />
         ) : !snapshot ? (
           loading && !hasLoadedOnce ? (
-            <p role="status" className="p-2 text-sm text-muted-foreground">
-              Loading…
-            </p>
+            <InlineStatus tone="loading">Loading…</InlineStatus>
           ) : (
             <Empty className="h-full">
               <EmptyHeader>
@@ -286,13 +285,9 @@ function GitChangesDiffPane({
         <span className="shrink-0 text-xs text-muted-foreground">{group === 'untracked' ? 'Untracked' : staged ? 'Staged' : 'Unstaged'}</span>
       </div>
       {state === 'loading' ? (
-        <p role="status" className="p-2 text-sm text-muted-foreground">
-          Loading diff…
-        </p>
+        <InlineStatus tone="loading">Loading diff…</InlineStatus>
       ) : 'error' in state ? (
-        <p role="alert" className="p-2 text-sm text-destructive">
-          {state.error}
-        </p>
+        <InlineStatus tone="error">{state.error}</InlineStatus>
       ) : (
         <DiffViewFromPatch path={entry.path} patch={state.patch} reason={state.reason} additions={entry.additions} deletions={entry.deletions} hideFileName />
       )}

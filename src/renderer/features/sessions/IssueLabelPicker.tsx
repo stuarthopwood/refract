@@ -3,6 +3,7 @@
 // colour dot is decorative only (bordered, forced-colour safe); a label's colour is never a fill.
 import { useState } from 'react'
 import { TagIcon, XIcon } from 'lucide-react'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CHECKBOX_BOX_CLASS, CHECKBOX_LIST_ITEM_CLASS, CheckboxIndicator, CheckboxItem } from '@/components/ui/checkbox'
@@ -64,7 +65,7 @@ export function IssueLabelPicker({ labels, selected, onChange, disabled, unavail
           <PopoverContent align="start" className="flex w-72 flex-col gap-2 p-2">
             <SearchField label="Filter labels" placeholder="Filter labels…" value={filter} onValueChange={setFilter} />
             <div role="group" aria-label="Labels" className="flex max-h-56 flex-col gap-1 overflow-y-auto">
-              {visible.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">No matching labels</p>}
+              {visible.length === 0 && <InlineStatus density="compact">No matching labels</InlineStatus>}
               {visible.map((label) => (
                 <CheckboxItem
                   key={label.name}
