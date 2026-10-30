@@ -1,14 +1,14 @@
 # Tasks 068
 
-- [ ] T1 #1422 GroupHeaderRow and three call sites
-- [ ] T2 #1416 Show hidden reset (toggle effect, start-up check, shared focus helper)
-- [ ] T3 #1418 ghost buttons
-- [ ] T4 #1420 revealAction.ts and four surfaces, docs
-- [ ] T5 #1428 accent tone
-- [ ] T6 #1424 remove preview and Save/Cancel
-- [ ] T7 docs/PLAN.md rows
-- [ ] T8 ci:local, check:ui-text, live check with screenshots
-- [ ] T9 quality gate
+- [x] T1 #1422 GroupHeaderRow and three call sites
+- [x] T2 #1416 Show hidden reset (toggle effect, start-up check, shared focus helper)
+- [x] T3 #1418 ghost buttons
+- [x] T4 #1420 revealAction.ts and four surfaces, docs
+- [x] T5 #1428 accent tone
+- [x] T6 #1424 remove preview and Save/Cancel
+- [x] T7 docs/PLAN.md rows
+- [x] T8 ci:local, check:ui-text, live check with screenshots
+- [x] T9 quality gate
 
 ## Analysis
 
