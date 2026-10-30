@@ -49,13 +49,12 @@ export function useExclusiveMenu(openProp: boolean | undefined, defaultOpen: boo
     }
   }, [open, id])
 
-  useEffect(
-    () =>
-      subscribe(() => {
-        if (openRef.current && openId !== null && openId !== id) changeRef.current(false)
-      }),
-    [id]
-  )
+  useEffect(() => {
+    if (!open) return
+    return subscribe(() => {
+      if (openRef.current && openId !== null && openId !== id) changeRef.current(false)
+    })
+  }, [open, id])
 
   return { open, onOpenChange: change }
 }
