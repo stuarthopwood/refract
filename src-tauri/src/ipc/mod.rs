@@ -38,6 +38,7 @@ pub mod file_explorer;
 pub mod files;
 pub mod git_changes;
 pub mod images;
+pub mod home;
 pub mod issues;
 pub mod model;
 pub mod model_roles;
@@ -197,6 +198,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings_default_clone_folder::register(dispatcher);
     sessions_lifecycle::register(dispatcher);
     sessions_visibility::register(dispatcher);
+    home::register(dispatcher);
     issues::register(dispatcher);
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
