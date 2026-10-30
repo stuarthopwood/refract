@@ -1,13 +1,14 @@
 // Spec 060 S2-14: the top-level Usage view (left nav, same shell as Pull requests and Issues).
 // Opening it starts the backfill and the rescan; leaving it stops the rescan. The dashboard fills
 // as data arrives, with a progress strip while the first backfill runs.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { ProgressStrip } from '@/components/ProgressStrip'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { useUsageStore } from '@/state/usage-store'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useViewStore } from '@/state'
 import { BudgetCard } from './BudgetCard'
 import { CallLogTable } from './CallLogTable'
@@ -16,7 +17,7 @@ import { HeadlineCards } from './HeadlineCards'
 import { SpendChart } from './SpendChart'
 import { TokenMixChart } from './TokenMixChart'
 import { UsageEmptyState } from './UsageEmptyState'
-import { UsageFilters, countActiveFilters } from './UsageFilters'
+import { UsageFilters, clearUsageFilters, countActiveFilters } from './UsageFilters'
 import { ModelTable, ProjectTable, ToolTable, TopSessionsTable } from './UsageTables'
 
 export function UsageView({ reservesWindowControls = true }: { reservesWindowControls?: boolean }) {
@@ -32,15 +33,15 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
   }, [])
 
   const status = s.status
-  const [announcement, setAnnouncement] = useState('')
+  const [announcement, announce] = useClearedAnnouncement()
   const wasRunning = useRef(false)
   const running = status?.running === true
   const seen = status?.sessionsSeen ?? 0
   // The strip unmounts when counting ends, so the announcement lives here for the life of the view.
   useEffect(() => {
-    if (wasRunning.current && !running && seen > 0) setAnnouncement('Usage history counted')
+    if (wasRunning.current && !running && seen > 0) announce('Usage history counted')
     wasRunning.current = running
-  }, [running, seen])
+  }, [running, seen, announce])
 
   const nothingFound = status !== null && !status.running && (!status.found || status.sessionsSeen === 0)
   const showProgress = status !== null && (status.running || (status.sessionsSeen > 0 && status.sessionsDone < status.sessionsSeen))
@@ -60,7 +61,10 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
         {announcement}
       </div>
       <UsageFilters />
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      <div
+        aria-busy={s.refreshing}
+        className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 transition-opacity ${s.refreshing ? 'opacity-60' : ''}`}
+      >
         {showProgress && status && (
           <ProgressStrip
             value={status.sessionsDone}
@@ -77,7 +81,7 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
               <EmptyTitle>No usage matches these filters.</EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
-              <Button variant="outline" onClick={() => s.setFilters({ project: null, model: null, reasoning: null, agentType: null })}>
+              <Button variant="outline" onClick={clearUsageFilters}>
                 Clear filters
               </Button>
             </EmptyContent>

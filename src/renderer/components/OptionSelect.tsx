@@ -12,11 +12,13 @@ export interface OptionSelectProps {
   anyLabel: string
   value: string | null | undefined
   options: string[]
+  /** Display text for an option whose stored value is not fit to show (for example `main`). */
+  optionLabel?(option: string): string
   onChange(value: string | null): void
   className?: string
 }
 
-export function OptionSelect({ label, anyLabel, value, options, onChange, className }: OptionSelectProps) {
+export function OptionSelect({ label, anyLabel, value, options, optionLabel, onChange, className }: OptionSelectProps) {
   return (
     <Select value={value ?? ANY} onValueChange={(next) => onChange(next === ANY ? null : next)}>
       <SelectTrigger aria-label={label} className={className ?? 'min-w-0 max-w-44'}>
@@ -26,7 +28,7 @@ export function OptionSelect({ label, anyLabel, value, options, onChange, classN
         <SelectItem value={ANY}>{anyLabel}</SelectItem>
         {options.map((option) => (
           <SelectItem key={option} value={option}>
-            {option}
+            {optionLabel ? optionLabel(option) : option}
           </SelectItem>
         ))}
       </SelectContent>

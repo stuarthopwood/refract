@@ -79,7 +79,7 @@ function BreakdownTable({ title, columns, rows, emptyText, loading }: BreakdownP
 }
 
 export const ProjectTable = ({ rows, loading }: BreakdownProps) => (
-  <BreakdownTable title="By Project" columns={PROJECT_COLUMNS} rows={rows} loading={loading} emptyText="No Projects in this range." />
+  <BreakdownTable title="By project" columns={PROJECT_COLUMNS} rows={rows} loading={loading} emptyText="No projects in this range." />
 )
 export const ModelTable = ({ rows, loading }: BreakdownProps) => (
   <BreakdownTable title="By model and reasoning level" columns={MODEL_COLUMNS} rows={rows} loading={loading} emptyText="No model calls in this range." />

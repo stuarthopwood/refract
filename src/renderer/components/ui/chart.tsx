@@ -98,12 +98,21 @@ export interface ChartView {
   toggle: ReactNode
 }
 
-export function useChartView(): ChartView {
+/** `unavailable` (no data, or still loading) disables the toggle; the label names the view a press switches to. */
+export function useChartView(unavailable = false): ChartView {
   const [asTable, setAsTable] = useState(false)
   const tableId = useId()
   const toggle = (
-    <Button type="button" variant="ghost" size="sm" aria-pressed={asTable} aria-controls={tableId} onClick={() => setAsTable((value) => !value)}>
-      View as table
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-pressed={asTable}
+      aria-controls={tableId}
+      disabled={unavailable}
+      onClick={() => setAsTable((value) => !value)}
+    >
+      {asTable ? 'View as chart' : 'View as table'}
     </Button>
   )
   return { asTable, tableId, toggle }
@@ -257,7 +266,7 @@ export function StackedBarChart({ title, summary, view, series, buckets, formatV
         </svg>
       </div>
       {buckets.length > 0 && (
-        <div aria-hidden className="flex justify-between pl-10 text-xs text-muted-foreground">
+        <div aria-hidden className="flex justify-between text-xs text-muted-foreground">
           <span>{buckets[0]?.label}</span>
           <span>{buckets[buckets.length - 1]?.label}</span>
         </div>

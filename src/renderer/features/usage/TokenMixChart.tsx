@@ -12,7 +12,7 @@ const LABELS: Record<UsageTokenMixRow['type'], string> = {
 }
 
 export function TokenMixChart({ rows, loading }: { rows: UsageTokenMixRow[]; loading?: boolean }) {
-  const view = useChartView()
+  const view = useChartView(loading === true || rows.length === 0)
   return (
     <ScreenSection
       title="Token mix"

@@ -20,7 +20,7 @@ export function SpendChart({
   onBucketChange(bucket: 'day' | 'hour'): void
   loading?: boolean
 }) {
-  const view = useChartView()
+  const view = useChartView(loading === true || buckets.length === 0)
   const totals = new Map<string, number>()
   for (const b of buckets) for (const m of b.byModel) totals.set(m.model, (totals.get(m.model) ?? 0) + m.usd)
   const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([model]) => model)

@@ -37,7 +37,7 @@ export function ScreenSection({ title, count, actions, note, error, loading = fa
   )
   return (
     <section aria-labelledby={headingId} className={cn('flex min-w-0 flex-col gap-2', className)}>
-      <div className="flex min-h-8 items-center gap-2">
+      <div className="flex min-h-8 flex-wrap items-center gap-2">
         <h2 id={headingId} ref={headingRef} tabIndex={headingRef ? -1 : undefined} className="text-sm font-semibold outline-none">
           {title}
           {showCount && <span className="sr-only">, {count}</span>}
@@ -47,7 +47,7 @@ export function ScreenSection({ title, count, actions, note, error, loading = fa
             {count}
           </span>
         )}
-        {actions && <div className="ml-auto flex items-center gap-1">{actions}</div>}
+        {actions && <div className="ml-auto flex flex-wrap items-center justify-end gap-1">{actions}</div>}
       </div>
       {note && <p className="text-xs text-muted-foreground">{note}</p>}
       {!loading && error && (

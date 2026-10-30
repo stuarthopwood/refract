@@ -34,6 +34,8 @@ interface UsageState {
   bucket: 'day' | 'hour'
   status: UsageStatus | null
   loaded: boolean
+  /** True from a filter, bucket, sort or page change until its results land, so stale figures show a busy state. */
+  refreshing: boolean
   error: string | null
   summary: UsageSummary | null
   timeseries: UsageTimeBucket[]
@@ -79,6 +81,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
   bucket: 'day',
   status: null,
   loaded: false,
+  refreshing: false,
   error: null,
   summary: null,
   timeseries: [],
@@ -119,11 +122,12 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     unsubscribe?.()
     unsubscribe = null
     sequence += 1
+    set({ refreshing: false })
     void window.refract.usage.stop()
   },
   setFilters(patch) {
     const filters = { ...get().filters, ...patch }
-    set({ filters, calls: { ...get().calls, pageIndex: 0 } })
+    set({ filters, refreshing: true, calls: { ...get().calls, pageIndex: 0 } })
     void window.refract.usage.setPrefs({ filters })
     void get().refresh()
   },
@@ -135,15 +139,15 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     else set({ jokes: previous })
   },
   setBucket(bucket) {
-    set({ bucket })
+    set({ bucket, refreshing: true })
     void get().refresh()
   },
   setCallsSort(sort) {
-    set({ calls: { ...get().calls, sort, pageIndex: 0 } })
+    set({ refreshing: true, calls: { ...get().calls, sort, pageIndex: 0 } })
     void get().refresh()
   },
   setCallsPage(pageIndex) {
-    set({ calls: { ...get().calls, pageIndex } })
+    set({ refreshing: true, calls: { ...get().calls, pageIndex } })
     void get().refresh()
   },
   async refresh() {
@@ -170,6 +174,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     const models = byModel.ok ? byModel.value : []
     set((state) => ({
       loaded: true,
+      refreshing: false,
       error: failure && !failure.ok ? failure.error.message : null,
       summary: summary.ok ? summary.value : state.summary,
       timeseries: timeseries.ok ? timeseries.value : state.timeseries,

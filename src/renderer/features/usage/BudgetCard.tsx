@@ -3,7 +3,6 @@
 // render as plain text only.
 import { ProgressStrip } from '@/components/ProgressStrip'
 import { ScreenSection } from '@/components/ScreenSection'
-import { Card, CardContent } from '@/components/ui/card'
 import type { UsageBudget } from '../../../shared/ipc-usage'
 import { formatInt, formatPercent } from './format'
 
@@ -42,8 +41,7 @@ export function BudgetCard({ budget, jokes }: { budget: UsageBudget | null; joke
       empty={budget && empty ? `Budget unavailable${budget.unavailable ? `: ${budget.unavailable}` : ''}.` : null}
     >
       {budget && !empty && (
-        <Card>
-          <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 border p-4">
             {budget.copilot && <CopilotRow copilot={budget.copilot} jokes={jokes} />}
             {budget.unavailable && <p className="text-xs text-muted-foreground">Budget unavailable for some providers: {budget.unavailable}.</p>}
             {budget.providers.map((provider) => (
@@ -63,8 +61,7 @@ export function BudgetCard({ budget, jokes }: { budget: UsageBudget | null; joke
                 {provider.resetsAt !== null && <p className="text-xs text-muted-foreground">Resets {dateOnly(provider.resetsAt)}.</p>}
               </div>
             ))}
-          </CardContent>
-        </Card>
+        </div>
       )}
     </ScreenSection>
   )
