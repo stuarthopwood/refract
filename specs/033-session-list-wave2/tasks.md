@@ -11,11 +11,11 @@
 - [x] T006 #934 `ScreenHeader`, `ListToolbar`, `TabsList` 32 px, Manage sessions rebuild, shared row, wording.
 
 ## Converge amendment (#934 row reuse, 2026-10-30)
-- [ ] T008 Move `canResume`/`handleResume` out of `useSessionRowActions.ts` into `useSessionResume.ts` unchanged (frees line budget under the 600 cap).
-- [ ] T009 `useSessionRowActions` accepts `repository | undefined` and an optional `SessionRowSurface` (`fallbackFocus`, `announce`, `open`, `onCreated`); sidebar behaviour unchanged when absent.
-- [ ] T010 `SessionRow` gains the `table` layout (slots: Project name, flags, last active, Archive/Restore quick action); the cells live in `SessionRowTableCells.tsx`.
-- [ ] T011 `ManageSessionRow` becomes a thin wrapper over `SessionRow`; delete its duplicated markup and handlers; `ManageSessionsScreen` unchanged in behaviour.
-- [ ] T012 Docs: `components.md` row entry, PLAN.md #934 rows set to done.
+- [x] T008 Move `canResume`/`handleResume` out of `useSessionRowActions.ts` into `useSessionResume.ts` unchanged (frees line budget under the 600 cap).
+- [x] T009 `useSessionRowActions` accepts `repository | undefined` and an optional `SessionRowSurface` (`fallbackFocus`, `announce`, `open`, `onCreated`); sidebar behaviour unchanged when absent.
+- [x] T010 `SessionRow` gains the `table` layout (slots: Project name, flags, last active, Archive/Restore quick action); the cells live in `SessionRowTableCells.tsx`.
+- [x] T011 `ManageSessionRow` becomes a thin wrapper over `SessionRow`; delete its duplicated markup and handlers; `ManageSessionsScreen` unchanged in behaviour.
+- [x] T012 Docs: `components.md` row entry, PLAN.md #934 rows set to done.
 
 ## Director
 - [x] T007 Gate (five reviewers), fixes, build slot, `pnpm ci:local`, live check, PR, PLAN.md row, follow-up issue.
