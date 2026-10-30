@@ -222,17 +222,10 @@ fn safe_stringify(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
-/// Applies an `async-result`/`wait` `details.jobs[]` list: the authoritative per-subagent completion.
-///
-/// The message has no `tool_call_id`, and a job id is only observed (not guaranteed) to echo the
-/// label, so a later Stage's job must not clobber an earlier settled Stage's row (#989).
-/// A row is settled once a job with real data resolves it; label-echo fallbacks never settle.
-/// The caller applies a message's jobs once, on `message_end`.
-///
-/// Candidates among unsettled rows rank by: still-Running first; then (Running only) `job_id`
-/// match over label-only; then latest `started_at`. Each job claims at most one item.
-/// Known limit: overlapping same-name jobs are a best-effort guess until #712's
-/// `parentToolCallId` lands.
+/// Applies `details.jobs[]` from an `async-result`/`wait` message, once on `message_end`.
+/// No `tool_call_id`: a later Stage's job must not clobber an earlier settled row (#989).
+/// Unsettled rows rank Running first, then `job_id` over label-only, then latest `started_at`;
+/// each job claims one item. Overlapping same-name jobs are a guess until #712 lands.
 pub(super) fn apply_async_result_jobs(
     items: Vec<Arc<TranscriptItem>>,
     jobs: &[Value],
