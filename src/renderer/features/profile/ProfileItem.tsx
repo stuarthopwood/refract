@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { initials } from '@/lib/initials'
+import { HolidayAccessory } from '@/features/holidays/HolidayAccessory'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { notify, useAccountsStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
@@ -151,6 +152,7 @@ export function ProfileItem() {
 
   return (
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
+      <HolidayAccessory />
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} modal={false}>
         <Tooltip>
           <TooltipTrigger asChild>

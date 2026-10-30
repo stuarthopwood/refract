@@ -170,7 +170,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           />
           <div className="flex flex-wrap items-center gap-2">
             <Select value={state} onValueChange={(value) => props.onStateChange(value as ListStateFilter)}>
-              <SelectTrigger aria-label="State" className="w-28 shrink-0">
+              <SelectTrigger aria-label="State" className="shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper">

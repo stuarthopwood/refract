@@ -80,7 +80,7 @@ export function AppearanceSection() {
             description="Seasonal artwork and ambient motion near a holiday."
           >
             <Select value={holidayTouches} onValueChange={(value) => void setHolidayTouches(value as typeof holidayTouches)}>
-              <SelectTrigger id="holiday-touches-select" aria-describedby="holiday-touches-description" size="sm">
+              <SelectTrigger id="holiday-touches-select" aria-describedby="holiday-touches-description">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

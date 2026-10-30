@@ -5,7 +5,7 @@ import type { AskQuestion, PendingRequest } from '../../../shared/model'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { CheckboxIndicator, CheckboxItem } from '@/components/ui/checkbox'
+import { CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -29,7 +29,7 @@ interface AskCardProps {
   request: AskRequest
 }
 
-const ASK_ROW_CLASS = 'gap-1 bg-transparent hover:bg-muted min-h-9 py-1'
+const ASK_ROW_CLASS = OPTION_ROW_CLASS
 
 function isQuestionComplete(question: AskQuestion, draft: AskDraftQuestion): boolean {
   if (question.multi) return draft.viewed
@@ -139,10 +139,10 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intentKey, sessionId])
 
-  async function submit() {
+  async function submit(answersBy: Record<string, AskDraftQuestion> = byQuestionId) {
     setBusyAction('submit')
     setError(null)
-    const answer: ChatAnswer = { answers: buildAnswers(questions, byQuestionId) }
+    const answer: ChatAnswer = { answers: buildAnswers(questions, answersBy) }
     const result = await window.refract.chat.answer(sessionId, request.requestId, answer)
     setBusyAction(null)
     if (!result.ok) {
@@ -170,12 +170,12 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   // D13: pressing the primary button on an incomplete batch moves to the NEXT incomplete
   // question after the active one, wrapping around; the inline note shows only when the active
   // question is the ONLY one still incomplete (searching wraps all the way back to it).
-  function handlePrimary() {
-    if (allComplete) {
-      void submit()
+  function advance(answersBy: Record<string, AskDraftQuestion>) {
+    const incomplete = (question: AskQuestion) => !isQuestionComplete(question, answersBy[question.id] ?? EMPTY_ASK_QUESTION_DRAFT)
+    if (!questions.some(incomplete)) {
+      void submit(answersBy)
       return
     }
-    const incomplete = (question: AskQuestion) => !isQuestionComplete(question, byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT)
     const activeIndex = questions.findIndex((question) => question.id === activeId)
     const rotated = [...questions.slice(activeIndex + 1), ...questions.slice(0, activeIndex + 1)]
     const next = rotated.find(incomplete)
@@ -187,6 +187,17 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     focusTargetOnActiveChangeRef.current = true
     setTabEpoch((epoch) => epoch + 1)
     setActiveQuestion(sessionId, request.requestId, next.id)
+  }
+
+  function handlePrimary() {
+    advance(byQuestionId)
+  }
+
+  // #1435: a pointer click or Space on a single-choice option commits it; arrow keys only move the pick.
+  function handlePickSingle(label: string) {
+    if (busy) return
+    selectSingleOption(sessionId, request.requestId, activeQuestion!.id, label)
+    advance({ ...byQuestionId, [activeQuestion!.id]: { ...activeDraft, selectedOptions: [label], otherSelected: false } })
   }
 
   function handleTabChange(questionId: string) {
@@ -207,6 +218,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
       showIncompleteNote={incompleteNoteId === activeQuestion.id && activeIncomplete}
       groupIdPrefix={groupAriaId}
       onSelectSingle={(label) => selectSingleOption(sessionId, request.requestId, activeQuestion.id, label)}
+      onPickSingle={handlePickSingle}
       onSelectOther={() => selectOther(sessionId, request.requestId, activeQuestion.id)}
       onToggleMulti={(label) => toggleMultiOption(sessionId, request.requestId, activeQuestion.id, label)}
       onCustomInput={(text) => setCustomInput(sessionId, request.requestId, activeQuestion.id, text, activeQuestion.multi)}
@@ -274,13 +286,13 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         {request.deadlineAt !== undefined && (
           <CardContent className="text-sm text-muted-foreground">{formatDeadlineText(request.deadlineAt, questions)}</CardContent>
         )}
-        <CardFooter className="justify-between gap-2">
+        <CardFooter>
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             aria-disabled={busy}
             aria-busy={busyAction === 'cancel'}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            className="dark:hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={() => !busy && void cancel()}
           >
             {busyAction === 'cancel' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
@@ -309,6 +321,7 @@ interface AskQuestionBodyProps {
   showIncompleteNote: boolean
   groupIdPrefix: string
   onSelectSingle: (label: string) => void
+  onPickSingle: (label: string) => void
   onSelectOther: () => void
   onToggleMulti: (label: string) => void
   onCustomInput: (text: string) => void
@@ -317,9 +330,10 @@ interface AskQuestionBodyProps {
 }
 
 const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(function AskQuestionBody(
-  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
+  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
   ref
 ) {
+  const arrowKeyRef = React.useRef(false)
   const { heading, body } = splitQuestionHeading(question.question)
   const safeId = `${groupIdPrefix}-${question.id}`.replace(/[^a-zA-Z0-9_-]/g, '-')
   const headingId = `${safeId}-heading`
@@ -372,17 +386,15 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                   aria-describedby={option.description ? descId : undefined}
                   className={ASK_ROW_CLASS}
                 >
-                  <span className="flex w-full min-w-0 items-center gap-2">
-                    <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-md border border-muted-foreground group-data-[state=checked]/checkbox-item:border-primary">
-                      <CheckboxIndicator />
-                    </span>
-                    <span id={labelId} className="min-w-0 flex-1 break-words">
-                      {option.label}
-                      {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
-                    </span>
+                  <span aria-hidden className={cn(OPTION_MARK_CLASS, "grid size-4 shrink-0 place-items-center rounded-md border border-muted-foreground group-data-[state=checked]/checkbox-item:border-foreground forced-colors:group-data-[state=checked]/checkbox-item:border-[Highlight]")}>
+                    <CheckboxIndicator />
+                  </span>
+                  <span id={labelId} className="col-start-2 min-w-0 break-words">
+                    {option.label}
+                    {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
                   </span>
                   {option.description && (
-                    <span id={descId} className="w-full min-w-0 break-words pl-6 text-xs text-muted-foreground">
+                    <span id={descId} className="col-start-2 w-full min-w-0 break-words text-xs text-muted-foreground">
                       {option.description}
                     </span>
                   )}
@@ -396,12 +408,10 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               aria-label="Other"
               className={ASK_ROW_CLASS}
             >
-              <span className="flex w-full min-w-0 items-center gap-2">
-                <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-md border border-muted-foreground group-data-[state=checked]/checkbox-item:border-primary">
-                  <CheckboxIndicator />
-                </span>
-                <span className="min-w-0 flex-1 break-words">Other</span>
+              <span aria-hidden className={cn(OPTION_MARK_CLASS, "grid size-4 shrink-0 place-items-center rounded-md border border-muted-foreground group-data-[state=checked]/checkbox-item:border-foreground forced-colors:group-data-[state=checked]/checkbox-item:border-[Highlight]")}>
+                <CheckboxIndicator />
               </span>
+              <span className="col-start-2 min-w-0 break-words">Other</span>
             </CheckboxItem>
             <Input
               value={draft.customInput}
@@ -409,7 +419,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               aria-disabled={busy}
               maxLength={ASK_CUSTOM_INPUT_MAX_LENGTH}
               placeholder="Type your own answer"
-              className="ml-6 w-[calc(100%-1.5rem)]"
+              className="ml-10 w-[calc(100%-2.5rem)]"
               aria-label="Other answer"
               onChange={(event) => onCustomInput(event.target.value)}
               onKeyDown={handleOtherKeyDown}
@@ -425,6 +435,8 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               aria-label={heading ? undefined : question.question}
               aria-describedby={describedBy}
               className="gap-2"
+              onKeyDownCapture={(event) => { arrowKeyRef.current = /^(Arrow|Home$|End$)/.test(event.key) }}
+              onKeyUpCapture={() => { arrowKeyRef.current = false }}
               value={draft.otherSelected ? otherValue : (draft.selectedOptions[0] ?? '')}
               onValueChange={(value) => (value === otherValue ? onSelectOther() : onSelectSingle(value))}
             >
@@ -438,19 +450,18 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                     disabled={busy}
                     aria-labelledby={labelId}
                     aria-describedby={option.description ? descId : undefined}
+                    onClick={() => !arrowKeyRef.current && onPickSingle(option.label)}
                     className={ASK_ROW_CLASS}
                   >
-                    <span className="flex w-full min-w-0 items-center gap-2">
-                      <span aria-hidden className={RADIO_RING_CLASS}>
-                        <RadioGroupIndicator />
-                      </span>
-                      <span id={labelId} className="min-w-0 flex-1 break-words">
-                        {option.label}
-                        {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
-                      </span>
+                    <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
+                      <RadioGroupIndicator />
+                    </span>
+                    <span id={labelId} className="col-start-2 min-w-0 break-words">
+                      {option.label}
+                      {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
                     </span>
                     {option.description && (
-                      <span id={descId} className="w-full min-w-0 break-words pl-6 text-xs text-muted-foreground">
+                      <span id={descId} className="col-start-2 w-full min-w-0 break-words text-xs text-muted-foreground">
                         {option.description}
                       </span>
                     )}
@@ -458,12 +469,10 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                 )
               })}
               <RadioGroupItem value={otherValue} disabled={busy} aria-label="Other" className={ASK_ROW_CLASS}>
-                <span className="flex w-full min-w-0 items-center gap-2">
-                  <span aria-hidden className={RADIO_RING_CLASS}>
-                    <RadioGroupIndicator />
-                  </span>
-                  <span className="min-w-0 flex-1 break-words">Other</span>
+                <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
+                  <RadioGroupIndicator />
                 </span>
+                <span className="col-start-2 min-w-0 break-words">Other</span>
               </RadioGroupItem>
             </RadioGroup>
             <Input
@@ -472,7 +481,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               aria-disabled={busy}
               maxLength={ASK_CUSTOM_INPUT_MAX_LENGTH}
               placeholder="Type your own answer"
-              className="ml-6 w-[calc(100%-1.5rem)]"
+              className="ml-10 w-[calc(100%-2.5rem)]"
               aria-label="Other answer"
               onChange={(event) => onCustomInput(event.target.value)}
               onKeyDown={handleOtherKeyDown}
