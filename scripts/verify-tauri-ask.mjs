@@ -163,7 +163,7 @@ function roleLabelFinder(role, label) {
   return `(() => {
     const els = Array.from(document.querySelectorAll('[role="${role}"]'));
     return els.find((el) => {
-      const labelSpan = el.querySelector('.flex-1.break-words');
+      const labelSpan = el.querySelector('.col-start-2.break-words');
       const node = labelSpan && labelSpan.firstChild;
       return !!node && typeof node.nodeValue === 'string' && node.nodeValue.trim() === ${JSON.stringify(label)};
     });
@@ -301,22 +301,22 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
       label: 'Features tab becomes active by itself after the single-choice pick',
     });
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '02-postgres-picked-auto-advanced.png'));
-    // #1434: option rows are filled (no border), and Cancel is a ghost button.
+    // #1434: option rows are filled (transparent border), and Cancel is a ghost button.
     const styles = await cdp.evaluate(`(() => {
       const row = Array.from(document.querySelectorAll('[role="checkbox"]'))[0];
       const cancel = Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Cancel');
       const r = row && getComputedStyle(row); const c = cancel && getComputedStyle(cancel);
-      return { rowBg: r?.backgroundColor, rowBorder: r?.borderTopWidth, cancelBg: c?.backgroundColor, cancelBorder: c?.borderTopWidth };
+      return { rowBg: r?.backgroundColor, rowBorder: r?.borderTopColor, cancelBg: c?.backgroundColor, cancelBorder: c?.borderTopColor };
     })()`);
     console.log(`verify-tauri-ask: option row / Cancel styles ${JSON.stringify(styles)}`);
-    assert(styles.rowBg && styles.rowBg !== 'rgba(0, 0, 0, 0)' && styles.rowBorder === '0px', `option row should have a fill and no border: ${JSON.stringify(styles)}`);
-    assert(styles.cancelBg === 'rgba(0, 0, 0, 0)' && styles.cancelBorder === '0px', `Cancel should be a ghost button: ${JSON.stringify(styles)}`);
+    assert(styles.rowBg && styles.rowBg !== 'rgba(0, 0, 0, 0)' && /(0, 0, 0, 0\)|transparent|\/ 0\))/.test(styles.rowBorder), `option row should have a fill and no border: ${JSON.stringify(styles)}`);
+    assert(styles.cancelBg === 'rgba(0, 0, 0, 0)' && /(0, 0, 0, 0\)|transparent|\/ 0\))/.test(styles.cancelBorder), `Cancel should be a ghost button: ${JSON.stringify(styles)}`);
 
     await clickRoleLabel(cdp, 'checkbox', 'Auth');
     await cdp.waitFor(
       `(() => {
         const els = Array.from(document.querySelectorAll('[role="checkbox"]'));
-        const el = els.find((e) => { const s = e.querySelector('.flex-1.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Auth'; });
+        const el = els.find((e) => { const s = e.querySelector('.col-start-2.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Auth'; });
         return !!el && el.getAttribute('aria-checked') === 'true';
       })()`,
       { timeoutMs: 15_000, label: 'Auth checkbox becomes checked' },
@@ -325,7 +325,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     await cdp.waitFor(
       `(() => {
         const els = Array.from(document.querySelectorAll('[role="checkbox"]'));
-        const el = els.find((e) => { const s = e.querySelector('.flex-1.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Search'; });
+        const el = els.find((e) => { const s = e.querySelector('.col-start-2.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Search'; });
         return !!el && el.getAttribute('aria-checked') === 'true';
       })()`,
       { timeoutMs: 15_000, label: 'Search checkbox becomes checked' },
@@ -334,7 +334,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     await cdp.waitFor(
       `(() => {
         const els = Array.from(document.querySelectorAll('[role="checkbox"]'));
-        const el = els.find((e) => { const s = e.querySelector('.flex-1.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Other'; });
+        const el = els.find((e) => { const s = e.querySelector('.col-start-2.break-words'); const n = s && s.firstChild; return !!n && n.nodeValue && n.nodeValue.trim() === 'Other'; });
         return !!el && el.getAttribute('aria-checked') === 'true';
       })()`,
       { timeoutMs: 15_000, label: 'Other checkbox becomes checked' },

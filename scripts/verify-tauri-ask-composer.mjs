@@ -49,11 +49,11 @@ export async function runComposerChecks(cdp, shotDir, assert) {
   const replaced = await cdp.evaluate(`${FIELD}.value`);
   assert(replaced === 'the quick', `choosing "the" should replace the word: ${JSON.stringify(replaced)}`);
 
-  await setText('qzxvbnrefract quick');
+  await setText('refrct quick');
   await rightClickField();
   const before = await menuTexts();
   const addEntry = before.find((t) => t.startsWith('Add'));
-  assert(!!addEntry, `a made-up word should offer Add to dictionary: ${JSON.stringify(before)}`);
+  assert(!!addEntry, `a misspelt word should offer Add to dictionary: ${JSON.stringify(before)}`);
   await clickMenuItem('Add');
   await rightClickField();
   const after = await menuTexts();
