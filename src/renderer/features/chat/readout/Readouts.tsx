@@ -11,6 +11,7 @@ import { DiffStatLine, formatDiffStatAccessible } from '@/features/sessions/sess
 import { formatElapsed } from '../formatElapsed'
 import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
 import { AgentsCard } from './AgentsCard'
+import { AlarmClock } from './AlarmClock'
 import { READOUT_ITEM_BASE_CLASS, READOUT_ITEM_INTERACTIVE_ADDITIONS, ReadoutItem } from './ReadoutItem'
 import { TodoCard } from './TodoCard'
 import { deriveSubagentPhrase } from './subagentDerive'
@@ -78,12 +79,7 @@ export function CurrentTimeReadout({ className }: { className?: string } = {}) {
     }
   }, [])
   const formatted = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)
-  return (
-    <ReadoutItem icon={READOUT_KIND_ICONS['current-time']} className={className}>
-      <span className="sr-only">{`Current time: ${formatted}`}</span>
-      <span aria-hidden>{formatted}</span>
-    </ReadoutItem>
-  )
+  return <AlarmClock formatted={formatted} now={now} className={className} />
 }
 
 export function PullRequestReadout({ sessionId }: { sessionId: string }) {

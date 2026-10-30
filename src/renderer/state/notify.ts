@@ -65,6 +65,11 @@ export function notifyPersistentError(text: string): void {
   announceAssertive(text)
 }
 
+/** A fired Alarm while the window is focused; stays until dismissed so a glance away cannot miss it. */
+export function notifyAlarm(label: string): void {
+  toast.info(label ? `Alarm: ${label}` : 'Alarm', { duration: Infinity, closeButton: true })
+}
+
 export interface ProgressToast {
   update(text: string): void
   succeed(text: string, action?: { label: string; onClick(): void }): void

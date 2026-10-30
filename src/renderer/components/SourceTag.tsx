@@ -16,7 +16,7 @@ interface SourceTagProps {
 
 export function SourceTag({ icon: Icon, label, tooltip, className }: SourceTagProps) {
   const tag = (
-    <span data-slot="source-tag" className={cn('inline-flex shrink-0 items-center gap-1 text-xs leading-5 text-muted-foreground', className)}>
+    <span data-slot="source-tag" className={cn('inline-flex shrink-0 items-center gap-1 text-sm leading-5 text-muted-foreground', className)}>
       <Icon aria-hidden="true" className="size-4 shrink-0" />
       {label}
     </span>

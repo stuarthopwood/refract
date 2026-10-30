@@ -103,6 +103,10 @@ _Avoid_: Session (in the agent's own sense), transcript
 The row between the transcript and the message box (spec 004), spanning the chat column's full width: one **Readout** per glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Plain text, no boxes (2026-10-15 grill, issue #564): a read-only Readout is an icon plus text with no border or fill; one that opens something (Pull request, Subagents) is a quiet text button with a hover background and no border. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently. Two health readouts, "RPC slow" and "Agent memory high" (#561, spec 044), are degraded-only: they render nothing, and reserve no space, until the Session's agent is actually degraded, and have no Settings row.
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
 
+**Alarm**:
+A one-shot reminder set from the **Status line**'s Current time readout (issue #1426, spec 072): a time and an optional label. It fires once, as an OS notification plus an in-app toast when the window is focused, then stays listed as Fired until edited or deleted. Alarms are app-wide (in `settings.json`), not per **Session**, and never repeat.
+_Avoid_: Timer, reminder, snooze
+
 **Turn total**:
 The muted elapsed-time line under a **Session**'s turn in the transcript (spec 001 FR-046). The running turn's total always ticks live; the settled total shows only when Settings > Chat "Show finished turn times" is on (default off, 2026-10-27 grill, issue #1250, FR-119). Distinct from the **Status line**'s Turn time readout, and the current-work banner above the composer shows no elapsed time at all.
 _Avoid_: Turn timer (ambiguous: the banner no longer has one)
@@ -111,8 +115,12 @@ _Avoid_: Turn timer (ambiguous: the banner no longer has one)
 The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal). Two or more agents in a Stage are connected by a **Spine** (issue #565). Its name is the first line of its batch brief, after its number ("Stage 1 · Quality gate for #923", issue #941).
 _Avoid_: Batch (in UI text), gate, phase (a phase is a **Todo phase**)
 
+**Todo task**:
+One item in a **Todo phase** of the agent's own todo list (OMP `todoPhases`), shown in the Todo panel and the Todo **Readout** (issue #1432). In user-facing text "task" means only this; delegated work is a subagent, a **Stage** or a Delegate. The model role id `task` and the `task()` tool name are protocol identifiers and stay.
+_Avoid_: Task for a subagent, Stage, step
+
 **Todo phase**:
-A named group of tasks in the agent's own todo list (OMP `todoPhases`). Pending todo phases are what **Up next** lists; a todo phase is planned work, never a **Stage**.
+A named group of **Todo tasks** in the agent's own todo list (OMP `todoPhases`). Pending todo phases are what **Up next** lists; a todo phase is planned work, never a **Stage**.
 _Avoid_: Stage, step
 
 **Up next**:

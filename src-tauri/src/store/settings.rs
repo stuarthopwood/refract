@@ -99,6 +99,8 @@ pub struct Settings {
     pub word_prediction_enabled: bool,
     /// Default Clone from GitHub folder; `None` when unset (`default_clone_folder.rs`, #867).
     pub default_clone_folder: Option<String>,
+    /// One-shot Alarms from the composer clock (`alarms.rs`, #1426).
+    pub alarms: Vec<Alarm>,
     /// Unrecognised keys, flattened into the top-level object; never overlaps a known field.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -114,6 +116,9 @@ use settings_parse::{
 };
 #[path = "activity_text.rs"]
 mod activity_text;
+#[path = "alarms.rs"]
+mod alarms;
+pub use alarms::Alarm;
 #[path = "agent_stopped_bar.rs"]
 mod agent_stopped_bar;
 #[path = "ai_credits.rs"]
@@ -213,6 +218,7 @@ impl SettingsStore {
         let animated_status_text = animated_status_text::parse(&object);
         let code_ligatures = code_ligatures::parse(&object);
         let default_clone_folder = default_clone_folder::parse(&object);
+        let alarms = alarms::parse(&object);
         let show_scrollbar_map = scrollbar_map::parse(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
         let typography = typography::parse(&object);
@@ -238,7 +244,7 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 27] = [
+        const KNOWN_FIELDS: [&str; 28] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -266,6 +272,7 @@ impl SettingsStore {
             "pullRequestsListWidthPx",
             right_pane::KEY,
             default_clone_folder::KEY,
+            alarms::KEY,
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -301,6 +308,7 @@ impl SettingsStore {
             pull_requests_list_width_px,
             right_pane,
             default_clone_folder,
+            alarms,
             extra,
         };
 
@@ -392,6 +400,7 @@ impl SettingsStore {
         );
         map.insert(right_pane::KEY.to_string(), json!(self.data.right_pane));
         default_clone_folder::write(&mut map, &self.data.default_clone_folder);
+        alarms::write(&mut map, &self.data.alarms);
         // Re-inserts keys captured at `open()` with no slot here, never overwriting a known key,
         // so unported settings survive every save and reach the wire.
         for (key, value) in &self.data.extra {
