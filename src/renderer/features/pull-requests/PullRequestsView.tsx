@@ -166,7 +166,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
       </div>
       {!repositoryId ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          Add a repository to browse its pull requests.
+          Add a project to browse its pull requests.
         </div>
       ) : (
         <ListDetailSplit

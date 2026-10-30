@@ -453,7 +453,7 @@ pub(super) fn pull_requests_new_session_from_pull_request(
             let registry = state.registry.lock().await;
             registry
                 .get_repository(repository_id)
-                .ok_or_else(|| not_found(format!("Repository not found: {repository_id}")))?
+                .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
                 .clone()
         };
         let repo_path = std::path::Path::new(&repository.path);

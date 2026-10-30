@@ -129,10 +129,10 @@ pub async fn validate(
         ));
     }
     if same_as_project(&resolved, project_paths) {
-        return Err(invalid("That folder is already a Project."));
+        return Err(invalid("That folder is already a project."));
     }
     if inside_project(&resolved, project_paths) {
-        return Err(invalid("That folder is inside an existing Project."));
+        return Err(invalid("That folder is inside an existing project."));
     }
     let existed = match tokio::fs::symlink_metadata(&resolved).await {
         Ok(meta) => {

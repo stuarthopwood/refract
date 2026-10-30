@@ -69,7 +69,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
         </div>
         <div className="w-full max-w-sm p-6 text-foreground">
           <h1 tabIndex={-1} data-readiness-root className="text-base font-medium outline-none">Get Refract ready</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a project can be added.</p>
           <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-2">
             {CHECK_ORDER.map((key) => (
               <CheckRow key={key} label={CHECK_LABELS[key]} check={checks?.[key]} checking={checking && checks === null} />

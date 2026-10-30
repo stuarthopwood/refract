@@ -257,7 +257,7 @@ pub async fn view_issue(repo_path: &Path, number: u64) -> Result<IssueDetail, Gh
     if !issue_url_matches(&raw.url, &owner, &repo, raw.number) {
         return Err(GhError::new(
             GhErrorCode::GithubFailed,
-            "GitHub returned an issue that does not belong to this repository.",
+            "GitHub returned an issue that does not belong to this GitHub repository.",
         ));
     }
     Ok(IssueDetail {

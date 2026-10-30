@@ -274,15 +274,15 @@ export async function addRepository(cdp, dir) {
  * the confirmation dialog's "Remove" action -- decision 29's prune check: proves a removed
  * Repository's id actually leaves `settings.json`, not just that the renderer forgets it. */
 export async function removeRepository(cdp, repoName) {
-  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`Repository actions for ${repoName}`)}]')`);
-  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove repository…')`, {
+  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`Project actions for ${repoName}`)}]')`);
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove project…')`, {
     timeoutMs: 10_000,
-    label: 'Row menu open with Remove repository item'
+    label: 'Row menu open with Remove project item'
   });
-  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove repository…')`);
-  await cdp.waitFor(`!!document.querySelector('[data-slot="alert-dialog-content"]')`, { timeoutMs: 10_000, label: 'Remove repository dialog open' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove project…')`);
+  await cdp.waitFor(`!!document.querySelector('[data-slot="alert-dialog-content"]')`, { timeoutMs: 10_000, label: 'Remove project dialog open' });
   await cdp.click(`Array.from(document.querySelectorAll('[data-slot="alert-dialog-action"]')).find((el) => el.textContent.trim() === 'Remove')`);
-  await cdp.waitFor(`!document.querySelector('[data-slot="alert-dialog-content"]')`, { timeoutMs: 15_000, label: 'Remove repository dialog closed' });
+  await cdp.waitFor(`!document.querySelector('[data-slot="alert-dialog-content"]')`, { timeoutMs: 15_000, label: 'Remove project dialog closed' });
 }
 
 /** Opens the Settings screen via the profile item's own cog, then returns via its "Back to
@@ -555,8 +555,8 @@ export async function proveProjectRenameFocusRedirect(cdp, log, { repoBName }) {
   await cdp.evaluate(`(${triggerFinder})?.focus()`);
   await cdp.waitFor(`document.activeElement === (${triggerFinder})`, { timeoutMs: 5_000, label: 'Project B trigger focused before renaming' });
   await pressKey(cdp, 113, 'F2', 'F2');
-  await cdp.waitFor(`!!document.querySelector('input[aria-label="Repository name"]')`, { timeoutMs: 5_000, label: 'repository rename input mounted after F2' });
-  await cdp.click(`document.querySelector('input[aria-label="Repository name"]')`);
+  await cdp.waitFor(`!!document.querySelector('input[aria-label="Project name"]')`, { timeoutMs: 5_000, label: 'repository rename input mounted after F2' });
+  await cdp.click(`document.querySelector('input[aria-label="Project name"]')`);
   await pressKey(cdp, 65, 'a', 'KeyA', 2);
   await pressKey(cdp, 8, 'Backspace', 'Backspace');
   await cdp.send('Input.insertText', { text: 'zzz-project-renamed-out-of-filter-zzz' });

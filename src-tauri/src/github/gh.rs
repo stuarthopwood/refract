@@ -323,13 +323,13 @@ pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhErro
     if remote.code != 0 {
         return Err(GhError::new(
             GhErrorCode::NoGithubRemote,
-            "This repository has no \"origin\" remote.",
+            "This project has no \"origin\" remote.",
         ));
     }
     let owner_repo = parse_owner_repo(remote.stdout.trim()).ok_or_else(|| {
         GhError::new(
             GhErrorCode::NoGithubRemote,
-            "This repository's origin remote is not a github.com remote.",
+            "This project's origin remote is not a github.com remote.",
         )
     })?;
     CACHE

@@ -82,7 +82,7 @@ pub async fn delete_check_for_missing_worktree(
         .map_err(|_| {
             GitError::new(
                 GitErrorCode::GitFailed,
-                format!("Refract could not check branch {branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your repository at {} before choosing Delete.", repo.display()),
+                format!("Refract could not check branch {branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your project at {} before choosing Delete.", repo.display()),
             )
         })?;
     let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);
