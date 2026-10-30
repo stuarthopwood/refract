@@ -252,6 +252,12 @@ samp {
   --scale-code: 1;
   --text-scale: var(--scale-app);
   --motion-shimmer-duration: 1.6s;
+  /* Switching motion (#678, spec 058): the shared durations and easing for every enter animation
+     and every shadcn dialog, menu, popover and tooltip. */
+  --motion-fast: 100ms;
+  --motion-base: 150ms;
+  --motion-panel: 200ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
   /* Theme-independent values only (spec 007 T008): everything else that used to live here as an
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
@@ -1948,6 +1954,43 @@ samp {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Switching motion (#678, spec 058): enter-only utilities built on tw-animate-css, animating
+ * `opacity` and `transform` only (at most 8px). `useEnterOnSwitch` adds one of them to an
+ * element when its key changes; the global reduced-motion rule above makes them instant. */
+@utility motion-enter {
+  @apply animate-in fade-in slide-in-from-bottom-1;
+  --tw-animation-duration: var(--motion-base);
+  --tw-ease: var(--ease-out);
+}
+@utility motion-enter-fade {
+  @apply animate-in fade-in;
+  --tw-animation-duration: 120ms;
+  --tw-ease: var(--ease-out);
+}
+@utility motion-enter-panel {
+  @apply animate-in fade-in slide-in-from-right-2;
+  --tw-animation-duration: var(--motion-panel);
+  --tw-ease: var(--ease-out);
+}
+@utility motion-crossfade {
+  @apply animate-in fade-in;
+  --tw-animation-duration: var(--motion-fast);
+  --tw-ease: var(--ease-out);
+}
+/* The selected tab's underline grows in on its own `::after` when the selection moves
+ * (150ms, transform and opacity only). The hook adds this to the tablist, never on first paint. */
+@utility motion-tab-underline {
+  & [role='tab'][aria-selected='true']::after {
+    animation: motion-underline-in var(--motion-base) var(--ease-out);
+  }
+}
+@keyframes motion-underline-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.4);
   }
 }
 

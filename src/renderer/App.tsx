@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeftRightIcon } from 'lucide-react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { EmptyChatState } from '@/features/chat/EmptyChatState'
 import { ChatPane } from '@/features/chat/ChatPane'
@@ -67,6 +68,7 @@ export function App() {
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
   const showReadiness = !ready || !hasRepositories
   const view = useViewStore((state) => state.view)
+  const viewRef = useEnterOnSwitch(view, 'view')
   const rightPaneOpen = useRightPaneStore((state) => state.open)
   // Gate remediation (Medium, round 2): the rail and pane are chat-view only (Stuart's
   // decision). The store's own `open` flag genuinely survives a view switch (not just FR-003's
@@ -500,7 +502,7 @@ export function App() {
           `isSplit` like the region above, since closing the single, non-split pane down to
           zero is the one case that region's own gate would otherwise miss. */}
       <div aria-live="polite" className="sr-only">{chatAreaAnnouncement}</div>
-      <div className="min-h-0 flex-1">
+            <div ref={viewRef} className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
         ) : view === 'settings' ? (

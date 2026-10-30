@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { ValueCrossfade } from '@/components/ValueCrossfade'
 import { useSessionsStore, useSettingsStore } from '@/state'
 import { PICKER_TRIGGER_CLASS } from './pickerShared'
 import type { ApprovalMode } from '../../../shared/model'
@@ -93,7 +94,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
           )}
         >
           <CurrentIcon aria-hidden className="size-4" />
-          {current.label}
+          <ValueCrossfade value={current.label} />
           {pendingLabel && <span className="text-muted-foreground">&middot; {pendingLabel}</span>}
         </button>
       </DropdownMenuTrigger>

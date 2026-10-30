@@ -8,6 +8,7 @@ import { forwardRef, type ComponentProps } from 'react'
 import { ClockIcon, CpuIcon, PinIcon, type LucideIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { ValueCrossfade } from '@/components/ValueCrossfade'
 import { CUSTOM_ROLE, ROLE_ICON, ROLE_LABEL, type RoleChipRoleId } from '@/lib/modelRoles'
 import { friendlyProviderLabel } from '@/lib/providerLabels'
 import { useModelRolesStore, useSessionsStore } from '@/state'
@@ -84,11 +85,11 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
             className={cn(PICKER_TRIGGER_CLASS, 'max-w-80 min-w-0 shrink', className)}
           >
             <shown.Icon aria-hidden className="size-4 shrink-0" />
-            <span className="shrink-0">{shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')}</span>
+            <ValueCrossfade className="shrink-0" value={shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')} />
             {shown.roleLabel && shown.model && (
               <span className="flex min-w-0 gap-1 @max-[400px]:hidden">
                 <span aria-hidden>·</span>
-                <span className="truncate">{shortModelName(shown.model)}</span>
+                <ValueCrossfade className="truncate" value={shortModelName(shown.model)} />
               </span>
             )}
             {queued && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}
