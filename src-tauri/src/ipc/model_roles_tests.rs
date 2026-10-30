@@ -135,6 +135,7 @@ fn parse_catalog_response_accepts_both_shapes_and_drops_bad_rows() {
         // Issue #1069: neither field is present, so both parse to their defaults.
         reasoning: false,
         thinking: None,
+        context_window: None,
     }];
     assert_eq!(
         parse_catalog_response(&serde_json::json!([valid.clone()])).unwrap(),
@@ -169,7 +170,7 @@ fn parse_catalog_response_accepts_both_shapes_and_drops_bad_rows() {
 }
 
 #[test]
-fn parse_catalog_response_keeps_only_the_six_needed_fields() {
+fn parse_catalog_response_keeps_only_the_seven_needed_fields() {
     let rich = serde_json::json!({
         "provider": "github-copilot", "kind": "chat", "id": "claude-fable-5",
         "selector": "github-copilot/claude-fable-5", "name": "Claude Fable 5",
@@ -185,6 +186,7 @@ fn parse_catalog_response_keeps_only_the_six_needed_fields() {
             name: "Claude Fable 5".into(),
             reasoning: true,
             thinking: Some(vec!["low".into(), "high".into()]),
+            context_window: Some(1_000_000),
         }]
     );
 }

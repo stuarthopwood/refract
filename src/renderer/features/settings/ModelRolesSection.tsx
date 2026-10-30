@@ -21,6 +21,7 @@ import { AdvisorModelRow } from './AdvisorModelRow'
 import { ProviderSwitch } from './ProviderSwitch'
 import { CATALOG_KIND_LABEL, RoleCatalogStatus } from './RoleCatalogStatus'
 import { RoleRow } from './RoleRow'
+import { SuspectWindowsNotice } from './SuspectWindowsNotice'
 
 export interface RoleDescriptor {
   role: ModelRoleId
@@ -294,6 +295,7 @@ export function ModelRolesSection() {
         </Alert>
       ) : (
         <>
+          <SuspectWindowsNotice catalog={catalogs.chat} />
           <ProviderSwitch
             providers={providersInCatalog(catalogs.chat)}
             selected={selectedProvider}
