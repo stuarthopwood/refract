@@ -1,11 +1,14 @@
-import type { CSSProperties } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { GaugeIcon, TriangleAlertIcon } from 'lucide-react'
 import { compactNumber } from '@/lib/compactNumber'
-import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
+import { findSuspectWindow, suspectWindowNote } from '@/lib/suspectContextWindow'
+import { EMPTY_READOUT_ENTRY, useModelRolesStore, useReadoutStore, useSessionsStore, useSettingsStore } from '@/state'
 import { ContextShakeMenu } from './ContextShakeMenu'
 import { ReadoutItem } from './ReadoutItem'
 
 export const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
+
+const refreshedSessions = new Set<string>()
 
 const STOPS = [0, 30, 70, 100] as const
 
@@ -23,11 +26,21 @@ export function contextUsageColor(percent: number): string {
 export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
   const contextUsage = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.contextUsage)
   const showBar = useSettingsStore((s) => s.settings.showContextUsageBar !== false)
+  const model = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.lastModel)
+  const catalog = useModelRolesStore((s) => s.catalogs.chat)
+  useEffect(() => {
+    // One forced refresh per session per run so a stale cached catalog cannot hide or invent a warning.
+    const force = !refreshedSessions.has(sessionId)
+    refreshedSessions.add(sessionId)
+    void useModelRolesStore.getState().loadCatalog('chat', force)
+  }, [sessionId, model?.id])
+  const suspect = findSuspectWindow(catalog, model)
+  const notice = suspect ? suspectWindowNote(suspect) : undefined
   if (contextUsage === null) return null
   if (contextUsage === 'not-available') {
     return (
-      <ContextShakeMenu sessionId={sessionId} figure={null}>
-        <ReadoutItem icon={GaugeIcon} accessibleName="Context n/a, context usage, shake options">
+      <ContextShakeMenu sessionId={sessionId} figure={null} notice={notice}>
+        <ReadoutItem icon={GaugeIcon} warning={Boolean(notice)} accessibleName={`Context n/a, context usage${notice ? `, warning: ${notice}` : ''}, shake options`}>
           <span aria-hidden>Context n/a</span>
         </ReadoutItem>
       </ContextShakeMenu>
@@ -41,10 +54,11 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
   const usedFull = FULL_NUMBER_FORMAT.format(contextUsage.usedTokens)
   const windowFull = FULL_NUMBER_FORMAT.format(contextUsage.windowTokens)
   return (
-    <ContextShakeMenu sessionId={sessionId} figure={`${used}/${windowSize} (${percent}%)`}>
+    <ContextShakeMenu sessionId={sessionId} figure={`${used}/${windowSize} (${percent}%)`} notice={notice}>
       <ReadoutItem
         icon={high ? TriangleAlertIcon : GaugeIcon}
-        accessibleName={`${used}/${windowSize} (${percent}%)${high ? ' high' : ''}, ${usedFull} of ${windowFull} tokens used, context usage, shake options`}
+        warning={Boolean(notice)}
+        accessibleName={`${used}/${windowSize} (${percent}%)${high ? ' high' : ''}, ${usedFull} of ${windowFull} tokens used, context usage${notice ? `, warning: ${notice}` : ''}, shake options`}
       >
         <span aria-hidden data-context-usage-figures style={colour} className="relative inline-flex items-center self-stretch">
           {used}/{windowSize} ({percent}%)
