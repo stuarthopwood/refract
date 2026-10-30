@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.16.0 (2026-10-30)
+
+### Features
+
+- feat(palette): command palette on a shared action registry (https://github.com/stuarthopwood/refract/pull/1415)
+- feat(palette): move menus and chords onto the action registry (https://github.com/stuarthopwood/refract/pull/1440)
+
+### Fixes
+
+- fix(chat): Previous past Notes, suspect context window warning, Usage spacing (https://github.com/stuarthopwood/refract/pull/1442)
+- fix(pull-requests): detail and filter polish for pull requests and issues (https://github.com/stuarthopwood/refract/pull/1444)
+- fix(session-list): session list and settings polish (https://github.com/stuarthopwood/refract/pull/1447)
+- fix(ui): app-wide polish for pickers, fields, buttons and chrome (https://github.com/stuarthopwood/refract/pull/1450)
+- fix(updater): loud install hand-off, composer spelling, Question card polish (https://github.com/stuarthopwood/refract/pull/1451)
+- fix(git): give diff_stat tests a 30 s budget under parallel load (https://github.com/stuarthopwood/refract/pull/1453)
+
+### Other
+
+- chore(renderer): cut src/renderer and src/shared comments to why-only (#1322) (https://github.com/stuarthopwood/refract/pull/1384)
+- docs(plan): add top chrome issue #1385 (https://github.com/stuarthopwood/refract/pull/1386)
+- docs(plan): add action buttons issue #1387 (https://github.com/stuarthopwood/refract/pull/1388)
+- docs(plan): add PR view dividers issue #1389 (https://github.com/stuarthopwood/refract/pull/1390)
+- docs(plan): add picker width issue #1391 (https://github.com/stuarthopwood/refract/pull/1392)
+- docs(plan): add hide merged PR actions issue #1393 (https://github.com/stuarthopwood/refract/pull/1394)
+- docs(plan): add #1395 quiet text fields line (https://github.com/stuarthopwood/refract/pull/1396)
+- docs(plan): add #1397 copy link icon line (https://github.com/stuarthopwood/refract/pull/1398)
+- docs(plan): add #1399 and #1400 select picker lines (https://github.com/stuarthopwood/refract/pull/1401)
+- docs(plan): add #1402 session usage panel line (https://github.com/stuarthopwood/refract/pull/1403)
+- docs(plan): add #1404 and #1405 context menu lines (https://github.com/stuarthopwood/refract/pull/1406)
+- docs(plan): add #1407 usage section spacing line (https://github.com/stuarthopwood/refract/pull/1408)
+- docs(plan): add #1409 advisor roster line (https://github.com/stuarthopwood/refract/pull/1410)
+- docs(plan): add #1411 context window warning line (https://github.com/stuarthopwood/refract/pull/1412)
+- docs(plan): add #1413 previous message note line (https://github.com/stuarthopwood/refract/pull/1414)
+- docs(plan): add #1416 hidden toggle line, correct #1413 cause (https://github.com/stuarthopwood/refract/pull/1417)
+- docs(plan): add #1418 session card ghost buttons line (https://github.com/stuarthopwood/refract/pull/1419)
+- docs(plan): add #1420 reveal action wording line (https://github.com/stuarthopwood/refract/pull/1421)
+- docs(plan): add #1422 header hover line (https://github.com/stuarthopwood/refract/pull/1423)
+- docs(plan): add #1424 appearance autosave line (https://github.com/stuarthopwood/refract/pull/1425)
+- docs(plan): add #1426 composer clock alarms line (https://github.com/stuarthopwood/refract/pull/1427)
+- docs(plan): add #1428-#1437 UI feedback batch lines (https://github.com/stuarthopwood/refract/pull/1438)
+
 ## v0.15.0 (2026-10-30)
 
 ### Features
