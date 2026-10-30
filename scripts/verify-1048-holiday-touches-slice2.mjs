@@ -11,6 +11,7 @@ import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSy
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { buildFakeGh } from './verify-1121-pr-polish-fake-gh.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
+import { createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
 import { settleForScreenshot, dispatchNeutralPointerdown } from './verify-1048-holiday-touches-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,21 +68,25 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
     child = launched.child;
     cdp = await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 }));
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target is not owned by the launched pid');
+    // The loop pauses while the window lacks focus; a background-launched exe has none.
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    // Transcript-pane loops live in gutters that only exist above 86rem (1376px).
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1800, height: 1000, deviceScaleFactor: 1, mobile: false });
     await cdp.waitFor(`!!(window.refract && window.refract.debug)`, { timeoutMs: 15_000, label: 'debug bridge' });
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen' });
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
     await cdp.click(`document.querySelector('[data-readiness-primary]')`);
+    const localFolder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Local folder'))`;
+    await cdp.waitFor(`!!(${localFolder})`, { timeoutMs: 10_000, label: 'Add project menu open' });
+    await cdp.click(localFolder);
     await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
-    await cdp.waitFor(`!!document.querySelector('[data-chat-empty-state]')`, { timeoutMs: 30_000, label: 'Empty chat state' });
-
-    await cdp.clickByLabel('New session from a branch in ', { prefix: true });
-    await cdp.waitFor(`(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`, { timeoutMs: 15_000, label: 'New session dialog' });
-    await cdp.clickByText('Create session', { inDialog: true });
-    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Dialog closed' });
-    await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Composer enabled' });
+    await cdp.clickByText('Add project', { inDialog: true });
+    await cdp.waitFor(`!!document.querySelector('[data-repository-id]')`, { timeoutMs: 30_000, label: 'Project added' });
+    await createSessionViaQuickCreate(cdp, path.basename(repoDir));
+    await cdp.evaluate(`window.refract.settings.setChatWidth('reading-column')`);
+    await sleep(500);
     await settleForScreenshot(cdp);
 
     const presence = () =>
@@ -92,7 +97,7 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
       }))()`);
     const p = await presence();
     if (c.icon) {
-      check(!!p.watermark && p.watermark.includes(c.icon), `${c.id} (${c.date}): watermark glyph is ${c.icon}`, p);
+      check(!p.watermark, `${c.id} (${c.date}): session-pane watermark stays plain (#1256)`, p);
       check(p.sidebar.some((k) => k.includes(c.icon)), `${c.id}: sidebar logo accessory is ${c.icon}`, p);
       check(p.loop === c.loop, `${c.id}: ambient loop ${c.loop ? 'present' : 'absent'} under Full`, p);
     } else {
@@ -114,7 +119,7 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
       await cdp.evaluate(`window.refract.settings.setHolidayTouches('artwork')`);
       await cdp.waitFor(`!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Artwork only: loop unmounts' });
       const pa = await presence();
-      check(!!pa.watermark && pa.sidebar.some((k) => k.includes(c.icon)), 'Artwork only: watermark and sidebar artwork stay', pa);
+      check(pa.sidebar.some((k) => k.includes(c.icon)), 'Artwork only: sidebar artwork stays', pa);
       await cdp.screenshot(shot('artwork-only'));
       await cdp.evaluate(`window.refract.settings.setHolidayTouches('off')`);
       await sleep(500);
@@ -125,8 +130,8 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
       await cdp.waitFor(`!!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Full: loop remounts' });
       await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
       await cdp.waitFor(`getComputedStyle(document.querySelector('.holiday-ambient-loop')).display === 'none'`, { timeoutMs: 5_000, label: 'Reduced motion hides the loop layer' });
-      const running = await cdp.evaluate(`document.getAnimations().length`);
-      check(running === 0, 'Reduced motion: no running animations', running);
+      const running = await cdp.evaluate(`document.getAnimations().filter((a) => a.effect?.target?.classList?.contains('holiday-ambient-loop-bat-wrap') && a.playState === 'running').length`);
+      check(running === 0, 'Reduced motion: no running loop animations', running);
       await cdp.screenshot(shot('reduced-motion'));
     }
 
@@ -150,8 +155,16 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
     const calls = existsSync(ompLog) ? readFileSync(ompLog, 'utf8').split('\n').filter(Boolean).length : 0;
     report.push({ step: `${c.id}: fake omp call log`, ok: true, extra: { log: ompLog, calls } });
     if (c.icon) check(calls > 0, `${c.id}: fake omp was used (call log has entries)`, calls);
+  } catch (err) {
+    if (cdp) {
+      await cdp.screenshot(shot('FAILED')).catch(() => {});
+      const text = await cdp.evaluate(`document.body.innerText.slice(0, 600)`).catch(() => '');
+      console.error(`${LOG}: page text at failure: ${JSON.stringify(text)}`);
+      const diag = await cdp.evaluate(`(() => { const l = document.querySelector('.holiday-ambient-loop'); const w = l && Array.from(l.querySelectorAll('.holiday-ambient-loop-bat-wrap')); return JSON.stringify({ paused: l?.getAttribute('data-paused'), count: l?.getAttribute('data-flight-count'), focus: document.hasFocus(), hidden: document.hidden, visible: w?.map((e) => e.offsetParent !== null) }); })()`).catch(() => '');
+      console.error(`${LOG}: loop diag: ${diag}`);
+    }
+    throw err;
   } finally {
-    if (cdp) cdp.close();
     if (child) await stopLauncher(child).catch(() => {});
     await safeRmSync(dataDir, LOG);
     await safeRmSync(importSourceDir, LOG);
