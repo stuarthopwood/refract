@@ -901,6 +901,8 @@ Also filed 2026-10-30: **#1416** (`p1`, bug), Session list: the Show hidden togg
 
 Also filed 2026-10-30: **#1418** (`p1`), Session details card: Copy path and Open in file explorer become ghost buttons (`outline` to `ghost` in `SessionDetailsCard.tsx`); placed as an index line after #1416's line.
 
+Also filed 2026-10-30: **#1420** (`p1`), App-wide: one label and icon for every reveal action ("Show in File Explorer" with `FolderOpenIcon`) across chat file links, the file explorer panel, the Session details card and the Session row menus, from one shared definition; pairs with #1418 and #1405; placed as an index line after #1418's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
