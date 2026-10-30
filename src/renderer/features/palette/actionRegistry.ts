@@ -46,6 +46,11 @@ export function chordText(chord: Chord): string {
   return chord.join('+')
 }
 
+/** Chord as words for screen readers, for example `Ctrl plus Shift plus comma`. */
+export function spokenChord(chord: Chord): string {
+  return chord.map((key) => (key === ',' ? 'comma' : key)).join(' plus ')
+}
+
 // Latin letters match on `event.key` and other layouts fall back to `event.code`, like the window-level handlers.
 function keyMatches(event: KeyboardEvent, token: string): boolean {
   const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)

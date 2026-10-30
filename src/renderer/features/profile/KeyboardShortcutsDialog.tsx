@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
-import { getActions, type Chord } from '@/features/palette/actionRegistry'
+import { getActions, spokenChord, type Chord } from '@/features/palette/actionRegistry'
 
 export interface KeyboardShortcutsDialogProps {
   open: boolean
@@ -34,7 +34,7 @@ const CONTEXTUAL_ROWS: Record<string, ShortcutRow[]> = {
 
 const GROUP_ORDER = ['Message box', 'Sessions', 'Pause', 'Chat pane', 'Right pane', 'Split view', 'General']
 
-// Rows for bound chords come from the action registry so this list cannot drift from what the palette runs.
+// Bound-chord rows are display metadata from the action registry; the handlers that match those chords live elsewhere.
 function buildShortcutGroups(): ShortcutGroup[] {
   const rows = new Map<string, ShortcutRow[]>(Object.entries(CONTEXTUAL_ROWS).map(([heading, list]) => [heading, [...list]]))
   for (const action of getActions()) {
@@ -46,6 +46,7 @@ function buildShortcutGroups(): ShortcutGroup[] {
   const headings = [...GROUP_ORDER.filter((heading) => rows.has(heading)), ...[...rows.keys()].filter((heading) => !GROUP_ORDER.includes(heading))]
   return headings.map((heading) => ({ heading, rows: rows.get(heading) ?? [] }))
 }
+
 /** Read-only list of the supported keyboard shortcuts. */
 export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: KeyboardShortcutsDialogProps) {
   const doneRef = useRef<HTMLButtonElement>(null)
@@ -66,13 +67,13 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
       >
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
-          <DialogDescription>The shortcuts Refract supports today. Ctrl+K opens the command palette.</DialogDescription>
+          <DialogDescription>The shortcuts Refract supports today.</DialogDescription>
         </DialogHeader>
         <div className="flex min-w-0 flex-col gap-4 overflow-y-auto">
           {groups.map((group) => (
             <div key={group.heading} className="flex min-w-0 flex-col gap-2">
               <h3 className="text-xs text-muted-foreground">{group.heading}</h3>
-              <ul role="list" className="flex flex-col gap-2">
+              <ul className="flex flex-col gap-2">
                 {group.rows.map((row) => (
                   <li key={row.action} className="flex min-w-0 items-center justify-between gap-2">
                     <span className="min-w-0 truncate text-sm">{row.action}</span>
@@ -80,21 +81,12 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
                       {row.chords.map((chord, index) => (
                         <span key={chord.join('+')} className="flex items-center gap-2">
                           {index > 0 && <span className="text-xs text-muted-foreground">or</span>}
-                          <KbdGroup>
+                          <KbdGroup aria-hidden>
                             {chord.map((key) => (
-                              <Kbd key={key}>
-                                {/* A lone ',' reads ambiguously to screen readers. */}
-                                {key === ',' ? (
-                                  <>
-                                    <span aria-hidden>,</span>
-                                    <span className="sr-only">comma</span>
-                                  </>
-                                ) : (
-                                  key
-                                )}
-                              </Kbd>
+                              <Kbd key={key}>{key}</Kbd>
                             ))}
                           </KbdGroup>
+                          <span className="sr-only">{spokenChord(chord)}</span>
                         </span>
                       ))}
                     </span>

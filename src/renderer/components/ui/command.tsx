@@ -61,7 +61,7 @@ function CommandInput({
   return (
     <div
       data-slot="command-input-wrapper"
-      className="flex items-center gap-2 border-b border-border px-2"
+      className="flex items-center gap-2 border-b border-border px-2 focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring"
     >
       <SearchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
@@ -102,6 +102,22 @@ function CommandEmpty({
   )
 }
 
+/** Result count for assistive tech (persistent live region) plus the visible empty state; kept outside the listbox. */
+function CommandStatus({ count }: { count: number }) {
+  return (
+    <>
+      <div data-slot="command-status" role="status" aria-live="polite" className="sr-only">
+        {count === 0 ? "No results" : `${count} ${count === 1 ? "result" : "results"}`}
+      </div>
+      {count === 0 && (
+        <div aria-hidden className="py-6 text-center text-sm text-muted-foreground">
+          No results.
+        </div>
+      )}
+    </>
+  )
+}
+
 function CommandGroup({
   className,
   ...props
@@ -126,7 +142,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex min-w-0 cursor-default items-center gap-2 rounded-md px-2 py-1 text-sm outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground",
+        "relative flex min-w-0 cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[selected=true]:ring-2 data-[selected=true]:ring-inset data-[selected=true]:ring-ring forced-colors:data-[selected=true]:bg-[Highlight] forced-colors:data-[selected=true]:text-[HighlightText]",
         className
       )}
       {...props}
@@ -150,6 +166,7 @@ export {
   CommandInput,
   CommandList,
   CommandEmpty,
+  CommandStatus,
   CommandGroup,
   CommandItem,
   CommandShortcut,
