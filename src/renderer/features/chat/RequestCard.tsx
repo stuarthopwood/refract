@@ -6,6 +6,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { OPTION_FILL_CLASS } from '@/components/ui/checkbox'
+import { cn } from '@/lib/utils'
 import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
 import { CollapsedLine } from './CollapsedLine'
@@ -410,7 +412,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                   variant="outline"
                   disabled={busy}
                   data-choice-item
-                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal bg-transparent py-1 text-left hover:bg-muted dark:border-border dark:bg-transparent dark:hover:bg-muted"
+                  className={cn("h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal py-1 text-left", OPTION_FILL_CLASS)}
                   onClick={() => void answer({ value: option }, 'answered', displayLabel)}
                 >
                   <span className="w-full min-w-0 break-words text-sm">
@@ -448,7 +450,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
       </CardContent>
       <CardFooter>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+        <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
           Cancel
         </Button>
       </CardFooter>

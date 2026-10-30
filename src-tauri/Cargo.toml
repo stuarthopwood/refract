@@ -130,4 +130,7 @@ windows = { version = "0.62.2", features = [
   "Win32_System_RestartManager",
   # Issue #561: `GetProcessMemoryInfo` (`session::health`) reads each agent's own working set.
   "Win32_System_ProcessStatus",
+  # Issue #1431: ISpellChecker (composer menu spelling suggestions).
+  "Win32_Globalization",
+  "Win32_System_Com",
 ] }
