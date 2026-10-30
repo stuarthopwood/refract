@@ -1,12 +1,3 @@
-// Issue #687 (spec 004 FR-035 to FR-040, FR-042): the current-work banner, one line directly above
-// the composer: the label in the accent text colour with the shared shimmer while
-// the Session is working (static when it needs you; the sweep is not restarted by a label change).
-// No elapsed time (FR-039, issue #1250): the turn-time chip and the transcript's turn total carry it.
-// Shown while the Session is working or needs you, hidden when idle, gated by
-// `sessionReadout['current-work']`. One per ChatPane (each split pane mounts its own, keyed by
-// `sessionId`). Text comes from the shared pure `deriveActivity` (src/shared/activity.ts) and is
-// rendered as plain text only. No spinner, no stop control (the composer and chat header already
-// carry both); `aria-live="off"`, so a screen reader is never interrupted by it.
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSessionsStore, useSettingsStore, useTodoPinStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { FadeCollapse } from '@/components/FadeCollapse'

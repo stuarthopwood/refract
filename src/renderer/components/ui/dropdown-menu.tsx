@@ -74,8 +74,6 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       data-variant={variant}
       data-inset={inset}
-      // The active-row cue is the opaque `--active-indicator` token, the same as the composer's
-      // pickers. A destructive item (Sign out, Remove repository...) keeps its own
       // `--color-destructive` cue so the bar never reads as "current" on top of its red tint.
       className={cn(MENU_ITEM_CLASS, MENU_ITEM_DESTRUCTIVE_CLASS, className)}
       {...props}
@@ -83,10 +81,6 @@ function DropdownMenuItem({
   )
 }
 
-/** Gate round 1 fix (code-reviewer HIGH, issue #564): the Reasoning picker's own current-level
- * selection used a plain `DropdownMenuItem` with a decorative, `aria-hidden` check icon, so a
- * screen reader never heard which level was current. Radix's own `RadioGroup`/`RadioItem`
- * expose that as `aria-checked`/`role="menuitemradio"` automatically. */
 function DropdownMenuRadioGroup({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
@@ -103,23 +97,6 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      // Issue #1043 (grilled 2026-10-19, ADR 0003): the TRAILING `CheckIcon` (see the Gate round 1
-      // note on `DropdownMenuRadioGroup`) read as unselected: the round swatches in the Theme
-      // submenu, its first caller, looked identical whether checked or not. Moves to the SAME
-      // leading ring-and-dot mark the Ask card's radios use
-      // (`RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, `radio-group.tsx`'s own shared source, ADR 0003 --
-      // never a second hand-rolled copy), so the checked row is visibly filled, not merely
-      // inferred from a trailing glyph. `group/radio-item` plus Radix's own `data-state`
-      // attribute (set on every `RadioItem` root, checked/unchecked) is what the ring's
-      // `group-data-[state=checked]/radio-item:` selector keys off, the same mechanism
-      // `RadioGroupItem` uses for the identical selector. Unlike Ask card/MergeDialog (full
-      // bordered cards whose OWN border already carries a `forced-colors:data-[state=checked]:
-      // border-[Highlight]` override), a menu row has no bordered-card fallback, so the ring
-      // itself needs that override here, or a checked and an unchecked row would render
-      // identically under Windows High Contrast (the same failure mode `RadioGroupItem`'s own
-      // comment documents, just with no outer border to lean on this time). The inset shadow
-      // stays on `--active-indicator`, same as `DropdownMenuItem` above -- unrelated to this
-      // fix, that cue follows focus, never selection (2026-10-15 decision, unchanged).
       className={cn("group/radio-item", MENU_ITEM_CLASS, className)}
       {...props}
     >
@@ -150,8 +127,6 @@ function DropdownMenuRadioItem({
   )
 }
 
-/** #496: a toggle row, exposed as
- * `role="menuitemcheckbox"` with `aria-checked` by Radix; the leading check mark is decorative. */
 function DropdownMenuCheckboxItem({
   className,
   children,

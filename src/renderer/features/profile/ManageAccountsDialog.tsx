@@ -1,10 +1,3 @@
-// Manage accounts (FR-008 to FR-011, FR-014, FR-016, T016/T017/T019): lists every GitHub CLI
-// account, offers Switch/Sign out per row, hosts the inline add-account flow
-// (AddAccountPanel.tsx) directly under its own section header, and (below a separator) the
-// read-only OMP provider section (OmpProvidersSection.tsx). Sign-out confirmation itself lives
-// one level up, in ProfileItem.tsx -- this dialog only asks its caller (`onRequestSignOut`) to
-// open it, since the same confirmation is also reachable from the profile menu's own Sign out
-// item, outside this dialog entirely.
 import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { Ref } from 'react'
 import {
@@ -31,44 +24,16 @@ import { OmpProvidersSection } from './OmpProvidersSection'
 export interface ManageAccountsDialogProps {
   open: boolean
   onOpenChange(open: boolean): void
-  /** Asks the caller (ProfileItem.tsx) to open the shared SignOutDialog for `account`; this
-   *  dialog never confirms a sign-out itself. */
   onRequestSignOut(account: GitHubAccount): void
-  /** Called on every close (Esc, the X button, or programmatically), after this dialog's own
-   *  close-auto-focus is suppressed -- the caller (ProfileItem.tsx) always returns focus to the
-   *  profile item's name button, since nothing inside this dialog is a better target once it is
-   *  gone. */
   onCloseFocus?(): void
 }
 
-/** Imperative focus targets ProfileItem.tsx needs after the shared SignOutDialog closes (its own
- *  focus map depends on whether the row that launched it, here, got a new active account or not
- *  -- state this dialog owns, not ProfileItem). Each method returns whether it actually found and
- *  focused a live element, so the caller can fall back to a different target when the original
- *  row is gone (e.g. the account it belonged to was just signed out). */
+/** Imperative focus targets ProfileItem.tsx needs after the shared SignOutDialog closes (its own */
 export interface ManageAccountsDialogHandle {
   focusAccountSignOutButton(host: string, login: string): boolean
   focusAddAccountButton(): boolean
-  /** Writes to this dialog's own polite live region (quality-gate remediation, accessibility-
-   *  auditor High): Radix hides everything outside an open modal dialog from assistive tech, so
-   *  a status message produced while this dialog is open -- e.g. ProfileItem.tsx's "Signed out
-   *  {name}" after a Manage accounts row's own Sign out confirms -- must be announced from a
-   *  region inside THIS dialog, not the caller's own (which stays hidden for as long as this
-   *  dialog stays open). A no-op while this dialog is closed (nothing is listening). */
   announce(text: string): void
-  /** Runs the exact same guarded start this dialog's own Add account button runs (status
-   *  gating, aria-disabled, assertive failure announcement + refocus) -- quality-gate
-   *  remediation (code-reviewer/accessibility-auditor Medium): the profile menu's "Sign in to
-   *  GitHub…" item opens this dialog and calls this instead of `addAccountStart()` directly,
-   *  which used to bypass every one of those guards and could start a second, concurrent flow. */
   startAddFlow(): void
-  /** UI N4 (quality-gate remediation, gate-3): "Fix sign-in…"/"Check GitHub connection…" (the
-   *  profile menu's own item, and ProfileItem.tsx's own name row) both open this dialog and call
-   *  this instead of `startAddFlow()` -- focuses whichever recovery control the ACTIVE account's
-   *  own row actually renders (Sign in again, or Check again for an unreachable host) WITHOUT
-   *  starting anything itself. Returns `false` (never auto-starts a flow as a fallback) when
-   *  there is no active account, or its row renders neither control (an Enterprise host's
-   *  terminal-command text has no button at all). */
   focusActiveAccountFixButton(): boolean
 }
 
@@ -79,16 +44,9 @@ function rowKey(host: string, login: string): string {
 function focusButton(el: HTMLElement | null | undefined): boolean {
   if (!el || !document.body.contains(el)) return false
   el.focus()
-  // Report success only if the element actually took focus (a disabled or inert element silently
-  // ignores focus()), so a retry loop never stops on a no-op.
   return document.activeElement === el
 }
 
-/** Retries the PREFERRED focus target on successive animation frames (up to `tries`) until it
- *  takes focus, then runs the `fallback` chain once. A store update's React commit can land after
- *  the first frame, so the control being focused may not exist yet; retrying only the preferred
- *  target (never the whole chain) stops a control that already exists, such as a row's Sign out,
- *  from winning the race against the one the user should land on. */
 function focusWhenReady(preferred: () => boolean, fallback?: () => boolean, tries = 12): void {
   requestAnimationFrame(() => {
     if (preferred()) return
@@ -100,11 +58,6 @@ function focusWhenReady(preferred: () => boolean, fallback?: () => boolean, trie
   })
 }
 
-/** UI N4 / A11y M1 (quality-gate remediation, gate-3): an unreachable host -- the `problem`
- *  field (set by main from `gh`'s own per-account error text), or the legacy `timeout` `state`
- *  value from before `problem` existed -- can never be fixed by Sign in again, so every row
- *  text/button/focus decision below branches on this instead of `account.state !== 'success'`
- *  alone. */
 function isUnreachable(account: GitHubAccount): boolean {
   return account.problem === 'unreachable' || account.state === 'timeout'
 }
@@ -121,10 +74,6 @@ export function ManageAccountsDialog({
   const addFlow = useAccountsStore((state) => state.addFlow)
   const addFlowOutcome = useAccountsStore((state) => state.addFlowOutcome)
   const pendingSwitch = useAccountsStore((state) => state.pendingSwitch)
-  // A11y M1 / UI N3 (quality-gate remediation, gate-3): drives the "Checking…"/aria-disabled
-  // state of every Check again control in this dialog (the header's own retry, and each
-  // unreachable row's own), the same reactive-subscription pattern `starting`/`addFlow` already
-  // use for Add account/Sign in again.
   const githubRefreshing = useAccountsStore((state) => state.githubRefreshing)
 
   const [starting, setStarting] = useState(false)
@@ -133,27 +82,15 @@ export function ManageAccountsDialog({
   const [assertive, announceAssertive] = useClearedAnnouncement()
 
   const addAccountBtnRef = useRef<HTMLButtonElement>(null)
-  // Accessibility-auditor High: the CLI-missing branch renders no Add account button at all, so
-  // `onOpenAutoFocus` below needs a second, always-present target for that branch.
   const installLinkRef = useRef<HTMLAnchorElement>(null)
-  // UI N1 / A11y M2 (quality-gate remediation, gate-3): the 'error' branch's own focus target --
-  // same reasoning as `installLinkRef` above, since that branch renders no Add account button
-  // either (nothing is known to have signed in yet when the CLI itself could not be read).
   const checkAgainHeaderRef = useRef<HTMLButtonElement>(null)
   const signOutRefs = useRef(new Map<string, HTMLButtonElement>())
   const switchRefs = useRef(new Map<string, HTMLButtonElement>())
-  // UI N4 (quality-gate remediation, gate-3): per-row recovery controls, tracked so
-  // `focusActiveAccountFixButton` ("Fix sign-in…"/"Check GitHub connection…") can focus
-  // whichever one the active account's own row actually renders.
   const signInAgainRefs = useRef(new Map<string, HTMLButtonElement>())
   const checkAgainRefs = useRef(new Map<string, HTMLButtonElement>())
   const rowLiRefs = useRef(new Map<string, HTMLLIElement>())
   const prevAddFlowRef = useRef(addFlow)
   const pendingAddAnnounceRef = useRef(false)
-  // Quality-gate remediation (code-reviewer High): `startAddFlow` is async and `open` can change
-  // while it awaits; a ref (not the `open` prop itself) is what a callback running after that
-  // await needs to see this render's latest value, same reasoning as SignOutDialog.tsx's own
-  // `accountRef`.
   const openRef = useRef(open)
   openRef.current = open
 
@@ -179,28 +116,13 @@ export function ManageAccountsDialog({
     }
   }))
 
-  // T019: a real OMP read spawns a scratch process (~4.7 s measured) -- fetched once per dialog
-  // open, never eagerly at app start and never re-fetched just because `open` stays true (the
-  // section's own "Check again"/"Retry" are the only other triggers).
   useEffect(() => {
     if (!open) return
     void useAccountsStore.getState().refreshOmpProviders()
-    // data-model.md / plan.md: the GitHub account list is refreshed on open too, the same
-    // stale-while-revalidate way the OMP section already is -- `refreshGithub` itself is a cheap
-    // no-op if a read is already in flight (e.g. the window focus/visibility refresh,
-    // init-stores.ts, already running).
     void useAccountsStore.getState().refreshGithub()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // Detects an add flow's own completion vs. cancellation (quality-gate remediation, code-
-  // reviewer Medium, root cause fix): the store nulls `addFlow` identically for BOTH outcomes, so
-  // this effect used to infer which one happened from the Cancel button's own `cancellingFlow`
-  // flag alone -- which only covers a click on THIS dialog's own Cancel button, never closing the
-  // dialog mid-flow (X/overlay) or the closed-while-starting auto-cancel `startAddFlow` issues
-  // itself, both of which armed the "Added…"/"Re-authenticated…" announcement by mistake.
-  // `addFlowOutcome` (the store's own last terminal status) is now the sole source of truth for
-  // THAT decision; `cancellingFlow` still only resets this dialog's own Cancel button UI.
   useEffect(() => {
     const prev = prevAddFlowRef.current
     prevAddFlowRef.current = addFlow
@@ -213,26 +135,13 @@ export function ManageAccountsDialog({
         pendingAddAnnounceRef.current = true
       }
     }
-    // A failed flow's own "Sign-in failed..." is announced once, by AddAccountPanel.tsx's own
-    // `role="alert"` paragraph -- quality-gate remediation (accessibility-auditor Low): a second
-    // assertive announcement from here was making a screen reader hear it twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addFlow, addFlowOutcome, cancellingFlow])
 
-  // Once the completed flow's new account actually shows up in `github` (it can arrive slightly
-  // after the 'completed' progress event -- contracts/ipc.md), announce and focus it.
   useEffect(() => {
     if (!pendingAddAnnounceRef.current) return
-    // Quality-gate remediation (code-reviewer Medium): cleared unconditionally, not only once an
-    // "added" account is found -- a "Sign in again" re-auth of an account already in the
-    // snapshot would otherwise leave this armed forever, mis-announcing the next unrelated flow.
     pendingAddAnnounceRef.current = false
     const before = useAccountsStore.getState().addFlowSnapshot
-    // UI N7 (quality-gate remediation, gate-3, inference): compares the active marker by login
-    // before vs. after, using the SAME pre-flow snapshot already captured for new-account
-    // detection above -- a completed flow (a brand new sign-in, or a "Sign in again" re-auth)
-    // can silently promote its account to active (main's own cli.ts decides that, not this
-    // dialog), which otherwise went unannounced.
     const activeBefore = before.find((candidate) => candidate.active)
     const activeAfter = github.find((candidate) => candidate.active)
     const activeChanged =
@@ -244,8 +153,6 @@ export function ManageAccountsDialog({
       signOutRefs.current.get(rowKey(added.host, added.login))?.focus()
       return
     }
-    // No brand new account appeared: this was a re-authentication of one already in the list,
-    // which still deserves its own announcement.
     const reauthed = findReauthenticatedAccount(before, github)
     if (reauthed) {
       announcePolite(`Re-authenticated ${reauthed.displayName ?? reauthed.login}${activeSuffix}`)
@@ -257,8 +164,6 @@ export function ManageAccountsDialog({
   }, [github])
 
   async function startAddFlow(): Promise<void> {
-    // Blocks only while a flow is actually running (quality-gate remediation, code-reviewer
-    // High): a 'failed' flow must never keep blocking Add account/Retry/Sign in again forever.
     if (addFlow?.status === 'waiting' || starting) return
     if (addFlow?.status === 'failed') useAccountsStore.getState().setAddFlow(null)
     setCancellingFlow(false)
@@ -271,11 +176,6 @@ export function ManageAccountsDialog({
       return
     }
     if (!openRef.current) {
-      // Quality-gate remediation (code-reviewer Medium): the dialog was closed (overlay click,
-      // the X button -- anything other than Escape, which `handleEscape` already blocks) while
-      // this request was still in flight, before `addFlow` had a `flowId` to cancel by. Now
-      // that one exists, cancel immediately rather than leaving `gh auth login` running
-      // unattended.
       const flowId = useAccountsStore.getState().addFlow?.flowId
       if (flowId) void useAccountsStore.getState().addAccountCancel(flowId)
     }
@@ -286,9 +186,6 @@ export function ManageAccountsDialog({
     void (async () => {
       const result = await useAccountsStore.getState().addAccountCancel(flowId)
       if (!result.ok) {
-        // Quality-gate remediation (accessibility-auditor Medium): otherwise Cancel is stuck on
-        // "Cancelling…" for good -- a successful cancel already resets this via the add-flow
-        // detection effect above, once `addFlow` actually goes null.
         setCancellingFlow(false)
         announceAssertive(`Could not cancel sign-in: ${result.message ?? 'unknown error'}`)
       }
@@ -307,26 +204,11 @@ export function ManageAccountsDialog({
     }
   }
 
-  /** A11y M1 / UI N3 (quality-gate remediation, gate-3), extended gate-4 Medium 1: one
-   *  unreachable row's own "Check again" (guarded by `githubRefreshing`, same pattern as Add
-   *  account/Sign in again above). `refreshGithub` re-reads every account, not just this one, so
-   *  the outcome is read back by re-finding THIS row afterwards, not assumed from a boolean
-   *  result -- split three ways, since "the problem cleared" used to wrongly cover both "it's
-   *  fixed" and "it changed to a DIFFERENT problem" alike: still `success` keeps today's
-   *  behaviour; still unreachable keeps the assertive warning and leaves focus alone (nothing
-   *  actually changed); anything else -- the token expired/unknown so the row now shows Sign in
-   *  again, or the account was signed out elsewhere so the row is gone entirely -- announces
-   *  what is now true (never the stale "Still can't reach GitHub") and focuses the row's own
-   *  recovery control. That control, or the whole row, only exists after this render commits, so
-   *  the focus move is deferred one frame, the same `requestAnimationFrame` `handleFixSignIn`
-   *  (ProfileItem.tsx) already uses for the identical reason. */
   async function handleRowCheckAgain(account: GitHubAccount): Promise<void> {
     if (useAccountsStore.getState().githubRefreshing) return
     const key = rowKey(account.host, account.login)
     await useAccountsStore.getState().refreshGithub()
     if (useAccountsStore.getState().githubStatus === 'missing-cli') {
-      // The read found no GitHub CLI at all, so the account list was cleared: say that, not that
-      // this account was signed out. The dialog has switched to its CLI-missing branch.
       announcePolite('GitHub CLI not found')
       focusWhenReady(
         () => focusButton(installLinkRef.current),
@@ -364,12 +246,6 @@ export function ManageAccountsDialog({
     }
   }
 
-  /** A11y M1 / UI N3 (quality-gate remediation, gate-3), extended gate-4 Medium 2: the 'error'
-   *  section's own header-level "Check again" used to announce nothing in either outcome, and
-   *  lost focus to the dialog container on success/missing-cli (the same Radix FocusScope
-   *  behaviour an unmounted row hits -- see `handleRowCheckAgain` above). Reads `githubStatus`
-   *  fresh from the store after the read resolves, since a successful/missing-cli result replaces
-   *  this whole branch (no single account to re-find the way the row handler does). */
   async function handleHeaderCheckAgain(): Promise<void> {
     if (useAccountsStore.getState().githubRefreshing) return
     await useAccountsStore.getState().refreshGithub()
@@ -415,8 +291,6 @@ export function ManageAccountsDialog({
       if (addFlow?.status === 'waiting') {
         void useAccountsStore.getState().addAccountCancel(addFlow.flowId)
       } else if (addFlow?.status === 'failed') {
-        // Quality-gate remediation (code-reviewer High): a failed flow must not survive into the
-        // next open, where it would otherwise keep blocking Add account/Retry/Sign in again.
         useAccountsStore.getState().setAddFlow(null)
       }
     }
@@ -430,14 +304,6 @@ export function ManageAccountsDialog({
       <DialogContent
         className="min-w-0 max-h-[min(680px,calc(100vh-4rem))] overflow-y-auto sm:max-w-lg"
         onOpenAutoFocus={(event) => {
-          // Approved design (docs/DESIGN.md): focus always starts on the GitHub section's Add
-          // account button, regardless of whether any account is signed in yet (quality-gate
-          // remediation, code-reviewer Medium: the previous `[open]` effect ran before Radix's
-          // own Portal commit mounted these refs and never actually focused anything). The
-          // CLI-missing branch renders no Add account button at all (accessibility-auditor
-          // High, round 2): `preventDefault` only fires when a real focus target exists here,
-          // so that branch focuses the Install GitHub CLI link instead rather than leaving focus
-          // outside the dialog entirely.
           if (addAccountBtnRef.current) {
             event.preventDefault()
             addAccountBtnRef.current.focus()
@@ -445,8 +311,6 @@ export function ManageAccountsDialog({
             event.preventDefault()
             installLinkRef.current.focus()
           } else if (checkAgainHeaderRef.current) {
-            // UI N1 (quality-gate remediation, gate-3): the 'error' branch renders neither of
-            // the above -- its own "Check again" is the only focusable control.
             event.preventDefault()
             checkAgainHeaderRef.current.focus()
           }
@@ -484,8 +348,6 @@ export function ManageAccountsDialog({
               </a>
             </div>
           ) : githubStatus === 'loading' ? (
-            // UI N1 (quality-gate remediation, gate-3): no Add account here -- nothing is known
-            // signed in or not yet, so offering it would be a guess either way.
             <div className="flex min-w-0 items-center gap-2" aria-busy="true">
               <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />
               <h3 id="github-accounts-heading" className="text-sm text-muted-foreground">
@@ -493,11 +355,6 @@ export function ManageAccountsDialog({
               </h3>
             </div>
           ) : githubStatus === 'error' ? (
-            // UI N1 (quality-gate remediation, gate-3): a `gh-failed`/thrown-invoke read with
-            // nothing cached -- icon + text, never colour alone, and no filled (or any) Add
-            // account button: it's unknown whether anyone is actually signed in, so offering to
-            // add a NEW account first, before offering to retry the read that would show any
-            // EXISTING ones, would be backwards.
             <div className="flex min-w-0 flex-col gap-2">
               <div className="flex items-center gap-2">
                 <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />
@@ -531,8 +388,6 @@ export function ManageAccountsDialog({
                   aria-disabled={starting || addFlow?.status === 'waiting' || undefined}
                   className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
                   onClick={() => {
-                    // `aria-disabled`, not `disabled` (quality-gate remediation, accessibility-
-                    // auditor High): a disabled focused button drops focus to <body>.
                     if (!starting && addFlow?.status !== 'waiting') void startAddFlow()
                   }}
                 >

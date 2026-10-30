@@ -1,10 +1,3 @@
-// Issue #700/#701 slice (b), decision record item 1: the Agents hover-focus card -- "running
-// agents with a one-line task summary (first sentence of `task`, about 100 characters, inert
-// text), elapsed time, quiet finished and failed counts, a link to the Subagents panel (click
-// still opens it)". Shown inside `Readouts.tsx`'s `SubagentsReadout`'s own Popover; the pill's
-// own click still opens the panel directly (unchanged). Gate round 1 fix 2: `SubagentsReadout`
-// disables the whole card whenever no subagent is currently running, so this component is only
-// ever mounted with a non-empty `running` list.
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -13,8 +6,6 @@ import { formatElapsed } from '../formatElapsed'
 import { STATUS_GLYPH } from '../statusGlyph'
 import { deriveSubagentSettledPhrase, type SubagentCount } from './subagentDerive'
 
-// Gate round 1 fix 6: cap the running list at a fixed row count with a quiet "and N more" line,
-// so a batch of dozens of subagents never grows the card without bound.
 const MAX_ROWS = 6
 
 export function AgentsCard({
@@ -24,17 +15,10 @@ export function AgentsCard({
 }: {
   subagents: SubagentSummary[]
   counts: SubagentCount
-  /** Gate round 1 fix 4: no click event needed any more -- `Readouts.tsx`'s own handler
-   * closes the card and refocuses the pill through `useReadoutCard`'s `anchorRef` itself,
-   * this card's own link is pointer-only (decision record "inert text"; a keyboard user's
-   * route is the pill, not this link). */
   onOpenPanel: () => void
 }) {
   const running = subagents.filter((agent) => agent.status === 'running')
   const [now, setNow] = useState(() => Date.now())
-  // Ticks once a second, same cadence `TurnTimeReadout` uses for the status line's own elapsed
-  // figure -- only while the card is actually mounted (Popover content, open or closing), and
-  // only while there is a running agent whose elapsed time would otherwise go stale.
   useEffect(() => {
     if (running.length === 0) return
     setNow(Date.now())
@@ -42,9 +26,6 @@ export function AgentsCard({
     return () => clearInterval(timer)
   }, [running.length])
   const settledPhrase = deriveSubagentSettledPhrase(counts)
-  // Gate round 1 fix 6: one shared status glyph (`statusGlyph.ts`'s own `STATUS_GLYPH.running`,
-  // the SAME spinner every other running row in the app already uses -- `SubagentPanel.tsx`,
-  // the Subagent chain, the tool rows), never a second hand-drawn running icon.
   const { Icon: RunningIcon, className: runningIconClass } = STATUS_GLYPH.running
   const shown = running.slice(0, MAX_ROWS)
   const moreCount = running.length - shown.length

@@ -2,20 +2,10 @@ import * as React from 'react'
 import { OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// #746: the shared unboxed row for a Session- or pane-scoped problem (docs/design/components.md,
-// #746: the shared unboxed row for a Session- or pane-scoped problem (docs/design/components.md,
-// "Banners"). Severity icon in the severity colour (error = destructive, warning = warning
-// token), title in normal foreground, an optional muted
-// detail line, then actions as `children`: one `outline` primary first, the rest `text` buttons,
-// a destructive one last as `text-destructive`. `role="alert"` fires at appearance only; keep any
-// expanding disclosure OUTSIDE this element so toggling it never re-announces the banner.
 interface PaneBannerProps extends Omit<React.ComponentProps<'div'>, 'title'> {
-  /** `error` is the octagon, `warning` the triangle (the severity set in components.md). */
   severity?: 'error' | 'warning'
   title: React.ReactNode
-  /** Second line, muted and selectable. */
   detail?: React.ReactNode
-  /** Monospace by default (paths, ids, commands); pass false for a prose sentence. */
   detailMono?: boolean
 }
 
