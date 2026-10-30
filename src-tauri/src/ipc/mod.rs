@@ -32,6 +32,8 @@ pub mod chat_pause;
 pub mod clipboard;
 pub mod conversations;
 pub mod copilot_plan;
+pub mod usage;
+pub mod usage_prefs;
 pub mod debug;
 pub mod file_attachments;
 pub mod file_explorer;
@@ -219,6 +221,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     app::register(dispatcher);
     token_guard::register(dispatcher);
     copilot_plan::register(dispatcher);
+    usage::register(dispatcher);
     updates::register(dispatcher);
     model_roles::register(dispatcher);
     model::register(dispatcher);
