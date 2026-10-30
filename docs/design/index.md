@@ -57,6 +57,7 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 | Close chat pane | Ctrl+W |
 | Collapse or expand the right pane (chat view) | Ctrl+Shift+B |
 | Open Settings | Ctrl+, |
+| Command palette | Ctrl+K or Ctrl+Shift+P |
 | Open in split (a session row) | Ctrl+click |
 | Move focus to the other pane (split open) | Ctrl+Shift+\ |
 
