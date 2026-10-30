@@ -16,18 +16,20 @@ interface ToolRowMenuProps {
 }
 
 function toolRowItems(item: ToolItem | undefined, open: boolean, onOpenChange: (open: boolean) => void) {
-  const command = item ? commandRowText(item) : ''
   const output = item?.status === 'running' ? '' : (item?.output ?? '')
-  return (kind: MenuKind) => (
-    <>
-      {command !== '' &&
-        actionMenuItem('transcript.copy-command', { kind, onSelect: () => void copyLinkText(command, 'Command copied', 'Nothing to copy: the command only contains hidden characters') })}
-      {output !== '' &&
-        actionMenuItem('transcript.copy-output', { kind, onSelect: () => void copyLinkText(output, 'Output copied', 'Nothing to copy: the output only contains hidden characters') })}
-      {(command !== '' || output !== '') && menuSeparator(kind)}
-      {actionMenuItem(open ? 'transcript.collapse' : 'transcript.expand', { kind, onSelect: () => onOpenChange(!open) })}
-    </>
-  )
+  return (kind: MenuKind) => {
+    const command = item ? commandRowText(item) : ''
+    return (
+      <>
+        {command !== '' &&
+          actionMenuItem('transcript.copy-command', { kind, onSelect: () => void copyLinkText(command, 'Command copied', 'Nothing to copy: the command only contains hidden characters') })}
+        {output !== '' &&
+          actionMenuItem('transcript.copy-output', { kind, onSelect: () => void copyLinkText(output, 'Output copied', 'Nothing to copy: the output only contains hidden characters') })}
+        {(command !== '' || output !== '') && menuSeparator(kind)}
+        {actionMenuItem(open ? 'transcript.collapse' : 'transcript.expand', { kind, onSelect: () => onOpenChange(!open) })}
+      </>
+    )
+  }
 }
 
 /** The row header's `More actions` kebab; absent while the call runs or for a multi-call group. */

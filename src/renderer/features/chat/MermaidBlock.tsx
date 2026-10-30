@@ -206,14 +206,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
       )}
       <div className="flex items-center gap-1">
         <CopyButton getText={() => code} label={`Copy source for ${accessibleName}`} announcement="Source copied" icon={FileCodeIcon} className={buttonClassName} />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label={`Copy ${accessibleName} as image`} className={buttonClassName} onClick={() => void copyImageWithToast()}>
-              <ImageIcon aria-hidden />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Copy as image</TooltipContent>
-        </Tooltip>
+        <CopyButton onCopy={copyImage} label={`Copy ${accessibleName} as image`} announcement="Image copied" icon={ImageIcon} className={buttonClassName} />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon-xs" aria-label={`Save ${accessibleName} as image`} className={buttonClassName} onClick={() => void saveImage()}>

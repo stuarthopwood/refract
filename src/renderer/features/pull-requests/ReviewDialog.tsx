@@ -121,17 +121,15 @@ export function ReviewDialog({
     onOpenChange(next)
   }
 
-  function focusTrigger(event: { preventDefault(): void }): void {
-    event.preventDefault()
-    // Security/accessibility remediation (round 4): unlike `MergeDialog.tsx`'s identical-looking
-    // `succeededRef`, a successful review submission never disables this dialog's own "Review"
-    // trigger -- `reviewDisabledReason` (FR-019) only reacts to the pull request's own
-    // draft/closed/merged state, which a review never changes. The enabled-check below is
-    // already correct for both the success and cancel paths, so no synchronous success flag is
-    // needed here.
+  function restoreTriggerFocus(): void {
     const button = restoreFocusTo.current
     if (button && !button.disabled) button.focus()
     else restoreFocusFallbackTo.current?.focus()
+  }
+
+  function focusTrigger(event: { preventDefault(): void }): void {
+    event.preventDefault()
+    restoreTriggerFocus()
   }
 
   const actionLabel = verdict === 'approve' ? 'Approve' : 'Request changes'
@@ -233,7 +231,7 @@ export function ReviewDialog({
         error={error}
         onCancel={() => setConfirming(false)}
         onConfirm={() => void submit()}
-        onCloseAutoFocus={() => focusTrigger({ preventDefault() {} })}
+        onCloseAutoFocus={restoreTriggerFocus}
       />
     </>
   )

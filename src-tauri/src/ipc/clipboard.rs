@@ -11,7 +11,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("clipboard.writeImage", clipboard_write_image);
 }
 
-/// Larger images are refused; a 2x Mermaid export is far below this (#471).
+/// Larger images are refused for both copy and save; the renderer reports the failure (#471, #1454).
 pub(super) const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 16_000_000;
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];

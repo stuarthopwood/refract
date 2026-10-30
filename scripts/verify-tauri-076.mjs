@@ -113,7 +113,7 @@ async function main() {
     check(await hasIcons(), 'message kebab menu: every item has an icon');
     await shot('02-message-kebab-menu.png');
     await closeMenu();
-    check(await cdp.evaluate(`document.activeElement?.getAttribute('aria-label') === 'More actions'`), 'Esc returns focus to the kebab');
+    await waitFor(`document.activeElement?.getAttribute('aria-label') === 'More actions'`, 'Esc returns focus to the kebab');
     await click(await centre(ASSISTANT_P), 'right');
     await menuOpen();
     const rightItems = await cdp.evaluate(MENU_ITEMS);
@@ -141,7 +141,7 @@ async function main() {
 
     // Tool row: kebab revealed on hover/focus, never mounted while running.
     const toolKebab = `Array.from(document.querySelectorAll('button[aria-label="More actions"]')).find((b) => b.closest('[data-slot="collapsible"]'))`;
-    const toolRow = `Array.from(document.querySelectorAll('button, [role="button"]')).find((b) => b.textContent.includes('echo menu-output-065') || b.textContent.includes('Echoing'))`;
+    const toolRow = `Array.from(document.querySelectorAll('button, [role="button"]')).find((b) => b.textContent.includes('echo menu-output-065'))`;
     await mouse('mouseMoved', await centre(toolRow));
     await waitFor(`!!(${toolKebab})`, 'tool row kebab mounted');
     await click(await centre(toolKebab));
@@ -181,6 +181,7 @@ $cancel.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
     await menuOpen();
     await click(await centre(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).find((i) => i.textContent.trim() === 'Delete…')`));
     await waitFor(`!!document.querySelector('[data-slot="alert-dialog-content"]')`, 'Delete dialog open');
+    await waitFor(`document.activeElement?.textContent.trim() === 'Cancel'`, 'Delete dialog autofocuses Cancel');
     const del = await cdp.evaluate(`(() => { const d = document.querySelector('[data-slot="alert-dialog-content"]'); return { role: d.getAttribute('role'), buttons: Array.from(d.querySelectorAll('button')).map((b) => b.textContent.trim()), focus: document.activeElement?.textContent.trim(), alerts: d.querySelectorAll('[role="alert"]').length }; })()`);
     check(del.role === 'alertdialog' && del.buttons.includes('Cancel') && del.buttons.includes('Delete'), 'Delete dialog is the shared alertdialog with Cancel and Delete', del);
     check(del.focus === 'Cancel', 'Delete dialog autofocuses Cancel', del.focus);

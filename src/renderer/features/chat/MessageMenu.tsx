@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { CopyIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { actionMenuItem, menuSeparator, type MenuKind } from '@/features/palette/menuItems'
 import { cn } from '@/lib/utils'
@@ -45,7 +47,7 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
   const [armed, setArmed] = React.useState(false)
   const focusOnArmRef = React.useRef(false)
   const rowRef = React.useRef<HTMLDivElement>(null)
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (armed && focusOnArmRef.current) {
       focusOnArmRef.current = false
       rowRef.current?.querySelector('button')?.focus()
@@ -71,15 +73,20 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
               <TranscriptKebab items={items} className={REVEAL_CLASS} />
             </>
           ) : (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               aria-label="Copy message"
-              className="size-6 shrink-0 rounded-md opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+              className={REVEAL_CLASS}
+              onClick={() => void copyLinkText(text, 'Message copied', NOTHING)}
               onFocus={() => {
                 focusOnArmRef.current = true
                 setArmed(true)
               }}
-            />
+            >
+              <CopyIcon aria-hidden />
+            </Button>
           ))}
       </div>
     </TranscriptMenu>

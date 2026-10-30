@@ -102,7 +102,7 @@ export function ConfirmAlertDialog({
           {confirmLabel && (
             <AlertDialogAction
               variant={tone === 'destructive' ? 'destructive' : 'default'}
-                            aria-disabled={busy || confirmDisabled}
+            aria-disabled={busy || confirmDisabled}
               className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
               onClick={(event) => {
                 event.preventDefault()

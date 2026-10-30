@@ -32,7 +32,7 @@ export function TranscriptKebab({ items, label = 'More actions', className }: { 
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label={label} className={cn('shrink-0 text-muted-foreground', className)}>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label={label} className={cn('shrink-0 text-muted-foreground aria-expanded:opacity-100', className)}>
               <MoreHorizontalIcon aria-hidden />
             </Button>
           </DropdownMenuTrigger>

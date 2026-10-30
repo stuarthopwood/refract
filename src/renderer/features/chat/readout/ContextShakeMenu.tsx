@@ -49,6 +49,10 @@ const IDLE_REASON_ID = 'context-shake-idle-reason'
 export function ContextShakeMenu({ sessionId, figure, notice, children }: { sessionId: string; figure: string | null; notice?: string; children: ReactNode }) {
   const idle = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'idle')
   const [confirming, setConfirming] = useState<ShakeAction | null>(null)
+  // Keeps the last action's text on screen while the dialog animates closed.
+  const shownRef = useRef<ShakeAction | null>(null)
+  if (confirming) shownRef.current = confirming
+  const shown = confirming ?? shownRef.current
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   // Right-click, Shift+F10 and the Menu key open the same menu as a left click.
@@ -133,9 +137,9 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
         open={confirming !== null}
         busy={false}
         tone="destructive"
-        title={`${confirming?.label ?? 'Shake'}?`}
-        description={confirming?.loss}
-        confirmLabel={confirming?.label ?? 'Shake'}
+        title={`${shown?.label ?? 'Shake'}?`}
+        description={shown?.loss}
+        confirmLabel={shown?.label ?? 'Shake'}
         onCancel={() => setConfirming(null)}
         onConfirm={() => {
           if (confirming) run(confirming)
