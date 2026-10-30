@@ -45,6 +45,8 @@ pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
 pub const READINESS_INSTALL_PROGRESS: &str = "readiness:install-progress";
 pub const READINESS_CHANGED: &str = "readiness:changed";
 pub const UPDATES_STATE_CHANGED: &str = "updates:state-changed";
+/// Spec 060 (#1331): `usage.progress`, emitted straight through `emit` by `ipc::usage`.
+pub const USAGE_PROGRESS: &str = "usage:progress";
 
 /// Spec 054 (#867): Clone from GitHub progress/terminal events, `{ cloneId, phase, ... }`.
 pub const REPOSITORIES_CLONE_PROGRESS: &str = "repositories:clone-progress";

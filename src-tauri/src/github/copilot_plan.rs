@@ -35,18 +35,46 @@ struct CacheEntry {
 /// Only `Failed` is retried on the short TTL; an unmetered account is a stable answer.
 #[derive(Clone, Copy)]
 enum Outcome {
-    Figure(f64),
+    Figure(PlanSnapshot),
     Unmetered,
     Failed,
 }
 
 impl Outcome {
-    fn percent(self) -> Option<f64> {
+    fn snapshot(self) -> Option<PlanSnapshot> {
         match self {
-            Outcome::Figure(p) => Some(p),
+            Outcome::Figure(s) => Some(s),
             Outcome::Unmetered | Outcome::Failed => None,
         }
     }
+}
+
+/// Spec 060 (S1-13): the figures of the same cached response `plan_percent_used` reads. The
+/// entitlement and remaining count are in the same unit as AI credits (`omp usage --json` reports
+/// the identical 2,000,000 limit); either is `None` when the response omits it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlanSnapshot {
+    pub percent_used: f64,
+    pub entitlement: Option<f64>,
+    pub remaining: Option<f64>,
+}
+
+/// Percent used plus the entitlement and remaining figures; `None` exactly when
+/// `parse_percent_used` is.
+pub fn parse_snapshot(body: &Value) -> Option<PlanSnapshot> {
+    let percent_used = parse_percent_used(body)?;
+    let snapshot = body.get("quota_snapshots")?.get("premium_interactions")?;
+    let figure = |key: &str| {
+        snapshot
+            .get(key)
+            .and_then(Value::as_f64)
+            .filter(|v| v.is_finite())
+    };
+    Some(PlanSnapshot {
+        percent_used,
+        entitlement: figure("entitlement"),
+        remaining: figure("quota_remaining"),
+    })
 }
 
 static CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
@@ -71,6 +99,12 @@ pub fn parse_percent_used(body: &Value) -> Option<f64> {
 
 /// The active github.com account's plan usage, cached; `None` = unavailable.
 pub async fn plan_percent_used() -> Option<f64> {
+    plan_snapshot().await.map(|s| s.percent_used)
+}
+
+/// Same cache and single request as `plan_percent_used`, with the entitlement and remaining
+/// figures alongside the percent (spec 060 `usage.budget`).
+pub async fn plan_snapshot() -> Option<PlanSnapshot> {
     let login = auth_status()
         .await
         .ok()?
@@ -90,10 +124,10 @@ pub async fn plan_percent_used() -> Option<f64> {
         fetched_at: Instant::now(),
         outcome: fetched,
     });
-    fetched.percent()
+    fetched.snapshot()
 }
 
-fn cached(login: &str) -> Option<Option<f64>> {
+fn cached(login: &str) -> Option<Option<PlanSnapshot>> {
     let guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     guard
         .as_ref()
@@ -104,13 +138,13 @@ fn cached(login: &str) -> Option<Option<f64>> {
             };
             e.login == login && e.fetched_at.elapsed() < ttl
         })
-        .map(|e| e.outcome.percent())
+        .map(|e| e.outcome.snapshot())
 }
 
 async fn fetch(login: &str) -> Outcome {
     match fetch_body(login).await {
         None => Outcome::Failed,
-        Some(body) => parse_percent_used(&body).map_or(Outcome::Unmetered, Outcome::Figure),
+        Some(body) => parse_snapshot(&body).map_or(Outcome::Unmetered, Outcome::Figure),
     }
 }
 

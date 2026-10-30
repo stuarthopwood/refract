@@ -127,6 +127,7 @@ impl SessionAgent {
         crate::session::subagents::on_frame(self, frame_type, &frame).await;
         crate::session::termination::on_frame(self, frame_type, &frame).await;
         crate::session::token_guard::on_frame(self, frame_type, &frame).await;
+        crate::session::usage_nudge::on_frame(self, frame_type, &frame).await;
     }
 
     async fn set_queue(&self, follow_up: Vec<String>, steering: Vec<String>) {

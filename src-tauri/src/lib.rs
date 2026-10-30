@@ -14,6 +14,7 @@ pub mod session;
 pub mod shell;
 pub mod store;
 pub mod updates;
+pub mod usage;
 
 use std::path::PathBuf;
 

@@ -64,6 +64,8 @@ pub mod subagents;
 pub mod theme;
 pub mod token_guard;
 pub mod updates;
+pub mod usage;
+pub mod usage_prefs;
 
 /// Shared state every registered handler receives. `registry`/`settings` are each behind their
 /// own `Arc<tokio::sync::Mutex<_>>` -- one lock per store, not one lock for both, so a slow
@@ -219,6 +221,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     app::register(dispatcher);
     token_guard::register(dispatcher);
     copilot_plan::register(dispatcher);
+    usage::register(dispatcher);
     updates::register(dispatcher);
     model_roles::register(dispatcher);
     model::register(dispatcher);

@@ -11,6 +11,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import { chatPauseBridge } from './chatPause'
+import { usageBridge } from './usage'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch } from '../shared/ipc-issues'
@@ -403,6 +404,8 @@ const refract: RefractApi = {
     openReleaseNotes: () => request<void>(IPC_REQUESTS.APP_OPEN_RELEASE_NOTES),
     getVersion: () => request<string>(IPC_REQUESTS.APP_GET_VERSION)
   },
+
+  usage: usageBridge(request, on),
 
   updates: {
     check: () => request<UpdateState>(IPC_REQUESTS.UPDATES_CHECK),
