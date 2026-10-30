@@ -12,7 +12,7 @@ import { commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
-import { ToolRowMenu } from './ToolRowMenu'
+import { ToolRowKebab, ToolRowMenu } from './ToolRowMenu'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -133,6 +133,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       detail={item.status === 'error' ? errorLine(item) : undefined}
       open={open}
       onOpenChange={setOpen}
+      action={<ToolRowKebab item={item} open={open} onOpenChange={setOpen} />}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
@@ -256,6 +257,7 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
           : undefined
       }
       hideDetailWhenOpen={!solo}
+      action={<ToolRowKebab item={solo ? last : undefined} open={open} onOpenChange={setOpen} />}
       contentClassName={solo ? LABEL_COLUMN_CONTENT_CLASS : SPINE_HOST_CONTENT_CLASS}
     >
       {solo ? (
