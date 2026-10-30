@@ -340,7 +340,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
             </Alert>
           </CardContent>
         )}
-        <CardFooter className="gap-2">
+        <CardFooter>
           <ApprovalActions options={request.options} busy={busy} onAnswer={(value, kind, detail) => void answer(value, kind, detail)} />
         </CardFooter>
       </Card>
@@ -392,12 +392,12 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
       )}
       <CardContent className="space-y-2">
         {request.inputKind === 'confirm' && (
-          <div className="flex gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void answer({ confirmed: true }, 'answered', 'Yes')}>
-              Yes
-            </Button>
+          <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void answer({ confirmed: false }, 'answered', 'No')}>
               No
+            </Button>
+            <Button size="sm" disabled={busy} onClick={() => void answer({ confirmed: true }, 'answered', 'Yes')}>
+              Yes
             </Button>
           </div>
         )}

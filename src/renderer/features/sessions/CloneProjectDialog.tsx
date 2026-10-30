@@ -376,7 +376,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
                   setDestination(event.target.value)
                 }}
               />
-              <Button type="button" variant="outline" onClick={() => void handleBrowse()}>
+              <Button type="button" variant="ghost" onClick={() => void handleBrowse()}>
                 <FolderOpenIcon aria-hidden />
                 Browse
               </Button>

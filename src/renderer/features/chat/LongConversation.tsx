@@ -147,16 +147,6 @@ export function LongConversationBanner({ sessionId }: { sessionId: string }) {
           <AlertActions>
             <Button
               type="button"
-              size="xs"
-              aria-disabled={handOff.disabled}
-              aria-describedby={handOff.reason ? reasonId : undefined}
-              className={DISABLED_BUTTON_CLASS}
-              onClick={handOff.run}
-            >
-              Hand off
-            </Button>
-            <Button
-              type="button"
               variant="outline"
               size="xs"
               onClick={() => {
@@ -165,6 +155,16 @@ export function LongConversationBanner({ sessionId }: { sessionId: string }) {
               }}
             >
               Dismiss
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              aria-disabled={handOff.disabled}
+              aria-describedby={handOff.reason ? reasonId : undefined}
+              className={DISABLED_BUTTON_CLASS}
+              onClick={handOff.run}
+            >
+              Hand off
             </Button>
           </AlertActions>
         </Alert>

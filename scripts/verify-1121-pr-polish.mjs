@@ -184,7 +184,7 @@ async function main() {
     checkPass('Added fake scratch repository as a Project');
 
     await cdp.clickByText('Pull requests');
-    await cdp.waitFor(`document.querySelector('h2') && document.querySelector('h2').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
+    await cdp.waitFor(`document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
     checkPass('Navigated to Pull requests view');
 
     const settled = await cdp.waitFor(`(() => {
@@ -297,16 +297,22 @@ async function main() {
     if (allNumbers) checkPass('State=All brings Closed (#6) and Merged (#7) rows into view', allNumbers);
     else checkFail('State=All brings Closed (#6) and Merged (#7) rows into view', 'rows #6/#7 never appeared');
 
-    const stateOnlyCases = [
-      [5, REASON.draft, 'draft'],
-      [6, REASON.closed, 'closed'],
-      [7, REASON.merged, 'merged']
-    ];
+    const stateOnlyCases = [[5, REASON.draft, 'draft']];
     for (const [number, reason, label] of stateOnlyCases) {
       await openDetail(number);
       const shape = await detailShape();
       const name = `#${number} (${label}): reason line hidden, pill is the reason, tooltip keeps reason`;
       const ok = shape && shape.reasonLineText === null && shape.reviewDisabled === true && shape.reviewTitle === reason && shape.mergeDisabled === true && shape.mergeTitle === reason;
+      if (ok) checkPass(name, JSON.stringify(shape));
+      else checkFail(name, JSON.stringify(shape));
+    }
+
+    // #1393: merged and closed pull requests hide Merge, Review and New session instead of disabling them.
+    for (const [number, label] of [[6, 'closed'], [7, 'merged']]) {
+      await openDetail(number);
+      const shape = await detailShape();
+      const name = `#${number} (${label}): Merge, Review and reason line are absent`;
+      const ok = shape && shape.reasonLineText === null && shape.reviewDisabled === null && shape.mergeDisabled === null;
       if (ok) checkPass(name, JSON.stringify(shape));
       else checkFail(name, JSON.stringify(shape));
     }

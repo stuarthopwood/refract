@@ -41,7 +41,7 @@ export function ProjectsSection() {
             ) : (
               <span className="text-xs text-muted-foreground">Not set</span>
             )}
-            <Button type="button" variant="outline" size="sm" onClick={() => void handleBrowse()}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void handleBrowse()}>
               <FolderOpenIcon aria-hidden />
               Browse
             </Button>

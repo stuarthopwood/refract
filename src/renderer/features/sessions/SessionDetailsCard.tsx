@@ -1,6 +1,7 @@
 import { cloneElement, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, FolderOpenIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
+import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
+import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { Button } from '@/components/ui/button'
 import { useAnyMenuOpen } from '@/components/ui/exclusive-menu'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -152,13 +153,13 @@ export function SessionDetailsCard({
               )}
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
-              <Button variant="outline" size="xs" onClick={() => void copyPath()}>
+              <Button variant="ghost" size="xs" onClick={() => void copyPath()}>
                 <CopyIcon aria-hidden />
                 Copy path
               </Button>
-              <Button variant="outline" size="xs" onClick={() => void reveal()}>
-                <FolderOpenIcon aria-hidden />
-                Open in file explorer
+              <Button variant="ghost" size="xs" onClick={() => void reveal()}>
+                <RevealActionIcon aria-hidden />
+                {REVEAL_ACTION_LABEL}
               </Button>
             </div>
           </div>

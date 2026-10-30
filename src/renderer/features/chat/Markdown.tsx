@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { ExternalLinkIcon, FolderOpenIcon } from 'lucide-react'
+import { ExternalLinkIcon } from 'lucide-react'
+import { REVEAL_ACTION_LABEL, RevealActionIcon, revealActionName } from '@/components/revealAction'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
@@ -481,14 +482,14 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
       copiedMessage="Path copied"
       wrapperClassName={wrapperClassName}
       wrapLink={wrapLink}
-      actions={[{ label: 'Show in File Explorer', icon: FolderOpenIcon, onSelect: reveal }]}
+      actions={[{ label: REVEAL_ACTION_LABEL, icon: RevealActionIcon, onSelect: reveal }]}
     >
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
           className={cn(activeClassName, className)}
-          aria-label={`Show in File Explorer: ${label}`}
+          aria-label={revealActionName(label)}
           // Blocks Radix's own `aria-describedby` so the tooltip isn't announced on top of the aria-label.
           aria-describedby={undefined}
           onClick={reveal}
@@ -497,7 +498,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
         </button>
       </TooltipTrigger>
       <TooltipContent className="[overflow-wrap:anywhere]">
-        Show in File Explorer: {label}
+        {revealActionName(label)}
       </TooltipContent>
     </Tooltip>
     </LinkActions>

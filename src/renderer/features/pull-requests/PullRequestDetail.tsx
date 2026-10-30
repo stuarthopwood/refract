@@ -160,14 +160,16 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const mergeStillChecking = detail.mergeDisabledReason === null && detail.mergeableState === 'unknown'
   const mergeDisabledReason = detail.mergeDisabledReason ?? (mergeStillChecking ? 'GitHub is still checking whether this pull request can merge.' : null)
   const mergeBlocked = detail.mergeDisabledReason !== null || detail.mergeableState !== 'mergeable'
+  // Merged and closed pull requests hide their actions; the StatePill says why (#1393). Draft keeps them.
+  const actionsHidden = detail.state === 'merged' || detail.state === 'closed'
   // A state-only disable already shows its reason via the StatePill; keep this line only while the pull
   // request is open but blocked by a conflict, a blocked merge, or mergeability still computing (#1131).
-  const showMergeReasonLine = detail.reviewDisabledReason === null && mergeDisabledReason !== null
+  const showMergeReasonLine = detail.reviewDisabledReason === null && mergeDisabledReason !== null && !actionsHidden
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* drag-regions-allow: renders right of PullRequestList, below PullRequestsView's own h-10 drag-region header, so it never touches App.tsx's strip despite the same shape. */}
-      <div className="shrink-0 border-b border-border p-4">
+      <div className="shrink-0 p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
@@ -197,35 +199,39 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
               </TooltipTrigger>
               <TooltipContent>Open on GitHub</TooltipContent>
             </Tooltip>
-            <Button
-              ref={newSessionButtonRef}
-              size="sm"
-              variant="ghost"
-              onClick={handleNewSessionClick}
-              disabled={newSessionBusy || detail.state !== 'open'}
-              title={detail.state !== 'open' ? 'Only an open pull request can start a Session.' : undefined}
-            >
-              {newSessionBusy ? 'Starting…' : 'New session'}
-            </Button>
-            <Button
-              ref={reviewButtonRef}
-              size="sm"
-              variant="ghost"
-              onClick={() => setReviewOpen(true)}
-              disabled={detail.reviewDisabledReason !== null}
-              title={detail.reviewDisabledReason ?? undefined}
-            >
-              Review
-            </Button>
-            <Button
-              ref={mergeButtonRef}
-              size="sm"
-              onClick={() => setMergeOpen(true)}
-              disabled={mergeBlocked}
-              title={mergeDisabledReason ?? undefined}
-            >
-              Merge
-            </Button>
+            {!actionsHidden && (
+              <>
+                <Button
+                  ref={newSessionButtonRef}
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleNewSessionClick}
+                  disabled={newSessionBusy || detail.state !== 'open'}
+                  title={detail.state !== 'open' ? 'Only an open pull request can start a Session.' : undefined}
+                >
+                  {newSessionBusy ? 'Starting…' : 'New session'}
+                </Button>
+                <Button
+                  ref={reviewButtonRef}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setReviewOpen(true)}
+                  disabled={detail.reviewDisabledReason !== null}
+                  title={detail.reviewDisabledReason ?? undefined}
+                >
+                  Review
+                </Button>
+                <Button
+                  ref={mergeButtonRef}
+                  size="sm"
+                  onClick={() => setMergeOpen(true)}
+                  disabled={mergeBlocked}
+                  title={mergeDisabledReason ?? undefined}
+                >
+                  Merge
+                </Button>
+              </>
+            )}
           </div>
         </div>
         {showMergeReasonLine && (

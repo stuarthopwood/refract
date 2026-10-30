@@ -21,6 +21,9 @@ import type { IssueSkippedProject } from '../../shared/ipc-issues'
 
 export type ListStateFilter = 'open' | 'closed' | 'all'
 
+/** Fixed width of the Filters panel's Project and Label pickers: never the column width (#1391). */
+export const FILTER_PICKER_CLASS = 'w-40 shrink-0'
+
 const STATE_OPTIONS: Array<{ value: ListStateFilter; label: string }> = [
   { value: 'open', label: 'Open' },
   { value: 'closed', label: 'Closed' },
@@ -162,7 +165,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           />
           <div className="flex flex-wrap items-center gap-2">
             <Select value={state} onValueChange={(value) => props.onStateChange(value as ListStateFilter)}>
-              <SelectTrigger aria-label="State" className="w-28 shrink-0">
+              <SelectTrigger aria-label="State" className="shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper">
@@ -179,7 +182,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
               options={projects.map((project) => ({ value: project.id, label: project.name }))}
               selected={repositoryIds}
               onChange={props.onRepositoryIdsChange}
-              className="min-w-0 max-w-44 flex-1"
+              className={FILTER_PICKER_CLASS}
             />
             {props.extraFilters}
           </div>

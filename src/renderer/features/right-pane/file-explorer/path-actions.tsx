@@ -2,7 +2,8 @@
 // Explorer and Copy path. Their labels, icons and handlers live here once; the tree row's inline
 // buttons (`TreeRowActions`), the preview header (`FilePreviewPane`) and the row's kebab/context
 // menu items (`TreeNodeRow`) are all built from them.
-import { CopyIcon, Code2Icon, FolderOpenIcon, type LucideIcon } from 'lucide-react'
+import { CopyIcon, Code2Icon, type LucideIcon } from 'lucide-react'
+import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -11,7 +12,7 @@ export type PathActionKey = 'openInVSCode' | 'reveal' | 'copyPath'
 
 export const PATH_ACTIONS: ReadonlyArray<{ key: PathActionKey; label: string; icon: LucideIcon }> = [
   { key: 'openInVSCode', label: 'Open in VS Code', icon: Code2Icon },
-  { key: 'reveal', label: 'Reveal in File Explorer', icon: FolderOpenIcon },
+  { key: 'reveal', label: REVEAL_ACTION_LABEL, icon: RevealActionIcon },
   { key: 'copyPath', label: 'Copy path', icon: CopyIcon }
 ]
 

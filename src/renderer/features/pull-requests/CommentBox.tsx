@@ -1,7 +1,7 @@
-// The bottom comment box (spec 038 FR-010): the full MarkdownEditor with a "Comment" primary
-// action and, while the pull request is open or draft, a destructive-outline "Close pull request"
-// at the footer's left edge that confirms through the shared ConfirmAlertDialog naming the pull
-// request. The draft text lives in PullRequestDetail so it survives a tab switch. Only the latest
+// The bottom comment box (spec 038 FR-010, #1387): the full MarkdownEditor with a "Post comment" primary
+// action and, while the pull request is open or draft, a ghost "Close pull request" beside it at the
+// trailing edge that confirms through the shared ConfirmAlertDialog naming the pull request.
+// The draft text lives in PullRequestDetail so it survives a tab switch. Only the latest
 // error shows; the sr-only alert region keeps late errors announced (#1200).
 import { useRef, useState } from 'react'
 import type { RefObject } from 'react'
@@ -64,7 +64,7 @@ export function CommentBox({ repositoryId, number, state, title, prTitle, text, 
   }
 
   return (
-    <div className="border-t border-border p-4">
+    <div className="px-4 pt-2 pb-4">
       <MarkdownEditor
         value={text}
         onChange={onTextChange}
@@ -75,11 +75,14 @@ export function CommentBox({ repositoryId, number, state, title, prTitle, text, 
         previewProps={PREVIEW_PROPS}
         footer={
           <div className="flex w-full items-center gap-2">
+            <p role="alert" className={cn('min-w-0 flex-1 text-xs text-destructive', !error && 'sr-only')}>
+              {error ?? ''}
+            </p>
             {(state === 'open' || state === 'draft') && (
               <Button
                 ref={closeButtonRef}
                 size="sm"
-                variant="destructive-outline"
+                variant="ghost-destructive"
                 onClick={() => {
                   setError(null)
                   setCloseOpen(true)
@@ -89,11 +92,8 @@ export function CommentBox({ repositoryId, number, state, title, prTitle, text, 
                 Close pull request
               </Button>
             )}
-            <p role="alert" className={cn('min-w-0 flex-1 text-xs text-destructive', !error && 'sr-only')}>
-              {error ?? ''}
-            </p>
             <Button size="sm" className="shrink-0" onClick={() => void handleComment()} disabled={busy || !text.trim()}>
-              {busy ? 'Commenting…' : 'Comment'}
+              {busy ? 'Posting…' : 'Post comment'}
             </Button>
           </div>
         }

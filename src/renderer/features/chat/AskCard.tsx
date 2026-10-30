@@ -286,7 +286,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         {request.deadlineAt !== undefined && (
           <CardContent className="text-sm text-muted-foreground">{formatDeadlineText(request.deadlineAt, questions)}</CardContent>
         )}
-        <CardFooter className="justify-between gap-2">
+        <CardFooter>
           <Button
             size="sm"
             variant="ghost"

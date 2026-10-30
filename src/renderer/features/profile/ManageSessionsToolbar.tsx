@@ -74,7 +74,7 @@ export function ManageSessionsToolbar({
       </Tabs>
 
       <Select value={filters.repositoryId} onValueChange={(value) => onFiltersChange({ ...filters, repositoryId: value })}>
-        <SelectTrigger aria-label="Filter by project" className="w-48">
+        <SelectTrigger aria-label="Filter by project">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -88,7 +88,7 @@ export function ManageSessionsToolbar({
       </Select>
 
       <Select value={filters.sort} onValueChange={(value) => onFiltersChange({ ...filters, sort: value as SortKey })}>
-        <SelectTrigger aria-label="Sort sessions" className="w-44">
+        <SelectTrigger aria-label="Sort sessions">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

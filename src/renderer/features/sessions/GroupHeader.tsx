@@ -1,6 +1,7 @@
 import { useId } from 'react'
-import type { ComponentType, KeyboardEvent, Ref } from 'react'
+import type { ComponentProps, ComponentType, KeyboardEvent, Ref } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -9,6 +10,14 @@ import type { GroupWaitingState } from './sessionDisplay'
 
 export const GROUP_HEADER_ACTIONS_WIDTH_PX = 80
 export const GROUP_HEADER_ACTIONS_OFFSET_PX = 88
+
+const GROUP_HEADER_ROW_CLASS =
+  'group flex items-center gap-1 rounded-md px-1 hover:bg-sidebar-accent has-[:focus-visible]:bg-sidebar-accent forced-colors:hover:outline forced-colors:hover:outline-1 forced-colors:hover:outline-[Highlight]'
+
+/** One rounded hover/keyboard-focus fill across a whole header row, buttons included (#1422). `plain` drops it while renaming. */
+export function GroupHeaderRow({ plain, className, ...props }: ComponentProps<'div'> & { plain?: boolean }) {
+  return <div {...props} className={cn(plain ? 'group flex items-center gap-1 px-1' : GROUP_HEADER_ROW_CLASS, className)} />
+}
 
 // Shared trigger styling for the Repository and Archived headers so they cannot drift. `icon` is decorative;
 // `tooltip` is also appended to the accessible name so screen readers get the status (#527, #528).
@@ -58,7 +67,7 @@ export function GroupHeaderTrigger({
       data-choice-item
       data-project-colored={color ? '' : undefined}
       style={color ? { color } : undefined}
-      className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {/* #735 decision 22: the visible Session's group, while closed -- the existing
           selected cue (`SessionRow.tsx`'s own left-edge bar), no fill, reserved for hover.
