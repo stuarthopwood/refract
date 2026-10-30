@@ -17,7 +17,10 @@ use super::{
 pub(super) fn register(d: &mut Dispatcher) {
     d.register("pullRequests.close", pull_requests_close);
     d.register("pullRequests.fetchImage", pull_requests_fetch_image);
-    d.register("pullRequests.listAcross", list_across::pull_requests_list_across);
+    d.register(
+        "pullRequests.listAcross",
+        list_across::pull_requests_list_across,
+    );
 }
 
 /// Closes without merging. The staleness check is lenient (no cache entry is fine, like
