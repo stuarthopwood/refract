@@ -187,7 +187,7 @@ async function runLayoutChecks(cdp) {
     await shot(cdp, '11-drag-select-over-mark.png');
     await cdp.evaluate(`getSelection().removeAllRanges()`);
   }
-  check(selection.text.length > 20 && selection.inMark === false && selection.endHit === false, 'Drag-select: a drag ending on the mark selects the message text and the mark never intercepts', { ...selection, text: selection.text.slice(0, 60) });
+  check(selection.text.includes('selectable words') && selection.inMark === false && selection.endHit === false, 'Drag-select: a drag ending on the mark selects the message text and the mark never intercepts', { ...selection, text: selection.text.slice(0, 60) });
   // Divider drags through their full range; the chat panel keeps its 360px floor.
   const labels = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="separator"]')).map((el) => el.getAttribute('aria-label'))`);
   const drags = [];
@@ -213,7 +213,7 @@ async function runLayoutChecks(cdp) {
     toggles.push({ open: await cdp.evaluate(`document.querySelector('[data-rail-toggle]')?.getAttribute('aria-expanded')`), subagents: !!subBtn, ...(await layoutState(cdp)) });
     if (i === 0) await shot(cdp, '13-right-pane-open.png');
   }
-  check(toggles.every((t) => t.ok === true), 'Right pane and Subagent panel toggled repeatedly: one mark, never covered', toggles);
+  check(toggles.every((t) => t.ok === true), 'Right pane and Subagent panel opened three times: one mark, above the composer', toggles);
   if ((await cdp.evaluate(`document.querySelector('[data-rail-toggle]')?.getAttribute('aria-expanded')`)) === 'true') await cdp.click(`document.querySelector('[data-rail-toggle]')`);
   await sleep(500);
 
@@ -280,7 +280,7 @@ async function main() {
     const hit = await cdp.evaluate(`(() => { const m = ${LIVE}[0]; const r = m.getBoundingClientRect(); const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { hitIsMark: el === m || m.contains(el), hit: el ? el.tagName + '.' + String(el.className).slice(0, 60) : null }; })()`);
     check(hit.hitIsMark === false, 'Click-through: elementFromPoint at the mark centre is real content, not the mark', hit);
     const focusableInMark = await cdp.evaluate(`${LIVE}[0].querySelectorAll('a,button,input,select,textarea,[tabindex]').length`);
-    check(focusableInMark === 0, 'Not a Tab stop: no focusable descendants', focusableInMark);
+    check(focusableInMark === 0, 'No focusable markup inside the mark', focusableInMark);
     await shot(cdp, '02-single-pane.png');
 
     // Split: create a second session, then Ctrl+click the first row (the real openInSplit path).
@@ -322,13 +322,13 @@ async function main() {
     for (const [feature, value, name] of [['forced-colors', 'active', 'forced-colors'], ['prefers-reduced-transparency', 'reduce', 'reduced-transparency']]) {
       await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: feature, value }] });
       await sleep(400);
-      const hiddenNow = await cdp.evaluate(`${LIVE}.every((el) => getComputedStyle(el).display === 'none')`);
+      const hiddenNow = await cdp.evaluate(`${LIVE}.length === 1 && ${LIVE}.every((el) => getComputedStyle(el).display === 'none')`);
       check(hiddenNow === true, `Emulated ${name}: the mark is display none`, null);
       await shot(cdp, `06-${name}.png`);
       await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: feature, value: feature === 'forced-colors' ? 'none' : 'no-preference' }] });
       await sleep(300);
     }
-    check((await cdp.evaluate(`${LIVE}.every((el) => getComputedStyle(el).display !== 'none')`)) === true, 'Emulation cleared: the mark returns', null);
+    check((await cdp.evaluate(`${LIVE}.length === 1 && ${LIVE}.every((el) => getComputedStyle(el).display !== 'none')`)) === true, 'Emulation cleared: the mark returns', null);
 
     await runLayoutChecks(cdp);
 
