@@ -78,7 +78,16 @@ async function main() {
       const r = spawnSync('powershell', ['-NoProfile', '-STA', '-Command', command], { encoding: 'utf8' });
       return r.status === 0 ? r.stdout : `ERR ${r.stderr}`;
     };
-    const clipText = () => ps(`$ErrorActionPreference='Stop'; Get-Clipboard -Raw`).replace(/\r?\n$/, '');
+    // Another process can hold the Windows clipboard for a moment; retry the read.
+    const clipText = () => {
+      let out = ''
+      for (let i = 0; i < 10; i += 1) {
+        out = ps(`$ErrorActionPreference='Stop'; Get-Clipboard -Raw`)
+        if (!out.startsWith('ERR')) break
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
+      }
+      return out.replace(/\r?\n$/, '')
+    };
     const hasIcons = () => cdp.evaluate(`Array.from(document.querySelectorAll('[role="menu"] [role^="menuitem"]')).every((i) => !!i.querySelector('svg'))`);
     const hoverReveal = async (expr) => {
       await mouse('mouseMoved', await centre(expr));
