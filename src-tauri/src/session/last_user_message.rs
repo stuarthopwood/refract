@@ -17,7 +17,9 @@ pub const MAX_LINE_CHARS: usize = 160;
 /// One line of text: whitespace collapsed, cut at `MAX_LINE_CHARS` with an ellipsis. `None` when
 /// nothing is left.
 pub fn one_line(text: &str) -> Option<String> {
-    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Whitespace can only shrink the text, so 4x the cap of input is always enough.
+    let head: String = text.chars().take(MAX_LINE_CHARS * 4).collect();
+    let collapsed = head.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.is_empty() {
         return None;
     }
@@ -69,7 +71,8 @@ pub async fn read_last_user_line(path: &Path) -> Option<String> {
         (&mut file).take(len - start).read_to_end(&mut buffer).await.ok()?;
         let text = String::from_utf8_lossy(&buffer);
         let mut lines: Vec<&str> = text.lines().collect();
-        // A window that starts mid-file begins with a fragment of an earlier line.
+        // A window that starts mid-file begins with a fragment of an earlier line; if it started
+        // exactly on a line boundary this drops one complete (older) line, which is harmless.
         if start > 0 && !lines.is_empty() {
             lines.remove(0);
         }

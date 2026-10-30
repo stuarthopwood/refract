@@ -1,7 +1,7 @@
 // `home.*` (issue #869, spec 059: the Home view). Thin handlers: the Session and repository are
 // always resolved from the registry, never from a renderer-supplied path.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -19,7 +19,7 @@ const MAX_SESSIONS: usize = 8;
 const MAX_PROJECTS: usize = 40;
 const LIST_CONCURRENCY: usize = 4;
 
-type ProjectOutcome = Result<(String, Vec<ClosedBranchRow>), GhError>;
+type ProjectOutcome = Result<Vec<ClosedBranchRow>, GhError>;
 
 pub fn register(d: &mut Dispatcher) {
     d.register("home.lastMessages", home_last_messages);
@@ -42,7 +42,7 @@ fn home_last_messages(state: super::AppState, args: Vec<Value>) -> HandlerFuture
     Box::pin(async move {
         let ids = string_array(&args, "home.lastMessages expects (sessionIds)")?;
         if ids.len() > MAX_SESSIONS {
-            return Err(invalid_argument("Ask for at most 8 sessions."));
+            return Err(invalid_argument(format!("Ask for at most {MAX_SESSIONS} sessions.")));
         }
         let mut result = Map::new();
         for id in ids {
@@ -91,13 +91,13 @@ struct ClosedResult {
     fetched_at: String,
 }
 
-/// `home.closedBranches(repositoryIds)`: one `gh pr list` per distinct owner/repo. A Project that
-/// fails (no GitHub remote, rate limit) is reported in `skipped`, never as a blank.
+/// `home.closedBranches(repositoryIds)`: one `gh pr list` per Project, so Projects sharing a
+/// remote each get the rows. A Project that fails (no GitHub remote, rate limit) is reported in `skipped`, never as a blank.
 fn home_closed_branches(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let ids = string_array(&args, "home.closedBranches expects (repositoryIds)")?;
         if ids.len() > MAX_PROJECTS {
-            return Err(invalid_argument("Choose at most 40 projects."));
+            return Err(invalid_argument(format!("Choose at most {MAX_PROJECTS} projects.")));
         }
         let mut skipped: Vec<Skipped> = Vec::new();
         let mut resolved: Vec<(String, String, std::path::PathBuf)> = Vec::new();
@@ -114,37 +114,48 @@ fn home_closed_branches(state: super::AppState, args: Vec<Value>) -> HandlerFutu
         }
         let semaphore = Arc::new(tokio::sync::Semaphore::new(LIST_CONCURRENCY));
         let mut tasks = tokio::task::JoinSet::new();
+        let mut task_index: HashMap<tokio::task::Id, usize> = HashMap::new();
         for (index, (_, _, path)) in resolved.iter().enumerate() {
             let path = path.clone();
             let semaphore = Arc::clone(&semaphore);
-            tasks.spawn(async move {
+            let handle = tasks.spawn(async move {
                 let _permit = semaphore.acquire_owned().await.ok();
                 let outcome: ProjectOutcome = async {
                     let (owner, repo) = owner_repo_for(&path).await?;
-                    let rows =
-                        gh_closed_branches::list_closed_branches(&path, &owner, &repo).await?;
-                    Ok((format!("{owner}/{repo}").to_lowercase(), rows))
+                    gh_closed_branches::list_closed_branches(&path, &owner, &repo).await
                 }
                 .await;
-                (index, outcome)
+                outcome
             });
+            task_index.insert(handle.id(), index);
         }
         let mut outcomes: Vec<(usize, ProjectOutcome)> = Vec::new();
-        while let Some(joined) = tasks.join_next().await {
-            if let Ok(outcome) = joined {
-                outcomes.push(outcome);
+        while let Some(joined) = tasks.join_next_with_id().await {
+            match joined {
+                Ok((task, outcome)) => {
+                    if let Some(index) = task_index.get(&task) {
+                        outcomes.push((*index, outcome));
+                    }
+                }
+                Err(err) => {
+                    if let Some(index) = task_index.get(&err.id()) {
+                        let (id, name, _) = &resolved[*index];
+                        skipped.push(Skipped {
+                            repository_id: id.clone(),
+                            repository_name: name.clone(),
+                            code: "gh-failed",
+                            message: "Loading this project's pull requests failed.".to_string(),
+                        });
+                    }
+                }
             }
         }
         outcomes.sort_by_key(|(index, _)| *index);
-        let mut seen: HashSet<String> = HashSet::new();
         let mut items: Vec<ClosedItem> = Vec::new();
         for (index, outcome) in outcomes {
             let (id, name, _) = &resolved[index];
             match outcome {
-                Ok((slug, rows)) => {
-                    if !seen.insert(slug) {
-                        continue;
-                    }
+                Ok(rows) => {
                     items.extend(rows.into_iter().map(|row| ClosedItem {
                         repository_id: id.clone(),
                         row,
