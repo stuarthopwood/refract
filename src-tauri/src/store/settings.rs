@@ -1,8 +1,4 @@
-// Port of `src/main/store/settings.ts`: holds `settings.json`, the single app-wide Settings row
-// (data-model.md "settings.json", tasks.md T015). Milestone 1 only exposes `settings.get` and
-// `settings.setApprovalMode` over IPC (`parity.md`); every other setter below is still a full,
-// faithful port (T015's own "Settings CRUD" scope) so a later slice's IPC registration is a
-// one-line `dispatcher.register(...)` away, not a second pass over this file.
+// `settings.json` store: the single app-wide Settings row.
 
 use std::path::{Path, PathBuf};
 
@@ -15,9 +11,7 @@ pub use super::holiday_touches::HolidayTouches;
 
 pub use super::approval_mode::ApprovalMode;
 
-// `ThemeId` extracted to `theme_id.rs` (issue #551 gate round 1, #806 ratchet -- see that
-// file's own header comment): re-exported here so every existing caller keeps importing it
-// from `crate::store::settings::ThemeId`, unchanged.
+// `ThemeId` lives in `theme_id.rs` (#806); re-exported so callers keep their import path.
 pub use super::theme_id::ThemeId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,10 +40,8 @@ pub struct SplitLayout {
     pub focused_index: u8,
 }
 
-/// #735 data-model.md: only the DIFFERENCE from each group's default is stored -- a Repository
-/// id absent from `collapsed_repository_ids` is open (the default for a newly added Project),
-/// and `archived_open` defaults `false`. De-duplicated and validated in
-/// `parse_session_list_collapse` below.
+/// Stores only the difference from the default: an id absent from `collapsed_repository_ids` is
+/// open; `archived_open` defaults `false` (#735).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionListCollapse {
@@ -70,57 +62,49 @@ pub struct Settings {
     pub theme: ThemeId,
     pub watermark_enabled: bool,
     pub chat_width: ChatWidth,
-    /// Issue #1048 (Settings, Appearance "Holiday touches"): default `Full` -- see
-    /// `HolidayTouches`'s own doc comment. No raw/lazy-correction tracking needed, the same
-    /// plain-enum shape `chat_width` above uses.
+    /// Default `Full` (#1048).
     pub holiday_touches: HolidayTouches,
-    /// Issue #482: how the shared status icon draws a state; default `Icons` (`status_style.rs`).
+    /// How the status icon draws a state; default `Icons` (#482).
     pub status_style: StatusStyle,
-    /// Issue #1300: gap between consecutive bookkeeping rows; default `Compact` (`chat_row_density.rs`).
+    /// Gap between bookkeeping rows; default `Compact` (#1300).
     pub chat_row_density: ChatRowDensity,
-    /// Issue #526 (FR-111): the Session row Activity line's wording; default `Plain`.
+    /// Session row Activity line wording; default `Plain` (#526).
     pub activity_text: ActivityText,
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
-    /// Issue #1082 (spec 004 FR-034): the 2px context usage bar; default on.
+    /// The 2px context usage bar; default on (#1082).
     pub show_context_usage_bar: bool,
-    /// Issue #1205 (FR-107): the "Agent stopped" bar; default on (`agent_stopped_bar.rs`).
+    /// The "Agent stopped" bar; default on (#1205).
     pub show_agent_stopped_bar: bool,
-    /// Issue #1238 (FR-053): the AI credits chip next to the Context usage chip; default on
-    /// (`ai_credits.rs`). Independent of the context usage switch.
+    /// AI credits chip beside the Context usage chip; default on, independent of it (#1238).
     pub show_ai_credits: bool,
-    /// Issue #1242 (FR-042): the shared status-text shimmer switch; default on.
+    /// Status-text shimmer switch; default on (#1242).
     pub animated_status_text: bool,
-    /// Issue #1246: code ligatures on the Code font; default on (`code_ligatures.rs`).
+    /// Code ligatures on the Code font; default on (#1246).
     pub code_ligatures: bool,
-    /// Issue #754 (spec 041): the chat scrollbar map; default on (scrollbar_map.rs).
+    /// Chat scrollbar map; default on (#754).
     pub show_scrollbar_map: bool,
-    /// Issue #1250 (FR-119): the settled turn total under each turn; default off.
+    /// Settled turn total under each turn; default off (#1250).
     pub show_finished_turn_times: bool,
-    /// Spec 036: text size scales (`typography.rs`).
+    /// Text size scales (`typography.rs`).
     pub typography: Typography,
-    /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
-    /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
-    /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
+    /// Collapsed/expanded state of session list groups; the renderer is the sole writer (#735).
     pub session_list_collapse: SessionListCollapse,
     pub pull_requests_list_width_px: i64,
-    /// Spec 024 (#538): the right pane's open/width/panels/active tab; see `right_pane.rs`.
+    /// Right pane open/width/panels/active tab (`right_pane.rs`, #538).
     pub right_pane: RightPaneState,
-    /// Issue #772 (lane R6): the word-prediction ghost-text off switch; Rust-only, default
-    /// `false` (the shared prediction daemon measured 463 MB private commit with two Sessions).
+    /// Word-prediction ghost-text switch; default `false` because the prediction daemon cost
+    /// 463 MB with two Sessions (#772).
     pub word_prediction_enabled: bool,
-    /// Spec 054 (#867): where Clone from GitHub lands by default; `None` when unset
-    /// (`default_clone_folder.rs`).
+    /// Default Clone from GitHub folder; `None` when unset (`default_clone_folder.rs`, #867).
     pub default_clone_folder: Option<String>,
-    /// Unrecognised settings.json keys ride along like Electron's untyped `this.data`:
-    /// `#[serde(flatten)]` merges them into the TOP-LEVEL object (never under an `"extra"` key).
-    /// Never overlaps a known field above (`SettingsStore::open` excludes them by name).
+    /// Unrecognised keys, flattened into the top-level object; never overlaps a known field.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
-// Small per-setting modules (issue #806 cap); see `settings_parse.rs` for the parse helpers.
+// Per-setting modules (#806); parse helpers are in `settings_parse.rs`.
 #[path = "settings_parse.rs"]
 mod settings_parse;
 pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
@@ -166,13 +150,8 @@ use right_pane::RightPaneState;
 pub struct SettingsStore {
     file: PathBuf,
     data: Settings,
-    /// Quality-gate remediation (HIGH, ported verbatim from `settings.ts`): the exact,
-    /// pre-correction `theme` value as it was actually in `settings.json` (`Some` once the
-    /// developer has ever saved a theme choice, `None` for a missing key or an invalid/corrupt
-    /// value). Kept separate from `data.theme` (always the corrected, in-memory value every
-    /// reader needs) so an unrelated setter's own whole-row write (`persist_whole`) never
-    /// silently persists the FR-013 in-memory correction to disk on the user's behalf -- only
-    /// `set_theme` itself is allowed to turn this from `None`/stale into a real value.
+    /// The exact `theme` as on disk (`None` if missing or invalid), kept apart from the corrected
+    /// `data.theme` so another setter's whole-row write never persists the correction.
     raw_theme: Option<ThemeId>,
     raw_watermark_enabled: Option<bool>,
     raw_show_sample_data: Option<bool>,
@@ -186,10 +165,7 @@ impl SettingsStore {
                 .await?;
         let object = raw.as_object().cloned().unwrap_or_default();
 
-        // No lazy-correction comment in `settings.ts` covers `approvalMode` itself (it is only
-        // ever defaulted via the missing-file fallback, never corrected on a present-but-invalid
-        // value) -- a hand-corrupted value here falls back to `ask`, a Rust-necessitated
-        // adaptation: `ApprovalMode` is a real enum, unlike TS's unchecked `as ApprovalMode` cast.
+        // A corrupt value falls back to `ask`; `ApprovalMode` is a real enum.
         let approval_mode = object
             .get("approvalMode")
             .and_then(|v| serde_json::from_value::<ApprovalMode>(v.clone()).ok())
@@ -241,17 +217,13 @@ impl SettingsStore {
         let show_finished_turn_times = finished_turn_times::parse(&object);
         let typography = typography::parse(&object);
 
-        // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
-        // comment for the memory-cost evidence behind that default.
+        // Default `false`; see `Settings::word_prediction_enabled` for why (#772).
         let word_prediction_enabled = object
             .get("wordPredictionEnabled")
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
-        // #735 data-model.md: a missing/null key is the default (no migration needed, every
-        // pre-#735 settings.json simply lacks this key); a present-but-malformed value resets
-        // to the default rather than trusted, the same lazy-correction pattern every other
-        // object-shaped field in this function uses.
+        // Missing or malformed resets to the default (#735).
         let session_list_collapse = match object.get("sessionListCollapse") {
             Some(v) if !v.is_null() => {
                 parse_session_list_collapse(v).unwrap_or_else(default_session_list_collapse)
@@ -345,17 +317,13 @@ impl SettingsStore {
         self.data.clone()
     }
 
-    /// Issue #772 (gate-fix, perf): `chat.predictWord`/`.predictWordFeedback` read this on every
-    /// keystroke-debounced call -- a plain bool read, never `get()`'s own whole-`Settings` clone.
+    /// Plain bool read for the per-keystroke prediction path, avoiding a whole-`Settings` clone (#772).
     pub fn word_prediction_enabled(&self) -> bool {
         self.data.word_prediction_enabled
     }
 
-    /// Mirrors `settings.ts`'s own `serialize`: every setter that persists the WHOLE row writes
-    /// `raw_theme`/`raw_watermark_enabled`/`raw_show_sample_data` (the value exactly as it was
-    /// last actually on disk), never `data`'s possibly lazily-corrected in-memory value -- an
-    /// absent raw value omits that key entirely (the Rust equivalent of `JSON.stringify` dropping
-    /// an `undefined` field), reproducing "no key written yet" on disk.
+    /// Whole-row writes use the `raw_*` values as last on disk, not the corrected in-memory ones;
+    /// an absent raw value omits its key.
     fn serialize_for_disk(&self) -> Value {
         let mut map = Map::new();
         map.insert("version".to_string(), json!(1));
@@ -424,9 +392,8 @@ impl SettingsStore {
         );
         map.insert(right_pane::KEY.to_string(), json!(self.data.right_pane));
         default_clone_folder::write(&mut map, &self.data.default_clone_folder);
-        // Re-inserts every key captured at `open()` with no slot here, verbatim (never overwrites
-        // a known key; `data.extra` excludes all twelve), so an unported setting survives every
-        // save, and `settings.get`/`settings:changed` flatten it onto the wire too.
+        // Re-inserts keys captured at `open()` with no slot here, never overwriting a known key,
+        // so unported settings survive every save and reach the wire.
         for (key, value) in &self.data.extra {
             map.insert(key.clone(), value.clone());
         }
@@ -439,9 +406,7 @@ impl SettingsStore {
         Ok(self.data.clone())
     }
 
-    /// `settings.setApprovalMode` (T031, FR-015, the one milestone-1 setter): persists the whole
-    /// row via `persist_whole`. Returns this call's own written value, not a possibly-superseded
-    /// shared read -- matches `settings.ts`'s own race-safety comment on every setter.
+    /// Persists the whole row; returns this call's own written value, not a shared read.
     pub async fn set_approval_mode(&mut self, mode: ApprovalMode) -> std::io::Result<Settings> {
         let next = Settings {
             approval_mode: mode,
@@ -450,10 +415,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setReadoutVisibility(kind, visible)` (spec 004 FR-012 to FR-014): `kind` is one
-    /// of the seven `ReadoutKind` string values; an unrecognised one is a no-op (the IPC handler
-    /// that will eventually call this validates against the known set first, the same division of
-    /// responsibility `settings.ts`'s own `READOUT_KINDS` guard uses).
+    /// An unrecognised `kind` is a no-op; the IPC handler validates it first.
     pub async fn set_readout_visibility(
         &mut self,
         kind: &str,
@@ -478,8 +440,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setSplit(layout)` (spec 005 FR-014/FR-015): persists the whole Split layout (or
-    /// `None` for no split).
+    /// Persists the whole Split layout (`None` for no split).
     pub async fn set_split(&mut self, layout: Option<SplitLayout>) -> std::io::Result<Settings> {
         let next = Settings {
             split: layout,
@@ -488,8 +449,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `theme.set(themeId)` (spec 007 FR-004): the one and only place allowed to turn `raw_theme`
-    /// into a real, developer-saved value.
+    /// The only place allowed to turn `raw_theme` into a developer-saved value.
     pub async fn set_theme(&mut self, theme: ThemeId) -> std::io::Result<Settings> {
         let next = Settings {
             theme,
@@ -501,8 +461,7 @@ impl SettingsStore {
         Ok(self.data.clone())
     }
 
-    /// `settings.setWatermarkEnabled(enabled)` (spec 012 FR-015 to FR-020): the one and only place
-    /// allowed to turn `raw_watermark_enabled` into a real, developer-saved value.
+    /// The only place allowed to turn `raw_watermark_enabled` into a developer-saved value.
     pub async fn set_watermark_enabled(&mut self, enabled: bool) -> std::io::Result<Settings> {
         self.raw_watermark_enabled = Some(enabled);
         let next = Settings {
@@ -512,9 +471,8 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setTranscriptDisplay(field, visible)` (issue #457): merges ONE field into
-    /// `transcript_display`, never a whole-object replace (a quick second toggle built from a
-    /// stale value must not revert the first).
+    /// Merges ONE field into `transcript_display`, so a quick second toggle cannot revert the
+    /// first (#457).
     pub async fn set_transcript_display(
         &mut self,
         field: &str,
@@ -534,8 +492,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `settings.setShowSampleData(enabled)` (spec 013 FR-020 to FR-022): the one and only place
-    /// allowed to turn `raw_show_sample_data` into a real, developer-saved value.
+    /// The only place allowed to turn `raw_show_sample_data` into a developer-saved value.
     pub async fn set_show_sample_data(&mut self, enabled: bool) -> std::io::Result<Settings> {
         self.raw_show_sample_data = Some(enabled);
         let next = Settings {
@@ -546,8 +503,7 @@ impl SettingsStore {
     }
 }
 
-// Split into a sibling file (not inline here) only to keep this file comfortably under this
-// build's 600-line-per-file cap once the full ported test suite (below) is included.
+// Tests live in a sibling file to keep this one under the size cap.
 #[cfg(test)]
 #[path = "settings_tests.rs"]
 mod tests;

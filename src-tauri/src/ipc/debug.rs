@@ -1,11 +1,5 @@
-// IPC handlers for debug-build-only knobs (issue #1048, R-lane live-check harness). Same posture
-// as `lib.rs::data_dir`'s own `REFRACT_DATA_DIR`: every env var read here is gated
-// `#[cfg(debug_assertions)]`, so a release build's `debug.getOverrides` always answers
-// `{ date: null, idleTimeoutMs: null, flightIntervalMs: null }` regardless of whether any of
-// them happens to be set in the process environment (gate-fix precedent, security review MEDIUM) -- never a build-time
-// `#[cfg]` on the channel's own registration, so the renderer can call this channel unconditionally
-// in every build without a feature-detection round trip; a release build's answer is simply
-// always inert.
+// Debug-build knobs for the R-lane live checks. Release builds always answer with nulls.
+// `#[cfg(debug_assertions)]` gates the env reads, so the channel can be called in every build.
 use serde::Serialize;
 use serde_json::Value;
 
@@ -15,39 +9,23 @@ pub fn register(d: &mut Dispatcher) {
     d.register("debug.getOverrides", debug_get_overrides);
 }
 
-/// Gate round 1 fix (Low, #1053): a debug build should never honour an idle override shorter
-/// than this -- a live check that asked for 0ms would otherwise busy-loop the pause/resume
-/// transition on every render. Only ever read from inside `resolve_overrides_from` (itself
-/// `#[cfg(debug_assertions)]`), so this carries the same gate -- an unqualified release build
-/// never declares (or warns about) a constant it can never read.
+/// Floor for the idle override: 0ms would busy-loop the pause/resume transition.
 #[cfg(debug_assertions)]
 const MIN_IDLE_TIMEOUT_MS: u64 = 1_000;
 
-/// Gate round 3 fix (High, item 1): a live check that asked for a flight interval of 0ms would
-/// busy-loop flights back-to-back with no gap at all -- same posture as `MIN_IDLE_TIMEOUT_MS`
-/// above.
+/// Floor for the flight-interval override: 0ms would busy-loop flights back-to-back.
 #[cfg(debug_assertions)]
 const MIN_FLIGHT_INTERVAL_MS: u64 = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct DebugOverrides {
-    /// `REFRACT_DATE_OVERRIDE` (`YYYY-MM-DD`): substitutes for `new Date()` everywhere the
-    /// renderer computes the active holiday (`shared/holidays.ts::activeHoliday`), so a live
-    /// check can see Halloween artwork without touching the system clock. Rejected (falls back
-    /// to `None`, the real system date) unless it is a genuine calendar date that round-trips
-    /// (`2026-02-30` is not a real day; never silently rolled forward to March 2nd the way
-    /// JavaScript's own lenient `Date` parsing would).
+    /// `REFRACT_DATE_OVERRIDE` (`YYYY-MM-DD`): stands in for today's date in holiday selection.
+    /// Invalid dates such as `2026-02-30` resolve to `None`, never rolled forward.
     date: Option<String>,
-    /// `REFRACT_HOLIDAY_IDLE_MS`: shortens the ambient loop's 60s no-input auto-pause
-    /// (WCAG 2.2.2) so a live check does not have to wait a full minute for that path. Clamped
-    /// to at least `MIN_IDLE_TIMEOUT_MS`.
+    /// `REFRACT_HOLIDAY_IDLE_MS`: shortens the 60s ambient auto-pause (WCAG 2.2.2), clamped to a floor.
     #[serde(rename = "idleTimeoutMs")]
     idle_timeout_ms: Option<u64>,
-    /// `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS`: gate round 3 fix (High, item 1) -- the real
-    /// gap between ambient-loop flights is randomised 60-120s, so a 60s CPU-budget sample
-    /// almost never contains one; this overrides that gap to a short fixed value (clamped to
-    /// at least `MIN_FLIGHT_INTERVAL_MS`) so a live check's own sample window reliably contains
-    /// several flights to measure.
+    /// `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS`: fixes the 60-120s flight gap so a sample holds several flights.
     #[serde(rename = "flightIntervalMs")]
     flight_interval_ms: Option<u64>,
 }
@@ -59,10 +37,7 @@ pub fn debug_get_overrides(_state: AppState, _args: Vec<Value>) -> HandlerFuture
     })
 }
 
-/// Mirrors `lib.rs::data_dir`'s own shape: the `#[cfg(debug_assertions)]` block is this
-/// function's own tail expression in a debug build (the `#[cfg(not(debug_assertions))]` block
-/// below is compiled out entirely in that build); a release build compiles out the first block
-/// instead and falls through to the always-inert default.
+/// Debug block is the tail expression; release compiles it out and falls through to the inert default.
 fn resolve_overrides() -> DebugOverrides {
     #[cfg(debug_assertions)]
     {
@@ -80,13 +55,8 @@ fn resolve_overrides() -> DebugOverrides {
     }
 }
 
-/// Pure parsing logic, factored out for readability (same reasoning `lib.rs::resolve_data_dir_override`
-/// documents). Gate round 1 fix (Low, #1053): `#[cfg(debug_assertions)]` only -- it has no reason
-/// to exist in a release build at all (`resolve_overrides` above never calls it there), and
-/// AGENTS.md's prototyping rule forbids a new `#[cfg(test)]` path for it (the whole file is new
-/// on this branch); the live check proves it instead (`scripts/verify-1048-holiday-touches.mjs`'s
-/// `runInvalidDateOverrideCheck` launches once with `REFRACT_DATE_OVERRIDE=2026-02-30` and asserts
-/// the override resolves to `null`).
+/// Pure parsing, factored out. `resolve_overrides` never calls it in release builds.
+/// Covered by the live check `verify-1048-holiday-touches.mjs`, not a unit test.
 #[cfg(debug_assertions)]
 fn resolve_overrides_from(
     raw_date: Option<String>,
@@ -114,10 +84,8 @@ fn resolve_overrides_from(
     }
 }
 
-/// Strict `YYYY-MM-DD` parse plus a real calendar-validity check (rejects `2026-02-30`, a
-/// non-existent day, rather than letting it through for the caller's own `new Date(...)` to
-/// silently roll forward to March 2nd). Never accepts a leading `+`/extra whitespace inside a
-/// field: each part must be ALL ASCII digits, of the expected width.
+/// Strict `YYYY-MM-DD` with a real calendar check: `2026-02-30` is rejected, not rolled forward.
+/// Each field must be ASCII digits of the expected width.
 #[cfg(debug_assertions)]
 fn is_valid_calendar_date_string(value: &str) -> bool {
     let parts: Vec<&str> = value.split('-').collect();

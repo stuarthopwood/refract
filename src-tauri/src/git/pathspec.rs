@@ -1,8 +1,4 @@
-// Shared pathspec containment check for the Git changes panel (spec 018 slice 1, issue #464),
-// split out of `changes_status.rs` (issue #806, "no god files" -- that file crossed the 600-line
-// cap again once this security hardening landed) so `changes_status.rs` and `changes_diff.rs`
-// (both already `super::`-siblings under `git::`) share ONE copy rather than one owning it and
-// the other importing across an otherwise-unrelated module boundary.
+// Pathspec containment check shared by `changes_status.rs` and `changes_diff.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -10,27 +6,9 @@ use crate::fs::resolve::is_unsafe_token;
 
 use super::git::{GitError, GitErrorCode};
 
-/// 2026-10-20 security hardening (Skippy, delegated by Stuart): refuses a pathspec BEFORE it is
-/// ever built into a `git` argv, rather than relying solely on the `--` separator every caller
-/// (`changes_status::stage_files`/`unstage_files`, `changes_diff::diff_text`) already places
-/// ahead of its pathspecs to stop option-reinterpretation. Two layers: `fs::resolve::
-/// is_unsafe_token` (shared with the File explorer lane, #790 -- an embedded NUL, a UNC/
-/// device-ish `//`/`\\` prefix, a drive prefix or drive-relative token, an NTFS alternate-data-
-/// stream colon, a reserved Windows device name in any segment) plus this function's own checks
-/// for a leading `-` (git-option reinterpretation, defense in depth), a leading `/`/`\\` or
-/// `Path::is_absolute` (a single-rooted-no-prefix or drive-absolute token `is_unsafe_token` alone
-/// would not catch), and any `..` path component (traversal); then a lexical join onto
-/// `worktree_path` confirming the result is a STRICT descendant of the worktree root -- no disk
-/// access (unlike `fs::remove_tree::checked_canonical_path`'s `dunce::canonicalize`): a path here
-/// may legitimately not exist yet (a deleted-but-staged file, or one about to be restored), so
-/// requiring it to resolve on disk would wrongly refuse a real, in-scope operation. A TRACKED
-/// symlink pointing outside the worktree is not a threat this check needs to cover -- `git add`/
-/// `restore`/`diff` all operate on the symlink's own blob, never read through it. **Exception
-/// (#1101 gate round 1 HIGH 1): `changes_diff.rs::untracked_file_patch` reads an UNTRACKED
-/// file's raw bytes directly (there is no git blob for it to operate on instead), so it layers
-/// `fs::resolve::resolve_in_worktree`'s own disk-aware, symlink-walking containment proof on top
-/// of this lexical check before ever touching the filesystem -- the one caller in this module
-/// this purely-lexical check alone does not fully cover.**
+/// Refuses an unsafe pathspec before it reaches a `git` argv; lexical only, no disk access.
+// Lexical (not canonicalize): the path may not exist yet (deleted-but-staged, or being restored).
+// A leading `-` is option injection and `..` is traversal; untracked reads add a symlink check.
 pub(super) fn validate_pathspec(worktree_path: &Path, path: &str) -> Result<(), GitError> {
     let refuse = || {
         GitError::new(

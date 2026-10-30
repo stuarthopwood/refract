@@ -1,5 +1,4 @@
-// Unit tests for `session::pending_selection` (lane RM, issue #766 part A): the pending-slot
-// logic and its wire shape. `#[path]`-loaded sibling of `pending_selection.rs`.
+// Unit tests for `session::pending_selection`, loaded via `#[path]`.
 use super::*;
 
 fn model(provider: &str, id: &str) -> Target {

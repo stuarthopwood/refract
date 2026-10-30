@@ -1,19 +1,11 @@
-// Lane-extension RPC/role-reapply helpers (lane RM, issues #454, #740, #741, #762, #766): split
-// out of `mod.rs` itself (code-review finding: pushed `mod.rs` over this build's 600-line cap)
-// into its own `impl SessionAgent` block, the same way `chat.rs`/`conversations.rs`/`launch.rs`
-// already split other concerns out of this module. See `mod.rs`'s own header for the lane
-// extension contract these exist to serve.
+// Lane-extension RPC and role-reapply helpers, split out of `mod.rs` to stay under the line cap.
 
 use serde_json::{json, Value};
 
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
-    /// Generic RPC passthrough for a lane module (lane RM's `session::model`): same
-    /// `state.process.clone()` + error mapping as `chat.rs`'s own `send()`. No idle check of its
-    /// own -- see `request_rpc_if_idle` below for the atomic version every lane call that
-    /// changes the model/role now uses instead (gate-fix, HIGH: the old two-step "check idle,
-    /// then call this" had a race window a concurrent turn start could land in).
+    /// Generic RPC passthrough for a lane module. No idle check; use `request_rpc_if_idle`.
     pub(in crate::session) async fn request_rpc(
         &self,
         cmd: Value,
@@ -36,11 +28,8 @@ impl SessionAgent {
             .map_err(|err| AgentError::new("prompt-failed", err.to_string()))
     }
 
-    /// Gate-fix (HIGH, race): checking `state.status` and cloning `state.process` happen under
-    /// the SAME lock acquisition here, so nothing can start a turn between "confirmed idle" and
-    /// "process handle taken". Refuses with `not-idle` (never queues) if the Session is working
-    /// at that exact instant. Lane RM's `set_model`/`cycle_model` use this for every RPC that
-    /// changes the live model.
+    /// Checks idle and takes the process handle under one lock, so no turn can start between them.
+    /// Refuses with `not-idle` instead of queuing.
     pub(in crate::session) async fn request_rpc_if_idle(
         &self,
         cmd: Value,
@@ -73,12 +62,8 @@ impl SessionAgent {
             .map_err(|err| AgentError::new("prompt-failed", err.to_string()))
     }
 
-    /// `send()`'s own atomic-idle sibling (gate-fix, HIGH, race): `send()` itself always allows
-    /// a mid-turn call to queue as a follow-up (`streamingBehavior`), which is exactly what lane
-    /// RM's own `/switch`/`/role` text commands must never do (refusal, not queuing). Checks
-    /// `state.status` and takes `state.process`/marks-user-acted under the SAME lock
-    /// acquisition, then sends a plain `prompt` with no `streamingBehavior` field at all (this
-    /// path only ever runs while idle).
+    /// Like `send()`, but refuses mid-turn instead of queuing. Checks idle and takes the
+    /// process handle under one lock.
     pub(in crate::session) async fn send_if_idle(
         &self,
         text: String,
@@ -130,12 +115,8 @@ impl SessionAgent {
         Ok(json!({ "queued": false }))
     }
 
-    /// Gate-fix (HIGH, race, #740): atomically decides whether a Settings-triggered role reapply
-    /// must be queued (the Session is working right now) or can run immediately -- the old code
-    /// read `status()` and wrote `pending_role_reapply` as two SEPARATE lock acquisitions, so a
-    /// settle landing between them lost the reapply until the Session's NEXT turn ended. Returns
-    /// `true` when queued (`on_frame`'s own settle hook applies it later), `false` when idle at
-    /// this exact instant (the caller must call `apply_role_now` itself right away).
+    /// Returns `true` if the reapply must queue because the Session is working. Atomic with the
+    /// status read, so a settle cannot lose it.
     pub(in crate::session) async fn queue_role_reapply_or_ready(&self, role: &str) -> bool {
         let mut state = self.state.lock().await;
         if matches!(
@@ -149,9 +130,7 @@ impl SessionAgent {
         }
     }
 
-    /// #766 part A: runs `store` on the model state only while the Session is NOT idle, under the
-    /// same lock acquisition as the status read (no gap a settle could land in). `false` means
-    /// the Session is idle and the caller must apply the choice now.
+    /// Runs `store` only while the Session is not idle, under the same lock as the status read.
     pub(in crate::session) async fn store_pending_unless_idle(
         &self,
         store: impl FnOnce(&mut crate::session::model::State),
@@ -164,9 +143,7 @@ impl SessionAgent {
         true
     }
 
-    /// The Session's own current Conversation file path, if any (registry lookup; #741: reading
-    /// its latest `model_change` role needs this). `None` for a brand-new Session that has
-    /// never sent its first message.
+    /// The Conversation file path, or `None` for a Session that has never sent a message.
     pub(in crate::session) async fn current_conversation_path(&self) -> Option<String> {
         self.registry
             .lock()
@@ -176,10 +153,7 @@ impl SessionAgent {
             .clone()
     }
 
-    /// Re-reads `get_state`, applies it via `sync_from_state`, and returns the raw `data` object
-    /// (FINDINGS item 30: `model = {provider, id, name?}`) so a lane (RM's own `set_model`/
-    /// `cycle_model`/role switch) can refresh the composer label/notice itself. Best-effort:
-    /// failures are non-fatal to the caller.
+    /// Re-reads `get_state`, applies it, and returns the raw `model` object. Failures are non-fatal.
     pub(in crate::session) async fn refresh_from_state(&self) -> Result<Value, AgentError> {
         let res = self
             .request_rpc(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
@@ -192,11 +166,7 @@ impl SessionAgent {
         Ok(data)
     }
 
-    /// Issue #740/#741 (lane RM): `summary_fields`'s own `currentRole`/`pinned` fields for a
-    /// `sessions.list()` row, computed OUTSIDE `state.lock()` (gate-fix, file-size: moved out of
-    /// `mod.rs` itself to keep it under this build's 600-line cap) -- `current_selection` needs
-    /// its own `with_model_state` lock, so calling it while `mod.rs` already holds `state.lock()`
-    /// would deadlock (the same `tokio::sync::Mutex`, not reentrant).
+    /// Computes `currentRole` and `pinned` outside `state.lock()`, since `current_selection` locks too.
     pub(in crate::session) async fn role_summary_fields(&self) -> (Value, bool) {
         let (pinned, current_role) = crate::session::model::current_selection(self).await;
         let current_role_value = if pinned {

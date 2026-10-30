@@ -1,7 +1,4 @@
-// Issue #1242 (spec 004 FR-042): Settings > Appearance "Animated status text", the switch for the
-// shared status-text shimmer (also reused by #1210). A child module of `settings.rs` (not inline
-// there) to keep that file under this build's 600-line cap (issue #806), the same reason
-// `agent_stopped_bar.rs` was split out.
+// "Animated status text" shimmer switch (#1242, #1210); split out for the file-size cap (#806).
 use serde_json::{Map, Value};
 
 use super::{Settings, SettingsStore};
@@ -14,8 +11,7 @@ pub(super) fn parse(object: &Map<String, Value>) -> bool {
 }
 
 impl SettingsStore {
-    /// `settings.setAnimatedStatusText(enabled)`: plain boolean, the same shape
-    /// `set_show_agent_stopped_bar` uses.
+    /// `settings.setAnimatedStatusText    (enabled)`: plain boolean.
     pub async fn set_animated_status_text(&mut self, enabled: bool) -> std::io::Result<Settings> {
         let next = Settings {
             animated_status_text: enabled,

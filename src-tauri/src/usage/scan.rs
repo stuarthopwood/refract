@@ -1,7 +1,4 @@
-// Spec 060 (S1-09): the sessions-directory walk. Finds every `*.jsonl` under the OMP sessions
-// root (never following symlinks), skips files whose size and mtime match what the last pass
-// recorded, and ingests the rest newest first so the Usage view fills with recent data first.
-// Read-only: nothing under the sessions directory is ever written.
+// Walks the OMP sessions folder (read-only, never following symlinks) for changed `*.jsonl` files.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,8 +25,7 @@ pub struct ScanReport {
     pub new_messages: u64,
 }
 
-/// `main` for `<root>/<folder>/<session>.jsonl`, `subagent` for anything nested deeper
-/// (`<root>/<folder>/<session>/<agent>.jsonl`).
+/// `main` for a top-level session file, `subagent` for anything nested deeper.
 pub fn agent_type_for(path: &Path, sessions_root: &Path) -> &'static str {
     let depth = path
         .strip_prefix(sessions_root)
@@ -91,9 +87,7 @@ fn unchanged(conn: &Connection, file: &SessionFile) -> bool {
         .is_some_and(|(mtime, len)| mtime == file.mtime_ms && len == file.len)
 }
 
-/// Ingests every changed file under `root`. `progress(seen, done)` is called after each file;
-/// `stop()` is polled between files so a shutdown does not wait for the whole backlog. A file that
-/// fails is logged and skipped; the rest still run.
+/// Ingests every changed file under `root`. `stop()` is polled between files so shutdown is prompt.
 pub fn scan(
     conn: &mut Connection,
     root: &Path,

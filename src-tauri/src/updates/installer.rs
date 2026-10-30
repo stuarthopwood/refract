@@ -1,22 +1,4 @@
-// Update download, checksum verification (spec 006 FR-014, research.md decision 4): downloads
-// the available release's installer and checksum assets via `gh release download` (the
-// developer's own signed-in credential, never a stored token), recomputes the installer's
-// SHA-256, and only persists `phase: Downloaded` on a match. Ported from
-// `src/main/update/UpdateInstaller.ts`'s `downloadUpdate`/`UpdateError` (git show
-// origin/spec-006-impl:src/main/update/UpdateInstaller.ts).
-//
-// Gate findings (PR #829 round 1):
-// - (perf HIGH) The store lock used to be held by the caller across the whole download (up to
-//   5 minutes). Fixed the same way as `checker::check_for_updates`: takes the shared
-//   `Arc<Mutex<_>>`, locks only to read the precondition and persist `Downloading` (broadcast via
-//   `on_state`), downloads and hashes with NO lock held, then re-locks once to commit.
-// - (security LOW) Downloaded only `*.exe`/`*.sha256` by glob, so a release with more than one
-//   `.exe` asset would silently keep "whichever is listed last". Now looks up the release's own
-//   asset list first, downloads the exact installer asset name and its exact `<name>.sha256`
-//   sibling (matching `install_on_quit.rs`'s own `sha256_sibling` naming), never a glob.
-// - (security LOW) Raw, uncapped `gh` stderr used to be saved to `last_error` as-is; now routed
-//   through the shared, redacting `github::gh::non_empty_or` plus this file's own local length
-//   cap, same as every other `gh` failure path.
+// The store lock is never held across the download.
 use std::path::Path;
 use std::time::Duration;
 
@@ -29,23 +11,14 @@ use super::dependency_install_http::safe_file_name;
 use super::signature::verify_installer_signature;
 use super::state::{SharedUpdateState, UpdatePhase, UpdateState};
 
-/// research.md decision 8: the same private repository `UpdateChecker`/`gh_client` reads from.
 const REPO: &str = "stuarthopwood/refract";
 
-/// Quality-gate remediation (HIGH, ported verbatim): the default metadata timeout exists for
-/// ordinary small calls -- the installer this downloads is ~146MB, which needs far longer than
-/// that on anything but a very fast connection; this is the one caller that opts into several
-/// minutes instead.
+/// The installer is about 146 MB, so it needs longer than the metadata timeout.
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-/// Shared cap for any raw `gh` error text this module ever surfaces (release-view JSON errors
-/// and the download path's own stderr/stdout pick alike) -- an unbounded `gh` response must
-/// never persist/display in full.
+/// Caps `gh` error text so unbounded output is never persisted or shown.
 const MAX_ERROR_LEN: usize = 500;
 
-/// Truncates `detail` to `MAX_ERROR_LEN` chars, appending `...` when it was cut -- the one
-/// shared helper both the `release view` error path and the download error path route through,
-/// so the cap can never drift between the two.
 fn cap_error(detail: impl Into<String>) -> String {
     let detail = detail.into();
     if detail.chars().count() > MAX_ERROR_LEN {
@@ -66,11 +39,7 @@ struct GhReleaseAssets {
     assets: Vec<GhReleaseAsset>,
 }
 
-/// `updates.install()`'s two documented errors (contracts/ipc.md): any failure past the
-/// `Available` precondition check (a network failure, a missing asset, or a real digest
-/// mismatch) is reported as `ChecksumMismatch` -- the contract defines no finer-grained code for
-/// this one call; `UpdateState.last_error` (via `updates:state-changed`/`getState`) still carries
-/// the specific, actionable reason for the badge UI.
+/// Every post-`Available` failure reports as `ChecksumMismatch`; the reason is in `last_error`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateErrorCode {
     UpdateUnavailable,
@@ -100,13 +69,7 @@ impl std::fmt::Display for UpdateError {
 
 impl std::error::Error for UpdateError {}
 
-/// `updates.install()` (contracts/ipc.md): awaits the whole download, checksum verification, and
-/// Authenticode signature verification (lane R11d, follow-up to #794: `signature.rs`'s pinned
-/// signer-certificate check) for the release named by the current `Available` state before
-/// resolving; persists `Downloading` immediately (so `updates:state-changed`, broadcast via
-/// `on_state`, can drive a progress indicator before this future ever resolves), then
-/// `Downloaded` with `installer_path` set on a verified match, or `Failed` with `last_error`
-/// otherwise (FR-014).
+/// Downloads and verifies the `Available` release, including its signature.
 pub async fn download_update(
     store: &SharedUpdateState,
     data_dir: &Path,
@@ -121,7 +84,6 @@ pub async fn download_update(
                 "No update is available to install.",
             ));
         }
-        // Safe: checked non-None immediately above.
         let tag_name = format!("v{}", state.available_version.unwrap());
         let downloading = guard.update(|s| s.phase = UpdatePhase::Downloading).await;
         drop(guard);
@@ -160,14 +122,9 @@ pub async fn download_update(
     }
 }
 
-/// The whole download-and-verify body, factored out of `download_update` so every exit path
-/// (missing asset, `gh` failure, a real digest mismatch, or a rejected Authenticode signature)
-/// collapses to the single `Err(String)` `download_update` reports as `ChecksumMismatch`,
-/// matching `UpdateInstaller.ts`'s own single `catch` block. Runs with NO store lock held.
+/// Runs with no lock held; every failure collapses to one `Err(String)`.
 async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String> {
     let updates_dir = data_dir.join("updates");
-    // A previous failed attempt's leftovers are never mistaken for this one's fresh pair --
-    // `updates_dir` is always `<data_dir>/updates`, never a caller-supplied or empty path.
     match tokio::fs::remove_dir_all(&updates_dir).await {
         Ok(()) => {}
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -177,10 +134,6 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         .await
         .map_err(|err| err.to_string())?;
 
-    // Security fix (gate round 1, LOW): look up the release's own asset list first and download
-    // the EXACT installer asset name plus its exact `<name>.sha256` sibling, never a `*.exe`
-    // glob -- a release with more than one `.exe` asset used to silently keep "whichever is
-    // listed last" instead of failing loudly.
     let assets: GhReleaseAssets = gh_json(
         data_dir,
         &[
@@ -189,11 +142,7 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
     )
     .await
     .map_err(|err| cap_error(err.to_string()))?;
-    // Gate finding (round 2, Medium): this header comment already claimed a release with more
-    // than one `.exe` asset is rejected, but the code only ever `.find()`-picked the first match
-    // silently -- fixed for real here: `.filter()` collects every `.exe` asset, and anything
-    // other than exactly one is an error (zero: "missing an installer"; two or more: ambiguous,
-    // never silently pick one).
+    // Exactly one `.exe` is required; a glob would hide an ambiguous release.
     let exe_assets: Vec<&str> = assets
         .assets
         .iter()
@@ -241,22 +190,10 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         .await
         .map_err(|err| err.to_string())?;
 
-    // Gate finding (round 3, Medium): a timed-out spawn's own `gh_raw` never writes anything to
-    // stdout/stderr (see `github::gh::gh_raw`'s own timeout branch) -- without this check,
-    // `non_empty_or` below would silently fall through to its generic `gh command failed: gh
-    // {args_joined}` fallback, which is accurate but not as actionable as a plain, dedicated
-    // message.
     if result.timed_out {
         return Err("Download timed out.".to_string());
     }
     if result.code != 0 {
-        // Security fix (gate round 2, Medium): routed through the shared, redacting
-        // `github::gh::non_empty_or` (never echoes a credential-shaped substring verbatim)
-        // rather than the deleted `gh_client::capped_failure_text`'s own unredacted
-        // stderr/stdout pick; capped via the shared `cap_error` helper (also used by the
-        // `release view` error path above), matching the deleted function's own cap --
-        // redaction alone is not sufficient, an unbounded `gh` response must never
-        // persist/display in full.
         let detail = non_empty_or(
             &result.stderr,
             &result.stdout,
@@ -265,12 +202,7 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         return Err(cap_error(detail));
     }
 
-    // Gate finding (round 2, Medium): `installer_name`/`checksum_name` are release-asset names
-    // sourced from `gh`'s own JSON (not a caller-supplied value, but still worth a defensive
-    // strip) -- `safe_file_name` only at this LOCAL path-join point, matching
-    // `dependency_install.rs`'s own `install_git`/`install_github_cli` convention; the `--pattern`
-    // arguments above intentionally stay the raw API names so they still match the real remote
-    // asset.
+    // Only the local path is sanitised; `--pattern` needs the raw API name.
     let installer_path = updates_dir.join(safe_file_name(&installer_name));
     let checksum_path = updates_dir.join(safe_file_name(&checksum_name));
     if !tokio::fs::try_exists(&installer_path)
@@ -294,16 +226,12 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
     let actual = hex_digest_file(&installer_path).await?;
 
     if !checksum_matches(&actual, &expected) {
-        // Both paths are always children of `updates_dir` (`<data_dir>/updates`), never derived
-        // from caller input.
         let _ = tokio::fs::remove_file(&installer_path).await;
         let _ = tokio::fs::remove_file(&checksum_path).await;
         return Err("The downloaded installer did not match its published checksum.".to_string());
     }
 
     if let Err(reason) = verify_installer_signature(&installer_path).await {
-        // Same tamper-defense as a checksum mismatch above: never leave a rejected installer on
-        // disk for a later caller (or a stale `installerPath`) to pick back up.
         let _ = tokio::fs::remove_file(&installer_path).await;
         let _ = tokio::fs::remove_file(&checksum_path).await;
         return Err(reason);

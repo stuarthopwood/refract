@@ -1,6 +1,4 @@
-// Spec 060 (#1331): nudges the Usage worker when a Refract Session finishes a message, so the
-// Usage view updates without waiting for the next scan. The path comes from the registry, never
-// from the frame.
+// Nudges the Usage worker on `message_end`. The path comes from the registry, never the frame.
 
 use std::path::Path;
 

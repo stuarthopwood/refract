@@ -1,10 +1,4 @@
-// Free functions `launch.rs`'s own `launch()`/`attach_and_verify()` need, plus the two other
-// modules (`conversations.rs`, `requests.rs`) that reuse them -- split out of `launch.rs` (code
-// review finding, round 4, 2026-10-14: pushed `launch.rs` to 609 lines, past issue #806's
-// 600-line soft cap) so `launch.rs` keeps headroom under its own limit. No behaviour change:
-// every function moved here verbatim. Port of `reattachVerification.ts`'s own `verifyReattach`
-// and `fetchAllMessages.ts` -- see `launch.rs`'s own header for this module's place in the
-// `agent/` split.
+// Launch helpers shared by `launch.rs`, `conversations.rs` and `requests.rs`, split out to stay under the 600-line cap.
 
 use serde_json::{json, Value};
 
@@ -14,8 +8,7 @@ use crate::store::settings::ApprovalMode;
 
 use super::{SessionAgent, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MESSAGE_PAGES, MESSAGES_PAGE_SIZE};
 
-/// `RegistryStoreError` has no `Display` impl (only its `Registry` variant's inner
-/// `RegistryError` does); mirrors `ipc::map_registry_error`'s own match for the message half.
+/// `RegistryStoreError` has no `Display` impl, so its message is mapped by hand here.
 pub(super) fn registry_store_error_message(
     err: crate::store::registry::RegistryStoreError,
 ) -> String {
@@ -34,26 +27,19 @@ pub(super) fn to_process_mode(mode: ApprovalMode) -> ProcApprovalMode {
     }
 }
 
-/// Also used by `agent::requests`'s own `pick_approval_target` to bound approval-dialog target
-/// strings; kept here with the rest of this module's field-length truncation.
+/// Also bounds approval-dialog target strings in `agent::requests`.
 pub(super) fn truncate(s: &str, max_len: usize) -> String {
     s.chars().take(max_len).collect()
 }
 
-/// Port of `reattachVerification.ts`'s own `assertConversationFileExists`: checked by
-/// `attach_and_verify` before it ever calls `switch_session` (gate-fix round 4, test review
-/// MEDIUM -- extracted out of `attach_and_verify`'s own inline `tokio::fs::metadata` check so
-/// the missing-file error message is directly unit-testable, matching TS's own naming of the
-/// path in the thrown message).
+/// Checked before `switch_session`, so a missing conversation file fails with a testable message.
 pub(super) async fn assert_conversation_file_exists(file: &str) -> Result<(), String> {
     if tokio::fs::metadata(file).await.is_err() {
         return Err(format!("Conversation file missing: {file}"));
     }
     Ok(())
 }
-/// Port of `reattachVerification.ts`'s own `verifyReattach`. Windows paths are compared
-/// case-insensitively without canonicalisation (both sides are already absolute paths from the
-/// registry/OMP itself, unlike `path.resolve`'s own relative-path handling).
+/// Windows paths compare case-insensitively; both sides are already absolute, so no canonicalisation.
 pub(super) fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), String> {
     let session_file = state
         .get("sessionFile")
@@ -72,14 +58,8 @@ pub(super) fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), 
     Ok(())
 }
 
-/// Port of `reattachVerification.ts`'s own `reattachRebaselineNotice` (Constitution v1.9.0 /
-/// FINDINGS item 44): when a reattach's observed `messageCount` comes back BELOW the Session's
-/// last known count, this build re-baselines `lastMessageCount` to the observed value
-/// (`sync_from_state`'s own job) rather than treating it as a failure -- see `verify_reattach`'s
-/// own doc comment for why a drop is never itself a failure. The caller must tell the user this
-/// happened, once, in product wording naming both counts; this only computes that text so it is
-/// never fabricated ad hoc at the call site. Returns `None` when there is nothing to report (no
-/// prior count, or the observed count did not drop).
+/// Builds the one-time notice for a message count that dropped on reattach, or `None` if it did not drop.
+/// The count is re-baselined, not treated as a failure; the caller shows the notice once.
 pub(super) fn reattach_rebaseline_notice(session: &Session, state: &Value) -> Option<String> {
     let last_message_count = session.last_message_count?;
     let message_count = state
@@ -94,13 +74,7 @@ pub(super) fn reattach_rebaseline_notice(session: &Session, state: &Value) -> Op
     ))
 }
 
-/// Minimal seam `fetch_all_messages`/`fallback_to_get_messages` need to be unit-tested against a
-/// plain fake instead of a real spawned `omp` process -- port of `fetchAllMessages.ts`'s own
-/// `MessagesPageRequester` interface, and mirrors this lane's own earlier `ResumableAgent`/
-/// `AttachableAgent` trait-extraction in `ipc/sessions_agent.rs`. `fetch_all_messages`'s public,
-/// `&OmpProcess`-typed signature (every existing call site in `launch.rs`/`conversations.rs`) is
-/// unchanged -- it is now a one-line adapter over the `_core` functions below, which take any
-/// `R: MessagesPageRequester` and are what `launch_support.test.rs` exercises directly.
+/// Lets the fetch logic run against a fake requester instead of a real `omp` process in tests.
 trait MessagesPageRequester {
     async fn request_frame(&self, cmd: Value, timeout_ms: u64) -> Result<Value, String>;
 }
@@ -113,9 +87,8 @@ impl MessagesPageRequester for OmpProcess {
     }
 }
 
-/// Port of `fetchAllMessages.ts`: bounded `get_messages_page` pagination, falling back to a
-/// single plain `get_messages` call if the very first page fails. Never fails outright -- an
-/// incomplete fetch (`complete: false`) returns whatever was already accumulated.
+/// Pages through messages, falling back to one plain `get_messages` call if the first page fails.
+/// Never fails outright; an incomplete fetch returns what was already collected.
 pub(super) async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
     fetch_all_messages_core(proc).await
 }
@@ -192,17 +165,8 @@ async fn fallback_to_get_messages_core<R: MessagesPageRequester>(proc: &R) -> (V
     (messages.unwrap().clone(), true)
 }
 
-/// D1/D2 (#572): `set_ask_dialog{enabled:true}` probe, sent once per process right after
-/// `launch()`'s own reattach verification. Result lives only in `agent.state`'s
-/// `ask_dialog_enabled` (never persisted to the registry); anything but
-/// `{success:true, data:{enabled:true}}` -- an error, a timeout, or any other response shape --
-/// leaves Refract on the `select` fallback path for this process's life (D2), and only a later
-/// reattach/relaunch (a new process, hence a fresh `launch()` call) re-probes. Returns the
-/// resolved `enabled` value; the caller (not this function) decides whether and when to tell the
-/// user, since appending a notice here -- before the history merge -- was gate-fix round 1 High
-/// finding H3: `merge_from_history` keeps only unresolved requests and running/streaming items,
-/// so a notice appended before it is silently dropped on every launch where the history fetch
-/// completes.
+/// Probes `set_ask_dialog`, once per process. Any failure means the `select` fallback for the process lifetime (#572).
+/// The caller shows any notice after the history merge, or the merge drops it.
 pub(super) async fn send_set_ask_dialog(agent: &SessionAgent, proc: &OmpProcess) -> bool {
     let enabled = match proc
         .request(
@@ -228,11 +192,7 @@ pub(super) async fn send_set_ask_dialog(agent: &SessionAgent, proc: &OmpProcess)
     enabled
 }
 
-/// D20 (#572): the one notice when `send_set_ask_dialog` above resolved `enabled: false`. Split
-/// out of `launch.rs` (which was sitting at the 600-line cap with no headroom) purely to keep
-/// that call site a one-liner; the caller still decides WHEN to call this (after the history
-/// merge, never right after `send_set_ask_dialog` itself -- gate-fix round 1 High: an earlier
-/// pass called `append_notice` before the merge, which silently dropped it every time).
+/// Notice shown when `send_set_ask_dialog` resolved `enabled: false` (#572). Call it after the history merge.
 pub(super) async fn append_ask_dialog_unavailable_notice(agent: &SessionAgent, enabled: bool) {
     if enabled {
         return;

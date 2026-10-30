@@ -1,7 +1,5 @@
-// Port of `src/main/github/gh.ts`'s review-thread/timeline/comment/review/merge surface (lane
-// R9, issue #792), split out of `gh.rs` to stay under the 600-line-per-file cap (issue #806): the
-// core timed `gh` wrapper (`gh_raw`/`gh_json`/`gh_graphql`/`owner_repo_for`) lives in `gh.rs`; the
-// list/search/view/staleness/files surface lives in `gh_pull_requests.rs`.
+// Review-thread, timeline, comment, review and merge surface, split from `gh.rs` for the 600-line
+// cap (#806). The core `gh` wrapper lives in `gh.rs`; list/search/view in `gh_pull_requests.rs`.
 
 use std::path::Path;
 use std::time::Duration;
@@ -13,8 +11,7 @@ use super::gh::{
     GhErrorCode, GraphqlValue,
 };
 
-/// `reviewThreads`/`timelineItems`: connection shapes confirmed live via introspection plus a
-/// live query. `item_types` filters the timeline to the three kinds this feature renders.
+/// `item_types` filters the timeline to the three kinds this feature renders.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GhReviewThreadComment {
@@ -103,14 +100,8 @@ pub struct GhTimelineNodes {
 
 pub type GhThreadsAndTimeline = GhReviewThreadsAndTimelineInner;
 
-/// Gate round 2 note (#568 decision 10, architect M6, pre-existing -- not introduced by #568):
-/// `timelineItems(first: 100, ...)` has no pagination (no `pageInfo`/cursor handling anywhere in
-/// this query or its caller). A pull request with more than 100 commits/comments/reviews
-/// combined silently loses everything past the 100th item, from both the Overview `Timeline`
-/// and `ReviewConsensus`'s own rollup -- a review past that cap is invisible to the consensus
-/// count the same way a commit or comment past it is invisible to the Timeline today. Recorded
-/// in `specs/003-pull-request-management/spec.md`'s own Clarifications; a pagination fix is
-/// tracked separately (issue #918), not fixed here.
+/// `timelineItems(first: 100, ...)` is not paginated, so items past the 100th are silently lost
+/// from the Timeline and `ReviewConsensus` (#918).
 const THREADS_AND_TIMELINE_QUERY: &str = "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } }";
 
 #[derive(Deserialize)]
@@ -142,8 +133,7 @@ pub async fn get_review_threads_and_timeline(
     Ok(data.repository.pull_request)
 }
 
-/// Input shapes confirmed via introspection only; never executed live in this session. Variables,
-/// never string interpolation, so a thread id never needs hand-escaping.
+/// Variables, never string interpolation, so a thread id needs no hand-escaping.
 pub async fn resolve_review_thread_mutation(
     repo_path: &Path,
     thread_id: &str,
@@ -180,9 +170,7 @@ struct ReplyComment {
     comment: ReplyCommentId,
 }
 
-/// `addPullRequestReviewComment(input: { inReplyTo: ... })`: `inReplyTo` confirmed as a real,
-/// current input field. Links the reply to the thread's opening comment, never a new unrelated
-/// top-level comment.
+/// `inReplyTo` links the reply to the thread's opening comment, not a new top-level comment.
 pub async fn reply_to_thread_mutation(
     repo_path: &Path,
     pull_request_id: &str,
@@ -203,8 +191,7 @@ pub async fn reply_to_thread_mutation(
     Ok(data.add_pull_request_review_comment.comment.id)
 }
 
-/// A top-level pull request comment, distinct from a thread reply: the documented porcelain
-/// `gh pr comment` command already covers it, no GraphQL mutation needed.
+/// A top-level pull request comment, via `gh pr comment` (no GraphQL mutation needed).
 pub async fn comment_on_pull_request(
     repo_path: &Path,
     number: u64,
@@ -239,18 +226,13 @@ pub enum ReviewVerdict {
     Comment,
     Approve,
     RequestChanges,
-    // Gate round 2 fix (#568 decision 10 amendment): a dismissed review used to be dropped
-    // entirely (mapped to `None`, same as the legitimate PENDING case), which fixed
-    // `ReviewConsensus.tsx`'s own count but silently deleted that reviewer's whole review
-    // history from the Overview `Timeline` (FR-008 regression) -- a dismissed review is now a
-    // real timeline entry with its own verdict, and the renderer (not this backend) decides
-    // what a dismissal means for the consensus rollup.
+    // A dismissed review stays a real timeline entry; the renderer decides what it means for
+    // the consensus rollup.
     Dismissed,
 }
 
-/// `submit_review`'s approve-pin input: the cached `pullRequestId`/`headSha` `submitReview`'s
-/// approve path pins its mutation to (security remediation, Medium-but-must-fix): approve must
-/// never act on a head that moved since the renderer last saw it.
+/// Approve-pin input: the cached `pullRequestId`/`headSha`, so approve never acts on a head that
+/// moved since the renderer last saw it.
 pub struct PinnedReview<'a> {
     pub pull_request_id: &'a str,
     pub head_sha: &'a str,
@@ -258,12 +240,8 @@ pub struct PinnedReview<'a> {
 
 const ADD_REVIEW_MUTATION: &str = "mutation($pullRequestId: ID!, $commitOID: GitObjectID!, $event: PullRequestReviewEvent!, $body: String) { addPullRequestReview(input: { pullRequestId: $pullRequestId, commitOID: $commitOID, event: $event, body: $body }) { clientMutationId } }";
 
-/// `gh pr review`: documented porcelain command for comment/request-changes. Approve is pinned to
-/// the exact reviewed commit via the `addPullRequestReview` GraphQL mutation's `commitOID` --
-/// that field only RECORDS which commit the review is attached to display-side; the mutation
-/// succeeds even if the head has since moved, so the IPC handler's own `expectedHeadSha` check
-/// run immediately before this call is the real staleness guarantee, not anything this mutation
-/// enforces.
+/// Review submit: comment/request-changes via `gh pr review`, approve via `addPullRequestReview`.
+/// `commitOID` only records the commit; the IPC `expectedHeadSha` check is the staleness guard.
 pub async fn submit_review(
     repo_path: &Path,
     number: u64,
@@ -296,8 +274,7 @@ pub async fn submit_review(
     Ok(())
 }
 
-/// `addPullRequestReview`'s GraphQL variables for the pinned-commit approve path, pulled out of
-/// `submit_review` so the variable-building logic is testable without a live `gh` spawn.
+/// GraphQL variables for the pinned-commit approve path.
 fn build_approve_review_variables<'a>(
     pinned: &PinnedReview<'a>,
     body: Option<&'a str>,
@@ -313,10 +290,7 @@ fn build_approve_review_variables<'a>(
     variables
 }
 
-/// `gh pr review`'s porcelain argv for the comment/request-changes path, pulled out of
-/// `submit_review` so the argv shape is testable without a live `gh` spawn. Owned `Vec<String>`,
-/// the same convention `gh_graphql`'s own `owned_args` already uses, since the args borrow from
-/// locals (`number`'s string form, `owner_repo`) that don't outlive this function otherwise.
+/// `gh pr review` argv for comment/request-changes. Owned, as the args borrow short-lived locals.
 fn build_review_argv(
     number: u64,
     owner_repo: &str,
@@ -327,13 +301,8 @@ fn build_review_argv(
         ReviewVerdict::Approve => "--approve",
         ReviewVerdict::RequestChanges => "--request-changes",
         ReviewVerdict::Comment => "--comment",
-        // Gate round 2 fix (#568 decision 10 amendment): `Dismissed` was added to this enum so
-        // a dismissed review keeps its own place in the Overview timeline (FR-008) -- it is
-        // never a SUBMITTABLE verdict, though. The IPC handler's own `input.get("verdict")`
-        // string match (`ipc/pull_requests/handlers.rs`) only ever constructs `Comment`/
-        // `Approve`/`RequestChanges` from a `submitReview` request and rejects anything else
-        // before this function is ever called, so this arm is unreachable in practice; it
-        // exists only to keep this match exhaustive against the enum's new 4th variant.
+        // `Dismissed` is never submittable; the IPC handler rejects it earlier, so this arm only
+        // keeps the match exhaustive.
         ReviewVerdict::Dismissed => {
             unreachable!("ReviewVerdict::Dismissed is never a submittable review verdict")
         }
@@ -388,8 +357,7 @@ struct AllowedMergeMethodsWire {
     rebase_merge_allowed: bool,
 }
 
-/// Repository-level merge-method settings (`gh repo view --json`, a standard documented field
-/// set): maps to the `MergeMethod[]` a pull request's `allowedMergeMethods` offers.
+/// Repository merge-method settings (`gh repo view --json`), mapped to `allowedMergeMethods`.
 pub async fn get_allowed_merge_methods(repo_path: &Path) -> Result<Vec<MergeMethod>, GhError> {
     let (owner, repo) = owner_repo_for(repo_path).await?;
     let result: AllowedMergeMethodsWire = gh_json(
@@ -406,9 +374,7 @@ pub async fn get_allowed_merge_methods(repo_path: &Path) -> Result<Vec<MergeMeth
     Ok(allowed_merge_methods_from_wire(&result))
 }
 
-/// The wire-booleans -> `Vec<MergeMethod>` mapping, pulled out of `get_allowed_merge_methods` so
-/// every boolean combination is testable without a live `gh` spawn. Order always
-/// merge/squash/rebase, matching the original `if`/`if`/`if` sequence.
+/// Maps the wire booleans to `Vec<MergeMethod>`, always in merge/squash/rebase order.
 fn allowed_merge_methods_from_wire(wire: &AllowedMergeMethodsWire) -> Vec<MergeMethod> {
     let mut methods = Vec::new();
     if wire.merge_commit_allowed {
@@ -423,9 +389,8 @@ fn allowed_merge_methods_from_wire(wire: &AllowedMergeMethodsWire) -> Vec<MergeM
     methods
 }
 
-/// `head_sha` is always passed (security remediation, Medium-but-must-fix): `--match-head-commit`
-/// makes GitHub itself refuse the merge if the pull request's head has moved since the renderer
-/// last saw it, independent of (and a stronger guarantee than) the in-process staleness cache.
+/// `head_sha` is always passed: `--match-head-commit` makes GitHub refuse the merge if the head
+/// moved, a stronger guarantee than the in-process staleness cache.
 pub async fn merge_pull_request(
     repo_path: &Path,
     number: u64,
@@ -449,9 +414,7 @@ pub async fn merge_pull_request(
     Ok(())
 }
 
-/// `gh pr merge`'s porcelain argv, pulled out of `merge_pull_request` so the
-/// `--match-head-commit <sha>` shape (security-critical: confirmed present per a prior gate's
-/// security review) is testable without a live `gh` spawn.
+/// `gh pr merge` argv; `--match-head-commit <sha>` is security-critical.
 fn build_merge_argv(
     number: u64,
     owner_repo: &str,
@@ -475,10 +438,8 @@ fn build_merge_argv(
     ]
 }
 
-/// A non-zero `gh pr merge` exit's stderr/stdout text classified into the right `GhError`,
-/// pulled out of `merge_pull_request` so the conflict/not-mergeable text-matching is testable
-/// without a live `gh` spawn. Falls back to the shared `map_gh_failure` (used identically by
-/// every other `gh` call site) for anything that doesn't match a known not-mergeable shape.
+/// Classifies a failed `gh pr merge` into a `GhError`, falling back to `map_gh_failure` for
+/// anything that is not a known not-mergeable shape.
 fn classify_merge_failure(stderr: &str, stdout: &str) -> GhError {
     let text = format!("{stderr}\n{stdout}").to_lowercase();
     let not_mergeable = text.contains("not mergeable")

@@ -1,7 +1,5 @@
-//! A tool call's model-written intent (issue #469, `docs/spike/FINDINGS.md` item 64): OMP lifts
-//! it to the top-level `intent` field of a live `tool_execution_start` frame and keeps it as
-//! `arguments.i` on a history or snapshot `toolCall` part. The text is untrusted model output, so
-//! it is cleaned here once, at the IPC boundary, and the renderer shows it as plain text.
+//! A tool call's model-written intent: OMP lifts it to the top-level `intent` of a live frame, or
+//! `arguments.i` on history parts. Untrusted model output, so cleaned once here at the IPC boundary (#469).
 
 use serde_json::Value;
 

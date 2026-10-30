@@ -1,10 +1,4 @@
-// IPC handlers for `chat.*` (contracts/ipc.md "Chat", tasks.md T026). Ports `chat.send`
-// (including the native `/new` slash-command routing and the allowlisted-commands validation,
-// `src/main/ipc/chat.ts`), `.stop`, `.answer`, `.removeQueued`, `.commands`, and `.sendNow`
-// (issue #540, lane R4). `.predictWord`/`.predictWordFeedback` are not ported (model roles/
-// predict-word are out of this slice's scope, `session::agent`'s own header).
-// `.setVisibleSubagent`/`.subagentSnapshot` are ported, but in the sibling `ipc/subagents.rs`
-// (lane R5, issue #788), not here.
+// IPC handlers for `chat.*`. `.setVisibleSubagent` lives in `ipc/subagents.rs`.
 
 use serde_json::{json, Value};
 
@@ -28,22 +22,18 @@ pub fn register(d: &mut Dispatcher) {
     d.register("chat.commands", chat_commands);
 }
 
-/// Pure (gate-fix, testability): `name` is one of Refract's own native/reserved commands
-/// (`session::agent::commands`'s own `NATIVE_RESERVED_COMMANDS`, the one shared copy).
+/// Whether `name` is a Refract-native reserved command.
 fn is_native_reserved(name: &str) -> bool {
     NATIVE_RESERVED_COMMANDS.contains(&name)
 }
 
-/// Pure (gate-fix, testability): the only two queue values OMP's `remove_queued_message`/the
-/// chip model recognise.
+/// Whether `queue` is a queue kind OMP recognises.
 fn is_valid_queue_kind(queue: &str) -> bool {
     queue == "followUp" || queue == "steering"
 }
 
-/// `/model` is rewritten to `/switch` before classification or forwarding; everything else
-/// passes through unchanged. Returns `(name, rest, original_name)` -- `original_name` is always
-/// what the user actually typed, kept for every error message downstream (a user who typed
-/// `/model` must see "/model", never the internal rewrite target "/switch").
+/// Rewrites `/model` to `/switch`, keeping the typed name for error messages.
+/// Users must see "/model", never the internal "/switch".
 fn rewrite_model_to_switch(name: String, rest: String) -> (String, String, String) {
     let original_name = name.clone();
     let name = if name == "model" {
@@ -54,8 +44,7 @@ fn rewrite_model_to_switch(name: String, rest: String) -> (String, String, Strin
     (name, rest, original_name)
 }
 
-/// Pure (gate-fix, testability): the `(sessionId, text)` positional pair every `chat.send`/
-/// `.sendNow` call needs, or `None` if either is missing or not a string.
+/// Extracts the `(sessionId, text)` positional pair, or `None` if malformed.
 fn parse_session_id_and_text(args: &[Value]) -> Option<(&str, &str)> {
     let session_id = args.first()?.as_str()?;
     let text = args.get(1)?.as_str()?;
@@ -66,15 +55,12 @@ fn manager(state: &AppState) -> &std::sync::Arc<SessionManager> {
     &state.session_manager
 }
 
-/// Port of `chat.ts`'s own `mapChatError`: every `chat.send`/`.stop`/`.removeQueued` failure
-/// maps straight through (`AgentError::code` already matches `src/shared/ipc.ts`'s own
-/// `IpcErrorCode` values, same as `AgentNotRunningError`/`PromptFailedError`'s own `code` field).
+/// Maps a chat agent error straight through to its IPC error code.
 fn map_chat_error(err: crate::session::AgentError) -> IpcError {
     IpcError::new(err.code, err.message)
 }
 
-/// Maps the omp::images classification to the exact message each reason gets at this call site
-/// (shared by both the shape and the decoded validation failures below).
+/// Maps an image validation reason to its user-facing IPC error.
 fn image_validation_ipc_error(err: ImageValidationError, mime_type: &str) -> IpcError {
     match err {
         ImageValidationError::UnsupportedImageType => IpcError::new(
@@ -84,29 +70,15 @@ fn image_validation_ipc_error(err: ImageValidationError, mime_type: &str) -> Ipc
         ImageValidationError::ByteSizeTooLarge => {
             IpcError::new("image-too-large", "Image exceeds the 20 MiB limit")
         }
-        // #771: a distinct message from the byte-size cap above -- a tiny file can still
-        // declare an enormous pixel count in its header.
+        // Separate from the byte cap: a tiny file can declare huge dimensions (#771).
         ImageValidationError::PixelCountTooLarge => {
             IpcError::new("image-too-large", "Image exceeds the maximum pixel count")
         }
     }
 }
 
-/// Port of `chat.ts`'s own `parseImagesArgument`: shape-checks, then independently re-validates
-/// every entry (FR-018) before ever building the outgoing `prompt` command. Gate-fix (Critical,
-/// security): builds a FRESH `{ type: "image", data, mimeType }` object containing ONLY the
-/// three validated fields, never the caller's whole object -- a compromised/buggy renderer could
-/// otherwise attach extra fields (`providerFile`, `url`, `detail`) that OMP's own real handling
-/// acts on, reaching a privileged provider-file/remote-URL fetch despite every shape/mime/size
-/// check here passing (mirrors `chat.ts`'s own `parseImagesArgument`, lines 57-81). Gate-fix
-/// (perf): `validate_image_attachment_shape` runs on the BORROWED `&str` first -- a mime-type or
-/// over-declared-size rejection never pays for the clone the blocking-pool call below needs.
-/// Only once shape passes does ownership of `data`/`mimeType` move into `spawn_blocking` (the
-/// full base64 decode plus header walk is CPU work, not I/O, and a 20 MiB image's worth of it
-/// should never run on an async executor thread); the same owned Strings come back out to build
-/// the fresh entry above, so each image's text is copied exactly once. A `JoinError` (the
-/// blocking task panicking on some input this parser itself cannot anticipate) is mapped to a
-/// fail-closed `unsupported-image-type`, never an `.expect()` panic reaching the IPC caller.
+/// Shape-checks, then re-validates each image and builds a fresh `{type, data, mimeType}`.
+/// Only those three fields are forwarded, so extra renderer fields never reach OMP.
 async fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, IpcError> {
     let Some(images) = images else {
         return Ok(None);
@@ -159,8 +131,7 @@ async fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Valu
         if let Err(err) = validation {
             return Err(image_validation_ipc_error(err, &mime_owned));
         }
-        // Built fresh from only the three validated, owned fields -- see this function's own
-        // doc comment; never the caller's original `entry`.
+        // Built from the validated fields only, never the caller's `entry`.
         parsed.push(json!({ "type": "image", "data": data_owned, "mimeType": mime_owned }));
     }
     Ok(Some(parsed))
@@ -193,37 +164,26 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     .map_err(map_chat_error)?;
                 return Ok(serde_json::json!({ "queued": false }));
             }
-            // Issue #477: `/pause` toggles; `/resume` stays OMP's own.
+            // `/pause` toggles here; `/resume` stays OMP's own.
             if name == "pause" && rest.is_empty() {
                 agent.toggle_pause().await.map_err(map_chat_error)?;
                 return Ok(serde_json::json!({ "queued": false }));
             }
-            // Issue #762 (lane RM): `/model`/`/model <model>` are a Refract-side rewrite to
-            // `/switch`/`/switch <model>`, before anything is classified or forwarded -- OMP's
-            // own `model` builtin (alias `models`) opens the role-writing hub, never what
-            // Refract's composer means by this name (FINDINGS item 53).
+            // `/model` is a Refract-side rewrite to `/switch`; OMP's `model` opens its own role hub.
             let (name, rest, original_name) = rewrite_model_to_switch(name, rest);
-            // Issue #766: `/role <role>` applies directly (Refract-native; no OMP command
-            // exists for this). Bare `/role` has no server-side action (the renderer opens the
-            // Ctrl+R selector) and falls through to the reserved-command refusal below, same as
-            // `/btw`/`/models`. Validates against the WIDER chat-role set (gate-fix, round 4):
-            // `cycleOrder` + `plan` + every other configured chat role, not only Ctrl+R's own
-            // narrower cycling list (`model::known_role_list`, Stuart's own decided design).
+            // `/role <role>` is Refract-native and validates against the wider chat-role set.
+            // Bare `/role` falls through to the reserved-command refusal below.
             if name == "role" && !rest.is_empty() {
                 let known_roles = model::known_chat_role_list()
                     .await
                     .map_err(map_chat_error)?;
-                // Gate-fix (HIGH): `chat.send`'s own wire type is `Result<{ queued: boolean }>`
-                // (ipc.ts); the richer `{model, role}` shape is for `ipc::model`'s own direct
-                // `applyRole` caller only, never this text-command path.
+                // `chat.send` returns only `{ queued }`; the richer `{model, role}` is for `ipc::model`.
                 model::apply_role(&agent, &rest, &known_roles)
                     .await
                     .map_err(map_chat_error)?;
                 return Ok(serde_json::json!({ "queued": false }));
             }
-            // Port of `slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS` (chat.ts:125-130):
-            // refused locally before classification, never forwarded to OMP even if a future
-            // OMP version later recognizes one of these names as a real command.
+            // Refused locally, never forwarded to OMP, even if OMP later adds one of these.
             if is_native_reserved(name.as_str()) {
                 let suffix = if rest.is_empty() {
                     String::new()
@@ -266,23 +226,16 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 }
                 SlashInvocationClassification::Supported => {
                     if name == "switch" {
-                        // Issue #762: `/switch <arg>` (and its `/model` alias, rewritten above)
-                        // tracks pinning/role state and refreshes the composer label itself --
-                        // never the generic forward-and-ignore path every other supported OMP
-                        // command below falls through to.
+                        // `/switch` updates pin/role state and refreshes the composer label itself.
                         return model::handle_switch_text(&agent, &rest)
                             .await
                             .map_err(map_chat_error);
                     }
-                    // Issue #937, gate round 2 fix (decided): the user is already driving
-                    // `/advisor` themselves -- cancel any still-pending silent attach/resume
-                    // probe (`session::advisor`'s own header) so it can never swallow or race
-                    // this real, user-authored reply.
+                    // Cancels any pending silent advisor probe so it cannot race this reply.
                     if name == "advisor" {
                         crate::session::advisor::cancel_pending_probe(&agent).await;
                     }
-                    // Any other real OMP-side command (from `available_commands_update`): fall
-                    // through and forward it as a normal prompt below.
+                    // Other OMP commands are forwarded as normal prompts below.
                 }
             }
         }
@@ -409,9 +362,7 @@ pub fn chat_commands(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-// Issue #540: no `images` argument here at all -- OMP keeps the queued message's own images
-// with it (`promote_queued_message` moves the existing message, attachments included, rather
-// than reprocessing it, so a resend never needs images supplied by the caller).
+// Resends keep their images: OMP moves the queued message, so no `images` argument is needed.
 pub fn chat_send_now(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some((session_id, text)) = parse_session_id_and_text(&args) else {

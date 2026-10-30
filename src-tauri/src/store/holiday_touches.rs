@@ -1,6 +1,4 @@
-// Issue #1048 (Settings, Appearance "Holiday touches"): same reason `chat_width.rs` was split
-// into its own file (not inline in `settings.rs`) -- keeps that file under this build's 600-line
-// cap (issue #806).
+// "Holiday touches" setting (#1048).
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -14,8 +12,7 @@ pub enum HolidayTouches {
 
 pub(super) const KEY: &str = "holidayTouches";
 
-/// Default `Full` -- a missing/malformed value is never trusted, the same lazy-correction
-/// pattern `chat_width` uses.
+/// Default `Full`: a missing or malformed value is never trusted.
 pub(super) fn parse(object: &Map<String, Value>) -> HolidayTouches {
     object
         .get(KEY)

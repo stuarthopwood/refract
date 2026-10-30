@@ -1,6 +1,4 @@
-// The generated OMP config overlay (`token-guard-overlay.yml`): nested YAML of the effective token
-// guard values, headed by a version comment. Written atomically on every launch (FR-001, FR-003)
-// so an edit in Settings applies to the next launch. Never edited by hand.
+// Generated `token-guard-overlay.yml`, rewritten on every launch so Settings edits apply next launch.
 
 use std::collections::BTreeMap;
 use std::io;

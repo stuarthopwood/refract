@@ -1,12 +1,5 @@
-// Tail-only crash detection (port of `terminationDetection.ts`), split out of `termination.rs`
-// (code review finding, round 4, 2026-10-14: pushed `termination.rs` to 631 lines, past issue
-// #806's 600-line soft cap). No behaviour change: every item moved here verbatim (`clean()`
-// calls become the equivalent `TerminationDetectionResult::default()` since that private helper
-// stayed in `termination.rs` with the struct it belongs to). `detect_unexpected_termination` is
-// brought in via a plain private `use` in `termination.rs` (gate-fix round 3, code
-// review/security MEDIUM: no `pub(crate)` re-export -- no caller outside that file and its own
-// test needs one). See `termination.rs`'s own header for this lane's full scope and the
-// `on_frame`/`on_exit`/`on_start_progress` extension-point contract.
+// Tail-only crash detection, split out of `termination.rs` to stay under the file-size cap (#806).
+// Reads at most a bounded tail of the Conversation file, never the whole file.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex as StdMutex};
@@ -17,16 +10,12 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::TerminationDetectionResult;
 
-/// Never read more than this many bytes from the tail of a Conversation file on the first pass
-/// (issue #510: "no whole-file read"). Mirrors `terminationDetection.ts`'s own `TAIL_BYTES`.
+/// First-pass tail size; no whole-file read (#510).
 const TAIL_BYTES: u64 = 256 * 1024;
-/// Mirrors `terminationDetection.ts`'s own `MAX_TAIL_BYTES`: the doubling cap for the
-/// single-oversized-line case.
+/// Doubling cap, used only for a single oversized line.
 const MAX_TAIL_BYTES: u64 = TAIL_BYTES * 8;
 
-/// One raw `.jsonl` tail line, classified down to only the fields this module reads -- every
-/// field access is narrowed against the actual JSON, never cast to an assumed interface, since a
-/// stored Conversation line is disk content at the same trust level as `registry.json`.
+/// One classified `.jsonl` tail line. Every field is narrowed from untrusted disk JSON, never cast.
 enum TailLine {
     SessionExit {
         reason: Option<String>,
@@ -47,9 +36,7 @@ fn parse_tail_line(line: &str) -> Option<TailLine> {
     if trimmed.is_empty() {
         return None;
     }
-    // Only the file's true last line can land here as a parse failure (see `read_tail_lines`): a
-    // genuinely truncated write, treated as inconclusive rather than asserted as a specific
-    // reason -- the caller still sees whatever earlier, fully-parsed lines in the window found.
+    // A parse failure is only ever a truncated last line; treat it as inconclusive.
     let parsed: Value = serde_json::from_str(trimmed).ok()?;
     let obj = parsed.as_object()?;
 
@@ -116,8 +103,7 @@ struct Window {
     started_at_zero: bool,
 }
 
-/// Reads one window of `handle`, `window_bytes` wide, ending at its current size. Port of
-/// `readWindow`.
+/// Reads `window_bytes` from the end of `handle`.
 async fn read_window(handle: &mut tokio::fs::File, window_bytes: u64) -> Option<Window> {
     let metadata = handle.metadata().await.ok()?;
     if !metadata.is_file() || metadata.len() == 0 {
@@ -147,9 +133,7 @@ async fn read_window(handle: &mut tokio::fs::File, window_bytes: u64) -> Option<
     })
 }
 
-/// Reads at most `TAIL_BYTES` (doubling up to `MAX_TAIL_BYTES` only for the pathological
-/// single-oversized-line case) from the tail of `file`. Port of `readTailLines`. Never panics: a
-/// missing, empty, or unreadable file (including a read that fails partway through) yields `[]`.
+/// Reads the tail of `file`; a missing or unreadable file yields `[]`, never a panic.
 async fn read_tail_lines(file: &str) -> Vec<String> {
     let Ok(mut handle) = tokio::fs::File::open(file).await else {
         return Vec::new();
@@ -162,8 +146,7 @@ async fn read_tail_lines(file: &str) -> Vec<String> {
         if window.started_at_zero {
             return window.lines;
         }
-        // The window's own first line is always dropped here: it may be a fragment of an
-        // earlier, larger line, never real evidence either way.
+        // The first line may be a fragment of a longer line, so it is never evidence.
         let candidate: Vec<String> = window.lines.into_iter().skip(1).collect();
         let has_real_content = candidate.iter().any(|line| !line.trim().is_empty());
         if has_real_content || window_bytes >= MAX_TAIL_BYTES {
@@ -181,9 +164,7 @@ async fn compute_detection(file: &str) -> TerminationDetectionResult {
         pending_tool_calls: Option<Vec<String>>,
     }
     let mut exit_record: Option<ExitRecord> = None;
-    // `(toolCallId, toolName)`, insertion order preserved like the TS port's own `Map` -- a
-    // repeated id updates its existing entry in place rather than moving to the end (`Map.set`'s
-    // own semantics).
+    // Keeps insertion order; a repeated id updates its entry in place.
     let mut outstanding: Vec<(String, String)> = Vec::new();
 
     for line in &lines {
@@ -195,9 +176,7 @@ async fn compute_detection(file: &str) -> TerminationDetectionResult {
                 reason,
                 pending_tool_calls,
             } => {
-                // This life's own exit record and its own evidence -- never inherit an EARLIER
-                // life's still-outstanding calls into it (those were this record's business, and
-                // this record already carries its own `pendingToolCalls`).
+                // Never inherit an earlier process life's outstanding calls.
                 exit_record = Some(ExitRecord {
                     reason,
                     pending_tool_calls,
@@ -205,8 +184,7 @@ async fn compute_detection(file: &str) -> TerminationDetectionResult {
                 outstanding.clear();
             }
             TailLine::Assistant { tool_calls } => {
-                // An assistant turn after an exit record means that crash was resumed and
-                // superseded -- no longer the TRAILING entry this detector cares about.
+                // A later assistant turn means the crash was resumed and superseded.
                 exit_record = None;
                 for (id, name) in tool_calls {
                     if let Some(entry) =
@@ -223,9 +201,7 @@ async fn compute_detection(file: &str) -> TerminationDetectionResult {
                 outstanding.retain(|(id, _)| id != &tool_call_id);
             }
             TailLine::User => {
-                // A new user prompt cannot follow an unanswered tool call within one healthy
-                // process life -- an earlier life's orphaned call is judged on its own, never
-                // carried into this one (quality-gate fix, `terminationDetection.ts` cycle 2).
+                // A user prompt starts a new life; earlier orphaned calls are not carried over.
                 exit_record = None;
                 outstanding.clear();
             }
@@ -263,17 +239,11 @@ struct CacheEntry {
     result: TerminationDetectionResult,
 }
 
-/// Caches by `(file, size, mtimeMs)`: an unrelated Session's status refresh costs a cheap `stat`
-/// instead of a repeat 256 KiB read for a Conversation that has not changed since the last call.
-/// Simplification from the TS port (which caches the in-flight `Promise` itself, de-duplicating
-/// two concurrent calls for the very same unchanged file): this caches the completed `result`
-/// only, so two calls racing before either finishes both read the file once each -- a minor
-/// perf-only difference, never a correctness one.
+/// Keyed by `(file, size, mtime)` so an unchanged file skips the re-read.
 static CACHE: LazyLock<StdMutex<HashMap<String, CacheEntry>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
-/// Issue #510 slice 1: the sole entry point. `file` absent (no Conversation has ever been
-/// started) is always clean with no file access attempted.
+/// Sole entry point. A `None` file (no Conversation yet) is clean with no I/O.
 pub(crate) async fn detect_unexpected_termination(
     file: Option<&str>,
 ) -> TerminationDetectionResult {
@@ -308,11 +278,7 @@ pub(crate) async fn detect_unexpected_termination(
     let result = compute_detection(file).await;
     {
         let mut cache = CACHE.lock().expect("termination cache mutex poisoned");
-        // Perf gate-fix: one entry per distinct Conversation path ever seen this run would grow
-        // unbounded across a very long-lived process with many archived Sessions. A real desktop
-        // user's own Session count stays small (realistically dozens, not thousands), so a
-        // coarse "clear everything past this bound" is enough -- the next call for any
-        // still-relevant file just re-populates its own entry, same cost as a cold cache.
+        // Coarse bound so the cache cannot grow without limit.
         const CACHE_MAX_ENTRIES: usize = 500;
         if cache.len() >= CACHE_MAX_ENTRIES {
             cache.clear();

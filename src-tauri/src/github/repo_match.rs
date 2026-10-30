@@ -1,6 +1,4 @@
-// Spec 054 (issue #867, FR-017): matching a GitHub repository to an existing Project by its
-// remote URL. Every remote of a Project counts (not only `origin`); https, ssh and scp-like forms
-// normalise to the same lowercase `owner/name` key, `github.com` only.
+// Matches a repo to a Project by any remote URL; https/ssh/scp forms share one lowercase key (#867).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -64,8 +62,7 @@ async fn project_remote_keys(path: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Lowercase `owner/name` to Project id, for every GitHub remote of every Project. Reads run a
-/// few at a time so a large registry never spawns one `git` per Project at once.
+/// Lowercase `owner/name` to Project id; reads run a few at a time to bound `git` spawns.
 pub async fn project_index(repositories: &[Repository]) -> HashMap<String, String> {
     let mut index: HashMap<String, String> = HashMap::new();
     for chunk in repositories.chunks(MAX_PARALLEL_READS) {

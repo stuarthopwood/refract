@@ -1,11 +1,4 @@
-// Pause mode (issue #477, spec 056). OMP has no RPC pause (can1357/oh-my-pi#17371), so Refract
-// runs the safe point itself at the turn boundary: the running turn finishes, queued messages
-// are withdrawn from OMP's queue, and new sends are held here until Resume.
-//
-// `State.held` is `Some` while paused or pausing (the texts held back, text only). The wire value
-// `pausing` vs `paused` is derived from the Session status, never stored: `pausing` while a turn
-// is still running, `paused` once it settles. The held list mirrors to `Session.paused_held` in
-// the registry so a pause survives app and agent restarts and never auto-resumes.
+// Pause mode. OMP has no RPC pause, so Refract holds sends and withdraws queued messages at the turn boundary.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -28,7 +21,7 @@ pub(super) struct State {
     written: Arc<AtomicU64>,
 }
 
-/// Pure: `pausing` while a turn is running, `paused` otherwise, `None` when not paused.
+/// Derived from status, never stored, so `pausing` vs `paused` cannot drift.
 pub(super) fn wire_value(state: &AgentState) -> Option<&'static str> {
     state.pause.held.as_ref().map(|_| {
         if matches!(
@@ -42,14 +35,14 @@ pub(super) fn wire_value(state: &AgentState) -> Option<&'static str> {
     })
 }
 
-/// Pure: a stopped Session with persisted held messages is still Paused.
+/// A stopped Session with persisted held messages stays paused.
 pub fn mark_stopped(object: &mut serde_json::Map<String, Value>, held: &Option<Vec<String>>) {
     if held.is_some() {
         object.insert("pause".to_string(), "paused".into());
     }
 }
 
-/// Pure: OMP's own queued messages followed by the held ones, for the chip row.
+/// OMP's queued messages come first, then the held ones.
 pub(super) fn queue_view(
     state: &AgentState,
     follow_up: &[String],
@@ -63,7 +56,7 @@ pub(super) fn queue_view(
 }
 
 impl SessionAgent {
-    /// Loads the persisted pause once per agent, before the first status or send.
+    /// Loads the persisted pause once per agent.
     pub(super) async fn ensure_pause_loaded(&self) {
         if self.state.lock().await.pause.loaded {
             return;
@@ -83,9 +76,7 @@ impl SessionAgent {
         }
     }
 
-    /// Writes the current held list. Each call snapshots under the state lock with a rising
-    /// sequence number; the registry lock then serialises writes, and a stale snapshot is
-    /// skipped, so concurrent mutations can never persist out of order.
+    /// Writes the held list. Stale snapshots are skipped to keep writes in order.
     pub(super) async fn persist_pause(&self) {
         let (held, seq, written) = {
             let mut state = self.state.lock().await;
@@ -129,7 +120,7 @@ impl SessionAgent {
         self.state.lock().await.pause.held.is_some()
     }
 
-    /// `chat.pause`: the running turn finishes; queued messages are withdrawn into the held list.
+    /// `chat.pause`: the running turn finishes, and queued messages move to the held list.
     pub async fn pause(&self) -> Result<Value, AgentError> {
         self.ensure_pause_loaded().await;
         let (has_process, follow_up, steering) = {
@@ -172,10 +163,7 @@ impl SessionAgent {
         Ok(json!({ "paused": true }))
     }
 
-    /// `chat.resume`: drains the held messages in order through the normal send path, then
-    /// clears the pause. The pause stays set while draining, so a concurrent send appends behind
-    /// the held ones. A failed send leaves the unsent messages held and the Session paused. With
-    /// held messages and no live process the pause stays and the caller sees `agent-not-running`.
+    /// `chat.resume`: drains held messages in order, then clears the pause. A failed send leaves the rest held.
     pub async fn resume(&self) -> Result<Value, AgentError> {
         self.ensure_pause_loaded().await;
         {
@@ -238,7 +226,7 @@ impl SessionAgent {
         }
     }
 
-    /// `send` gate: while paused, holds the text instead of sending it. `Ok(None)` = not paused.
+    /// `send` gate: holds the text while paused. `Ok(None)` means not paused.
     pub(super) async fn hold_if_paused(
         &self,
         text: &str,
@@ -271,7 +259,7 @@ impl SessionAgent {
         Ok(Some(json!({ "queued": true })))
     }
 
-    /// `remove_queued` gate: a chip for a held message is removed from the held list.
+    /// `remove_queued` gate: removes a held message's chip from the held list.
     pub(super) async fn remove_held(&self, text: &str) -> bool {
         self.ensure_pause_loaded().await;
         {

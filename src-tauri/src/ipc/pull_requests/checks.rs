@@ -1,5 +1,4 @@
-// Per-check mapping for `PullRequestDetail.checks` (spec 038, FR-011/FR-012): one entry per
-// `statusCheckRollup` item. The aggregate `checkState` stays in `mapping.rs::map_check_state`.
+// Per-check mapping for `PullRequestDetail.checks`; the aggregate lives in `mapping.rs`.
 
 use serde::Serialize;
 
@@ -34,8 +33,7 @@ fn map_check_outcome(run: &GhCheckRun) -> CheckOutcome {
     let status = run.status.as_deref().unwrap_or("").to_uppercase();
     let conclusion = run.conclusion.as_deref().unwrap_or("").to_uppercase();
     let state = run.state.as_deref().unwrap_or("").to_uppercase();
-    // A `StatusContext` has only `state`; a `CheckRun` has `status` plus (once completed)
-    // `conclusion`.
+    // A `StatusContext` has only `state`; a `CheckRun` has `status` and `conclusion`.
     if !state.is_empty() {
         return match state.as_str() {
             "SUCCESS" => CheckOutcome::Successful,

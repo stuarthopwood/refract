@@ -1,5 +1,4 @@
-// IPC handler for `settings.setAnimatedStatusText` (issue #1242, spec 004 FR-042). Its own file
-// (not inline in `settings.rs`) to keep that file under this build's 600-line cap (issue #806).
+// IPC handler for `settings.setAnimatedStatusText`. Own file to respect the 600-line cap (#806).
 use serde_json::Value;
 
 use super::settings::require_bool;

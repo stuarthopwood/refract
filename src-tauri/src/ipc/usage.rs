@@ -1,7 +1,4 @@
-// Spec 060 (#1331) `usage.*` handlers. A renderer value is only ever a filter (range and bounded
-// strings that become bound SQL parameters), a sort key from an allowlist, a page number, or a
-// time-zone offset; nothing here takes a path or SQL fragment, and no result carries prompt prose.
-// The Usage worker's nudge path comes from the registry (`nudge`), never from the renderer.
+// `usage.*` handlers. Renderer values are only filters, sort keys or offsets, never paths or SQL.
 
 use std::sync::{Arc, OnceLock};
 
@@ -35,7 +32,7 @@ pub fn register(d: &mut Dispatcher) {
     super::usage_prefs::register(d);
 }
 
-/// The worker is created on the first `usage.start`; until then there is nothing to nudge.
+/// Nothing to nudge until the Usage view starts the worker.
 fn service(state: &AppState) -> Arc<UsageService> {
     SERVICE
         .get_or_init(|| {
@@ -48,7 +45,7 @@ fn service(state: &AppState) -> Arc<UsageService> {
             });
             let registry = state.registry.clone();
             let projects: crate::usage::ProjectsProvider = Arc::new(move || {
-                // Runs on the usage worker thread, never inside the tokio runtime.
+                // Runs on the usage worker thread, not the tokio runtime.
                 ProjectIndex::from_registry(&registry.blocking_lock().snapshot())
             });
             Arc::new(UsageService::new(emit, projects))
@@ -56,8 +53,7 @@ fn service(state: &AppState) -> Arc<UsageService> {
         .clone()
 }
 
-/// Called from `session::usage_nudge` when a Refract Session finishes a message. A no-op until
-/// the Usage view has started the worker.
+/// Called on each finished message. A no-op until the Usage worker starts.
 pub fn nudge(path: &std::path::Path) {
     if let Some(service) = SERVICE.get() {
         service.nudge(path);
@@ -100,8 +96,7 @@ fn usage_status(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move { to_json(&service(&state).status()) })
 }
 
-/// Checks the text bounds and the range and agent-type allowlists; the SQL layer parameterises
-/// the rest.
+/// Checks text bounds and range and agent-type allowlists; SQL parameterises the rest.
 pub(super) fn validate_filters(filters: &Filters) -> Result<(), IpcError> {
     filters.validate().map_err(query_error)?;
     let texts = [&filters.project, &filters.model, &filters.reasoning];
@@ -124,8 +119,7 @@ pub(super) fn parse_filters(value: Option<&Value>) -> Result<Filters, IpcError> 
     Ok(filters)
 }
 
-/// The renderer sends `Date.getTimezoneOffset()` (minutes WEST of UTC); `QueryCtx` wants minutes
-/// EAST. This is the one place the sign flips. Absent or null means UTC.
+/// The renderer sends minutes WEST of UTC; this flips the sign to minutes EAST. Null means UTC.
 fn query_ctx(tz_west: Option<&Value>) -> Result<QueryCtx, IpcError> {
     let west = match tz_west {
         None | Some(Value::Null) => 0,
@@ -218,7 +212,7 @@ fn usage_top_sessions(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
             let mut value = to_json(row)?;
-            // A Conversation file lives in its Session's own session directory.
+            // A Conversation file lives in its Session's directory.
             let parent = std::path::Path::new(&row.session_file)
                 .parent()
                 .map(|p| normalise_path(&p.to_string_lossy()))
@@ -266,7 +260,7 @@ fn usage_budget(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move { to_json(&budget::budget().await) })
 }
 
-/// A filters value in the contract's `UsageFilters` shape, for `usage.getPrefs`.
+/// A filters value in the `UsageFilters` shape, for `usage.getPrefs`.
 pub(super) fn filters_json(f: &Filters) -> Value {
     json!({
         "range": f.range,

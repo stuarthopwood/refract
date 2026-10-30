@@ -1,15 +1,10 @@
-// Port of `src/main/omp/loginProviders.ts`'s `requestLoginProviders`/`readOmpLoginProviders`.
-// Drops the TS source's `sessionId: string` parameter entirely: it only ever fed
-// `pidRecords.ts`, out of scope for this Rust build -- `omp::process::OmpProcessOptions` has no
-// such field (see its own doc comment narrowing the field set to spawn/ready-wait/stop).
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
 use crate::omp::process::{ApprovalMode, OmpProcess, OmpProcessOptions};
 
-/// Port of `OmpLoginProvider` (`loginProviders.ts`).
+/// An OMP login provider and whether it is authenticated.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OmpLoginProvider {
@@ -17,10 +12,7 @@ pub struct OmpLoginProvider {
     pub authenticated: bool,
 }
 
-/// Runs the read-only `get_login_providers` command against an already-running `proc` and
-/// returns the provider list. Never fails: any problem -- request error, unsuccessful response,
-/// malformed payload -- resolves to `None` instead. Each provider's `id` is validated as a
-/// string before being trusted.
+/// Requests the provider list from a running `proc`. Any failure resolves to `None`.
 pub async fn request_login_providers(proc: &OmpProcess) -> Option<Vec<OmpLoginProvider>> {
     let res = proc
         .request(serde_json::json!({ "type": "get_login_providers" }), 60_000)
@@ -30,9 +22,7 @@ pub async fn request_login_providers(proc: &OmpProcess) -> Option<Vec<OmpLoginPr
     parse_login_providers_response(&res)
 }
 
-/// Pure parsing core of `request_login_providers`, split out so it is directly testable without
-/// a live `OmpProcess`: given the raw response `Value` a real `proc.request` would resolve to,
-/// returns the provider list under the same rules documented on `request_login_providers` above.
+/// Parses the raw response, split out so tests need no live process.
 fn parse_login_providers_response(res: &Value) -> Option<Vec<OmpLoginProvider>> {
     if res.get("success").and_then(Value::as_bool) != Some(true) {
         return None;
@@ -40,8 +30,7 @@ fn parse_login_providers_response(res: &Value) -> Option<Vec<OmpLoginProvider>> 
 
     let raw = res.get("data").and_then(|d| d.get("providers"));
     let raw = match raw.and_then(Value::as_array) {
-        // Matches the TS source's own `!Array.isArray(raw) -> []` branch: a present-but-
-        // malformed `providers` field is an empty list, not a whole-call failure.
+        // A malformed `providers` field is an empty list, not a failure.
         None => return Some(Vec::new()),
         Some(arr) => arr,
     };
@@ -60,12 +49,7 @@ fn parse_login_providers_response(res: &Value) -> Option<Vec<OmpLoginProvider>> 
     Some(providers)
 }
 
-/// Spins up a scratch, non-Session `OmpProcess` (temp-dir cwd, started on demand, stopped and
-/// the temp dir removed when done) purely to call `request_login_providers` above, for a caller
-/// with no already-running process of its own to reuse (`accounts.omp.list`'s only caller).
-///
-/// Never fails: resolves to `None` on any problem, including temp-dir creation or process spawn
-/// failure.
+/// Spawns a throwaway `OmpProcess` to fetch the providers. Resolves to `None` on any failure.
 pub async fn read_omp_login_providers() -> Option<Vec<OmpLoginProvider>> {
     let scratch_dir = std::env::temp_dir().join(format!(
         "refract-omp-login-providers-{}-{}",

@@ -1,14 +1,5 @@
-// Token guard, Session side (#1212, spec 021 Lane B): the post-turn shake and the per-Conversation
-// model-call counter. Lane extension point like `advisor`: owns its `State` (held in `AgentState`
-// via `with_token_guard_state`) and is called from `agent/frame.rs`, `agent/chat.rs` and the
-// Conversation changes in `agent/conversations.rs`/`agent/launch.rs`. The pure decisions live in
-// `omp::token_guard::{shake,counter}`.
-//
-// Shake: after a turn fully settles (`handle_turn_settled`, once per settle), a spawned task reads
-// the context size fresh from `get_session_stats`; above 60k it sends `/shake` as a prompt through
-// `request_rpc_if_idle`, so it never runs while a turn is active (a user prompt that wins the race
-// refuses it). The shake's `command_output` frame is swallowed (`swallow_shake_output`), and the
-// next user prompt awaits an in-flight shake for a bounded time (`await_shake`).
+// Post-turn shake and per-Conversation model-call counter. Pure decisions live in `omp::token_guard`.
+// The shake goes through `request_rpc_if_idle`, so it never runs during an active turn.
 
 use std::time::Duration;
 

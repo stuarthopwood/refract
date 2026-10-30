@@ -1,5 +1,4 @@
-// Test module for `explorer_watch_state.rs`, split into this sibling file to stay under the
-// 600-line soft cap -- included via `#[path = "explorer_watch_state_tests.rs"] mod tests;`.
+// Tests for `explorer_watch_state.rs`, kept in a sibling file for the 600-line cap.
 
 use super::*;
 
@@ -48,9 +47,7 @@ fn begin_worktree_operation_clears_busy_on_drop_without_finish() {
         let _guard = begin_worktree_operation(no_app_handle(), &session);
         assert!(is_session_busy(&session));
     }
-    // Gate round 2 fix: dropped without `finish()` (the early-`?`-return / failure path) must
-    // still clear busy AND reset -- a failed lifecycle operation already stopped the watcher, so
-    // a mounted panel must still re-check rather than being left on a stale tree with none.
+    // A dropped lifecycle guard must still clear busy and reset, even on the failure path.
     assert!(!is_session_busy(&session));
     let _ = resets; // no real AppHandle in this test to observe the emitted event through; the
                     // "does it reset" behaviour is covered live (CDP) and by the handle-present
@@ -64,8 +61,7 @@ fn begin_worktree_operation_drop_without_finish_forgets_loaded_paths_via_reset()
     {
         let _guard = begin_worktree_operation(no_app_handle(), &session);
     }
-    // `notify_file_explorer_reset` (fired by Drop on the failure path) clears loaded paths --
-    // observable proof the reset path actually ran, without needing a real `AppHandle`.
+    // Drop on the failure path clears loaded paths, proving the reset ran without an `AppHandle`.
     assert!(!has_loaded_paths(&session));
 }
 
@@ -99,8 +95,7 @@ async fn ensure_watcher_is_idempotent_and_race_free() {
     std::fs::create_dir_all(&dir).unwrap();
     let runtime = tokio::runtime::Handle::current();
 
-    // Two concurrent callers for the SAME Session: at most one watcher must survive, and the
-    // loser must stop its own just-created watcher rather than orphaning it (gate round 1 fix).
+    // Concurrent callers for one Session leave at most one watcher, and the loser stops its own.
     let mut set = tokio::task::JoinSet::new();
     for _ in 0..2 {
         let runtime = runtime.clone();
@@ -112,9 +107,7 @@ async fn ensure_watcher_is_idempotent_and_race_free() {
     }
     while set.join_next().await.is_some() {}
 
-    // Gate round 2 fix: assert exactly one SURVIVING handle, not just "a watcher exists" --
-    // capture its identity, then prove a THIRD `ensure_watcher` call (now a plain no-op since a
-    // watcher already exists) returns the SAME handle rather than silently replacing it.
+    // A third `ensure_watcher` call must return the same surviving handle, not replace it.
     let first_handle = watcher_handle(&session).expect("exactly one watcher must survive the race");
     ensure_watcher(runtime, no_app_handle(), None, &session, &dir, None, false);
     assert!(
@@ -146,8 +139,7 @@ async fn cached_worktree_validity_caches_only_valid_until_a_reset() {
     let first = cached_worktree_validity(&session, &repo, &worktree).await;
     assert_eq!(first, WorktreeValidity::Valid);
 
-    // Mutate disk state that WOULD change the live answer (remove the `.git` pointer file) --
-    // the CACHED `Valid` value must still be returned until a reset/forget.
+    // A cached `Valid` result survives a disk change until the cache is reset.
     std::fs::remove_file(worktree.join(".git")).unwrap();
     let second = cached_worktree_validity(&session, &repo, &worktree).await;
     assert_eq!(
@@ -159,15 +151,14 @@ async fn cached_worktree_validity_caches_only_valid_until_a_reset() {
     forget_file_explorer_session(&session);
     assert!(!VALIDITY_CACHE.lock().unwrap().contains_key(&session));
 
-    // Cache slot cleared: the live (now genuinely Invalid, since `.git` is gone) answer returns.
+    // After a reset, the live answer is returned.
     let third = cached_worktree_validity(&session, &repo, &worktree).await;
     assert_eq!(third, WorktreeValidity::Invalid);
 }
 
 #[tokio::test]
 async fn cached_worktree_validity_never_caches_an_invalid_result() {
-    // Gate round 2 fix: an `Invalid` answer must NEVER be cached, so a user who repairs a broken
-    // worktree outside the app and hits Retry always sees the live, current answer.
+    // `Invalid` is never cached, so a repaired worktree shows its live state on retry.
     let session = unique_session("validity-invalid");
     let repo = std::env::temp_dir().join(format!("refract-watch-state-repo-{session}"));
     let worktree = std::env::temp_dir().join(format!("refract-watch-state-wt-{session}"));
@@ -184,10 +175,7 @@ async fn cached_worktree_validity_never_caches_an_invalid_result() {
 
 #[test]
 fn refresh_directory_guards_are_pure_and_callable() {
-    // `refresh_directory` itself is private and exercised end-to-end by `ipc::file_explorer`'s
-    // own live-check convention (CDP); this test only proves the pure `is_loaded` gate it leads
-    // with behaves correctly for an unloaded path, which is the perf-critical guard (gate round
-    // 1 Perf HIGH).
+    // Checks the unloaded-path guard, which keeps refreshes cheap.
     let session = unique_session("refresh-guard");
     assert!(!is_loaded(&session, "node_modules/sub"));
     record_loaded_path(&session, "src");

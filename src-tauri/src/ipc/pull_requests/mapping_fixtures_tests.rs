@@ -1,20 +1,11 @@
-// Recorded-`gh`-output fixtures for `GhPrListEntry`/`GhSearchEntry`/`GhPrViewDetail` (issue #792's
-// own named ask: "write fixtures from recorded `gh` output for list, detail, review submit and
-// merge"), deserialised from real camelCase JSON strings via `serde_json::from_str` and run
-// through the pure mapping functions in `mapping.rs`, rather than constructed as Rust struct
-// literals -- the regression test for the HIGH finding (code review, 2026-10-14) that a Team
-// review request (no `login` key at all in `gh`'s own wire shape) used to fail to map rather than
-// falling back to `login: "unknown"`. Nested as a child of `mapping_tests.rs` (not a direct
-// sibling of `mapping.rs`) purely to stay under the 600-line-per-file cap (issue #806) while still
-// reaching `mapping.rs`'s privately-imported items through `mapping_tests.rs`'s own
-// `use super::*;`.
+// Fixtures from real camelCase `gh` JSON, run through `mapping.rs`; regression for a Team review
+// request (no `login` key) that failed to map instead of falling back to "unknown".
 
 use super::*;
 use crate::github::gh_pull_requests::{GhPrListEntry, GhSearchEntry};
 
-/// A team review request has no `login` key at all in real `gh`/GraphQL output (`gh.rs`'s own
-/// `GhActor` doc comment) -- `#[serde(default)]` on both of `GhActor`'s fields lets it deserialise
-/// with `login: None` instead of failing to parse.
+/// A team review request has no `login` key in real `gh` output; `#[serde(default)]` on
+/// `GhActor` lets it deserialise with `login: None`.
 const TEAM_REVIEWER_JSON: &str = r#"{"name":"Some Team","__typename":"Team"}"#;
 
 #[test]
@@ -75,8 +66,8 @@ fn gh_search_entry_deserialises_camel_case() {
     assert_eq!(entry.url, "https://github.com/stuarthopwood/refract/pull/9");
 }
 
-/// `headRepositoryOwner` carries no `#[serde(default)]` -- real `gh` always sends the key, either
-/// an actor object (cross-repository) or `null` (same-repository), never omitted outright.
+/// `headRepositoryOwner` has no `#[serde(default)]`: real `gh` sends an actor (cross-repository)
+/// or `null` (same-repository), never omits it.
 fn gh_pr_view_detail_json(is_cross_repository: bool, head_repository_owner: &str) -> String {
     format!(
         r#"{{
@@ -141,15 +132,8 @@ fn gh_pr_view_detail_deserialises_camel_case_cross_repository_false_without_owne
     assert!(detail.head_repository_owner.is_none());
 }
 
-/// The inner `pullRequest` shape `get_review_threads_and_timeline` (`gh_mutations.rs`) actually
-/// hands `build_timeline`, deserialised from JSON rather than constructed as a struct literal
-/// (unlike `mapping_tests.rs`'s own `GhThreadsAndTimeline` cases) specifically to exercise the
-/// `__typename` discriminator and three null-shaped fields real `gh`/GraphQL output sends: a
-/// review thread's `line: null` (file-level comment), a timeline node's `author: null` (deleted
-/// account), and a pending `PullRequestReview`'s `submittedAt: null` -- the full envelope
-/// (`{"repository":{"pullRequest":{...}}}`) is deserialised separately in `gh_mutations_tests.rs`,
-/// which can see its private wrapper structs; this test starts one layer in, at the already-
-/// unwrapped shape `build_timeline` itself reads.
+/// The inner `pullRequest` shape `build_timeline` receives, as JSON to exercise `__typename` and
+/// the null `line`, `author` and `submittedAt` that real `gh` output sends.
 #[test]
 fn threads_and_timeline_json_fixture_maps_through_build_timeline() {
     let json = r#"{
@@ -200,9 +184,7 @@ fn threads_and_timeline_json_fixture_maps_through_build_timeline() {
         serde_json::from_str(json).expect("GhThreadsAndTimeline fixture parses");
 
     let timeline = build_timeline(&data);
-    // The pending review is dropped (no verdict); only the comment and the review thread
-    // remain, chronologically ordered by their earliest timestamp: the thread's first comment
-    // (2024-01-01) sorts before the issue comment (2024-01-02).
+    // The pending review is dropped (no verdict); the rest sort by earliest timestamp.
     assert_eq!(timeline.len(), 2);
     match &timeline[0] {
         TimelineEntry::ReviewThread { thread } => {

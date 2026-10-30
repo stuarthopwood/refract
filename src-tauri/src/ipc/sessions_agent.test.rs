@@ -1,9 +1,6 @@
-// Unit tests for `ipc::sessions_agent` (lane R3, issue #786): the pure decision functions ported
-// from `canAutoStart.test.ts`, `resumeEligibility.test.ts`, and `src/shared/canResumeSession.ts`'s
-// own rules, plus the atomic busy-lock (`try_lock_resuming`, gate-fix: a single `HashSet::insert`
-// call used as the whole check, not a separate `contains()` then a later `insert()`).
-// `#[path]`-loaded sibling of `sessions_agent.rs` (excluded from `check:file-size` by its own
-// `.test.rs` name).
+// Unit tests for `ipc::sessions_agent`: pure decision functions plus the atomic busy-lock
+// (`try_lock_resuming`, a single `HashSet::insert` as the whole check).
+// `#[path]`-loaded sibling, excluded from `check:file-size` by its `.test.rs` name.
 use super::*;
 use crate::events::EventSink;
 use crate::session::SessionManager;
@@ -13,7 +10,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 #[test]
 fn can_auto_start_table() {
-    // Port of `canAutoStart.test.ts`'s own `it.each` table.
+    // Table of auto-start cases.
     let cases: &[(Option<&str>, bool, bool)] = &[
         (None, false, true),
         (None, true, false),
@@ -170,13 +167,8 @@ fn try_lock_resuming_releases_on_drop_allowing_a_later_claim() {
     );
 }
 
-// -------------------------------------------------------------------------------------------
-// `resume_session_core`/`attach_snapshot_decision` against plain fakes (gate-fix, code review +
-// test-review HIGH): the whole point of the `ResumableAgent`/`AttachableAgent` seam is that
-// these decision bodies are testable without a real `SessionAgent`/process. `StdMutex` (not a
-// bare `Cell`) only because the trait methods take `&self` through a shared reference the real
-// adapter also uses that way; `#[tokio::test]`'s default current-thread runtime never touches
-// these fakes from a second OS thread, so the extra lock is cheap insurance, not a requirement.
+// `resume_session_core`/`attach_snapshot_decision` against plain fakes, so the decision bodies
+// are testable without a real `SessionAgent`/process.
 
 struct FakeResumableAgent {
     status: SessionStatus,
@@ -185,17 +177,11 @@ struct FakeResumableAgent {
     terminated_unexpectedly: bool,
     send_fails: bool,
     start_fails: bool,
-    /// Gate-fix (round 3, test review HIGH): simulates a concurrent archive landing WHILE
-    /// `resolve_termination`'s own tail read is in flight (`resumeSession.test.ts`'s own
-    /// "archived during the tail read" case) -- flipped by `resolve_termination` itself below,
-    /// read by `is_archived`, so a caller that checks `is_archived` BEFORE calling
-    /// `resolve_termination` would wrongly see `false` here too.
+    /// Simulates an archive landing WHILE `resolve_termination`'s tail read is in flight; a caller
+    /// checking `is_archived` BEFORE that call would wrongly see `false`.
     archived_during_resolve: bool,
     archived: StdMutex<bool>,
-    /// Gate-fix (round 4, test review MEDIUM): proves the upfront-`archived` short-circuit
-    /// genuinely skips the tail read entirely (`resumeSession.test.ts`'s own "refuses as
-    /// not-eligible for an archived Session, without reading the tail" -- never worth a 256 KiB
-    /// file read for a Session a resume can never apply to).
+    /// Proves the upfront-`archived` short-circuit skips the tail read entirely.
     resolve_termination_called: StdMutex<bool>,
     start_called: StdMutex<bool>,
     notify_called: StdMutex<bool>,
@@ -231,11 +217,8 @@ impl ResumableAgent for FakeResumableAgent {
     }
 
     async fn start(&self) -> Result<(), AgentError> {
-        // A real yield point (gate-fix: `resume_session_core_sends_the_instruction_exactly_once_
-        // under_real_concurrency` races two calls via `tokio::join!` on the SAME `#[tokio::test]`
-        // current-thread runtime -- without an actual `.await` that returns `Pending` at least
-        // once while the lock is held, both futures would run to completion back to back inside
-        // a single poll, never actually overlapping).
+        // A real yield point: without a `Pending` await while the lock is held, the two
+        // `tokio::join!` futures would run back to back and never overlap.
         tokio::task::yield_now().await;
         *self.start_called.lock().unwrap() = true;
         if self.start_fails {
@@ -324,12 +307,8 @@ async fn resume_session_core_refuses_busy_while_another_call_holds_the_lock() {
 
 #[tokio::test]
 async fn resume_session_core_sends_the_instruction_exactly_once_under_real_concurrency() {
-    // Port of `resumeSession.test.ts`'s own "sends the instruction exactly once under real
-    // concurrency (two calls started before either resolves)": the sibling test above pre-claims
-    // the guard itself before calling `resume_session_core`, which only proves the function
-    // checks an ALREADY-held lock correctly -- `tokio::join!` instead races the function's own
-    // internal `try_lock_resuming` call twice for the SAME id, the stronger property this TS
-    // case name describes.
+    // `tokio::join!` races the function's own `try_lock_resuming` twice for the same id; the
+    // sibling test only proves an already-held lock is respected.
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable(
         SessionStatus::Stopped,
@@ -381,10 +360,8 @@ async fn resume_session_core_refuses_when_not_eligible_without_starting_the_agen
 
 #[tokio::test]
 async fn resume_session_core_refuses_an_archived_session_without_reading_the_tail() {
-    // Port of `resumeSession.test.ts`'s own "refuses as not-eligible for an archived Session,
-    // without reading the tail" (Main gate round 4 MEDIUM): never worth a 256 KiB Conversation
-    // read for a Session a resume can never apply to -- the upfront `archived` parameter must
-    // short-circuit BEFORE `resolve_termination` is ever called, not merely refuse afterward.
+    // The upfront `archived` parameter must short-circuit BEFORE `resolve_termination`, not
+    // merely refuse afterward.
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable(
         SessionStatus::Stopped,
@@ -412,12 +389,8 @@ async fn resume_session_core_refuses_an_archived_session_without_reading_the_tai
 
 #[tokio::test]
 async fn resume_session_core_refuses_when_archived_during_the_tail_read() {
-    // Gate-fix (round 3, test review HIGH): the sibling test above passes `archived=true` as a
-    // snapshot from BEFORE `resolve_termination`'s own tail read starts -- it cannot prove the
-    // race where the archive instead lands DURING that await. `archived_during_resolve` flips
-    // `FakeResumableAgent`'s own `is_archived` flag from inside `resolve_termination` itself, so
-    // this proves `resume_session_core`'s own fresh `is_archived().await` re-check (not the
-    // stale `archived` snapshot parameter) is what catches it.
+    // An archive landing DURING the tail read: the fresh `is_archived().await` re-check, not the
+    // stale `archived` snapshot, must catch it.
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable_with_archive_race(
         SessionStatus::Stopped,
@@ -465,8 +438,7 @@ async fn resume_session_core_starts_notifies_and_sends_when_eligible_and_restart
 
 #[tokio::test]
 async fn resume_session_core_never_sends_when_the_restart_itself_fails() {
-    // Port of `resumeSession.test.ts`'s own "releases the lock after agent.start() resolves but
-    // the resulting snapshot is still stopped".
+    // Releases the lock after start() resolves while the snapshot is still stopped.
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable(
         SessionStatus::Stopped,
@@ -491,11 +463,7 @@ async fn resume_session_core_never_sends_when_the_restart_itself_fails() {
 
 #[tokio::test]
 async fn resume_session_core_refuses_a_third_call_after_completion_as_not_stopped() {
-    // Port of `resumeSession.test.ts`'s own "refuses a third call after completion as
-    // not-stopped (the agent is now idle)" (Main gate round 4 MEDIUM): a resume that actually
-    // completed leaves the Session no longer `Stopped`, so a LATER call (lock long since
-    // released, a genuinely fresh attempt, not a concurrent one) must refuse `not-stopped`
-    // rather than re-running the whole eligible path again.
+    // A later, fresh call after a completed resume must refuse `not-stopped`, not re-run.
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable(
         SessionStatus::Stopped,
@@ -538,10 +506,7 @@ async fn resume_session_core_propagates_a_send_failure_as_prompt_failed() {
 
 #[tokio::test]
 async fn resume_session_core_swallows_a_rejected_agent_start() {
-    // Port of `resumeSession.test.ts`'s own "swallows a rejected agent.start() and still returns
-    // the (still-stopped) resulting snapshot": `resume_session_core`'s own `let _ =
-    // agent.start().await;` discards the error structurally -- this proves it actually does,
-    // not merely that every other test above happens to call a `start()` that resolves cleanly.
+    // A rejected start() is swallowed structurally (`let _ = agent.start().await`); this proves it.
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable(
         SessionStatus::Stopped,
@@ -568,9 +533,7 @@ struct FakeAttachableAgent {
     terminated_unexpectedly: bool,
     start_called: StdMutex<bool>,
     notify_called: StdMutex<bool>,
-    /// Gate-fix (round 5, test review MEDIUM): proves `attach_snapshot_decision` returns early
-    /// (no tail read at all) for a Session that is not stopped, not merely that it refused to
-    /// start.
+    /// Proves `attach_snapshot_decision` returns early (no tail read) for a non-stopped Session.
     resolve_termination_called: StdMutex<bool>,
 }
 
@@ -609,9 +572,7 @@ fn fake_attachable(status: SessionStatus, terminated_unexpectedly: bool) -> Fake
 
 #[tokio::test]
 async fn attach_snapshot_decision_is_none_and_never_starts_when_not_stopped() {
-    // Port of `attachSnapshot.test.ts`'s own "never reads the tail when the agent is not
-    // stopped (no detection, no start)" (Main gate round 5 MEDIUM): asserts the tail read
-    // itself never happens, not merely that `start` was never called.
+    // Asserts the tail read itself never happens when the agent is not stopped.
     let agent = fake_attachable(SessionStatus::Working, false);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(detection.is_none());
@@ -650,7 +611,7 @@ async fn attach_snapshot_decision_passive_open_never_auto_starts_an_agent_exited
 
 #[tokio::test]
 async fn attach_snapshot_decision_passive_open_never_starts_even_when_nothing_is_wrong() {
-    // Issue #1205 (FR-103): a passive open shows saved history and never starts the agent.
+    // A passive open shows saved history and never starts the agent (#1205).
     let agent = fake_attachable(SessionStatus::Stopped, false);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(detection.is_some());
@@ -661,11 +622,8 @@ async fn attach_snapshot_decision_passive_open_never_starts_even_when_nothing_is
 #[tokio::test]
 async fn attach_snapshot_decision_a_genuinely_crashed_session_with_the_same_stop_reason_never_auto_starts(
 ) {
-    // Port of `attachSnapshot.test.ts`'s own "a genuinely crashed Session with the same
-    // stopReason never auto-starts and the detection reaches buildSnapshot" (Main gate round 4
-    // HIGH): `not-started` is normally allowed to auto-start, but a tail read proving it
-    // actually died mid-turn (`terminated_unexpectedly: true`) must still block it -- and the
-    // caller still gets the real detection back either way (threaded into `build_snapshot`).
+    // A tail read proving death mid-turn (`terminated_unexpectedly`) blocks auto-start, and the
+    // detection still reaches `build_snapshot`.
     let agent = fake_attachable(SessionStatus::Stopped, true);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(
@@ -680,8 +638,7 @@ async fn attach_snapshot_decision_a_genuinely_crashed_session_with_the_same_stop
 
 #[tokio::test]
 async fn attach_snapshot_decision_notifies_list_changed_only_when_the_agent_actually_starts() {
-    // Port of `attachSnapshot.test.ts`'s own "notifies listChanged only when the agent actually
-    // starts".
+    // Notifies listChanged only when the agent actually starts.
     let not_stopped = fake_attachable(SessionStatus::Working, false);
     attach_snapshot_decision(&not_stopped, false).await;
     assert!(!*not_stopped.notify_called.lock().unwrap());
@@ -691,13 +648,8 @@ async fn attach_snapshot_decision_notifies_list_changed_only_when_the_agent_actu
     assert!(*starts.notify_called.lock().unwrap());
 }
 
-// -------------------------------------------------------------------------------------------
-// `sessions_resume`/`attach_snapshot_core` against a REAL `AppState`/registry (same `make_state`
-// pattern `ipc/sessions_lifecycle_tests.rs`'s own tests use): the one TS case per handler that
-// genuinely lives here -- an unknown session id -- is refused by the registry lookup BEFORE
-// either handler ever creates an agent, so it needs no `ResumableAgent`/`AttachableAgent` fake at
-// all.
-// -------------------------------------------------------------------------------------------
+// `sessions_resume`/`attach_snapshot_core` against a real `AppState`: an unknown session id is
+// refused by the registry lookup before any agent is created.
 
 fn temp_registry_dir(label: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -727,7 +679,7 @@ async fn make_state(dir: &std::path::Path) -> AppState {
 
 #[tokio::test]
 async fn sessions_resume_returns_not_found_for_an_unknown_session_id() {
-    // Port of `resumeSession.test.ts`'s own "returns not-found for an unknown session id".
+    // Returns not-found for an unknown session id (resume).
     let dir = temp_registry_dir("resume-not-found");
     let state = make_state(&dir).await;
     let args = vec![Value::String("missing-id".to_string())];
@@ -739,7 +691,7 @@ async fn sessions_resume_returns_not_found_for_an_unknown_session_id() {
 
 #[tokio::test]
 async fn attach_snapshot_core_returns_not_found_for_an_unknown_session_id() {
-    // Port of `attachSnapshot.test.ts`'s own "returns not-found for an unknown session id".
+    // Returns not-found for an unknown session id (attach).
     let dir = temp_registry_dir("attach-not-found");
     let state = make_state(&dir).await;
     let err = attach_snapshot_core(&state, "missing-id", false)

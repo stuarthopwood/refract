@@ -1,7 +1,5 @@
-// Spec 054 (issue #867, FR-022, FR-023, FR-030, FR-032): one `gh repo clone` child process,
-// modelled on `cli.rs`'s `GhLoginFlow`: spawn through `resolve_gh` with an argument array (no
-// shell), stream stderr into coarse progress stages, keep a private stderr tail only to classify a
-// failed exit into a fixed sentence, and an idempotent `cancel()` whose exit event fires once.
+// One `gh repo clone` child: spawned via `resolve_gh` with an argument array, stderr streamed into
+// coarse progress stages, an idempotent `cancel()` firing the exit event once (#867).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -13,7 +11,7 @@ use tokio::sync::{mpsc, watch};
 use super::gh::{resolve_gh, GhError, GhErrorCode};
 use super::repo_ref::RepoRef;
 
-/// Windows-only: `CREATE_NO_WINDOW` (same flag `gh.rs`'s own `gh_raw` applies).
+/// Windows-only: `CREATE_NO_WINDOW`.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const STDERR_TAIL_BYTES: usize = 2 * 1024;
 const MAX_LINE_CHARS: usize = 4096;

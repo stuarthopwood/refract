@@ -1,6 +1,4 @@
-// Spec 054 (issue #867, FR-025): validated `owner/name` references to a GitHub repository.
-// Pure, no I/O. Every string that ever becomes a `gh` argument for listing or cloning passes
-// through here first; the renderer never builds one.
+// Validated `owner/name` repo refs; every `gh` list/clone argument passes through here (#867).
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoRef {
@@ -53,9 +51,7 @@ fn build(owner: &str, name: &str) -> Result<RepoRef, &'static str> {
     }
 }
 
-/// Accepts `owner/name`, or `https://github.com/owner/name` optionally with one trailing `/` and
-/// `.git`. Anything else (`git@`, `http`, other hosts, userinfo, port, query, fragment,
-/// `tree/...` paths, whitespace inside, control characters) is refused with a plain sentence.
+/// Accepts `owner/name` or `https://github.com/owner/name[/][.git]`; anything else is refused.
 pub fn parse_source(raw: &str) -> Result<RepoRef, &'static str> {
     let text = raw.trim();
     if text.is_empty() || text.chars().any(|c| c.is_whitespace() || c.is_control()) {

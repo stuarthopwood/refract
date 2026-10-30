@@ -1,4 +1,4 @@
-// Spec 060 (S1-17): Project label matching.
+// Project label matching.
 
 use std::path::Path;
 

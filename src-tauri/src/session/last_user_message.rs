@@ -1,8 +1,5 @@
-// The last user prompt of a Conversation, for the Home view's Recent Sessions cards (issue #869,
-// spec 059). The #862 preview reader scans the file's head and returns the FIRST prompt, so this
-// reads a bounded tail window instead: 256 KiB, doubling to 2 MiB when the window holds no
-// complete user message (one oversized line). The file is disk content, so every field is
-// narrowed against the JSON, never assumed.
+// Last user prompt of a Conversation, for the Home view's Recent Sessions cards. Reads a bounded
+// tail window, since the head reader returns the first prompt. Every field is narrowed against the JSON.
 
 use std::path::Path;
 
@@ -11,11 +8,10 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 const TAIL_BYTES: u64 = 256 * 1024;
 const MAX_TAIL_BYTES: u64 = TAIL_BYTES * 8;
-/// A card shows one line; longer prompts are cut here.
+/// Cards show one line, so longer prompts are cut here.
 pub const MAX_LINE_CHARS: usize = 160;
 
-/// One line of text: whitespace collapsed, cut at `MAX_LINE_CHARS` with an ellipsis. `None` when
-/// nothing is left.
+/// Collapses whitespace and cuts at `MAX_LINE_CHARS`. `None` when nothing is left.
 pub fn one_line(text: &str) -> Option<String> {
     // Whitespace can only shrink the text, so 4x the cap of input is always enough.
     let head: String = text.chars().take(MAX_LINE_CHARS * 4).collect();
@@ -58,8 +54,7 @@ fn last_user_in(lines: &[&str]) -> Option<String> {
     })
 }
 
-/// Reads the last user prompt of the contained `.jsonl` file at `path`; `None` when the file has
-/// none within the 2 MiB cap or cannot be read.
+/// Reads the last user prompt of the `.jsonl` file at `path`. `None` on read failure or when none is found within the cap.
 pub async fn read_last_user_line(path: &Path) -> Option<String> {
     let mut file = tokio::fs::File::open(path).await.ok()?;
     let len = file.metadata().await.ok()?.len();
@@ -75,8 +70,7 @@ pub async fn read_last_user_line(path: &Path) -> Option<String> {
             .ok()?;
         let text = String::from_utf8_lossy(&buffer);
         let mut lines: Vec<&str> = text.lines().collect();
-        // A window that starts mid-file begins with a fragment of an earlier line; if it started
-        // exactly on a line boundary this drops one complete (older) line, which is harmless.
+        // A window that starts mid-file begins with a partial line, which is safe to drop.
         if start > 0 && !lines.is_empty() {
             lines.remove(0);
         }

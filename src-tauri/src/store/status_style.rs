@@ -1,6 +1,5 @@
-// Issue #482: Settings > Appearance "Status style", how the shared status icon draws a Session's
-// state (Icons or Dots). A child module of `settings.rs` to keep that file under the 600-line cap
-// (issue #806).
+// How the shared status icon draws a Session's state (Icons or Dots); child module of
+// `settings.rs` for the size cap (#806).
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -28,7 +27,7 @@ pub(super) fn write(map: &mut Map<String, Value>, value: StatusStyle) {
 }
 
 impl SettingsStore {
-    /// `settings.setStatusStyle(value)`: plain-replace shape, as `set_activity_text` uses.
+    /// Plain-replace setter.
     pub async fn set_status_style(&mut self, value: StatusStyle) -> std::io::Result<Settings> {
         let next = Settings {
             status_style: value,

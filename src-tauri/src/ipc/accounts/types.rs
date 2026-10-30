@@ -1,13 +1,5 @@
-// Wire shapes for `accounts.*` (`src/shared/ipc.ts`'s `GitHubAccount`/`GitHubAddFlowProgress`,
-// specs/008-profile-and-accounts data-model.md) and the pure, side-effect-free logic the handlers
-// in `handlers.rs` and the orchestration in `mod.rs` share: flattening a `gh auth status` host
-// list with `profileCache.json`'s cached display fields, the two `gh auth switch`/`gh auth
-// logout` after-images (`project_switch`/`project_sign_out`), the opportunistic-refresh
-// staleness test (`is_profile_refresh_due`), and the fixed-sentence GitHub-CLI error mapping
-// (GateUi008 M7: the renderer only ever sees one of a few plain-language sentences, never a raw
-// `gh` stderr line or a `--user <login>` argument). Split out of `mod.rs` to stay under the
-// 600-line-per-file cap (issue #806), matching `ipc/pull_requests`'s own `mod.rs`/`mapping.rs`/
-// `handlers.rs` split.
+// Wire shapes and pure logic for `accounts.*`, split out of `mod.rs` for the 600-line cap (#806).
+// Renderer errors are fixed plain-language sentences, never raw `gh` stderr or `--user` arguments.
 
 use serde::Serialize;
 
@@ -16,10 +8,8 @@ use crate::github::gh::GhError;
 use crate::ipc::IpcError;
 use crate::store::profile_cache::{ProfileCacheEntry, ProfileCacheStore};
 
-/// spec 008 data-model.md: one GitHub CLI account across every signed-in host; never includes a
-/// token (FR-012, constitution V). `display_name`/`avatar_data_url` come from
-/// `profileCache.json`, refreshed opportunistically (research.md decision 5) -- both absent
-/// until first fetched, in which case the renderer shows `login` and initials respectively.
+/// One GitHub CLI account across every signed-in host. Never carries a token.
+/// `display_name` and `avatar_data_url` are absent until the profile is first fetched.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHubAccount {
@@ -27,16 +17,14 @@ pub struct GitHubAccount {
     pub login: String,
     pub active: bool,
     pub state: String,
-    /// Why `state` is not `"success"`, classified from `gh`'s own per-account error text (never
-    /// shown raw). Absent when `state` is `"success"`.
+    /// Why `state` is not `"success"`. Classified from `gh` output; never shown raw.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub problem: Option<&'static str>,
     pub display_name: Option<String>,
     pub avatar_data_url: Option<String>,
 }
 
-/// spec 008 contracts/ipc.md `accounts:github-add-progress`: the add-account flow's one-time
-/// code and progress (FR-009), pushed until the flow completes, is cancelled, or fails.
+/// Progress of the add-account flow (one-time code and status), pushed until it ends.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHubAddFlowProgress {
@@ -56,10 +44,7 @@ pub enum AddFlowStatus {
     Failed,
 }
 
-/// Flattens the CLI's account list with `profileCache.json`'s cached display fields (the pure,
-/// no-refresh read every caller in `mod.rs` shares: the explicit `list()` path, the
-/// background-refresh re-read, a switch/sign-out's post-mutation reconcile, and the
-/// completed-add path).
+/// Flattens the CLI account list with cached profile fields. Pure and never refreshes.
 pub(super) fn to_github_accounts(
     hosts: &[GhAuthHostEntry],
     cache: &ProfileCacheStore,
@@ -81,8 +66,7 @@ pub(super) fn to_github_accounts(
         .collect()
 }
 
-/// What `gh auth switch --hostname <host> --user <login>` leaves behind: on that host the chosen
-/// account is active, every other account (and every other host) unchanged.
+/// The state after `gh auth switch`: the chosen account is active on its host, nothing else moves.
 pub(super) fn project_switch(
     hosts: &[GhAuthHostEntry],
     host: &str,
@@ -103,10 +87,8 @@ pub(super) fn project_switch(
         .collect()
 }
 
-/// What `gh auth logout --hostname <host> --user <login>` leaves behind: the account is gone
-/// and, when it was the active one, the CLI activates the first remaining account on that host
-/// in its own listing order (verified live against a two- and three-account config, including a
-/// non-alphabetical order).
+/// The state after `gh auth logout`. If the removed account was active, the CLI activates the
+/// first remaining account on that host, in its own listing order.
 pub(super) fn project_sign_out(
     hosts: &[GhAuthHostEntry],
     host: &str,
@@ -133,11 +115,8 @@ pub(super) fn project_sign_out(
     }
 }
 
-/// research.md decision 5 / GateCode008 MEDIUM "profile refetched on every list() call": an entry
-/// fetched within the last hour is left alone; a login with no entry yet, or whose last attempt
-/// came back with neither a `displayName` nor an `avatarDataUrl` (a failure) more than five
-/// minutes ago, is still due. An unparseable or future `fetchedAt` (hand-edited file, clock moved
-/// back) is due, never "fresh".
+/// An entry fetched within the hour is fresh. A failed or missing one is due after five minutes.
+/// An unparseable or future `fetchedAt` is always due, never fresh.
 pub(super) fn is_profile_refresh_due(entry: Option<&ProfileCacheEntry>, now_millis: i64) -> bool {
     let Some(entry) = entry else { return true };
     let Some(fetched_millis) = parse_iso8601_millis(&entry.fetched_at) else {
@@ -162,13 +141,7 @@ pub(super) fn now_epoch_millis() -> i64 {
         .as_millis() as i64
 }
 
-/// Parses exactly the shape `crate::ipc::now_iso8601()` produces
-/// (`"YYYY-MM-DDTHH:MM:SS.mmmZ"`, UTC only) -- the only format ever written to
-/// `ProfileCacheEntry.fetched_at`. Returns `None` for anything else (a hand-edited file, a
-/// different precision), which `is_profile_refresh_due` above treats as "due", matching
-/// `Date.parse`'s own NaN-on-unparseable fallback the ported TS relied on. No `chrono`/`time`
-/// crate dependency (neither is in this build's `Cargo.toml`): the inverse of `ipc::mod`'s own
-/// `civil_from_days` (Howard Hinnant's well-known `days_from_civil` algorithm), UTC only.
+/// Parses only the `now_iso8601()` shape (UTC). Returns `None` otherwise; no date crate is used.
 fn parse_iso8601_millis(value: &str) -> Option<i64> {
     let bytes = value.as_bytes();
     if bytes.len() != 24
@@ -214,9 +187,7 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
 pub(super) const DEFAULT_GITHUB_ERROR_MESSAGE: &str =
     "GitHub CLI could not finish that. Try again.";
 
-/// GateUi008 M7: the renderer only ever sees one of these fixed, plain-language sentences for a
-/// GitHub-CLI-related failure -- never the CLI's own stderr, a `gh ...` command line, or a
-/// channel name. Codes outside this map fall back to `DEFAULT_GITHUB_ERROR_MESSAGE`.
+/// Maps a GitHub-CLI error code to a fixed sentence. Unknown codes use the default sentence.
 pub(super) fn github_error_message(code: &str) -> &'static str {
     match code {
         "gh-not-found" => "GitHub CLI is not installed.",
@@ -226,8 +197,7 @@ pub(super) fn github_error_message(code: &str) -> &'static str {
     }
 }
 
-/// `err`'s raw message (which can carry a `--user <login>` argument) stays in this debug log
-/// only -- the renderer only ever sees `github_error_message`'s fixed sentence.
+/// The raw message stays in the debug log only; the renderer gets the fixed sentence.
 pub(super) fn map_gh_error(err: GhError) -> IpcError {
     log::debug!(
         "accounts: GitHub CLI operation failed ({}): {}",
@@ -237,10 +207,7 @@ pub(super) fn map_gh_error(err: GhError) -> IpcError {
     IpcError::new(err.code.as_str(), github_error_message(err.code.as_str()))
 }
 
-/// Mirrors the ported TS's own `toGithubError` catch-all branch: a non-`GhError` failure (a
-/// `profileCache.json` read/write error, say) never leaves its own detail on the wire either,
-/// collapsing to the same fixed `'gh-failed'` sentence -- and, matching that branch exactly, is
-/// never itself logged (unlike `map_gh_error` above).
+/// Non-CLI failures collapse to the fixed `'gh-failed'` sentence and are never logged.
 pub(super) fn map_io_error(_err: std::io::Error) -> IpcError {
     IpcError::new("gh-failed", DEFAULT_GITHUB_ERROR_MESSAGE)
 }
@@ -465,9 +432,7 @@ mod tests {
 
     #[tokio::test]
     async fn to_github_accounts_flattens_cache_hit_and_miss() {
-        // A path that cannot exist yet: `ProfileCacheStore::open` treats a missing file as an
-        // empty cache (`atomic_json::read_json_file`'s own documented ENOENT-is-default
-        // behaviour), so this never touches disk -- no tempdir needed for the "miss" half.
+        // A missing file reads as an empty cache, so this never touches disk.
         let scratch = std::env::temp_dir().join(format!(
             "refract-accounts-test-{}-{}",
             std::process::id(),

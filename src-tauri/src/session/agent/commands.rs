@@ -1,6 +1,4 @@
-// Slash-command filtering/classification tables (port of `slash-commands.ts`, plus the #760
-// source-aware policy this build adds on top, lane R4 issue #787). See `mod.rs`'s own header
-// for this module's place in the `agent/` split and the lane extension contract.
+// Slash-command filtering and classification, with the source-aware policy (#760).
 
 use serde_json::{json, Value};
 
@@ -15,17 +13,13 @@ pub(super) fn string_array(value: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Port of `slash-commands.ts`'s own `SUPPORTED_OMP_COMMANDS` table.
+/// Built-in OMP commands Refract supports, with their verified subcommands.
 fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
     match name {
         "fast" => Some(&["on", "ultra", "off", "status"]),
         "slow" => Some(&["on", "off", "status"]),
         "extended-context" => Some(&["on", "off", "status"]),
-        // Issue #917, Decided (Stuart, 2026-10-16): deliberately included despite never being
-        // probed (the probe's own DENYLIST names it, `omp-usage.md`'s "needs-decision" bucket) --
-        // verified instead by issue #917's own live check against a real signed-in profile. Kept
-        // in parity with `slash-commands.ts`'s own `SUPPORTED_OMP_COMMANDS`, which carries the
-        // full rationale.
+        // Listed without a probe, verified by a live check instead (#917).
         "advisor" => Some(&["on", "off", "status"]),
         "prewalk" => Some(&["restart"]),
         "effort" => Some(&[
@@ -40,31 +34,20 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
         "tools" | "context" | "fresh" | "retry" | "rename" | "add-dir" | "dirs" | "force"
         | "autoresearch" | "annotate" | "forget-approvals" => Some(&[]),
         "shake" => Some(&["elide", "images", "thinking"]),
-        // Issue #762 (lane RM): the explicit decision `omp-usage.md` line 163 was waiting for.
-        // No fixed subcommand table (an empty allow-list here, same shape `add-dir`/`dirs` use)
-        // -- its one argument is a free-form, charset-checked model/role token, gated by
-        // `classify_against_builtin`'s own name-aware branch below, never this table.
+        // Takes a free-form model/role argument, checked by `classify_against_builtin` (#762).
         "switch" => Some(&[]),
         _ => None,
     }
 }
 
-/// Issue #760 probe (FINDINGS item 57): OMP's own `source` field is `"builtin"` for its native
-/// commands, `"file"` for a project/user command (the same value for both -- OMP does not
-/// distinguish them further), and `"skill"` for a `/skill:<name>` entry. A command whose
-/// `source` is anything OTHER than one of the two confirmed non-builtin values ("file"/"skill")
-/// -- including a missing field entirely -- is treated as builtin-restricted: fail closed
-/// towards the stricter, already-verified policy rather than trusting an unprobed future
-/// `source` value with free-form arguments.
+/// Only `file` and `skill` sources are non-builtin. Any other value, or none, fails closed as builtin.
+/// Trusting an unknown source would allow free-form arguments on it.
 fn is_builtin_source(source: Option<&str>) -> bool {
     !matches!(source, Some("file") | Some("skill"))
 }
 
-/// Port of `src/shared/slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS`: Refract's own
-/// native/reserved command names (constitution I), refused locally even if OMP later recognizes
-/// one of them as a real command -- never forwarded as a literal prompt. `ipc::chat` imports
-/// this (rather than keeping its own copy) so the one list backs both the send-time refusal and
-/// the menu-filtering exclusion below.
+/// Refract's native command names, refused locally and never forwarded as a prompt.
+/// `ipc::chat` shares this list for both the send refusal and the menu exclusion.
 pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
     "new",
     "resume",
@@ -74,54 +57,31 @@ pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
     "pause",
     "plan-review",
     "btw",
-    // Issue #762 (lane RM): `/model` is always rewritten to `/switch` before classification
-    // (`ipc::chat`); reserved here too, defence in depth, so a future OMP command or a custom
-    // command (#760) can never take the name over if that rewrite is ever bypassed.
+    // `/model` is rewritten to `/switch` upstream; reserved here too, in case that rewrite is bypassed.
     "model",
-    // Issue #762: opens Settings' Model roles page client-side; never forwarded to OMP.
+    // Opens Settings client-side; never forwarded to OMP.
     "models",
-    // Issue #766: `/role` with no argument has no server-side action (the renderer opens the
-    // role selector); `/role <role>` is special-cased in `ipc::chat` BEFORE this check runs.
+    // `/role` alone is handled in the renderer; `/role <role>` is special-cased in `ipc::chat`.
     "role",
 ];
 
-/// Refract's own native commands (`NATIVE_BUILT_COMMANDS`): `/new` has a working implementation
-/// (`start_new_conversation`); `/btw` is listed for menu parity with the Electron build but has
-/// no implementation here (side chat out of scope, see `mod.rs`'s own header) -- `ipc::chat`'s
-/// own `NATIVE_RESERVED_COMMANDS` check refuses it with `unknown-command` before classification
-/// ever reaches `chat.send`, so this module never sees a `/btw` invocation to special-case.
-/// Tagged `source: "native"` (issue #760's own `SlashCommandDescriptor.source` field) so the
-/// menu can tell these apart from anything OMP itself reports.
+/// Refract's native commands. `/btw` is listed for menu parity but is refused before classification.
+/// Tagged `source: "native"` so the menu can tell them apart from OMP's commands.
 const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
     ("new", "Start a new Conversation in this Session"),
     ("btw", "Ask the agent a side question"),
-    // Issue #762: handled in the renderer (`MessageInput.tsx` opens Settings > Model roles); still
-    // reserved above so `chat.send` refuses it if it ever arrives. `role` stays unlisted (no
-    // renderer handler yet), reserved for the same reason.
+    // Handled in the renderer; still reserved so `chat.send` refuses it if it arrives.
     ("models", "Open model role settings"),
 ];
 
-/// Port of `slash-commands.ts`'s own `filterSupportedCommands`, extended per issue #760: a
-/// raw command whose `source` is NOT builtin (a project/user `"file"` command, or a `"skill"`)
-/// is listed exactly as OMP reports it, with no allowlist pruning -- the user wrote it, so
-/// `SUPPORTED_OMP_COMMANDS` (built-ins only, FR-032) does not apply. A builtin-sourced command
-/// keeps today's rule: hidden entirely unless verified, then pruned to its verified subcommands.
+/// Filters the raw command list. Non-builtin (`file`/`skill`) commands are listed unpruned.
+/// Builtins are shown only when verified, and then only with their verified subcommands.
 pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
-    // Gate-fix (Medium, security): collected from the RAW list, before any allow-list pruning
-    // below drops a builtin that was never verified (e.g. `model`, `login`) -- the bug this
-    // closes let a file/skill command assume the identity of exactly that class of builtin,
-    // because a downstream anti-shadow check that only sees the ALREADY-FILTERED list has no
-    // trace left of a builtin this same function already dropped to compare against. Also
-    // seeded with `NATIVE_RESERVED_COMMANDS` (gate-fix): a file/skill command named `plan`,
-    // `resume`, etc. is refused unconditionally at `chat.send` regardless of source, so listing
-    // it in the menu at all would be misleading -- it can never actually run.
+    // Collected before pruning, so a file/skill command cannot shadow a dropped builtin.
+    // Reserved names are seeded too, so a command that can never run is not listed.
     let mut builtin_claimed: std::collections::HashSet<&str> = std::collections::HashSet::new();
     builtin_claimed.extend(NATIVE_RESERVED_COMMANDS.iter().copied());
-    // Gate-fix (MEDIUM, security): `switch` is a real OMP builtin this lane forwards (never
-    // reserved, since it must still reach OMP) -- seeded unconditionally rather than only when
-    // `raw` happens to report a builtin-sourced `switch` entry, so a custom command named
-    // `switch` can never take the name over even against an OMP version/config that does not
-    // list it as a builtin.
+    // `switch` is always seeded, so a custom command cannot take its name.
     builtin_claimed.insert("switch");
     for command in raw {
         if !is_builtin_source(command.get("source").and_then(Value::as_str)) {
@@ -148,9 +108,7 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
         };
         let source = command.get("source").and_then(Value::as_str);
         if !is_builtin_source(source) {
-            // Gate-fix: a file/skill command whose name or alias is claimed by ANY raw
-            // builtin-sourced entry -- allow-listed or not -- is dropped entirely: never
-            // listed, never runnable. It must never be able to assume a builtin's identity.
+            // A file/skill command sharing a name with any builtin is dropped entirely.
             let shadows_a_builtin = builtin_claimed.contains(name)
                 || command
                     .get("aliases")
@@ -185,11 +143,7 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
             pruned["subcommands"] = Value::Array(filtered);
         }
         if name == "switch" {
-            // Issue #762: `/model` is a Refract-side alias of `/switch`, menu display only --
-            // `ipc::chat` rewrites a typed `/model` to `/switch` before anything is classified
-            // or forwarded, so OMP's own descriptor (which has no `model` alias of its own)
-            // never needs to be asked for this. "The menu lists one entry, /switch with the
-            // alias model shown beside it, not two commands" (issue #762).
+            // `/model` is a menu-only alias of `/switch`; `ipc::chat` rewrites it before classifying.
             let mut aliases: Vec<Value> = pruned
                 .get("aliases")
                 .and_then(Value::as_array)
@@ -205,7 +159,7 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
     out
 }
 
-/// Port of `slash-commands.ts`'s own `parseSlashCommand`.
+/// Splits a raw slash invocation into its name and remaining text.
 pub fn parse_slash_command(text: &str) -> Option<(String, String)> {
     let trimmed = text.trim_start();
     let body = trimmed.strip_prefix('/')?;
@@ -224,10 +178,7 @@ pub fn parse_slash_command(text: &str) -> Option<(String, String)> {
     Some((name.to_string(), rest))
 }
 
-/// Port of `slash-commands.ts`'s own `SlashInvocationClassification`/`classifySlashInvocation`,
-/// extended per issue #760: a non-builtin-sourced descriptor (project/user `"file"`, or
-/// `"skill"`) runs with free-form arguments once its bare name is recognized -- only a builtin
-/// descriptor stays restricted to its own verified subcommand table.
+/// A non-builtin descriptor takes free-form arguments; a builtin is limited to its verified subcommands.
 pub enum SlashInvocationClassification {
     Supported,
     UnknownCommand,
@@ -244,15 +195,11 @@ fn matches_name(descriptor: &Value, name: &str) -> bool {
             .unwrap_or(false)
 }
 
-/// The builtin-restricted half of classification: the bare name/one verified subcommand only,
-/// any further trailing text refused. Shared by both branches of `classify_slash_invocation`
-/// below so the anti-shadow fix never duplicates this logic.
+/// The builtin check: the bare name or one verified subcommand, with no trailing text.
+/// Shared by both branches of `classify_slash_invocation`.
 fn classify_against_builtin(descriptor: &Value, rest: &str) -> SlashInvocationClassification {
     if descriptor.get("name").and_then(Value::as_str) == Some("switch") {
-        // Issue #762: `/switch` takes one charset-checked model/role token (`provider/id`, a
-        // bare id, a thinking suffix, or a role alias `@role`), never OMP's own (absent)
-        // `subcommands` table -- `supported_omp_subcommands`'s own `Some(&[])` entry for
-        // `"switch"` exists only to keep it listed in the menu, not to gate this argument.
+        // `/switch` takes one charset-checked model/role token, not a subcommand table.
         return if crate::session::model::model_support::is_switch_argument_token(rest) {
             SlashInvocationClassification::Supported
         } else {
@@ -286,13 +233,8 @@ fn classify_against_builtin(descriptor: &Value, rest: &str) -> SlashInvocationCl
     }
 }
 
-/// Resolves which descriptor `name` classifies against: a builtin-sourced entry matching
-/// `name` or an alias, checked first regardless of list order (the gate-fix anti-shadow scan),
-/// else the first descriptor that matches at all. `None` when nothing in `commands` matches
-/// `name` (an unknown command). Shared by `classify_slash_invocation` and
-/// `classify_unsupported_arguments` below so a refusal's own presentation can never resolve a
-/// DIFFERENT descriptor than the one that actually produced the refusal (gate round 1, code
-/// review: the two used to duplicate this lookup).
+/// Resolves the descriptor `name` classifies against, preferring a builtin match. `None` if unknown.
+/// Shared with `classify_unsupported_arguments` so a refusal uses the same descriptor.
 fn resolve_matched_descriptor<'a>(name: &str, commands: &'a [Value]) -> Option<&'a Value> {
     commands
         .iter()
@@ -319,20 +261,13 @@ pub fn classify_slash_invocation(
     classify_against_builtin(descriptor, rest)
 }
 
-/// Which of the two refusal wordings `ipc::chat` should show once `classify_slash_invocation`
-/// has already refused `rest` as `UnsupportedArguments` (issue #938 items 2 and 3; gate round 1,
-/// ui-architect-v3 decided): the first word of `rest` was itself one of the command's own
-/// verified subcommands, but more text followed it ("/advisor on now"); or the first word is
-/// not a recognised subcommand at all (including a command with no verified subcommands, e.g.
-/// `/switch`'s free-form argument, whose own table is always pruned empty).
+/// Chooses the refusal wording: a valid subcommand followed by extra text, or an unrecognised word (#938).
 pub enum SubcommandRefusal {
     ExtraTextAfterSubcommand { subcommand: String },
     UnrecognisedSubcommand { verified: Vec<String> },
 }
 
-/// Resolves the SAME descriptor `classify_against_builtin` was refused against (via
-/// `resolve_matched_descriptor`), so the refusal always distinguishes/lists exactly what a
-/// second attempt would accept.
+/// Resolves the same descriptor the refusal used, so the listed options match what would be accepted.
 pub fn classify_unsupported_arguments(
     name: &str,
     rest: &str,

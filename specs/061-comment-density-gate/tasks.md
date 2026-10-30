@@ -8,3 +8,4 @@
 - T006 Add the gate to `docs/rust-build.md`; set the #1322 row in `docs/PLAN.md` to slice 1 in review. [FR-8]
 - T007 Scratch proof outside the repo: 7-line block fails; baseline growth by one line fails. [SC-1, SC-2]
 - T008 Five-reviewer gate, then `pnpm ci:local` on the final head. [SC-3]
+- T009 Slice (b) done: `src-tauri/src` cut to why-only comments, comment-only diff proved by a strip-comments equivalence check, `src-tauri` baseline entries removed. [Refs #1322]

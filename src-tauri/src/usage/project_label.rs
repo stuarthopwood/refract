@@ -1,14 +1,10 @@
-// Spec 060 (S1-06): the Project label of a session file. The `cwd` in the file's `session` entry
-// decides: a Refract Project or one of its Worktrees takes the Project's name, any other folder
-// shows as its own path. The lossy folder name OMP gives the session folder is the fallback when
-// the header is missing.
+// Project label of a session file, from the `cwd` in its session header.
 
 use std::path::Path;
 
 use crate::store::registry::Registry;
 
-/// Windows-style comparison form: `\\?\` stripped, `/` folded to `\`, trailing separators
-/// trimmed, lower-cased.
+/// Normalises a path for comparison: strips `\\?\`, folds slashes, lower-cases.
 pub fn normalise_path(raw: &str) -> String {
     let trimmed = raw.trim();
     let without_prefix = trimmed
@@ -32,7 +28,7 @@ impl ProjectIndex {
             .map(|(path, name)| (normalise_path(path), name.to_string()))
             .filter(|(path, _)| !path.is_empty())
             .collect();
-        // Longest path first so a Worktree nested under another Project's folder wins.
+        // Longest first, so a nested Worktree wins over its parent Project.
         entries.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
         Self { entries }
     }

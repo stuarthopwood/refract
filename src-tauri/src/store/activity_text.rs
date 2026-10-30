@@ -1,6 +1,4 @@
-// Issue #526 (FR-111): Settings "Activity text", the Session row Activity line's wording style.
-// A child module of `settings.rs` (not inline there) to keep that file under this build's 600-line
-// cap (issue #806), the same reason `chat_width.rs` and `agent_stopped_bar.rs` were split out.
+// Settings "Activity text" (#526); split out of `settings.rs` for the file-size cap (#806).
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -24,7 +22,7 @@ pub(super) fn parse(object: &Map<String, Value>) -> ActivityText {
 }
 
 impl SettingsStore {
-    /// `settings.setActivityText(value)`: plain-replace shape, as `set_chat_width` uses.
+    /// `settings.setActivityText(value)`: plain replace.
     pub async fn set_activity_text(&mut self, value: ActivityText) -> std::io::Result<Settings> {
         let next = Settings {
             activity_text: value,

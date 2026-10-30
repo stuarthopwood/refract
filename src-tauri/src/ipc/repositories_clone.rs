@@ -1,6 +1,4 @@
-// IPC handlers for Clone from GitHub (spec 054, issue #867): `repositories.listGitHub`,
-// `repositories.clone`, `repositories.cloneCancel`, and the `repositories:clone-progress` event
-// (contracts/ipc.md). The `gh` plumbing lives in `github/repo_*.rs` and `github/clone_*.rs`.
+// `repositories.listGitHub`, `repositories.clone`, `repositories.cloneCancel` and their progress event.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -188,7 +186,7 @@ pub fn repositories_clone(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "Another clone is already using that folder.",
             ));
         }
-        // Create the folder exclusively so only a folder this attempt made is ever cleaned up.
+        // Exclusive create, so cleanup only ever removes a folder this attempt made.
         let created_by_us = if destination.existed {
             false
         } else {
@@ -253,8 +251,7 @@ pub fn repositories_clone_cancel(_state: AppState, args: Vec<Value>) -> HandlerF
     })
 }
 
-/// Cancels every running clone and waits (bounded) for their supervisors to clean up; called
-/// from the app exit hook so a quit never leaves a half-cloned folder behind.
+/// Cancels running clones on app exit, so a quit never leaves a half-cloned folder.
 pub async fn shutdown_all() {
     let jobs: Vec<Arc<CloneJob>> = RUNNING
         .lock()
@@ -291,8 +288,8 @@ fn progress_payload(clone_id: &str, stage: &str, percent: Option<u8>) -> Value {
     json!({ "cloneId": clone_id, "phase": "progress", "stage": stage, "percent": percent })
 }
 
-/// Removes the folder this attempt created (FR-029); returns the path when removal failed. A
-/// pre-existing empty destination is left untouched, whatever the attempt wrote into it.
+/// Removes the folder this attempt created; returns the path if removal failed.
+/// A pre-existing empty destination is never touched.
 async fn clean_up(state: &AppState, destination: &Path, created_by_us: bool) -> Option<String> {
     if !created_by_us {
         return None;
@@ -320,7 +317,7 @@ async fn supervise(
     destination: PathBuf,
     created_by_us: bool,
 ) {
-    // The renderer learns the cloneId from the start reply before the first event arrives.
+    // The cloneId arrives in the start reply, before the first event.
     tokio::time::sleep(FIRST_EMIT_DELAY).await;
     let mut last_stage = "";
     let mut last_emit = Instant::now();

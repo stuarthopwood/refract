@@ -1,10 +1,4 @@
-// #926: "attach any file type, inlining text files up to 256 KB and sending other files as a
-// path" -- the file-path sibling of `attachments.rs`'s own image-path reader, split into its own
-// module (not grown into `attachments.rs` itself) per issue #806's "one agent per Rust file"/
-// file-size convention: `ipc/attachments.rs` already sat near its own soft cap before this
-// feature. Reuses `attachments.rs`'s own `resolve_attachment_path`/`read_bounded`/
-// `resolve_session_worktree`/shared length constants (gate round 1, Code1 Medium: DRY) rather
-// than a second, independent copy of any of them.
+// File-path sibling of `attachments.rs`'s image reader. Reuses its shared path and read helpers.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -22,11 +16,7 @@ use super::attachments::{
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
-    // #926: "attach any file type" -- `readFile` classifies a non-image path (inline text up to
-    // the cap, or sent as its own path when binary/oversized/a folder); `pickFiles` is the
-    // Attach button's native multi-file dialog (real OS paths, no extension filter), the same
-    // pattern `repositories.pickFolder` already uses. `recordDroppedPaths` is the native-OS-drop
-    // half of the same allow-list `pickFiles` populates (D2, see below).
+    // `readFile` inlines text up to the cap; `pickFiles` is the native multi-file dialog.
     d.register("attachments.readFile", attachments_read_file);
     d.register("attachments.pickFiles", attachments_pick_files);
     d.register(
@@ -35,35 +25,15 @@ pub fn register(d: &mut Dispatcher) {
     );
 }
 
-// #926 (Stuart's own grill decision 2/3): a text file up to this many bytes is inlined verbatim;
-// anything larger is sent as its own path instead. Fixed, not a Setting (grill decision 3).
+// Text files up to this size are inlined. Larger files are sent as a path.
 const MAX_INLINE_FILE_BYTES: u64 = 256 * 1024;
-// #926 (grill decision 3): "binary" means a NUL byte anywhere in this many leading bytes, or the
-// whole read not being valid UTF-8 -- checked against the SAME bytes already read for the cap
-// above, never a second read.
+// "Binary" means a NUL byte in the sniffed prefix or invalid UTF-8 in the whole read.
 const BINARY_SNIFF_PREFIX_BYTES: usize = 8 * 1024;
-// Gate round 1 (D2 Medium): caps how many absolute paths one Session's own allow-list below will
-// ever hold -- an unbounded set would otherwise grow forever across a long-lived Session's many
-// picks/drops. Gate round 2 (D2-rev, Sec2 Medium): hitting the cap is now a surfaced error, never
-// a silent "the rest just didn't get recorded" -- a Session that picks/drops this many distinct
-// absolute paths in one run is far outside normal use, worth telling the developer about.
+// Caps the allow-list size. Hitting the cap is a surfaced error, never a silent drop.
 const MAX_ALLOWED_PATHS_PER_SESSION: usize = 500;
 
-/// D2 (decided, gate round 2 correction): the per-session set of absolute paths the RENDERER has
-/// itself already resolved via `attachments.pickFiles`'s own native dialog or a native OS
-/// drag-drop (`attachments.recordDroppedPaths`, called by `useTauriFileDrop.ts` before it ever
-/// attaches anything). `read_file_attachment` below refuses any OTHER absolute token outright.
-/// This stops a CONFUSED renderer from reading an arbitrary absolute path it was never actually
-/// shown by the user (a stale/incorrect in-memory path, a logic bug) -- it is not a defence
-/// against a COMPROMISED renderer, which already has equivalent reach through this app's own
-/// agent (file read/write tools run with the developer's own full filesystem access; CSP's
-/// `script-src 'self'` with no remote content already bounds what a compromised renderer could
-/// even load). A RELATIVE token is unaffected: it still goes through the existing
-/// worktree-contained resolver untouched. Process-wide (not persisted): a restart clears every
-/// Session's own allow-list, which is fine -- a fresh picker/drop always re-populates it before
-/// `readFile` is ever called for that path. `forget_session` below drops a Session's own entry
-/// entirely once it is deleted (`sessions_lifecycle.rs`'s own `sessions_delete`), so this map
-/// never grows by one stale entry per Session ever created and later removed.
+/// Per-session absolute paths the renderer picked or dropped. Process-wide, not persisted.
+/// `read_file_attachment` refuses any other absolute token.
 static ALLOWED_PATHS_STORE: LazyLock<Mutex<HashMap<String, HashSet<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -71,25 +41,14 @@ fn allowed_paths_store() -> &'static Mutex<HashMap<String, HashSet<String>>> {
     &ALLOWED_PATHS_STORE
 }
 
-/// Gate round 2 (D2-rev Sec2 Medium): returns `false` once the cap is reached so the caller can
-/// surface a real error instead of silently dropping the overflow paths on the floor. Gate round
-/// 3 (Code3 Medium): a path ALREADY on the allow-list (re-picked or re-dropped) is skipped
-/// before the cap is ever tested against it -- `set.insert` on an existing value is already a
-/// no-op, so counting it against the cap used to reject an otherwise-fitting NEW path purely
-/// because a harmless duplicate happened to land after the cap was reached. All-or-nothing: if
-/// the genuinely-new paths would not ALL fit, none of them are inserted -- a partial insert used
-/// to leave some paths silently allow-listed even though the caller's own `Err` response told
-/// the renderer none of this pick succeeded, an invisible state no retry could ever see or fix.
+/// Records paths for a session. Returns `false` when the cap is hit. Duplicates are skipped.
+/// All-or-nothing: a partial insert would leave some paths allow-listed despite an error.
 fn record_allowed_paths(session_id: &str, paths: impl IntoIterator<Item = String>) -> bool {
     let mut store = allowed_paths_store()
         .lock()
         .expect("allowed_paths_store poisoned");
     let set = store.entry(session_id.to_string()).or_default();
-    // Gate round 4 (Code4 Low): a `HashSet` for the in-batch dedupe, not a `Vec` -- an O(1)
-    // `contains` against the persisted set, then an O(1) `insert` into this batch's own set
-    // (which already dedupes a path repeated more than once within the SAME batch) -- a growing
-    // `Vec`'s own `contains` made the per-path check O(n), the whole loop O(n^2), for a large
-    // batch.
+    // A `HashSet` keeps the membership checks O(1) for large batches.
     let mut new_paths: HashSet<String> = HashSet::new();
     for path in paths {
         if !set.contains(&path) {
@@ -111,9 +70,7 @@ fn is_allowed_absolute_path(session_id: &str, path: &str) -> bool {
         .is_some_and(|set| set.contains(path))
 }
 
-/// Gate round 2 (D2-rev Sec2 Medium): drops `session_id`'s own allow-list entry entirely --
-/// called from `sessions_lifecycle.rs`'s `sessions_delete` once a Session is actually gone, so
-/// this process-wide map never accumulates one stale entry per Session ever created.
+/// Drops a session's allow-list entry when the session is deleted, so the map does not grow.
 pub(crate) fn forget_session(session_id: &str) {
     allowed_paths_store()
         .lock()
@@ -121,21 +78,14 @@ pub(crate) fn forget_session(session_id: &str) {
         .remove(session_id);
 }
 
-/// #926: classifies ANY resolvable non-image path (file or folder) for the "attach any file"
-/// feature. Unlike `attachments.rs`'s own `read_image_file`, this DOES return the resolved,
-/// symlink-vetted absolute path to the renderer -- the whole point of a "sent as path" attachment
-/// is that the agent reads the file itself with its own tools, so the real path IS the payload
-/// for that case, not a privacy leak (#926's own "added to the message as its absolute path"
-/// decision). A directory classifies the same way a too-large/binary file does -- #926's own
-/// "folders are sent as a path" decision -- with `isDirectory: true` and no meaningful byte count.
+/// Classifies a resolvable path as text, binary, oversized, or folder. Returns the real path,
+/// since a path-sent attachment is read by the agent itself.
 async fn read_file_attachment(
     session_id: &str,
     worktree_root: &str,
     token: &str,
 ) -> Result<Value, IpcError> {
-    // D2 (decided): an ABSOLUTE token must already be on this Session's own allow-list (recorded
-    // by `pickFiles`/`recordDroppedPaths`); a RELATIVE token is unaffected, still fully handled
-    // by `resolve_attachment_path`'s own worktree-contained branch below.
+    // An absolute token must already be on this session's allow-list. A relative one is not.
     if Path::new(token).is_absolute() && !is_allowed_absolute_path(session_id, token) {
         return Err(not_found("That file could not be found."));
     }
@@ -148,11 +98,7 @@ async fn read_file_attachment(
         .unwrap_or_else(|| real_path.to_string_lossy().into_owned());
     let path_string = real_path.to_string_lossy().into_owned();
 
-    // Gate round 2 (Code2 HIGH): a directory is classified via its own path-based stat BEFORE
-    // `read_bounded` ever runs -- `File::open` on a directory fails outright on Windows (no
-    // `FILE_FLAG_BACKUP_SEMANTICS`), so a folder could never reach `read_bounded`'s own
-    // open-handle metadata at all; round 1's `is_dir()` branch inside that shared helper was
-    // unreachable dead code for exactly this reason, now removed there.
+    // Folders are classified by a path stat first, since `File::open` fails on a directory.
     let path_metadata = fs::metadata(&real_path)
         .await
         .map_err(|_| not_found("That file could not be found."))?;
@@ -166,17 +112,13 @@ async fn read_file_attachment(
         }));
     }
 
-    // Gate round 2 (Code2 HIGH): `read_bounded` now checks the real on-disk size BEFORE ever
-    // reading a byte -- `None` means already proven over the inline cap from the stat alone.
+    // `read_bounded` returns `None` when the stat alone proves the file is over the cap.
     let (metadata, buffer) = read_bounded(&real_path, MAX_INLINE_FILE_BYTES).await?;
     if !metadata.is_file() {
         return Err(not_found("That file could not be found."));
     }
     let Some(buffer) = buffer else {
-        // #926 grill decision 2/3: over the inline cap -- sent as its own path. Gate round 2
-        // (Code2 HIGH): the REAL on-disk size from the stat, never a buffer length (which would
-        // always read back as exactly the inline cap regardless of how much larger the file
-        // actually is).
+        // Over the inline cap. Reports the real on-disk size from the stat.
         return Ok(json!({
             "kind": "path",
             "path": path_string,
@@ -186,11 +128,7 @@ async fn read_file_attachment(
         }));
     };
     if buffer.len() as u64 > metadata.len() {
-        // Gate round 2 (Code2 HIGH, corrected): grew past its OWN stat'd size mid-read --
-        // reports `metadata.len()` (the stat'd size), consistent with the oversized-from-the-
-        // start branch above, never `buffer.len()` (which is bounded by `read_cap =
-        // metadata.len() + 1` and so would misreport a size that only ever differs from the
-        // stat by at most one byte, regardless of how much the file actually grew).
+        // Grew past its stat'd size mid-read. Reports the stat'd size, not the buffer length.
         return Ok(json!({
             "kind": "path",
             "path": path_string,
@@ -200,9 +138,7 @@ async fn read_file_attachment(
         }));
     }
 
-    // #926 grill decision 3: "binary" means a NUL byte in the first `BINARY_SNIFF_PREFIX_BYTES`,
-    // or the whole read not being valid UTF-8 -- checked against these SAME already-read bytes,
-    // never a second read of the file.
+    // Binary means a NUL byte in the sniffed prefix or invalid UTF-8. Checks the bytes already read.
     let sniff_len = buffer.len().min(BINARY_SNIFF_PREFIX_BYTES);
     if buffer[..sniff_len].contains(&0u8) {
         return Ok(json!({
@@ -213,10 +149,7 @@ async fn read_file_attachment(
             "isDirectory": false,
         }));
     }
-    // `buffer` moves into `from_utf8` instead of being cloned first -- its own byte length is
-    // captured beforehand since `String::from_utf8`'s `Err` arm returns the original bytes back
-    // out (`FromUtf8Error::into_bytes`), not a borrow, so there is no later read of `buffer` to
-    // preserve by cloning.
+    // The byte length is captured first, because `from_utf8` consumes the buffer on error.
     let byte_length = buffer.len();
     match String::from_utf8(buffer) {
         Ok(text) => Ok(json!({
@@ -258,21 +191,8 @@ pub fn attachments_read_file(state: AppState, args: Vec<Value>) -> HandlerFuture
     })
 }
 
-/// #926: native multi-file picker for the composer's Attach button -- real absolute OS paths
-/// (never a browser `File` with no path, same reasoning `repositories.pickFolder` already
-/// relies on), routed through `attachments.readImageFile`/`.readFile` by the renderer exactly
-/// like a dropped path. No extension filter: "any file type" is the point of this feature.
-/// D2: now also the FIRST half of `readFile`'s own absolute-path allow-list -- every path this
-/// dialog returns is recorded against the calling Session before it is handed back to the
-/// renderer. Gate round 2 (D2-rev Sec2 Medium): validates the Session exists FIRST
-/// (`resolve_session_worktree`), so this map never gains a key for a Session id that was never
-/// real, and surfaces a named error if the per-session cap was hit instead of silently dropping
-/// the overflow. Gate round 3 (Sec3 HIGH): the native dialog is modal and can sit open for an
-/// arbitrarily long time while the user decides -- re-checked AFTER it returns, right before
-/// recording, so a Session DELETED during that wait can no longer have paths recorded against
-/// it -- `resolve_session_worktree` only checks the registry still has an entry for this id at
-/// all, which an ARCHIVED (but not deleted) Session still does, so archiving alone does not
-/// trip this check.
+/// Native multi-file picker for the Attach button. Returns real OS paths and records them
+/// against the session's allow-list. Validates the session again after the dialog closes.
 pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str) else {
@@ -305,9 +225,7 @@ pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFutur
             .filter_map(|p| p.into_path().ok())
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        // Gate round 3 (Sec3 HIGH): see this function's own doc comment above -- the dialog can
-        // stay open indefinitely, so the Session is re-checked here, not trusted from the first
-        // check made before it ever opened.
+        // The dialog can stay open a long time, so the session is checked again here.
         resolve_session_worktree(&state, &session_id).await?;
         if !record_allowed_paths(&session_id, path_strings.iter().cloned()) {
             return Err(invalid_argument(
@@ -320,15 +238,8 @@ pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFutur
     })
 }
 
-/// D2: the native-OS-drag-drop half of `readFile`'s own absolute-path allow-list above --
-/// `useTauriFileDrop.ts`'s own `onFileDrop` handler calls this BEFORE attaching anything,
-/// recording the exact paths Tauri's own native drag-drop handler just reported, the same way
-/// `pickFiles`'s own paths already are. Gate round 2 (D2-rev Sec2 Medium): recording happens
-/// HERE, in Rust, rather than trusting the renderer's own event payload alone -- the native
-/// drop event and the renderer's own `onFileDrop` callback both originate from the SAME Tauri
-/// event, so recording in Rust closes no real race the renderer-side event couldn't also close,
-/// but keeps the allow-list's only writer on this side of the boundary, consistent with
-/// `pickFiles`. Session existence is validated first, same as `pickFiles`.
+/// Records paths from a native OS drag-drop. The renderer calls this before attaching anything.
+/// Session existence is validated first, same as `pickFiles`.
 pub fn attachments_record_dropped_paths(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str) else {

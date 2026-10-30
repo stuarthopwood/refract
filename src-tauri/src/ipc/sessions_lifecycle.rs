@@ -1,27 +1,5 @@
-// IPC handlers for the registry-only `sessions.*` subset (contracts/ipc.md "Sessions", tasks.md
-// T019/T024/T041/T042/T043/T068): `.list`/`.create`/`.rename` (Phase 2(b)), `.archive`/
-// `.restore` (T041), `.deleteCheck`/`.delete` (T042), `.recreateWorktree` (T043), and
-// `.diffStat`/`.revealWorktree` (T068, lane R2 #785). `.list` now completes its live-runtime
-// fields via `session::SessionManager::summaries` (Phase 3, tasks.md T024) instead of the "never
-// opened this run" default placeholder.
-//
-// Split from the former `ipc/sessions.rs` (issue #784, "Pre-declare per-lane Rust files") so
-// lane R2 (#785, session worktree and lifecycle: archive, restore, delete, recreate, diffStat,
-// reveal, remotes) is the only lane that ever edits this file; `.open`/`.stopAgent`/
-// `.setVisible` live in the sibling `ipc/sessions_agent.rs` instead (lane R3, #786).
-//
-// Simplification from `sessions.ts` (lane R3/#786 territory, not built yet in this crate): no
-// `resumingIds` busy-lock exists here, so `.archive`/`.delete` skip the guard against a
-// concurrent `sessions.resume` (lane R3's own channel). The file-explorer watcher
-// lifecycle wiring (lane R7, #790, gate round 1 fix) IS now in place: `.archive`/`.delete`/
-// `.recreateWorktree` each call `fs::explorer_watch_state::begin_worktree_operation` before
-// touching the worktree and `.finish(...)` after, and `.restore` calls
-// `notify_file_explorer_reset` directly -- see each handler's own comment. Gate round 1 item 1
-// (#464, Git changes panel): each of those same three handlers ALSO stops
-// `fs::git_changes_watch_state`'s own separate per-Session watcher alongside the explorer one
-// (that module has no tree/busy-session bookkeeping of its own), and
-// `git_changes_watch_state::ensure_watcher` itself refuses to (re)start while
-// `explorer_watch_state::is_session_busy` is true, reusing that same busy-claim.
+// Registry-only `sessions.*` handlers: list, create, rename, archive, restore, delete, recreate, diffStat.
+// Split from `sessions.rs` (#784); `.open`/`.stopAgent`/`.setVisible` live in `sessions_agent.rs`.
 
 use std::path::Path;
 
@@ -143,10 +121,7 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .add_session(session.clone())
             .await
         {
-            // Security remediation (Medium, ported from `sessions.ts`): the Repository may have
-            // been removed while `list_branches`/`add_worktree_with_generated_name` above were
-            // still in flight -- roll back the worktree/branch just created so it is not
-            // stranded.
+            // Roll back the new worktree if the Repository was removed mid-create.
             let _ = remove_worktree(repo_path, &added.worktree_path, &added.branch, true).await;
             return Err(map_registry_error(err));
         }
@@ -184,10 +159,7 @@ pub fn sessions_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `sessions.archive` (T041): stops the live agent (if any -- idempotent for an already-stopped
-/// Session, same as `SessionAgent::shutdown`'s own contract), then stamps `archivedAt`. See this
-/// file's header for the `resumingIds`/file-explorer simplifications ported out of
-/// `sessions.ts`'s own handler.
+/// `sessions.archive`: stops the live agent if any, then stamps `archivedAt`.
 pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -197,27 +169,20 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
         if state.registry.lock().await.get_session(&id).is_none() {
             return Err(not_found(format!("Session not found: {id}")));
         }
-        // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: stops any running file-explorer
-        // watcher and marks the Session busy BEFORE the archive proceeds, so a concurrent
-        // `listDirectory`/`ensureWatching` cannot restart one mid-operation; resets the Explorer
-        // on BOTH success and failure (the watcher is already stopped either way) so a mounted
-        // panel re-checks instead of staying on a stale tree with no watcher underneath
-        // (`sessions.ts`:209, 228-234).
+        // Mark busy before archiving so a concurrent watcher restart cannot race the operation.
+        // The Explorer is reset on success and failure so it never shows a stale tree.
         let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
             state.app_handle.clone(),
             &id,
         );
-        // Gate round 1 item 1 (#464): the git-changes panel has its own, separate per-Session
-        // watcher (`fs::git_changes_watch_state`) that `begin_worktree_operation` above knows
-        // nothing about -- stop it here too, so a still-mounted panel's `ensureWatching` cannot
-        // restart it mid-archive.
+        // The git-changes watcher is separate from `begin_worktree_operation`; stop it too (#464).
         crate::fs::git_changes_watch_state::stop_watcher(&id);
         state
             .session_manager
             .get_or_create_agent(&id)
             .shutdown()
             .await;
-        // Gate-fix (security MEDIUM, round 6): clears any stale pid record (own doc comment).
+        // Clears any stale pid record.
         crate::process::pid_records::remove_process_records_for_session(&id).await;
         state
             .registry
@@ -232,11 +197,7 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
             )
             .await
             .map_err(map_registry_error)?;
-        // Issue #657/#658 (disk hygiene on archive and PR merge): the single call point future
-        // reclaim logic attaches to once an archived Session's worktree becomes eligible for
-        // GC -- the actual POLICY (whether/when to reclaim) stays deferred to those issues;
-        // this hook only ships the point itself, so a later lane never has to rediscover where
-        // archive finishes. Fires only on success, never on an early `?` return above.
+        // Disk-reclaim hook for archived worktrees (#657, #658). Fires only on success.
         on_worktree_released(&id);
         worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset);
         state.session_manager.notify_list_changed();
@@ -244,7 +205,7 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `sessions.restore` (T041): clears `archivedAt` back to `null`.
+/// `sessions.restore`: clears `archivedAt`.
 pub fn sessions_restore(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -267,17 +228,14 @@ pub fn sessions_restore(state: AppState, args: Vec<Value>) -> HandlerFuture {
             )
             .await
             .map_err(map_registry_error)?;
-        // Lane R7 (#790) lifecycle hook: a mounted Explorer panel for this Session was stuck on
-        // the "archived" state -- reset so it re-checks and reloads now that it is live again.
+        // Reset the Explorer, which may still show the archived state.
         crate::fs::explorer_watch_state::notify_file_explorer_reset(&state.app_handle, &id);
         state.session_manager.notify_list_changed();
         Ok(Value::Null)
     })
 }
 
-/// `sessions.deleteCheck` (T042): feeds the delete confirmation text. Issue #599 (see
-/// `git::worktree_delete`'s own header): decides purely from live git state, never `fs.stat`ing
-/// the worktree folder.
+/// `sessions.deleteCheck`: feeds the delete confirmation. Decides from git state, never `fs.stat`.
 pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -296,10 +254,7 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .clone();
             (session, repository)
         };
-        // Issue #891 gate round 3 (H1): held for the whole `delete_check_for_session` call --
-        // this spawns about five git child processes with their own `current_dir` set to the
-        // worktree; `sessions.delete`'s write guard waits for this, so a Retry can never remove
-        // the worktree under a STALE call's git children (the P4 post-refusal refresh).
+        // Held across the git calls, so a Retry cannot remove the worktree under them (#891).
         let _read_guard = crate::fs::worktree_access::read_guard_bounded(&id)
             .await
             .map_err(map_git_error)?;
@@ -314,12 +269,7 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
     })
 }
 
-/// `sessions.deleteLeftoverSummary` (issue #891, Stuart's 2026-10-19 grill item 3): a
-/// read-only background filesystem walk the Delete dialog runs as soon as it opens, listing
-/// generated folders (for example `node_modules`) by name with file counts and other files by
-/// path, capped with "and N more". Purely informational -- Delete stays enabled regardless of
-/// how long this takes or what it finds; see `fs::leftover_summary`'s own header for why this
-/// is deliberately a SEPARATE call from `sessions.deleteCheck`'s own fast git-only answer.
+/// `sessions.deleteLeftoverSummary`: informational walk of leftover files for the Delete dialog.
 pub fn sessions_delete_leftover_summary(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -342,9 +292,7 @@ pub fn sessions_delete_leftover_summary(state: AppState, args: Vec<Value>) -> Ha
     })
 }
 
-/// `sessions.delete` (T042): removes the worktree (issue #599's safe-delete path), best-effort
-/// deletes this Session's own Conversation transcript files, then removes the registry entry.
-/// See this file's header for the `resumingIds`/file-explorer simplifications.
+/// `sessions.delete`: removes the worktree, its Conversation files, then the registry entry.
 pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -381,32 +329,19 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             (session, repository)
         };
 
-        // Issue #891 gate round 1 item 5: a leftover-summary walk started when the dialog
-        // opened may still be running here -- cancel it and wait for it to exit BEFORE any holder
-        // check, so Refract's own open handles are never mistaken for an external holder. Issue
-        // #1163: stops only that read-only walk (never the agent turn), bounded so it cannot hang.
+        // Cancel the leftover walk first so Refract's own handles are not read as external holders.
         crate::fs::worktree_access::cancel_walk_bounded(&id)
             .await
             .map_err(map_git_error)?;
 
-        // Issue #891 gate round 3 (H1): the write guard blocks until EVERY Refract-owned reader
-        // of this worktree (`deleteCheck`'s own git children, the leftover walk above) has
-        // released, and is held through the removal so no NEW reader can start. Issue #1055:
-        // bounded (`write_guard_bounded`), so a hung reader yields an honest Retry refusal.
+        // Held through removal so no new reader starts (#1055).
         let _write_guard = crate::fs::worktree_access::write_guard_bounded(&id)
             .await
             .map_err(map_git_error)?;
 
-        // Issue #891, Stuart's 2026-10-19 grill item 2: the NAMED-holder (file-handle) check
-        // runs BEFORE the agent is stopped -- a refused Delete for an external FILE holder must
-        // leave the Session exactly as it was, agent still running, watcher untouched. This
-        // Session's own recorded `omp` pids are excluded from whatever Restart Manager reports:
-        // the agent itself holding its own files open is never a reason to refuse.
+        // Check named file holders before stopping the agent, so a refusal changes nothing. Own pids are excluded.
         let own_pids = pid_records::pids_for_session(&id).await;
-        // Issue #891, Stuart's decision 2 (issuecomment-6273442096): a direct status read, not
-        // `!own_pids.is_empty()` -- that list is only a proxy used to exclude this Session's
-        // own pids from Restart Manager, and could in principle be stale (a crashed process
-        // whose record has not yet been reaped) while the agent itself already reads `Stopped`.
+        // Read the status directly; the own-pids list can be stale after a crash.
         let was_running = state
             .session_manager
             .get_or_create_agent(&id)
@@ -421,37 +356,22 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         .await
         .map_err(map_git_error)?;
 
-        // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: see `sessions_archive`'s own
-        // comment -- resets on failure too, not only on success.
+        // Resets the Explorer on failure too (see `sessions_archive`).
         let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
             state.app_handle.clone(),
             &id,
         );
-        // Gate round 1 item 1 (#464): see `sessions_archive`'s own comment -- stop the
-        // git-changes panel's own separate watcher here too.
+        // Stop the git-changes panel's separate watcher too (#464).
         crate::fs::git_changes_watch_state::stop_watcher(&id);
-        // CRITICAL fix (gate round 1): the live agent (if any) must be shut down BEFORE the
-        // worktree is removed -- same ordering `sessions.archive` uses. A still-running omp
-        // process holds its cwd (and open file handles) inside the worktree; removing it out
-        // from under a live process is the EBUSY/EPERM class `wrap_fs_error` exists to explain.
-        // Also why the cwd-holder check below must come AFTER this, never before (see
-        // `worktree_holders::check_folder_in_use`'s own doc comment): this Session's own agent,
-        // while still running, is itself an unattributable cwd holder from a plain rename's own
-        // point of view -- checking first would refuse every ordinary Delete of a running one.
+        // Shut the agent down before removal: a live process holds the worktree's cwd.
+        // The cwd-holder check must run after this, or it refuses every Delete of a running Session.
         state
             .session_manager
             .get_or_create_agent(&id)
             .shutdown()
             .await;
 
-        // Issue #891, Stuart's decision 2 (issuecomment-6273442096): "a refused Delete leaves
-        // the Session running" stands even here. If the probe refuses and the agent WAS
-        // running before this call (`was_running`, captured above -- Delete's own shutdown is
-        // the only reason it would not be), restart it through the normal `start()` path before
-        // returning the refusal; a Session already stopped beforehand stays stopped, matching
-        // every other refusal. A restart failure must never hide the real one: `status()` is
-        // checked afterwards (same pattern `ipc/sessions_agent.rs`'s own `resume_session_core`
-        // uses), and if it is still `Stopped` the returned message names that too.
+        // A refused Delete restarts a Session that was running before the call (#891).
         if let Err(err) = worktree_holders::check_folder_in_use(
             Path::new(&repository.path),
             Path::new(&session.worktree_path),
@@ -503,13 +423,9 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(map_registry_error)?;
         state.session_manager.remove_agent(&id);
-        // Gate round 2 (D2-rev Sec2 Medium): drops this Session's own absolute-path allow-list
-        // entry (`file_attachments.rs`'s own `ALLOWED_PATHS_STORE`) now that it is truly gone,
-        // so that process-wide map never accumulates one stale entry per Session ever deleted.
+        // Drop this Session's absolute-path allow-list entry, so the map does not grow.
         super::file_attachments::forget_session(&id);
-        // Issue #657/#658: same reclaim hook `sessions_archive` fires, called here too since
-        // delete releases a worktree exactly as finally as an archive does. Fires only on
-        // success (every earlier failure path returns via `?` before reaching this line).
+        // Disk-reclaim hook, as for archive (#657, #658). Success only.
         on_worktree_released(&id);
         worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Forgotten);
         state.session_manager.notify_list_changed();
@@ -517,9 +433,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `sessions.recreateWorktree` (T043): recreates the worktree at its original path, attaching
-/// the existing branch. `branch-missing` is this handler's own custom error (not a `GitError`),
-/// matching `sessions.ts`'s own handler.
+/// `sessions.recreateWorktree`: recreates the worktree at its path on the existing branch.
 pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -543,13 +457,7 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
             (session, repository)
         };
 
-        // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: the busy/stop claim is taken
-        // AFTER `branch_exists` (not before, gate round 2 fix) -- Electron's own
-        // `recreateWorktree` only stops the watcher once it knows the branch actually exists,
-        // so a plain `branch-missing` failure (no worktree mutation attempted at all) never
-        // stops a healthy running watcher for no reason. Once taken, it resets the Explorer on
-        // BOTH success and a later failure (the watcher is already stopped before the folder
-        // recreation is attempted, same PR #671 round 4 Critical reasoning as before).
+        // Take the busy claim after `branch_exists`, so a branch-missing failure leaves the watcher running.
         let repo_path = Path::new(&repository.path);
         if !branch_exists(repo_path, &session.branch).await {
             return Err(IpcError::new(
@@ -561,8 +469,7 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
             state.app_handle.clone(),
             &id,
         );
-        // Gate round 1 item 1 (#464): see `sessions_archive`'s own comment -- stop the
-        // git-changes panel's own separate watcher here too.
+        // Stop the git-changes panel's separate watcher too (#464).
         crate::fs::git_changes_watch_state::stop_watcher(&id);
         recreate_worktree(
             repo_path,
@@ -580,8 +487,7 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
 mod diag;
 use diag::{sessions_diff_stat, sessions_reveal_worktree};
 
-// Split into `sessions_delete_support.rs` (#806 "No god files", issue #891 gate round 1 margin):
-// the reclaim hook, the Conversation-cleanup helper, and its own path-containment check.
+// Delete helpers (reclaim hook, Conversation cleanup, path check) live in `sessions_delete_support.rs`.
 mod sessions_delete_support;
 #[cfg(test)]
 use sessions_delete_support::WORKTREE_RELEASED_HOOK_CALLS;

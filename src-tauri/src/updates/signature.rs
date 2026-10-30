@@ -1,66 +1,19 @@
-// Authenticode signature verification for the update installer (lane R11d, follow-up to #794).
-// Stuart decided (2026-10-14) to sign releases locally with a self-signed code-signing
-// certificate (`scripts/release-local.mjs`) rather than buy a CA-issued one; that certificate is
-// trusted only on Stuart's own machine, so a plain `WinVerifyTrust` trust decision is not enough
-// by itself -- every OTHER machine's root store rejects it (`CERT_E_UNTRUSTEDROOT`), and a
-// stranger's own self-signed cert would otherwise "validly" sign a hostile installer. The real
-// check this module makes is: the file carries a structurally valid Authenticode signature AND
-// its signer's leaf certificate is byte-for-byte one of the pins below -- `CERT_E_UNTRUSTEDROOT`
-// is accepted ONLY alongside a pin match AND no other chain error bit; every other
-// `WinVerifyTrust` outcome, any other chain error, and any pin mismatch, fails closed.
-//
-// `installer.rs` calls this once right after the downloaded installer's SHA-256 checksum
-// matches; `install_on_quit.rs` calls it again immediately before the install-on-quit hand-off
-// (under a 10s timeout there -- gate finding, PR #837 round 1 perf Medium: `stop_all()`'s own
-// quit path is already time-bounded, and this check must never make quitting hang on a stalled
-// Win32 call). Neither call replaces the existing checksum check -- the checksum defends against
-// a corrupted or substituted download between `gh release download` and disk, this defends
-// against a download whose bytes (and checksum) were never Refract's own signed build in the
-// first place.
+// Authenticode check for the update installer: a valid signature plus a pinned signer leaf cert.
+// Self-signed release certs fail Windows trust elsewhere, so the pin is the real trust anchor (#794).
 
 use std::path::Path;
 
-/// SHA-256 pins accepted for the installer's signer leaf certificate -- a slice, not a single
-/// value (gate finding, PR #837 round 1, Medium), so a certificate ROTATION can ship one
-/// transitional release signed with the OLD certificate while this list already carries BOTH
-/// pins: every already-installed client (still only holding the old pin) accepts that one
-/// release, and from then on carries the new pin too. Rotating straight to a single new pin
-/// would instead strand every existing install -- they would reject the very release meant to
-/// carry them across.
-///
-/// Computed 2026-10-14 against `certs/refract-codesign.cer`'s DER bytes (the whole certificate
-/// file, hashed byte-for-byte -- the same digest `Get-FileHash -Algorithm SHA256` or
-/// `sha256sum` would report for that file), for the certificate Stuart created in
-/// `Cert:\CurrentUser\My`:
-/// - SHA-1 thumbprint: `31B95999D331BD33210126432FAB3FF18ECA5DBD`
-/// - Subject: `CN=Stuart Hopwood (Refract Code Signing)`
-/// - Expires: 2031-10-14
-///
-/// This pin is an exact byte match against the certificate's own DER, not a chain/expiry
-/// decision (gate finding, PR #837 round 1: the previous wording here was wrong) -- a signature
-/// timestamped before expiry (`scripts/release-local.mjs`'s own `/tr` flag) stays verifiable by
-/// `WinVerifyTrust` after the certificate itself expires, so expiry alone does not invalidate
-/// anything already released. Rotation (README.md's own "Releasing" section has the full
-/// procedure): add the new certificate's SHA-256 here ALONGSIDE this one, cut one transitional
-/// release signed with the OLD certificate, then once every client has picked that release up,
-/// drop the old entry and switch new releases to signing with the new certificate.
+/// Accepted SHA-256 pins of the signer leaf cert. A list so a rotation can ship one transitional
+/// release that old and new clients both accept. Each pin is an exact DER byte match (#837).
 pub const SIGNING_CERT_SHA256_PINS: &[&str] =
     &["3eb35b51305f032a9678eb5628912f951ec3ed7ccdb59d61503263f069ed8e83"];
 
-/// Surfaced as `UpdateState.last_error` for every rejected signature, regardless of the exact
-/// Win32 failure reason (unsigned, tampered, wrong signer, a timed-out check, or a
-/// `WinVerifyTrust`/chain-helper call failing outright) -- none of those distinctions are
-/// actionable for the renderer's badge UI, and a more specific message would hand an attacker
-/// probing the update path a free oracle for which check tripped.
+/// The one message for every rejection, so probing the update path reveals which check failed.
 pub const SIGNATURE_REJECTED_MESSAGE: &str =
     "The update installer isn't signed by Refract's certificate.";
 
-/// Verifies `path`'s Authenticode signature and pinned signer certificate (this module's own doc
-/// comment above). Runs the blocking Win32 calls on a `spawn_blocking` thread, the same pattern
-/// `checksum::hex_digest_file` already uses for its own blocking file I/O. A panic inside that
-/// task (an internal bug, never a caller-controlled condition) still fails closed through the
-/// same constant message, logging the real detail instead of leaking it into `last_error` (gate
-/// finding, PR #837 round 1, Low).
+/// Verifies `path`'s signature and signer pin. Runs the blocking Win32 calls off the async
+/// runtime; a panic in that task fails closed with the same message.
 pub async fn verify_installer_signature(path: &Path) -> Result<(), String> {
     let path = path.to_path_buf();
     match tokio::task::spawn_blocking(move || imp::verify(&path)).await {
@@ -115,23 +68,13 @@ mod imp {
             dwStateAction: WTD_STATEACTION_VERIFY,
             hWVTStateData: HANDLE::default(),
             pwszURLReference: PWSTR::null(),
-            // The pin is this check's own trust anchor; neither a CRL/OCSP response nor an
-            // AIA-chased issuer cert fetched over the network changes that decision, so both are
-            // disabled here -- `WTD_REVOCATION_CHECK_NONE` (a provider flag, distinct from
-            // `fdwRevocationChecks` above, which only covers the revocation-check KIND) and
-            // `WTD_CACHE_ONLY_URL_RETRIEVAL` together ensure `WinVerifyTrust` never blocks on a
-            // network call (gate finding, PR #837 round 1, perf Medium: on an offline or
-            // captive-portal network this could otherwise stall for Windows' own ~15s
-            // URL-retrieval timeout, possibly more than once, on every download and every quit).
+            // Never block on CRL/OCSP or AIA network fetches; the pin is the trust anchor (#837).
             dwProvFlags: WTD_REVOCATION_CHECK_NONE | WTD_CACHE_ONLY_URL_RETRIEVAL,
             dwUIContext: Default::default(),
             pSignatureSettings: std::ptr::null_mut(),
         };
 
-        // Safety: `action_id` and `trust_data` are both local, correctly-sized stack values that
-        // outlive this call; `pcwszFilePath` points at `wide_path`, which also outlives it.
-        // `dwStateAction: WTD_STATEACTION_VERIFY` tells `WinVerifyTrust` to write a state handle
-        // back into `trust_data.hWVTStateData`, read below before it is released.
+        // Safety: all pointed-to locals outlive this call. VERIFY writes `hWVTStateData`, closed below.
         let mut action_id = WINTRUST_ACTION_GENERIC_VERIFY_V2;
         let result = unsafe {
             WinVerifyTrust(
@@ -143,9 +86,7 @@ mod imp {
 
         let outcome = evaluate(result, trust_data.hWVTStateData);
 
-        // Always releases the state `WinVerifyTrust` allocated above, regardless of `outcome` --
-        // a leaked `hWVTStateData` handle is a resource leak on every single call, not just the
-        // failure paths.
+        // Close the state handle on success and failure paths alike.
         trust_data.dwStateAction = WTD_STATEACTION_CLOSE;
         unsafe {
             let _ = WinVerifyTrust(
@@ -158,13 +99,8 @@ mod imp {
         outcome
     }
 
-    /// `result` is `WinVerifyTrust`'s raw return value: `0` (`ERROR_SUCCESS`) means a fully
-    /// trusted chain; `CERT_E_UNTRUSTEDROOT.0` is the one other value ever accepted, and only
-    /// once the chain has no OTHER error bit (gate finding, PR #837 round 1, Medium: a revoked
-    /// or otherwise broken chain could previously hide behind the untrusted-root carve-out) and
-    /// the signer leaf certificate matches a pin -- every other result (no signature, a bad
-    /// digest, an explicitly distrusted or revoked cert, any other chain-building failure) fails
-    /// closed without inspecting the chain further.
+    /// Accepts `0`, or `CERT_E_UNTRUSTEDROOT` with no other chain error bit, and only with a pin
+    /// match. Everything else fails closed.
     fn evaluate(result: i32, state_data: HANDLE) -> Result<(), String> {
         if result != 0 && result != CERT_E_UNTRUSTEDROOT.0 {
             return Err(SIGNATURE_REJECTED_MESSAGE.to_string());
@@ -189,26 +125,13 @@ mod imp {
         }
     }
 
-    /// The signer leaf certificate's own SHA-256 (hex) plus its chain's `dwErrorStatus`, read
-    /// together since both come off the same `CRYPT_PROVIDER_SGNR` pointer.
+    /// Leaf certificate SHA-256 (hex) and its chain's error status.
     struct SignerChainInfo {
         leaf_sha256: String,
         chain_error_status: u32,
     }
 
-    /// Walks `WTHelperProvDataFromStateData` -> the first (index 0, i.e. the end-entity/leaf,
-    /// never a chain ancestor) signer -> that signer's own first certificate, then hashes the
-    /// leaf's raw DER encoding (`CERT_CONTEXT::pbCertEncoded`/`cbCertEncoded`) -- the same bytes
-    /// `certs/refract-codesign.cer` holds and `SIGNING_CERT_SHA256_PINS` was computed from --
-    /// and reads that same signer's `pChainContext`'s `TrustStatus.dwErrorStatus`. Returns `None`
-    /// for a null pointer anywhere along the signer/cert chain (an unsigned file, or
-    /// `WinVerifyTrust` never having built a usable chain), which `evaluate` turns into the same
-    /// rejection message as every other failure. A null `pChainContext` specifically (a signer
-    /// was found, but no chain was built for it) reads as `u32::MAX` -- every error bit set --
-    /// rather than 0, since `evaluate` only ever consults this field on the
-    /// `CERT_E_UNTRUSTEDROOT` path, a result that implies a chain WAS built; a missing chain
-    /// there is itself the anomaly, so it must fail the "no other error bit" check, not pass it
-    /// by default.
+    /// Hashes the leaf cert's DER bytes. A missing chain reads as all error bits (`u32::MAX`), so it fails closed.
     fn signer_chain_info(state_data: HANDLE) -> Option<SignerChainInfo> {
         unsafe {
             let prov_data = WTHelperProvDataFromStateData(state_data);

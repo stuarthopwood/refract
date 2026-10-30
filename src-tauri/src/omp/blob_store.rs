@@ -1,10 +1,4 @@
-// #513: reads one image out of OMP's own content-addressed blob store
-// (`%USERPROFILE%\.omp\agent\blobs\<sha256>[.<ext>]`), the only place a saved conversation's
-// `blob:sha256:<hash>` image reference can be resolved (OMP's RPC has no command for it).
-// Constitution Principle V: the path is built ONLY from the fixed folder and a hash that matched
-// `^[0-9a-f]{64}$` -- never from anything a message says -- and the folder is not added to any
-// filesystem scope; this is a plain backend read. Everything else (an unreadable, oversized,
-// non-image or too-many-pixel file) is simply "unavailable".
+// The hash is the only input to the path, so a message can never steer the read outside the blob folder.
 
 use std::fs::File;
 use std::io::Read;
@@ -33,8 +27,7 @@ fn blobs_dir() -> Option<PathBuf> {
     Some(dirs::home_dir()?.join(".omp").join("agent").join("blobs"))
 }
 
-/// The bytes of the blob for `hash`, or `None` when the hash is malformed, no file exists, the
-/// candidate is not a regular file directly inside the blob folder, or it exceeds the byte cap.
+/// The bytes of the blob for `hash`, or `None` when it is malformed, missing, or over the cap.
 pub fn read_blob(hash: &str) -> Option<Vec<u8>> {
     if !is_blob_hash(hash) {
         return None;

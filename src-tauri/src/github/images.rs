@@ -1,9 +1,5 @@
-// `pullRequests.fetchImage` (spec 038, FR-006, ADR 0004): fetches an image written into a pull
-// request body or comment and returns it as a `data:` URL, so the renderer's CSP stays unchanged
-// and it never contacts the image host itself. Same shape as `profile.rs::fetch_avatar`: https
-// only, a fixed host allow-list, redirects followed by hand with every hop re-validated, a
-// declared-type allow-list (never SVG) AND a magic-byte check, a byte cap and a bounded timeout
-// (the shared `HTTP_CLIENT`'s). No credentials are ever sent.
+// Returns PR body/comment images as `data:` URLs so the renderer's CSP stays unchanged. https
+// only, host allow-list, hops re-validated, never SVG, magic-byte check, size cap, no credentials.
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -105,7 +101,6 @@ async fn request_image_once(url: &Url) -> Result<ImageResponse, ImageFetchError>
         .get(LOCATION)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    // A redirect carries no image; skip buffering its (tiny) body.
     let body = if (300..400).contains(&status) {
         Vec::new()
     } else {

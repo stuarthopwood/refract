@@ -1,12 +1,4 @@
-// IPC handlers for `model.*` (lane RM, issues #454, #740, #741, #762, #766, #760, #564): the
-// composer's model picker (`setModel`, `cycleModel`), the Reasoning picker (`setThinkingLevel`),
-// and the role selector (`/role`, Ctrl+R: `applyRole`, `listRoles`). Thin argument-parsing
-// wrappers over `session::model`'s own business logic (mid-turn refusal, pin/role bookkeeping,
-// notices, resolution) -- this file owns only positional-argument validation and the
-// `AgentError` -> `IpcError` mapping, the same direct passthrough `ipc::chat`'s own
-// `map_chat_error` already uses for this exact error shape (not `map_agent_error`, whose
-// whitelist is tuned for session-lifecycle codes this lane never returns: `not-idle`,
-// `prompt-failed`, `invalid-argument`, `omp-probe-failed`, `agent-not-running`).
+// Thin argument-parsing wrappers over `session::model`; this file validates positional args and maps `AgentError` to `IpcError`.
 
 use std::sync::Arc;
 
@@ -47,7 +39,7 @@ async fn require_session(state: &AppState, session_id: &str) -> Result<(), IpcEr
     Ok(())
 }
 
-/// #454: the composer's model picker, `(sessionId, provider, modelId)`.
+/// Sets the composer's model picker selection.
 pub fn model_set_model(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (Some(session_id), Some(provider), Some(model_id)) = (
@@ -68,8 +60,7 @@ pub fn model_set_model(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// #454: the composer's keyboard/toolbar cycle, `(sessionId)`. FINDINGS item 54: steps through
-/// catalog models, never `cycleOrder`'s roles.
+/// Steps through catalog models, never `cycleOrder`'s roles.
 pub fn model_cycle_model(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str) else {
@@ -84,7 +75,7 @@ pub fn model_cycle_model(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// #564: the composer's Reasoning picker, `(sessionId, level)`.
+/// Sets the Reasoning picker level.
 pub fn model_set_thinking_level(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (Some(session_id), Some(level)) = (
@@ -104,9 +95,7 @@ pub fn model_set_thinking_level(state: AppState, args: Vec<Value>) -> HandlerFut
     })
 }
 
-/// #766: the Ctrl+R selector and a role chip click, `(sessionId, role)`. `role` is validated
-/// against `known_role_list()` before anything is sent (FINDINGS item 53's documented gap: OMP's
-/// own `/switch @<role>` silently no-ops on an unresolvable argument rather than erroring).
+/// Validates `role` against `known_role_list()` first: OMP's `/switch @<role>` silently no-ops on an unknown role.
 pub fn model_apply_role(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (Some(session_id), Some(role)) = (
@@ -127,10 +116,7 @@ pub fn model_apply_role(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// #766: the Ctrl+R selector's own listing, `(sessionId)` -- `cycleOrder` plus `"plan"`, each
-/// resolved to its configured `modelRoles` selector (raw string; the renderer's own catalog
-/// lookup turns it into a friendly, provider-free name, #741), with this Session's own
-/// current/pinned state so the UI can mark "current".
+/// Lists `cycleOrder` plus `"plan"` with their configured `modelRoles` selectors.
 pub fn model_list_roles(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str) else {
@@ -138,9 +124,7 @@ pub fn model_list_roles(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        // These two `omp` CLI reads run sequentially (not concurrently): every real `omp
-        // config get/set` invocation is already serialised process-wide by `OMP_INVOCATION_LOCK`
-        // (`omp/config.rs`), so this ordering is incidental, not the safety mechanism.
+        // Sequential by design: `OMP_INVOCATION_LOCK` already serialises `omp config` calls.
         let known_roles = model::known_role_list().await.map_err(map_model_error)?;
         let model_roles = crate::ipc::model_roles::get_model_roles()
             .await

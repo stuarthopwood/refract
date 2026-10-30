@@ -1,9 +1,5 @@
-// Issue #561: the round-trip time of the quick RPC commands Refract already sends, kept only as
-// the latest sample plus a slow streak (no polling, no history). `session::health` reads it
-// through `OmpProcess::rpc_latency` and decides whether to surface an "RPC slow" readout.
-//
-// A child module of `process` so it reaches `Inner` and `OmpProcess::inner` without widening
-// their visibility.
+// RPC round-trip sample for `session::health`: latest value plus a slow streak only.
+// Child module of `process`, so it reaches `Inner` without widening visibility.
 use std::sync::Mutex;
 use std::time::Duration;
 

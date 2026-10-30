@@ -1,15 +1,9 @@
-// `gh` CLI sign-in status for `updates::checker::check_for_updates` (lane R11b, issue #794).
-// Shares the shared `github::gh::gh_raw`/`resolve_gh` directly (gate finding, PR #829 round 2,
-// Medium: this file used to duplicate its own `gh_raw`/`GhRawResult`/spawn-with-timeout runner
-// purely because the shared one had no configurable timeout; it now takes one). Keeps only what
-// doesn't belong in the PR-management module: the update-specific `GithubCliStatus` mapping and
-// offline-text matching -- `updates::installer::download_update` calls `github::gh::gh_raw`
-// directly for its own download, not through this file.
+// `gh` sign-in status for the update checker, built on the shared `github::gh::gh_raw`.
 
 use std::path::Path;
 use std::time::Duration;
 
-/// Port of `gh.ts`'s `GithubCliStatus` union.
+/// Sign-in state of the `gh` CLI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GithubCliStatus {
     Ok,
@@ -20,10 +14,7 @@ pub enum GithubCliStatus {
 
 const AUTH_STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// `could not resolve host|enotfound|getaddrinfo|network is unreachable|timed? ?out|
-/// econnrefused|econnreset`, case-insensitive (`gh.ts`'s `OFFLINE_RE`), hand-matched since this
-/// build has no regex crate dependency. `timed? ?out` expands to its four literal combinations
-/// (optional `d`, optional space before `out`): `timeout`, `timedout`, `time out`, `timed out`.
+// Hand-matched network-error substrings (no regex crate here); case-insensitive.
 fn looks_offline(text: &str) -> bool {
     let lower = text.to_lowercase();
     const SUBSTRINGS: &[&str] = &[
@@ -41,10 +32,7 @@ fn looks_offline(text: &str) -> bool {
     SUBSTRINGS.iter().any(|needle| lower.contains(needle))
 }
 
-/// Spec 006 shared "is gh signed in" check (port of `gh.ts`'s `githubCliStatus`, used by
-/// `updates::checker::check_for_updates`). Never panics. An `Err` from the shared `gh_raw` --
-/// meaning `gh` itself could not be resolved -- maps to `NotInstalled`; `gh_raw` never fails for a
-/// network/auth failure, only for a missing `gh` (those surface as a non-zero `.code` instead).
+/// Checks whether `gh` is installed and signed in. An `Err` from `gh_raw` means `gh` is missing.
 pub async fn github_cli_status(cwd: &Path) -> GithubCliStatus {
     let auth = match crate::github::gh::gh_raw(cwd, &["auth", "status"], None, AUTH_STATUS_TIMEOUT)
         .await
@@ -55,11 +43,7 @@ pub async fn github_cli_status(cwd: &Path) -> GithubCliStatus {
     if auth.code == 0 {
         return GithubCliStatus::Ok;
     }
-    // Gate finding (round 3, Medium): the shared `gh_raw`'s own timeout path never writes
-    // "timed out" (or any text at all) to stdout/stderr -- `timed_out` is the only signal a spawn
-    // itself stalled, so it must be checked explicitly, before `looks_offline`'s text match (which
-    // exists for `gh`'s OWN reported network-timeout text, a different case) ever runs against
-    // what would otherwise be two empty strings and silently fall through to `NotSignedIn`.
+    // A stalled spawn writes no text, so `timed_out` must be checked explicitly.
     if auth.timed_out || looks_offline(&format!("{}\n{}", auth.stdout, auth.stderr)) {
         return GithubCliStatus::Offline;
     }

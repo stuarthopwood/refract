@@ -1,13 +1,5 @@
-// IPC handlers for `conversations.*` (contracts/ipc.md "Conversations", tasks.md T018/T025).
-// `.list` is the registry-only arm (Phase 2(b)); `.startNew`/`.open` (Phase 3, tasks.md T025)
-// drive the live `SessionAgent` via `AppState::session_manager`, going through
-// `startStoppedSessionOnConversation`'s port (`SessionAgent::start_with_conversation`) for a
-// `stopped` Session (issue #69). The directory-scan logic itself is a direct port of
-// `src/main/conversations.ts`'s `listConversations` (no live-agent dependency at all -- a pure
-// file read), folded into this one file rather than mirroring the Electron build's separate
-// `src/main/conversations.ts` module. `list_conversations`/`ConversationInfo`/`build_snapshot`
-// are `pub(crate)` so `ipc::sessions_agent`'s own `.open` arm can build the same `SessionSnapshot`
-// shape (`contracts/ipc.md`'s own shared `buildSnapshot`, `src/main/ipc/util.ts`).
+// IPC handlers for `conversations.*`. `.list` reads the registry; `.startNew` and `.open` drive the live `SessionAgent`.
+// The directory scan is a pure file read. `list_conversations`, `ConversationInfo`, and `build_snapshot` are `pub(crate)` so `sessions_agent` can reuse them.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -20,7 +12,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("conversations.open", conversations_open);
 }
 
-/// `src/shared/model.ts`'s own `ConversationInfo` shape.
+/// Conversation metadata returned by `conversations.list`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConversationInfo {
@@ -32,18 +24,8 @@ pub(crate) struct ConversationInfo {
     is_current: bool,
 }
 
-/// Port of `src/main/ipc/util.ts`'s own `buildSnapshot`, returned by `sessions.open`/`.recover`/
-/// `.resume` and `conversations.startNew`/`.open` alike (contracts/ipc.md). `readout`/`subagents`
-/// are out of this build's scope (`session::agent`'s own header): emitted as the documented
-/// "nothing read yet" empty shape so the unmodified renderer's `SessionSnapshot` consumers never
-/// see a missing field, never actually computed or updated afterward.
-///
-/// `detection` (lane R3, issue #786, gate-fix): a FRESHLY computed `resolve_termination()`
-/// result, threaded in by callers that already paid for one (`ipc::sessions_agent`'s own
-/// `attach_snapshot_core`/`resume_locked`) so this never re-derives a SECOND, possibly different
-/// answer from `agent.runtime_view()`'s own cached (and, for a Session whose crash this run's
-/// `on_exit` never saw, potentially stale-`false`) `terminatedUnexpectedly`. `None` (every other
-/// caller here) leaves `runtime_view()`'s own value untouched.
+/// Builds the `SessionSnapshot` shared by `sessions.open`, `.recover`, `.resume`, and conversation switches.
+/// `readout` and `subagents` are empty until read, so the renderer never sees a missing field.
 pub(crate) async fn build_snapshot(
     session: &crate::store::registry::Session,
     agent: &std::sync::Arc<crate::session::SessionAgent>,
@@ -78,19 +60,15 @@ pub(crate) async fn build_snapshot(
     serde_json::json!({
         "runtime": runtime,
         "conversations": conversations,
-        // Lane R5 (issue #788, code-review round 1): the LIVE readout/subagent list, not the
-        // permanent "nothing read yet" shape -- `session::readout`/`session::subagents` each
-        // retain their own last-computed value precisely so this snapshot can return it.
+        // Show the live readout and subagent list, not a placeholder.
         "readout": crate::session::readout::current_readout_value(agent).await,
         "subagents": crate::session::subagents::current_summaries_value(agent).await,
         "advisorOn": crate::session::advisor::current_advisor_value(agent).await,
     })
 }
 
-/// Issue #1205 (FR-103): a `stopped` agent with no transcript of its own (never started this
-/// run) shows its current Conversation's saved history, read from the file with no `omp`
-/// process, through the unchanged `SessionSnapshot` shape -- or a plain notice when the file is
-/// missing or holds no messages. Once the agent starts, its live transcript replaces this.
+/// A `stopped` agent with no transcript of its own shows its Conversation's saved history, read from file.
+/// A missing or empty file shows a plain notice instead.
 async fn inject_saved_history(runtime: &mut Value, session: &crate::store::registry::Session) {
     use crate::session::saved_history::{notice_for, SavedHistory};
     use crate::session::saved_history_cache::load_saved_history;
@@ -146,12 +124,8 @@ pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-// A Conversation file is named `<timestamp with `:`/`.` replaced by `-`>_<uuid>.jsonl`, e.g.
-// `2026-09-30T18-02-07-675Z_01a0f37b-1fbb-7513-afb3-77377123bcb7.jsonl`. The fixed-width prefix
-// before the uuid is always exactly 25 characters (`YYYY-MM-DDTHH-mm-ss-mmmZ_`); this is a manual
-// positional parse of that fixed shape rather than a regex (no `regex` crate dependency in this
-// build's `Cargo.toml`), reconstructing the same ISO timestamp
-// `src/main/conversations.ts`'s own `FILE_NAME_RE`-based `parseFileName` does.
+// File names are `<timestamp>_<uuid>.jsonl`, with the timestamp's `:` and `.` replaced by `-`.
+// The timestamp prefix is a fixed 25 characters, so it is parsed by position, not by regex.
 fn parse_file_name(file_name: &str) -> Option<(String, String)> {
     const SUFFIX: &str = ".jsonl";
     const PREFIX_LEN: usize = 25;
@@ -200,8 +174,7 @@ fn parse_file_name(file_name: &str) -> Option<(String, String)> {
 const PREVIEW_SCAN_HARD_CAP_BYTES: usize = 64 * 1024;
 const PREVIEW_MAX_LENGTH: usize = 120;
 
-/// Extracts plain text from a stored `role: 'user'` message's `content` (string, or an array of
-/// `{ type: 'text', text: '...' }` parts).
+/// Plain text of a stored user message, from a string or from `text` parts.
 fn extract_user_text(content: &Value) -> String {
     match content {
         Value::String(text) => text.clone(),
@@ -216,43 +189,15 @@ fn extract_user_text(content: &Value) -> String {
     }
 }
 
-/// Reads the file's first line for `title` (OMP writes a fixed-width, 256-byte `type: "title"`
-/// slot there -- `omp://session.md` "File Format" -- so it is always complete well inside any
-/// cap below) and scans for the first `role: 'user'` message for `preview`, using a hard byte
-/// cap on the file read itself (`AsyncReadExt::take`), not merely a byte count checked between
-/// complete lines -- a single oversized line can never read past the cap either.
-///
-/// Issue #862: OMP's own prelude between the header and the first user message --
-/// `model_change`, `thinking_level_change`, `service_tier_change`, and now a `memory_recall`
-/// `custom` entry (about 8.6 KB) plus `eager-todo-prelude`/`eager-task-prelude` `custom_message`
-/// entries -- pushed that first user message to about 11 KB in the wild, past the old fixed
-/// 8 KB window (`PREVIEW_SCAN_BYTES`), so the Conversation was silently skipped. Reading through
-/// a `take`-limited handle means not one byte past the cap is ever read from disk, not just that
-/// parsing stops there; a line (including the title line) is parsed once its own trailing `\n`
-/// has actually been read, or when it is genuinely the file's own last line within the cap (no
-/// trailing newline at real end-of-file); a record cut short by the cap itself is never parsed.
-///
-/// Returns `None` only when real end-of-file is reached within the cap without ever finding a
-/// user message (data-model.md: "files with zero user messages are not listed"). Returns
-/// `Some((title, None))` when the cap is hit first: the Conversation still has a title (or an
-/// empty one) and is still listed, just without a preview, rather than hidden -- reaching the
-/// cap proves nothing about whether a user message exists further in the file. A `role: 'user'`
-/// message with no text content (an image-only message, or one with an empty/missing `content`)
-/// still counts as "found" -- `preview` becomes `Some(String::new())` rather than leaving the
-/// scan to continue past it looking for a later, text-bearing message; FR-086's rule is "never
-/// hide a row", not "find the first message with non-empty text".
+/// Reads the title and first user preview under a byte cap, so one oversized line cannot overrun it.
+/// Reaching the cap still lists the Conversation, just without a preview.
 async fn read_conversation_file(
     file: &std::path::Path,
 ) -> std::io::Result<Option<(String, Option<String>)>> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
     let handle = tokio::fs::File::open(file).await?;
-    // `take`'s own limit already bounds every read, so no extra `BufReader` capacity on top of
-    // it is needed (a 64 KiB upfront allocation would be wasted I/O/memory for every call,
-    // `BufReader::new`'s small default is enough). One byte of budget PAST the intended cap is
-    // the sentinel that tells a file whose real size is EXACTLY `PREVIEW_SCAN_HARD_CAP_BYTES`
-    // apart from one that genuinely holds more: only `bytes_read_total >
-    // PREVIEW_SCAN_HARD_CAP_BYTES` (strictly past the cap, i.e. the sentinel byte was actually
-    // consumed) counts as a cap hit below.
+    // `take` bounds every read, so `BufReader`'s default capacity is enough. The extra byte of budget
+    // tells a file of exactly the cap size apart from a larger one (see the cap check below).
     let limited = handle.take(PREVIEW_SCAN_HARD_CAP_BYTES as u64 + 1);
     let mut reader = BufReader::new(limited);
     let mut title = String::new();
@@ -265,30 +210,21 @@ async fn read_conversation_file(
         buf.clear();
         let bytes_read = reader.read_until(b'\n', &mut buf).await? as u64;
         if bytes_read == 0 {
-            // Real end of file: the `take` budget is one byte wider than the cap, so this can
-            // only happen once the real file itself is exhausted, never as an artefact of the
-            // cap alone.
+            // Real end of file (the budget is one byte wider than the cap).
             break;
         }
         bytes_read_total += bytes_read;
         if bytes_read_total > PREVIEW_SCAN_HARD_CAP_BYTES as u64 {
-            // The file genuinely holds more than the cap: this piece may or may not be a whole
-            // record, but reading further to find out is exactly what the cap exists to avoid,
-            // so it is never parsed.
+            // Past the cap: never parse a possibly partial record.
             cap_hit = true;
             break;
         }
-        // A piece still within budget but missing its trailing `\n` is genuinely the file's own
-        // last line (no closing newline at end of file) -- not the cap, which the check above
-        // already ruled out -- so it is parsed exactly like any other line below; the next
-        // `read_until` call reports real end-of-file and ends the loop normally.
+        // A final line without `\n` is still parsed; the next read reports end of file.
         let trimmed = buf.trim_ascii();
         let current_index = line_index;
         line_index += 1;
         if !trimmed.is_empty() {
-            // `from_slice` never panics or needs a prior UTF-8 check of its own: invalid UTF-8
-            // (or any other malformed JSON) simply fails to parse here, same as any other
-            // unparseable line -- it is skipped, never an `Err` that could drop the whole file.
+            // Invalid or malformed JSON is skipped, never an error that drops the whole file.
             if let Ok(parsed) = serde_json::from_slice::<Value>(trimmed) {
                 if let Some(object) = parsed.as_object() {
                     if current_index == 0 {
@@ -386,9 +322,7 @@ pub(crate) async fn list_conversations(
     results
 }
 
-/// `conversations.startNew` (contracts/omp-usage.md "New Conversation"): a `stopped` Session
-/// goes through the stopped-Session Conversation switch (`startStoppedSessionOnConversation`'s
-/// port); an already-live, idle Session calls `SessionAgent::start_new_conversation` directly.
+/// `conversations.startNew`. A `stopped` Session starts on a new Conversation; a live one starts it in place.
 pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str).map(str::to_string) else {
@@ -425,10 +359,7 @@ pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFutu
     })
 }
 
-/// `conversations.open` (contracts/omp-usage.md "Open an earlier Conversation"): `file` is
-/// renderer-supplied and only accepted if it is one of this Session's own Conversations (never
-/// an arbitrary filesystem path). A `stopped` Session goes through the stopped-Session
-/// Conversation switch; an already-live, idle Session calls `SessionAgent::open_conversation`.
+/// `conversations.open`. `file` must be one of this Session's own Conversations, never a free path.
 pub fn conversations_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (Some(session_id), Some(file)) = (

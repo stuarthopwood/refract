@@ -1,15 +1,9 @@
-// The main agent's live activity for the current-work banner (issue #687, spec 004 FR-035 to
-// FR-040), split out of the parent `readout` module (#806 file-size discipline) the same way
-// `readout_todo.rs` is. Retains the latest tool call's own `intent` argument (and, when a call
-// carries none, its tool name plus target path so the renderer can phrase a plain verb), the
-// auto-retry attempt, and whether a compaction (automatic or manual `/compact`) is running. Everything rides the existing
-// coalesced `readout:update`; no new event.
+// Current-work banner state (#687), split out of `readout` for file size (#806).
 use serde_json::{json, Value};
 
 use super::super::agent::SessionAgent;
 use super::schedule_readout_update;
 
-// Issue #526: the per-Session `session:activity` emitter for the Session row Activity line.
 #[path = "readout_activity_emit.rs"]
 mod readout_activity_emit;
 pub use readout_activity_emit::current_activity;
@@ -27,8 +21,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
     }
 }
 
-/// Agent-authored text is untrusted (issue #687 decision 7): the renderer strips control
-/// characters and caps it at 160 characters; this bound only keeps the readout payload small.
+/// The renderer caps agent-authored text at 160 characters; this only bounds the payload.
 const MAX_TEXT_CHARS: usize = 400;
 
 #[derive(Debug, Clone, Default)]
@@ -37,7 +30,7 @@ pub(super) struct ActivityState {
     latest_tool: Option<(String, Option<String>)>,
     retry: Option<(i64, i64)>,
     compacting: bool,
-    /// Issue #526: `session:activity` throttle bookkeeping; survives `reset`.
+    /// Throttle bookkeeping; survives `reset`.
     emit: readout_activity_emit::EmitState,
 }
 
@@ -50,7 +43,7 @@ fn bounded(text: &str) -> Option<String> {
     }
 }
 
-/// The path-like argument a plain verb can name ("Reading ChatPane.tsx"); never a command line.
+/// A path-like argument, so the banner can say "Reading ChatPane.tsx"; never a command line.
 fn target_of(args: &Value) -> Option<String> {
     ["path", "file_path", "filePath", "file"]
         .iter()
@@ -59,7 +52,7 @@ fn target_of(args: &Value) -> Option<String> {
 }
 
 impl ActivityState {
-    /// The frame types `apply_frame` reacts to; every other frame skips the state lock.
+    /// Frame types `apply_frame` reacts to; others skip the state lock.
     pub(super) fn is_activity_frame(frame_type: &str) -> bool {
         matches!(
             frame_type,
@@ -84,8 +77,7 @@ impl ActivityState {
                     return false;
                 };
                 let args = frame.get("args").unwrap_or(&Value::Null);
-                // OMP's wire schema carries `intent` on the frame itself; the call's own args may
-                // carry the same field (subagent progress reads it there), so accept either.
+                // Subagent progress puts `intent` in args, not on the frame; accept either.
                 self.latest_intent = frame
                     .get("intent")
                     .or_else(|| args.get("intent"))

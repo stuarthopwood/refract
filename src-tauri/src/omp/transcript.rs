@@ -1,22 +1,5 @@
-// Port of `src/main/omp/transcript.ts` (tasks.md T020): builds the renderer-facing
-// `TranscriptItem[]` from OMP's own message history (`TranscriptState::from_history`) and from
-// live rpc-ui frames (`TranscriptState::apply_frame`). Pure data transformation: no I/O.
-//
-// Unlike the TS source, this module has no strongly typed `Frame`/`OmpMessage` union to work
-// against (`omp::process` deliberately forwards every non-response frame as raw
-// `serde_json::Value`, see that module's own header comment) -- every frame/message field is
-// read defensively by name, the same way `transcript.ts` itself already reads every `unknown`
-// (`args`, `details`, custom-message payloads) rather than trusting a static type. Field names
-// on the wire are unchanged from `src/shared/frames.ts`/`src/shared/model.ts`.
-//
-// Change-detection deviation (documented per the Slice C/Phase 3 facade contract): `transcript.ts`
-// diffs by JS object identity (`replaceMessageItems` preserves the reference of any item it did
-// not touch). `TranscriptItem` here derives `PartialEq` and every "did this change" signal in this
-// module (`TranscriptState::apply_frame`'s return value, `settle_*`'s return value) is computed by
-// comparing the item list by VALUE before and after, not by reference. This is a strictly more
-// precise definition of "unchanged" than reference identity (it can never report a change for an
-// item whose fields are all still the same), so it is a safe substitute for `diff.rs`'s own
-// `diff_transcript`, which needs the same signal.
+// Builds renderer-facing transcript items from OMP history and live rpc-ui frames. Pure: no I/O.
+// Fields are read defensively by name (untyped wire); change detection compares by value.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -46,15 +29,7 @@ use agent_message::try_build_agent_message;
 mod turn_error;
 use turn_error::{build_turn_error_item, current_turn_has_error};
 
-// ---------------------------------------------------------------------------
-// Wire types (`src/shared/model.ts` `TranscriptItem`)
-// ---------------------------------------------------------------------------
-
-/// One renderer-facing transcript row. Wire-identical to `src/shared/model.ts`'s
-/// `TranscriptItem` union: each variant's `kind` tag and field names match the TS shape
-/// field-for-field (`#[serde(tag = "kind", rename_all = "kebab-case")]` reproduces the TS
-/// variant names; a `rename_all = "camelCase"` on each multi-word-field variant reproduces the
-/// TS field names), so a serialized value round-trips through `src/renderer` unchanged.
+/// One renderer-facing transcript row, wire-identical to `model.ts`'s `TranscriptItem`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TranscriptItem {
@@ -62,14 +37,14 @@ pub enum TranscriptItem {
         id: String,
         text: String,
         at: i64,
-        // #926: files/folders attached, parsed by `file_attachment_markers`; empty for none.
+        // Files and folders attached to the message (#926).
         #[serde(
             rename = "fileAttachments",
             default,
             skip_serializing_if = "Vec::is_empty"
         )]
         file_attachments: Vec<FileAttachmentRef>,
-        // #513: images sent with the message (ids only, never bytes); empty for none.
+        // Image ids only, never bytes (#513).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         images: Vec<ImageRef>,
     },
@@ -100,14 +75,12 @@ pub enum TranscriptItem {
         started_at: Option<i64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_ms: Option<i64>,
-        /// `unknown` on the TS side; serialized as absent (not `null`) when unset, matching
-        /// `JSON.stringify` dropping an explicit `args: undefined`.
+        /// Unset args serialize as absent, not `null`.
         #[serde(default, skip_serializing_if = "Value::is_null")]
         args: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
-        /// Never set by this module (renderer-computed from `edit`/`write`, per `transcript.ts`'s
-        /// own comment); kept only for wire parity with `ToolItem['diff']`.
+        /// Never set here; the renderer computes it from `edit`/`write`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diff: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -116,7 +89,7 @@ pub enum TranscriptItem {
         edit: Option<EditField>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         write: Option<WriteField>,
-        /// The model's sanitised one-line intent (#469, `transcript/tool_intent.rs`).
+        /// The model's one-line intent (#469).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         intent: Option<String>,
     },
@@ -127,11 +100,7 @@ pub enum TranscriptItem {
         spec_index: u32,
         name: String,
         task: String,
-        /// The owning batch `task()` call's own shared `context` argument (sibling of `tasks[]`
-        /// on the wire, `omp/tools/task.md`'s own batch schema): the Stage's batch brief, whose
-        /// first line names the Stage (issue #941). Absent for a flat (non-batch) call or a
-        /// malformed/missing string -- the renderer then falls back to the agents' shared name
-        /// prefix, then a bare "Stage N".
+        /// The batch `task()` call's shared `context`; its first line names the Stage (#941).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         context: Option<String>,
         status: SubagentStatus,
@@ -143,21 +112,12 @@ pub enum TranscriptItem {
         result: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         job_id: Option<String>,
-        /// The owning assistant message's id (history: `h{index}`, a stable ordinal; live: the
-        /// real message id, which still orders the same way): the key the renderer groups
-        /// Stage membership by (#563 gate round 2 architect addendum A), since reopened history
-        /// carries no subagent timing to split on. Empty for the brief live window between a
-        /// `tool_execution_start` frame and the message snapshot that echoes its `task` call
-        /// back (`upsert_subagent_items`'s own doc comment), self-correcting once that lands.
+        /// The owning assistant message's id; the renderer groups Stage membership by it (#563).
+        /// Empty briefly between `tool_execution_start` and the message snapshot echoing the call.
         #[serde(default)]
         message_id: String,
-        /// Never serialized (Rust-only bookkeeping, no TS/wire counterpart): set once a REAL
-        /// async-result job (one carrying `resultText`/`errorText`/`schema.data`, never the
-        /// bare label-echo fallback, gate round 1 item 2, issue #989) has resolved this row.
-        /// `apply_async_result_jobs` never re-matches a settled row to a later job sharing its
-        /// `job_id`/label, no matter which Stage that later job belongs to; an UNsettled row
-        /// (fresh, or only ever given the label-echo fallback) stays open to a later real
-        /// match. Defaults `false` on every construction/deserialize path.
+        /// Never serialized: set once a real async-result job has resolved this row, so a
+        /// later job with the same `job_id`/label never re-matches it (#989).
         #[serde(skip)]
         async_settled: bool,
     },
@@ -198,8 +158,7 @@ pub enum TranscriptItem {
         level: NoticeLevel,
         text: String,
     },
-    /// #1284: the end-of-turn model error (`transcript/turn_error.rs`); `text` is OMP's own
-    /// `errorMessage`, untrusted.
+    /// #1284: the end-of-turn model error (`turn_error.rs`); `text` is OMP's untrusted `errorMessage`.
     TurnError { id: String, text: String },
 }
 
@@ -266,8 +225,7 @@ pub enum RequestResolution {
     Cancelled,
 }
 
-/// From an `edit` tool's `tool_execution_end` `result.details` (or history's
-/// `toolResult.details`); the renderer builds the unified diff (T025).
+/// From an `edit` tool's result details; the renderer builds the unified diff.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EditField {
@@ -276,23 +234,17 @@ pub struct EditField {
     pub new_text: String,
 }
 
-/// From a `write` tool's args; the renderer diffs it against a cached prior read/edit of the
-/// same path (T025).
+/// From a `write` tool's args; the renderer diffs it against a cached prior read/edit.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct WriteField {
     pub path: String,
     pub content: String,
 }
 
-// ---------------------------------------------------------------------------
-// Constants (`src/shared/model.ts`, `transcript.ts`)
-// ---------------------------------------------------------------------------
-
 const MAX_TARGET_LENGTH: usize = 200;
 const SUBAGENT_NAME_LENGTH: usize = 60;
 
-/// Tool names the agent calls for its own bookkeeping (T086, FR-052): a call to one of these
-/// never becomes a `tool` item (`src/shared/model.ts` `HIDDEN_TOOLS`).
+/// Agent bookkeeping tools that never become a `tool` item (`HIDDEN_TOOLS` in `model.ts`).
 const HIDDEN_TOOLS: &[&str] = &["todo"];
 
 const ASYNC_RESULT_CUSTOM_TYPE: &str = "async-result";
@@ -302,9 +254,7 @@ fn is_advisory_severity(value: &str) -> bool {
     matches!(value, "nit" | "concern" | "blocker")
 }
 
-/// `src/shared/frames.ts`'s `KNOWN_FRAME_TYPES`: every frame type `apply_frame` (and OMP itself)
-/// can emit. Exposed so `session::agent` (Phase 3) can mirror `SessionAgent.onFrame`'s own
-/// `isKnownFrame` gate before deciding whether an unrecognised frame can be ignored.
+/// Mirrors `KNOWN_FRAME_TYPES` in `frames.ts`: every frame type OMP can emit.
 pub fn is_known_frame_type(frame_type: &str) -> bool {
     matches!(
         frame_type,
@@ -338,9 +288,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Reads a JSON field as an epoch-millisecond timestamp the same way `transcript.ts` reads
-/// `message.timestamp` (`typeof message.timestamp === 'number'`): any JSON number, not only one
-/// that fits `i64` exactly.
+/// Reads a JSON field as an epoch-millisecond timestamp: any JSON number, not only an exact `i64`.
 fn as_timestamp(value: &Value, key: &str) -> Option<i64> {
     value.get(key).and_then(Value::as_f64).map(|f| f as i64)
 }
@@ -353,16 +301,8 @@ fn truncate_chars(s: &str, max: usize) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tool row fields (port of `transcript.ts` lines 34-104)
-// ---------------------------------------------------------------------------
-
-/// Port of `firstStringArg`. Note: `serde_json::Map`'s default iteration order is key-sorted,
-/// not JS's insertion order (`preserve_order` is not a declared `serde_json` feature and
-/// Cargo.toml must not be edited in this slice) -- for a tool whose first string-typed argument
-/// this function must guess at (anything but `edit`/`read`/`write`/`bash`/`grep`/`glob`, see
-/// `extract_target`), the *which* string picked first can differ from the TS build. Documented
-/// deviation, not a defect: this only affects the `target` label shown on an uncommon tool's row.
+/// First string argument. `serde_json::Map` iterates key-sorted, not in insertion order, so
+/// for uncommon tools the picked `target` label can differ from the TS build.
 fn first_string_arg(args: &Value) -> String {
     if let Some(map) = args.as_object() {
         // #469: the intent (`i`/`intent`) is the row's label, never its target.
@@ -378,11 +318,7 @@ fn first_string_arg(args: &Value) -> String {
     String::new()
 }
 
-/// Hand-rolled port of `EDIT_HEADER_PATH_RE = /\[(.+?)#[0-9A-Fa-f]{4}\]/` (the `regex` crate is
-/// not a declared dependency; Cargo.toml must not be edited in this slice). Scans for the first
-/// `[`, then the shortest non-empty run of characters before a `#` that is itself followed by
-/// exactly four hex digits and a closing `]` -- the same non-greedy `.+?` semantics as the
-/// original regex.
+/// Hand-rolled `/\[(.+?)#[0-9A-Fa-f]{4}\]/` (no `regex` dependency): shortest run before `#hhhh]`.
 fn find_edit_header_path(s: &str) -> Option<String> {
     let mut scan_from = 0usize;
     while let Some(open_rel) = s[scan_from..].find('[') {
@@ -485,19 +421,12 @@ fn join_text(parts: &[Value]) -> String {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Advisory notes (T084, FR-051): port of `transcript.ts` lines 338-500
-// ---------------------------------------------------------------------------
-
-/// A numeric character reference is only valid when it names a real Unicode scalar value: at
-/// most U+10FFFF, and never a lone surrogate. Port of `isValidXmlCodePoint`.
+/// A numeric character reference must be a real Unicode scalar: at most U+10FFFF, no surrogate.
 fn is_valid_xml_code_point(code_point: u32) -> bool {
     code_point <= 0x10ffff && !(0xd800..=0xdfff).contains(&code_point)
 }
 
-/// Decodes the five XML entities (plus numeric character references) valid in XML-escaped
-/// attribute values/text nodes; anything else is left untouched. Hand-rolled port of
-/// `decodeXmlEntities` (the `regex` crate is not a declared dependency).
+/// Decodes the five XML entities and numeric references; anything else is left untouched.
 fn decode_xml_entities(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
@@ -521,10 +450,7 @@ fn decode_xml_entities(text: &str) -> String {
     out
 }
 
-/// Tries to decode one entity/character-reference starting at `&` in `rest`. Returns the decoded
-/// text and the number of bytes consumed (including the leading `&`), or `None` when `rest` does
-/// not start with a recognised, well-formed, in-range entity (the caller then copies the lone
-/// `&` through unchanged, matching the original regex's "no match" fallthrough).
+/// Decodes one entity at `&` in `rest`: the text and bytes consumed, or `None` (caller keeps `&`).
 fn decode_one_entity(rest: &str) -> Option<(String, usize)> {
     debug_assert!(rest.starts_with('&'));
     for (name, ch) in [
@@ -583,8 +509,7 @@ struct RawAttr {
     value: String,
 }
 
-/// Hand-rolled scanner for `ADVISORY_ATTR_RE = /([A-Za-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g`
-/// over one tag's own attribute-list capture group.
+/// Hand-rolled scanner for `name="value"`/`name='value'` pairs over one tag's attribute list.
 fn scan_advisory_attrs(attr_source: &str) -> Vec<RawAttr> {
     let bytes = attr_source.as_bytes();
     let len = bytes.len();
@@ -643,9 +568,7 @@ fn scan_advisory_attrs(attr_source: &str) -> Vec<RawAttr> {
     out
 }
 
-/// Reads one tag's attribute-list capture group into a name->value map; a duplicate attribute
-/// name means the source was never well-formed, so the whole element is a parse failure (`None`),
-/// not a silent keep-last-value. Port of `parseAdvisoryAttrs`.
+/// Reads an attribute list into a map; a duplicate name is a parse failure (`None`).
 fn parse_advisory_attrs(attr_source: &str) -> Option<std::collections::HashMap<String, String>> {
     let mut attrs = std::collections::HashMap::new();
     for attr in scan_advisory_attrs(attr_source) {
@@ -657,16 +580,13 @@ fn parse_advisory_attrs(attr_source: &str) -> Option<std::collections::HashMap<S
     Some(attrs)
 }
 
-/// One `<advisory ...>` opening tag's own attribute-list capture group and the byte offset just
-/// past the tag's closing `>`.
+/// One `<advisory ...>` opening tag's attribute list and the byte offset past its `>`.
 struct OpenTagMatch {
     attr_source: String,
     body_start: usize,
 }
 
-/// Hand-rolled port of
-/// `ADVISORY_OPEN_TAG_RE = /<advisory\b((?:\s+[A-Za-z][\w-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*>/g`:
-/// matches only the opening tag itself (no body capture), scanning from `from`.
+/// Hand-rolled matcher for an `<advisory ...>` opening tag only (no body), scanning from `from`.
 fn find_advisory_open_tag(content: &str, from: usize) -> Option<OpenTagMatch> {
     let bytes = content.as_bytes();
     let len = bytes.len();
@@ -757,10 +677,8 @@ fn find_advisory_open_tag(content: &str, from: usize) -> Option<OpenTagMatch> {
 
 const ADVISORY_CLOSE_TAG: &str = "</advisory>";
 
-/// Parses every `<advisory ...>note</advisory>` element out of `content` into its own item --
-/// `[]` when none are found at all. Port of `parseAdvisoryElements`; see the TS doc comment for
-/// why the closing-tag search is a single forward `indexOf` per open tag (linear total scan even
-/// against many unclosed `<advisory` tags).
+/// Parses every `<advisory ...>note</advisory>` element into an item. One forward closing-tag
+/// search per open tag keeps the scan linear even with many unclosed tags.
 fn parse_advisory_elements(message_id: &str, content: &str) -> Vec<TranscriptItem> {
     let mut items = Vec::new();
     let mut index = 0usize;
@@ -802,10 +720,8 @@ fn parse_advisory_elements(message_id: &str, content: &str) -> Vec<TranscriptIte
     items
 }
 
-/// Returns the parsed `advisory` item(s) when `message` carries OMP's confirmed wire shape for
-/// one (`customType: 'advisor'`), `None` when it does not. Port of `tryBuildAdvisoryItems`: a
-/// confirmed advisory message that yields zero well-formed elements becomes a plain `notice`
-/// instead (FR-051), never silently dropped.
+/// Parsed `advisory` items for a `customType: 'advisor'` message, else `None`. One yielding no
+/// well-formed element becomes a plain `notice`, never dropped.
 fn try_build_advisory_items(
     message_id: &str,
     custom_type: &str,
@@ -825,13 +741,8 @@ fn try_build_advisory_items(
     }])
 }
 
-// ---------------------------------------------------------------------------
-// Assistant message content parts -> items (port of `buildAssistantItems`, lines 514-604)
-// ---------------------------------------------------------------------------
-
-/// Builds the items for one assistant message's `content[]` snapshot. `capture_timing` is
-/// `false` for `from_history` (a historical message carries only one timestamp for its whole
-/// life, so stamping one from `now_ms()` at load time would show a meaningless duration).
+/// Builds items for one assistant `content[]` snapshot. `capture_timing` is `false` for history,
+/// where a load-time `now_ms()` stamp would show a meaningless duration.
 fn build_assistant_items(
     message_id: &str,
     parts: &[Value],
@@ -997,10 +908,8 @@ fn build_assistant_items(
     result
 }
 
-/// Replaces every item belonging to `message_id` (single id or `id:index`) with `replacement`,
-/// preserving its position; appends at the end for a brand-new message. Also strips any item
-/// whose id appears in `replacement` from wherever it currently sits (a `subagent` item is keyed
-/// by `tool_call_id`, not `message_id`). Port of `replaceMessageItems`.
+/// Replaces every item of `message_id` (or `id:index`) in place, appending for a new message.
+/// Also strips items whose id is in `replacement` (a `subagent` item is keyed by `tool_call_id`).
 fn replace_message_items(
     items: Vec<Arc<TranscriptItem>>,
     message_id: &str,
@@ -1021,9 +930,7 @@ fn replace_message_items(
     let insert_at = items.iter().position(matches).unwrap_or(items.len());
     let without_message: Vec<Arc<TranscriptItem>> =
         items.into_iter().filter(|item| !matches(item)).collect();
-    // `insert_at` was computed against the original list; since every item strictly before it
-    // was (by definition of `position`) not a match, it also survives into `without_message`
-    // unchanged, so the same index still marks the right splice point.
+    // Every item before `insert_at` is a non-match and survives, so the index is still valid.
     let insert_at = insert_at.min(without_message.len());
     let mut result = without_message;
     let tail = result.split_off(insert_at);
@@ -1032,14 +939,7 @@ fn replace_message_items(
     result
 }
 
-// ---------------------------------------------------------------------------
-// Message snapshot application (port of `applyMessageSnapshot`, lines 629-665)
-// ---------------------------------------------------------------------------
-
-/// Borrows `message`'s own `content[]` instead of cloning it (performance finding, 2026-10-13:
-/// this runs on every `message_start`/`message_update`/`message_end` frame -- once per streamed
-/// token chunk -- and a deep clone of a long assistant message's content array was pure waste
-/// when every caller only ever reads it).
+/// Borrows `content[]` rather than cloning: this runs once per streamed token chunk.
 fn content_parts(message: &Value) -> &[Value] {
     message
         .get("content")
@@ -1090,18 +990,8 @@ fn apply_message_snapshot(
                 .unwrap_or("");
             let content = message.get("content").and_then(Value::as_str).unwrap_or("");
             let details = message.get("details").cloned().unwrap_or(Value::Null);
-            // Gate round 3 fix (issue #989, `agent://Main`): short-circuit on the custom type
-            // itself, before any other `custom` arm -- real omp always sets `display: true` on
-            // an async-result message (research.md decision 19), so without this short-circuit
-            // a `message_start` frame (job application skipped below) fell through to the plain
-            // `display == true` Notice branch, leaving a permanent Notice row that `message_end`
-            // never replaces or removes. On this LIVE path only, an `async-result` message
-            // therefore never builds a Notice/advisory/agent-message item at any frame --
-            // `message_end` is the only frame that ever applies its jobs, unconditionally
-            // guaranteed for every message (research.md decision 19's gate-round-3 correction).
-            // The HISTORY replay path (`items_from_history`) keeps its own, unchanged
-            // fallthrough: a stored async-result message with no `details.jobs` at all still
-            // falls through to the same checks this live arm now skips.
+            // Live async-result messages always set `display: true`; without this a `message_start`
+            // would leave a permanent Notice row `message_end` never removes (#989).
             if custom_type == ASYNC_RESULT_CUSTOM_TYPE {
                 if !streaming {
                     if let Some(async_result) =
@@ -1136,17 +1026,11 @@ fn apply_message_snapshot(
             }
             replace_message_items(items, message_id, Vec::new())
         }
-        // `developer` is always hidden; `toolResult` live output comes from
-        // `tool_execution_end`, not from the message lifecycle frames. Both (and anything else)
-        // fall through the wildcard below unchanged (clippy `wildcard_in_or_patterns`: `_` alone
-        // already covers them).
+        // `developer` is hidden and `toolResult` output comes from `tool_execution_end`; the
+        // wildcard covers both (clippy `wildcard_in_or_patterns`).
         _ => items,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Live tool-execution frames (port of `applyToolExecutionStart`/`End`, lines 667-754)
-// ---------------------------------------------------------------------------
 
 fn apply_tool_execution_start(
     items: Vec<Arc<TranscriptItem>>,
@@ -1283,9 +1167,7 @@ fn apply_tool_execution_end(
             return updated;
         }
     }
-    // The `wait` tool's own `tool_execution_end` is the other real carrier of per-subagent
-    // completion: apply its `details.jobs[]` regardless of tool name, so a batch a `wait` call
-    // actually waited for completes its rows instead of spinning forever.
+    // `wait` also carries per-subagent completion: apply its `details.jobs[]` so waited rows finish.
     if let Some(wait_jobs) = jobs_from_details(result_details.as_ref().unwrap_or(&Value::Null)) {
         items = apply_async_result_jobs(items, &wait_jobs);
     }
@@ -1381,14 +1263,8 @@ fn apply_prompt_result_notice(
     }
 }
 
-/// Applies one live rpc-ui frame to the current transcript. Ignores every frame type not listed
-/// in contracts/omp-usage.md "Frames Refract consumes" without throwing. `has_user_acted`
-/// mirrors `SessionAgent`'s own tracking of whether the user has sent a prompt or slash command
-/// yet in this process's lifetime -- `false` only for the window between process start and the
-/// user's first send, exactly when OMP's unsolicited startup banner can arrive. Port of
-/// `applyFrame`. `tool_execution_update` has no arm (falls to the wildcard below): `session::agent`
-/// never routes it here (TS itself only acts on it for a `task` tool, and subagents are not
-/// ported in this build -- performance finding, 2026-10-13).
+/// Applies one live rpc-ui frame; unlisted frame types are ignored. `has_user_acted` is `false`
+/// only until the first user send, when OMP's unsolicited startup banner can arrive.
 fn apply_frame_items(
     items: Vec<Arc<TranscriptItem>>,
     frame: &Value,
@@ -1476,10 +1352,6 @@ fn apply_frame_items(
         _ => items,
     }
 }
-
-// ---------------------------------------------------------------------------
-// History (`get_messages`) conversion (port of `attachToolResult`/`fromHistory`, lines 810-963)
-// ---------------------------------------------------------------------------
 
 fn attach_tool_result(
     items: Vec<Arc<TranscriptItem>>,
@@ -1577,11 +1449,8 @@ fn attach_tool_result(
         .collect()
 }
 
-/// Issue #510 slice 3: settles a `tool` row still `running` to `'interrupted'` when the caller
-/// already knows the writing process is gone (`terminated_unexpectedly`), OR when a later `user`
-/// item follows it in the transcript (a new user turn can never follow an unanswered tool call
-/// within one healthy process life). Port of `settleInterruptedToolRows`. Returns `true` when any
-/// row changed.
+/// Settles a `running` tool row to `'interrupted'` when the process died or a later `user` item
+/// follows it (#510). Returns `true` when any row changed.
 fn settle_interrupted_tool_rows_items(
     mut items: Vec<Arc<TranscriptItem>>,
     terminated_unexpectedly: bool,
@@ -1605,14 +1474,8 @@ fn settle_interrupted_tool_rows_items(
     (items, changed)
 }
 
-/// Builds the transcript items for a stored session's history (from `get_messages`), per
-/// contracts/omp-usage.md "Message parts". Port of `fromHistory`'s own per-message loop --
-/// deliberately NOT including the final `settleInterruptedToolRows` pass the TS function always
-/// runs: this facade exposes that as a separate `TranscriptState::settle_interrupted_tool_rows`
-/// method (see that struct's doc comment), since the Rust signature carries no
-/// `terminated_unexpectedly` parameter to run it with yet. (`settleStaleSubagentRows` has no port
-/// in this build: subagents are out of scope, see this file's own header comment, so there is no
-/// `current_turn_keys`-scoped staleness to settle.)
+/// Builds items from stored `get_messages` history. It omits the final interrupted-row settle
+/// pass; `TranscriptState::settle_interrupted_tool_rows` runs that separately.
 fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
     let mut items: Vec<Arc<TranscriptItem>> = Vec::new();
     for (index, message) in messages.iter().enumerate() {
@@ -1674,29 +1537,8 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
     items
 }
 
-// ---------------------------------------------------------------------------
-// `TranscriptState`: the mutable facade `session::agent` (Phase 3) drives
-// ---------------------------------------------------------------------------
-
-/// Owns one Session's current `TranscriptItem[]`, built from `get_messages` history
-/// (`from_history`) and kept current by live rpc-ui frames (`apply_frame`). Mirrors
-/// `SessionAgent.ts`'s own `runtime.transcript` field plus the piece of its state that feeds
-/// `transcript.ts`'s functions: `has_user_acted` (`SessionAgent.hasUserActed`).
-/// `terminated_unexpectedly` (`detectUnexpectedTermination`) has no equivalent constructor
-/// parameter on this struct (the facade's `from_history` takes only `messages`) -- set it with
-/// `set_terminated_unexpectedly` before calling `settle_interrupted_tool_rows`, which is how
-/// `fromHistory` itself always finished on the TS side. `settleStaleSubagentRows`/
-/// `current_turn_keys` have no port in this build: subagents are out of scope (see this file's
-/// own header comment), so there is nothing for a durable-turn-marker staleness pass to settle.
-///
-/// Items are stored behind `Arc` (performance finding, 2026-10-13): `apply_frame` and every
-/// helper it calls only ever wrap a genuinely new/changed value in a fresh `Arc`
-/// (`Arc::make_mut`'s own clone-on-write, or a freshly built item), leaving every untouched
-/// item's `Arc` pointer unchanged. That makes `items().to_vec()` (done once per frame by
-/// `session::agent` to diff against) O(n) pointer bumps instead of a full deep copy, and lets
-/// `diff.rs`'s `diff_transcript` tell "changed" from "unchanged" with `Arc::ptr_eq` instead of a
-/// full value compare -- so per-frame cost is proportional to what changed, not to the whole
-/// transcript.
+/// One Session's current `TranscriptItem[]`; items sit behind `Arc` so only changed ones get a
+/// fresh pointer and `diff_transcript` can use `Arc::ptr_eq`.
 pub struct TranscriptState {
     items: Vec<Arc<TranscriptItem>>,
     has_user_acted: bool,
@@ -1712,8 +1554,7 @@ impl TranscriptState {
         }
     }
 
-    /// Port of the `get_messages` history conversion (`fromHistory`'s per-message loop; see
-    /// `items_from_history`'s doc comment for why the trailing settle pass is not run here).
+    /// Converts `get_messages` history (the trailing settle pass is not run here).
     pub fn from_history(messages: &[Value]) -> Self {
         Self {
             items: items_from_history(messages),
@@ -1722,16 +1563,14 @@ impl TranscriptState {
         }
     }
 
-    /// Finalizes every still-live row: tool AND subagent both settle per `cause` (`#563` decision 15, extended to Tool by #911: `UserStop`->`Cancelled`, `Crash`-> `Error`/`Exited` respectively).
+    /// Finalizes every still-live tool and subagent row per `cause` (#563, #911).
     pub fn finalize_live_items(&mut self, cause: SubagentFinalizeCause) {
         let items = std::mem::take(&mut self.items);
         self.items = finalize_live_transcript(items, cause);
     }
 
-    /// Builds history items and settles them BEFORE merging onto the live ones (never after --
-    /// code review finding, 2026-10-14: post-merge settling could mark a genuinely still-running
-    /// LIVE row `interrupted`). `terminated_unexpectedly` is one-shot, never written to `self`.
-    /// Port of `fromHistory(...)` (settles history) then `mergeLiveTranscript`.
+    /// Settles history items BEFORE merging onto live ones, or a running live row could be marked
+    /// `interrupted`. `terminated_unexpectedly` is one-shot, never written to `self`.
     pub fn merge_from_history(&mut self, messages: &[Value], terminated_unexpectedly: bool) {
         let history_items = items_from_history(messages);
         let (settled, _) =
@@ -1739,9 +1578,8 @@ impl TranscriptState {
         self.items = merge_history_with_live(&settled, &self.items);
     }
 
-    /// Applies one live rpc-ui frame (port of `applyFrame`), mutating `self.items` in place so
-    /// that only the items the frame actually touched get a new `Arc` -- everything else keeps
-    /// its identity (see this struct's own doc comment). `turn_abort_requested` (issue #911): `session::agent`'s own per-turn flag, read fresh under the same lock -- see `apply_tool_execution_end`'s own doc comment.
+    /// Applies one live frame in place; only touched items get a new `Arc`.
+    /// `turn_abort_requested` is `session::agent`'s per-turn flag (#911).
     pub fn apply_frame(&mut self, frame: &Value, turn_abort_requested: bool) {
         let items = std::mem::take(&mut self.items);
         self.items = apply_frame_items(items, frame, self.has_user_acted, turn_abort_requested);
@@ -1751,9 +1589,7 @@ impl TranscriptState {
         &self.items
     }
 
-    /// Replaces the item with the same `id` in place, or appends it. Port of
-    /// `SessionAgent.ts`'s private `upsertTranscriptItem` (used there for `request` rows around
-    /// approval dialogs, and for ad hoc `notice`/`agent-message` items built outside a frame).
+    /// Replaces the item with the same `id` in place, or appends it.
     pub fn upsert_item(&mut self, item: TranscriptItem) {
         match self
             .items
@@ -1764,16 +1600,16 @@ impl TranscriptState {
             None => self.items.push(Arc::new(item)),
         }
     }
-    /// Marks the user has sent a prompt/slash command at least once (`SessionAgent.hasUserActed`); one-directional.
+    /// Marks that the user has sent a prompt/slash command; one-directional.
     pub fn mark_user_acted(&mut self) {
         self.has_user_acted = true;
     }
-    /// Sets the flag `settle_interrupted_tool_rows` reads; port of `fromHistory`'s `terminatedUnexpectedly` param.
-    /// Called by `session::agent::conversations`'s `open_conversation()` via `session::termination::detect_unexpected_termination_for_transcript` (a full rebuild, never merged with the live transcript -- `launch()`'s own merge path settles via `merge_from_history`'s own parameter instead, see its doc comment).
+    /// Sets the flag `settle_interrupted_tool_rows` reads (full rebuilds only; launch merges settle
+    /// via `merge_from_history`'s own parameter).
     pub fn set_terminated_unexpectedly(&mut self, value: bool) {
         self.terminated_unexpectedly = value;
     }
-    /// Port of `settleInterruptedToolRows`, using the flag set by `set_terminated_unexpectedly`; returns `true` when any row changed.
+    /// Settles interrupted tool rows using the `set_terminated_unexpectedly` flag; `true` if any changed.
     pub fn settle_interrupted_tool_rows(&mut self) -> bool {
         let (next, changed) =
             settle_interrupted_tool_rows_items(self.items.clone(), self.terminated_unexpectedly);

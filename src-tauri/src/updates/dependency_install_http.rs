@@ -1,9 +1,4 @@
-// Shared low-level helpers for `dependency_install.rs` (lane R11b, issue #794): generic HTTP
-// fetch/download with a fixed-host allowlist, process-spawn, scratch-directory, and
-// failure-detail-formatting plumbing used by every one of `install_git`/`install_omp`/
-// `install_github_cli`. Split out purely to keep that file under the 600-line soft cap
-// (`AGENTS.md` "No god files") -- every item here is `pub(super)`, internal to `updates`, not
-// part of this crate's public surface.
+//! Low-level helpers for `dependency_install.rs`: allowlisted HTTP, process spawn, scratch dirs.
 
 use std::env;
 use std::future::Future;
@@ -16,13 +11,11 @@ use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-/// Same flag `git::git`'s `git_raw` applies: no console window flashes for a spawned installer,
-/// extraction, or PowerShell child.
+/// Stops spawned installers and PowerShell children from flashing a console window.
 pub(super) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub(super) const ALLOWED_DOWNLOAD_HOSTS: &[&str] = &["github.com"];
-/// GitHub's release-asset CDN redirects a `github.com/.../releases/download/...` URL to one of
-/// these hosts; a download must never be allowed to land anywhere else.
+/// GitHub's asset CDN hosts. A download may redirect only to these.
 pub(super) const ALLOWED_REDIRECT_HOSTS: &[&str] = &[
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
@@ -30,13 +23,9 @@ pub(super) const ALLOWED_REDIRECT_HOSTS: &[&str] = &[
 const MAX_REDIRECTS: u32 = 5;
 
 pub(super) const FETCH_JSON_TIMEOUT: Duration = Duration::from_secs(15);
-/// Perf/security remediation (gate round 1, issue #794): bounds only the connect phase of a
-/// download request, never the body transfer -- see `allowlisted_client`'s own doc comment for
-/// why a flat total-request timeout was replaced with this plus `DOWNLOAD_READ_TIMEOUT`.
+/// Bounds connect only, so a slow body transfer is not cut off.
 const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-/// Bounds a single body read/chunk, resetting after every successful read
-/// (`reqwest::ClientBuilder::read_timeout`'s own semantics) -- a multi-minute transfer at a
-/// trickle still succeeds as long as no individual read ever stalls this long.
+/// Per-read timeout, so a slow but live download still completes.
 const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const MAX_DETAIL_LENGTH: usize = 200;
 
@@ -51,9 +40,7 @@ pub(super) struct GhLatestRelease {
     pub(super) assets: Vec<GhReleaseAsset>,
 }
 
-/// Quality-gate remediation: every failure detail could be a raw multi-line stderr dump or a
-/// long caught-error message; the readiness screen's progress text must never show either.
-/// Collapses whitespace, appends a manual-install hint, and caps the whole combined string.
+/// Collapses whitespace and caps the detail so raw stderr stays out of the UI.
 pub(super) fn fail_detail(raw: &str, manual_hint: &str) -> String {
     let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
     let combined = if collapsed.is_empty() {
@@ -69,9 +56,7 @@ pub(super) fn fail_detail(raw: &str, manual_hint: &str) -> String {
     }
 }
 
-/// Security (constitution V): every fetch this module performs is to a fixed, hard-coded host
-/// list, never a caller-supplied value. Validates `raw` is an `https` URL whose host is in
-/// `allowed_hosts` before it is ever handed to `reqwest`.
+/// Rejects non-https URLs and hosts outside `allowed_hosts` before `reqwest` sees them.
 pub(super) fn assert_allowed_url(
     raw: &str,
     allowed_hosts: &[&str],
@@ -92,19 +77,7 @@ pub(super) fn assert_allowed_url(
 }
 
 pub(super) fn allowlisted_client() -> Result<Client, String> {
-    // `redirect(Policy::none())`: every hop is inspected and allowlisted manually below, rather
-    // than letting `reqwest` silently follow a response wherever it points -- `fetch_from_
-    // allowed_host`'s whole reason to exist.
-    //
-    // `connect_timeout`/`read_timeout` (perf/security remediation, gate round 1): a download
-    // used to carry a single flat 120s *total* request timeout covering the whole body transfer,
-    // which doesn't reset as bytes keep arriving -- a ~65MB Git for Windows installer fails
-    // below roughly 4.5 Mbit/s even on an otherwise-healthy slow connection. `connect_timeout`
-    // bounds only the initial connect/response-headers phase; `read_timeout` bounds each
-    // individual body read and resets after every successful one, so a multi-minute transfer at
-    // a trickle still succeeds as long as no single read ever stalls this long. `fetch_json`
-    // still layers its own short per-request `.timeout(FETCH_JSON_TIMEOUT)` total-timeout
-    // override on top of this same client for the small, fast GitHub API JSON calls.
+    // Redirects are off; each hop is checked in `fetch_from_allowed_host`.
     Client::builder()
         .redirect(Policy::none())
         .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
@@ -113,7 +86,7 @@ pub(super) fn allowlisted_client() -> Result<Client, String> {
         .map_err(|err| format!("failed to build HTTP client: {err}"))
 }
 
-/// Fetches a fixed, hard-coded GitHub API JSON endpoint (never a caller-supplied URL).
+/// Fetches a fixed GitHub API JSON endpoint.
 pub(super) async fn fetch_json<T: serde::de::DeserializeOwned>(
     client: &Client,
     url: &str,
@@ -136,10 +109,7 @@ pub(super) async fn fetch_json<T: serde::de::DeserializeOwned>(
         .map_err(|err| format!("{label} returned invalid JSON: {err}"))
 }
 
-/// Follows a download URL that originates from GitHub's own API response (`browser_download_
-/// url`), validating every hop -- including each redirect -- against a fixed host allowlist
-/// before issuing the next request. `reqwest`'s own redirect-follow is disabled on the client
-/// (`allowlisted_client`), so every 3xx here is inspected manually.
+/// Follows a download URL hop by hop, checking each redirect against the allowlist.
 pub(super) async fn fetch_from_allowed_host(
     client: &Client,
     initial_url: &str,
@@ -175,11 +145,7 @@ pub(super) async fn fetch_from_allowed_host(
     Err(format!("{label} redirected too many times"))
 }
 
-/// A fresh, uuid-named scratch directory under the OS temp root, so two concurrent installs of
-/// the same dependency can never collide on the same download/extraction path. Returns an RAII
-/// guard (`ScratchDir`, derefs to `Path`) rather than a bare `PathBuf`: every caller's directory
-/// otherwise stuck around in `%TEMP%` forever, since nothing previously removed it after a
-/// dependency install finished -- success or failure.
+/// A unique scratch directory, so concurrent installs never collide. Cleaned up on drop.
 pub(super) async fn scratch_dir() -> Result<ScratchDir, String> {
     let dir = env::temp_dir().join(format!("refract-dep-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir)
@@ -188,12 +154,7 @@ pub(super) async fn scratch_dir() -> Result<ScratchDir, String> {
     Ok(ScratchDir(dir))
 }
 
-/// RAII guard returned by `scratch_dir`: best-effort deletes its directory tree on `Drop`, so a
-/// dependency install never leaks its scratch folder regardless of which `?` return path a
-/// caller takes. Uses `std::fs::remove_dir_all` rather than the `tokio::fs` version -- `Drop`
-/// cannot run async code, and this brief synchronous blocking is acceptable for a small, bounded
-/// cleanup, not a hot path. Errors are swallowed: a failed best-effort cleanup must never panic
-/// or fail a caller that may already be unwinding.
+/// Removes its directory on drop. Sync because `Drop` cannot await; errors are ignored.
 pub(super) struct ScratchDir(PathBuf);
 
 impl std::ops::Deref for ScratchDir {
@@ -210,8 +171,7 @@ impl Drop for ScratchDir {
     }
 }
 
-/// Strips any directory component a GitHub-API-sourced asset name might contain, so only the
-/// bare file name is ever used to build a path on disk.
+/// Keeps only the bare file name, so an asset name cannot escape the scratch directory.
 pub(super) fn safe_file_name(name: &str) -> String {
     Path::new(name)
         .file_name()
@@ -221,10 +181,7 @@ pub(super) fn safe_file_name(name: &str) -> String {
         .to_string()
 }
 
-/// Downloads `url` (already validated per-hop by `fetch_from_allowed_host`) to `dest_path`,
-/// refusing to overwrite an existing file rather than silently clobbering one -- `dest_path`
-/// always lives inside this call's own fresh `scratch_dir`, so a collision here would only ever
-/// mean a real bug, not routine contention.
+/// Downloads to `dest_path`, failing rather than overwriting an existing file.
 pub(super) async fn download_to_file(
     client: &Client,
     url: &str,
@@ -238,11 +195,7 @@ pub(super) async fn download_to_file(
         .open(dest_path)
         .await
         .map_err(|err| format!("{label} failed to create destination file: {err}"))?;
-    // Streamed chunk-by-chunk (perf remediation, gate round 1): the Git for Windows installer is
-    // roughly 60-70MB and the GitHub CLI zip roughly 15MB -- buffering the whole response with
-    // `response.bytes()` before a single `write_all` held the entire asset in memory at once.
-    // `Response::chunk` (no extra `reqwest` feature needed) keeps memory flat at one chunk
-    // regardless of asset size.
+    // Streams chunk by chunk so a ~65MB installer is never held in memory whole.
     while let Some(chunk) = response
         .chunk()
         .await
@@ -252,11 +205,7 @@ pub(super) async fn download_to_file(
             .await
             .map_err(|err| format!("{label} failed to write destination file: {err}"))?;
     }
-    // Gate finding: a successful `write_all` only means the bytes reached the OS buffer cache,
-    // not that they are durable on disk or even fully visible to whatever this file's caller
-    // runs next (e.g. `bsdtar`/the installer `.exe` itself) -- `flush` then `sync_all` (the
-    // stronger, data-durable guarantee `flush` alone does not promise under tokio) before this
-    // function ever reports success.
+    // `sync_all` so the next process to run the file sees complete bytes on disk.
     file.flush()
         .await
         .map_err(|err| format!("{label} failed to flush destination file: {err}"))?;
@@ -266,9 +215,7 @@ pub(super) async fn download_to_file(
     Ok(())
 }
 
-/// Runs `exe_path args` with no shell, bounded by `timeout`; never fails on a non-zero exit,
-/// callers branch on the returned exit code. `kill_on_drop` matches `git::git`'s own wrapper: a
-/// timed-out child is reaped rather than left running as an orphan.
+/// Runs a process with a timeout. A non-zero exit is not an error; callers read the code.
 pub(super) async fn run_process(
     exe_path: &Path,
     args: &[&str],
@@ -301,11 +248,7 @@ pub(super) fn exit_detail(what: &str, code: i32, message: &str) -> String {
     }
 }
 
-/// Finds the official PowerShell 7+ binary on PATH if present, else falls back to the fixed
-/// Windows PowerShell 5.1 system path -- never a bare name passed to `Command::new` (same
-/// cwd-before-PATH `CreateProcess` risk `executables.rs`'s own doc comments describe). A sibling
-/// file in this same lane (`install_on_quit.rs`) needs this exact same small fallback; a little
-/// duplicated logic between the two is expected rather than sharing a module for it.
+/// Returns an absolute PowerShell path, never a bare name (avoids cwd-first lookup).
 pub(super) fn resolve_powershell() -> PathBuf {
     if let Ok(path) = which::which_global("pwsh") {
         return path;
@@ -327,8 +270,7 @@ pub(super) fn find_asset_by_suffix<'a>(
     assets.iter().find(|asset| asset.name.ends_with(suffix))
 }
 
-/// Walks `dir` looking for a file literally named `name` -- the GitHub CLI's zip extracts into a
-/// version-named subfolder whose exact name varies by release, so the path cannot be hard-coded.
+/// Searches subfolders too, since the GitHub CLI zip extracts into a version-named folder.
 pub(super) fn find_file_named<'a>(
     dir: &'a Path,
     name: &'a str,

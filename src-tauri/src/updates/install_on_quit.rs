@@ -1,33 +1,4 @@
-// Install-on-quit mechanism (spec 006 FR-015, FR-016, FR-018, research.md decision 5): when a
-// verified installer is waiting (`phase: 'downloaded'`) and Refract quits normally, main spawns a
-// short-lived helper -- still inside Refract's own kill-on-close Job Object
-// (`process::job_object.rs`) -- whose only job is to hand the real wait-then-install work to a
-// NEW process created through WMI (`Invoke-CimMethod -ClassName Win32_Process -MethodName
-// Create`). WMI's own provider host (`wmiprvse.exe`), not this helper, is what actually calls
-// Win32 `CreateProcess` for that new process, and Windows only auto-assigns a freshly-created
-// process to its PARENT's job(s) -- `wmiprvse.exe` is never a member of Refract's job, so the
-// wait-then-install process it creates is never assigned to it either, and survives Refract's
-// exit intact (quality-gate remediation, CRITICAL: `spawn(..., { detached: true })`'s plain
-// `DETACHED_PROCESS`/`CREATE_NEW_PROCESS_GROUP` does nothing to escape job membership, so the old
-// helper was being killed by Windows the instant Refract's own process exited, before it ever
-// reached `Start-Process ... /S`).
-//
-// Deliberately NOT done by adding `JOB_OBJECT_LIMIT_BREAKAWAY_OK`/`CREATE_BREAKAWAY_FROM_JOB` to
-// the job itself (the other fix the report offered): that would let ANY process opt out of the
-// job, including a spawned `omp` subprocess, which must stay killable -- that is the whole point
-// of `process/job_object.rs`. The WMI hand-off needs no change to the job's own flags at all
-// (smallest blast radius: zero changes to `job_object.rs`).
-//
-// Refract does not relaunch itself; the developer's next launch (from the unchanged Desktop/Start
-// Menu shortcut) is the new version.
-//
-// UNVERIFIED: gate T004/T011 pending -- this has not yet been confirmed on a real quit-then-
-// relaunch against a packaged build (docs/spike/FINDINGS.md item 12 only verified the job's own
-// kill-on-close guarantee, not this WMI breakaway).
-//
-// Ported from `src/main/update/installOnQuit.ts`'s `verifyInstallerBeforeQuit`,
-// `scheduleInstallOnQuit`, `resolveInstallingState` (git show
-// origin/spec-006-impl:src/main/update/installOnQuit.ts).
+// WMI puts the installer helper outside Refract's kill-on-close job; leave the job flags alone so `omp` stays killable.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -39,27 +10,14 @@ use super::checksum::{checksum_matches, hex_digest_file};
 use super::signature::{verify_installer_signature, SIGNATURE_REJECTED_MESSAGE};
 use super::state::{UpdatePhase, UpdateState, UpdateStateStore};
 
-/// Windows-only: `CREATE_NO_WINDOW`, the same flag `git/git.rs` uses -- no console window flashes
-/// for the short-lived in-job PowerShell helper this spawns.
+/// Hides the console window of the short-lived PowerShell helper.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// Gate finding (PR #837 round 1, perf Medium): `run_install_on_quit_hook`'s own 30s budget
-/// (`mod.rs`'s `VERIFY_AND_SCHEDULE_TIMEOUT`) bounds this function's TOTAL work, but a stalled
-/// `WinVerifyTrust` call inside it previously had no bound of its own -- `stop_all()`'s quit path
-/// already times out at 15s; this check must never make quitting hang for longer than that on a
-/// stalled Win32 call. A timeout here is treated as a rejection (fails closed), consistent with
-/// every other `verify_installer_signature` failure.
+/// Bounds the signature check so a stalled `WinVerifyTrust` cannot hang quit. Fails closed.
 const SIGNATURE_VERIFY_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Quality-gate remediation (LOW, security): re-verifies a `downloaded` installer immediately
-/// before scheduling it, rather than trusting `updateState.json`'s possibly-stale `installerPath`
-/// at face value -- the file must still live directly inside `updates_dir` (`<userData>/updates`,
-/// never anywhere a stale/tampered `installerPath` could have redirected it to), its SHA-256
-/// must still match the `.sha256` sibling file (not a new `UpdateChecker` download, that sibling
-/// file is this app's one persisted copy of "the expected hash"), and (lane R11d, follow-up to
-/// #794) its Authenticode signature and pinned signer certificate must still verify -- the same
-/// two checks `installer.rs` makes right after download, re-run here in case the file on disk
-/// changed between then and quit.
+/// Re-verifies a `downloaded` installer before scheduling it: it must sit directly in
+/// `updates_dir`, match its `.sha256` sibling, and still pass the Authenticode check.
 pub async fn verify_installer_before_quit(
     installer_path: &Path,
     updates_dir: &Path,
@@ -98,10 +56,7 @@ pub async fn verify_installer_before_quit(
     {
         Ok(result) => result?,
         Err(_) => {
-            // Gate finding (PR #837 round 2, Low): returns the same constant message every other
-            // rejected signature does, logging the real detail instead -- a timeout is just
-            // another reason `verify_installer_signature` didn't resolve `Ok`, not a distinct
-            // oracle for the renderer's badge UI to surface.
+            // Same constant message as any rejected signature, so a timeout is not a distinct oracle.
             log::error!(
                 "signature verification of {} timed out after {SIGNATURE_VERIFY_TIMEOUT:?}",
                 installer_path.display()
@@ -113,12 +68,7 @@ pub async fn verify_installer_before_quit(
     Ok(())
 }
 
-/// Spawns the short-lived in-job PowerShell helper that hands the real wait-then-install process
-/// off to a WMI-created, out-of-job wait-then-install process, and resolves once this hand-off
-/// has been confirmed (via `Win32_Process.Create`'s own `ReturnValue`), not merely once the
-/// helper process was launched -- a silent hand-off failure must never be mistaken for a
-/// scheduled install. The caller persists `phase: Installing` only after this resolves
-/// successfully.
+/// Spawns the helper that hands the install off to a WMI-created process.
 pub async fn schedule_install_on_quit(
     installer_path: &Path,
     refract_pid: u32,
@@ -127,22 +77,7 @@ pub async fn schedule_install_on_quit(
     let pwsh = resolve_powershell();
     let pwsh_str = pwsh.to_string_lossy();
 
-    // Quality-gate remediation (LOW, security): `$env:REFRACT_INSTALLER_PATH` is left as literal,
-    // UNEXPANDED text in this constant -- it is resolved by the WMI-created process from ITS OWN
-    // environment (set below via `Win32_ProcessStartup.EnvironmentVariables`, never spliced into
-    // any script as a string). The installer's filename comes from a GitHub release asset name
-    // (less trusted than Refract's own fixed constants), and PowerShell's tokenizer also treats
-    // U+2018-U+201B as quote characters, which a doubled-ASCII-quote escape alone would not
-    // defend against. `refract_pid` (a plain integer from `std::process::id()`, never caller
-    // input) and `pwsh` (a `which`/fixed-path-resolved, equally trusted system path) are
-    // interpolated directly -- neither is a shell-injection boundary, and `pwsh` is still
-    // defensively single-quote-escaped below along with everything else in `inner_command_line`.
-    // Gate finding (PR #829 round 1, Medium): `/UPDATE` tells the generated installer this is an
-    // upgrade over an existing install (`installer.nsi`'s own `PageLeaveReinstall`/`UpdateMode`
-    // handling) -- without it, every update silently re-creates the Desktop/Start-menu shortcuts
-    // and re-runs the WebView2 bootstrapper step on each quit-then-install cycle.
-    // Issue #883 ("Update now"): when `relaunch_path` is set, the installer is awaited and the
-    // new Refract started from the same literal env-var mechanism as the installer path above.
+    // `$env:` names stay unexpanded so the installer path is never spliced into the script.
     let inner_command = if relaunch_path.is_some() {
         format!(
             "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE' -Wait; Start-Process -FilePath $env:REFRACT_RELAUNCH_PATH"
@@ -156,12 +91,7 @@ pub async fn schedule_install_on_quit(
         format!("\"{pwsh_str}\" -NoProfile -NonInteractive -WindowStyle Hidden -Command \"{inner_command}\"");
     let outer_script = [
         format!("$inner = '{}'", escape_single_quoted(&inner_command_line)),
-        // Forwards every env var this (outer, in-job) process already has -- including
-        // `REFRACT_INSTALLER_PATH`, set below via `Command::env` -- to the WMI-created process.
-        // `Win32_ProcessStartup.EnvironmentVariables`, when set at all, REPLACES rather than
-        // extends the new process's environment, so this reads the full table rather than
-        // listing only the one new variable, to avoid silently dropping `SystemRoot`/`PATH`/etc.
-        // the inner `pwsh.exe` itself may need.
+        // WMI replaces the child's env rather than extending it, so forward `SystemRoot`/`PATH` too.
         "$envList = [Environment]::GetEnvironmentVariables().GetEnumerator() | ForEach-Object { \"$($_.Key)=$($_.Value)\" }".to_string(),
         "$startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ EnvironmentVariables = $envList }".to_string(),
         "$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $inner; ProcessStartupInformation = $startup }".to_string(),
@@ -207,20 +137,7 @@ pub async fn schedule_install_on_quit(
     }
 }
 
-/// Resolves any phase left over from a run that quit (or crashed) before it finished -- called
-/// once at startup before the automatic update check:
-/// - `Installing` (FR-018): the install-on-quit helper either succeeded (`installed_version`
-///   matches `available_version`, resolved to `Idle`) or never finished/ran (resolved to
-///   `Failed`) -- unchanged from this function's original, narrower scope.
-/// - `Downloading` (gate finding, HIGH "a quit during download leaves the phase stuck"): nothing
-///   persists a partial download to resume, and `checker::check_for_updates`'s own busy-guard
-///   would otherwise refuse to ever check again from this phase -- resolved to `Failed` with an
-///   actionable message, so the status bar's Retry action appears instead of a permanently inert
-///   badge.
-/// - `Checking`: a quit mid-check never promised the user anything for this phase -- resolved to
-///   `Idle`, not `Failed` (nothing to retry, nothing went wrong).
-///
-/// Every other phase (`Idle`, `Available`, `Downloaded`, `Failed`) is left untouched (no write).
+/// Resolves a phase left behind by a run that quit or crashed mid-flight.
 pub async fn resolve_startup_state(
     store: &mut UpdateStateStore,
     installed_version: &str,
@@ -228,19 +145,14 @@ pub async fn resolve_startup_state(
     let state = store.get();
     match state.phase {
         UpdatePhase::Installing => {
-            // A version match means the install-on-quit helper succeeded, a mismatch (or the
-            // helper never got to run) is reported as a failure.
+            // A version mismatch means the helper never installed the update.
             let version_matches = state
                 .available_version
                 .as_deref()
                 .is_some_and(|available| available == installed_version);
 
             if version_matches {
-                // Quality-gate remediation (LOW "a successful install leaves the old installer
-                // on disk"): on a version match, the installer and its `.sha256` sibling (about
-                // 146MB together) are deleted -- they already did their job and are never needed
-                // again. Two individual file deletes, only ever the exact paths this same
-                // `state.installerPath` already names, never a directory.
+                // Delete only the exact installer and sibling paths, never a directory.
                 if let Some(installer_path) = state.installer_path.as_deref() {
                     let _ = tokio::fs::remove_file(installer_path).await;
                     let _ = tokio::fs::remove_file(sha256_sibling(Path::new(installer_path))).await;
@@ -280,8 +192,7 @@ pub async fn resolve_startup_state(
                 .await
         }
         UpdatePhase::Downloaded => {
-            // Issue #883: a verified installer for a version that is already installed (installed
-            // by hand since) must not keep prompting "Update now".
+            // Drop an installer for a version already installed, so it stops prompting "Update now".
             let stale = state
                 .available_version
                 .as_deref()
@@ -306,9 +217,7 @@ pub async fn resolve_startup_state(
     }
 }
 
-/// Resolves PowerShell: `pwsh` (PowerShell 7+) if it is on `PATH`, else the fixed, always-present
-/// Windows PowerShell 5.1 path -- infallible, since the fallback exists on every supported
-/// Windows target.
+/// Prefers `pwsh` on `PATH`, else the always-present Windows PowerShell 5.1.
 fn resolve_powershell() -> PathBuf {
     if let Ok(path) = which::which_global("pwsh") {
         return path;
@@ -323,24 +232,19 @@ fn resolve_powershell() -> PathBuf {
         .join("powershell.exe")
 }
 
-/// `<installer>.sha256`: appended to the whole path (including the `.exe` extension), never
-/// replacing it -- the same sibling-file naming `installer.rs`'s own `UpdateInstaller.ts` port
-/// uses.
+/// `<installer>.sha256`, appended to the full path so the `.exe` is kept.
 fn sha256_sibling(installer_path: &Path) -> PathBuf {
     let mut name = installer_path.as_os_str().to_os_string();
     name.push(".sha256");
     PathBuf::from(name)
 }
 
-/// Factored out so it can be unit-tested without touching the filesystem: `installer_path` must
-/// live directly inside `updates_dir`, never one level deeper/shallower or in an unrelated
-/// directory a stale/tampered `installerPath` could otherwise redirect verification to.
+/// Rejects a tampered `installerPath` that points outside `updates_dir`.
 fn installer_is_directly_inside(installer_path: &Path, updates_dir: &Path) -> bool {
     installer_path.parent() == Some(updates_dir)
 }
 
-/// PowerShell single-quoted strings escape an embedded `'` by doubling it. Port of
-/// `installOnQuit.ts`'s own `escapeSingleQuoted`.
+/// PowerShell single-quoted strings escape an embedded `'` by doubling it.
 fn escape_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
 }

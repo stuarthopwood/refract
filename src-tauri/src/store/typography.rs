@@ -1,5 +1,5 @@
-// Spec 036 (WP-E): Settings > Appearance "Text size", three persisted scale multipliers. A child
-// module of `settings.rs` to keep that file under the 600-line cap (issue #806).
+// Settings > Appearance "Text size": three persisted scale multipliers; child module of
+// `settings.rs` for the size cap (#806).
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -60,7 +60,7 @@ pub(super) fn write(map: &mut Map<String, Value>, typography: Typography) {
 }
 
 impl SettingsStore {
-    /// `settings.setTypography({ appScale, chatScale, codeScale })`; values are clamped.
+    /// Clamps values into range.
     pub async fn set_typography(&mut self, typography: Typography) -> std::io::Result<Settings> {
         let next = Settings {
             typography: Typography {

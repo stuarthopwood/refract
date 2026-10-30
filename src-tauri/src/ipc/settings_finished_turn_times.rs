@@ -1,5 +1,4 @@
-// IPC handler for `settings.setShowFinishedTurnTimes` (issue #1250, spec 001 FR-119). Its own file
-// (not inline in `settings.rs`) to keep that file under this build's 600-line cap (issue #806).
+// IPC handler for `settings.setShowFinishedTurnTimes`. Own file to respect the 600-line cap (#806).
 use serde_json::Value;
 
 use super::settings::require_bool;

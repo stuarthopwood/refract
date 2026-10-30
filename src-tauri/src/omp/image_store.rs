@@ -1,10 +1,5 @@
-// #513: the bounded, process-wide store for the bytes of an image that arrived INLINE (base64)
-// on a live user message frame. The transcript item only ever carries an id (never the bytes);
-// `images.get` reads the bytes back by that id. The id is a deterministic content id so the
-// same message seen again (`message_start`, then `message_end`) lands on one entry, never two.
-// Bounded by total bytes and entry count, oldest first, so a long Session of 20 MiB pastes
-// cannot grow memory without limit; an evicted image shows the "no longer available"
-// placeholder until the history is reloaded (OMP then holds it as a blob).
+// Process-wide store for inline (base64) image bytes. The id is a content hash, so a message
+// seen twice maps to one entry; eviction is oldest-first, bounded by bytes and count (#513).
 
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
@@ -29,8 +24,7 @@ fn store() -> &'static Mutex<Store> {
     STORE.get_or_init(|| Mutex::new(Store::default()))
 }
 
-/// The id of an inline image: FNV-1a 64 over the bytes plus the length. Not cryptographic; it
-/// only keys our own store, and a (vanishingly unlikely) collision is guarded by the length.
+/// The id of an inline image: FNV-1a 64 over the bytes plus the length. Not cryptographic.
 pub fn inline_image_id(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in bytes {
@@ -59,8 +53,7 @@ pub fn is_inline_image_id(id: &str) -> bool {
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
-/// Stores the bytes (already validated by the caller) and returns their id. A re-put of the same
-/// content refreshes nothing and keeps one entry.
+/// Stores the bytes (validated by the caller) and returns their id. A duplicate put is a no-op.
 pub fn put(bytes: Vec<u8>, mime_type: &str) -> String {
     let id = inline_image_id(&bytes);
     let mut guard = store().lock().expect("image store mutex poisoned");

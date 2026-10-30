@@ -1,6 +1,5 @@
-// `closePullRequest` (spec 038, FR-010), split from `gh_mutations.rs` to keep that file's growth
-// minimal (issue #806). The pull request id is the GraphQL node id the handler already has from
-// its staleness check; a variable, never string interpolation.
+// `closePullRequest`, split from `gh_mutations.rs` (#806). The GraphQL node id is passed as a
+// variable, never interpolated.
 
 use std::path::Path;
 

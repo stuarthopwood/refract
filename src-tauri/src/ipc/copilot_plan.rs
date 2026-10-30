@@ -1,6 +1,4 @@
-// `copilot.planUsage` (#1238, spec 004 FR-051): the user's individual Copilot plan usage as a
-// percentage, `null` when unavailable. Takes no arguments from the renderer and never returns a
-// token; the one network call and its caching live in `github::copilot_plan`.
+// Never returns a token; the network call and its caching live in `github::copilot_plan`.
 
 use serde_json::{json, Value};
 
@@ -11,8 +9,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("settings.setShowAiCredits", settings_set_show_ai_credits);
 }
 
-/// `settings.setShowAiCredits(enabled)` (#1238, FR-053); lives here because `settings.rs` is at
-/// the file-size cap.
+/// Lives here because `settings.rs` is at the file-size cap.
 fn settings_set_show_ai_credits(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let enabled =

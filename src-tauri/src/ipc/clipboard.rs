@@ -1,8 +1,4 @@
-// IPC handler for `clipboard.writeText` (contracts/ipc.md "Clipboard", T069): the fallback a
-// Copy-path button uses when the sandboxed renderer's own `navigator.clipboard.writeText` is
-// refused. `tauri_plugin_clipboard_manager`'s `Clipboard::write_text` is a main-process API and
-// needs no renderer permission, the same reasoning the Electron build's own `electron.clipboard`
-// comment gives.
+// Fallback for when the sandboxed renderer's clipboard write is refused; the main process needs no permission.
 
 use serde_json::Value;
 use tauri_plugin_clipboard_manager::ClipboardExt;

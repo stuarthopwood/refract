@@ -1,7 +1,4 @@
-// The token guard values store (`token-guard.json` in the Refract data dir). Only deliberate
-// developer changes are persisted (`overrides`); the effective value of every key is its
-// override when that validates, otherwise the grilled default (FR-006), so one bad stored value
-// falls back for that key alone. Keys are the dotted OMP config keys of the overlay.
+// Token guard values store (`token-guard.json`). A bad stored value falls back to its default for that key only.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

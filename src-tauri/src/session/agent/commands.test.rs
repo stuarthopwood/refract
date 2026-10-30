@@ -1,14 +1,6 @@
-// Unit tests for `session::agent::commands` (lane R4, issue #787; gate-fix round 1):
-// `parse_slash_command`, `is_builtin_source`, the source-aware `filter_supported_commands`, and
-// `classify_slash_invocation` including the anti-shadow fix (a file/skill command sharing a
-// builtin's name or alias must never inherit the free-form policy). `#[path]`-loaded sibling of
-// `commands.rs` (excluded from `check:file-size` by its own `.test.rs` name).
+// Unit tests for `session::agent::commands`.
 
 use super::*;
-
-// ---------------------------------------------------------------------------
-// parse_slash_command
-// ---------------------------------------------------------------------------
 
 #[test]
 fn parse_slash_command_bare_name() {
@@ -45,10 +37,6 @@ fn parse_slash_command_none_for_a_bare_slash() {
     assert_eq!(parse_slash_command("/   "), None);
 }
 
-// ---------------------------------------------------------------------------
-// is_builtin_source
-// ---------------------------------------------------------------------------
-
 #[test]
 fn is_builtin_source_table() {
     assert!(
@@ -64,10 +52,6 @@ fn is_builtin_source_table() {
     assert!(!is_builtin_source(Some("file")));
     assert!(!is_builtin_source(Some("skill")));
 }
-
-// ---------------------------------------------------------------------------
-// filter_supported_commands
-// ---------------------------------------------------------------------------
 
 #[test]
 fn filter_supported_commands_always_prepends_native_built_commands() {
@@ -140,10 +124,6 @@ fn filter_supported_commands_passes_through_a_skill_sourced_command() {
         .iter()
         .any(|c| c.get("name").and_then(Value::as_str) == Some("skill:my-skill")));
 }
-
-// ---------------------------------------------------------------------------
-// classify_slash_invocation
-// ---------------------------------------------------------------------------
 
 fn builtin(name: &str, subcommands: &[&str]) -> Value {
     json!({
@@ -222,10 +202,7 @@ fn classify_matches_an_alias() {
     ));
 }
 
-/// Gate-fix regression test (High/Medium, security): a file/skill command sharing a builtin's
-/// exact name must still be classified against the BUILTIN's own rules once arguments are given
-/// -- never granted free-form arguments just because a `.find()` happened to pick the file
-/// descriptor first.
+/// A file command sharing a builtin's name keeps the builtin's argument rules.
 #[test]
 fn classify_a_file_command_shadowing_a_builtin_name_stays_builtin_restricted() {
     let commands = vec![
@@ -242,8 +219,7 @@ fn classify_a_file_command_shadowing_a_builtin_name_stays_builtin_restricted() {
         classify_slash_invocation("session", "info", &commands),
         SlashInvocationClassification::Supported
     ));
-    // Free-form text that is NOT the builtin's verified subcommand: must be refused, not
-    // silently accepted as if it were the file command's own free-form policy.
+    // Free-form text that is not the builtin's verified subcommand must be refused.
     assert!(matches!(
         classify_slash_invocation("session", "delete", &commands),
         SlashInvocationClassification::UnsupportedArguments
@@ -272,8 +248,7 @@ fn classify_a_skill_sourced_command_runs_with_free_form_arguments() {
 
 #[test]
 fn classify_a_descriptor_with_no_source_field_fails_closed_to_builtin_restricted() {
-    // No `source` key at all (not even `null`) -- must be treated exactly like `source:"builtin"`
-    // with no verified subcommands: bare name supported, any argument refused.
+    // No `source` key at all is treated like `source:"builtin"` with no verified subcommands.
     let commands = vec![json!({ "name": "mystery" })];
     assert!(matches!(
         classify_slash_invocation("mystery", "", &commands),
@@ -285,12 +260,7 @@ fn classify_a_descriptor_with_no_source_field_fails_closed_to_builtin_restricted
     ));
 }
 
-/// Gate-fix regression test (High, security): the REAL shape production actually produces --
-/// `filter_supported_commands` already drops a non-allow-listed builtin entirely (e.g. `model`,
-/// `ratchet`), so a downstream shadow check that only ever sees the FILTERED list has no trace
-/// of that builtin left to compare against. This runs the real pipeline, raw list -> filter ->
-/// classify, with a HIDDEN (never allow-listed) builtin colliding with a file command by name
-/// and, separately, by alias -- both must come out refused/absent, never free-form.
+/// A builtin dropped by the allow-list filter must still shadow a same-named file command.
 #[test]
 fn raw_to_filter_to_classify_a_file_command_cannot_assume_a_hidden_builtins_name() {
     let raw = vec![
@@ -298,9 +268,7 @@ fn raw_to_filter_to_classify_a_file_command_cannot_assume_a_hidden_builtins_name
         json!({ "name": "model", "source": "file", "description": "a user command named model" }),
     ];
     let filtered = filter_supported_commands(&raw);
-    // The hidden builtin itself is correctly absent (today's pre-existing rule); the critical
-    // assertion is that the FILE command sharing its name is ALSO absent, not silently promoted
-    // to free-form just because the builtin that would have blocked it got filtered out first.
+    // The file command sharing a hidden builtin's name must also stay absent.
     assert!(
         !filtered
             .iter()
@@ -342,10 +310,7 @@ fn filter_supported_commands_keeps_a_file_command_with_no_real_collision() {
         .any(|c| c.get("name").and_then(Value::as_str) == Some("check-build")));
 }
 
-/// Gate-fix regression test: a file/skill command named one of Refract's own reserved native
-/// commands (`plan`, `resume`, `fork`, ...) must never be listed -- `chat.send`'s own
-/// `NATIVE_RESERVED_COMMANDS` check would refuse it unconditionally anyway, so listing it in
-/// the menu would be misleading (it can never actually run).
+/// Native reserved commands (`plan`, `resume`, ...) must never be listed as file commands.
 #[test]
 fn filter_supported_commands_drops_a_file_command_named_after_a_reserved_native_command() {
     let raw = vec![

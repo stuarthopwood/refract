@@ -1,13 +1,8 @@
-// Test module for `process.rs`, split into its own file via `#[path = ...]` (same convention
-// `omp/redact.rs` -> `redact_tests.rs` and `git/worktrees.rs` -> `worktrees_tests.rs` already
-// use) rather than adding to a file already well past the 600-line soft cap.
+// Test module for `process.rs`, kept in its own file via `#[path]` to stay under the line cap.
 
 use super::*;
 
-/// Security regression (gate round 4, 2026-10-14): seeking to an arbitrary byte offset used to
-/// return whatever followed it verbatim, including a credential fragment split by the seek --
-/// no pattern in `omp::redact` recognises a partial token, so it would have survived the
-/// warn/error filter and redaction downstream unredacted.
+/// Security regression: a mid-line seek must not return a credential fragment that redaction misses.
 #[tokio::test]
 async fn read_tail_bytes_drops_a_mid_line_fragment_from_an_arbitrary_seek() {
     let dir = std::env::temp_dir().join(format!("refract-process-tests-{}", uuid::Uuid::new_v4()));

@@ -1,27 +1,5 @@
-// OS notification on session status change, with click-to-focus (lane R10b, issue #793): port of
-// `src/main/notifications.ts`'s own "a Notification only when no Refract window has OS focus and
-// only when a Session becomes `needs-you`, or finishes (`working` -> `idle`). Clicking focuses
-// the window and emits `ui:open-session`." Driven from `events::EventSink::emit_session_status`
-// (the one place every status transition already flows through) rather than from
-// `session::agent` directly: Rust has no single process-wide event bus to subscribe a second
-// listener to the way Electron's `SessionManager.onEvent` gives `registerNotifications` for free
-// (`events.rs`'s own doc comment), and `session/agent/*` is touched only through its named hooks
-// (`on_frame`/`on_exit`/`on_start_progress`/per-lane `State`), none of which fire on a status
-// change.
-//
-// Unlike Electron (one `Notification` instance per fire, with its own `.on('click', ...)` closure
-// capturing that fire's `sessionId`), `tauri-plugin-notification`'s desktop implementation has
-// ONE global `on_action` handler for the app's whole lifetime: the Session id instead round-trips
-// through the notification's own `extra` payload (`NotificationBuilder::extra`), read back from
-// `ActionPerformed::notification()::extra()` -- confirmed from the plugin's own source
-// (`desktop.rs`'s `imp::wait`/`performed()`: the `data` handed to `show_tracked` IS the builder's
-// own serialised `NotificationData`, `extra` included, on every desktop platform this build
-// targets, not just mobile -- `ActiveNotification`'s rustdoc mentioning "mobile only" describes
-// the unrelated `Notification::active()` listing accessor, not this click payload).
-//
-// No JS/webview capability needed (`capabilities/default.json`'s own doc comment: capabilities
-// gate webview-to-plugin calls only): every call here is Rust-side (`app.notification()`), never
-// invoked from the renderer.
+// OS notification on Session status change, with click-to-focus. Shown from `events::EventSink::emit_session_status`.
+// The Session id rides in the notification `extra` payload, since the plugin has one global action handler.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
@@ -34,16 +12,11 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::events::UI_OPEN_SESSION;
 use crate::store::registry::RegistryStore;
 
-/// The previous `status` string seen for each session id, so a repeat `session:status` emit for
-/// an unrelated field (e.g. `unread`) never re-fires a notification -- mirrors `notifications.ts`'s
-/// own `lastStatus` `Map`, module-scoped there the same way (one process, one map, for the app's
-/// whole lifetime).
+/// Previous `status` per Session id, so a repeat emit for an unrelated field never re-notifies.
 static LAST_STATUS: LazyLock<StdMutex<HashMap<String, String>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
-/// Pure core (gate fix): without this, `LAST_STATUS` grows one entry per Session that ever
-/// existed, archived/deleted ones included, for the app's whole run. Unit-testable with a plain
-/// map and id set, no registry/async involved.
+/// Drops entries for Sessions no longer in the registry, so the map cannot grow forever.
 fn retain_only(
     last_status: &mut HashMap<String, String>,
     valid_ids: &std::collections::HashSet<String>,
@@ -51,10 +24,8 @@ fn retain_only(
     last_status.retain(|id, _| valid_ids.contains(id));
 }
 
-/// `events::EventSink::emit_session_list_changed`'s own one-line hook: prunes `LAST_STATUS` down
-/// to whatever Sessions the registry still has every time the list changes (archive, restore,
-/// delete, recreate all fire this event already). The registry lock is async, so this spawns
-/// its own short-lived task rather than block the emit path.
+/// Prunes `LAST_STATUS` to the registry's current Sessions whenever the list changes.
+/// The registry lock is async, so this runs on a spawned task.
 pub fn prune_deleted_sessions(registry: Arc<AsyncMutex<RegistryStore>>) {
     tauri::async_runtime::spawn(async move {
         let valid_ids: std::collections::HashSet<String> = registry
@@ -72,16 +43,12 @@ pub fn prune_deleted_sessions(registry: Arc<AsyncMutex<RegistryStore>>) {
     });
 }
 
-/// Registers the one global click handler (issue #793): focuses the window and emits
-/// `ui:open-session` for the Session id carried in the clicked notification's own `extra`
-/// payload. Call once, from `lib.rs`'s `setup` closure, before any notification is ever shown --
-/// `tauri_plugin_notification`'s own `show()` only tracks a notification's action at all when a
-/// handler/listener already exists at the moment it is shown.
+/// Registers the one global click handler. Call once, before any notification is shown.
+/// The plugin only tracks a shown notification's action when a handler already exists.
 pub fn init(app: &AppHandle) {
     let app_for_action = app.clone();
     let _ = app.notification().on_action(move |performed| {
-        // "tap" is a click on the notification body itself; this build registers no action
-        // buttons (no `action_type_id`), so nothing else is ever reported.
+        // "tap" is the notification body click; no action buttons are registered.
         if performed.action_id() != "tap" {
             return;
         }
@@ -96,8 +63,7 @@ pub fn init(app: &AppHandle) {
         let Some(window) = app_for_action.get_webview_window("main") else {
             return;
         };
-        // Matches `notifications.ts`'s own click handler exactly: restore if minimised, then
-        // focus, then hand the renderer the Session id to open.
+        // Restore if minimised, then focus, then open the Session.
         if window.is_minimized().unwrap_or(false) {
             let _ = window.unminimize();
         }
@@ -111,12 +77,8 @@ pub fn init(app: &AppHandle) {
     });
 }
 
-/// Whether `previous` -> `status` is a needs-you/finished transition worth a notification
-/// (`notifications.ts`'s own rule: "only when a Session becomes `needs-you`, or finishes
-/// (`working` -> `idle`)"). `Some(true)` for a needs-you transition, `Some(false)` for a
-/// finished (working -> idle) one, `None` for every other change (a repeat `needs-you`, any
-/// other idle transition, a stopped Session, ...). Pure and side-effect-free so it is
-/// unit-testable with no app/registry/window at all.
+/// Whether `previous` -> `status` is a needs-you or finished transition worth a notification.
+/// `Some(true)` is needs-you, `Some(false)` is finished, `None` is anything else.
 fn notification_worthy_transition(previous: Option<&str>, status: &str) -> Option<bool> {
     if status == "needs-you" && previous != Some("needs-you") {
         Some(true)
@@ -127,12 +89,8 @@ fn notification_worthy_transition(previous: Option<&str>, status: &str) -> Optio
     }
 }
 
-/// `events::EventSink::emit_session_status`'s own one-line hook: decides whether this status
-/// change is a needs-you/finished transition worth a notification, skips it when the window
-/// already has OS focus (`notifications.ts`'s own `window.isFocused()` check), then looks up the
-/// Session's live display name and shows it. The registry lock is async (`tokio::sync::Mutex`),
-/// so the lookup and the `show()` call both run on a spawned task -- `emit_session_status` itself
-/// stays a plain, non-blocking `fn` like every other `EventSink` method.
+/// Shows a notification for a needs-you or finished transition, unless the window has focus.
+/// The registry lock is async, so the lookup and `show()` run on a spawned task.
 pub fn on_session_status(
     app_handle: Arc<StdMutex<Option<AppHandle>>>,
     registry: Arc<AsyncMutex<RegistryStore>>,
@@ -242,8 +200,7 @@ mod notification_worthy_transition_tests {
 
     #[test]
     fn stopped_to_idle_does_not_notify() {
-        // Only a `working` -> `idle` transition is "finished"; any other predecessor (stopped,
-        // needs-you, none at all) reaching `idle` is not.
+        // Only working -> idle counts as finished.
         assert_eq!(
             notification_worthy_transition(Some("stopped"), "idle"),
             None

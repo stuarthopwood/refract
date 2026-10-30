@@ -1,8 +1,4 @@
-// Spec 060 (#1331, ADR 0006): Refract's own usage database, fed from OMP's session files.
-
-//
-// The IPC layer calls: `UsageService` (`new`, `start`, `stop`, `status`, `nudge`, `last_error`),
-// `open_reader`, `queries::*`, `budget::budget`, `schema::{prefs_get, prefs_set}` and `paths::*`.
+// Refract's own usage database, fed from OMP's session files.
 
 pub mod budget;
 pub mod credits;

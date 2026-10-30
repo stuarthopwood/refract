@@ -1,13 +1,5 @@
-// Chat attachment IPC channels (lane R4, issue #787): `attachments.readImageFile`, the file-path
-// sibling of `ipc/chat.rs`'s own base64/clipboard image path. Port of `src/main/ipc/attachments.ts`
-// (the shared reader #514/#432 built) plus the containment/symlink-safety primitives
-// `src/main/ipc/files.ts` provides it (`isUnsafeToken`, `resolveNoFollow`,
-// `resolveNoFollowUnrooted`, `resolveInWorktree`) -- ported HERE rather than into `ipc/files.rs`
-// (lane R7's own pre-declared file, issue #790): issue #784's "one agent per Rust file" rule
-// means a file can have only one owning lane, and `files.rs` is R7's. The Electron build shares
-// one copy because `attachments.ts` already imports from `files.ts` there; this build accepts
-// the duplication (a second, independent copy will exist once R7 lands `files.rs`) as the cost
-// of never needing cross-lane coordination over either file.
+// `attachments.readImageFile` channel. Holds its own copy of the path-containment helpers, since
+// `files.rs` belongs to another lane (#790) and one file must have one owner (#784).
 
 use std::path::{Path, PathBuf};
 
@@ -26,22 +18,14 @@ pub fn register(d: &mut Dispatcher) {
     d.register("attachments.readImageFile", attachments_read_image_file);
 }
 
-// Gate round 1 (Code1 Medium, DRY): `pub(super)` so `file_attachments.rs` reuses these instead
-// of redeclaring them.
+// `pub(super)` so `file_attachments.rs` reuses these instead of duplicating them.
 pub(super) const MAX_SESSION_ID_LENGTH: usize = 256;
-// Matches `files.ts`'s own `MAX_TOKEN_LENGTH` (a single path, not a whole prompt).
 pub(super) const MAX_TOKEN_LENGTH: usize = 4096;
-// Bounds how many link substitutions the walk below will follow before rejecting outright --
-// without this, a cycle (`a -> b`, `b -> a`) would loop forever.
+// Caps link substitutions so a symlink cycle is rejected instead of looping forever.
 const MAX_LINK_HOPS: u32 = 32;
 
-/// Windows reserved device names (case-insensitive, with or without a trailing extension) --
-/// rejected as a path SEGMENT anywhere in the token, before any filesystem call ever touches it.
-/// Defence in depth, not the only thing standing between a reserved name and `fs::open` (every
-/// one of these fails `fs::canonicalize` with not-found in practice). Port of `files.ts`'s own
-/// regex, including the superscript-digit `COM`/`LPT` variants Windows itself still recognises
-/// (`COM\u{b9}`-`COM\u{b3}`, `LPT\u{b9}`-`LPT\u{b3}`); no embedded-dot-run edge cases beyond a
-/// single trailing extension.
+/// Windows reserved device names, matched per path segment, including the superscript `COM`/`LPT`
+/// variants.
 fn is_reserved_name(segment: &str) -> bool {
     let upper = segment.to_ascii_uppercase();
     let core_end = upper.find('.').unwrap_or(upper.len());
@@ -62,12 +46,8 @@ fn is_reserved_name(segment: &str) -> bool {
     }
 }
 
-/// Port of `files.ts`'s own `isUnsafeToken`: every TEXT-ONLY rejection a token must pass before
-/// any filesystem call ever touches it -- NUL bytes; UNC/device paths (`\\host\share`, `\\?\...`,
-/// `\\.\...`, all normalise to a leading `//` once backslashes become forward slashes); any colon
-/// other than a single drive-letter prefix (blocks `javascript:`/`data:`/an NTFS alternate data
-/// stream, and also catches a drive-relative token like `D:foo`); Windows reserved device names
-/// per path segment.
+/// Rejects unsafe tokens by text alone, before any filesystem call: NUL bytes, UNC/device paths,
+/// colons other than a drive prefix, and reserved device names.
 fn is_unsafe_token(value: &str) -> bool {
     if value.contains('\0') {
         return true;
@@ -102,12 +82,8 @@ fn is_unsafe_token(value: &str) -> bool {
         .any(is_reserved_name)
 }
 
-/// ASCII-only case fold (matches the TS fix for the Kelvin-sign bypass, U+212A, which Unicode
-/// `toLowerCase()` collapses to `'k'` even though NTFS treats them as different characters):
-/// never touches non-ASCII, so this is only ever a pre-filter, never the real security boundary.
-/// Gate-fix (Low): folds only on Windows (`cfg!(target_os = "windows")`), matching `files.ts`'s
-/// own `process.platform === 'win32'` guard -- a non-Windows build (this crate targets Windows
-/// only today, but the guard costs nothing and keeps this function honest if that ever changes).
+/// ASCII-only case fold, Windows only. Non-ASCII is never folded, so this is a pre-filter, not
+/// the security boundary.
 fn fold_case(value: &str) -> String {
     if cfg!(target_os = "windows") {
         value.chars().map(|c| c.to_ascii_lowercase()).collect()
@@ -120,10 +96,7 @@ fn is_contained_in(value: &str, root: &str) -> bool {
     value == root || value.starts_with(&format!("{root}{}", std::path::MAIN_SEPARATOR))
 }
 
-/// Lexically collapses `.`/`..` components without touching the filesystem (unlike
-/// `Path::canonicalize`, which requires every component to exist) -- the Rust equivalent of
-/// Node's `path.resolve`/`path.join` normalisation, needed because `PathBuf::join` alone leaves
-/// `..` components in place.
+/// Collapses `.` and `..` lexically, without touching the filesystem.
 fn lexical_normalize(p: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
@@ -139,14 +112,8 @@ fn lexical_normalize(p: &Path) -> PathBuf {
     out
 }
 
-/// Strips Windows' `\\?\` canonical-path prefix (and its UNC variant `\\?\UNC\`) so a
-/// canonicalised path compares lexically the same way Node's `fs.realpath` output already does --
-/// Rust's `std::fs::canonicalize` prepends this verbatim-path marker on Windows; Node never does.
-/// Gate-fix (Low): rebuilt from the parsed `Component::Prefix` kind rather than manual string
-/// slicing -- `Path`'s own component parser already recognises `Prefix::VerbatimDisk`/
-/// `Prefix::VerbatimUNC` regardless of casing, so there is no separate case-fold step to get
-/// wrong, and a path with any other (non-verbatim) prefix or no prefix at all passes through
-/// unchanged by construction.
+/// Strips the `\\?\` prefix that `canonicalize` adds on Windows, so paths compare like Node's
+/// `realpath` output.
 fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
     use std::path::{Component, Prefix};
     let mut components = path.components();
@@ -175,14 +142,8 @@ enum WalkError {
     OutsideWorktree,
 }
 
-/// Port of `files.ts`'s own `resolveNoFollow`: walks `relative_suffix` one path segment at a
-/// time against `root` (already realpath'd) and `unresolved_root` (the Session's own recorded
-/// worktree path, never realpath'd -- covers a worktree reached through a junction/8.3 short
-/// name), substituting any symlink's own raw, unfollowed target text and re-vetting it (both for
-/// its own text shape via `is_unsafe_token` and for containment under either root) before
-/// continuing, instead of ever handing a multi-component path to a single native resolve call
-/// that would follow every link in one native call with no chance to vet an intermediate hop.
-/// Capped at `MAX_LINK_HOPS` substitutions to reject a cycle rather than loop forever.
+/// Walks `relative_suffix` one segment at a time, vetting each symlink target before following it.
+/// Never hands a multi-segment path to one native resolve, which would skip those checks.
 async fn resolve_no_follow(
     root: &Path,
     unresolved_root: &Path,
@@ -238,9 +199,7 @@ async fn resolve_no_follow(
         let Some(matched_root) = matched_root else {
             return Err(WalkError::OutsideWorktree);
         };
-        // Restart from `root`, with the target's OWN relative segments prepended to whatever
-        // was still pending -- the target's own path may contain further unverified links in
-        // ITS OWN intermediate segments, not only at its final component.
+        // Restart from `root`: the target may hold further unverified links in its own segments.
         let rel = target_abs.strip_prefix(matched_root).unwrap_or(&target_abs);
         let mut rest: Vec<String> = rel
             .to_string_lossy()
@@ -252,19 +211,14 @@ async fn resolve_no_follow(
         queue = rest;
         current = root.to_path_buf();
     }
-    // A link that resolves, through however many hops, back to the worktree root itself must be
-    // rejected the same way a top-level token equal to the root already is.
+    // A link resolving back to the worktree root is rejected, like a token equal to the root.
     if current == root {
         return Err(WalkError::FileMissing);
     }
     Ok(current)
 }
 
-/// Port of `files.ts`'s own `resolveNoFollowUnrooted`: generalises `resolve_no_follow` above for
-/// an ABSOLUTE token with NO containment boundary (#514/#432: a user-initiated absolute path is
-/// read directly, not required to stay inside any worktree) -- walks from the token's own drive
-/// root one segment at a time, never handing a multi-component path to a single native resolve
-/// call. A link's target is still vetted for its own TEXT shape before ever being followed.
+/// Like `resolve_no_follow`, for absolute paths with no containment root (#514).
 async fn resolve_no_follow_unrooted(absolute_token: &str) -> Option<PathBuf> {
     use std::path::Component;
     let normalized = lexical_normalize(Path::new(absolute_token));
@@ -322,16 +276,12 @@ enum ResolveReason {
     OutsideWorktree,
     FileMissing,
     #[allow(dead_code)] // Mirrors `files.ts`'s own three-reason result; not surfaced by this
-    // lane's own `readImageFile` (it always reports `not-found`, like Electron's own
-    // `attachments.ts`), kept for fidelity with the ported function's real return shape.
+    // Kept so the return shape matches the original; this channel always reports `not-found`.
     WorktreeMissing,
 }
 
-/// Port of `files.ts`'s own `resolveInWorktree`: resolves `token` against `worktree_root`,
-/// proving containment rather than assuming it. Every string-only rejection runs BEFORE any
-/// filesystem call touches `token` -- a UNC path reaching `fs::canonicalize` can trigger an
-/// outbound SMB authentication attempt on Windows (NTLM hash leak) even without ever actually
-/// opening anything, so these must never be deferred to "resolve first, check after".
+/// Resolves `token` against `worktree_root` and proves containment. Text checks run first:
+/// `canonicalize` on a UNC path can trigger an SMB auth attempt (NTLM leak).
 async fn resolve_in_worktree(worktree_root: &str, token: &str) -> Result<PathBuf, ResolveReason> {
     if is_unsafe_token(token) {
         return Err(ResolveReason::OutsideWorktree);
@@ -352,8 +302,7 @@ async fn resolve_in_worktree(worktree_root: &str, token: &str) -> Result<PathBuf
     };
     let unresolved_root = lexical_normalize(Path::new(worktree_root));
 
-    // `path.resolve(resolvedRoot, token)`'s Rust equivalent: an absolute `token` overrides the
-    // root entirely; a relative one (including one laden with `..`) is normalised against it.
+    // An absolute `token` overrides the root; a relative one is normalised against it.
     let candidate = if Path::new(token).is_absolute() {
         lexical_normalize(Path::new(token))
     } else {
@@ -364,10 +313,7 @@ async fn resolve_in_worktree(worktree_root: &str, token: &str) -> Result<PathBuf
     let unresolved_root_lower = fold_case(&unresolved_root.to_string_lossy());
     let candidate_lower = fold_case(&candidate.to_string_lossy());
 
-    // A LEXICAL containment check on the normalised candidate, before `resolve_no_follow`/
-    // `canonicalize` ever touch it -- a path outside the worktree is rejected without ever
-    // resolving it. The remaining risk (a symlink/junction INSIDE the worktree pointing outside
-    // it) is exactly what `resolve_no_follow` below still exists to catch.
+    // Lexical containment check first; `resolve_no_follow` catches links that point out.
     let lexically_contained = is_contained_in(&candidate_lower, &resolved_root_lower)
         || is_contained_in(&candidate_lower, &unresolved_root_lower);
     if !lexically_contained {
@@ -398,16 +344,12 @@ async fn resolve_in_worktree(worktree_root: &str, token: &str) -> Result<PathBuf
             WalkError::OutsideWorktree => ResolveReason::OutsideWorktree,
         })?;
 
-    // Safe now: every segment of `walked` has already been individually vetted and had any link
-    // substituted -- nothing is left in it for `canonicalize` to follow; this only canonicalises
-    // casing/8.3 short names.
+    // Every link is already substituted, so `canonicalize` only fixes casing and 8.3 names.
     let resolved_target = realpath(&walked)
         .await
         .map_err(|_| ResolveReason::FileMissing)?;
 
-    // The REAL, final-target containment check, the actual security boundary: NO case folding --
-    // both sides are already fully realpath'd, and two paths naming the same on-disk location
-    // always realpath to byte-identical strings.
+    // The real security boundary. No case folding: both sides are already realpath'd.
     let resolved_target_str = resolved_target.to_string_lossy();
     let resolved_root_str = resolved_root.to_string_lossy();
     let contained = resolved_target_str == resolved_root_str
@@ -423,9 +365,7 @@ async fn resolve_in_worktree(worktree_root: &str, token: &str) -> Result<PathBuf
     Ok(resolved_target)
 }
 
-/// Port of `attachments.ts`'s own `resolveAttachmentPath`: branches on whether `token` is
-/// absolute (walked with no worktree containment, #514's own "the resolved file may legitimately
-/// live anywhere on disk" decision) or relative (delegates entirely to `resolve_in_worktree`).
+/// Absolute paths are walked with no containment (#514); relative ones go to `resolve_in_worktree`.
 pub(super) async fn resolve_attachment_path(worktree_root: &str, token: &str) -> Option<PathBuf> {
     if is_unsafe_token(token) {
         return None;
@@ -437,10 +377,7 @@ pub(super) async fn resolve_attachment_path(worktree_root: &str, token: &str) ->
     }
 }
 
-/// Gate round 1 (Code1 Medium, DRY): the session-lookup-to-worktree-root sequence every
-/// `attachments.*`/`file_attachments.rs` handler that takes a `sessionId` repeats; pulled into
-/// one shared helper instead of each handler re-locking the registry and re-writing the same
-/// not-found mapping.
+/// Shared session-to-worktree lookup, so each handler does not repeat the registry lock.
 pub(super) async fn resolve_session_worktree(
     state: &AppState,
     session_id: &str,
@@ -452,19 +389,8 @@ pub(super) async fn resolve_session_worktree(
     }
 }
 
-/// Gate round 2 (Code2 HIGH): the open-handle/stat/bounded-read sequence both `read_image_file`
-/// (below) and `file_attachments.rs`'s own `read_file_attachment` need. Opens the file FIRST and
-/// reads every subsequent fact from THAT SAME handle's own `metadata()` -- a DIRECTORY is handled
-/// entirely by the CALLER via its own path-based stat BEFORE ever reaching here (`File::open` on
-/// a directory fails outright on Windows with no `FILE_FLAG_BACKUP_SEMANTICS`, so a folder could
-/// never reach this function's own `metadata()` call at all -- the round-1 version's `is_dir()`
-/// early return was unreachable dead code, removed here). Checks `metadata.len()` against `cap`
-/// BEFORE reading a single byte (restores the pre-#926 guard round 1's refactor dropped: an
-/// oversized file now costs one stat, never a wasted read); returns `None` for an
-/// already-oversized file (the caller uses `metadata.len()` for the real size) or
-/// `Some(buffer)` read up to `metadata.len() + 1` bytes, so the caller can detect the file
-/// growing mid-read by comparing `buffer.len()` against `metadata.len()` ITSELF -- never against
-/// the external `cap`, which a small file growing only slightly would never trip.
+/// Opens the file, then stats and reads through that one handle. Returns `None` if the file is
+/// already over `cap`, before any read. Directories must be rejected by the caller first.
 pub(super) async fn read_bounded(
     real_path: &Path,
     cap: u64,
@@ -502,11 +428,7 @@ pub(super) async fn read_bounded(
     Ok((metadata, Some(buffer)))
 }
 
-/// Port of `attachments.ts`'s own `readImageFile`, the reader both #514 and #432 share. Never
-/// returns the resolved path or any other file metadata beyond the validated image bytes
-/// themselves. Gate round 2 (Code2 HIGH): the open-handle/stat/bounded-read sequence now lives
-/// in the shared `read_bounded` above; the size cap is checked there BEFORE any read, restoring
-/// #514's own original guard.
+/// Reads a validated image. Returns only the bytes, never the resolved path or other metadata.
 async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcError> {
     let Some(real_path) = resolve_attachment_path(worktree_root, token).await else {
         return Err(not_found("That file could not be found."));
@@ -515,9 +437,7 @@ async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcE
     if !metadata.is_file() {
         return Err(not_found("That file could not be found."));
     }
-    // Checked BEFORE ever decoding the bytes (#514's own requirement: "check the size before
-    // decoding") -- `read_bounded` returns `None` without ever reading a byte once the STAT
-    // alone already proves the file over cap.
+    // Size is checked before decoding, so an oversized file is refused without a read.
     let Some(buffer) = buffer else {
         return Err(IpcError::new(
             "image-too-large",
@@ -527,14 +447,12 @@ async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcE
             ),
         ));
     };
-    // Grew past its own stat'd size mid-read (gate round 2 Code2 HIGH: compared against
-    // `metadata.len()` itself, never the external cap, which a slight growth would never trip) --
-    // a file swapped or grown between the stat and this read is refused rather than trusted.
+    // A file that grew after the stat is refused, not trusted.
     if buffer.len() as u64 > metadata.len() {
         return Err(not_found("That file could not be read."));
     }
 
-    // Identified purely by content, never by filename extension.
+    // Type is detected from content, never from the extension.
     let header_len = buffer.len().min(24);
     let Some(mime_type) = sniff_image_mime_type(&buffer[..header_len]) else {
         return Err(IpcError::new(
@@ -542,10 +460,7 @@ async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcE
             "That file is not a supported image type; nothing was attached.",
         ));
     };
-    // Decompression-bomb guard (shared with the renderer's own re-encode path): every supported
-    // format always carries its own dimensions in a fixed-offset header field when genuinely
-    // well-formed; `None` means either a malformed/truncated file or a crafted header, refused
-    // either way -- the magic-byte check above already proved the type.
+    // Decompression-bomb guard: a missing or malformed dimension header is refused.
     let Some((width, height)) = read_image_dimensions(&buffer, mime_type) else {
         return Err(IpcError::new(
             "unsupported-image-type",

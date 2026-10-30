@@ -1,12 +1,5 @@
-// IPC handlers for `settings.*` (contracts/ipc.md "Settings", tasks.md T015/T028; remaining
-// setters wired lane R8, issue #791). `settings.setApprovalMode` persists the mode and
-// broadcasts `settings:changed` (T028) so every window stays in sync. Not ported (`session::
-// agent`'s own header): fanning `pendingMode` out to every LIVE Session and restarting each at
-// its next settle (T031/T032) -- this build has no `restart()`, so a running Session keeps its
-// OLD mode until it is stopped and reopened. Every other setter below is a direct port of
-// `src/main/ipc/settings.ts`'s basic-shape-validation-then-persist pattern: a malformed
-// argument is `invalid-argument`, a valid one is persisted via `store::settings::SettingsStore`
-// and broadcast the same way.
+// IPC handlers for `settings.*`: validate shape (`invalid-argument` on failure), persist, then
+// broadcast `settings:changed`. A running Session keeps its old approval mode until reopened.
 
 use serde_json::Value;
 
@@ -37,11 +30,7 @@ pub fn register(d: &mut Dispatcher) {
         "settings.setDetectImagePathsOnPaste",
         settings_set_detect_image_paths_on_paste,
     );
-    // Issue #772, lane R6: the underlying `word_prediction_enabled` field belongs to the
-    // `chat.predictWord*` prediction feature lane R6 owns, but the channel itself follows every
-    // other `settings.set*` channel's own naming -- registered here (not `side_chat.rs`) to keep
-    // every `settings.*` channel in one place, same reasoning `ipc/mod.rs`'s own module split
-    // documents for every other per-area file.
+    // Registered here (not `side_chat.rs`) to keep every `settings.*` channel in one place (#772).
     d.register(
         "settings.setShowContextUsageBar",
         settings_set_show_context_usage_bar,
@@ -106,9 +95,8 @@ fn parse_approval_mode(value: &str) -> Option<ApprovalMode> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
-/// Spec 004 FR-012 to FR-014: the eight known `ReadoutKind` values; an unrecognised one is
-/// `invalid-argument` here (the store's own `set_readout_visibility` additionally no-ops on one,
-/// a second, independent layer).
+/// The eight known `ReadoutKind` values; an unrecognised one is `invalid-argument` here (the
+/// store also no-ops on one).
 const READOUT_KINDS: [&str; 8] = [
     "changes",
     "context-usage",
@@ -158,11 +146,8 @@ pub fn settings_set_readout_visibility(state: AppState, args: Vec<Value>) -> Han
     })
 }
 
-/// Spec 005 contracts/ipc.md `settings.setSplit`: basic-shape validation only, mirroring
-/// `settings.ts`'s own quality-gate-remediated check -- `Value::Object` vs `Value::Array` are
-/// already distinct `serde_json` variants (unlike JS's `typeof [] === 'object'`), so no separate
-/// array rejection is needed; every field is read by direct key lookup and only a freshly-built
-/// `SplitLayout` is ever persisted, never the caller's own object verbatim.
+/// `settings.setSplit`: basic-shape validation; fields are read by key and only a freshly built
+/// `SplitLayout` is persisted, never the caller's object.
 const SPLIT_NOT_OBJECT_MESSAGE: &str = "settings.setSplit expects a SplitLayout or null";
 const SPLIT_SHAPE_MESSAGE: &str = "settings.setSplit expects { sessionIds: [string, string] (distinct), dividerPercent: 0-100, focusedIndex: 0 | 1 } or null";
 
@@ -232,8 +217,7 @@ pub fn settings_set_watermark_enabled(state: AppState, args: Vec<Value>) -> Hand
     })
 }
 
-/// `settings.setChatWidth(width)` (issue #554, FR-073): same enum-parse-then-persist shape as
-/// `settings_set_approval_mode` above.
+/// `settings.setChatWidth(width)`: enum-parse-then-persist, like `settings_set_approval_mode`.
 pub fn settings_set_chat_width(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let width = match args
@@ -265,8 +249,7 @@ fn parse_chat_width(value: &str) -> Option<ChatWidth> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
-/// `settings.setHolidayTouches(value)` (issue #1048): same enum-parse-then-persist shape as
-/// `settings_set_chat_width` above.
+/// `settings.setHolidayTouches(value)`: enum-parse-then-persist, like `settings_set_chat_width`.
 pub fn settings_set_holiday_touches(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let value = match args
@@ -298,8 +281,7 @@ fn parse_holiday_touches(value: &str) -> Option<HolidayTouches> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
-/// `settings.setActivityText(value)` (issue #526, FR-111): same enum-parse-then-persist shape as
-/// `settings_set_chat_width` above.
+/// `settings.setActivityText(value)`: enum-parse-then-persist, like `settings_set_chat_width`.
 pub fn settings_set_activity_text(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let value = args
@@ -322,9 +304,8 @@ pub fn settings_set_activity_text(state: AppState, args: Vec<Value>) -> HandlerF
     })
 }
 
-/// Issues #457 and #469: `field` is one of the three known `TranscriptDisplaySettings` keys,
-/// validated here (`invalid-argument` for anything else) before ever reaching the store's own
-/// per-field merge.
+/// `field` must be one of the three known `TranscriptDisplaySettings` keys (#457, #469), else
+/// `invalid-argument`, before reaching the store's per-field merge.
 pub fn settings_set_transcript_display(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let field = match arg_str(&args, 0) {
@@ -384,11 +365,8 @@ pub fn settings_set_detect_image_paths_on_paste(
     })
 }
 
-/// `settings.setWordPredictionEnabled` (issue #772, Rust-only -- no Electron implementation):
-/// persists the whole `Settings` row and broadcasts `settings:changed`, the same pattern every
-/// other setter above uses; `ipc/side_chat.rs`'s own `chat.predictWord`/`.predictWordFeedback`
-/// read `store::settings::SettingsStore::word_prediction_enabled()` to gate before ever reaching
-/// a live process.
+/// `settings.setWordPredictionEnabled` (#772): persists and broadcasts; `chat.predictWord*` read
+/// `word_prediction_enabled()` to gate before reaching a live process.
 pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let enabled = require_bool(&args, 0, "settings.setWordPredictionEnabled", "enabled")?;
@@ -405,12 +383,8 @@ pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -
     })
 }
 
-/// #735 contracts/ipc.md `settings.setSessionListCollapse`: basic-shape validation only --
-/// `{ collapsedRepositoryIds: string[], archivedOpen: boolean }` -- plus the shared
-/// `sanitize_collapsed_repository_ids` cap-and-dedupe pass (gate round 2 fix), mirroring
-/// `parse_split_arg`'s own validate-then-persist pattern above. Ids are de-duplicated silently,
-/// never rejected; an over-cap count or id length IS rejected as `invalid-argument`, since this
-/// is the renderer's own validated write path, unlike the disk loader's lazy-correction.
+/// `settings.setSessionListCollapse` (#735): `{ collapsedRepositoryIds, archivedOpen }`. Ids are
+/// de-duplicated silently; an over-cap count or id length is `invalid-argument`.
 const SESSION_LIST_COLLAPSE_SHAPE_MESSAGE: &str =
     "settings.setSessionListCollapse expects { collapsedRepositoryIds: string[], archivedOpen: boolean }";
 
@@ -456,10 +430,8 @@ pub fn settings_set_session_list_collapse(state: AppState, args: Vec<Value>) -> 
     })
 }
 
-/// #930 contracts/ipc.md `settings.setPullRequestsListWidth(px)`: one width for every Project,
-/// clamped (not rejected) by `SettingsStore` itself, the same shape `settings.setTheme` would
-/// use if it did not also track a raw value -- a plain-replace setter with no raw/lazy-correction
-/// tracking needed.
+/// `settings.setPullRequestsListWidth(px)` (#930): one width for every Project, clamped (not
+/// rejected) by `SettingsStore`.
 pub fn settings_set_pull_requests_list_width(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let width_px = args.first().and_then(Value::as_i64).ok_or_else(|| {
@@ -478,8 +450,8 @@ pub fn settings_set_pull_requests_list_width(state: AppState, args: Vec<Value>) 
     })
 }
 
-/// Spec 024 contracts/ipc.md `settings.setRightPane(value)` (#538): a malformed shape is
-/// `invalid-argument`; width and the active tab are normalised by `right_pane::parse`.
+/// `settings.setRightPane(value)` (#538): a malformed shape is `invalid-argument`; width and the
+/// active tab are normalised by `right_pane::parse`.
 pub fn settings_set_right_pane(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let parsed = args
@@ -503,7 +475,7 @@ pub fn settings_set_right_pane(state: AppState, args: Vec<Value>) -> HandlerFutu
     })
 }
 
-/// `settings.setShowContextUsageBar(enabled)` (issue #1082, spec 004 FR-034).
+/// `settings.setShowContextUsageBar(enabled)` (#1082).
 pub fn settings_set_show_context_usage_bar(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let enabled = require_bool(&args, 0, "settings.setShowContextUsageBar", "enabled")?;
@@ -520,7 +492,7 @@ pub fn settings_set_show_context_usage_bar(state: AppState, args: Vec<Value>) ->
     })
 }
 
-/// `settings.setShowAgentStoppedBar(enabled)` (issue #1205, FR-107).
+/// `settings.setShowAgentStoppedBar(enabled)` (#1205).
 pub fn settings_set_show_agent_stopped_bar(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let enabled = require_bool(&args, 0, "settings.setShowAgentStoppedBar", "enabled")?;

@@ -1,6 +1,4 @@
-// `chat.pause`/`chat.resume`/`chat.pauseAll`/`chat.resumeAll` (issue #477, spec 056): the
-// Refract-run pause at the turn boundary. The per-Session logic lives in
-// `session::agent::pause`; these handlers only validate arguments and find the agents.
+// Pause handlers only validate arguments; the per-Session logic lives in `session::agent::pause`.
 
 use serde_json::{json, Value};
 
@@ -71,8 +69,7 @@ pub fn chat_pause_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// Resumes every paused Session, including a paused one whose agent is not running (clearing
-/// its pause); one that cannot resume yet (held messages and no agent) stays paused.
+/// Resumes every paused Session; one that cannot resume yet stays paused.
 pub fn chat_resume_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let ids: Vec<String> = state
