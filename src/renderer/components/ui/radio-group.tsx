@@ -37,10 +37,30 @@ import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 // against its own `--popover` on its own (3.46:1) -- Obsidian (2.99:1) and Nordic Frost (2.92:1)
 // still measure under the floor, so this fix stays unconditional (`border-foreground`
 // everywhere), never reverted for Cyber Amber alone.
+// `RadioMark` below draws the same mark for listbox-option rows (Model picker).
 // `AskCard.tsx`/`MergeDialog.tsx` now use the same ring (#1065), so their checked ring is
 // `border-foreground` too, no longer `border-primary`; the row's own `border-primary` edge stays.
 export const RADIO_RING_CLASS = "grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-foreground"
 export const RADIO_DOT_CLASS = "size-2 rounded-full bg-foreground forced-colors:bg-[CanvasText]"
+
+// #1065: the same ring-and-dot for a row that is not a Radix radio item (a `role="option"` row in
+// a listbox picker, e.g. the Model picker). It sets its own `data-state`, so the ring keys off
+// itself instead of a `group/radio-item` ancestor; the dot is conditionally mounted, as Radix's
+// indicators do.
+export function RadioMark({ checked, className }: { checked: boolean; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      data-state={checked ? "checked" : "unchecked"}
+      className={cn(
+        "grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground data-[state=checked]:border-foreground forced-colors:data-[state=checked]:border-[Highlight]",
+        className
+      )}
+    >
+      {checked && <span className={RADIO_DOT_CLASS} />}
+    </span>
+  )
+}
 
 // Hand-written (not `pnpm dlx shadcn add radio-group`, no network in this environment), matching
 // shadcn's own radio-group.tsx shape: a thin `data-slot`-tagged wrapper per Root/Item/Indicator

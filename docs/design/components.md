@@ -99,7 +99,7 @@ For both kinds:
 - The shortcut, when one exists, is a right-aligned `Kbd`.
 - Groups are split by separators.
 - The destructive item is last, after a separator, in the destructive colour.
-- Check marks and radio marks are allowed. **A single-choice menu is a real radio group** (`DropdownMenuRadioGroup`/`DropdownMenuRadioItem`, `menuitemradio` with `aria-checked`) whose leading radio mark is the shared `RADIO_RING_CLASS` ring-and-dot (`radio-group.tsx`; the same mark the Ask card's and Merge dialog's radios use, a `--foreground` ring), filled for the selected item; never a trailing check standing in for a radio (Stuart, 2026-10-19, #1043; #1065).
+- Check marks and radio marks are allowed. **A single-choice menu is a real radio group** (`DropdownMenuRadioGroup`/`DropdownMenuRadioItem`, `menuitemradio` with `aria-checked`) whose leading radio mark is the shared `RADIO_RING_CLASS` ring-and-dot (`radio-group.tsx`; the same mark the Ask card's and Merge dialog's radios use, a `--foreground` ring), filled for the selected item; never a trailing check standing in for a radio (Stuart, 2026-10-19, #1043; #1065). A listbox option row that is not a Radix menu (the Model picker) draws the same mark with the shared `RadioMark` (`radio-group.tsx`).
 
 Evidence at `origin/main` 9f23d22: action-menu items carry no icons today (`SessionList.tsx:309-327` and `:420-422`, `ManageSessionRow.tsx:422-439`); the Profile and Approval mode menus already have a leading icon on nearly every item.
 

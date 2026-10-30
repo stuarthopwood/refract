@@ -15,11 +15,12 @@
 // mode instead; a stale `launchedMode` from the session's last run would otherwise freeze the pill
 // on a mode the app-wide setting has since moved on from (regression fixed here).
 import type { ComponentType } from 'react'
-import { BookmarkCheckIcon, CheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
+import { BookmarkCheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -97,27 +98,21 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        {MODE_ITEMS.map((item) => {
-          const ItemIcon = item.icon
-          const checked = item.value === currentMode
-          return (
-            <DropdownMenuItem key={item.value} onSelect={() => handleSelect(item.value)}>
-              <ItemIcon aria-hidden className="size-4" />
-              <div className="flex flex-col gap-1 py-1">
-                <span className="flex items-center gap-2">
-                  {item.label}
-                  {checked && (
-                    <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
-                      <CheckIcon aria-hidden className="size-4" />
-                      Current
-                    </span>
-                  )}
-                </span>
-                <span className="text-xs text-muted-foreground">{item.hint}</span>
-              </div>
-            </DropdownMenuItem>
-          )
-        })}
+        {/* #1065: the same leading ring-and-dot current-choice mark as the Reasoning and Theme menus. */}
+        <DropdownMenuRadioGroup value={currentMode} onValueChange={(value) => handleSelect(value as ApprovalMode)}>
+          {MODE_ITEMS.map((item) => {
+            const ItemIcon = item.icon
+            return (
+              <DropdownMenuRadioItem key={item.value} value={item.value}>
+                <ItemIcon aria-hidden className="size-4" />
+                <div className="flex flex-col gap-1 py-1">
+                  <span>{item.label}</span>
+                  <span className="text-xs text-muted-foreground">{item.hint}</span>
+                </div>
+              </DropdownMenuRadioItem>
+            )
+          })}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )

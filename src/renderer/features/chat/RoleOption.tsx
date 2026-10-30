@@ -3,6 +3,7 @@
 // colour alone.
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { RadioMark } from '@/components/ui/radio-group'
 
 export function RoleOption({
   id,
@@ -48,6 +49,7 @@ export function RoleOption({
       )}
     >
       <span className="flex items-center gap-1">
+        <RadioMark checked={Boolean(current)} />
         <Icon aria-hidden className="size-4 shrink-0" />
         {/* #1208 SC-005: an invisible medium-weight copy reserves the highlighted width, so moving
             the highlight never resizes the chip or shifts its neighbours. */}

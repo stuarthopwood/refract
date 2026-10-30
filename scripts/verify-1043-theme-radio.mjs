@@ -30,14 +30,15 @@
 //     `forced-colors` (the same limitation `verify-tauri-567.mjs`'s header comment already
 //     records) -- a structural check confirms the ring's own
 //     `forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]` utility class is
-//     literally present in the rendered markup, AND a `document.styleSheets` check confirms
+//     literally present in the rendered markup, AND the real built CSS read off disk
+//     (`forcedColorsRuleCompiled`, every `out/tauri-web/assets/*.css`) confirms
 //     Tailwind genuinely compiled a matching `@media (forced-colors: ...)` CSS rule declaring
 //     `border-color: Highlight` (not just that the class name exists as rendered-DOM text);
 //     real OS forced-colours rendering is reported `notExercised`, not silently skipped or
 //     falsely claimed.
 // Then, the shared `DropdownMenuRadioItem`'s OTHER caller:
-//   - The composer's Reasoning picker (`ComposerPickers.tsx:114-120`, needed NO code change for
-//     #1043): `menuitemradio` x8 (every `THINKING_LEVELS` entry), exactly one checked matching
+//   - The composer's Reasoning picker (`ComposerPickers.tsx`, needed ONLY the label-truncation
+//     wrapper for #1043, no radio-mark change): `menuitemradio` x8 (every `THINKING_LEVELS` entry), exactly one checked matching
 //     the Session's real selected `lastThinkingLevel` (set through a real click/keyboard
 //     selection in the UI, never a seed -- see the exception note below), the same
 //     dot-on-checked-only structural proof, and a real keyboard selection through the real
@@ -249,8 +250,11 @@ async function main() {
     // every one of the 5 iterations below, including the first (switching away from this seed
     // back to 'dark'), is a genuine pointer-driven transition.
     await switchTheme(cdp, 'cyber-amber', 'Cyber Amber');
+    let realTransitions = 0;
     for (const theme of THEMES_1043) {
+      const alreadyActive = await cdp.evaluate(`document.documentElement.classList.contains(${JSON.stringify(`theme-${theme.id}`)})`);
       await switchTheme(cdp, theme.id, theme.name);
+      if (!alreadyActive) realTransitions += 1;
       await openThemeSubmenu(cdp);
       const rows = await readRadioRows(cdp);
       const checkedRows = rows.filter((r) => r.ariaChecked === 'true');
@@ -280,7 +284,8 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-theme-submenu.png`));
       await closeAllMenus(cdp);
     }
-    checkPass('Pointer selection moves the check: exercised once per preset above via switchTheme, genuinely 5/5 transitions (seeded on Cyber Amber beforehand, so the first iteration switching to Dark is a real transition too, not a same-theme no-op click)');
+    if (realTransitions === THEMES_1043.length) checkPass(`Pointer selection moves the check: ${realTransitions}/${THEMES_1043.length} switchTheme calls changed the active theme (seeded on Cyber Amber beforehand, so the first iteration switching to Dark is a real transition too, not a same-theme no-op click)`);
+    else checkFail(`Pointer selection moves the check: every switchTheme call changes the active theme`, `${realTransitions}/${THEMES_1043.length} real transitions`);
 
     // ---- Keyboard: open via Enter, ArrowDown x2 + ArrowRight into the submenu, confirm focus
     // lands on the ACTIVE preset first. Seeds 'Dark (high contrast)' (THEMES_1043[1]), not
@@ -394,7 +399,7 @@ async function main() {
     await teardownA();
 
     // -----------------------------------------------------------------------------------------
-    // Part B: the Reasoning picker (ComposerPickers.tsx) -- needed zero code change for #1043,
+    // Part B: the Reasoning picker (ComposerPickers.tsx) -- needed only the label-truncation wrapper for #1043,
     // but is the shared DropdownMenuRadioItem's only other caller, so it is live-checked here.
     // -----------------------------------------------------------------------------------------
     const repoParentB = mkdtempSync(path.join(tmpdir(), 'refract-1043-repoB-'));
