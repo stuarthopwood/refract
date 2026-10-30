@@ -889,6 +889,8 @@ Also filed 2026-10-30: **#1404** (`p1`, bug), context menus: suppress the native
 
 Also filed 2026-10-30: **#1405** (`p1`), context menus: an `icon` prop on the shared menu items and an appropriate icon on every menu item app-wide, one icon per action; lands after #1404; placed as an index line after #1404's line.
 
+Also filed 2026-10-30: **#1407** (`p1`), Usage view: 32px between major stats sections (column and chart row `gap-4` to `gap-8`), Usage view only; placed as an index line after #1405's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
