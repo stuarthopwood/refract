@@ -5,7 +5,7 @@ import { stopAndRestore } from '@/features/chat/restoreQueue'
 import { toggleRightPane } from '@/features/right-pane/toggle-right-pane'
 import { focusedPaneSessionId, newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
 import { focusSessionPane } from '@/lib/focus'
-import { useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { registerActions, type PaletteAction } from './actionRegistry'
 import { usePaletteStore } from './paletteStore'
 
@@ -50,7 +50,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     group: 'Sessions',
     chord: ['Ctrl', 'N'],
     keywords: ['create', 'worktree'],
-    when: () => useViewStore.getState().view === 'chat' && useRepositoriesStore.getState().repositories.length > 0,
+    when: () => useViewStore.getState().view === 'chat',
     run: newSessionInFocusedPane
   },
   {

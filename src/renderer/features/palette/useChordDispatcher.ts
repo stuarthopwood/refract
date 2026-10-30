@@ -14,12 +14,12 @@ export function useChordDispatcher(enabled: boolean): void {
         if (action.id === PALETTE_ACTION_ID) continue
         const matched = [action.chord, action.aliasChord].some((chord) => chord && chordMatches(event, chord))
         if (!matched) continue
+        if (event.repeat || event.isComposing) continue
         if (action.chordUnguarded) {
           event.preventDefault()
           if (isActionEnabled(action)) action.run()
           return
         }
-        if (event.repeat || event.isComposing) continue
         if (!isActionEnabled(action)) continue
         if (document.querySelector(OVERLAY_OPEN_SELECTOR)) continue
         event.preventDefault()
