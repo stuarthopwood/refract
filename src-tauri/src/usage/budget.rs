@@ -76,13 +76,18 @@ pub async fn budget() -> Budget {
         }
     }
     let now = now_ms();
-    let (snapshot, usage) = tokio::join!(plan_snapshot(), run_omp_usage());
+    let (snapshot, usage, burn) = tokio::join!(plan_snapshot(), run_omp_usage(), async {
+        tokio::task::spawn_blocking(move || burn_per_day(now))
+            .await
+            .ok()
+            .flatten()
+    });
     let (parsed, unavailable) = match usage {
         Ok(value) => (parse_usage(&value), None),
         Err(reason) => (ParsedUsage::default(), Some(reason)),
     };
     let copilot =
-        snapshot.map(|s| copilot_row(&s, parsed.copilot_resets_at, burn_per_day(now), now));
+        snapshot.map(|s| copilot_row(&s, parsed.copilot_resets_at, burn, now));
     let result = Budget {
         copilot,
         providers: parsed.providers,
