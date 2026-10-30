@@ -77,7 +77,7 @@
       asserts a no-override baseline shows no holiday artwork, measures idle CPU
       Full-on-vs-Off, and writes `report.json`.
 
-## Phase 6: Remaining holidays (slice 2, FR-013)
+## Phase 6: Remaining holidays (slice 2, FR-013a)
 
 - [ ] T017 Switch Bonfire Night, Christmas, New Year, Star Wars Day, Pi Day on
       (`VERIFIED_HOLIDAYS`) and live-verify their `HOLIDAY_CONTENT` entries (T006) across the

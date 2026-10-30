@@ -133,7 +133,7 @@ build never honours either override even if the same environment variable happen
   holiday accessory; the accessory itself MUST be `aria-hidden`.
 - **FR-012**: Every empty-state holiday line MUST be `aria-hidden` and MUST never replace the
   empty state's own existing guidance text.
-- **FR-013** (slice 2, Skippy for Stuart 2026-10-30): all six holidays MUST be switched on
+- **FR-013a** (slice 2, Skippy for Stuart 2026-10-30): all six holidays MUST be switched on
   (`VERIFIED_HOLIDAYS` all `true`). Ambient loops: Bonfire Night = rising firework sparks,
   Christmas = falling snow, New Year = drifting confetti/sparkle, all inline SVG in
   `currentColor` at the existing artwork opacity, all under the FR-007/FR-008 stop rules and the

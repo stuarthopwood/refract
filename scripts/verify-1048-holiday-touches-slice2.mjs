@@ -105,6 +105,8 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
       await cdp.waitFor(`Number(document.querySelector('.holiday-ambient-loop')?.getAttribute('data-flight-count') ?? 0) > 0`, { timeoutMs: 30_000, label: `${c.id}: a loop flight starts` });
       const pieces = await cdp.evaluate(`document.querySelectorAll('.holiday-ambient-loop-bat-wrap').length`);
       check(pieces === 3, `${c.id}: three loop pieces`, pieces);
+      const flying = await cdp.evaluate(`document.getAnimations().filter((a) => a.effect?.target?.classList?.contains('holiday-ambient-loop-bat-wrap')).length`);
+      check(flying > 0, `${c.id}: a loop piece is actually animating`, flying);
       await cdp.screenshot(shot('loop-flight'));
     }
 

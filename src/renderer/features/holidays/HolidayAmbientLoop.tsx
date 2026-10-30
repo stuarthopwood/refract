@@ -255,10 +255,13 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
         scheduleNextFlight()
         return
       }
+      const keyframes = holiday ? flightKeyframes(holiday) : null
+      if (!keyframes) {
+        scheduleNextFlight()
+        return
+      }
       setFlightCount((count) => count + 1)
       bat.style.willChange = 'transform'
-      const keyframes = holiday ? flightKeyframes(holiday) : null
-      if (!keyframes) return
       const animation = bat.animate(keyframes, { duration: 4_000, easing: 'ease-in-out', fill: 'none' })
       currentAnimation = animation
       currentBat = bat
