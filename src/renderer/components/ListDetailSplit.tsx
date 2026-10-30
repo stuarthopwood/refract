@@ -1,17 +1,7 @@
-// The shared list and detail split (#930, #504): a resizable list column beside a detail pane, used
-// by the Pull requests and Issues views so both keep one width, one clamp and one reset rule.
-// The list column width is a single remembered value (`pull-requests-layout-store.ts`) for every
-// view that uses this split.
-//
-// Behaviour carried over unchanged from the Pull requests view (issue #930 gate fixes):
-// - `defaultSize` stays pinned at the true default: it is also `react-resizable-panels`'
-//   double-click-reset target, so binding it to the live width would make reset a no-op. A
-//   remembered non-default width is applied once, imperatively, on mount; it is read in the first
-//   render because a child's layout effect reports the default width before this effect runs.
-// - `maxSize` is a live percentage of the group's measured width, floored so it can never resolve
-//   below the minimum: a static "50%" conflicts with a pixel minimum when the group is under twice
-//   the minimum, and `maxSize` wins that conflict.
-// - `onResize` is the one source of truth for the width, and `setWidth` persists it (debounced).
+// A resizable list column beside a detail pane, shared by the Pull requests and Issues views (#930, #504).
+// `defaultSize` stays pinned at the true default because it is also the double-click-reset target; a
+// remembered width is applied once on mount. `maxSize` is a live percentage floored above the pixel
+// minimum, since a static "50%" loses to it in a narrow group.
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'

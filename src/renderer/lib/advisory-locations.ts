@@ -1,42 +1,8 @@
-// Conservative `path:line[:column]` extraction from an advisory's note and guidance (issue
-// #558, FR-051 amendment, ui-architect-v3 roundtable decision 4; regex corrected gate round 1,
-// extended gate round 2).
-//
-// An ALLOWLISTED code-file extension set -- not a bare `\w+` -- is the conservative choice: it
-// naturally excludes URL/host false positives without any fragile scheme-stripping logic. The
-// leading `(?<![\w./\\:@~+-])` lookbehind (replacing a plain `\b`, gate round 1 fix: `\b` chopped
-// path prefixes -- `C:\Repos\x\foo.ts:42` became `Repos\x\foo.ts:42`, `/home/x/foo.ts:1` lost
-// its leading `/`) only allows a match to START where the preceding character is NOT itself
-// part of a path/URL -- this also rejects a URL's own host segment as an emergent property,
-// with no separate `://` check needed: every segment boundary inside `https://host/a/b.ts:1` is
-// itself preceded by `/` or `:`, both excluded, so no valid start position exists anywhere in a
-// scheme-qualified URL. The optional prefix group restores a drive letter (`C:\`), a relative
-// prefix (`./`, `../`), a home-relative `~/` (gate round 2 fix), or a bare absolute-path leading
-// `/` that the body's own character class (which excludes `:` to keep the line-number delimiter
-// unambiguous) cannot include itself. The body is bounded to `{1,260}` characters (gate round 1
-// Security Low: an unbounded `+` lets the class restart at every `/`/`.`/`-` boundary in a long,
-// hostile note, costing roughly quadratic time against the ~40 extension alternatives).
-//
-// Gate round 2 fix (Medium, ui-architect-v3): `@`, `~` and `+` are now in BOTH the body class
-// and the lookbehind's exclusion set -- without them, `node_modules/@scope/pkg/index.js:3` and
-// `~/proj/foo.ts:1` matched only their OWN tail (`scope/pkg/index.js:3`, `/proj/foo.ts:1`),
-// silently showing, copying and sending a WRONG path to the agent, which is worse than showing
-// none (decision 4's own "conservative"). Two related cases are NOT fixed, and are accepted,
-// documented limitations rather than defects to chase, because -- unlike `@`/`~`/`+`, which are
-// ordinary PATH characters that simply needed adding to both sides of the lookbehind -- fixing
-// either would require treating a character that is ALSO the normal, common boundary a path is
-// found after/within as something else, which breaks the far more common case it exists for:
-// - A path containing a literal SPACE (`C:\Program Files\x\foo.ts:1`) still extracts only its
-//   tail after the space, because a space must stay a valid match-START boundary -- it is how a
-//   path named mid-sentence ("see src/foo.ts:42 for details") is found at all; excluding it would
-//   silently stop matching the overwhelmingly common no-space case to fix a rarer one.
-// - `Location:src/a.ts:1` (a label with no space before the path) never matches at all, because
-//   `:` is already excluded from the lookbehind (gate round 1, to keep the line-number
-//   delimiter unambiguous) -- the same exclusion that correctly rejects a URL's own
-//   scheme-qualified host also rejects this label's own colon as a valid preceding character.
-//   Widening the exclusion set for one would widen it for the other; "no match" here is the
-//   same conservative fallback the issue already accepts for any unparseable note.
-//
+// Conservative `path:line[:column]` extraction from an advisory's note and guidance. (#558)
+// The extension allowlist excludes URL false positives; the lookbehind stops a match starting inside a
+// path/URL; the body is bounded to {1,260} against quadratic backtracking. `@~+` are in both so scoped
+// paths aren't truncated. Accepted limits: a path with a literal space extracts only its tail, and
+// `Location:src/a.ts:1` never matches.
 const LOCATION_PATTERN =
   /(?<![\w./\\:@~+-])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|~[\\/]|\/)?[\w./\\@~+-]{1,260}\.(?:ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|c|h|cc|cpp|hpp|cs|rb|php|swift|m|mm|sql|sh|ps1|ya?ml|toml|json|md|css|scss|html|vue|svelte)):(\d+)(?::(\d+))?\b/gi
 
@@ -48,14 +14,7 @@ export interface AdvisoryLocation {
   column?: number
 }
 
-/** Scans `text` and `guidance` COMBINED (the issue says "any path:line the note names", with no
- * scoping restriction, and guidance commonly names the fix location too) and returns EVERY
- * match, de-duplicated by its own `path:line` pair (gate round 1 fix: de-duplicating by the raw
- * matched text let `foo.ts:42` and `foo.ts:42:5` both render as if they were different
- * locations) -- the FIRST raw text for a given pair wins, never just the first match overall.
- * The dedupe key normalises `\` to `/` (gate round 2 fix, Low): `src\foo.ts:42` and
- * `src/foo.ts:42` are the same location, so without this they rendered as two. `raw` itself is
- * NEVER normalised -- the advisor's own text is always shown and copied verbatim. */
+/** Extracts every `path:line` from `text` and `guidance` combined, de-duplicated by normalised path and line (first raw text wins); `raw` is never normalised. */
 export function extractAdvisoryLocations(text: string, guidance?: string): AdvisoryLocation[] {
   const combined = guidance ? `${text}\n${guidance}` : text
   const seen = new Set<string>()

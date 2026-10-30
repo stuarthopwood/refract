@@ -1,11 +1,6 @@
-// Issue #1124: one item look shared by `dropdown-menu.tsx` and `context-menu.tsx` (items,
-// sub-triggers, radio and checkbox items), so the two menu families cannot drift apart again.
-// The 2px inset bar on focus is the active-row cue (`--active-indicator`); a destructive item
-// keeps its own red cue. Icons rest at `text-muted-foreground` and go full strength (current
-// text colour) on hover/focus; an icon with its own `text-*` class is left alone. Forced colours
-// drop the box-shadow bar and `bg-accent`, so a focused row gets a `Highlight` outline there (#1065).
-// Radix moves real DOM focus on pointer hover, so the bar and fill paint on hover too, not only
-// on keyboard navigation.
+// One item look shared by `dropdown-menu.tsx` and `context-menu.tsx` so they can't drift (#1124).
+// A 2px inset bar marks the focused row; Radix focuses on pointer hover, so it paints on hover too.
+// Forced colours drop the bar and fill, so focus gets a `Highlight` outline (#1065). An icon with its own `text-*` class is left alone.
 const MENU_ICON_CLASS =
   "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-current focus:[&_svg:not([class*='text-'])]:text-current data-[variant=destructive]:[&_svg:not([class*='text-'])]:text-destructive"
 
@@ -16,8 +11,7 @@ export const MENU_ITEM_DESTRUCTIVE_CLASS =
 
 export const MENU_SUB_TRIGGER_CLASS = `${MENU_ITEM_CLASS} data-[state=open]:bg-accent data-[state=open]:text-accent-foreground`
 
-// Shared boxes, so a dropdown and a context menu render identically: one min-width, one ring
-// (no border), one label size and one pointer-inert separator. Radix animation hooks are the same.
+// Shared boxes so a dropdown and a context menu render identically.
 const MENU_BOX_CLASS =
   "duration-[var(--motion-fast)] ease-[var(--ease-out)] z-50 min-w-40 overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground ring-1 ring-foreground/10 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
 
