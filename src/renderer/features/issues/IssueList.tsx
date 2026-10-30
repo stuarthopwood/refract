@@ -1,7 +1,7 @@
 // The Issues list column (issue #504, spec 051): the shared `ProjectListPane` (Filter tabs, Filters
 // toggle, search, State, Project, summary, skipped disclosure, empty state) plus Issues' own Label
 // filter and rows.
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { ColourDot } from '@/components/ColourDot'
 import { FILTER_PICKER_CLASS, ProjectListPane } from '@/components/ProjectListPane'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
@@ -20,12 +20,29 @@ const TABS: Array<{ value: IssueTab; label: string }> = [
 
 function labelSummary(labels: string[]): string {
   if (labels.length === 0) return 'Any label'
-  return labels.length === 1 ? (labels[0] ?? '') : ` labels`
+  return labels.length === 1 ? (labels[0] ?? '') : `${labels.length} labels`
 }
 
 export function IssueList() {
   const repositories = useRepositoriesStore((s) => s.repositories)
   const store = useIssuesStore()
+  const pillsRef = useRef<HTMLDivElement>(null)
+  const pickerRef = useRef<HTMLButtonElement>(null)
+  const pendingFocus = useRef<number | null>(null)
+
+  // A dismissed pill unmounts its focused button: move focus to the next pill, else the previous, else the picker.
+  const dismissLabel = (name: string) => {
+    const index = store.labels.indexOf(name)
+    pendingFocus.current = index < store.labels.length - 1 ? index : index - 1
+    store.removeLabel(name)
+  }
+  useEffect(() => {
+    if (pendingFocus.current === null) return
+    const target = pendingFocus.current
+    pendingFocus.current = null
+    const buttons = pillsRef.current?.querySelectorAll<HTMLButtonElement>('[data-label-pill] button')
+    ;(buttons?.[target] ?? pickerRef.current)?.focus()
+  }, [store.labels])
 
   const allIds = repositories.map((repo) => repo.id)
   const allIdsKey = allIds.join('|')
@@ -69,18 +86,16 @@ export function IssueList() {
             leading: <ColourDot color={label.color} />
           }))}
           selected={store.labels}
-          onChange={(next) => {
-            const changed = next.length > store.labels.length ? next.find((n) => !store.labels.includes(n)) : store.labels.find((n) => !next.includes(n))
-            if (changed !== undefined) store.toggleLabel(changed)
-          }}
+          onChange={store.setLabels}
+          triggerRef={pickerRef}
           className={FILTER_PICKER_CLASS}
         />
       }
       filterChips={
         store.labels.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1">
+          <div ref={pillsRef} className="flex flex-wrap items-center gap-1">
             {store.labels.map((name) => (
-              <Badge key={name} variant="secondary" onDismiss={() => store.removeLabel(name)} dismissLabel={`Remove label filter ${name}`}>
+              <Badge key={name} data-label-pill variant="secondary" title={name} onDismiss={() => dismissLabel(name)} dismissLabel={`Remove label filter ${name}`}>
                 {name}
               </Badge>
             ))}

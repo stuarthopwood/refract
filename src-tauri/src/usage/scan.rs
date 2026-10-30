@@ -25,12 +25,12 @@ pub struct ScanReport {
     pub new_messages: u64,
 }
 
-/// `advisor` for an `__advisor` session file (a WATCHDOG.yml roster or the Advisor role),
+/// `advisor` for an OMP `__advisor*.jsonl` file (a WATCHDOG.yml roster or the Advisor role),
 /// `main` for any other top-level file, `subagent` for anything nested deeper.
 pub fn agent_type_for(path: &Path, sessions_root: &Path) -> &'static str {
     if path
         .file_name()
-        .is_some_and(|name| name.to_string_lossy().contains("__advisor"))
+        .is_some_and(|name| name.to_string_lossy().starts_with("__advisor"))
     {
         return "advisor";
     }

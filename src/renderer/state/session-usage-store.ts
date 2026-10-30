@@ -13,8 +13,10 @@ import type {
   UsageTokenMixRow
 } from '../../shared/ipc-usage'
 
+import { acquireUsageService, releaseUsageService } from './usage-service'
+
 export const SESSION_CALLS_STEP = 10
-const MAX_CALLS = 100
+export const MAX_CALLS = 100
 
 export interface SessionUsageEntry {
   summary: UsageSummary | null
@@ -71,6 +73,32 @@ export function periodStart(resetsAt: number): number {
 let sequence = 0
 let unsubscribe: (() => void) | null = null
 let watchedDir: string | null = null
+let lastProgress: Pick<UsageStatus, 'running' | 'sessionsDone' | 'sessionsSeen'> | null = null
+let trailing: ReturnType<typeof setTimeout> | null = null
+let inFlight = false
+let dirty = false
+const REFRESH_THROTTLE_MS = 1500
+
+/** Trailing-throttled refresh: at most one in flight, one more queued when progress arrived meanwhile. */
+function scheduleRefresh(refresh: (dir: string) => Promise<void>): void {
+  if (inFlight) {
+    dirty = true
+    return
+  }
+  if (trailing) return
+  trailing = setTimeout(() => {
+    trailing = null
+    if (!watchedDir) return
+    inFlight = true
+    void refresh(watchedDir).finally(() => {
+      inFlight = false
+      if (dirty) {
+        dirty = false
+        scheduleRefresh(refresh)
+      }
+    })
+  }, REFRESH_THROTTLE_MS)
+}
 
 export const useSessionUsageStore = create<SessionUsageState>((set, get) => ({
   status: null,
@@ -78,11 +106,17 @@ export const useSessionUsageStore = create<SessionUsageState>((set, get) => ({
   entries: {},
   async start() {
     unsubscribe?.()
+    lastProgress = null
     unsubscribe = window.refract.usage.onProgress((status) => {
-      set({ status })
-      if (watchedDir) void get().refresh(watchedDir)
+      const same =
+        lastProgress?.running === status.running &&
+        lastProgress.sessionsDone === status.sessionsDone &&
+        lastProgress.sessionsSeen === status.sessionsSeen
+      lastProgress = status
+      if (!same) set({ status })
+      if (watchedDir) scheduleRefresh(get().refresh)
     })
-    const started = await window.refract.usage.start()
+    const started = await acquireUsageService('session-usage')
     if (started.ok) set({ status: started.value })
     const budget = await window.refract.usage.budget()
     if (budget.ok) set({ budget: budget.value })
@@ -91,8 +125,11 @@ export const useSessionUsageStore = create<SessionUsageState>((set, get) => ({
     unsubscribe?.()
     unsubscribe = null
     watchedDir = null
+    if (trailing) clearTimeout(trailing)
+    trailing = null
+    dirty = false
     sequence += 1
-    void window.refract.usage.stop()
+    releaseUsageService('session-usage')
   },
   async refresh(sessionDir) {
     watchedDir = sessionDir

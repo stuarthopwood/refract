@@ -30,21 +30,20 @@ export function AdvisorRosterNotice({ sessionId }: { sessionId: string }) {
       aria-label="Advisor roster"
       severity="warning"
       title={describeAdvisorRoster(roster)}
-      detail={`File: ${roster.path}.`}
+      detail={`File: ${roster.path}`}
       data-slot="advisor-roster-notice"
       className="shrink-0 px-4 py-2"
     >
-      <Button type="button" size="xs" onClick={() => void open()}>
+      <Button type="button" variant="outline" size="xs" onClick={() => void open()}>
         Open file
       </Button>
-      <Button type="button" variant="text" size="xs" className="text-muted-foreground underline underline-offset-2 hover:decoration-2" onClick={() => void copyPath()}>
+      <Button type="button" variant="text" size="xs" onClick={() => void copyPath()}>
         Copy path
       </Button>
       <Button
         type="button"
         variant="text"
         size="xs"
-        className="text-muted-foreground underline underline-offset-2 hover:decoration-2"
         onClick={() => {
           useAdvisorRosterStore.getState().dismiss(sessionId)
           focusSessionPane(sessionId)

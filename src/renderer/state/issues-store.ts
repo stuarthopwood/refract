@@ -24,7 +24,7 @@ interface IssuesState {
   setTab(tab: IssueTab): void
   setState(state: IssueStateFilter): void
   setRepositoryIds(ids: string[]): void
-  toggleLabel(label: string): void
+  setLabels(labels: string[]): void
   removeLabel(label: string): void
   setQuery(query: string): void
   clearFilters(): void
@@ -52,8 +52,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   setTab: (tab) => set({ tab, selected: null }),
   setState: (state) => set({ state, selected: null }),
   setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null }),
-  toggleLabel: (label) =>
-    set((s) => ({ labels: s.labels.includes(label) ? s.labels.filter((l) => l !== label) : [...s.labels, label], selected: null })),
+  setLabels: (labels) => set({ labels, selected: null }),
   removeLabel: (label) => set((s) => ({ labels: s.labels.filter((l) => l !== label), selected: null })),
   setQuery: (query) => set({ query }),
   // A fresh `repositoryIds` array on every reset is what re-runs the list's fetch effect, so Clear

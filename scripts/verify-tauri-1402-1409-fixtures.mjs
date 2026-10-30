@@ -76,7 +76,7 @@ export function writePopulatedSessions(root) {
   const advisorDir = path.join(root, 'x-adv');
   mkdirSync(advisorDir, { recursive: true });
   writeFileSync(
-    path.join(advisorDir, 's9__advisor.jsonl'),
+    path.join(advisorDir, '__advisor.jsonl'),
     header('s9', now - 1800_000) + assistant('d1', now - 1700_000, [5, 5, 0], 0.01, { model: ADVISOR_MODEL })
   );
   return { sessionDir, mainFile };

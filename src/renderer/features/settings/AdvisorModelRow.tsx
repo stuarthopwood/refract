@@ -80,7 +80,7 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
       catalogError={catalogError}
       isPending={pending || !loaded}
       saveError={saveError}
-      warning={roster ? `${describeAdvisorRoster(roster)} File: ${roster.path}.` : undefined}
+      warning={roster ? `${describeAdvisorRoster(roster)}. File: ${roster.path}` : undefined}
       selectedProvider={selectedProvider}
       unsetLabel="Refract's default"
       onCommit={(next, announcement) => void commit(next, announcement)}

@@ -8,7 +8,7 @@ import { ProgressStrip } from '@/components/ProgressStrip'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { SESSION_CALLS_STEP, useSessionUsageStore } from '@/state/session-usage-store'
+import { MAX_CALLS, SESSION_CALLS_STEP, useSessionUsageStore } from '@/state/session-usage-store'
 import { useSessionsStore, useViewStore } from '@/state'
 import type { UsageBreakdownRow } from '../../../shared/ipc-usage'
 import { callToListItem } from './callLogRow'
@@ -98,7 +98,7 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
             label="Recent model calls, newest first"
             items={entry.calls.map((row) => callToListItem(row))}
             footer={
-              entry.calls.length < entry.callsTotal && entry.callsLimit < 100 ? (
+              entry.calls.length < entry.callsTotal && entry.callsLimit < MAX_CALLS ? (
                 <Button variant="link" className="self-start px-0" onClick={() => useSessionUsageStore.getState().showMore(sessionDir)}>
                   Show more ({SESSION_CALLS_STEP} more)
                 </Button>

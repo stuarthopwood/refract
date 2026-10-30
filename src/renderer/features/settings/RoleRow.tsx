@@ -91,7 +91,7 @@ export function RoleRow({
       )}
       {warning && (
         <p id={warningId} className="flex items-start gap-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
-          <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-severity-warning" />
+          <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-severity-warning forced-colors:text-[CanvasText]" />
           <span>
             <strong className="font-medium text-foreground">Warning:</strong> {warning}
           </span>

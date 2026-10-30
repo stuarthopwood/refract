@@ -18,10 +18,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-1402-1409';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.SHOTS_DIR || 'C:\\Users\\shopwood\\.copilot\\session-state\\e887165f-4199-4dd0-87bd-70f7907d61f5\\files\\shots1402-1409';
+const SHOTS_DIR = process.env.SHOTS_DIR || mkdtempSync(path.join(tmpdir(), 'refract-1402-1409-shots-'));
 
 const steps = [];
 const screenshots = [];
+const skipped = [];
 const record = (name, pass, detail = '') => {
   steps.push({ name, pass: !!pass, detail: typeof detail === 'string' ? detail : JSON.stringify(detail) });
   console.log(`${LOG}: ${pass ? 'PASS' : 'FAIL'} ${name}${pass || !detail ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`}`);
@@ -172,7 +173,7 @@ async function main() {
     child = undefined;
     cdp.close?.();
     await launch(empty.mainFile);
-    await createSessionViaQuickCreate(cdp, repoName).catch(() => null);
+    await createSessionViaQuickCreate(cdp, repoName);
     await openUsagePanel(cdp);
     const emptyOk = await cdp.waitFor(`document.body.innerText.includes('No usage yet in this session')`, { timeoutMs: 40_000, label: 'empty state' }).then(() => true, () => false);
     record('#1402 empty state "No usage yet in this session" for a call-less Session', emptyOk);
@@ -192,7 +193,7 @@ async function main() {
     const settingsAfter = await settingsAdvisorText(cdp);
     record('#1409 Settings Advisor row has no roster Warning after removal', !/WATCHDOG\.yml/.test(settingsAfter), settingsAfter.slice(0, 300));
     await shot(cdp, '1409-settings-clean');
-    record('#1400 loading overlay', true, 'SKIPPED: the 504 fake gh has no delay hook, and adding one is not cheap');
+    skipped.push({ name: '#1400 loading overlay', reason: 'the 504 fake gh has no delay hook, and adding one is not cheap' });
   } catch (err) {
     record('script completed without error', false, String(err?.stack ?? err));
     if (cdp) await shot(cdp, 'error').catch(() => null);
@@ -203,7 +204,7 @@ async function main() {
       try { await safeRmSync(d, LOG); } catch (e) { console.log(`${LOG}: cleanup ${d}: ${e.message}`); }
     }
     const reportPath = path.join(SHOTS_DIR, 'report.json');
-    writeFileSync(reportPath, JSON.stringify({ gitHead: head, steps, screenshots }, null, 2));
+    writeFileSync(reportPath, JSON.stringify({ gitHead: head, steps, skipped, screenshots }, null, 2));
     console.log(`${LOG}: report ${reportPath}`);
     process.exitCode = steps.every((s) => s.pass) ? 0 : 1;
   }

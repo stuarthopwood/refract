@@ -8,7 +8,7 @@ interface LoadingOverlayProps {
   className?: string
 }
 
-/** Blurs non-interactive content behind a centred "Loading" card while a refetch is in flight. */
+/** Blurs non-interactive content behind a centred "Loading" card while a refetch is in flight. The card is visual only; the caller's polite status announces it. */
 export function LoadingOverlay({ loading, children, className }: LoadingOverlayProps) {
   return (
     <div className={cn('relative', className)} aria-busy={loading}>
@@ -16,8 +16,7 @@ export function LoadingOverlay({ loading, children, className }: LoadingOverlayP
         // Zero-height sticky anchor keeps the card in view when the content scrolls.
         <div className="sticky top-0 z-10 h-0">
           <div
-            role="status"
-            aria-live="polite"
+            aria-hidden
             className="absolute top-16 left-1/2 -translate-x-1/2 rounded-md border border-border bg-background/90 px-4 py-2 text-sm shadow-md backdrop-blur-sm"
           >
             Loading

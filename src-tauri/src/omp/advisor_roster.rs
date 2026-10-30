@@ -35,11 +35,27 @@ pub fn agent_dir() -> Option<PathBuf> {
     }
 }
 
+/// A symlink or special file is never read or opened: a repo can ship `WATCHDOG.yml` as a link.
+fn is_regular_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_file())
+        .unwrap_or(false)
+}
+
+/// True when `path` still names a roster file and is a regular file; called just before opening.
+pub fn is_openable(path: &Path) -> bool {
+    let named = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| FILE_NAMES.iter().any(|known| known.ends_with(name)));
+    named && is_regular_file(path)
+}
+
 fn find_in(dir: &Path) -> Option<PathBuf> {
     FILE_NAMES
         .iter()
         .map(|name| dir.join(name))
-        .find(|path| path.is_file())
+        .find(|path| is_regular_file(path))
 }
 
 /// Agent dir first, then `cwd` and each parent up to the directory holding `.git`.

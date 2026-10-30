@@ -52,10 +52,10 @@ function Badge({
     <Comp
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant }), onDismiss && "pr-1", className)}
+      className={cn(badgeVariants({ variant }), onDismiss && "max-w-full overflow-visible", className)}
       {...props}
     >
-      {children}
+      {onDismiss && !asChild ? <span className="min-w-0 truncate">{children}</span> : children}
       {onDismiss && !asChild && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -63,7 +63,7 @@ function Badge({
               type="button"
               variant="ghost"
               size="icon-xs"
-              className="size-4 shrink-0 rounded-sm"
+              className="-my-1 -mr-1 size-6 shrink-0 rounded-sm"
               aria-label={dismissLabel ?? "Remove"}
               onClick={onDismiss}
             >

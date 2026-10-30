@@ -4,6 +4,8 @@ use rusqlite::types::Value;
 use super::queries::{QueryError, QueryResult, Where};
 
 /// Folds a Session directory like `normalise_path`, but ASCII-lowercase to agree with SQL `lower()`.
+/// `lower()` is ASCII-only and every separator folds to a backslash (Windows-first), so non-ASCII
+/// case differences and POSIX paths are not matched.
 pub(super) fn normalise(raw: &str) -> QueryResult<String> {
     let trimmed = raw.trim();
     let bare = trimmed

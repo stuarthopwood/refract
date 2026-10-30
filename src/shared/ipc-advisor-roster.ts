@@ -32,5 +32,5 @@ export function describeAdvisorRoster(roster: AdvisorRoster): string {
   const count = roster.advisors.length;
   const models = [...new Set(roster.advisors.map((a) => a.model).filter((m): m is string => Boolean(m)))];
   const noun = `${count} advisor${count === 1 ? '' : 's'}`;
-  return `A WATCHDOG.yml roster overrides the Advisor role: ${models.length > 0 ? `${noun} (${models.join(', ')})` : noun}.`;
+  return `A WATCHDOG.yml roster overrides the Advisor role: ${models.length > 0 ? `${noun} (${models.join(', ')})` : noun}`;
 }

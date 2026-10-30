@@ -25,12 +25,19 @@ export function SpendChart({
 }) {
   const view = useChartView(loading === true || buckets.length === 0)
   if (compact) {
+    const values = buckets.map((b) => b.byModel.reduce((sum, m) => sum + m.usd, 0))
+    const total = values.reduce((sum, v) => sum + v, 0)
+    const unit = bucket === 'day' ? 'day' : 'hour'
     return (
       <ScreenSection title="Spend over time" loading={loading} empty={buckets.length === 0 ? 'No spend yet.' : null}>
-        <Sparkline
-          label={`Spend per ${bucket}, ${buckets.length} ${bucket === 'day' ? 'days' : 'hours'}`}
-          values={buckets.map((b) => b.byModel.reduce((sum, m) => sum + m.usd, 0))}
-        />
+        {values.length < 2 ? (
+          <p className="text-xs text-muted-foreground">{`${formatUsd(total)} so far; the trend appears after a second ${unit}`}</p>
+        ) : (
+          <Sparkline
+            label={`Spend per ${unit}, ${values.length} ${unit}s: ${formatUsd(total)} total, peak ${formatUsd(Math.max(...values))}`}
+            values={values}
+          />
+        )}
       </ScreenSection>
     )
   }

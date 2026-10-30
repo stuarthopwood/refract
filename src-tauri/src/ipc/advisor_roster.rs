@@ -42,6 +42,10 @@ fn advisor_roster_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let roster = detect(&state, &args)
             .await?
             .ok_or_else(|| not_found("No advisor roster file found."))?;
+        let path = PathBuf::from(&roster.path);
+        if !advisor_roster::is_openable(&path) {
+            return Err(not_found("No advisor roster file found."));
+        }
         let opened = tokio::task::spawn_blocking(move || {
             tauri_plugin_opener::open_path(roster.path, None::<&str>)
         })
