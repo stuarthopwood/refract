@@ -13,12 +13,13 @@ import {
 } from 'lucide-react'
 import { useId, type ComponentType } from 'react'
 import type { PullRequestState, PullRequestSummary } from '../../../shared/github'
+import type { PullRequestAcrossItem } from '../../../shared/ipc-pull-requests'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
 import { cn } from '@/lib/utils'
 
 interface PullRequestRowProps {
-  pullRequest: PullRequestSummary
+  pullRequest: PullRequestAcrossItem
   selected: boolean
   onSelect(): void
 }
@@ -101,7 +102,7 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
           {check.label}
         </span>
         <span aria-hidden="true">{'\u00b7'}</span>
-        <span className="truncate">{pullRequest.repository}</span>
+        <span className="truncate" data-pr-repository={pullRequest.repository}>{pullRequest.repositoryName}</span>
         <span aria-hidden="true">{'\u00b7'}</span>
         <span className="tabular-nums"><RelativeTime value={pullRequest.updatedAt} focusable={false} /></span>
       </span>
