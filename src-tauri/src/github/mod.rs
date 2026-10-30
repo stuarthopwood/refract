@@ -22,6 +22,7 @@ pub mod gh_close;
 pub mod gh_issue_list;
 pub mod gh_issues;
 pub mod gh_mutations;
+pub mod gh_pr_search_across;
 pub mod gh_pull_requests;
 pub mod gh_viewer;
 pub mod images;

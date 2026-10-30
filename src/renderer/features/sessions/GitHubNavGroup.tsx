@@ -49,7 +49,7 @@ export function GitHubNavGroup() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const openIssues = useViewStore((state) => state.openIssues)
   const view = useViewStore((state) => state.view)
-  const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
+  const selectPullRequest = usePullRequestsStore((state) => state.select)
   // Defaults to the focused pane's Session's repository, then the first added one; the view's own
   // Project control changes it afterward (issue #569: shared, reactive hook).
   const defaultRepositoryId = useDefaultRepositoryId()
@@ -71,8 +71,8 @@ export function GitHubNavGroup() {
 
   function handleOpenPullRequests(): void {
     if (!defaultRepositoryId) return
-    selectPullRequest(defaultRepositoryId, null)
-    openPullRequests(defaultRepositoryId)
+    selectPullRequest(null)
+    openPullRequests()
   }
 
   return (

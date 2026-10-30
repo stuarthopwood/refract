@@ -42,7 +42,7 @@ interface ViewState {
    *  `view`) and coming back via the profile menu's "Manage sessions" item again. */
   manageSessionsFilters: SessionFilters
   openChat(repositoryId?: string): void
-  openPullRequests(repositoryId: string): void
+  openPullRequests(): void
   openIssues(): void
   openSettings(section?: SettingsSectionId): void
   openManageSessions(): void
@@ -57,7 +57,7 @@ export const useViewStore = create<ViewState>((set) => ({
   settingsSection: null,
   manageSessionsFilters: DEFAULT_FILTERS,
   openChat: (repositoryId) => set((state) => ({ view: 'chat', repositoryId: repositoryId ?? state.repositoryId })),
-  openPullRequests: (repositoryId) => set({ view: 'pull-requests', repositoryId }),
+  openPullRequests: () => set({ view: 'pull-requests' }),
   openIssues: () => set({ view: 'issues' }),
   openSettings: (section) =>
     set({

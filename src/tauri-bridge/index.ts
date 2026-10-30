@@ -13,6 +13,7 @@ import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import { chatPauseBridge } from './chatPause'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch } from '../shared/ipc-issues'
+import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
   BranchEntry,
@@ -331,6 +332,8 @@ const refract: RefractApi = {
 
   pullRequests: {
     list: (repositoryId, tab, state, query) => request<PullRequestListResult>(IPC_REQUESTS.PULL_REQUESTS_LIST, repositoryId, tab, state, query),
+    listAcross: (tab, state, repositoryIds, query, limit) =>
+      request<PullRequestAcrossResult>(IPC_REQUESTS.PULL_REQUESTS_LIST_ACROSS, tab, state, repositoryIds, query, limit),
     detail: (repositoryId, number) => request<PullRequestDetail>(IPC_REQUESTS.PULL_REQUESTS_DETAIL, repositoryId, number),
     comment: (repositoryId, number, body) =>
       request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_COMMENT, repositoryId, number, body),
