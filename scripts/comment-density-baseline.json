@@ -1,611 +1,111 @@
 {
-  "scripts/check-drag-regions.mjs": {
-    "commentLines": 72,
-    "maxBlock": 16
-  },
   "scripts/check-file-size.mjs": {
-    "commentLines": 42,
-    "maxBlock": 21
-  },
-  "scripts/check-indent.mjs": {
-    "commentLines": 35,
-    "maxBlock": 20
-  },
-  "scripts/check-mermaid-contrast.mjs": {
-    "commentLines": 140,
-    "maxBlock": 48
+    "commentLines": 21,
+    "maxBlock": 12
   },
   "scripts/check-omp-schema-drift.mjs": {
-    "commentLines": 151,
-    "maxBlock": 56
-  },
-  "scripts/check-parity.mjs": {
-    "commentLines": 82,
-    "maxBlock": 19
-  },
-  "scripts/check-spacing.mjs": {
-    "commentLines": 15,
-    "maxBlock": 15
-  },
-  "scripts/check-theme-contrast.mjs": {
-    "commentLines": 190,
+    "commentLines": 42,
     "maxBlock": 16
   },
-  "scripts/check-ui-text.mjs": {
-    "commentLines": 15,
-    "maxBlock": 8
-  },
-  "scripts/check-versions.mjs": {
-    "commentLines": 8,
-    "maxBlock": 8
-  },
-  "scripts/ci-local.mjs": {
-    "commentLines": 37,
-    "maxBlock": 18
-  },
-  "scripts/composer-selection-contrast.mjs": {
-    "commentLines": 39,
-    "maxBlock": 28
-  },
-  "scripts/contrast-math.mjs": {
-    "commentLines": 30,
-    "maxBlock": 8
-  },
-  "scripts/find-nav-contrast.mjs": {
-    "commentLines": 12,
-    "maxBlock": 8
-  },
-  "scripts/focused-badge-contrast.mjs": {
-    "commentLines": 22,
-    "maxBlock": 10
+  "scripts/check-parity.mjs": {
+    "commentLines": 21,
+    "maxBlock": 7
   },
   "scripts/mermaid-contrast-measure.mjs": {
-    "commentLines": 123,
-    "maxBlock": 46
-  },
-  "scripts/release-changelog.mjs": {
-    "commentLines": 39,
+    "commentLines": 44,
     "maxBlock": 11
-  },
-  "scripts/release-local.mjs": {
-    "commentLines": 171,
-    "maxBlock": 49
-  },
-  "scripts/release-versions.mjs": {
-    "commentLines": 45,
-    "maxBlock": 12
-  },
-  "scripts/release.mjs": {
-    "commentLines": 108,
-    "maxBlock": 31
-  },
-  "scripts/switch-track-contrast.mjs": {
-    "commentLines": 12,
-    "maxBlock": 12
   },
   "scripts/theme-contrast-pairs.mjs": {
-    "commentLines": 287,
-    "maxBlock": 29
-  },
-  "scripts/theme-swatch-drift.mjs": {
-    "commentLines": 12,
+    "commentLines": 69,
     "maxBlock": 9
   },
-  "scripts/verify-055-chat-link-menus.mjs": {
-    "commentLines": 15,
-    "maxBlock": 8
-  },
-  "scripts/verify-1000-stage-defer.mjs": {
-    "commentLines": 156,
-    "maxBlock": 88
-  },
   "scripts/verify-1001-stage-focus-join.mjs": {
-    "commentLines": 159,
-    "maxBlock": 91
-  },
-  "scripts/verify-1008-stage-label-jump-helpers.mjs": {
-    "commentLines": 41,
-    "maxBlock": 17
-  },
-  "scripts/verify-1008-stage-label-jump.mjs": {
-    "commentLines": 144,
-    "maxBlock": 67
-  },
-  "scripts/verify-1039-amber-retune.mjs": {
-    "commentLines": 143,
-    "maxBlock": 56
-  },
-  "scripts/verify-1043-theme-radio-helpers.mjs": {
-    "commentLines": 111,
-    "maxBlock": 25
+    "commentLines": 48,
+    "maxBlock": 23
   },
   "scripts/verify-1043-theme-radio.mjs": {
-    "commentLines": 121,
-    "maxBlock": 57
-  },
-  "scripts/verify-1048-holiday-touches-helpers.mjs": {
-    "commentLines": 130,
-    "maxBlock": 57
-  },
-  "scripts/verify-1048-holiday-touches-scenarios.mjs": {
-    "commentLines": 17,
+    "commentLines": 27,
     "maxBlock": 7
-  },
-  "scripts/verify-1048-holiday-touches.mjs": {
-    "commentLines": 97,
-    "maxBlock": 25
-  },
-  "scripts/verify-1050-command-pill-helpers.mjs": {
-    "commentLines": 108,
-    "maxBlock": 21
-  },
-  "scripts/verify-1050-command-pill.mjs": {
-    "commentLines": 120,
-    "maxBlock": 28
-  },
-  "scripts/verify-1067-enter-queued-helpers.mjs": {
-    "commentLines": 20,
-    "maxBlock": 6
-  },
-  "scripts/verify-1067-enter-queued.mjs": {
-    "commentLines": 154,
-    "maxBlock": 64
-  },
-  "scripts/verify-1069-roles-overhaul-helpers.mjs": {
-    "commentLines": 62,
-    "maxBlock": 12
-  },
-  "scripts/verify-1069-roles-overhaul.mjs": {
-    "commentLines": 173,
-    "maxBlock": 61
-  },
-  "scripts/verify-1074-text-opacity-helpers.mjs": {
-    "commentLines": 84,
-    "maxBlock": 36
-  },
-  "scripts/verify-1074-text-opacity.mjs": {
-    "commentLines": 150,
-    "maxBlock": 68
-  },
-  "scripts/verify-1077-agent-goal-helpers.mjs": {
-    "commentLines": 22,
-    "maxBlock": 11
-  },
-  "scripts/verify-1077-agent-goal.mjs": {
-    "commentLines": 132,
-    "maxBlock": 77
-  },
-  "scripts/verify-1101-git-polish.mjs": {
-    "commentLines": 154,
-    "maxBlock": 43
-  },
-  "scripts/verify-1111-git-readpath.mjs": {
-    "commentLines": 149,
-    "maxBlock": 44
-  },
-  "scripts/verify-1121-fake-gh-launcher.rs": {
-    "commentLines": 10,
-    "maxBlock": 10
-  },
-  "scripts/verify-1121-pr-polish-fake-gh.mjs": {
-    "commentLines": 35,
-    "maxBlock": 10
-  },
-  "scripts/verify-1121-pr-polish.mjs": {
-    "commentLines": 83,
-    "maxBlock": 47
-  },
-  "scripts/verify-1122-selected-style-helpers.mjs": {
-    "commentLines": 50,
-    "maxBlock": 11
   },
   "scripts/verify-1122-selected-style.mjs": {
-    "commentLines": 89,
-    "maxBlock": 46
+    "commentLines": 32,
+    "maxBlock": 12
   },
-  "scripts/verify-1233-holiday-visibility.mjs": {
-    "commentLines": 16,
-    "maxBlock": 7
+  "scripts/verify-464-git-changes-helpers2.mjs": {
+    "commentLines": 29,
+    "maxBlock": 11
   },
-  "scripts/verify-1235-crlf-paste.mjs": {
-    "commentLines": 10,
+  "scripts/verify-554-chat-width.mjs": {
+    "commentLines": 54,
+    "maxBlock": 9
+  },
+  "scripts/verify-555-user-message-time.mjs": {
+    "commentLines": 37,
     "maxBlock": 8
   },
-  "scripts/verify-1236-mid-turn-prose.mjs": {
-    "commentLines": 11,
-    "maxBlock": 8
-  },
-  "scripts/verify-1238-ai-credits.mjs": {
-    "commentLines": 15,
-    "maxBlock": 8
-  },
-  "scripts/verify-406-watermark.mjs": {
+  "scripts/verify-556-zero-box.mjs": {
     "commentLines": 26,
     "maxBlock": 8
   },
-  "scripts/verify-439-history-truncate-fixtures.mjs": {
-    "commentLines": 54,
-    "maxBlock": 7
-  },
-  "scripts/verify-439-history-truncate.mjs": {
-    "commentLines": 172,
-    "maxBlock": 71
-  },
-  "scripts/verify-464-git-changes-helpers.mjs": {
-    "commentLines": 181,
-    "maxBlock": 18
-  },
-  "scripts/verify-464-git-changes-helpers2.mjs": {
-    "commentLines": 95,
-    "maxBlock": 41
-  },
-  "scripts/verify-464-git-changes.mjs": {
-    "commentLines": 172,
-    "maxBlock": 45
-  },
-  "scripts/verify-513-user-bubble-images.mjs": {
-    "commentLines": 29,
-    "maxBlock": 8
-  },
-  "scripts/verify-551-helpers.mjs": {
-    "commentLines": 30,
-    "maxBlock": 6
-  },
-  "scripts/verify-551-presets.mjs": {
-    "commentLines": 116,
-    "maxBlock": 26
-  },
-  "scripts/verify-554-chat-width.mjs": {
-    "commentLines": 130,
-    "maxBlock": 38
-  },
-  "scripts/verify-555-user-message-time.mjs": {
-    "commentLines": 115,
-    "maxBlock": 61
-  },
-  "scripts/verify-556-zero-box.mjs": {
-    "commentLines": 110,
-    "maxBlock": 49
-  },
-  "scripts/verify-557-thought-runs.mjs": {
-    "commentLines": 91,
-    "maxBlock": 36
-  },
-  "scripts/verify-558-blocker-callout.mjs": {
-    "commentLines": 94,
-    "maxBlock": 20
-  },
   "scripts/verify-563-subagent-gate1.mjs": {
-    "commentLines": 141,
-    "maxBlock": 31
-  },
-  "scripts/verify-563-subagent-stage.mjs": {
-    "commentLines": 69,
-    "maxBlock": 18
-  },
-  "scripts/verify-564-gate2-live-check.mjs": {
-    "commentLines": 54,
-    "maxBlock": 10
-  },
-  "scripts/verify-565-spine.mjs": {
-    "commentLines": 84,
-    "maxBlock": 28
-  },
-  "scripts/verify-570-tool-colours.mjs": {
-    "commentLines": 87,
-    "maxBlock": 26
-  },
-  "scripts/verify-632-grouped-calls.mjs": {
-    "commentLines": 115,
-    "maxBlock": 27
-  },
-  "scripts/verify-672-start-message-helpers.mjs": {
-    "commentLines": 166,
-    "maxBlock": 20
+    "commentLines": 42,
+    "maxBlock": 7
   },
   "scripts/verify-672-start-message.mjs": {
-    "commentLines": 78,
-    "maxBlock": 29
-  },
-  "scripts/verify-680-686-chat-header.mjs": {
-    "commentLines": 14,
-    "maxBlock": 11
-  },
-  "scripts/verify-687-current-work-banner.mjs": {
-    "commentLines": 13,
+    "commentLines": 28,
     "maxBlock": 7
   },
-  "scripts/verify-700-pill-cards.mjs": {
-    "commentLines": 120,
-    "maxBlock": 16
-  },
-  "scripts/verify-700-todo-pin-helpers.mjs": {
-    "commentLines": 36,
-    "maxBlock": 21
-  },
-  "scripts/verify-700-todo-pin.mjs": {
-    "commentLines": 116,
-    "maxBlock": 12
-  },
   "scripts/verify-741-role-chip-helpers.mjs": {
-    "commentLines": 150,
-    "maxBlock": 17
-  },
-  "scripts/verify-741-role-chip.mjs": {
-    "commentLines": 84,
-    "maxBlock": 42
-  },
-  "scripts/verify-777-transcript-memo.mjs": {
-    "commentLines": 16,
-    "maxBlock": 11
-  },
-  "scripts/verify-802-scale-stream-probe.mjs": {
-    "commentLines": 38,
-    "maxBlock": 26
+    "commentLines": 62,
+    "maxBlock": 7
   },
   "scripts/verify-802-side-chat-scrollbars.mjs": {
-    "commentLines": 110,
-    "maxBlock": 64
-  },
-  "scripts/verify-862-conversation-history.mjs": {
-    "commentLines": 81,
-    "maxBlock": 57
-  },
-  "scripts/verify-880-taskbar-icon-helpers.mjs": {
-    "commentLines": 51,
-    "maxBlock": 19
-  },
-  "scripts/verify-880-taskbar-icon.mjs": {
-    "commentLines": 45,
-    "maxBlock": 27
-  },
-  "scripts/verify-883-gh-shim.rs": {
-    "commentLines": 11,
+    "commentLines": 30,
     "maxBlock": 11
   },
-  "scripts/verify-883-updates.mjs": {
-    "commentLines": 24,
-    "maxBlock": 18
+  "scripts/verify-862-conversation-history.mjs": {
+    "commentLines": 18,
+    "maxBlock": 10
+  },
+  "scripts/verify-880-taskbar-icon.mjs": {
+    "commentLines": 14,
+    "maxBlock": 9
+  },
+  "scripts/verify-883-gh-shim.rs": {
+    "commentLines": 8,
+    "maxBlock": 8
   },
   "scripts/verify-891-delete-leftovers-helpers.mjs": {
-    "commentLines": 122,
+    "commentLines": 114,
     "maxBlock": 20
   },
   "scripts/verify-891-delete-leftovers.mjs": {
-    "commentLines": 85,
-    "maxBlock": 22
+    "commentLines": 41,
+    "maxBlock": 9
   },
   "scripts/verify-911-stop-neutral.mjs": {
-    "commentLines": 61,
-    "maxBlock": 33
-  },
-  "scripts/verify-917-advisor-command.mjs": {
-    "commentLines": 74,
-    "maxBlock": 22
-  },
-  "scripts/verify-917-advisor-off-stops-reviews.mjs": {
-    "commentLines": 66,
-    "maxBlock": 33
-  },
-  "scripts/verify-925-924-helpers.mjs": {
-    "commentLines": 112,
-    "maxBlock": 26
+    "commentLines": 18,
+    "maxBlock": 7
   },
   "scripts/verify-925-924-polish.mjs": {
-    "commentLines": 178,
-    "maxBlock": 46
-  },
-  "scripts/verify-926-attach-any-file.mjs": {
-    "commentLines": 185,
-    "maxBlock": 25
-  },
-  "scripts/verify-926-drag-drop-trap.mjs": {
-    "commentLines": 22,
-    "maxBlock": 12
-  },
-  "scripts/verify-926-launch-helpers.mjs": {
-    "commentLines": 7,
-    "maxBlock": 7
-  },
-  "scripts/verify-927-928-hover.mjs": {
-    "commentLines": 20,
-    "maxBlock": 6
-  },
-  "scripts/verify-927-928-quiet-composer.mjs": {
-    "commentLines": 124,
-    "maxBlock": 32
+    "commentLines": 71,
+    "maxBlock": 19
   },
   "scripts/verify-937-advisor-chip-helpers.mjs": {
-    "commentLines": 110,
+    "commentLines": 73,
     "maxBlock": 12
   },
-  "scripts/verify-937-advisor-chip.mjs": {
-    "commentLines": 114,
-    "maxBlock": 22
-  },
-  "scripts/verify-938-slash-rest.mjs": {
-    "commentLines": 87,
-    "maxBlock": 37
-  },
-  "scripts/verify-941-part2-helpers.mjs": {
-    "commentLines": 61,
-    "maxBlock": 27
-  },
-  "scripts/verify-941-part2.mjs": {
-    "commentLines": 79,
-    "maxBlock": 25
-  },
-  "scripts/verify-941-stage-naming-expand-helpers.mjs": {
-    "commentLines": 38,
-    "maxBlock": 25
-  },
-  "scripts/verify-941-stage-naming-helpers.mjs": {
-    "commentLines": 145,
-    "maxBlock": 26
-  },
-  "scripts/verify-941-stage-naming-overflow-helpers.mjs": {
-    "commentLines": 52,
-    "maxBlock": 11
-  },
-  "scripts/verify-941-stage-naming-panel-helpers.mjs": {
-    "commentLines": 48,
-    "maxBlock": 11
-  },
-  "scripts/verify-941-stage-naming.mjs": {
-    "commentLines": 77,
-    "maxBlock": 40
-  },
-  "scripts/verify-947-938-helpers.mjs": {
-    "commentLines": 124,
-    "maxBlock": 14
-  },
-  "scripts/verify-947-938-slash-menu.mjs": {
-    "commentLines": 83,
-    "maxBlock": 26
-  },
-  "scripts/verify-975-code-surface.mjs": {
-    "commentLines": 50,
-    "maxBlock": 23
-  },
-  "scripts/verify-980-toast-send.mjs": {
-    "commentLines": 118,
-    "maxBlock": 39
-  },
-  "scripts/verify-985-queued-refresh.mjs": {
-    "commentLines": 78,
-    "maxBlock": 38
-  },
-  "scripts/verify-991-stage-focus.mjs": {
-    "commentLines": 135,
-    "maxBlock": 84
-  },
-  "scripts/verify-997-notice-severity.mjs": {
-    "commentLines": 107,
-    "maxBlock": 44
-  },
-  "scripts/verify-error-prefix-space.mjs": {
-    "commentLines": 44,
-    "maxBlock": 16
-  },
-  "scripts/verify-p1-agentmsg.mjs": {
-    "commentLines": 29,
-    "maxBlock": 19
-  },
-  "scripts/verify-p1-composer.mjs": {
-    "commentLines": 32,
-    "maxBlock": 29
-  },
-  "scripts/verify-rm-live-check-blank-profile.mjs": {
-    "commentLines": 39,
-    "maxBlock": 15
-  },
-  "scripts/verify-rm-live-check.mjs": {
-    "commentLines": 114,
-    "maxBlock": 18
-  },
-  "scripts/verify-tauri-1331.mjs": {
-    "commentLines": 21,
-    "maxBlock": 8
-  },
-  "scripts/verify-tauri-499-930-helpers.mjs": {
-    "commentLines": 86,
-    "maxBlock": 19
-  },
-  "scripts/verify-tauri-499-930.mjs": {
-    "commentLines": 126,
-    "maxBlock": 34
-  },
-  "scripts/verify-tauri-504.mjs": {
-    "commentLines": 17,
-    "maxBlock": 8
-  },
-  "scripts/verify-tauri-559.mjs": {
-    "commentLines": 136,
-    "maxBlock": 37
-  },
-  "scripts/verify-tauri-560-gate2.mjs": {
-    "commentLines": 93,
-    "maxBlock": 26
-  },
-  "scripts/verify-tauri-560-helpers.mjs": {
-    "commentLines": 57,
-    "maxBlock": 14
-  },
-  "scripts/verify-tauri-560.mjs": {
-    "commentLines": 149,
-    "maxBlock": 51
-  },
-  "scripts/verify-tauri-567.mjs": {
-    "commentLines": 110,
-    "maxBlock": 48
-  },
-  "scripts/verify-tauri-568.mjs": {
-    "commentLines": 101,
-    "maxBlock": 44
-  },
-  "scripts/verify-tauri-569.mjs": {
-    "commentLines": 78,
-    "maxBlock": 35
-  },
-  "scripts/verify-tauri-735.mjs": {
-    "commentLines": 101,
-    "maxBlock": 38
-  },
-  "scripts/verify-tauri-869.mjs": {
-    "commentLines": 20,
-    "maxBlock": 8
-  },
-  "scripts/verify-tauri-874.mjs": {
-    "commentLines": 22,
-    "maxBlock": 10
-  },
-  "scripts/verify-tauri-934.mjs": {
-    "commentLines": 14,
-    "maxBlock": 7
-  },
-  "scripts/verify-tauri-ask.mjs": {
-    "commentLines": 113,
-    "maxBlock": 25
-  },
-  "scripts/verify-tauri-cdp.mjs": {
-    "commentLines": 86,
-    "maxBlock": 16
-  },
   "scripts/verify-tauri-fake-omp.mjs": {
-    "commentLines": 107,
-    "maxBlock": 45
-  },
-  "scripts/verify-tauri-launcher.rs": {
-    "commentLines": 44,
-    "maxBlock": 22
-  },
-  "scripts/verify-tauri-omp-shim.rs": {
-    "commentLines": 17,
-    "maxBlock": 17
+    "commentLines": 34,
+    "maxBlock": 11
   },
   "scripts/verify-tauri-record.mjs": {
-    "commentLines": 57,
-    "maxBlock": 23
-  },
-  "scripts/verify-tauri-scratch-helpers.mjs": {
-    "commentLines": 105,
-    "maxBlock": 26
-  },
-  "scripts/verify-tauri-session-list-helpers.mjs": {
-    "commentLines": 165,
-    "maxBlock": 14
-  },
-  "scripts/verify-tauri-side-chat.mjs": {
-    "commentLines": 76,
-    "maxBlock": 29
-  },
-  "scripts/verify-tauri.mjs": {
-    "commentLines": 109,
-    "maxBlock": 39
+    "commentLines": 19,
+    "maxBlock": 7
   },
   "scripts/worktrees-reap.mjs": {
-    "commentLines": 31,
-    "maxBlock": 20
+    "commentLines": 19,
+    "maxBlock": 8
   },
   "src/renderer/App.tsx": {
     "commentLines": 283,
@@ -1028,12 +528,12 @@
     "maxBlock": 14
   },
   "src/renderer/features/holidays/HolidayAmbientLoop.tsx": {
-    "commentLines": 113,
-    "maxBlock": 34
+    "commentLines": 111,
+    "maxBlock": 33
   },
   "src/renderer/features/holidays/holidayContent.ts": {
-    "commentLines": 26,
-    "maxBlock": 8
+    "commentLines": 22,
+    "maxBlock": 6
   },
   "src/renderer/features/profile/HealthCheckDialog.tsx": {
     "commentLines": 32,
@@ -1484,7 +984,7 @@
     "maxBlock": 9
   },
   "src/shared/holidays.ts": {
-    "commentLines": 45,
+    "commentLines": 44,
     "maxBlock": 12
   },
   "src/shared/holidayTouches.ts": {
