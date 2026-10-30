@@ -12,7 +12,7 @@ Three treatments, chosen by what the control does (agenda item 1):
 | --- | --- | --- |
 | Decision buttons in cards, dialogs, and banners | Label only | Approve, Deny, Recover, Delete, Cancel |
 | Repeated row and toolbar actions | Icon only, with the bundle below | History, refresh, row menus |
-| Standalone commands that create, open, or copy | Leading icon plus label | New conversation, Add project, Open in file explorer, Copy path |
+| Standalone commands that create, open, or copy | Leading icon plus label | New conversation, Add project, Show in File Explorer, Copy path |
 
 ## Icon-only bundle
 

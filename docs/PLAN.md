@@ -897,19 +897,19 @@ Also filed 2026-10-30: **#1411** (`p1`, bug), Context usage: warn when the activ
 
 Also filed 2026-10-30: **#1413** (`p1`, bug), Chat: Previous message navigation gets stuck on a Note (`mid-turn-prose`) entry; the message scroller's 64px top exclusion (`scrollPreviousItemPeek`) hides any row shorter than about 48px landed at the 16px jump inset, so `readCurrent` skips it and Previous re-targets it; placed as an index line after #1411's line.
 
-Also filed 2026-10-30: **#1416** (`p1`, bug), Session list: the Show hidden toggle stays after the last hidden Session is unhidden; turn Show hidden off when the hidden count reaches zero (and at start-up), moving focus to Collapse all groups; placed as an index line after #1413's line.
+Also filed 2026-10-30: **#1416** (`p1`, bug), Session list: the Show hidden toggle stays after the last hidden Session is unhidden; turn Show hidden off when the hidden count reaches zero (and at start-up), moving focus to Collapse all groups; placed as an index line after #1413's line. Status: built in spec 068 (`session-list-settings-polish`), awaiting merge.
 
-Also filed 2026-10-30: **#1418** (`p1`), Session details card: Copy path and Open in file explorer become ghost buttons (`outline` to `ghost` in `SessionDetailsCard.tsx`); placed as an index line after #1416's line.
+Also filed 2026-10-30: **#1418** (`p1`), Session details card: Copy path and Open in file explorer become ghost buttons (`outline` to `ghost` in `SessionDetailsCard.tsx`); placed as an index line after #1416's line. Status: built in spec 068 (`session-list-settings-polish`), awaiting merge.
 
-Also filed 2026-10-30: **#1420** (`p1`), App-wide: one label and icon for every reveal action ("Show in File Explorer" with `FolderOpenIcon`) across chat file links, the file explorer panel, the Session details card and the Session row menus, from one shared definition; pairs with #1418 and #1405; placed as an index line after #1418's line.
+Also filed 2026-10-30: **#1420** (`p1`), App-wide: one label and icon for every reveal action ("Show in File Explorer" with `FolderOpenIcon`) across chat file links, the file explorer panel, the Session details card and the Session row menus, from one shared definition; pairs with #1418 and #1405; placed as an index line after #1418's line. Status: built in spec 068 (`session-list-settings-polish`), awaiting merge.
 
-Also filed 2026-10-30: **#1422** (`p1`), Session list: project header hover fill covers the whole row including its action buttons (one rounded `bg-sidebar-accent` shape, moved from `GroupHeaderTrigger` to a shared header-row wrapper also used by the Archived and Git changes headers); placed as an index line after #1420's line.
+Also filed 2026-10-30: **#1422** (`p1`), Session list: project header hover fill covers the whole row including its action buttons (one rounded `bg-sidebar-accent` shape, moved from `GroupHeaderTrigger` to a shared header-row wrapper also used by the Archived and Git changes headers); placed as an index line after #1420's line. Status: built in spec 068 (`session-list-settings-polish`), awaiting merge.
 
-Also filed 2026-10-30: **#1424** (`p1`), Settings > Appearance: remove the Save and Cancel row so Theme and Chat width autosave like every other Settings control (drops the preview-then-commit state in `AppearanceSection.tsx` and `ChatWidthPicker.tsx`); placed as an index line after #1422's line.
+Also filed 2026-10-30: **#1424** (`p1`), Settings > Appearance: remove the Save and Cancel row so Theme and Chat width autosave like every other Settings control (drops the preview-then-commit state in `AppearanceSection.tsx` and `ChatWidthPicker.tsx`); placed as an index line after #1422's line. Status: built in spec 068 (`session-list-settings-polish`), awaiting merge.
 
 Also filed 2026-10-30: **#1426** (`feature`, `p1`), Composer clock: clicking the clock opens a popover for one-shot alarms with create, edit and delete; alarms fire an OS notification plus an in-app toast when focused, and persist in `settings.json`; placed as an index line after #1424's line.
 
-Also filed 2026-10-30: **#1428** (`p1`, `right-pane`), Right rail: Agents count badge uses the accent colour (`bg-primary text-primary-foreground`) instead of the `working` state tone; placed as an index line after #1426's line.
+Also filed 2026-10-30: **#1428** (`p1`, `right-pane`), Right rail: Agents count badge uses the accent colour (`bg-primary text-primary-foreground`) instead of the `working` state tone; placed as an index line after #1426's line. Status: built in spec 068 (`session-list-settings-polish`), awaiting merge.
 
 Also filed 2026-10-30: **#1429** (`p1`, `chat`), Composer status line: pill row gap widens from `gap-x-2` to `gap-x-3`; hover padding unchanged; placed as an index line after #1428's line.
 
