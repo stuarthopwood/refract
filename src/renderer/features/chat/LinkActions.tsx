@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { CopyIcon, type LucideIcon } from 'lucide-react'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import { CopyButton } from '@/components/ui/copy-button'
@@ -6,6 +7,7 @@ import { copyLinkText } from './linkClipboard'
 
 export interface LinkAction {
   label: string
+  icon: LucideIcon
   onSelect: () => void
 }
 
@@ -64,9 +66,9 @@ export function LinkActions({ copyText, copyLabel, copiedMessage, actions, wrapp
           }
         }}
       >
-        <ContextMenuItem onSelect={() => void copyLinkText(copyText, copiedMessage)}>{copyLabel}</ContextMenuItem>
+        <ContextMenuItem icon={CopyIcon} onSelect={() => void copyLinkText(copyText, copiedMessage)}>{copyLabel}</ContextMenuItem>
         {actions.map((action) => (
-          <ContextMenuItem key={action.label} onSelect={action.onSelect}>
+          <ContextMenuItem key={action.label} icon={action.icon} onSelect={action.onSelect}>
             {action.label}
           </ContextMenuItem>
         ))}

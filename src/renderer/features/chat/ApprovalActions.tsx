@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { CheckCheckIcon, InfinityIcon, ShieldCheckIcon } from 'lucide-react'
 import type { ChatAnswer } from '../../../shared/ipc'
 import { Button } from '@/components/ui/button'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
@@ -31,16 +32,16 @@ export function ApprovalActions({
   const menu = hasMenu ? (
     <>
       {parsed.session !== undefined && (
-        <DropdownMenuItem onSelect={() => approveWith(parsed.session!)}>{parsed.session}</DropdownMenuItem>
+        <DropdownMenuItem icon={CheckCheckIcon} onSelect={() => approveWith(parsed.session!)}>{parsed.session}</DropdownMenuItem>
       )}
       {parsed.grants.map((grant) => (
-        <DropdownMenuItem key={grant.label} onSelect={() => approveWith(grant.label)}>
+        <DropdownMenuItem key={grant.label} icon={ShieldCheckIcon} onSelect={() => approveWith(grant.label)}>
           {grant.label}
         </DropdownMenuItem>
       ))}
       {parsed.grants.length > 0 && <DropdownMenuSeparator />}
       {parsed.grants.map((grant) => (
-        <DropdownMenuItem key={grant.alwaysLabel} onSelect={() => approveWith(grant.alwaysLabel)}>
+        <DropdownMenuItem key={grant.alwaysLabel} icon={InfinityIcon} onSelect={() => approveWith(grant.alwaysLabel)}>
           {grant.alwaysLabel}
         </DropdownMenuItem>
       ))}

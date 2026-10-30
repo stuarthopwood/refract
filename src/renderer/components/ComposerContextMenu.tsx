@@ -4,13 +4,11 @@ import { notify } from '@/state'
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuShortcut,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
+import { textEditItems, type TextEditAction } from '@/features/palette/menuItems'
 
-type FieldAction = 'cut' | 'copy' | 'paste' | 'paste-text' | 'select-all'
+type FieldAction = TextEditAction
 
 interface FieldState {
   hasSelection: boolean
@@ -107,26 +105,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
           if (el && action) void runAction(el, action)
         }}
       >
-        <ContextMenuItem disabled={!state.editable || !state.hasSelection} onSelect={() => (pendingRef.current = 'cut')}>
-          Cut
-          <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem disabled={!state.hasSelection} onSelect={() => (pendingRef.current = 'copy')}>
-          Copy
-          <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem disabled={!state.editable} onSelect={() => (pendingRef.current = 'paste')}>
-          Paste
-          <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem disabled={!state.editable} onSelect={() => (pendingRef.current = 'paste-text')}>
-          Paste as plain text
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem disabled={!state.hasText} onSelect={() => (pendingRef.current = 'select-all')}>
-          Select all
-          <ContextMenuShortcut>Ctrl+A</ContextMenuShortcut>
-        </ContextMenuItem>
+        {textEditItems({ ...state, onSelect: (action) => (pendingRef.current = action) })}
       </ContextMenuContent>
     </ContextMenu>
   )

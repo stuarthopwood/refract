@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { ExternalLinkIcon, FolderOpenIcon } from 'lucide-react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
@@ -392,7 +393,7 @@ function ExternalLink({ href, className, children, wrapLink, title: _title, ...r
       copiedMessage="Link copied"
       wrapLink={wrapLink}
       // Activating the anchor itself reuses the one external-link policy (tauri-bridge/externalLinks.ts).
-      actions={[{ label: 'Open in browser', onSelect: () => anchorRef.current?.click() }]}
+      actions={[{ label: 'Open in browser', icon: ExternalLinkIcon, onSelect: () => anchorRef.current?.click() }]}
     >
     <Tooltip>
       <TooltipTrigger asChild>
@@ -480,7 +481,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
       copiedMessage="Path copied"
       wrapperClassName={wrapperClassName}
       wrapLink={wrapLink}
-      actions={[{ label: 'Show in File Explorer', onSelect: reveal }]}
+      actions={[{ label: 'Show in File Explorer', icon: FolderOpenIcon, onSelect: reveal }]}
     >
     <Tooltip>
       <TooltipTrigger asChild>
