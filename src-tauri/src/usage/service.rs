@@ -36,7 +36,11 @@ pub type StatusEmit = Arc<dyn Fn(&UsageStatus) + Send + Sync>;
 
 enum Msg {
     Scan,
+    /// The five-minute timer fired; unlike `Scan` it is not deduped through `scan_pending`.
+    Rescan,
     Nudge(PathBuf),
+    /// `stop()` ran: the worker drops its connection and sleeps until the next `start()`.
+    Stop,
 }
 
 struct Inner {
@@ -97,9 +101,13 @@ impl UsageService {
         self.send(Msg::Scan);
     }
 
-    /// Stops periodic scans and nudges; a scan in flight stops between files.
+    /// Stops periodic scans and nudges; a scan in flight stops between files, and the worker then
+    /// releases its connection and sleeps.
     pub fn stop(&self) {
         self.inner.started.store(false, Ordering::SeqCst);
+        if let Some(tx) = lock(&self.tx).as_ref() {
+            let _ = tx.send(Msg::Stop);
+        }
     }
 
     pub fn status(&self) -> UsageStatus {
@@ -147,7 +155,11 @@ impl UsageService {
             *guard = Some(tx);
         }
         if let Some(tx) = guard.as_ref() {
-            let _ = tx.send(msg);
+            if tx.send(msg).is_err() {
+                // The worker is gone; the next call spawns a fresh one.
+                *guard = None;
+                self.inner.scan_pending.store(false, Ordering::SeqCst);
+            }
         }
     }
 }
@@ -162,32 +174,64 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn worker(inner: &Inner, rx: &Receiver<Msg>) {
-    let mut conn = match schema::open_db(&inner.db_path) {
-        Ok(c) => c,
-        Err(e) => {
-            *lock(&inner.last_error) = Some(e.to_string());
-            inner.scan_pending.store(false, Ordering::SeqCst);
-            return;
-        }
-    };
-    *lock(&inner.last_error) = None;
+    let mut conn: Option<Connection> = None;
     let mut next_scan = Instant::now() + SCAN_INTERVAL;
     loop {
-        let wait = next_scan.saturating_duration_since(Instant::now());
-        match rx.recv_timeout(wait) {
-            Ok(Msg::Scan) => {
-                inner.scan_pending.store(false, Ordering::SeqCst);
-                full_scan(inner, &mut conn);
-                next_scan = Instant::now() + SCAN_INTERVAL;
+        // Idle (stopped, or no connection yet): block without a timer so nothing rescans.
+        let msg = if conn.is_some() && inner.started.load(Ordering::SeqCst) {
+            match rx.recv_timeout(next_scan.saturating_duration_since(Instant::now())) {
+                Ok(msg) => msg,
+                Err(RecvTimeoutError::Timeout) => Msg::Rescan,
+                Err(RecvTimeoutError::Disconnected) => break,
             }
-            Ok(Msg::Nudge(path)) => nudge_one(inner, &mut conn, &path),
-            Err(RecvTimeoutError::Timeout) => {
-                if inner.started.load(Ordering::SeqCst) {
-                    full_scan(inner, &mut conn);
+        } else {
+            match rx.recv() {
+                Ok(msg) => msg,
+                Err(_) => break,
+            }
+        };
+        let started = inner.started.load(Ordering::SeqCst);
+        match msg {
+            Msg::Stop => {
+                if !started {
+                    conn = None;
                 }
+                continue;
+            }
+            Msg::Scan | Msg::Rescan | Msg::Nudge(_) if !started => {
+                if matches!(msg, Msg::Scan) {
+                    inner.scan_pending.store(false, Ordering::SeqCst);
+                }
+                continue;
+            }
+            _ => {}
+        }
+        if conn.is_none() {
+            match schema::open_db(&inner.db_path) {
+                Ok(c) => {
+                    *lock(&inner.last_error) = None;
+                    conn = Some(c);
+                }
+                Err(e) => {
+                    *lock(&inner.last_error) = Some(e.to_string());
+                    inner.scan_pending.store(false, Ordering::SeqCst);
+                    continue;
+                }
+            }
+        }
+        let Some(c) = conn.as_mut() else { continue };
+        match msg {
+            Msg::Scan => {
+                inner.scan_pending.store(false, Ordering::SeqCst);
+                full_scan(inner, c);
                 next_scan = Instant::now() + SCAN_INTERVAL;
             }
-            Err(RecvTimeoutError::Disconnected) => break,
+            Msg::Rescan => {
+                full_scan(inner, c);
+                next_scan = Instant::now() + SCAN_INTERVAL;
+            }
+            Msg::Nudge(path) => nudge_one(inner, c, &path),
+            Msg::Stop => {}
         }
     }
 }
@@ -275,7 +319,7 @@ fn relabel_all(
             continue;
         }
         let tx = conn.transaction()?;
-        rollup::relabel_file(&tx, &file, &old, &new)?;
+        rollup::relabel_file(&tx, &file, &new)?;
         tx.execute(
             "UPDATE file_offsets SET project_label = ?1 WHERE session_file = ?2",
             params![new, file],
