@@ -899,6 +899,8 @@ Also filed 2026-10-30: **#1413** (`p1`, bug), Chat: Previous message navigation 
 
 Also filed 2026-10-30: **#1416** (`p1`, bug), Session list: the Show hidden toggle stays after the last hidden Session is unhidden; turn Show hidden off when the hidden count reaches zero (and at start-up), moving focus to Collapse all groups; placed as an index line after #1413's line.
 
+Also filed 2026-10-30: **#1418** (`p1`), Session details card: Copy path and Open in file explorer become ghost buttons (`outline` to `ghost` in `SessionDetailsCard.tsx`); placed as an index line after #1416's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
