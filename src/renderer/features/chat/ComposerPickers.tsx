@@ -106,9 +106,9 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
         </TooltipTrigger>
         <TooltipContent>{tooltipContent}</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="start">
-        {nextLabel && session?.lastThinkingLevel && (
-          <>
+      <DropdownMenuContent align="start" className="max-w-64">
+              {nextLabel && session?.lastThinkingLevel && (
+                <>
             <DropdownMenuItem onSelect={() => void handleSelect(session.lastThinkingLevel as ThinkingLevel)}>Keep current ({label})</DropdownMenuItem>
             <DropdownMenuSeparator />
           </>

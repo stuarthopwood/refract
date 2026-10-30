@@ -332,7 +332,7 @@ async function main() {
     // #1043: the Theme submenu is now a real DropdownMenuRadioGroup -- the active preset is the
     // ONE checked `menuitemradio`, not a row whose textContent happens to include the word
     // "Current" (that trailing marker is gone, per #1043's own fix).
-    const currentMarkerPresent = await cdp.evaluate(`!!Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.getAttribute('aria-checked') === 'true')`);
+    const currentMarkerPresent = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menuitemradio"]')).filter((el) => el.getAttribute('aria-checked') === 'true').length === 1`);
     const focusInSubmenu = await cdp.evaluate(`document.activeElement?.getAttribute('role') === 'menuitemradio' && document.activeElement?.getAttribute('aria-checked') === 'true'`);
     if (onThemeTrigger && currentMarkerPresent) {
       checkPass('Keyboard: ArrowDown x2 + ArrowRight opens the Theme submenu with one checked menuitemradio', JSON.stringify({ onThemeTrigger, currentMarkerPresent, focusInSubmenu }));

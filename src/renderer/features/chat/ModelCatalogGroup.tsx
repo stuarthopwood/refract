@@ -24,8 +24,9 @@
 // by closing and reopening the menu. The row also gets its OWN id (`retryOptionId`, passed down
 // rather than derived from `optionId`) so a successful retry's `aria-activedescendant` never
 // reuses an id that belonged to the now-gone error row.
-import { CheckIcon, Loader2Icon } from 'lucide-react'
+import { Loader2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { RadioMark } from '@/components/ui/radio-group'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { PICKER_OPTION_ACTIVE_CLASS, PICKER_OPTION_CLASS } from './pickerShared'
 
@@ -142,6 +143,7 @@ export function ModelCatalogGroup({
               }}
               className={cn(PICKER_OPTION_CLASS, active && PICKER_OPTION_ACTIVE_CLASS)}
             >
+              <RadioMark checked={checked} />
               <span className="min-w-0 flex-1 truncate">
                 {/* Gate round 6 fix (`agent://Arch877` Visual N6): `text-xs`, matching the Roles
                     group's own secondary text size (was unset, inheriting the row's `text-sm`). */}
@@ -149,7 +151,6 @@ export function ModelCatalogGroup({
                 {checked && <span className="text-xs text-muted-foreground"> current</span>}
                 {nextModel && entry.provider === nextModel.provider && entry.id === nextModel.modelId && <span className="text-xs text-muted-foreground"> next</span>}
               </span>
-              {checked && <CheckIcon aria-hidden className="size-4 shrink-0" />}
             </div>
           )
         })}
