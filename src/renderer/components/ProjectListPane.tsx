@@ -22,7 +22,7 @@ import type { IssueSkippedProject } from '../../shared/ipc-issues'
 export type ListStateFilter = 'open' | 'closed' | 'all'
 
 /** Fixed width of the Filters panel's Project and Label pickers: never the column width (#1391). */
-export const FILTER_PICKER_CLASS = 'shrink-0'
+export const FILTER_PICKER_CLASS = 'w-40 shrink-0'
 
 const STATE_OPTIONS: Array<{ value: ListStateFilter; label: string }> = [
   { value: 'open', label: 'Open' },

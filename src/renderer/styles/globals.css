@@ -81,6 +81,8 @@
   --color-surface-3: var(--surface-3);
   --color-surface-hover: var(--surface-hover);
   --color-divider: var(--divider);
+  --color-field-border: var(--field-border);
+  --color-ghost-edge: var(--ghost-edge);
   --color-titlebar: var(--titlebar);
   --color-border-strong: var(--border-strong);
   --color-accent-text: var(--accent-text);
@@ -250,6 +252,8 @@ samp {
   --scale-app: 1;
   --scale-chat: 1;
   --scale-code: 1;
+  --field-ring-width: 0px;
+  --ghost-edge: transparent;
   --text-scale: var(--scale-app);
   --motion-shimmer-duration: 1.6s;
   /* Switching motion (#678, spec 058): the shared durations and easing for every enter animation
@@ -353,6 +357,7 @@ samp {
    * existing full `--ring` treatment untouched (`pickerShared.tsx`'s own
    * `COMPOSER_FOCUS_CLASS`/`COMPOSER_BUTTON_FOCUS_CLASS`, unchanged by this issue). */
   --composer-border: var(--divider);
+  --field-border: var(--divider);
   --composer-focus: oklch(1 0 0 / 35%);
   --composer-ring: transparent;
   /* U1/A1 (gate951UI/A11y High): Approval/Model/Reasoning triggers keep NO visible border in
@@ -855,6 +860,7 @@ samp {
   --composer-placeholder: oklch(1 0 0 / 40%);
   --composer-background: transparent;
   --composer-border: var(--divider);
+  --field-border: var(--divider);
   /* A1 (Low, gate951A11y; Decided, Skippy, delegated by Stuart 2026-10-17): the 55% mix
    * measured ~2.20:1 against this theme's own `--background` -- noticeably weaker than Dark's
    * equivalent `oklch(1 0 0 / 35%)` at ~3.14:1 -- so the muted focus cue read as a different
@@ -997,6 +1003,9 @@ samp {
    * `--composer-ring` replaces `ring-ring/50` (the focus glow). Nothing this preset renders
    * changes. */
   --composer-border: color-mix(in oklab, var(--muted-foreground) 85%, transparent);
+  --field-border: var(--border);
+  --field-ring-width: 2px;
+  --ghost-edge: var(--border);
   --composer-focus: var(--ring);
   --composer-ring: color-mix(in oklab, var(--ring) 50%, transparent);
   /* U1 (High, gate951UI/A11y): the Approval/Model/Reasoning triggers must keep a visible,
@@ -1441,6 +1450,7 @@ samp {
   --composer-placeholder: oklch(1 0 0 / 40%);
   --composer-background: transparent;
   --composer-border: var(--divider);
+  --field-border: var(--divider);
   --composer-focus: color-mix(in oklab, var(--border) 75%, transparent);
   --composer-ring: transparent;
   --composer-control-border: transparent;
@@ -1729,6 +1739,7 @@ samp {
   --composer-placeholder: oklch(1 0 0 / 40%);
   --composer-background: transparent;
   --composer-border: var(--divider);
+  --field-border: var(--divider);
   --composer-focus: oklch(1 0 0 / 35%);
   --composer-ring: transparent;
   --composer-control-border: transparent;
