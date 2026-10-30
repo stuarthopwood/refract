@@ -1,8 +1,8 @@
 // Shared confirm AlertDialog (extracted from MemoryTriageDialog.tsx for issue #883, so the
 // "Update now" confirmation reuses it instead of hand-building a second one): a title, a
-// description, Cancel, and one confirm action. While `busy`, Escape and both buttons are inert.
-// Focus on close is always the caller's choice (`onCloseAutoFocus`), since these dialogs open
-// from a plain state flag with no Trigger for Radix to return focus to.
+// description, Cancel, and an optional confirm action. While `busy`, Escape, the body and both buttons are inert.
+// Focus on close is the caller's choice (`onCloseAutoFocus`; `false` lets Radix restore it), since these
+// dialogs open from a plain state flag with no Trigger for Radix to return focus to.
 import type { ReactNode, Ref } from 'react'
 import { cn } from '@/lib/utils'
 import {
@@ -23,7 +23,7 @@ export function ConfirmAlertDialog({
   description,
   confirmLabel,
   busyLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel,
   size,
   error,
   children,
@@ -41,6 +41,7 @@ export function ConfirmAlertDialog({
   /** Omitted for an informational dialog that only offers the cancel button (a "can't do this yet" notice). */
   confirmLabel?: string
   busyLabel?: string
+  /** Defaults to "Cancel", or "Close" when there is no confirm action. */
   cancelLabel?: string
   size?: 'default' | 'sm' | 'md'
   /** An always-mounted live region under the body: announces a failure the moment it is set. */
@@ -61,6 +62,7 @@ export function ConfirmAlertDialog({
     <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onCancel() }}>
       <AlertDialogContent
         size={size}
+        aria-busy={busy}
         onOpenAutoFocus={onOpenAutoFocus}
         onEscapeKeyDown={(event) => {
           if (busy) event.preventDefault()
@@ -73,7 +75,11 @@ export function ConfirmAlertDialog({
           <AlertDialogTitle className="break-words">{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
-        {children}
+        {children && (
+          <fieldset disabled={busy} className="contents">
+            {children}
+          </fieldset>
+        )}
         {error !== undefined && (
           <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
             {error ?? ''}
@@ -92,7 +98,7 @@ export function ConfirmAlertDialog({
               onCancel()
             }}
           >
-            {cancelLabel}
+            {cancelLabel ?? (confirmLabel ? 'Cancel' : 'Close')}
           </AlertDialogCancel>
           {confirmLabel && (
             <AlertDialogAction

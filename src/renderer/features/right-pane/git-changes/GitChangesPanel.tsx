@@ -136,7 +136,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
           for an ACTION failure, and from the Not-available state's own role="alert" below
           (which has nothing else to show at all, so it IS the primary signal there). */}
       {snapshot && sessionEntry?.loadError && (
-        <InlineStatus tone="loading" density="compact">
+        <InlineStatus tone="notice" density="compact">
           {sessionEntry.loadError}
         </InlineStatus>
       )}

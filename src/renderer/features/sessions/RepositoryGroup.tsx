@@ -311,7 +311,7 @@ export function RepositoryGroup({
         <CollapsibleContent>
           {active.length === 0 ? (
             // Empty-state line; "yet" is wrong when the only Sessions are archived (#567).
-            <InlineStatus density="compact" className="py-1 pl-6">
+            <InlineStatus density="compact" className="pl-6">
               {sessions.length === 0 ? 'No sessions yet' : 'No active sessions'}
             </InlineStatus>
           ) : (

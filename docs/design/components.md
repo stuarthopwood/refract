@@ -10,7 +10,7 @@ Shared components decided in #934: **ScreenHeader** (**built**, `src/renderer/co
 
 Added by spec 074 (#935 groups: inline status text, confirm dialogs):
 
-- **InlineStatus** (`src/renderer/components/InlineStatus.tsx`): the one line for loading, error and empty text. `tone` is `info`, `loading` (role `status`) or `error` (role `alert`, destructive colour); `density` is `block` (`p-4 text-sm`) or `compact` (`px-2 py-1 text-xs`). Do not hand-style a `<p>` for these.
+- **InlineStatus** (`src/renderer/components/InlineStatus.tsx`): the one line for loading, error and empty text. `tone` is `info`, `loading` or `notice` (a quiet failure such as a background refresh) (role `status`), or `error` (role `alert`, destructive colour); `density` is `block` (`p-4 text-sm`) or `compact` (`px-2 py-1 text-xs`). Do not hand-style a `<p>` for these.
 - **ConfirmAlertDialog** (`src/renderer/components/ConfirmAlertDialog.tsx`): every confirm dialog uses it. Extra props: `cancelLabel`, `size`, `error` (an always-mounted alert line), `children` (a body slot, such as Merge's method radios), `cancelRef`, `onOpenAutoFocus`, and an optional `confirmLabel` (omit it for an info dialog with one Close button). `onCloseAutoFocus` returning `false` lets Radix restore focus. Still hand-built, tracked in the #935 follow-up: DeleteDialog, ReviewDialog, ContextShakeMenu.
 
 Added by spec 042 (Chat user avatar):
