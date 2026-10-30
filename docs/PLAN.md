@@ -903,6 +903,32 @@ Also filed 2026-10-30: **#1418** (`p1`), Session details card: Copy path and Ope
 
 Also filed 2026-10-30: **#1420** (`p1`), App-wide: one label and icon for every reveal action ("Show in File Explorer" with `FolderOpenIcon`) across chat file links, the file explorer panel, the Session details card and the Session row menus, from one shared definition; pairs with #1418 and #1405; placed as an index line after #1418's line.
 
+Also filed 2026-10-30: **#1422** (`p1`), Session list: project header hover fill covers the whole row including its action buttons (one rounded `bg-sidebar-accent` shape, moved from `GroupHeaderTrigger` to a shared header-row wrapper also used by the Archived and Git changes headers); placed as an index line after #1420's line.
+
+Also filed 2026-10-30: **#1424** (`p1`), Settings > Appearance: remove the Save and Cancel row so Theme and Chat width autosave like every other Settings control (drops the preview-then-commit state in `AppearanceSection.tsx` and `ChatWidthPicker.tsx`); placed as an index line after #1422's line.
+
+Also filed 2026-10-30: **#1426** (`feature`, `p1`), Composer clock: clicking the clock opens a popover for one-shot alarms with create, edit and delete; alarms fire an OS notification plus an in-app toast when focused, and persist in `settings.json`; placed as an index line after #1424's line.
+
+Also filed 2026-10-30: **#1428** (`p1`, `right-pane`), Right rail: Agents count badge uses the accent colour (`bg-primary text-primary-foreground`) instead of the `working` state tone; placed as an index line after #1426's line.
+
+Also filed 2026-10-30: **#1429** (`p1`, `chat`), Composer status line: pill row gap widens from `gap-x-2` to `gap-x-3`; hover padding unchanged; placed as an index line after #1428's line.
+
+Also filed 2026-10-30: **#1430** (`p1`, `chat`), Advisor row: source tag, severity and message share one font size (`text-sm`) with the trailing meta kept at `text-xs`; placed as an index line after #1429's line.
+
+Also filed 2026-10-30: **#1431** (`p1`, `bug`), Composer: restore spelling suggestions and "Add to dictionary" in the right-click menu; the custom Radix context menu has no spelling items; supersedes closed #445; placed as an index line after #1430's line.
+
+Also filed 2026-10-30: **#1432** (`p1`, `design`), Chat Tasks vs Todo: keep the data models and panels separate; reserve "task" in UI text for Todo items; delegated work is "subagent", "Stage" or "Delegate"; add a `CONTEXT.md` "Todo task" entry; placed as an index line after #1431's line.
+
+Also filed 2026-10-30: **#1433** (`p1`, `bug`), Updater: update fails after download and accept; trace the quit-to-installer hand-off and capture error text, `updateState.json` and the app log before designing a fix; placed as an index line after #1432's line.
+
+Also filed 2026-10-30: **#1434** (`p1`, `design`), Question card: option rows take a fill instead of borders, radio centred on the whole row, Cancel becomes a labelled ghost button; fallback card matches; placed as an index line after #1433's line.
+
+Also filed 2026-10-30: **#1435** (`p1`, `feature`), Question card: picking a single-choice option advances to the next incomplete question or submits the batch; Other, multi-select and footer buttons unchanged; placed as an index line after #1434's line.
+
+Also filed 2026-10-30: **#1436** (`p1`, `design`), Subagents chain: card treatment for the in-chat Stage chain (2+ Stages) as a recorded exception to the zero-box rule; right-pane tree and single Stages unchanged; placed as an index line after #1435's line.
+
+Also filed 2026-10-30: **#1437** (`p1`, `bug`), Subagents chain: a Stage stays running in the chain row after the Agents pill shows finished; settle transcript subagent items from the same lifecycle and jobs events as the summaries; placed as an index line after #1436's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
