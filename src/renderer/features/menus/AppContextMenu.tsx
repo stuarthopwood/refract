@@ -25,6 +25,7 @@ export function AppContextMenu() {
   const triggerRef = useRef<HTMLSpanElement>(null)
   const fieldRef = useRef<TextField | null>(null)
   const pendingRef = useRef<TextEditAction | null>(null)
+  const copyTextRef = useRef('')
   const [target, setTarget] = useState<Target | null>(null)
 
   const onUnhandled = useCallback((event: MouseEvent) => {
@@ -42,6 +43,11 @@ export function AppContextMenu() {
       next = { kind: 'selection' }
     }
     fieldRef.current = field
+    copyTextRef.current = !field
+      ? (window.getSelection()?.toString() ?? '')
+      : next?.kind === 'field' && next.hasSelection
+        ? field.value.slice(field.selectionStart ?? 0, field.selectionEnd ?? 0)
+        : ''
     if (!next || !triggerRef.current) return
     setTarget(next)
     let { clientX, clientY } = event
@@ -69,8 +75,8 @@ export function AppContextMenu() {
           const action = pendingRef.current
           pendingRef.current = null
           field?.focus()
-          if (field && action) void runTextFieldAction(field, action)
-          else if (!field && action === 'copy') void copySelection()
+          if (field && action) void runTextFieldAction(field, action, copyTextRef.current)
+          else if (!field && action === 'copy') void copySelection(copyTextRef.current)
         }}
       >
         {target?.kind === 'field' ? (

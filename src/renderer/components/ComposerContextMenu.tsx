@@ -20,6 +20,7 @@ interface FieldState {
 export function ComposerContextMenu({ children }: { children: ReactNode }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const pendingRef = useRef<FieldAction | null>(null)
+  const copyTextRef = useRef('')
   const [state, setState] = useState<FieldState>({ hasSelection: false, editable: false, hasText: false })
 
   const field = () => boxRef.current?.querySelector('textarea') ?? null
@@ -29,6 +30,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
       onOpenChange={(open) => {
         const el = field()
         if (!open || !el) return
+        copyTextRef.current = el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0)
         setState({ hasSelection: el.selectionStart !== el.selectionEnd, editable: !el.readOnly && !el.disabled, hasText: el.value !== '' })
       }}
     >
@@ -46,7 +48,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
           const action = pendingRef.current
           pendingRef.current = null
           el?.focus()
-          if (el && action) void runTextFieldAction(el, action)
+          if (el && action) void runTextFieldAction(el, action, copyTextRef.current)
         }}
       >
         {textEditItems({ ...state, onSelect: (action) => (pendingRef.current = action) })}
