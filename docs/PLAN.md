@@ -871,6 +871,8 @@ Also filed 2026-10-30: **#1387** (`p1`), action buttons app-wide: action rows ri
 
 Also filed 2026-10-30: **#1389** (`p1`), Pull requests detail view: the full-width horizontal lines under the header, above the comment box and above Checks are removed and the regions are separated by whitespace only, in every theme including Dark (high contrast); cards, the comment editor box and per-file diff headers keep their edges; placed as an index line after #1387's line.
 
+Also filed 2026-10-30: **#1391** (`p1`), Pull requests and Issues Filters panel: the Project and Label pickers take a fixed 8px-grid width like the State picker (never `flex-1` with the list column), truncating long labels; supersedes #930's column-fitted Project selector; placed as an index line after #1389's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
