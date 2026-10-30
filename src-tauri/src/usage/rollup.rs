@@ -97,7 +97,7 @@ pub fn record_message(
     session_file: &str,
     m: &MessageRow,
 ) -> rusqlite::Result<bool> {
-    let inserted = conn.prepare_cached(INSERT_MESSAGE)?.execute(params![
+    let inserted = conn.prepare(INSERT_MESSAGE)?.execute(params![
         session_file,
         m.entry_id,
         m.ts,
@@ -128,34 +128,32 @@ pub fn record_message(
         return Ok(false);
     }
     let credits = m.credits.unwrap_or(0.0);
-    conn.prepare_cached(UPSERT_MESSAGE_ROLLUP)?
-        .execute(params![
-            hour_start(m.ts),
-            m.project_label,
-            m.model,
-            m.reasoning,
-            m.agent_type,
-            m.input,
-            m.output,
-            m.cache_read,
-            m.cache_write,
-            m.total_tokens,
-            m.cost_total,
-            m.cost_input,
-            m.cost_output,
-            m.cost_cache_read,
-            m.cost_cache_write,
-            credits,
-        ])?;
-    conn.prepare_cached(UPSERT_SESSION_ROLLUP)?
-        .execute(params![
-            session_file,
-            m.session_id,
-            m.ts,
-            m.cost_total,
-            credits,
-            m.project_label,
-        ])?;
+    conn.prepare(UPSERT_MESSAGE_ROLLUP)?.execute(params![
+        hour_start(m.ts),
+        m.project_label,
+        m.model,
+        m.reasoning,
+        m.agent_type,
+        m.input,
+        m.output,
+        m.cache_read,
+        m.cache_write,
+        m.total_tokens,
+        m.cost_total,
+        m.cost_input,
+        m.cost_output,
+        m.cost_cache_read,
+        m.cost_cache_write,
+        credits,
+    ])?;
+    conn.prepare(UPSERT_SESSION_ROLLUP)?.execute(params![
+        session_file,
+        m.session_id,
+        m.ts,
+        m.cost_total,
+        credits,
+        m.project_label,
+    ])?;
     Ok(true)
 }
 
@@ -167,7 +165,7 @@ pub fn record_tool_call(
     t: &ToolCallRow,
 ) -> rusqlite::Result<bool> {
     let inserted = conn
-        .prepare_cached(
+        .prepare(
             "INSERT OR IGNORE INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, is_error, \
              result_chars, cost_share, project_label, model, reasoning, agent_type) \
              VALUES (?1, ?2, ?3, ?4, ?5, NULL, 0, ?6, ?7, ?8, ?9, ?10)",
@@ -186,7 +184,7 @@ pub fn record_tool_call(
         ])?
         == 1;
     if inserted {
-        conn.prepare_cached(UPSERT_TOOL_ROLLUP)?.execute(params![
+        conn.prepare(UPSERT_TOOL_ROLLUP)?.execute(params![
             hour_start(t.ts),
             t.project_label,
             t.tool,
@@ -211,7 +209,7 @@ pub fn record_tool_result(
     result_chars: i64,
 ) -> rusqlite::Result<bool> {
     let updated =
-        conn.prepare_cached(
+        conn.prepare(
             "UPDATE tool_calls SET is_error = ?3, result_chars = ?4 \
              WHERE session_file = ?1 AND tool_call_id = ?2 AND is_error IS NULL",
         )?
@@ -225,14 +223,14 @@ pub fn record_tool_result(
         return Ok(false);
     }
     let (ts, label, tool, agent_type): (i64, String, String, String) = conn
-        .prepare_cached(
+        .prepare(
             "SELECT ts, project_label, tool, agent_type FROM tool_calls \
              WHERE session_file = ?1 AND tool_call_id = ?2",
         )?
         .query_row(params![session_file, tool_call_id], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
         })?;
-    conn.prepare_cached(UPSERT_TOOL_ROLLUP)?.execute(params![
+    conn.prepare(UPSERT_TOOL_ROLLUP)?.execute(params![
         hour_start(ts),
         label,
         tool,
@@ -251,7 +249,7 @@ pub fn record_user_message(
     u: &UserMessageRow,
 ) -> rusqlite::Result<bool> {
     Ok(conn
-        .prepare_cached(
+        .prepare(
             "INSERT OR IGNORE INTO user_messages (session_file, entry_id, ts, chars, yelling, profanity, \
              blame, project_label) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         )?

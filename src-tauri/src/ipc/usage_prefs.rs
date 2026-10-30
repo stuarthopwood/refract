@@ -24,7 +24,7 @@ fn read_prefs() -> HandlerResult {
     let conn = schema::open_db(&paths::usage_db_path()).map_err(db_error)?;
     let jokes = schema::prefs_get(&conn, KEY_JOKES)
         .map_err(db_error)?
-        .map_or(true, |v| v != "false");
+        .is_none_or(|v| v != "false");
     let stored = schema::prefs_get(&conn, KEY_FILTERS)
         .map_err(db_error)?
         .and_then(|v| serde_json::from_str::<Value>(&v).ok())
@@ -48,7 +48,10 @@ fn write_prefs(patch: &Value) -> HandlerResult {
         Some(Value::Bool(b)) => Some(*b),
         Some(_) => return Err(invalid_argument("usage.setPrefs: jokes must be a boolean")),
     };
-    let filters = obj.get("filters").map(|v| parse_filters(Some(v))).transpose()?;
+    let filters = obj
+        .get("filters")
+        .map(|v| parse_filters(Some(v)))
+        .transpose()?;
     let conn = schema::open_db(&paths::usage_db_path()).map_err(db_error)?;
     if let Some(b) = jokes {
         schema::prefs_set(&conn, KEY_JOKES, if b { "true" } else { "false" }).map_err(db_error)?;

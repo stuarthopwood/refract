@@ -82,7 +82,7 @@ fn read_line<R: BufRead>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Result<LineRe
 
 fn load_state(conn: &Connection, key: &str) -> rusqlite::Result<FileState> {
     Ok(conn
-        .prepare_cached(
+        .prepare(
             "SELECT offset, session_id, cwd, project_label, cur_model, cur_reasoning \
              FROM file_offsets WHERE session_file = ?1",
         )?
@@ -108,7 +108,7 @@ fn save_state(
     len: i64,
     mtime_ms: i64,
 ) -> rusqlite::Result<()> {
-    conn.prepare_cached(
+    conn.prepare(
         "INSERT INTO file_offsets (session_file, offset, last_modified, file_len, session_id, cwd, \
          agent_type, project_label, cur_model, cur_reasoning) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) \
          ON CONFLICT(session_file) DO UPDATE SET offset = excluded.offset, \

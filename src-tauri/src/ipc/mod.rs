@@ -32,8 +32,6 @@ pub mod chat_pause;
 pub mod clipboard;
 pub mod conversations;
 pub mod copilot_plan;
-pub mod usage;
-pub mod usage_prefs;
 pub mod debug;
 pub mod file_attachments;
 pub mod file_explorer;
@@ -66,6 +64,8 @@ pub mod subagents;
 pub mod theme;
 pub mod token_guard;
 pub mod updates;
+pub mod usage;
+pub mod usage_prefs;
 
 /// Shared state every registered handler receives. `registry`/`settings` are each behind their
 /// own `Arc<tokio::sync::Mutex<_>>` -- one lock per store, not one lock for both, so a slow

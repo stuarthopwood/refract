@@ -117,11 +117,13 @@ pub(super) fn validate_filters(filters: &Filters) -> Result<(), IpcError> {
         }
     }
     let texts = [&filters.project, &filters.model, &filters.reasoning];
-    if texts
-        .iter()
-        .any(|t| t.as_deref().is_some_and(|s| s.chars().count() > MAX_FILTER_TEXT))
-    {
-        return Err(invalid_argument("usage filters: a filter value is too long"));
+    if texts.iter().any(|t| {
+        t.as_deref()
+            .is_some_and(|s| s.chars().count() > MAX_FILTER_TEXT)
+    }) {
+        return Err(invalid_argument(
+            "usage filters: a filter value is too long",
+        ));
     }
     Ok(())
 }
@@ -142,7 +144,9 @@ fn query_ctx(tz_west: Option<&Value>) -> Result<QueryCtx, IpcError> {
         Some(value) => value
             .as_i64()
             .filter(|v| v.abs() <= MAX_TZ_MINUTES)
-            .ok_or_else(|| invalid_argument("usage: tzOffsetMinutes must be a whole number of minutes"))?,
+            .ok_or_else(|| {
+                invalid_argument("usage: tzOffsetMinutes must be a whole number of minutes")
+            })?,
     };
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -163,7 +167,7 @@ where
         run(&conn).map_err(query_error)
     })
     .await
-    .map_err(|e| db_unavailable(e))?
+    .map_err(db_unavailable)?
 }
 
 fn usage_summary(_state: AppState, args: Vec<Value>) -> HandlerFuture {
@@ -180,7 +184,11 @@ fn usage_timeseries(_state: AppState, args: Vec<Value>) -> HandlerFuture {
         let hourly = match args.get(1).and_then(Value::as_str) {
             Some("day") => false,
             Some("hour") => true,
-            _ => return Err(invalid_argument("usage.timeseries: bucket must be 'day' or 'hour'")),
+            _ => {
+                return Err(invalid_argument(
+                    "usage.timeseries: bucket must be 'day' or 'hour'",
+                ))
+            }
         };
         let ctx = query_ctx(args.get(2))?;
         to_json(&read(move |c| queries::timeseries(c, &filters, hourly, &ctx)).await?)
@@ -244,7 +252,11 @@ fn usage_calls(_state: AppState, args: Vec<Value>) -> HandlerFuture {
             .map_err(|_| invalid_argument("usage.calls: sort must be { key, dir }"))?;
         let page: Page = serde_json::from_value(args.get(2).cloned().unwrap_or(Value::Null))
             .map_err(|_| invalid_argument("usage.calls: page must be { index, size }"))?;
-        if page.size < 1 || page.size > MAX_PAGE_SIZE || page.index < 0 || page.index > MAX_PAGE_INDEX {
+        if page.size < 1
+            || page.size > MAX_PAGE_SIZE
+            || page.index < 0
+            || page.index > MAX_PAGE_INDEX
+        {
             return Err(invalid_argument(format!(
                 "usage.calls: page size must be 1 to {MAX_PAGE_SIZE}"
             )));
