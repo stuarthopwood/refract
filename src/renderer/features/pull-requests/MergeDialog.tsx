@@ -74,7 +74,7 @@ export function MergeDialog({
       size="md"
       title={`Merge ${title}?`}
       description="Choose a merge method, then confirm."
-      confirmLabel="Merge"
+      confirmLabel={error ? 'Retry' : 'Merge'}
       busyLabel="Merging…"
       error={error}
       onCancel={() => {
@@ -93,12 +93,27 @@ export function MergeDialog({
         else restoreFocusFallbackTo.current?.focus()
       }}
     >
-      <RadioGroup aria-label="Merge method" value={method} onValueChange={(value) => setMethod(value as MergeMethod)}>
+      <RadioGroup
+        aria-label="Merge method"
+        value={method}
+        onValueChange={(value) => {
+          if (submitting) return
+          setMethod(value as MergeMethod)
+          setError(null)
+        }}
+      >
         {allowedMergeMethods.map((candidate) => {
           const labelId = `merge-method-${candidate}-label`
           const descriptionId = `merge-method-${candidate}-description`
           return (
-            <RadioGroupItem key={candidate} value={candidate} aria-labelledby={labelId} aria-describedby={descriptionId}>
+            <RadioGroupItem
+              key={candidate}
+              value={candidate}
+              aria-labelledby={labelId}
+              aria-describedby={descriptionId}
+              aria-disabled={submitting}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            >
               <span className="flex w-full min-w-0 items-center gap-2">
                 <span aria-hidden className={RADIO_RING_CLASS}>
                   <RadioGroupIndicator />

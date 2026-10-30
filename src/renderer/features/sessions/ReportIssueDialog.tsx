@@ -196,7 +196,6 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
         title="Discard this draft?"
         description="Your title and description have not been filed and will be lost."
         confirmLabel="Discard draft"
-        busyLabel="Discarding…"
         onCancel={() => setConfirmDiscard(false)}
         onConfirm={() => {
           setConfirmDiscard(false)

@@ -3,8 +3,9 @@
 // description, Cancel, and an optional confirm action. While `busy`, Escape, the body and both buttons are inert.
 // Focus on close is the caller's choice (`onCloseAutoFocus`; `false` lets Radix restore it), since these
 // dialogs open from a plain state flag with no Trigger for Radix to return focus to.
-import type { ReactNode, Ref } from 'react'
+import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { InlineStatus } from '@/components/InlineStatus'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,11 +28,11 @@ export function ConfirmAlertDialog({
   size,
   error,
   children,
-  cancelRef,
+  bodyLabel,
+  confirmDisabled = false,
   onCancel,
   onConfirm,
   onCloseAutoFocus,
-  onOpenAutoFocus,
   tone = 'default'
 }: {
   open: boolean
@@ -48,13 +49,14 @@ export function ConfirmAlertDialog({
   error?: string | null
   /** Body content between the description and the error line (a radio group, a list). */
   children?: ReactNode
-  cancelRef?: Ref<HTMLButtonElement>
+  /** Names the body group for assistive tech; give one whenever `children` is a set of controls. */
+  bodyLabel?: string
+  /** Blocks the confirm without the busy label (a pre-check still loading). */
+  confirmDisabled?: boolean
   onCancel(): void
   onConfirm?(): void
   /** Return `false` to let Radix restore focus itself; any other result means the caller moved it. */
   onCloseAutoFocus(): boolean | void
-  /** Runs on open; `preventDefault` stops Radix focusing the first control. */
-  onOpenAutoFocus?(event: Event): void
   /** destructive fills the confirm button with the destructive colour (a close, a delete). */
   tone?: 'default' | 'destructive'
 }) {
@@ -62,8 +64,6 @@ export function ConfirmAlertDialog({
     <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onCancel() }}>
       <AlertDialogContent
         size={size}
-        aria-busy={busy}
-        onOpenAutoFocus={onOpenAutoFocus}
         onEscapeKeyDown={(event) => {
           if (busy) event.preventDefault()
         }}
@@ -76,18 +76,17 @@ export function ConfirmAlertDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         {children && (
-          <fieldset disabled={busy} className="contents">
+          <div role={bodyLabel ? 'group' : undefined} aria-label={bodyLabel} className="grid gap-4">
             {children}
-          </fieldset>
+          </div>
         )}
         {error !== undefined && (
-          <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+          <InlineStatus tone="error" className={cn('p-0', !error && 'sr-only')}>
             {error ?? ''}
-          </p>
+          </InlineStatus>
         )}
-        <AlertDialogFooter>
+        <AlertDialogFooter className={cn(!confirmLabel && 'group-data-[size=sm]/alert-dialog-content:grid-cols-1 group-data-[size=sm]/alert-dialog-content:justify-items-end')}>
           <AlertDialogCancel
-            ref={cancelRef}
             aria-disabled={busy}
             className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={(event) => {
@@ -102,12 +101,12 @@ export function ConfirmAlertDialog({
           </AlertDialogCancel>
           {confirmLabel && (
             <AlertDialogAction
-              variant={tone === 'destructive' ? 'destructive' : 'invert'}
-              aria-disabled={busy}
+              variant={tone === 'destructive' ? 'destructive' : 'default'}
+                            aria-disabled={busy || confirmDisabled}
               className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
               onClick={(event) => {
                 event.preventDefault()
-                if (!busy) onConfirm?.()
+                if (!busy && !confirmDisabled) onConfirm?.()
               }}
             >
               {busy ? (busyLabel ?? confirmLabel) : confirmLabel}

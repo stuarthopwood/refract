@@ -31,7 +31,6 @@ function signOutBody(account: GitHubAccount, accounts: GitHubAccount[]): string 
 export function SignOutDialog({ account, accounts, onOpenChange, onCloseFocus }: SignOutDialogProps) {
   const [signingOut, setSigningOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const cancelRef = useRef<HTMLButtonElement>(null)
   // Live account ref so an in-flight confirm never acts on a different account's dialog.
   const accountRef = useRef(account)
   accountRef.current = account
@@ -76,13 +75,8 @@ export function SignOutDialog({ account, accounts, onOpenChange, onCloseFocus }:
       busyLabel="Signing out…"
       tone="destructive"
       error={error}
-      cancelRef={cancelRef}
       onCancel={() => onOpenChange(false)}
       onConfirm={() => void handleConfirm()}
-      onOpenAutoFocus={(event) => {
-        event.preventDefault()
-        cancelRef.current?.focus()
-      }}
       onCloseAutoFocus={() => {
         const outcome = justConfirmedRef.current ? 'confirmed' : 'cancelled'
         justConfirmedRef.current = false
