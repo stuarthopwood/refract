@@ -215,7 +215,7 @@ session-list/Subagent-panel/split state, and consistently absent from every full
 - [ ] T018 Run every check in [quickstart.md](quickstart.md), all four stories, on one clean build;
   confirm `pnpm typecheck` and `pnpm build` both pass (depends on T011, T013, T015, T016, T017). (#425)
   Partial evidence 2026-10-30: `pnpm typecheck` passes and the debug build succeeds on v0.14.0;
-  `scripts/verify-406-watermark.mjs` passes 22 of 22 checks (see T011). Stays open until the
+  `scripts/verify-406-watermark.mjs` passes 21 of 21 checks (see T011). Stays open until the
   not-yet-run checks listed under T011, T015 and T016 are done.
 
 **Checkpoint**: every quickstart.md check passes on a single clean build; typecheck and build are
