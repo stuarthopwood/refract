@@ -3,6 +3,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronRightIcon, type LucideIcon } from "lucide-react"
+import { isMenuOpen, useExclusiveMenu } from "@/components/ui/exclusive-menu"
 import { MenuItemIcon } from "@/components/ui/menu-item-icon"
 import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
 import {
@@ -17,9 +18,13 @@ import {
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 function DropdownMenu({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+  const menu = useExclusiveMenu(openProp, defaultOpen, onOpenChange)
+  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} open={menu.open} onOpenChange={menu.onOpenChange} />
 }
 
 function DropdownMenuTrigger({
@@ -56,6 +61,10 @@ function DropdownMenuContent({
           className
         )}
         {...props}
+        onCloseAutoFocus={(event) => {
+          props.onCloseAutoFocus?.(event)
+          if (isMenuOpen()) event.preventDefault()
+        }}
       />
     </DropdownMenuPortal>
   )

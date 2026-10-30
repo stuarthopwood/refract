@@ -2,6 +2,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { ChevronRightIcon, CheckIcon, type LucideIcon } from "lucide-react"
+import { isMenuOpen, useExclusiveMenu } from "@/components/ui/exclusive-menu"
 import { MenuItemIcon } from "@/components/ui/menu-item-icon"
 import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
 import {
@@ -15,9 +16,12 @@ import {
 } from "@/components/ui/menu-item-classes"
 
 function ContextMenu({
+  open: openProp,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
-  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
+  const menu = useExclusiveMenu(openProp, undefined, onOpenChange)
+  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} open={menu.open} onOpenChange={menu.onOpenChange} />
 }
 
 function ContextMenuTrigger({
@@ -78,6 +82,10 @@ function ContextMenuContent({
         data-slot="context-menu-content"
         className={cn("max-h-(--radix-context-menu-content-available-height) origin-(--radix-context-menu-content-transform-origin) overflow-y-auto duration-[var(--motion-fast)] ease-[var(--ease-out)]", MENU_CONTENT_CLASS, className )}
         {...props}
+        onCloseAutoFocus={(event) => {
+          props.onCloseAutoFocus?.(event)
+          if (isMenuOpen()) event.preventDefault()
+        }}
       />
     </ContextMenuPrimitive.Portal>
   )
