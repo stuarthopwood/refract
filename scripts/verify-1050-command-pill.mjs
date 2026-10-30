@@ -400,7 +400,7 @@ async function main() {
     await cdp.evaluate(`${TEXTAREA}.scrollTop = 0`);
     await cdp.waitFor(`${OVERLAY}.scrollTop === 0`, { timeoutMs: 3_000, label: 'scrolled draft: overlay scrollTop synced back to 0 after scrolling to the top' });
 
-    // ---- 12. Send/Stop clickable while a pill shows (gate round 3 CRITICAL fix) ------------
+    // ---- 12. Send/Stop clickable while a pill shows ------------
     // The textarea's z-index (only while a pill shows) once painted over Send/Stop. Run last: a real click sends.
     // Use /skill, not /btw: /btw opens the Side chat panel and refuses the send, leaving the draft.
     await clearAndType(cdp, pressKey, '/skill:demo-review hi');
