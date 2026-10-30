@@ -99,17 +99,6 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
         )}
         <DropdownMenuContent align="start" side="top">
           {figure && <DropdownMenuLabel className="text-foreground">{figure}</DropdownMenuLabel>}
-          {notice && (
-            <>
-              <DropdownMenuItem asChild>
-                <a href={SUSPECT_WINDOW_ISSUE_URL} target="_blank" rel="noreferrer noopener">
-                  <ExternalLinkIcon aria-hidden className="size-4" />
-                  Why this window may be wrong (oh-my-pi#17481)
-                </a>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          )}
           {!idle && (
             <DropdownMenuLabel id={IDLE_REASON_ID} className="font-normal">
               Available when the session is idle
@@ -130,6 +119,17 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
               </Fragment>
             )
           })}
+          {notice && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <a href={SUSPECT_WINDOW_ISSUE_URL} target="_blank" rel="noreferrer noopener">
+                  <ExternalLinkIcon aria-hidden className="size-4" />
+                  Why this window may be wrong (oh-my-pi#17481)
+                </a>
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>

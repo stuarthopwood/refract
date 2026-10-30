@@ -8,7 +8,7 @@ export function SuspectWindowsNotice({ catalog }: { catalog: readonly ModelCatal
   const suspects = suspectContextWindows(catalog)
   if (suspects.length === 0) return null
   return (
-    <Alert variant="warning" role="note">
+    <Alert variant="warning" role="note" className="mb-6">
       <TriangleAlertIcon aria-hidden />
       <AlertTitle>Suspect context windows</AlertTitle>
       <AlertDescription>

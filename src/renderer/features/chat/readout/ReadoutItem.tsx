@@ -1,6 +1,6 @@
 import { forwardRef } from 'react'
 import type { ComponentType, FocusEvent, HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react'
-import { TriangleAlertIcon } from 'lucide-react'
+import { CircleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // One source of truth for the classes either way -- this component below still uses the SAME two constants, never a second copy of the literal strings.
@@ -32,7 +32,7 @@ export const ReadoutItem = forwardRef<HTMLButtonElement | HTMLAnchorElement | HT
 ) {
   const baseClasses = cn(READOUT_ITEM_BASE_CLASS, className)
   const interactiveClasses = cn(baseClasses, READOUT_ITEM_INTERACTIVE_ADDITIONS)
-  const warningIcon = warning ? <TriangleAlertIcon aria-hidden data-readout-warning className="size-4 text-severity-warning forced-colors:text-[CanvasText]" /> : null
+  const warningIcon = warning ? <CircleAlertIcon aria-hidden data-readout-warning className="size-4 text-severity-warning forced-colors:text-[CanvasText]" /> : null
 
   if (href) {
     return (
