@@ -52,7 +52,8 @@ export function failedHomeSections(state: Pick<HomeState, 'prs' | 'issues' | 'cl
   const bad = (section: HomeSection<unknown>): boolean => section.error !== null || section.skipped.length > 0
   if (bad(state.prs.authored) || bad(state.prs['review-requested'])) failed.push('My pull requests')
   if (bad(state.issues.assigned) || bad(state.issues.authored)) failed.push('My issues')
-  if (bad(state.closed)) failed.push('Tidy up')
+  // Tidy up shows only its error, not skipped Projects, so only an error is announced for it.
+  if (state.closed.error !== null) failed.push('Tidy up')
   return failed
 }
 

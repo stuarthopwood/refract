@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Live CDP check for issue #869 (the Home view, spec 059). Drives the real Tauri debug build,
 // isolated per the `refract-tauri-live-check-isolation` skill (own REFRACT_DATA_DIR, WebView2
 // profile and import dir; never %APPDATA%/refract-tauri). A fake `gh` (verify-tauri-869-fake-gh.rs)
 // and the fake `omp` shim (scenario `ask`) are put first on PATH, so nothing here can reach GitHub
