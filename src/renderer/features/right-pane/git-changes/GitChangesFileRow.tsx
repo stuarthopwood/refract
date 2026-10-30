@@ -144,27 +144,22 @@ export function GitChangesFileRow({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isConflict ? (
-            <DropdownMenuItem onSelect={() => setConfirmResolveOpen(true)}>
-              <CheckIcon aria-hidden className="size-4" />
+            <DropdownMenuItem icon={CheckIcon} onSelect={() => setConfirmResolveOpen(true)}>
               {`Mark ${fileName} as resolved`}
             </DropdownMenuItem>
           ) : canStage ? (
-            <DropdownMenuItem onSelect={() => void handleStage()}>
-              <PlusIcon aria-hidden className="size-4" />
+            <DropdownMenuItem icon={PlusIcon} onSelect={() => void handleStage()}>
               {`Stage ${fileName}`}
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem onSelect={() => void handleUnstage()}>
-              <MinusIcon aria-hidden className="size-4" />
+            <DropdownMenuItem icon={MinusIcon} onSelect={() => void handleUnstage()}>
               {`Unstage ${fileName}`}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onSelect={onOpenDiff}>
-            <EyeIcon aria-hidden className="size-4" />
+          <DropdownMenuItem icon={EyeIcon} onSelect={onOpenDiff}>
             {`Open diff for ${fileName}`}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void runOpenInVSCode()}>
-            <Code2Icon aria-hidden className="size-4" />
+          <DropdownMenuItem icon={Code2Icon} onSelect={() => void runOpenInVSCode()}>
             {`Open ${fileName} in VS Code`}
           </DropdownMenuItem>
         </DropdownMenuContent>

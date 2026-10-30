@@ -2,7 +2,7 @@
 // grouped by outcome -- only Action required and Failing expanded; Pending, Successful, Neutral
 // and Skipped collapsed. Every row pairs its status icon with the outcome word (never colour
 // alone) and offers "Open details" through a plain http(s) anchor, as ChangesTab does (no IPC).
-import { ChevronRightIcon, CircleAlertIcon, EllipsisVerticalIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
+import { ChevronRightIcon, CircleAlertIcon, EllipsisVerticalIcon, ExternalLinkIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
 import { useState, type ComponentType } from 'react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -79,13 +79,13 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isHttpUrl(check.detailsUrl) ? (
-            <DropdownMenuItem asChild>
+            <DropdownMenuItem asChild icon={ExternalLinkIcon}>
               <a href={check.detailsUrl} target="_blank" rel="noreferrer noopener">
                 Open details<span className="sr-only"> (opens in browser)</span>
               </a>
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem disabled>Open details (no link available)</DropdownMenuItem>
+            <DropdownMenuItem disabled icon={ExternalLinkIcon}>Open details (no link available)</DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
