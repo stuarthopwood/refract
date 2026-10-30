@@ -2,6 +2,7 @@
 // Live CDP check for spec 008 (profile item, profile menu, Manage accounts, Manage sessions) against a real built
 // Tauri debug exe with fake `omp`, an empty GH_CONFIG_DIR (signed-out gh), a scratch REFRACT_DATA_DIR and its own port.
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_008_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-008.mjs
+// The gh state depends on the host's gh credentials (GH_TOKEN can override GH_CONFIG_DIR); checks accept either.
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,7 +21,7 @@ const SHOTS_DIR = process.env.REFRACT_008_SHOTS_DIR || path.join(tmpdir(), 'refr
 mkdirSync(SHOTS_DIR, { recursive: true });
 
 const THEMES = ['theme-dark', 'theme-dark-high-contrast'];
-const MENU_ORDER = ['Sign in to GitHub', 'Manage accounts', 'Manage sessions', 'Theme', 'Keyboard shortcuts', 'Health check', "What's new"];
+const MENU_ORDER = ['Manage accounts', 'Manage sessions', 'Theme', 'Keyboard shortcuts', 'Health check', "What's new"];
 const REPORT = [];
 let passed = 0;
 function log(line) {
@@ -63,8 +64,13 @@ async function runChecks(cdp, { repoDir }) {
   assert(visible.length > 0, 'profile item shows a visible name or "Sign in" (FR-004)');
 
   // FR-005: keyboard order and visible focus on the profile item and the cog.
-  await cdp.evaluate(`(() => { document.activeElement?.blur(); ${NAME_BUTTON}.focus(); return true; })()`);
-  const focusedName = await getActiveElementAccessibleName(cdp);
+  // Real Tab navigation so :focus-visible applies (a programmatic focus() would not match it).
+  await cdp.evaluate(`(() => { document.activeElement?.blur(); return true; })()`);
+  let focusedName = { name: null };
+  for (let i = 0; i < 40 && focusedName.name !== label; i++) {
+    await pressTab(cdp);
+    focusedName = await getActiveElementAccessibleName(cdp);
+  }
   assert(focusedName.name === label, 'profile item takes keyboard focus with its accessible name');
   const outline = await cdp.evaluate(`getComputedStyle(${NAME_BUTTON}).outlineStyle`);
   assert(outline !== 'none', 'profile item shows a visible focus indicator (FR-005, SC-006)');
