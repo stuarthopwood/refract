@@ -1,12 +1,3 @@
-// Manage accounts' OMP provider section (spec 008 FR-016, T019, research.md Decision 6 /
-// FINDINGS item 43): read-only -- OMP 18.6.1 has no `/login`/`/logout` over rpc-ui, so this
-// never offers a sign-in or sign-out action, only the read and an instruction to run
-// `omp login` in a terminal (never `/logout`: no terminal counterpart was found for it either).
-// A real read spawns a scratch `omp` process (~4.7 s measured), so it is never fetched eagerly:
-// ManageAccountsDialog.tsx calls `refreshOmpProviders()` once when the dialog opens; this
-// component only re-triggers it from "Check again"/"Retry", and otherwise just renders whatever
-// the store already has (stale-while-revalidate -- cached data is never hidden behind a loading
-// skeleton for a later refresh, only for the very first read of the app session).
 import { useEffect, useRef, useState } from 'react'
 import { CheckIcon, ChevronDownIcon, CopyIcon, LoaderCircleIcon, MinusIcon, TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -17,9 +8,6 @@ import { ompSummaryLine, splitOmpProviders } from '@/lib/account-format'
 import { notify, useAccountsStore } from '@/state'
 
 export interface OmpProvidersSectionProps {
-  /** The dialog's own shared live regions (ManageAccountsDialog.tsx) -- this section never owns
-   *  a live region of its own, so a screen reader never has more than the two existing channels
-   *  to listen to. */
   announcePolite(message: string): void
   announceAssertive(message: string): void
 }

@@ -10,14 +10,8 @@ interface SkillPromptRowProps {
   item: SkillPromptItem
 }
 
-// A user-invoked `/skill:<name>` custom message (issue #547): a quiet row naming the skill, its
-// arguments and line count when present, with the injected skill text collapsed behind an
-// explicit expand (`CollapsedLine`'s own `Collapsible`, uncontrolled and closed by default --
-// never auto-shown, since a real sample ran to about 3,900 characters). Expanded text renders as
-// sanitised Markdown (constitution V: it is skill prose, not trusted markup), the same component
-// every other expandable row in the transcript uses. Same icon family as the "Using skill" tool
-// row (#543) so both read as skill events; unlike that row there is no running/done/failed status
-// to show (a custom message, not a tool call), so the icon names the event itself instead.
+// `/skill:<name>` custom message row: the injected skill text stays collapsed (a sample ran ~3,900 chars) and
+// renders as sanitised Markdown (constitution V). No status icon: it is a message, not a tool call (#547).
 export function SkillPromptRow({ item }: SkillPromptRowProps) {
   const summaryParts = [item.args, item.lineCount != null ? `${item.lineCount} line${item.lineCount === 1 ? '' : 's'}` : undefined].filter(
     (part): part is string => part !== undefined

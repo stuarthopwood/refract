@@ -1,13 +1,6 @@
 import { create } from 'zustand'
 
 interface AlertDismissState {
-  // Issue #560 gate-remediation (item 1): used to be `ProfileAlertRows.tsx`'s own local
-  // `useState`/`useRef` -- fine across that one component's own lifetime, but the review wants
-  // dismissal store-backed regardless, so a remount of `ProfileAlertRows` (e.g. a future caller
-  // mounting a second instance, or a dev hot-reload) can never un-dismiss an alert the user
-  // already dismissed this run. Matches `memory-store.ts`'s own convention exactly: reset to its
-  // initial value only by a full app restart (a fresh store instance), never written to
-  // `settings.json`/disk, no persist middleware.
   memoryDismissed: boolean
   ompVersionDismissed: boolean
   // The hidden->shown "was shown" refs the announce effect uses to fire only once per
