@@ -1,4 +1,4 @@
-# Analysis: spec 066
+# Analysis: spec 067
 
 Coverage: FR-1 T001; FR-2 T002; FR-3 T003; FR-4 T004; SC-1 and SC-2 T006. No FR lacks a task.
 

@@ -1,4 +1,4 @@
-# Tasks: spec 066
+# Tasks: spec 067
 
 - [ ] T001 IssueDetail uses `CopyButton` (FR-1).
 - [ ] T002 PullRequestDetail hides actions on merged or closed (FR-2).

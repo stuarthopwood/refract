@@ -1,4 +1,4 @@
-# Spec 066: Pull request and Issue detail polish (#1397, #1393, #1389, #1391)
+# spec 067: Pull request and Issue detail polish (#1397, #1393, #1389, #1391)
 
 Four small renderer changes in one batch. Renderer only: no Rust, no IPC change.
 

@@ -1,4 +1,4 @@
-# Plan: spec 066
+# Plan: spec 067
 
 Renderer only.
 
