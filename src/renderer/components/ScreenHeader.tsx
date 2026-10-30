@@ -11,8 +11,9 @@ export interface ScreenHeaderProps {
   title: string
   /** Moved to on mount by the caller so focus never drops to `<body>` when the screen swaps in. */
   headingRef?: Ref<HTMLHeadingElement>
-  backLabel: string
-  onBack(): void
+  /** Omit both for a top-level view with no Back (Home). */
+  backLabel?: string
+  onBack?(): void
   /** Plain muted text beside the heading, for example "5 sessions across 4 projects". */
   count?: string
   /** Right-aligned actions. */
@@ -24,14 +25,16 @@ export interface ScreenHeaderProps {
 export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children, reservesWindowControls = false }: ScreenHeaderProps) {
   return (
     <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="no-drag-region" aria-label={backLabel} onClick={onBack}>
-            <ArrowLeftIcon aria-hidden className="size-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{backLabel}</TooltipContent>
-      </Tooltip>
+      {backLabel && onBack && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm" className="no-drag-region" aria-label={backLabel} onClick={onBack}>
+              <ArrowLeftIcon aria-hidden className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{backLabel}</TooltipContent>
+        </Tooltip>
+      )}
       <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
         {title}
       </h1>

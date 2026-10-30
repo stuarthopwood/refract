@@ -3,13 +3,13 @@
 // by a divider. A `role="group"` inside the existing Sessions `<nav>` (never a nested landmark).
 // `aria-current` gives the open view a visible AND accessible signal, never colour alone (FR-030).
 import { useEffect, type ComponentType, type ReactNode } from 'react'
-import { CircleDotIcon, GitPullRequestIcon } from 'lucide-react'
+import { CircleDotIcon, GitPullRequestIcon, HouseIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { SIDEBAR_NAV_BUTTON_CLASS } from '@/components/sidebarNavButtonClass'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
-import { useAccountsStore, usePullRequestsStore, useViewStore } from '@/state'
+import { useAccountsStore, usePullRequestsStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 
 interface NavItemProps {
   active: boolean
@@ -49,6 +49,9 @@ export function GitHubNavGroup() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const openIssues = useViewStore((state) => state.openIssues)
   const view = useViewStore((state) => state.view)
+  const openHome = useViewStore((state) => state.openHome)
+  const noPane = useSplitStore((state) => state.paneSessionIds.length === 0)
+  const needsYouCount = useSessionsStore((state) => state.sessions.filter((s) => s.status === 'needs-you' && !s.archivedAt && !s.hiddenAt).length)
   const selectPullRequest = usePullRequestsStore((state) => state.select)
   // Defaults to the focused pane's Session's repository, then the first added one; the view's own
   // Project control changes it afterward (issue #569: shared, reactive hook).
@@ -76,7 +79,18 @@ export function GitHubNavGroup() {
   }
 
   return (
-    <div role="group" aria-label="GitHub" className="flex shrink-0 flex-col gap-1 pt-2">
+    <div role="group" aria-label="Views" className="flex shrink-0 flex-col gap-1 pt-2">
+      <NavItem
+        active={view === 'home' || (view === 'chat' && noPane)}
+        icon={HouseIcon}
+        text="Home"
+        label={needsYouCount > 0 ? `Home, ${needsYouCount} need you` : 'Home'}
+        onClick={openHome}
+      >
+        {needsYouCount > 0 && (
+          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground">{needsYouCount} need you</span>
+        )}
+      </NavItem>
       <NavItem
         active={view === 'pull-requests'}
         icon={GitPullRequestIcon}
