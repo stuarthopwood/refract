@@ -1,13 +1,3 @@
-// Spec 013 FR-020 to FR-022 (research.md decision 7): Settings > Panels (formerly "Right pane"),
-// a dedicated section for the one "Show sample data" switch, not folded into Appearance -- this is
-// about right-pane content, not visual theme. Immediate apply, no Save step, the same pattern
-// `ChatDisplaySection.tsx` already uses for its own switches. Spec 036: built from the shared
-// `SettingsPage` / `SettingsGroup` / `SettingRow`.
-//
-// Scope note: this section persists the setting and exposes it to the renderer
-// (`Settings.showSampleData`, `useSettingsStore`); `FdbKnowledgePanel.tsx`/
-// `AgentBuilderPanel.tsx` are the consumers that actually switch between the empty state and
-// their own sample content (FR-021/FR-022) off this same boolean.
 import { useState } from 'react'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
@@ -17,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useSettingsStore } from '@/state'
 import { resetPanelOrder } from '../right-pane/panel-order'
 
+/** Settings section for right-pane options. */
 export function RightPaneSection() {
   const showSampleData = useSettingsStore((state) => state.settings.showSampleData)
   const setShowSampleData = useSettingsStore((state) => state.setShowSampleData)
