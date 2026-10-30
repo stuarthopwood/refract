@@ -865,6 +865,8 @@ Also filed 2026-10-28: **#1298** (`p1`), follow-up to #1233: the Halloween ghost
 
 Also filed 2026-10-28: **#1300** (`p1`), chat row density and non-agent row verb emphasis: Tight / Compact / Comfy row gaps (4 / 8 / 16px, Compact default) set in Settings > Appearance, superseding the "Density: medium" line in `docs/design/product-look-and-feel.md` for chat rows; placed as an index line after #1298's line. Spec 048 (branch chat-row-density): built, PR open.
 
+Also filed 2026-10-30: **#1385** (`p1`), top chrome: the shared `titlebar-surface` loses its band colour and bottom line app-wide (Dark high contrast keeps the line), each top strip takes its own column's background, the left pane's logo row is removed so the Views buttons move up, the holiday ghost moves before the profile avatar, the line above Add project becomes inset like the Views separator, and the right rail's 40px spacer and 8px top margin are removed on both platforms (native decorations make the spacer dead space); supersedes #682's coloured top bar and the `--titlebar` rule in `docs/design/foundations-tokens-theming.md`; placed as an index line after #1300's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
