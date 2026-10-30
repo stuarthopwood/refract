@@ -1,3 +1,4 @@
+import { ArrowLeftRightIcon, BarChart3Icon, CommandIcon, PanelRightIcon, PauseIcon, PlayIcon, PlusIcon, SettingsIcon, SquareIcon, XIcon } from 'lucide-react'
 import { canTogglePause, setAllPaused, setSessionPaused } from '@/features/chat/pauseActions'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { stopAndRestore } from '@/features/chat/restoreQueue'
@@ -20,6 +21,7 @@ function liveSessions() {
 const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   {
     id: 'open-palette',
+    icon: CommandIcon,
     label: 'Command palette',
     group: 'General',
     chord: ['Ctrl', 'K'],
@@ -29,6 +31,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'stop',
+    icon: SquareIcon,
     label: 'Stop',
     group: 'Message box',
     chord: ['Ctrl', 'Shift', 'X'],
@@ -41,6 +44,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'new-session',
+    icon: PlusIcon,
     label: 'New session',
     group: 'Sessions',
     chord: ['Ctrl', 'N'],
@@ -50,6 +54,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'pause-session',
+    icon: PauseIcon,
     label: 'Pause session',
     group: 'Pause',
     when: () => {
@@ -63,6 +68,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'resume-session',
+    icon: PlayIcon,
     label: 'Resume session',
     group: 'Pause',
     when: () => !!focusedSession()?.pause,
@@ -73,6 +79,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'pause-all',
+    icon: PauseIcon,
     label: 'Pause all',
     group: 'Pause',
     when: () => liveSessions().some((session) => session.status !== 'stopped' && !session.pause),
@@ -80,6 +87,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'resume-all',
+    icon: PlayIcon,
     label: 'Resume all',
     group: 'Pause',
     when: () => liveSessions().some((session) => !!session.pause),
@@ -87,6 +95,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'close-chat-pane',
+    icon: XIcon,
     label: 'Close chat pane',
     group: 'Chat pane',
     chord: ['Ctrl', 'W'],
@@ -98,6 +107,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'toggle-right-pane',
+    icon: PanelRightIcon,
     label: 'Collapse or expand the right pane',
     group: 'Right pane',
     chord: ['Ctrl', 'Shift', 'B'],
@@ -107,6 +117,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'focus-other-pane',
+    icon: ArrowLeftRightIcon,
     label: 'Move focus to the other pane',
     group: 'Split view',
     chord: ['Ctrl', 'Shift', '\\'],
@@ -115,6 +126,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'open-settings',
+    icon: SettingsIcon,
     label: 'Open Settings',
     group: 'General',
     chord: ['Ctrl', ','],
@@ -124,6 +136,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'open-usage',
+    icon: BarChart3Icon,
     label: 'Open Usage',
     group: 'General',
     when: () => useViewStore.getState().view !== 'usage',

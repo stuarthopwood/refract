@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronRightIcon } from "lucide-react"
+import { CheckIcon, ChevronRightIcon, type LucideIcon } from "lucide-react"
+import { MenuItemIcon } from "@/components/ui/menu-item-icon"
 import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
 import {
   MENU_ITEM_CLASS,
@@ -64,10 +65,13 @@ function DropdownMenuItem({
   className,
   variant = "default",
   inset,
+  icon,
+  children,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   variant?: "default" | "destructive"
   inset?: boolean
+  icon?: LucideIcon
 }) {
   return (
     <DropdownMenuPrimitive.Item
@@ -77,7 +81,10 @@ function DropdownMenuItem({
       // `--color-destructive` cue so the bar never reads as "current" on top of its red tint.
       className={cn(MENU_ITEM_CLASS, MENU_ITEM_DESTRUCTIVE_CLASS, className)}
       {...props}
-    />
+    >
+      <MenuItemIcon icon={icon} />
+      {children}
+    </DropdownMenuPrimitive.Item>
   )
 }
 
@@ -92,8 +99,9 @@ function DropdownMenuRadioGroup({
 function DropdownMenuRadioItem({
   className,
   children,
+  icon,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem> & { icon?: LucideIcon }) {
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
@@ -122,6 +130,7 @@ function DropdownMenuRadioItem({
             `RadioGroupIndicator`, and `size-2` finally applies. */}
         <DropdownMenuPrimitive.ItemIndicator className={RADIO_DOT_CLASS} />
       </span>
+      <MenuItemIcon icon={icon} />
       {children}
     </DropdownMenuPrimitive.RadioItem>
   )
@@ -130,8 +139,9 @@ function DropdownMenuRadioItem({
 function DropdownMenuCheckboxItem({
   className,
   children,
+  icon,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem> & { icon?: LucideIcon }) {
   return (
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
@@ -143,6 +153,7 @@ function DropdownMenuCheckboxItem({
           <CheckIcon className="size-4" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
+      <MenuItemIcon icon={icon} />
       {children}
     </DropdownMenuPrimitive.CheckboxItem>
   )
@@ -158,9 +169,11 @@ function DropdownMenuSubTrigger({
   className,
   inset,
   children,
+  icon,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubTrigger> & {
   inset?: boolean
+  icon?: LucideIcon
 }) {
   return (
     <DropdownMenuPrimitive.SubTrigger
@@ -169,6 +182,7 @@ function DropdownMenuSubTrigger({
       className={cn(MENU_SUB_TRIGGER_CLASS, className)}
       {...props}
     >
+      <MenuItemIcon icon={icon} />
       {children}
       <ChevronRightIcon className="ml-auto" />
     </DropdownMenuPrimitive.SubTrigger>
@@ -222,6 +236,19 @@ function DropdownMenuSeparator({
   )
 }
 
+function DropdownMenuShortcut({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="dropdown-menu-shortcut"
+      className={cn("ml-auto text-xs tracking-widest text-muted-foreground", className)}
+      {...props}
+    />
+  )
+}
+
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -232,6 +259,7 @@ export {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,

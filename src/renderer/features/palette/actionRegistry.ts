@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react'
+
 /** A key chord as display tokens, modifiers first: `['Ctrl', 'Shift', 'X']`. */
 export type Chord = readonly string[]
 
@@ -7,6 +9,8 @@ export interface PaletteAction {
   label: string
   /** Heading the shortcuts dialog files this action's chord under. */
   group: string
+  /** Leading icon in menus and the palette; one icon per action everywhere (#1405). */
+  icon?: LucideIcon
   chord?: Chord
   aliasChord?: Chord
   /** Extra words the fuzzy search also matches. */
