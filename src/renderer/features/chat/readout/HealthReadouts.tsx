@@ -1,14 +1,5 @@
-// Issue #561 (spec 044): the Status line's two degraded-only health readouts, "RPC slow" and
-// "Agent memory high". Quiet by default: each renders nothing, and reserves no space, until the
-// Session's agent is actually degraded (`session:health`, `session-health-store.ts`). Read-only
-// (no box, no action; the low-memory notice under the profile item stays the one action
-// surface), built like `AiCreditsReadout`: a focusable no-op button so the tooltip is
-// keyboard-reachable, with the full phrase as its accessible name.
-//
-// Each Session pane reads its own Session's entry. A hidden `role="status"` per readout stays
-// mounted so the announcement is polite and reliable, the `LongConversationChip` pattern; it
-// speaks only when a measure ENTERS degraded after the first value arrived (never on load,
-// switch or clear), at most once per five minutes per Session and measure.
+// Issue #561: the Status line's two degraded-only health readouts, "RPC slow" and "Agent memory
+// high".
 import { useEffect, useRef, useState } from 'react'
 import type { ComponentType } from 'react'
 import { HourglassIcon, MemoryStickIcon } from 'lucide-react'
@@ -23,7 +14,7 @@ const REANNOUNCE_MS = 5 * 60 * 1000
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
 const gigabytes = (bytes: number) => (bytes / 1e9).toFixed(1)
 
-/** Text for the polite status: set on a null-to-value change for the same Session only. */
+// Text for the polite status: set on a null-to-value change for the same Session only.
 const lastSpokeAt = new Map<string, number>()
 
 function useEnterAnnouncement(measure: string, sessionId: string, value: number | null, message: (prefix: string) => string): string {
