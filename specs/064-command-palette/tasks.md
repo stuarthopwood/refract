@@ -11,8 +11,8 @@
 
 ## Slice 2
 
-- [ ] T009 `icon` on menu items and registry actions (FR-11, FR-12).
-- [ ] T010 `actionMenuItem` and `textEditItems` builders (FR-10).
+- [x] T009 `icon` on menu items and registry actions (FR-11, FR-12).
+- [x] T010 `actionMenuItem` and `textEditItems` builders (FR-10).
 - [ ] T011 Migrate the menus listed in FR-13 to icons and builders (FR-13, FR-14).
 - [ ] T012 Route the window-level chords through the registry (FR-15).
 - [ ] T013 Native context-menu block, repo header menu, one-open-menu (FR-17 to FR-19).
