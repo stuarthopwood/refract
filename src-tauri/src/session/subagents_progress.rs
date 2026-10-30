@@ -148,11 +148,11 @@ pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
                     continue;
                 };
                 let status_str = job.get("status").and_then(Value::as_str);
-                if matches!(status_str, Some("pending") | Some("running")) {
-                    continue;
-                }
                 entry.status = match status_str {
-                    Some(s) => map_progress_status(s),
+                    Some(s) => match map_progress_status(s) {
+                        SummaryStatus::Running => continue,
+                        settled => settled,
+                    },
                     None => SummaryStatus::Finished,
                 };
                 changed = true;

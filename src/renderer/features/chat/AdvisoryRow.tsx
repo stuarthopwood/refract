@@ -94,7 +94,7 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   const Icon = ADVISORY_ICON[item.severity]
   const className = ADVISORY_CLASS[item.severity]
   const meta = item.turnsAgo !== undefined ? `T-${item.turnsAgo}` : undefined
-  const leading = <SourceTag icon={EyeIcon} label="Advisor" tooltip={item.advisor} />
+  const leading = <SourceTag icon={EyeIcon} label="Advisor" tooltip={item.advisor} className="text-sm" />
   const triggerAriaLabel = buildTriggerLabel(item)
   // #558 decision 9: a blocker opens by default, live or reopened from history alike -- no
   // live-vs-history branch, same rendering derived purely from the stored `severity` (matches

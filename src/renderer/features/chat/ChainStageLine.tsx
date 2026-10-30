@@ -14,6 +14,7 @@ import {
   isSubagentSuccessStatus,
   SUBAGENT_STATUS_LABEL,
   SUBAGENT_SUCCESS_TEXT_CLASS,
+  SubagentStatusGlyph,
   SubagentStatusIcon,
   subagentStatusTextClass,
   summarizeSubagentStatuses
@@ -71,7 +72,12 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
       role="group"
       aria-label={`${speechHeading}, ${summaryText}${status === 'running' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
+      data-status={status}
     >
+      {/* Status is in the group's accessible name; the glyph keeps it from being colour-only. */}
+      <span aria-hidden="true" className="inline-flex shrink-0 items-center self-center">
+        <SubagentStatusGlyph status={status} />
+      </span>
       {canJump ? (
         <button
           type="button"

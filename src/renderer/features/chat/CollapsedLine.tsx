@@ -39,6 +39,8 @@ export interface CollapsedLineProps {
   id?: string
   className?: string
   contentClassName?: string
+  /** Extra classes for the header trigger button, e.g. to drop its hover fill inside a card. */
+  triggerClassName?: string
   clampLines?: number
 }
 
@@ -68,6 +70,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     children,
     className,
     contentClassName,
+    triggerClassName,
     clampLines,
     id
   },
@@ -199,7 +202,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           aria-describedby={showDetail ? detailId : undefined}
           {...focusHandlers}
           className={cn(
-            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
+            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+            triggerClassName
           )}
         >
           {row}

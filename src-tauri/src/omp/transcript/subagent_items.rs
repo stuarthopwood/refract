@@ -133,11 +133,16 @@ pub enum ProgressOutcome {
 
 /// Absent, empty and in-flight words are `Running`; any other unrecognised word counts as success.
 pub fn classify_progress_status(status: Option<&str>) -> ProgressOutcome {
-    let lower = status.unwrap_or("").to_lowercase();
-    if lower.contains("cancel") || lower.contains("abort") {
+    let lower = status.unwrap_or("").trim().to_lowercase();
+    let word_starts = |stems: &[&str]| {
+        lower
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|word| stems.iter().any(|stem| word.starts_with(stem)))
+    };
+    if word_starts(&["cancel", "abort"]) {
         return ProgressOutcome::Cancelled;
     }
-    if lower.contains("fail") || lower.contains("error") {
+    if word_starts(&["fail", "error"]) {
         return ProgressOutcome::Failed;
     }
     if matches!(
@@ -175,7 +180,7 @@ impl TranscriptState {
         if outcome == ProgressOutcome::Running {
             return;
         }
-        let Some(pos) = self.items.iter().position(|item| {
+        let Some(pos) = self.items.iter().rposition(|item| {
             matches!(item.as_ref(), TranscriptItem::Subagent { tool_call_id: t, spec_index: s, status: SubagentStatus::Running, .. } if t == tool_call_id && *s == spec_index)
         }) else {
             return;

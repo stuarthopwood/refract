@@ -57,7 +57,7 @@ async function main() {
     await cdp.clickByLabel('Send message');
 
     await cdp.waitFor(`!!(${CHAIN_TRIGGER})`, { timeoutMs: 30_000, label: 'Subagents chain row mounted' });
-    await new Promise((r) => setTimeout(r, 3000));
+    await cdp.waitFor(`document.querySelectorAll('[role="group"][data-status]').length === 0 || !!(${CHAIN_TRIGGER})?.innerText.includes('Finished')`, { timeoutMs: 30_000, label: 'chain settled' });
     const state = await cdp.evaluate(`(() => {
       const t = ${CHAIN_TRIGGER};
       const root = t.closest('[data-slot="collapsible"]');
@@ -67,7 +67,7 @@ async function main() {
     if (state.turnDone) failures.push('turn already ended; the settle-before-turn-end condition was not exercised');
     if (/running/i.test(state.label) || /running/i.test(state.text)) failures.push(`#1437: chain row still shows running while agents finished: ${state.label}`);
     if (!/Finished/.test(state.text)) failures.push(`#1437: chain row text does not read Finished: ${state.text}`);
-    if (!/\bborder-divider\b/.test(state.cls) || !/\bbg-card\b/.test(state.cls) || !/\brounded-lg\b/.test(state.cls)) failures.push(`#1436: chain row card classes missing: ${state.cls}`);
+    if (!/\bring-divider\b/.test(state.cls) || /\bbg-card\b/.test(state.cls) || !/\brounded-lg\b/.test(state.cls)) failures.push(`#1436: chain row card classes missing: ${state.cls}`);
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '1437-chain-settled-dark.png'));
     await switchTheme(cdp, 'obsidian', 'Obsidian');

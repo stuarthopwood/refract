@@ -10,7 +10,7 @@ pub const MAX_LABEL_CHARS: usize = 80;
 const MAX_ID_CHARS: usize = 64;
 /// An alarm overdue by more than this (app closed or asleep) goes inactive without notifying.
 pub const FIRE_GRACE_MS: i64 = 5 * 60 * 1000;
-/** Year 9999: anything later is garbage and would overflow time arithmetic. */
+/// Year 9999: anything later is garbage and would overflow time arithmetic.
 const MAX_FIRE_AT_MS: i64 = 253_402_300_799_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,6 +24,12 @@ pub struct Alarm {
 }
 
 impl Alarm {
+    /// Whether `id` is a non-empty id within the cap; `delete` uses it to refuse oversize input.
+    pub fn is_valid_id(id: &str) -> bool {
+        let id = id.trim();
+        !id.is_empty() && id.chars().count() <= MAX_ID_CHARS
+    }
+
     /// Trims the label, caps lengths, and rejects an empty or oversize id.
     pub fn sanitized(id: &str, label: &str, fire_at_ms: i64, active: bool) -> Option<Alarm> {
         let id = id.trim();

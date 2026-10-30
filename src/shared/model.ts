@@ -64,6 +64,9 @@ export type ReadoutKind =
 
 /** One-shot composer-clock alarm (#1426); `fireAtMs` is a UTC epoch in ms and `active` turns false once it fires. */
 export interface Alarm { id: string; label: string; fireAtMs: number; active: boolean }
+/** Alarm list and label caps; the Rust store enforces the same values (`store/alarms.rs`). */
+export const MAX_ALARMS = 20
+export const MAX_ALARM_LABEL_CHARS = 80
 
 export interface Settings {
   version: 1;
