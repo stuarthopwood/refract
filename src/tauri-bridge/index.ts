@@ -49,6 +49,7 @@ import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-atta
 import type { StopResult } from '../shared/stop-result'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
 import type { MessageImageData } from '../shared/ipc-images'
+import type { CustomTheme, ThemeList } from '../shared/ipc-themes'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
@@ -380,6 +381,14 @@ const refract: RefractApi = {
     preview: (themeId) => request<void>(IPC_REQUESTS.THEME_PREVIEW, themeId),
     set: (themeId) => request<Settings>(IPC_REQUESTS.THEME_SET, themeId)
   },
+  themes: {
+    list: () => request<ThemeList>(IPC_REQUESTS.THEMES_LIST),
+    import: () => request<CustomTheme | null>(IPC_REQUESTS.THEMES_IMPORT),
+    export: (suggestedName, json) => request<string | null>(IPC_REQUESTS.THEMES_EXPORT, suggestedName, json),
+    remove: (id) => request<null>(IPC_REQUESTS.THEMES_REMOVE, id),
+    openFolder: (id) => request<null>(IPC_REQUESTS.THEMES_OPEN_FOLDER, ...(id === undefined ? [] : [id])),
+    setCustom: (id) => request<Settings>(IPC_REQUESTS.THEME_SET_CUSTOM, id)
+  },
 
   tokenGuard: {
     get: () => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_GET),
@@ -478,7 +487,7 @@ const refract: RefractApi = {
 // cast) now that its shape is declared here.
 declare global {
   interface Window {
-    __REFRACT_THEME_BOOTSTRAP__?: { theme: ThemeId; typography?: Typography }
+    __REFRACT_THEME_BOOTSTRAP__?: { theme: ThemeId; typography?: Typography; customTheme?: CustomTheme | null; customThemeNotice?: 'reset' | 'missing' | null }
   }
 }
 

@@ -9,7 +9,7 @@ import { initStores, initThemeStore } from './state'
 import { initTypographyStore } from './state/typography-store'
 
 const bootstrap = window.refract.themeBootstrap()
-initThemeStore(bootstrap.theme)
+initThemeStore(bootstrap.theme, bootstrap.customTheme)
 initTypographyStore(bootstrap.typography)
 
 initStores()

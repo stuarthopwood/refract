@@ -100,7 +100,13 @@ export function initStores(): void {
   })
   window.refract.onSettingsChanged((settings) => {
     useSettingsStore.getState().setSettings(settings)
-    useThemeStore.getState().setTheme(settings.theme)
+    const themeStore = useThemeStore.getState()
+    // A freshly imported theme is not in the list yet; load it before the id is looked up.
+    if (settings.customTheme && !themeStore.customThemes.some((t) => t.id === settings.customTheme)) {
+      void themeStore.refreshCustomThemes().then(() => useThemeStore.getState().setTheme(settings.theme, settings.customTheme))
+    } else {
+      themeStore.setTheme(settings.theme, settings.customTheme ?? null)
+    }
     useChatWidthStore.getState().setChatWidth(settings.chatWidth)
   })
   window.refract.onAlarmFired((alarm) => {

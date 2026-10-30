@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   watermarkEnabled: true,
   chatWidth: 'full',
+  customTheme: null,
   holidayTouches: 'full',
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,

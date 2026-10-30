@@ -35,7 +35,7 @@ import type { AttachmentsApi } from './ipc-attachments'; import type { Clipboard
 import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi } from './ipc-issues'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
 import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
-import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
+import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { CustomTheme, ThemesApi } from './ipc-themes'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
 
 /** The four top-level items of the in-app menu bar. */
 export const APP_MENU_IDS = ['file', 'edit', 'view', 'window'] as const;
@@ -350,6 +350,12 @@ export const IPC_REQUESTS = {
   HOME_CLOSED_BRANCHES: 'home.closedBranches',
   THEME_PREVIEW: 'theme.preview',
   THEME_SET: 'theme.set',
+  THEME_SET_CUSTOM: 'theme.setCustom',
+  THEMES_LIST: 'themes.list',
+  THEMES_IMPORT: 'themes.import',
+  THEMES_EXPORT: 'themes.export',
+  THEMES_REMOVE: 'themes.remove',
+  THEMES_OPEN_FOLDER: 'themes.openFolder',
   TOKEN_GUARD_GET: 'tokenGuard.get',
   TOKEN_GUARD_SET: 'tokenGuard.set',
   TOKEN_GUARD_RESET: 'tokenGuard.reset',
@@ -554,6 +560,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     preview(themeId: ThemeId | null): Promise<Result<void>>;
     set(themeId: ThemeId): Promise<Result<Settings>>;
   };
+  themes: ThemesApi;
 
   tokenGuard: {
     get(): Promise<Result<TokenGuardSnapshot>>;
@@ -564,7 +571,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
 
   copilot: { planUsage(): Promise<Result<{ percentUsed: number } | null>> }; // #1238; null = unavailable.
 
-  themeBootstrap(): { theme: ThemeId; typography?: Settings['typography'] };
+  themeBootstrap(): { theme: ThemeId; typography?: Settings['typography']; customTheme?: CustomTheme | null; customThemeNotice?: 'reset' | 'missing' | null };
 
   accounts: {
     github: {
