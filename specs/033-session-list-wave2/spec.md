@@ -48,6 +48,8 @@
 ### User Story 5 - Manage sessions on shared components (P2)
 
 1. **Given** Manage sessions, **Then** it uses `ScreenHeader`, `ListToolbar` (All/Active/Archived tabs, Project select, Sort select, `SearchField`), 32 px controls, a plain count line, and the Session list's row component extended with Project, last active and Archive columns (#934).
+2. **Given** Manage sessions, **Then** each row is the shared `SessionRow` (the component the sidebar list uses) in its `table` layout, not a second row implementation; it keeps the same visible columns (state, name and branch, Project, flags, last active) and the same Archive/Restore quick action, "..." menu, right-click menu, rename, delete and focus behaviour; `ManageSessionRow` shrinks to a thin wrapper that supplies the Manage-only slots and callbacks (#934, converge amendment 2026-10-30).
+3. **Given** the sidebar Session list, **Then** it looks and behaves exactly as before the row reuse.
 
 ## Requirements
 
@@ -56,5 +58,6 @@
 - **FR-004** Presets `--project-1..10` per theme meet 4.5:1; `Repository.color` optional, `repositories.setColor` in `repositories_color.rs` (#887).
 - **FR-005** `RepositoryRemote` gains a known-host variant; owner/repo parsed in Rust; userinfo stripped (#646).
 - **FR-006** `ScreenHeader`, `ListToolbar` shared components; `TabsList` is 32 px app-wide (#934).
+- **FR-009** `SessionRow` takes a discriminated `layout` (`list` default, `table`); `useSessionRowActions` takes an optional `SessionRowSurface` (terminal focus fallback, announce, open, created) for the Manage-only differences; no row markup or row action logic is duplicated in `features/profile/` (#934).
 - **FR-007** No file crosses 600 lines; the file-size baseline never grows.
 - **FR-008** Verified live in Dark, Dark (high contrast) and one accent theme.
