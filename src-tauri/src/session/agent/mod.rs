@@ -226,7 +226,6 @@ impl SessionAgent {
             .await;
     }
 
-
     pub(super) async fn emit_status(&self) {
         self.ensure_pause_loaded().await;
         let state = self.state.lock().await;
@@ -354,7 +353,6 @@ impl SessionAgent {
         Self::insert_termination_and_progress_fields(obj, &state);
         payload
     }
-
 
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;

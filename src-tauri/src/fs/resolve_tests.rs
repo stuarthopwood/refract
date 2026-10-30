@@ -3,7 +3,6 @@
 
 use super::*;
 
-
 #[test]
 fn nul_byte_is_unsafe() {
     assert!(is_unsafe_token("a\0b"));
@@ -71,7 +70,6 @@ fn an_ordinary_relative_token_is_safe() {
     assert!(!is_unsafe_token("src/main.rs"));
     assert!(!is_unsafe_token("a/../b"));
 }
-
 
 async fn fixture() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("refract-resolve-test-{}", uuid::Uuid::new_v4()));

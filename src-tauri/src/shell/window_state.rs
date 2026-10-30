@@ -1,7 +1,6 @@
 // Persists window position, size and maximised state to `window-state.json` in `data_dir()`.
 // Uses the crate's own atomic JSON helper, not `tauri-plugin-window-state`, which keys off `identifier`.
 
-
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -141,7 +140,7 @@ pub async fn apply_on_startup(data_dir: &Path, window: &WebviewWindow) -> Arc<Tr
         Some((x, y)) => {
             let _ = window.set_position(Position::Physical(PhysicalPosition { x, y }));
         }
-// Full screen is not restored; an off-screen position centres on the primary display.
+        // Full screen is not restored; an off-screen position centres on the primary display.
         None => {
             let _ = window.center();
         }

@@ -61,7 +61,6 @@ pub struct UpdateState {
     pub unavailable_reason: Option<UnavailableReason>,
 }
 
-
 impl Default for UpdateState {
     fn default() -> Self {
         Self {

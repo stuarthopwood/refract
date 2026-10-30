@@ -33,8 +33,7 @@ pub fn set_process_app_user_model_id() {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn set_process_app_user_model_id() {
-}
+pub fn set_process_app_user_model_id() {}
 
 /// Applies the taskbar icon and window AUMID to a built window. Windows only.
 #[cfg(target_os = "windows")]

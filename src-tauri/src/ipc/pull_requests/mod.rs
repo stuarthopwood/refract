@@ -112,7 +112,6 @@ pub(super) async fn repo_path_for(
     ))
 }
 
-
 /// Bounds the per-row `gh pr view` spawns to `CHECK_STATE_CONCURRENCY`.
 const CHECK_STATE_CONCURRENCY: usize = 8;
 
@@ -236,7 +235,6 @@ pub(in crate::ipc::pull_requests) async fn list_pull_requests(
         })
         .collect())
 }
-
 
 #[derive(Debug, Clone)]
 struct StalenessEntry {

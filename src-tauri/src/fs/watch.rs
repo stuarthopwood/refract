@@ -186,8 +186,7 @@ where
                     }
                     return;
                 }
-                Err(std_mpsc::RecvTimeoutError::Timeout) => {
-                }
+                Err(std_mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std_mpsc::RecvTimeoutError::Disconnected) => return,
             }
         }

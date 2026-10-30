@@ -206,7 +206,6 @@ pub struct PullRequestDetail {
     pub head_repository_owner: Option<String>,
 }
 
-
 /// Draft applies only while open; a closed draft still reads as Closed (GitHub keeps `isDraft`).
 pub fn map_pull_request_state(state: &str, is_draft: bool) -> PullRequestState {
     let upper = state.to_uppercase();

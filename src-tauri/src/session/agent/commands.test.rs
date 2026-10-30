@@ -2,7 +2,6 @@
 
 use super::*;
 
-
 #[test]
 fn parse_slash_command_bare_name() {
     assert_eq!(
@@ -38,7 +37,6 @@ fn parse_slash_command_none_for_a_bare_slash() {
     assert_eq!(parse_slash_command("/   "), None);
 }
 
-
 #[test]
 fn is_builtin_source_table() {
     assert!(
@@ -54,7 +52,6 @@ fn is_builtin_source_table() {
     assert!(!is_builtin_source(Some("file")));
     assert!(!is_builtin_source(Some("skill")));
 }
-
 
 #[test]
 fn filter_supported_commands_always_prepends_native_built_commands() {
@@ -127,7 +124,6 @@ fn filter_supported_commands_passes_through_a_skill_sourced_command() {
         .iter()
         .any(|c| c.get("name").and_then(Value::as_str) == Some("skill:my-skill")));
 }
-
 
 fn builtin(name: &str, subcommands: &[&str]) -> Value {
     json!({
