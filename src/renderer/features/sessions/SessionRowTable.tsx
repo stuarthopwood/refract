@@ -6,10 +6,9 @@
 import { ArchiveIcon, ArchiveRestoreIcon, EllipsisVerticalIcon, FolderGit2Icon, GitBranchIcon, TriangleAlertIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/IconButton'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { cn } from '@/lib/utils'
 import type { SessionSummary } from '../../../shared/ipc'
@@ -94,40 +93,28 @@ export function SessionRowTable({
               </button>
             )}
             <div className="flex shrink-0 items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
-                    aria-disabled={row.quickActionPending || undefined}
-                    onClick={row.runQuickAction}
-                    className="text-muted-foreground aria-disabled:opacity-50"
-                  >
-                    {isArchived ? <ArchiveRestoreIcon aria-hidden className="size-4" /> : <ArchiveIcon aria-hidden className="size-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{isArchived ? 'Restore' : 'Archive'}</TooltipContent>
-              </Tooltip>
+              <IconButton
+                size="icon-xs"
+                label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
+                side="bottom"
+                aria-disabled={row.quickActionPending || undefined}
+                onClick={row.runQuickAction}
+                className="text-muted-foreground aria-disabled:opacity-50"
+              >
+                {isArchived ? <ArchiveRestoreIcon aria-hidden /> : <ArchiveIcon aria-hidden />}
+              </IconButton>
               <DropdownMenu onOpenChange={(open) => onDropdownOpenChange(row, open)}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        ref={row.menuTriggerRef}
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`${session.name} actions`}
-                        className="text-muted-foreground"
-                      >
-                        <EllipsisVerticalIcon aria-hidden className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">More actions</TooltipContent>
-                </Tooltip>
+                <DropdownMenuTrigger asChild>
+                  <IconButton
+                    ref={row.menuTriggerRef}
+                    size="icon-xs"
+                    label={`${session.name} actions`}
+                    side="bottom"
+                    className="text-muted-foreground"
+                  >
+                    <EllipsisVerticalIcon aria-hidden />
+                  </IconButton>
+                </DropdownMenuTrigger>
                 <DropdownMenuContent className="max-w-80" onCloseAutoFocus={row.handleMenuCloseAutoFocus}>
                   <DropdownActionItems actions={row.actions} />
                 </DropdownMenuContent>
