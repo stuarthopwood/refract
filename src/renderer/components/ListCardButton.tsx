@@ -23,7 +23,7 @@ export function ListCardButton({ ariaLabel, onClick, children, actions, classNam
         aria-label={ariaLabel}
         onClick={onClick}
         className={cn(
-          'flex min-w-0 flex-1 flex-col gap-1 rounded-lg px-3 py-2 text-left',
+          'flex min-w-0 flex-1 flex-col gap-1 rounded-lg px-4 py-2 text-left',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring forced-colors:focus-visible:outline-solid',
           className
         )}
