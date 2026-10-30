@@ -15,3 +15,16 @@ Chords are stored as key arrays (`['Ctrl','Shift','X']`) because that is what th
 Accessibility: cmdk supplies `role="combobox"`, `aria-activedescendant`, `role="listbox"`, `role="option"` and labelled groups; the Dialog gives modality and an `sr-only` title. Focus return follows the shortcuts dialog's `onCloseAutoFocus` pattern.
 
 No new tests (rapid-prototyping phase). Verify with `pnpm typecheck`, `pnpm test` and the `check:*` scripts; the live check belongs to the director.
+
+## Slice 2 plan
+
+Renderer only; `src-tauri/` unchanged (no native item maps to a registry action).
+
+1. Icons (FR-11, FR-12): `icon` prop on the context-menu and dropdown-menu item, checkbox, radio and sub-trigger wrappers, rendered through one shared `MenuItemIcon` in `components/ui/menu-item-classes.tsx` or a sibling; `PaletteAction.icon`.
+2. Builders (FR-10, FR-14): `features/palette/menuItems.ts(x)` with `actionMenuItem(id)` and `textEditItems`, rendering through `ContextMenuItem` or `DropdownMenuItem`.
+3. Migrate every menu user (FR-13) to icons and, where an action id exists, to the builders.
+4. Chords (FR-15): `features/palette/useChordDispatcher.ts` replaces the per-chord `useEffect` handlers in `App.tsx`; guards stay in the actions' `when()`.
+5. #1404 (FR-17 to FR-19): `features/menus/` holds `useBlockNativeContextMenu` (one `contextmenu` listener), `openMenuStore` (one open menu id) wired into the shared menu roots, and the repo header context menu in `RepositoryGroup.tsx`.
+6. Docs (FR-20).
+
+No new tests (rapid-prototyping phase).
