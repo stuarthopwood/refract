@@ -25,8 +25,15 @@ pub struct ScanReport {
     pub new_messages: u64,
 }
 
-/// `main` for a top-level session file, `subagent` for anything nested deeper.
+/// `advisor` for an `__advisor` session file (a WATCHDOG.yml roster or the Advisor role),
+/// `main` for any other top-level file, `subagent` for anything nested deeper.
 pub fn agent_type_for(path: &Path, sessions_root: &Path) -> &'static str {
+    if path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().contains("__advisor"))
+    {
+        return "advisor";
+    }
     let depth = path
         .strip_prefix(sessions_root)
         .map_or(0, |rel| rel.components().count());

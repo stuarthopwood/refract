@@ -1,3 +1,4 @@
+pub mod advisor_roster;
 pub mod blob_store;
 pub mod config;
 pub mod diff;

@@ -1,0 +1,57 @@
+// #1409 (spec 070): the one-time Session notice shown when a WATCHDOG.yml roster was found at
+// launch, because a roster silently replaces the Advisor role. Refract never deletes the file.
+import { toast } from 'sonner'
+import { PaneBanner } from '@/components/PaneBanner'
+import { Button } from '@/components/ui/button'
+import { focusSessionPane } from '@/lib/focus'
+import { useAdvisorRosterStore } from '@/state/advisor-roster-store'
+import { describeAdvisorRoster } from '../../../shared/ipc-advisor-roster'
+
+export function AdvisorRosterNotice({ sessionId }: { sessionId: string }) {
+  const roster = useAdvisorRosterStore((s) => s.bySession[sessionId])
+  const dismissedPath = useAdvisorRosterStore((s) => s.dismissed[sessionId])
+  if (!roster || dismissedPath === roster.path) return null
+  const rosterPath = roster.path
+
+  async function open() {
+    const result = await window.refract.advisorRoster.open(sessionId)
+    if (!result.ok) toast.error(`Could not open the roster file: ${result.error.message}`)
+  }
+
+  async function copyPath() {
+    const result = await window.refract.clipboard.writeText(rosterPath)
+    if (result.ok) toast.success('Path copied')
+    else toast.error(`Could not copy the path: ${result.error.message}`)
+  }
+
+  return (
+    <PaneBanner
+      role="region"
+      aria-label="Advisor roster"
+      severity="warning"
+      title={describeAdvisorRoster(roster)}
+      detail={`File: ${roster.path}.`}
+      data-slot="advisor-roster-notice"
+      className="shrink-0 px-4 py-2"
+    >
+      <Button type="button" size="xs" onClick={() => void open()}>
+        Open file
+      </Button>
+      <Button type="button" variant="text" size="xs" className="text-muted-foreground underline underline-offset-2 hover:decoration-2" onClick={() => void copyPath()}>
+        Copy path
+      </Button>
+      <Button
+        type="button"
+        variant="text"
+        size="xs"
+        className="text-muted-foreground underline underline-offset-2 hover:decoration-2"
+        onClick={() => {
+          useAdvisorRosterStore.getState().dismiss(sessionId)
+          focusSessionPane(sessionId)
+        }}
+      >
+        Dismiss
+      </Button>
+    </PaneBanner>
+  )
+}

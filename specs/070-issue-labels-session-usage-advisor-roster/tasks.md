@@ -4,9 +4,9 @@
 - [x] T2 #1400 Badge onDismiss, LoadingOverlay, IssueList picker, pill row, overlay
 - [x] T3 #1402 sessionDir filter (IPC type and Rust queries)
 - [x] T4 #1402 panel registration, store, SessionUsagePanel, HeadlineCards/SpendChart variants
-- [ ] T5 #1409 Rust roster detection, IPC, launch notice
-- [ ] T6 #1409 Advisor row warning, Usage caption
-- [ ] T7 #1409 check:advisor-roster and ci:local wiring
+- [x] T5 #1409 Rust roster detection, IPC, launch notice
+- [x] T6 #1409 Advisor row warning, Usage caption
+- [x] T7 #1409 check:advisor-roster and ci:local wiring
 - [ ] T8 docs/PLAN.md rows
 - [ ] T9 ci:local, live check with screenshots
 - [ ] T10 reviewer gate
