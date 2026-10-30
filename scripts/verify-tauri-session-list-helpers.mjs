@@ -261,12 +261,14 @@ export async function restoreOnlyArchivedRow(cdp) {
  * once at least one Repository already exists. */
 export async function addRepository(cdp, dir) {
   await cdp.click(
-    `document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository')`
+    `document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project')`
   );
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Local folder…')`, { timeoutMs: 10_000, label: 'Add project menu open' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Local folder…')`);
   await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
   await cdp.click(`document.querySelector('[role="dialog"] input')`);
   await cdp.send('Input.insertText', { text: dir });
-  await cdp.clickByText('Add repository', { inDialog: true });
+  await cdp.clickByText('Add project', { inDialog: true });
   await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add repository dialog closed' });
 }
 

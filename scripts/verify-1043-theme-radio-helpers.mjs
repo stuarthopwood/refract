@@ -228,8 +228,8 @@ export async function ringCarriesForcedColorsOverride(cdp) {
  * own two defining substrings -- `group-data-[state=checked]/radio-item` (the group-variant
  * key) and `border-[Highlight]` (the arbitrary value) -- rather than reconstructing Tailwind's
  * exact compiled selector syntax by hand (which differs across versions and which group/media-
- * variant nesting order it picks). Confirms via brace-depth counting (from the nearest `@media`
- * before the match to the match itself) that it is genuinely NESTED inside a forced-colors
+ * variant nesting order it picks). Confirms via brace-depth counting (walking back from the match
+ * to the blocks that enclose it) that it is genuinely NESTED inside a forced-colors
  * media block, and that the matched rule's own declaration body actually sets
  * `border-color: highlight` (CSS colour keywords are case-insensitive; Lightning CSS lowercases
  * them), not just that a rule with a matching selector exists with some unrelated declaration. */
@@ -255,12 +255,22 @@ export function forcedColorsRuleCompiled(repoRoot) {
   if (selIdx === -1) {
     return { cssFile: file, totalChars: normalized.length, selectorFound: false, insideForcedColorsMedia: false, declaresHighlightBorder: false };
   }
-  const mediaIdx = normalized.lastIndexOf('@media', selIdx);
-  const mediaHeader = mediaIdx === -1 ? '' : normalized.slice(mediaIdx, mediaIdx + 40);
-  const between = mediaIdx === -1 ? '' : normalized.slice(mediaIdx, selIdx);
-  const opens = (between.match(/\{/g) || []).length;
-  const closes = (between.match(/\}/g) || []).length;
-  const insideForcedColorsMedia = mediaIdx !== -1 && /forced-colors/i.test(mediaHeader) && opens - closes >= 1;
+  // Walk back from the match collecting the headers of every block that ENCLOSES it (a closed
+  // sibling `@media` before the match must not count, and an unrelated nested one must not hide
+  // the real forced-colors parent).
+  const enclosingHeaders = [];
+  for (let i = selIdx - 1, depth = 0; i >= 0; i--) {
+    const ch = normalized[i];
+    if (ch === '}') depth++;
+    else if (ch === '{') {
+      if (depth === 0) {
+        const headerStart = Math.max(normalized.lastIndexOf('}', i - 1), normalized.lastIndexOf('{', i - 1), normalized.lastIndexOf(';', i - 1)) + 1;
+        enclosingHeaders.push(normalized.slice(headerStart, i).trim());
+      } else depth--;
+    }
+  }
+  const mediaHeader = enclosingHeaders.find((h) => /^@media[^{]*forced-colors/i.test(h)) ?? enclosingHeaders.find((h) => h.startsWith('@media')) ?? '';
+  const insideForcedColorsMedia = /^@media[^{]*forced-colors/i.test(mediaHeader);
   const bodyStart = normalized.indexOf('{', selIdx);
   const bodyEnd = normalized.indexOf('}', bodyStart);
   const body = bodyStart !== -1 && bodyEnd !== -1 ? normalized.slice(bodyStart, bodyEnd) : '';
