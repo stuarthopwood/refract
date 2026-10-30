@@ -16,8 +16,9 @@ const STATUS_ORDER: Record<SessionDisplayStatus, number> = {
   'needs-you': 0,
   'unread-response': 1,
   working: 2,
-  idle: 3,
-  stopped: 4
+  paused: 3,
+  idle: 4,
+  stopped: 5
 }
 
 /** Filters, then sorts, `sessions` per `filters` -- never mutates the input array. Search matches

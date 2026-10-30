@@ -106,6 +106,7 @@ fn make_session_for_notice(last_message_count: Option<i64>) -> crate::store::reg
         last_activity_at: "2026-10-14T00:00:00.000Z".to_string(),
         archived_at: None,
         hidden_at: None,
+        paused_held: None,
         current_turn_subagents: None,
         stopped_on_request_conversation: None,
         stopped_on_request_at_size: None,

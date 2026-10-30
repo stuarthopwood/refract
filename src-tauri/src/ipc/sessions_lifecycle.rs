@@ -109,7 +109,6 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 format!("Base branch not found: {base_branch}"),
             ));
         }
-
         let added = add_worktree_with_generated_name(repo_path, &base_branch)
             .await
             .map_err(map_git_error)?;
@@ -130,6 +129,7 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             last_activity_at: now,
             archived_at: None,
             hidden_at: None,
+            paused_held: None,
             current_turn_subagents: None,
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,

@@ -28,6 +28,7 @@ pub mod accounts;
 pub mod app;
 pub mod attachments;
 pub mod chat;
+pub mod chat_pause;
 pub mod clipboard;
 pub mod conversations;
 pub mod copilot_plan;
@@ -200,6 +201,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
     chat::register(dispatcher);
+    chat_pause::register(dispatcher);
     subagents::register(dispatcher);
     clipboard::register(dispatcher);
     file_explorer::register(dispatcher);

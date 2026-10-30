@@ -10,6 +10,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
+import { chatPauseBridge } from './chatPause'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch } from '../shared/ipc-issues'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
@@ -215,7 +216,8 @@ const refract: RefractApi = {
     setVisibleSubagent: (sessionId, subagentId) =>
       request<void>(IPC_REQUESTS.CHAT_SET_VISIBLE_SUBAGENT, sessionId, subagentId),
     subagentSnapshot: (sessionId, subagentId) =>
-      request<TranscriptItem[]>(IPC_REQUESTS.CHAT_SUBAGENT_SNAPSHOT, sessionId, subagentId)
+      request<TranscriptItem[]>(IPC_REQUESTS.CHAT_SUBAGENT_SNAPSHOT, sessionId, subagentId),
+    ...chatPauseBridge(request)
   },
 
   sideChat: {

@@ -14,6 +14,7 @@ import { focusSessionPane, focusSessionRow, focusSessionsNav } from '@/lib/focus
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { createdSessionAnnouncement } from './createdSessionAnnouncement'
 import { useHideSession } from './useHideSession'
+import { setSessionPaused } from '@/features/chat/pauseActions'
 
 // Issue #811 (SessionList.tsx split): this is SessionRow's own body, moved unchanged -- archive,
 // restore, delete, resume and rename state and handlers, plus the focus-after-removal fallback
@@ -490,6 +491,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       onHide: hideSession.hide,
       onUnhide: hideSession.unhide,
       onStopAgent: () => void stopAgent(session.id),
+      onTogglePause: () => void setSessionPaused(session.id, !session.pause),
       onDelete: () => {
         captureFocusFallback()
         setDeleteOpen(true)

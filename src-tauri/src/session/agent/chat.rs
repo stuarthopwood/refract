@@ -17,6 +17,21 @@ impl SessionAgent {
         text: String,
         images: Option<Vec<Value>>,
     ) -> Result<Value, AgentError> {
+        if let Some(held) = self.hold_if_paused(&text, &images).await? {
+            return Ok(held);
+        }
+        self.send_unheld(text, images, false).await
+    }
+
+    /// The send path proper, without the pause gate (`resume` drains held messages through it).
+    /// `force_follow_up` marks every message after the first of a drain, which can race the
+    /// status update from the turn the first one starts.
+    pub(super) async fn send_unheld(
+        &self,
+        text: String,
+        images: Option<Vec<Value>>,
+        force_follow_up: bool,
+    ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
         let (proc, working) = {
             let idle_with_process = {
@@ -54,7 +69,7 @@ impl SessionAgent {
                 cmd["images"] = Value::Array(images);
             }
         }
-        if working {
+        if working || force_follow_up {
             cmd["streamingBehavior"] = Value::String("followUp".to_string());
         }
         let res = proc
@@ -192,7 +207,7 @@ impl SessionAgent {
     /// `AgentError` labelled with `action` (posted as a transcript notice too, matching both
     /// callers' own prior behaviour), and returns the response's `data` object on success for
     /// the caller to pull its own field out of.
-    async fn queue_op(
+    pub(super) async fn queue_op(
         &self,
         cmd: Value,
         action: &str,
@@ -226,6 +241,9 @@ impl SessionAgent {
     /// `chat.removeQueued` (issue #540): `queue` is the chip's own queue (`'followUp'` or
     /// `'steering'`) -- OMP's `remove_queued_message` only matches within the exact queue given.
     pub async fn remove_queued(&self, text: String, queue: &str) -> Result<Value, AgentError> {
+        if self.remove_held(&text).await {
+            return Ok(json!({ "removed": true }));
+        }
         let data = self
             .queue_op(
                 json!({ "type": "remove_queued_message", "message": text, "queue": queue }),

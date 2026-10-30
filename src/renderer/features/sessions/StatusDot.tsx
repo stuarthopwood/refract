@@ -6,7 +6,8 @@ const TONE: Record<SessionDisplayStatus, string> = {
   working: 'text-state-working motion-safe:animate-pulse',
   'needs-you': 'text-state-needs-you',
   stopped: 'text-state-stopped',
-  'unread-response': 'text-state-unread-response'
+  'unread-response': 'text-state-unread-response',
+  paused: 'text-state-paused'
 }
 
 /** Issue #482: the Dots **Status style**. One shape per state so colour is never the only cue
@@ -42,6 +43,13 @@ function DotShape({ status }: { status: SessionDisplayStatus }) {
       )
     case 'stopped':
       return <rect x="5" y="5" width="6" height="6" rx="1.25" fill="currentColor" />
+    case 'paused':
+      return (
+        <>
+          <rect x="4.5" y="4" width="2.5" height="8" rx="0.75" fill="currentColor" />
+          <rect x="9" y="4" width="2.5" height="8" rx="0.75" fill="currentColor" />
+        </>
+      )
     case 'unread-response':
       return (
         <>

@@ -57,6 +57,11 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     rows: [{ action: 'New session', keys: ['Ctrl', 'N'] }]
   },
   {
+    // Story #477 (pause mode): Space resumes the focused paused pane.
+    heading: 'Pause',
+    rows: [{ action: 'Resume the focused paused session', keys: ['Space'] }]
+  },
+  {
     // Issue #621 (close chat pane): its own heading, not folded into "Split view" below --
     // Ctrl+W closes the showing chat pane whether or not a split is open.
     heading: 'Chat pane',
