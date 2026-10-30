@@ -246,7 +246,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             <div
               ref={listRef}
               tabIndex={-1}
-              className="flex flex-col divide-y divide-divider outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+              className="flex flex-col divide-y divide-divider outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
             >
               {props.children}
             </div>
@@ -278,7 +278,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
               <div
                 ref={capNoteRef}
                 tabIndex={-1}
-                className="p-2 text-center text-xs text-muted-foreground outline-none focus-visible:outline-2 focus-visible:outline-ring"
+                className="p-2 text-center text-xs text-muted-foreground outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring"
               >
                 Showing the first {paging?.cap}, narrow with filters.
               </div>
