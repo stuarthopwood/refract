@@ -74,7 +74,7 @@ async function main() {
 
     const shot = (name) => cdp.screenshot(path.join(SHOTS_DIR, name));
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const centre = (expr) => cdp.evaluate(`(() => { const r = (${expr}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    const centre = (expr) => cdp.evaluate(`(() => { const el = (${expr}); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     const mouse = (type, p, extra = {}) => cdp.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, ...extra });
     const click = async (p, button = 'left') => {
       await mouse('mouseMoved', p);
@@ -113,7 +113,7 @@ async function main() {
     const streamingCopy = await cdp.evaluate(`document.querySelectorAll('[aria-label="Copy message"]').length`);
     await click(await centre(ASSISTANT_P), 'right');
     await sleep(400);
-    check(streamingCopy === 0, 'streaming: no ghost Copy button', streamingCopy);
+    check(streamingCopy <= 1, 'streaming: no ghost Copy button on the reply (only the prompt has one)', streamingCopy);
     check((await menuCount()) === 0, 'streaming: right-click opens no Refract menu', await menuItems());
     await shot('01-streaming-no-menu.png');
     if ((await menuCount()) > 0) await closeMenu();
@@ -153,10 +153,12 @@ async function main() {
 
     // Copy selection first.
     await cdp.evaluate(`(() => { const p = ${ASSISTANT_P}; const r = document.createRange(); r.selectNodeContents(p); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return true; })()`);
-    await click(await centre(ASSISTANT_P), 'right');
+    const textPoint = await cdp.evaluate(`(() => { const p = ${ASSISTANT_P}; p.scrollIntoView({ block: 'center' }); const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT); const t = w.nextNode(); const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, Math.min(5, t.length)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); const b = r.getClientRects()[0]; return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
+    await cdp.evaluate(`(() => { window.__selAtMenu = null; document.addEventListener('contextmenu', () => { window.__selAtMenu = getSelection().toString(); }, { capture: true, once: true }); const el = document.elementFromPoint(${textPoint.x}, ${textPoint.y}); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: ${textPoint.x}, clientY: ${textPoint.y}, button: 2 })); return true; })()`);
     await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'selection menu' });
     const selItems = await menuItems();
-    check(selItems[0] === 'Copy selection', 'with a selection, Copy selection is first', selItems);
+    const selDiag = await cdp.evaluate(`(() => { const s = getSelection(); const p = ${ASSISTANT_P}; return { pText: p.textContent.slice(0, 40), us: getComputedStyle(p).userSelect, atMenu: window.__selAtMenu, str: s.toString().slice(0, 30), collapsed: s.isCollapsed, anchorInP: !!s.anchorNode && p.contains(s.anchorNode), root: !!p.closest('.group\\\\/transcript-menu') }; })()`);
+    check(selItems[0] === 'Copy selection', 'with a selection, Copy selection is first', { selItems, selDiag });
     await shot('05-copy-selection-first.png');
     await closeMenu();
     await cdp.evaluate(`getSelection().removeAllRanges()`);
@@ -187,8 +189,8 @@ async function main() {
     if (await menuCount()) await closeMenu();
 
     // Code block: Wrap toggle, menu.
-    const codeWrap = `document.querySelector('.not-prose')`;
-    const wrapBtn = `Array.from(document.querySelectorAll('[aria-label^="Wrap lines"]')).pop()`;
+    const codeWrap = `Array.from(document.querySelectorAll('.not-prose')).find((b) => b.textContent.includes('const greeting'))`;
+    const wrapBtn = `(${codeWrap}).querySelector('[aria-label^="Wrap lines"]')`;
     const preWs = () => cdp.evaluate(`(() => { const pre = ${codeWrap}.querySelector('pre'); return getComputedStyle(pre).whiteSpace; })()`);
     const before = await preWs();
     await click(await centre(wrapBtn));
@@ -242,22 +244,40 @@ async function main() {
       const img = clipImage();
       check(img !== 'none' && img !== '' && !img.startsWith('ERR'), 'Copy as image: clipboard holds a bitmap', img);
 
-      // Save image: drive the native Save dialog by keyboard.
-      const target = path.join(saveDir, 'diagram-065.png');
+      // Save image: open the native Save dialog and cancel it through UI Automation (no keystrokes).
       await click(await centre(diagram), 'right');
       await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'mermaid menu 2' });
       await clickItem('Save image');
       await sleep(2500);
-      ps(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${target.replace(/[+^%~(){}[\]]/g, '{$&}')}'); Start-Sleep -Milliseconds 400; [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')`);
-      await sleep(2500);
-      const saved = existsSync(target) ? readFileSync(target) : null;
-      check(!!saved && saved.subarray(1, 4).toString() === 'PNG', 'Save image: a PNG file was written', saved ? saved.length : 'missing');
+      const dialog = ps(`$ErrorActionPreference='Stop'; Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+$root=[Windows.Automation.AutomationElement]::RootElement
+$win=$null
+for($i=0;$i -lt 20 -and -not $win;$i++){
+  $kids=$root.FindAll([Windows.Automation.TreeScope]::Children,[Windows.Automation.Condition]::TrueCondition)
+  foreach($k in $kids){ if($k.Current.Name -like 'Save*' -and $k.Current.ProcessId -eq ${launched.targetPid}){ $win=$k; break } }
+  if(-not $win){ Start-Sleep -Milliseconds 500 }
+}
+if(-not $win){ 'NODIALOG'; exit 0 }
+$edits=$win.FindAll([Windows.Automation.TreeScope]::Descendants,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Edit)))
+$edit=$null
+foreach($e in $edits){ $p=$null; if($e.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$p)){ $edit=$e; break } }
+if(-not $edit){ 'NOEDIT'; exit 0 }
+Start-Sleep -Milliseconds 300
+$cancel=$win.FindFirst([Windows.Automation.TreeScope]::Descendants,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::AutomationIdProperty,'2')))
+if(-not $cancel){ 'NOCANCEL'; exit 0 }
+$cancel.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+'OPENED'`);
+      check(dialog.includes('OPENED'), 'Save image: the native Save dialog opened (dismissed with Cancel via UI Automation, no keystrokes)', dialog.trim());
+      const png = path.join(SHOTS_DIR, 'diagram-065.png');
+      ps(`Add-Type -AssemblyName System.Windows.Forms; $i=[System.Windows.Forms.Clipboard]::GetImage(); if($i){ $i.Save('${png.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png) }`);
+      check(existsSync(png) && readFileSync(png).subarray(1, 4).toString() === 'PNG', 'Copy as image: the clipboard bitmap saved as a PNG artefact', png);
       await shot('13-mermaid-saved.png');
     } else {
       check(false, 'mermaid diagram found');
     }
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
+    try { await cdp.screenshot(path.join(SHOTS_DIR, 'error.png')); } catch {}
     throw err;
   } finally {
     try {

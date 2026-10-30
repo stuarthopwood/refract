@@ -30,7 +30,7 @@ export function TranscriptMenu({ items, disabled = false, className, children }:
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild disabled={disabled}>
+      <ContextMenuTrigger asChild disabled={disabled} className="select-text">
         <div
           ref={rootRef}
           className={cn('group/transcript-menu', className)}
