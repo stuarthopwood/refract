@@ -7,6 +7,9 @@ import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+// aria-disabled keeps the button focusable, so focus is not lost when the last page is reached.
+const PAGER_DISABLED_CLASS = 'aria-disabled:pointer-events-none aria-disabled:opacity-50'
+
 export type SortDirection = 'asc' | 'desc'
 
 export interface SortableColumn<T> {
@@ -27,6 +30,8 @@ export interface SortableTableProps<T> {
   sort: { key: string; dir: SortDirection }
   onSortChange(sort: { key: string; dir: SortDirection }): void
   emptyText: string
+  /** First fetch in flight: one muted "Loading…" row instead of the empty text. */
+  loading?: boolean
   paging?: { index: number; size: number; total: number; onIndexChange(index: number): void }
 }
 
@@ -42,7 +47,7 @@ export function sortRowsBy<T>(rows: T[], columns: SortableColumn<T>[], sort: { k
   })
 }
 
-export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortChange, emptyText, paging }: SortableTableProps<T>) {
+export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortChange, emptyText, loading = false, paging }: SortableTableProps<T>) {
   const pageCount = paging ? Math.max(1, Math.ceil(paging.total / paging.size)) : 1
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -81,17 +86,17 @@ export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortC
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {rows.length === 0 || loading ? (
               <tr>
                 <td colSpan={columns.length} className="px-2 py-4 text-muted-foreground">
-                  {emptyText}
+                  {loading ? 'Loading…' : emptyText}
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
                 <tr key={rowKey(row)} className="border-t border-divider">
                   {columns.map((column) => (
-                    <td key={column.key} className={cn('max-w-72 truncate px-2 py-1', column.align === 'right' ? 'text-right' : 'text-left')}>
+                    <td key={column.key} className={cn('max-w-72 break-words px-2 py-1', column.align === 'right' ? 'text-right' : 'text-left')}>
                       {column.render(row)}
                     </td>
                   ))}
@@ -103,7 +108,14 @@ export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortC
       </div>
       {paging && paging.total > paging.size && (
         <div className="flex items-center gap-2 text-xs">
-          <Button type="button" variant="outline" size="sm" disabled={paging.index <= 0} onClick={() => paging.onIndexChange(paging.index - 1)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-disabled={paging.index <= 0}
+            className={PAGER_DISABLED_CLASS}
+            onClick={() => paging.index > 0 && paging.onIndexChange(paging.index - 1)}
+          >
             Previous
           </Button>
           <span aria-live="polite" className="tabular-nums text-muted-foreground">
@@ -113,8 +125,9 @@ export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortC
             type="button"
             variant="outline"
             size="sm"
-            disabled={paging.index + 1 >= pageCount}
-            onClick={() => paging.onIndexChange(paging.index + 1)}
+            aria-disabled={paging.index + 1 >= pageCount}
+            className={PAGER_DISABLED_CLASS}
+            onClick={() => paging.index + 1 < pageCount && paging.onIndexChange(paging.index + 1)}
           >
             Next
           </Button>

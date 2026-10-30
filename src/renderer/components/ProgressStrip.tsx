@@ -1,23 +1,27 @@
 // The shared progress strip (spec 060 S2-04, ADR 0003): a labelled `role="progressbar"` with a
 // numeric value, plus a polite live region that announces `doneText` once when it completes.
 // The label is the visible text; the bar itself is a shape cue (fill over a bordered track).
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 export interface ProgressStripProps {
   value: number
   max: number
   /** Visible line, for example "Counting your sins: 4 of 12 sessions". */
   label: string
-  /** Announced (and shown nowhere) when `value` reaches `max` after being below it. */
-  doneText: string
+  /** Announced (and shown nowhere) when `value` reaches `max` after being below it; omit when a screen owns the announcement. */
+  doneText?: string
 }
 
 export function ProgressStrip({ value, max, label, doneText }: ProgressStripProps) {
   const labelId = useId()
   const done = max > 0 && value >= max
   const [announce, setAnnounce] = useState('')
+  const wasDone = useRef(done)
   useEffect(() => {
-    setAnnounce(done ? doneText : '')
+    // Only a below-max to max change announces; a bar that first renders full stays silent.
+    if (done && !wasDone.current) setAnnounce(doneText ?? '')
+    else if (!done) setAnnounce('')
+    wasDone.current = done
   }, [done, doneText])
   const percent = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
   return (
@@ -31,9 +35,10 @@ export function ProgressStrip({ value, max, label, doneText }: ProgressStripProp
         aria-valuemin={0}
         aria-valuemax={max}
         aria-valuenow={Math.min(value, max)}
+        aria-valuetext={`${percent}%`}
         className="h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted"
       >
-        <div className="h-full bg-foreground transition-[width]" style={{ width: `${percent}%` }} />
+        <div className="h-full bg-foreground transition-[width] motion-reduce:transition-none" style={{ width: `${percent}%` }} />
       </div>
       <div role="status" aria-live="polite" className="sr-only">
         {announce}

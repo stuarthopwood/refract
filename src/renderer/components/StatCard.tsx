@@ -14,14 +14,27 @@ export interface StatCardProps {
 
 export function StatCard({ label, value, caption, className }: StatCardProps) {
   const labelId = useId()
+  const valueId = useId()
+  const captionId = useId()
   return (
-    <Card role="group" aria-labelledby={labelId} className={cn('min-w-0', className)}>
+    <Card
+      role="group"
+      aria-labelledby={labelId}
+      aria-describedby={caption ? `${valueId} ${captionId}` : valueId}
+      className={cn('min-w-0', className)}
+    >
       <CardContent className="flex flex-col gap-1">
-        <p id={labelId} className="truncate text-xs text-muted-foreground">
+        <p id={labelId} className="break-words text-xs text-muted-foreground">
           {label}
         </p>
-        <p className="truncate text-xl font-semibold tabular-nums">{value}</p>
-        {caption && <p className="text-xs text-muted-foreground">{caption}</p>}
+        <p id={valueId} className="break-words text-xl font-semibold tabular-nums">
+          {value}
+        </p>
+        {caption && (
+          <p id={captionId} className="text-xs text-muted-foreground">
+            {caption}
+          </p>
+        )}
       </CardContent>
     </Card>
   )

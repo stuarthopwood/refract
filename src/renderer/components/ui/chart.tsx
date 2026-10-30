@@ -4,109 +4,129 @@
 // as a theme chart colour, a 1px foreground outline, and a direct label with its total in the
 // legend, so no series relies on colour alone. Each chart has a "View as table" toggle that swaps
 // the drawing for a real table of the same numbers.
-import { useId, useState, type ReactNode } from 'react'
+import { Fragment, useId, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import { SortableTable, sortRowsBy } from '@/components/SortableTable'
+import type { SortableColumn } from '@/components/SortableTable'
 import { cn } from '@/lib/utils'
 
 export interface ChartSeries {
   name: string
+  /** A neutral, low-key series such as "Other": drawn in the muted token, never a status hue. */
+  muted?: boolean
 }
 
-const SERIES_COLOURS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
+// Each hue is mixed toward the foreground so the fill stays at 3:1 or better against the card in
+// every theme; the 1px foreground outline on each shape carries the 1.4.11 boundary as well.
+const SERIES_COLOURS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'].map(
+  (c) => `color-mix(in oklab, ${c} 78%, var(--foreground))`
+)
+const MUTED_COLOUR = 'var(--muted-foreground)'
 const PATTERN_COUNT = 5
 
-/** Pattern defs shared by every chart; ids carry the chart's own prefix so two charts never collide. */
-function SeriesPatterns({ prefix, count }: { prefix: string; count: number }) {
+const seriesColours = (series: ChartSeries[]): string[] =>
+  series.map((s, i) => (s.muted ? MUTED_COLOUR : (SERIES_COLOURS[i % SERIES_COLOURS.length] ?? MUTED_COLOUR)))
+
+/**
+ * Pattern defs, rendered ONCE per chart in a zero-size svg; the bars and the legend swatches both
+ * reference them by id (`url(#prefix-i)` resolves across svgs in one document), so no id repeats.
+ */
+function SeriesPatterns({ prefix, colours }: { prefix: string; colours: string[] }) {
   const ink = 'var(--foreground)'
   return (
-    <defs>
-      {Array.from({ length: count }, (_, i) => {
-        const colour = SERIES_COLOURS[i % SERIES_COLOURS.length]
-        const id = `${prefix}-${i}`
-        const base = <rect width="6" height="6" fill={colour} />
-        switch (i % PATTERN_COUNT) {
-          case 1:
-            return (
-              <pattern key={id} id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                {base}
-                <rect width="2" height="6" fill={ink} fillOpacity="0.55" />
-              </pattern>
-            )
-          case 2:
-            return (
-              <pattern key={id} id={id} width="6" height="6" patternUnits="userSpaceOnUse">
-                {base}
-                <circle cx="3" cy="3" r="1.2" fill={ink} fillOpacity="0.6" />
-              </pattern>
-            )
-          case 3:
-            return (
-              <pattern key={id} id={id} width="6" height="6" patternUnits="userSpaceOnUse">
-                {base}
-                <rect width="6" height="2" fill={ink} fillOpacity="0.55" />
-              </pattern>
-            )
-          case 4:
-            return (
-              <pattern key={id} id={id} width="6" height="6" patternUnits="userSpaceOnUse">
-                {base}
-                <path d="M0 0L6 6M6 0L0 6" stroke={ink} strokeOpacity="0.55" strokeWidth="1" />
-              </pattern>
-            )
-          default:
-            return (
-              <pattern key={id} id={id} width="6" height="6" patternUnits="userSpaceOnUse">
-                {base}
-              </pattern>
-            )
-        }
-      })}
-    </defs>
+    <svg aria-hidden focusable="false" width="0" height="0" className="absolute">
+      <defs>
+        {colours.map((colour, i) => {
+          const id = `${prefix}-${i}`
+          const base = <rect width="6" height="6" fill={colour} />
+          return <Fragment key={id}>{renderPattern(id, i, base, ink)}</Fragment>
+        })}
+      </defs>
+    </svg>
   )
+}
+
+function renderPattern(id: string, i: number, base: ReactNode, ink: string): ReactNode {
+  const common = { id, width: '6', height: '6', patternUnits: 'userSpaceOnUse' } as const
+  switch (i % PATTERN_COUNT) {
+    case 1:
+      return (
+        <pattern {...common} patternTransform="rotate(45)">
+          {base}
+          <rect width="2" height="6" fill={ink} fillOpacity="0.55" />
+        </pattern>
+      )
+    case 2:
+      return (
+        <pattern {...common}>
+          {base}
+          <circle cx="3" cy="3" r="1.2" fill={ink} fillOpacity="0.6" />
+        </pattern>
+      )
+    case 3:
+      return (
+        <pattern {...common}>
+          {base}
+          <rect width="6" height="2" fill={ink} fillOpacity="0.55" />
+        </pattern>
+      )
+    case 4:
+      return (
+        <pattern {...common}>
+          {base}
+          <path d="M0 0L6 6M6 0L0 6" stroke={ink} strokeOpacity="0.55" strokeWidth="1" />
+        </pattern>
+      )
+    default:
+      return <pattern {...common}>{base}</pattern>
+  }
 }
 
 /** The legend swatch: the same pattern as the bars, so the key matches the drawing. */
 function Swatch({ prefix, index }: { prefix: string; index: number }) {
   return (
     <svg aria-hidden width="14" height="14" className="shrink-0">
-      <SeriesPatterns prefix={`${prefix}-sw`} count={index + 1} />
-      <rect width="14" height="14" fill={`url(#${prefix}-sw-${index})`} stroke="var(--foreground)" strokeWidth="1" />
+      <rect width="14" height="14" fill={`url(#${prefix}-${index})`} stroke="var(--foreground)" strokeWidth="1" />
     </svg>
   )
 }
 
+/** The "View as table" state of one chart, owned by the screen so the button can live in the section's `actions`. */
+export interface ChartView {
+  asTable: boolean
+  tableId: string
+  toggle: ReactNode
+}
+
+export function useChartView(): ChartView {
+  const [asTable, setAsTable] = useState(false)
+  const tableId = useId()
+  const toggle = (
+    <Button type="button" variant="ghost" size="sm" aria-pressed={asTable} aria-controls={tableId} onClick={() => setAsTable((value) => !value)}>
+      View as table
+    </Button>
+  )
+  return { asTable, tableId, toggle }
+}
+
 interface ChartFrameProps {
-  title: string
+  view: ChartView
   /** One sentence for screen readers: what the chart shows. */
   summary: string
   /** Renders the same data as a table. */
   table: ReactNode
   legend?: ReactNode
+  patterns: ReactNode
   children: ReactNode
   className?: string
 }
 
-function ChartFrame({ title, summary, table, legend, children, className }: ChartFrameProps) {
-  const [asTable, setAsTable] = useState(false)
-  const tableId = useId()
+function ChartFrame({ view, summary, table, legend, patterns, children, className }: ChartFrameProps) {
   return (
-    <div className={cn('flex min-w-0 flex-col gap-2', className)}>
-      <div className="flex items-center gap-2">
-        <h3 className="text-xs font-semibold">{title}</h3>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto"
-          aria-pressed={asTable}
-          aria-controls={tableId}
-          onClick={() => setAsTable((value) => !value)}
-        >
-          View as table
-        </Button>
-      </div>
-      <div id={tableId}>
-        {asTable ? (
+    <div className={cn('min-w-0', className)}>
+      {patterns}
+      <div id={view.tableId}>
+        {view.asTable ? (
           table
         ) : (
           <>
@@ -120,39 +140,42 @@ function ChartFrame({ title, summary, table, legend, children, className }: Char
   )
 }
 
-function ChartTable({ caption, headers, rows }: { caption: string; headers: string[]; rows: string[][] }) {
+interface ChartTableRow {
+  id: string
+  cells: string[]
+  /** What each column sorts by; the first column sorts by original order. */
+  sortBy: (number | string)[]
+}
+
+function ChartTable({ caption, headers, rows }: { caption: string; headers: string[]; rows: ChartTableRow[] }) {
+  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'c0', dir: 'asc' })
+  const columns: SortableColumn<ChartTableRow>[] = headers.map((header, i) => ({
+    key: `c${i}`,
+    header,
+    align: i === 0 ? 'left' : 'right',
+    sortValue: (row) => row.sortBy[i] ?? 0,
+    render: (row) => row.cells[i] ?? ''
+  }))
   return (
     <div className="max-h-64 overflow-auto">
-      <table className="w-full text-xs tabular-nums">
-        <caption className="sr-only">{caption}</caption>
-        <thead>
-          <tr>
-            {headers.map((header, i) => (
-              <th key={header} scope="col" className={cn('px-2 py-1 font-semibold', i === 0 ? 'text-left' : 'text-right')}>
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row[0]} className="border-t border-divider">
-              {row.map((cell, i) => (
-                <td key={i} className={cn('px-2 py-1', i === 0 ? 'text-left' : 'text-right')}>
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <SortableTable
+        caption={caption}
+        columns={columns}
+        rows={sortRowsBy(rows, columns, sort)}
+        rowKey={(row) => row.id}
+        sort={sort}
+        onSortChange={setSort}
+        emptyText="No data in this range."
+      />
     </div>
   )
 }
 
 export interface StackedBarChartProps {
+  /** Names the table view's caption. */
   title: string
   summary: string
+  view: ChartView
   series: ChartSeries[]
   /** One column per bucket; `values[i]` belongs to `series[i]`. */
   buckets: { label: string; values: number[] }[]
@@ -164,7 +187,7 @@ export interface StackedBarChartProps {
 const CHART_HEIGHT = 140
 const CHART_WIDTH = 600
 
-export function StackedBarChart({ title, summary, series, buckets, formatValue, bucketHeader }: StackedBarChartProps) {
+export function StackedBarChart({ title, summary, view, series, buckets, formatValue, bucketHeader }: StackedBarChartProps) {
   const prefix = useId().replace(/:/g, '')
   const totals = buckets.map((bucket) => bucket.values.reduce((sum, v) => sum + v, 0))
   const max = Math.max(0, ...totals)
@@ -173,8 +196,9 @@ export function StackedBarChart({ title, summary, series, buckets, formatValue, 
   const seriesTotals = series.map((_, i) => buckets.reduce((sum, bucket) => sum + (bucket.values[i] ?? 0), 0))
   return (
     <ChartFrame
-      title={title}
+      view={view}
       summary={summary}
+      patterns={<SeriesPatterns prefix={prefix} colours={seriesColours(series)} />}
       legend={series.map((s, i) => (
         <li key={s.name} className="flex items-center gap-2">
           <Swatch prefix={prefix} index={i} />
@@ -186,7 +210,11 @@ export function StackedBarChart({ title, summary, series, buckets, formatValue, 
         <ChartTable
           caption={`${title} as a table`}
           headers={[bucketHeader, ...series.map((s) => s.name), 'Total']}
-          rows={buckets.map((bucket, i) => [bucket.label, ...bucket.values.map(formatValue), formatValue(totals[i] ?? 0)])}
+          rows={buckets.map((bucket, i) => ({
+            id: String(i),
+            cells: [bucket.label, ...bucket.values.map(formatValue), formatValue(totals[i] ?? 0)],
+            sortBy: [i, ...bucket.values, totals[i] ?? 0]
+          }))}
         />
       }
     >
@@ -201,11 +229,10 @@ export function StackedBarChart({ title, summary, series, buckets, formatValue, 
           preserveAspectRatio="none"
           className="h-36 min-w-0 flex-1 border-b border-l border-divider"
         >
-          <SeriesPatterns prefix={prefix} count={series.length} />
           {buckets.map((bucket, bi) => {
             let y = CHART_HEIGHT
             return (
-              <g key={bucket.label}>
+              <g key={bi}>
                 {bucket.values.map((value, si) => {
                   const height = max > 0 ? (value / max) * (CHART_HEIGHT - 2) : 0
                   if (height <= 0) return null
@@ -240,27 +267,36 @@ export function StackedBarChart({ title, summary, series, buckets, formatValue, 
 }
 
 export interface BarChartProps {
+  /** Names the table view's caption. */
   title: string
   summary: string
+  view: ChartView
   rows: { label: string; value: number; detail?: string }[]
   formatValue(value: number): string
+  /** Heading of the label column in the table view, for example "Token type". */
+  labelHeader: string
   /** Heading of the detail column in the table view, when rows carry `detail`. */
   detailHeader?: string
 }
 
-export function BarChart({ title, summary, rows, formatValue, detailHeader }: BarChartProps) {
+export function BarChart({ title, summary, view, rows, formatValue, labelHeader, detailHeader }: BarChartProps) {
   const prefix = useId().replace(/:/g, '')
   const max = Math.max(0, ...rows.map((row) => row.value))
   const hasDetail = rows.some((row) => row.detail !== undefined)
   return (
     <ChartFrame
-      title={title}
+      view={view}
       summary={summary}
+      patterns={<SeriesPatterns prefix={prefix} colours={seriesColours(rows.map((row) => ({ name: row.label })))} />}
       table={
         <ChartTable
           caption={`${title} as a table`}
-          headers={['Type', 'Amount', ...(hasDetail ? [detailHeader ?? 'Detail'] : [])]}
-          rows={rows.map((row) => [row.label, formatValue(row.value), ...(hasDetail ? [row.detail ?? ''] : [])])}
+          headers={[labelHeader, 'Amount', ...(hasDetail ? [detailHeader ?? 'Detail'] : [])]}
+          rows={rows.map((row, i) => ({
+            id: String(i),
+            cells: [row.label, formatValue(row.value), ...(hasDetail ? [row.detail ?? ''] : [])],
+            sortBy: [i, row.value, ...(hasDetail ? [row.detail ?? ''] : [])]
+          }))}
         />
       }
     >
@@ -273,7 +309,6 @@ export function BarChart({ title, summary, rows, formatValue, detailHeader }: Ba
               {row.detail !== undefined && <span className="tabular-nums text-muted-foreground">{row.detail}</span>}
             </div>
             <svg aria-hidden className="h-3 w-full" preserveAspectRatio="none" viewBox="0 0 100 12">
-              <SeriesPatterns prefix={prefix} count={rows.length} />
               <rect
                 width={max > 0 ? Math.max(0.5, (row.value / max) * 100) : 0}
                 height="12"

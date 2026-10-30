@@ -278,9 +278,10 @@ A pane banner (Worktree missing, Terminated unexpectedly, The agent stopped, sta
 
 ## Usage view components (spec 060, #1331)
 
-Four shared pieces carry the Usage view; reuse them rather than copying.
+Five shared pieces carry the Usage view; reuse them rather than copying.
 
-- **Chart** (`components/ui/chart.tsx`): hand-written SVG (`StackedBarChart`, `BarChart`, `Sparkline`), no charting library. Series are told apart by fill pattern plus a legend with direct labels and totals, never colour alone, and every chart has a **View as table** toggle (`aria-pressed`) that swaps the SVG for a real table.
-- **StatCard** (`components/StatCard.tsx`): a label, a value and an optional caption read as one labelled group.
-- **SortableTable** (`components/SortableTable.tsx`): header buttons inside `th` cells carrying `aria-sort`, controlled sort, optional paging and an empty row. Keyboard-only.
-- **ProgressStrip** (`components/ProgressStrip.tsx`): `role="progressbar"` with value, min and max, plus a polite live region that announces completion.
+- **Chart** (`components/ui/chart.tsx`): hand-written SVG (`StackedBarChart`, `BarChart`, `Sparkline`), no charting library. Series are told apart by fill pattern plus a legend with direct labels and totals, never colour alone; patterns are defined once per chart, and a `muted` series (such as "Other") uses the muted token. The chart has no heading: wrap it in a `ScreenSection` and put `useChartView().toggle` (**View as table**, `aria-pressed`) in its `actions`. The table view is a `SortableTable`.
+- **StatCard** (`components/StatCard.tsx`): a label, a value and an optional caption read as one labelled group (value and caption are its description); text wraps, never truncates.
+- **SortableTable** (`components/SortableTable.tsx`): header buttons inside `th` cells carrying `aria-sort`, controlled sort, optional paging (Previous and Next use `aria-disabled` so focus survives the last page), a `loading` row and an empty row. Cells wrap.
+- **ProgressStrip** (`components/ProgressStrip.tsx`): `role="progressbar"` with value, min, max and `aria-valuetext`, plus a polite live region that announces `doneText` only on a below-max to max change. Omit `doneText` when the screen owns the announcement.
+- **OptionSelect** (`components/OptionSelect.tsx`): a compact "any or one of" select; the first item clears the filter.
