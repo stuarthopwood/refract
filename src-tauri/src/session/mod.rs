@@ -26,6 +26,7 @@ pub mod subagents;
 pub mod termination;
 pub mod thinking_level;
 pub mod token_guard;
+mod usage_nudge;
 
 pub use agent::{AgentError, SessionAgent, SessionStatus};
 pub use manager::SessionManager;

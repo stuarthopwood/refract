@@ -189,6 +189,12 @@ _Avoid_: Issues page, issue log, issue tracker
 
 **Usage view**:
 The left-nav entry and the dashboard it opens (#1331), showing every OMP model call, tool call, token and **AI credit** recorded on this machine, by **Project**, model, reasoning level and agent type, read from Refract's own local `usage.db` (ADR 0006), never committed to any repository.
+
+**Project label**:
+The name the **Usage view** shows for the folder an OMP session ran in: the **Project**'s name when the session's working directory is, or sits inside, a Project's checkout (longest match wins), otherwise the working directory's last path segment. A display label only; it does not create a **Project**.
+
+**usage.db**:
+Refract's own SQLite database in its data folder (#1331, ADR 0006), filled incrementally and idempotently from OMP's session files (`~/.omp/agent/sessions`, or the folder `REFRACT_OMP_SESSIONS_DIR` names). It is a rebuildable cache of OMP's record, plus the Usage view's saved filters and Jokes toggle; the session files stay the source of truth.
 _Avoid_: Stats page, billing page
 
 **AI credit**:

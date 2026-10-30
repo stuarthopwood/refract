@@ -54,8 +54,8 @@ function relPath(p) {
 // ---------------------------------------------------------------------------
 
 function extractConstObject(source, constName) {
-  const match = source.match(new RegExp(`export const ${constName} = \\{([\\s\\S]*?)\\n\\} as const;`));
-  if (!match) throw new Error(`check-parity: could not find ${constName} in ${relPath(ipcTsPath)}`);
+  const match = source.match(new RegExp(`export const ${constName} = \\{([\\s\\S]*?)\\n\\} as const;?`));
+  if (!match) throw new Error(`check-parity: could not find ${constName} in the IPC contract sources`);
   const entries = [];
   const entryRe = /^\s*([A-Z0-9_]+):\s*'([^']+)',?\s*$/gm;
   let m;
@@ -74,8 +74,16 @@ function extractConstObject(source, constName) {
 }
 
 const ipcSource = readFile(ipcTsPath);
-const requests = extractConstObject(ipcSource, 'IPC_REQUESTS');
-const events = extractConstObject(ipcSource, 'IPC_EVENTS');
+// Spec 060: `ipc.ts` is at its cap, so the Usage channels live in `ipc-usage.ts`.
+const ipcUsageSource = readFile(path.join(repoRoot, 'src/shared/ipc-usage.ts'));
+const requests = [
+  ...extractConstObject(ipcSource, 'IPC_REQUESTS'),
+  ...extractConstObject(ipcUsageSource, 'IPC_USAGE_REQUESTS'),
+];
+const events = [
+  ...extractConstObject(ipcSource, 'IPC_EVENTS'),
+  ...extractConstObject(ipcUsageSource, 'IPC_USAGE_EVENTS'),
+];
 const bootstrapMatch = ipcSource.match(/export const THEME_BOOTSTRAP_CHANNEL = '([^']+)';/);
 if (!bootstrapMatch) throw new Error(`check-parity: could not find THEME_BOOTSTRAP_CHANNEL in ${relPath(ipcTsPath)}`);
 const themeBootstrapChannel = bootstrapMatch[1];
@@ -384,6 +392,19 @@ const REQUEST_LANES = {
   MODEL_APPLY_ROLE: 'RM',
   MODEL_LIST_ROLES: 'RM',
   MODEL_SET_THINKING_LEVEL: 'RM', // #564, ipc/model.rs
+  USAGE_START: 'U', // #1331, ipc/usage.rs and ipc/usage_prefs.rs
+  USAGE_STOP: 'U',
+  USAGE_STATUS: 'U',
+  USAGE_SUMMARY: 'U',
+  USAGE_TIMESERIES: 'U',
+  USAGE_TOKEN_MIX: 'U',
+  USAGE_BREAKDOWN: 'U',
+  USAGE_TOP_SESSIONS: 'U',
+  USAGE_CALLS: 'U',
+  USAGE_FRUSTRATION: 'U',
+  USAGE_BUDGET: 'U',
+  USAGE_GET_PREFS: 'U',
+  USAGE_SET_PREFS: 'U',
 };
 
 const EVENT_LANES = {
@@ -409,6 +430,7 @@ const EVENT_LANES = {
   FILE_EXPLORER_RESET: 'R7',
   ACCOUNTS_GITHUB_CHANGED: 'R9', // #792
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'R9',
+  USAGE_PROGRESS: 'U', // #1331
 };
 
 const THEME_BOOTSTRAP_LANE = 'R8'; // #791, theme.rs
