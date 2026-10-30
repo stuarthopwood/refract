@@ -1,7 +1,9 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
-import { ChevronRightIcon, CheckIcon } from "lucide-react"
+import { ChevronRightIcon, CheckIcon, type LucideIcon } from "lucide-react"
+import { isMenuOpen, useExclusiveMenu } from "@/components/ui/exclusive-menu"
+import { MenuItemIcon } from "@/components/ui/menu-item-icon"
 import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
 import {
   MENU_ITEM_CLASS,
@@ -14,9 +16,12 @@ import {
 } from "@/components/ui/menu-item-classes"
 
 function ContextMenu({
+  open: openProp,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
-  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
+  const menu = useExclusiveMenu(openProp, undefined, onOpenChange)
+  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} open={menu.open} onOpenChange={menu.onOpenChange} />
 }
 
 function ContextMenuTrigger({
@@ -77,6 +82,10 @@ function ContextMenuContent({
         data-slot="context-menu-content"
         className={cn("max-h-(--radix-context-menu-content-available-height) origin-(--radix-context-menu-content-transform-origin) overflow-y-auto duration-[var(--motion-fast)] ease-[var(--ease-out)]", MENU_CONTENT_CLASS, className )}
         {...props}
+        onCloseAutoFocus={(event) => {
+          props.onCloseAutoFocus?.(event)
+          if (isMenuOpen()) event.preventDefault()
+        }}
       />
     </ContextMenuPrimitive.Portal>
   )
@@ -86,9 +95,12 @@ function ContextMenuItem({
   className,
   inset,
   variant = "default",
+  icon,
+  children,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Item> & {
   inset?: boolean
+  icon?: LucideIcon
   variant?: "default" | "destructive"
 }) {
   return (
@@ -103,7 +115,9 @@ function ContextMenuItem({
         className
       )}
       {...props}
-    />
+    >
+      {props.asChild ? children : <><MenuItemIcon icon={icon} />{children}</>}
+    </ContextMenuPrimitive.Item>
   )
 }
 
@@ -111,9 +125,11 @@ function ContextMenuSubTrigger({
   className,
   inset,
   children,
+  icon,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.SubTrigger> & {
   inset?: boolean
+  icon?: LucideIcon
 }) {
   return (
     <ContextMenuPrimitive.SubTrigger
@@ -122,6 +138,7 @@ function ContextMenuSubTrigger({
       className={cn(MENU_SUB_TRIGGER_CLASS, className)}
       {...props}
     >
+      <MenuItemIcon icon={icon} />
       {children}
       <ChevronRightIcon className="ml-auto" />
     </ContextMenuPrimitive.SubTrigger>
@@ -146,9 +163,11 @@ function ContextMenuCheckboxItem({
   children,
   checked,
   inset,
+  icon,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.CheckboxItem> & {
   inset?: boolean
+  icon?: LucideIcon
 }) {
   return (
     <ContextMenuPrimitive.CheckboxItem
@@ -163,6 +182,7 @@ function ContextMenuCheckboxItem({
           <CheckIcon className="text-current" />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
+      <MenuItemIcon icon={icon} />
       {children}
     </ContextMenuPrimitive.CheckboxItem>
   )
@@ -172,9 +192,11 @@ function ContextMenuRadioItem({
   className,
   children,
   inset,
+  icon,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.RadioItem> & {
   inset?: boolean
+  icon?: LucideIcon
 }) {
   return (
     <ContextMenuPrimitive.RadioItem
@@ -189,6 +211,7 @@ function ContextMenuRadioItem({
       >
         <ContextMenuPrimitive.ItemIndicator className={RADIO_DOT_CLASS} />
       </span>
+      <MenuItemIcon icon={icon} />
       {children}
     </ContextMenuPrimitive.RadioItem>
   )

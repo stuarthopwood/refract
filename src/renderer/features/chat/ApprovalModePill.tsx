@@ -1,5 +1,4 @@
-import type { ComponentType } from 'react'
-import { BookmarkCheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
+import { BookmarkCheckIcon, HandIcon, PencilLineIcon, ZapIcon, type LucideIcon } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +16,7 @@ interface ModeItem {
   value: ApprovalMode
   label: string
   hint: string
-  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
+  icon: LucideIcon
 }
 
 const MODE_ITEMS: ModeItem[] = [
@@ -69,10 +68,8 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
       <DropdownMenuContent align="start">
         <DropdownMenuRadioGroup value={currentMode} onValueChange={(value) => handleSelect(value as ApprovalMode)}>
           {MODE_ITEMS.map((item) => {
-            const ItemIcon = item.icon
             return (
-              <DropdownMenuRadioItem key={item.value} value={item.value}>
-                <ItemIcon aria-hidden className="size-4" />
+              <DropdownMenuRadioItem key={item.value} value={item.value} icon={item.icon}>
                 <div className="flex flex-col gap-1 py-1">
                   <span>{item.label}</span>
                   <span className="text-xs text-muted-foreground">{item.hint}</span>

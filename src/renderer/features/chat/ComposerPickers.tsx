@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ClockIcon, Loader2Icon, PaperclipIcon } from 'lucide-react'
+import { CheckIcon, ClockIcon, Link2Icon, Loader2Icon, PaperclipIcon, SignalHighIcon, SignalIcon, SignalLowIcon, SignalMediumIcon, SignalZeroIcon, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { ValueCrossfade } from '@/components/ValueCrossfade'
@@ -13,6 +13,17 @@ import { notify, useSessionsStore } from '@/state'
 import { useChatAreaAnnouncer } from './chatAreaAnnouncer'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
 import { COMPOSER_DISABLED_CLASS, GHOST_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerOpenState } from './pickerShared'
+
+const LEVEL_ICON: Record<ThinkingLevel, LucideIcon> = {
+  inherit: Link2Icon,
+  off: SignalZeroIcon,
+  minimal: SignalLowIcon,
+  low: SignalLowIcon,
+  medium: SignalMediumIcon,
+  high: SignalHighIcon,
+  xhigh: SignalIcon,
+  max: SignalIcon
+}
 
 export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
@@ -80,14 +91,14 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
       <DropdownMenuContent align="start" className="max-w-64">
         {nextLabel && session?.lastThinkingLevel && (
           <>
-            <DropdownMenuItem onSelect={() => void handleSelect(session.lastThinkingLevel as ThinkingLevel)}>Keep current ({label})</DropdownMenuItem>
+            <DropdownMenuItem icon={CheckIcon} onSelect={() => void handleSelect(session.lastThinkingLevel as ThinkingLevel)}>Keep current ({label})</DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         )}
         {/* A `DropdownMenuRadioGroup` exposes the current level as `aria-checked`. */}
         <DropdownMenuRadioGroup value={session?.lastThinkingLevel ?? undefined} onValueChange={(value) => void handleSelect(value as ThinkingLevel)}>
           {THINKING_LEVELS.map((level) => (
-            <DropdownMenuRadioItem key={level} value={level}>
+            <DropdownMenuRadioItem key={level} value={level} icon={LEVEL_ICON[level]}>
               <span className="min-w-0 flex-1 truncate">
                 {THINKING_LEVEL_LABEL[level]}
                 {level === nextLevel && <span className="text-xs text-muted-foreground"> next</span>}

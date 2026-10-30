@@ -2,11 +2,12 @@
 // grouped by outcome -- only Action required and Failing expanded; Pending, Successful, Neutral
 // and Skipped collapsed. Every row pairs its status icon with the outcome word (never colour
 // alone) and offers "Open details" through a plain http(s) anchor, as ChangesTab does (no IPC).
-import { ChevronRightIcon, CircleAlertIcon, EllipsisVerticalIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
+import { ChevronRightIcon, CircleAlertIcon, EllipsisVerticalIcon, ExternalLinkIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
 import { useState, type ComponentType } from 'react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { MenuItemIcon } from '@/components/ui/menu-item-icon'
 import { cn } from '@/lib/utils'
 import type { CheckOutcome, PullRequestCheck, PullRequestDetail } from '../../../shared/github'
 import { CHECK_STATE_DISPLAY } from './PullRequestRow'
@@ -81,11 +82,11 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
           {isHttpUrl(check.detailsUrl) ? (
             <DropdownMenuItem asChild>
               <a href={check.detailsUrl} target="_blank" rel="noreferrer noopener">
-                Open details<span className="sr-only"> (opens in browser)</span>
+                <MenuItemIcon icon={ExternalLinkIcon} />Open details<span className="sr-only"> (opens in browser)</span>
               </a>
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem disabled>Open details (no link available)</DropdownMenuItem>
+            <DropdownMenuItem disabled icon={ExternalLinkIcon}>Open details (no link available)</DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

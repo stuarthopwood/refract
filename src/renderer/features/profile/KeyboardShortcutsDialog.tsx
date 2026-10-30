@@ -34,7 +34,7 @@ const CONTEXTUAL_ROWS: Record<string, ShortcutRow[]> = {
 
 const GROUP_ORDER = ['Message box', 'Sessions', 'Pause', 'Chat pane', 'Right pane', 'Split view', 'General']
 
-// Bound-chord rows are display metadata from the action registry; the handlers that match those chords live elsewhere.
+// Bound-chord rows are display metadata from the action registry; useChordDispatcher matches them.
 function buildShortcutGroups(): ShortcutGroup[] {
   const rows = new Map<string, ShortcutRow[]>(Object.entries(CONTEXTUAL_ROWS).map(([heading, list]) => [heading, [...list]]))
   for (const action of getActions()) {

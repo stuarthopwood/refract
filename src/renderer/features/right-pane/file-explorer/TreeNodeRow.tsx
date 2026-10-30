@@ -89,7 +89,7 @@ export function TreeNodeRow({
     reveal: () => void onReveal(node.path),
     copyPath: (confirm) => onCopyPath(node.path, confirm)
   }
-  const menuActions = PATH_ACTIONS.map(({ key, label }) => ({ key, label, onSelect: () => void (key === 'copyPath' ? handlers.copyPath(true) : handlers[key]()) }))
+  const menuActions = PATH_ACTIONS.map(({ key, label, icon }) => ({ key, label, icon, onSelect: () => void (key === 'copyPath' ? handlers.copyPath(true) : handlers[key]()) }))
 
   const rowContent = (
     <div
@@ -170,7 +170,7 @@ export function TreeNodeRow({
           </Tooltip>
           <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
             {menuActions.map((action) => (
-              <DropdownMenuItem key={action.key} onSelect={action.onSelect}>
+              <DropdownMenuItem key={action.key} icon={action.icon} onSelect={action.onSelect}>
                 {action.label}
               </DropdownMenuItem>
             ))}
@@ -187,7 +187,7 @@ export function TreeNodeRow({
       <ContextMenuTrigger asChild>{rowContent}</ContextMenuTrigger>
       <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
         {menuActions.map((action) => (
-          <ContextMenuItem key={action.key} onSelect={action.onSelect}>
+          <ContextMenuItem key={action.key} icon={action.icon} onSelect={action.onSelect}>
             {action.label}
           </ContextMenuItem>
         ))}

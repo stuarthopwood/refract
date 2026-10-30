@@ -57,7 +57,7 @@ export function DropdownActionItems({ actions }: { actions: SessionRowAction[] }
     action.kind === 'separator' ? (
       <DropdownMenuSeparator key={`sep-${index}`} />
     ) : (
-      <DropdownMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
+      <DropdownMenuItem key={action.key} variant={action.variant} icon={action.icon} disabled={action.disabled} onSelect={action.onSelect}>
         <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
       </DropdownMenuItem>
     )
@@ -69,7 +69,7 @@ export function ContextActionItems({ actions }: { actions: SessionRowAction[] })
     action.kind === 'separator' ? (
       <ContextMenuSeparator key={`sep-${index}`} />
     ) : (
-      <ContextMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
+      <ContextMenuItem key={action.key} variant={action.variant} icon={action.icon} disabled={action.disabled} onSelect={action.onSelect}>
         <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
       </ContextMenuItem>
     )

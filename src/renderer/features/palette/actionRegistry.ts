@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react'
+
 /** A key chord as display tokens, modifiers first: `['Ctrl', 'Shift', 'X']`. */
 export type Chord = readonly string[]
 
@@ -7,8 +9,12 @@ export interface PaletteAction {
   label: string
   /** Heading the shortcuts dialog files this action's chord under. */
   group: string
+  /** Leading icon in menus and the palette; one icon per action everywhere (#1405). */
+  icon?: LucideIcon
   chord?: Chord
   aliasChord?: Chord
+  /** Chord fires even with an overlay open or on key repeat, and is swallowed when `when()` is false. */
+  chordUnguarded?: boolean
   /** Extra words the fuzzy search also matches. */
   keywords?: readonly string[]
   /** Read at call time from store state, so the answer is never stale. */
@@ -51,11 +57,20 @@ export function spokenChord(chord: Chord): string {
   return chord.map((key) => (key === ',' ? 'comma' : key)).join(' plus ')
 }
 
-// Latin letters match on `event.key` and other layouts fall back to `event.code`, like the window-level handlers.
+const PUNCTUATION_CODES: Record<string, string> = { '\\': 'Backslash', ',': 'Comma' }
+
+// Letters and comma match on `event.key` with an `event.code` fallback for non-Latin layouts; Backslash matches on code
+// alone because Shift changes `event.key` to '|'.
 function keyMatches(event: KeyboardEvent, token: string): boolean {
+  const code = PUNCTUATION_CODES[token]
+  if (code === undefined) {
+    const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
+    if (latin) return event.key.toLowerCase() === token.toLowerCase()
+    return /^[A-Za-z]$/.test(token) && event.code === `Key${token.toUpperCase()}`
+  }
+  if (token === '\\') return event.code === code
   const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
-  if (latin) return event.key.toLowerCase() === token.toLowerCase()
-  return /^[A-Za-z]$/.test(token) && event.code === `Key${token.toUpperCase()}`
+  return latin ? event.key === token : event.code === code
 }
 
 /** True when the keydown is exactly this chord: same modifiers, same final key. */

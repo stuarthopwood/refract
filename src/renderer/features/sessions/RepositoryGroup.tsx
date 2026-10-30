@@ -3,13 +3,8 @@ import type { KeyboardEvent } from 'react'
 import { EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
@@ -30,6 +25,8 @@ import { projectColorCss } from '@/lib/projectColor'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
+import { ContextActionItems, DropdownActionItems } from './SessionRowParts'
+import { buildRepositoryActions } from './repositoryActions'
 
 // Hidden at rest via opacity (stays in the Tab order); revealed on group hover/focus, own aria-expanded, and under (hover: none) (#567).
 // `dark:hover:` / `aria-expanded:` fills beat the Button base's `dark:hover:bg-muted/50`, which equals the selected row; the focus class restores a forced-colours outline.
@@ -159,12 +156,44 @@ export function RepositoryGroup({
     triggerRef.current?.focus()
   }, [renaming])
 
+  const actions = buildRepositoryActions(
+    {
+      onRename: () => {
+        renameRequestedRef.current = true
+        startRenaming()
+      },
+      onColour: () => {
+        colourRequestedRef.current = true
+      },
+      onReport: () => {
+        reportRequestedRef.current = true
+      },
+      onRemove: () => setRemoveOpen(true)
+    },
+    !!githubRemoteSlug(repository.remote)
+  )
+
+  function handleMenuCloseAutoFocus(event: Event): void {
+    if (!renameRequestedRef.current && !colourRequestedRef.current && !reportRequestedRef.current) return
+    const openColour = colourRequestedRef.current
+    const openReport = reportRequestedRef.current
+    renameRequestedRef.current = false
+    colourRequestedRef.current = false
+    reportRequestedRef.current = false
+    event.preventDefault()
+    // Open only once the menu has fully closed, so it cannot take focus back from the popover.
+    if (openColour) setColorOpen(true)
+    if (openReport) setReportOpen(true)
+  }
+
   // Only a confirmed `none` earns the "local only" icon; unreadable or unparsed repos must not (#528).
   const remoteIcon = remoteHeaderIcon(repository.remote)
   const remoteTooltip = remoteHeaderTooltip(repository.remote)
   return (
     <div ref={groupRootRef} className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>
+        <ContextMenu>
+        <ContextMenuTrigger asChild disabled={renaming}>
         <div ref={headerRowRef} className="group flex items-center gap-1 px-1">
           {renaming ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -268,51 +297,16 @@ export function RepositoryGroup({
                 <EllipsisVerticalIcon aria-hidden />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              onCloseAutoFocus={(event) => {
-                if (!renameRequestedRef.current && !colourRequestedRef.current && !reportRequestedRef.current) return
-                const openColour = colourRequestedRef.current
-                const openReport = reportRequestedRef.current
-                renameRequestedRef.current = false
-                colourRequestedRef.current = false
-                reportRequestedRef.current = false
-                event.preventDefault()
-                // Open only once the menu has fully closed, so it cannot take focus back from the popover.
-                if (openColour) setColorOpen(true)
-                if (openReport) setReportOpen(true)
-              }}
-            >
-              <DropdownMenuItem
-                onSelect={() => {
-                  renameRequestedRef.current = true
-                  startRenaming()
-                }}
-              >
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  colourRequestedRef.current = true
-                }}
-              >
-                Colour…
-              </DropdownMenuItem>
-              {githubRemoteSlug(repository.remote) && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    reportRequestedRef.current = true
-                  }}
-                >
-                  Report an issue…
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
-                Remove project…
-              </DropdownMenuItem>
+            <DropdownMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+              <DropdownActionItems actions={actions} />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+          <ContextActionItems actions={actions} />
+        </ContextMenuContent>
+        </ContextMenu>
         <CollapsibleContent>
           {active.length === 0 ? (
             // Empty-state line; "yet" is wrong when the only Sessions are archived (#567).

@@ -413,7 +413,7 @@ export function Transcript({
   return (
     <JumpToStageContext.Provider value={jumpToStageRow}>
     <LinkContext.Provider value={sessionId}>
-    <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
+    <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end" scrollPreviousItemPeek={0}>
       <ChatNavBridge
         sessionId={sessionId}
         items={items}

@@ -2,7 +2,7 @@
 // items -- Local folder… and Clone from GitHub… -- shared by the session list footer and the
 // first-run screen. Owns both dialogs so a caller only picks a `variant`.
 import { useRef, useState } from 'react'
-import { ChevronDownIcon, ChevronUpIcon, FolderPlusIcon } from 'lucide-react'
+import { ChevronDownIcon, ChevronUpIcon, CloudDownloadIcon, FolderOpenIcon, FolderPlusIcon } from 'lucide-react'
 import { SIDEBAR_NAV_BUTTON_CLASS } from '@/components/sidebarNavButtonClass'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -71,6 +71,7 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
           }}
         >
           <DropdownMenuItem
+            icon={FolderOpenIcon}
             onSelect={() => {
               openingDialogRef.current = true
               setLocalOpen(true)
@@ -79,6 +80,7 @@ export function AddProjectMenu({ variant, side, disabled = false, className }: A
             Local folder…
           </DropdownMenuItem>
           <DropdownMenuItem
+            icon={CloudDownloadIcon}
             onSelect={() => {
               openingDialogRef.current = true
               setCloneOpen(true)
