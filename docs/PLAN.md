@@ -905,6 +905,8 @@ Also filed 2026-10-30: **#1420** (`p1`), App-wide: one label and icon for every 
 
 Also filed 2026-10-30: **#1422** (`p1`), Session list: project header hover fill covers the whole row including its action buttons (one rounded `bg-sidebar-accent` shape, moved from `GroupHeaderTrigger` to a shared header-row wrapper also used by the Archived and Git changes headers); placed as an index line after #1420's line.
 
+Also filed 2026-10-30: **#1424** (`p1`), Settings > Appearance: remove the Save and Cancel row so Theme and Chat width autosave like every other Settings control (drops the preview-then-commit state in `AppearanceSection.tsx` and `ChatWidthPicker.tsx`); placed as an index line after #1422's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
