@@ -79,6 +79,22 @@ fn flag_values(args: &[String], name: &str) -> Vec<String> {
     out
 }
 
+fn bulk_prs() -> Vec<Pr> {
+    (100..400u64)
+        .map(|number| Pr {
+            repo: "octocat/hello-world",
+            number,
+            title: Box::leak(format!("Bulk change {number}").into_boxed_str()),
+            open: true,
+            draft: false,
+            checks: "none",
+            authored: false,
+            assigned: false,
+            review_requested: false,
+        })
+        .collect()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Ok(log) = std::env::var("FAKE_GH_LOG") {
@@ -100,8 +116,15 @@ fn main() {
         let want = |f: &str| !flag_values(&args, f).is_empty();
         let limit: usize = flag_values(&args, "--limit").pop().and_then(|l| l.parse().ok()).unwrap_or(30);
         let query = args.iter().position(|a| a == "--").and_then(|i| args.get(i + 1)).map(|q| q.to_lowercase());
+        // Paging check: while FAKE_GH_FAIL_FILE exists, any search for more than one page fails.
+        if limit > 50 && std::env::var("FAKE_GH_FAIL_FILE").map_or(false, |f| std::path::Path::new(&f).exists()) {
+            eprintln!("fake gh: forced failure for limit {limit}");
+            std::process::exit(1);
+        }
+        let bulk = bulk_prs();
         let rows: Vec<String> = PRS
             .iter()
+            .chain(bulk.iter())
             .filter(|p| repos.iter().any(|r| r.eq_ignore_ascii_case(p.repo)))
             .filter(|p| match state.as_deref() {
                 Some("open") => p.open,
@@ -120,7 +143,8 @@ fn main() {
     } else if joined.starts_with("pr view") {
         let number: u64 = args.get(2).and_then(|n| n.parse().ok()).unwrap_or(0);
         let repo = flag_values(&args, "--repo").pop().unwrap_or_default();
-        match PRS.iter().find(|p| p.number == number && p.repo.eq_ignore_ascii_case(&repo)) {
+        let bulk = bulk_prs();
+        match PRS.iter().chain(bulk.iter()).find(|p| p.number == number && p.repo.eq_ignore_ascii_case(&repo)) {
             Some(pr) => view_row(pr),
             None => std::process::exit(1),
         }

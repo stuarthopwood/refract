@@ -10,7 +10,7 @@
 // the State and Project filters, search, the empty state, the detail pane with its Review actions,
 // the recorded gh calls, and the Issues view still working on the same shell.
 
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -73,6 +73,8 @@ async function main() {
     if (ghBuild.status !== 0) throw new Error(`fake gh build failed: ${ghBuild.stderr}`);
     process.env.PATH = `${ghDir}${path.delimiter}${process.env.PATH}`;
     process.env.FAKE_GH_LOG = ghLog;
+    const failFile = path.join(ghDir, 'fail-paging');
+    process.env.FAKE_GH_FAIL_FILE = failFile;
 
     const projects = [
       ['hello-world', 'repo874a', 'hello-world'],
@@ -213,7 +215,50 @@ async function main() {
       `${searches.length} search calls`
     );
 
-    // 9. Issues still works on the shared shell
+    let bulkRows = 0;
+    const bulkCount = `document.querySelectorAll('[data-pr-row]').length`;
+    const MORE = `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Show more pull requests')`;
+    const waitCount = async (n, label) => {
+      try { await cdp.waitFor(`${bulkCount} === ${n}`, { timeoutMs: 40_000, label }); return true; } catch { bulkRows = await cdp.evaluate(bulkCount); log(`  rows seen: ${bulkRows}, wanted ${n}`); return false; }
+    };
+    // Keyboard-driven Show more (so later programmatic focus counts as :focus-visible).
+    const pressMore = async () => {
+      await cdp.evaluate(`(${MORE}).focus()`);
+      await cdp.pressEnter();
+    };
+
+    // 10. Paging: a failed "Show more" keeps the rows and shows an inline alert; the focus rings paint.
+    await cdp.click(`document.querySelector('input[aria-label="Search pull requests"]')`);
+    await cdp.send('Input.insertText', { text: 'bulk' });
+    await cdp.pressEnter();
+    check(await waitCount(50, 'first page'), 'Search "bulk" lists the first page of 50 rows', '50 rows');
+    check(await cdp.evaluate(`!!(${MORE})`), 'A "Show more pull requests" button is offered', 'hasMore');
+    writeFileSync(failFile, 'fail');
+    await pressMore();
+    await cdp.waitFor(`!!document.querySelector('[role="alert"]') && document.querySelector('[role="alert"]').textContent.includes('Try Show more again.')`, { timeoutMs: 20_000, label: 'inline failure alert' });
+    check(await cdp.evaluate(`${bulkCount} === 50 && !!(${MORE})`), 'Failed Show more keeps the 50 rows and the button', '50 rows, button present');
+    check(await cdp.evaluate(`document.activeElement === (${MORE})`), 'Focus stays on the Show more button after the failure');
+    await shot(cdp, '11-show-more-failed-keeps-rows.png');
+    unlinkSync(failFile);
+    await pressMore();
+    check(await waitCount(100, 'second page'), 'Retrying Show more loads the next page', '100 rows');
+    check(await cdp.evaluate(`!document.querySelector('[role="alert"]')`), 'The inline alert clears after a successful retry');
+    await cdp.waitFor(`!!(${MORE}) && (${MORE}).getAttribute('aria-disabled') !== 'true'`, { timeoutMs: 20_000, label: 'button idle' });
+    await pressMore();
+    await waitCount(150, 'third page');
+    await cdp.waitFor(`!!(${MORE}) && (${MORE}).getAttribute('aria-disabled') !== 'true'`, { timeoutMs: 20_000, label: 'button idle again' });
+    await pressMore();
+    check(await waitCount(200, 'fourth page'), 'Show more stops at the 200-row cap', '200 rows');
+    await cdp.waitFor(`document.body.textContent.includes('Showing the first 200')`, { timeoutMs: 20_000, label: 'cap note' });
+    await sleep(300);
+    check(await cdp.evaluate(`document.activeElement?.textContent.includes('Showing the first 200') && getComputedStyle(document.activeElement).outlineStyle === 'solid'`), 'Focus moves to the cap note and its focus ring paints', 'outline-style: solid');
+    await shot(cdp, '12-cap-note-focus-ring.png');
+    await cdp.evaluate(`document.querySelector('[data-pr-row]').closest('[tabindex="-1"]').focus()`);
+    check(await cdp.evaluate(`document.activeElement?.getAttribute('tabindex') === '-1' && getComputedStyle(document.activeElement).outlineStyle === 'solid'`), 'The list wrapper paints a focus ring under keyboard focus', 'outline-style: solid');
+    await shot(cdp, '13-list-focus-ring.png');
+    await cdp.clickByText('Clear filters').catch(() => undefined);
+
+        // 9. Issues still works on the shared shell
     await cdp.click(`Array.from(document.querySelectorAll('[role="group"][aria-label="GitHub"] button')).find((el) => el.textContent.trim() === 'Issues')`);
     await cdp.waitFor(`!!document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Issues'`, { timeoutMs: 10_000, label: 'Issues heading' });
     await cdp.waitFor(`document.body.textContent.includes('No issues match')`, { timeoutMs: 15_000, label: 'issues empty state' });
