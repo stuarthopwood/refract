@@ -56,3 +56,8 @@ from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
   your own `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` and
   `REFRACT_DATA_DIR` pointing at a scratch data directory, never Stuart's real
   `%APPDATA%\refract-tauri`. `scripts/verify-tauri.mjs` already does this.
+- `REFRACT_OMP_SESSIONS_DIR` (spec 060, #1331) is an absolute path that
+  replaces `~/.omp/agent/sessions` as the folder the Usage worker reads, so a live check can feed
+  it a synthetic fixture. A relative or empty value is ignored. `scripts/verify-tauri-1331.mjs`
+  (`node scripts/verify-tauri-1331.mjs`, with `CARGO_TARGET_DIR` and `SHOTS_DIR` set) uses it with
+  a fake `omp` and a fake `gh` on PATH and proves both through their call logs.
