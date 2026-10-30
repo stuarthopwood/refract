@@ -184,7 +184,7 @@ async function main() {
     checkPass('Added fake scratch repository as a Project');
 
     await cdp.clickByText('Pull requests');
-    await cdp.waitFor(`document.querySelector('h2') && document.querySelector('h2').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
+    await cdp.waitFor(`document.querySelector('h1') && document.querySelector('h1').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
     checkPass('Navigated to Pull requests view');
 
     const settled = await cdp.waitFor(`(() => {
@@ -313,10 +313,6 @@ async function main() {
       const shape = await detailShape();
       const name = `#${number} (${label}): Merge, Review and reason line are absent`;
       const ok = shape && shape.reasonLineText === null && shape.reviewDisabled === null && shape.mergeDisabled === null;
-      if (ok) checkPass(name, JSON.stringify(shape));
-      else checkFail(name, JSON.stringify(shape));
-    }`;
-      const ok = shape && shape.reasonLineText === null && shape.reviewDisabled === true && shape.reviewTitle === reason && shape.mergeDisabled === true && shape.mergeTitle === reason;
       if (ok) checkPass(name, JSON.stringify(shape));
       else checkFail(name, JSON.stringify(shape));
     }
