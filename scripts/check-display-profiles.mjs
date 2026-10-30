@@ -32,7 +32,7 @@ function measure(pair, props, profile) {
   const b = props[pair.b]
   if (!a || !b) return null
   let lumA = relativeLuminance(resolvedLinear(a, b))
-  // The canvas and card are opaque, so compositing `b` over itself is a no-op that keeps the call uniform.
+  // `b` is opaque, so resolvedLinear returns it unchanged; the second argument is only a placeholder backdrop.
   let lumB = relativeLuminance(resolvedLinear(b, b))
   if (profile) {
     lumA = applyProfile(lumA, profile)
