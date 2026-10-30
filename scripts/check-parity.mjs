@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-// Generated parity report: renderer IPC contract (`src/shared/ipc.ts`) vs the Rust backend (`src-tauri/src`),
-// re-derived from source each run so a new channel shows up as missing automatically.
-//
-// Usage:
-//   node scripts/check-parity.mjs              print a plain-text table + totals
-//   node scripts/check-parity.mjs --markdown    print a GitHub-flavoured markdown table instead
-//   node scripts/check-parity.mjs --gate        exit 1 if any channel is not implemented
+// IPC parity report (ipc.ts vs Rust backend), re-derived each run so new channels show as missing.
+// Usage: node scripts/check-parity.mjs [--markdown | --gate]  (--gate exits 1 if any channel is missing)
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';

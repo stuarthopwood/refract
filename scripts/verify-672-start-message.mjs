@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check (#672): one centred Session start notice per Session, in the foreground colour, with the transcript dimmed behind it when history exists.
-// Every `startProgress.kind` is driven through real production paths, never `window.__refractStores` (absent from a production exe):
-// the Rust start-queue's real timers (`READY_PROMPT_AFTER_MS`=60s, process.rs) made observable via `REFRACT_FAKE_OMP_READY_DELAY_MS`,
-// and `startProgress` read from the DOM (`readVisibleStartKind`) because the sessions IPC omits it.
-// Costs ~5-6 minutes of wall-clock: the real 60s/180s timers are waited out. A failed `theme.set` is a failure, not `notExercised`.
-// The recorded-frame omp shim must be PATH-prepended, or a real omp launches (ready in 1-2s, no `prompt`/`extended`); `setupLaunch` checks the fake's debug log.
-// The fake always replays the recorded `extension_ui_request` regardless of `--approval-mode`, so a real turn clicks the Approve card.
+// Live CDP check: one centred Session start notice per Session, with the transcript dimmed behind it when history exists.
+// Drives real timers (no `window.__refractStores`, absent from a production exe); takes ~5-6 minutes.
+// The omp shim must be PATH-prepended or a real omp launches; `setupLaunch` checks the fake's debug log.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

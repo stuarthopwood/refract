@@ -1,14 +1,9 @@
 #!/usr/bin/env node
-// Recorded-frame fake `omp`: stands in for the real `omp --mode rpc-ui` child (same argv, same stdin/stdout
-// JSONL wire) and answers from a hand-sanitised tape (scripts/fixtures/omp-frames/*.jsonl), so UI flows
-// run with no model cost or network. It is the payload of the `omp.exe` shim (verify-tauri.mjs `buildOmpShim`)
-// placed first on PATH, so its stdio are the real pipes `OmpProcess::connect` set up.
-//
-// Tape format: see scripts/fixtures/omp-frames/README.md. `REFRACT_FAKE_OMP_READY_DELAY_MS` delays the
-// first frame (Session-shaped processes only, so the readiness probe isn't slowed) for slow-start checks (#672)
-// without a new fixture.
-// `--no-session` always selects `readiness`: the probe and the Session's `OmpProcess` share this environment,
-// so a per-launch `REFRACT_FAKE_OMP_SCENARIO` must not redirect the probe onto a tape it wasn't scripted for (#856).
+// Recorded-frame fake `omp`: stands in for `omp --mode rpc-ui` (same argv, stdin/stdout JSONL) and replays a
+// hand-sanitised tape (scripts/fixtures/omp-frames/*.jsonl), so UI flows run with no model cost. It is the
+// payload of the `omp.exe` shim (verify-tauri.mjs `buildOmpShim`). Tape format: omp-frames/README.md.
+// `REFRACT_FAKE_OMP_READY_DELAY_MS` delays the first frame (Session-shaped processes only) for slow-start checks.
+// `--no-session` always selects `readiness`, so a per-launch SCENARIO can't redirect the probe onto a tape it wasn't scripted for.
 // Otherwise `REFRACT_FAKE_OMP_SCENARIO` names a fixture under omp-frames/, defaulting to `session`.
 
 import { readFileSync, writeFileSync } from 'node:fs';

@@ -112,13 +112,9 @@ export async function readRoleChip(cdp) {
   return cdp.evaluate(ROLE_CHIP_LABEL_EXPR);
 }
 
-/** Shared contrast probe (chip text vs real effective background, ancestor opacity folded into
- * the foreground alpha) for the per-theme loop and the sensitivity self-check.
- *
- * `fgOpacityOverride` replaces the live-read opacity in the maths only: forcing a real dimmed
- * render via `chip.style.setProperty('opacity', ..., 'important')` measured the same ratio every
- * time (`getComputedStyle` read back "1"; cause never isolated), so the self-check substitutes
- * the opacity into the compositing math instead. */
+/** Shared contrast probe (chip text vs real effective background, ancestor opacity folded in).
+ * `fgOpacityOverride` replaces the live-read opacity in the maths only: forcing a dimmed render
+ * via an inline `opacity` style read back "1" from `getComputedStyle` (cause never isolated). */
 export async function measureChipContrast(cdp, fgOpacityOverride) {
   const probe = await cdp.evaluate(`
     (() => {

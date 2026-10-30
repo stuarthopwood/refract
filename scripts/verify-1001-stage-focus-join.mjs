@@ -1,27 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for #1001 (a11y): focus dropped to `<body>` when a one-agent Stage gained a
-// second agent while focus was inside it. `StageGroupRow` swaps a bare `SubagentBody` for a
-// `SpineList`, unmounting the focused node, and a removed node cannot be asked whether it held
-// focus. The fix tracks focus via `focusin`/`focusout` and, on the 1-to-2 transition, moves it to
-// the Stage's own trigger, the one element that survives every member-count change. Pre-wrapping
-// the solo body in `SpineList` instead was rejected (permanent visual regression for solo Stages).
-//
-// Uses `scripts/fixtures/omp-frames/stages-1001.jsonl`: one Stage whose two members arrive as
-// separate `task()` calls under the same assistant message id, so it grows in place. The shared
-// `stages-941.jsonl` declares every member upfront and never grows.
-//
-// Proves, in order:
-//   1. The Stage renders solo first (no `SpineList`; `JoinsLater` absent).
-//   2. A real keyboard Tab places focus in the solo member's Prompt code block, confirmed by a
-//      marker attribute (a DOM reference does not survive the re-render).
-//   3. `document.activeElement` sampled on every animation frame (in-page, so no CDP jitter)
-//      across the whole join is never `document.body`. This is the RED/GREEN discriminator.
-//   4. Once `JoinsLater` mounts, focus is on the Stage's own trigger, not merely not-body.
-//   5. A per-theme screenshot pass (structural check, not colour-dependent).
-//
-// Window blur fires `focusout` with `activeElement` unchanged, so the handler ignores that
-// signature; a simulated blur is spliced in before the join. A click-away negative proof needs
-// its own second 1-to-2 transition and is recorded in `notExercised`.
+// Live CDP check for #1001: focus must not drop to `<body>` when a solo Stage gains a second agent
+// (the focused node unmounts, so focus has to move to the Stage's own trigger on the 1-to-2 join).
+// Uses fixtures/omp-frames/stages-1001.jsonl, whose members arrive separately so the Stage grows.
+// Window blur fires `focusout` with `activeElement` unchanged, so the handler ignores it.
+// A click-away negative proof needs its own 1-to-2 transition and is recorded in `notExercised`.
 
 import { mkdtempSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

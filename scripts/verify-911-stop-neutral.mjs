@@ -1,11 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for #911: a user-initiated Stop mid-flight must settle a tool row to a neutral `cancelled` treatment, never the red failed one.
-// Uses the fake-omp fixture `scripts/fixtures/omp-frames/stop-911.jsonl`: a real omp's abort timing is not deterministic enough to assert a settled DOM state.
-// Turn A: `read` finishes, then `bash` runs until the real Stop click sends `abort_and_restore_queue`; the fixture then ends it with `isError:true` "Command aborted" and `prompt_result{status:"aborted"}`.
-// Turn B: a genuine `bash` failure with no abort in flight must still settle `error`, never `cancelled`.
-//
-// Discriminator: turn A's `bash` row is neutral `cancelled` (stop-circle icon, muted token, "Stopped" label, no `aria-describedby`/Error line), not `error`.
-// It must fail on a build where `apply_tool_execution_end` maps every `isError:true` to `Error` (no `ToolStatus::Cancelled`).
+// Live CDP check for #911: a user-initiated Stop must settle a tool row to neutral `cancelled`, never red `error`.
+// Uses fixture `fixtures/omp-frames/stop-911.jsonl` (real omp abort timing is non-deterministic).
+// Turn A: `bash` is stopped mid-flight and must show neutral "Stopped". Turn B: a genuine bash failure must stay `error`.
+// Fails on a build where `apply_tool_execution_end` maps every `isError:true` to `Error`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -54,7 +51,7 @@ const THEMES = [
 
 const TRANSCRIPT_BUTTONS = `Array.from(document.querySelectorAll('[aria-label="Transcript"] button'))`;
 
-// Solo `read` rows are not command-style (`COMMAND_STYLE_TOOLS` is bash/grep only), so they keep the "Read" label (#1208 verb map).
+// Solo `read` rows aren't command-style (COMMAND_STYLE_TOOLS is bash/grep only), so they keep the "Read" label.
 function rowByLabelFinder(text) {
   return `(${TRANSCRIPT_BUTTONS}).find((el) => {
     const label = el.querySelector('[data-slot="collapsed-line-label"]');
@@ -62,7 +59,7 @@ function rowByLabelFinder(text) {
   })`;
 }
 
-// A solo `bash` row shows "$ <command>" (`commandRowText`); find it by a command substring, never by index, so turn A's and turn B's `bash` rows can't be confused.
+// Find the solo `bash` row by command substring, never by index, so turn A's and B's rows can't be confused.
 function rowByCommandSubstringFinder(substring) {
   return `(${TRANSCRIPT_BUTTONS}).find((el) => {
     const s = el.querySelector('span.min-w-0.flex-1');
@@ -74,8 +71,7 @@ const READ_ROW = rowByLabelFinder('Read');
 const STOPPED_BASH_ROW = rowByCommandSubstringFinder('sleep 30');
 const FAILED_BASH_ROW = rowByCommandSubstringFinder('definitely-not-a-real-path-911');
 
-// Reads the row's status icon colour, sr-only status word (scoped to the icon slot `span.flex.h-5.w-4`, not the meta slot's `, ` separator span)
-// and whether an Error line is mounted (`aria-describedby` is set only when `detail !== undefined`), never guessed from class names.
+// Status icon is scoped to `span.flex.h-5.w-4` (not the meta slot's `, ` span); `aria-describedby` is set only when `detail !== undefined`.
 function rowStateExpr(finderExpr) {
   return `(() => {
     const header = (${finderExpr});

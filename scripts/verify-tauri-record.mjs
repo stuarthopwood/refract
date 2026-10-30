@@ -1,11 +1,8 @@
 #!/usr/bin/env node
-// Records real `omp --mode rpc-ui` frames to a raw JSONL capture (both directions, tagged) that is
-// hand-sanitised into the fixtures the fake `omp` replays (#795). Re-run when the wire protocol changes.
+// Records real `omp --mode rpc-ui` frames to raw JSONL for hand-sanitising into fake-omp fixtures.
 // The raw output can hold real chat text and must never be checked in.
-//
 // Usage: node scripts/verify-tauri-record.mjs --out <path> [--timeout-ms 120000] [--readiness]
-// `--readiness` records the read-only `ipc/readiness.rs` probe (no model turn); the default
-// capture spends real model tokens, so keep the scripted prompt tiny.
+// The default capture spends real model tokens; `--readiness` is the no-model-turn probe.
 
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs';

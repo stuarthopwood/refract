@@ -1,13 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for #554 (Settings: chat reading width, full by default or a centred 64rem
-// column). Uses ambient-profile `omp` with scratch data only and sends no prompt, so every
-// assertion is a static rect/computed-style read.
+// Live CDP check for #554 (Settings: chat reading width, full by default or a centred 64rem column).
+// Uses ambient-profile `omp` with scratch data and sends no prompt. The exe is tied to this commit by
+// rebuilding first and asserting the `max-w-[64rem]` marker in the built bundle.
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node scripts/verify-554-chat-width.mjs
 // (needs a prior `pnpm tauri build --debug --no-bundle`).
-//
-// Covers Full vs Reading column by mouse and keyboard, composer width unchanged, narrow window,
-// Escape/Cancel discard, and persistence across relaunch. The exe is tied to this commit by
-// rebuilding first and asserting the `max-w-[64rem]` marker in the built bundle.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

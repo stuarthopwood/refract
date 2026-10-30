@@ -1,13 +1,8 @@
-// Real-rendered-DOM contrast measurement, loaded as an ES module inside the renderer by
+// Real-rendered-DOM contrast measurement, loaded as an ES module in the renderer by
 // scripts/check-mermaid-contrast.mjs's Electron harness (never from Node).
-//
-// Text contrast is measured from real pixels, not computed style: computed style missed what
-// else can paint behind a label (e.g. a stroked branch line). Each diagram is rendered twice,
-// glyphs visible and glyphs hidden (`opacity: 0` changes paint, not layout); the hidden capture
-// is the real background and the visible one the real foreground. `capturePage()` only exists
-// in the Electron main process, so this module only prepares diagrams and hides glyphs; the
-// caller takes the screenshots and does the ratio math.
-//
+// Text contrast is measured from real pixels (computed style misses stroked lines behind labels):
+// each diagram renders with glyphs visible and hidden (`opacity: 0`). `capturePage()` exists only in
+// the Electron main process, so the caller takes the screenshots and does the ratio math.
 // Shape-vs-background and pie-slice checks still use computed style + `elementsFromPoint`.
 
 function srgbToLinear(c) {

@@ -1,12 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check that expanded notices, start-failure details and the approval-error Alert carry no
-// background, border or radius. Runs three phases against one sha256-pinned exe with the fake omp
-// shim and scratch data dirs, so no model cost and no real omp profile is touched.
-//
-// The approval-error phase stubs `window.refract.chat.answer` instead of killing omp:
-// `handle_exit` settles pending requests to Cancelled before Approve can reach `answer_request`.
-// Question and Ask cards stay code-verified only (no fixture drives them); the Subagents panel
-// reuses NoticeRow and is blocked on #712.
+// Live CDP check: expanded notices, start-failure details and the approval-error Alert have no
+// background, border or radius. Uses the fake omp shim and scratch dirs (no model cost).
+// The approval-error phase stubs `window.refract.chat.answer`: `handle_exit` cancels pending
+// requests before Approve could reach `answer_request`.
 
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

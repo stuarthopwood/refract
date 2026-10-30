@@ -1,14 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check: the Conversation history list shows a Conversation whose first user message
-// starts after the old fixed 8 KB preview-scan window (the long-prelude file); it must list both
-// seeded Conversations, not just the control one.
-//
-// Seeds two hand-built `.jsonl` Conversation files in the fake-omp session dir before launch;
-// the `user-message-time` tape scripts startup, so no chat prompt is sent. A file name needs a
-// 25-character `YYYY-MM-DDTHH-mm-ss-mmmZ_` prefix (`conversations.rs` `parse_file_name`).
-//
-// Not proven here (see `notExercised`): the 64 KiB hard cap listing an empty preview, no-user-
-// message files being skipped, image-only first messages, and cheap listing of multi-MB files.
+// Live CDP check: Conversation history lists a Conversation whose first user message starts after the old 8 KB scan window.
+// File names need a 25-character `YYYY-MM-DDTHH-mm-ss-mmmZ_` prefix (`conversations.rs` `parse_file_name`).
+// Unproven cases are listed in `notExercised`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

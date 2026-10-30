@@ -1,16 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for #1122 (one selected-item style: square corners, flush 2px left bar, accent
-// fill via `ActiveIndicatorBar`) and #1119 (Explorer name/icon tone), across Dark, Obsidian and
-// Dark (high contrast); other themes are covered by `check-theme-contrast.mjs`.
-// Reuses the `subagents.jsonl` fake-omp tape (no new fixtures) for real SessionRow/Subagent rows.
-// The Settings nav is the site that shows keyboard focus distinct from selection on two rows at
-// once (a plain list of tab-stoppable buttons, not a roving-tabindex tree).
-// Forced-colours: CDP has no working `Emulation.setEmulatedMedia` for `forced-colors` in WebView2,
-// so the check confirms the classes render and that Tailwind compiled a matching
-// `@media (forced-colors: active)` rule by reading the built CSS off disk (CSSOM scans 0 rules).
+// Live CDP check: one selected-item style (square corners, flush 2px left bar, accent fill) and Explorer name/icon tone,
+// across Dark, Obsidian and Dark (high contrast); other themes are covered by `check-theme-contrast.mjs`.
+// Forced-colours: CDP cannot emulate `forced-colors` in WebView2, so Tailwind's compiled
+// `@media (forced-colors: active)` rule is read from the built CSS on disk (CSSOM scans 0 rules).
 //
-// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 node
-// scripts/verify-1122-selected-style.mjs (rebuilds the debug exe fresh into its own scratch copy).
+// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 node scripts/verify-1122-selected-style.mjs
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

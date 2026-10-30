@@ -1,13 +1,8 @@
 #!/usr/bin/env node
-// Live check for #880 (Tauri taskbar button shows a blank icon): launches a REAL Tauri debug exe and inspects its OS window via Win32 (not the DOM):
-// `WM_GETICON` (what taskbar/Alt-Tab read first) and `System.AppUserModel.ID` via `SHGetPropertyStoreForWindow`, plus a native `PrintWindow` screenshot.
-//
-// Limits: the taskbar glyph is judged by eye from the screenshot, not asserted; `GetClassLongPtr(GCLP_HICON/GCLP_HICONSM)` is reported only,
-// because tao always registers null class icons (`shell::app_identity::set_window_icons`). The PACKAGED AUMID needs an installed build;
-// a debug build deliberately uses `APP_USER_MODEL_ID_DEV`, which is what is asserted.
-//
-// Usage (after `pnpm install` on this exact head): CARGO_TARGET_DIR=<shared target dir>
-// CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node scripts/verify-880-taskbar-icon.mjs
+// Live Win32 check for #880 (blank taskbar icon): asserts `WM_GETICON` and the window AppUserModelID of a real debug exe.
+// The glyph is judged by eye; class icons are only reported because tao registers null ones.
+// The packaged AUMID needs an installed build; a debug build uses `APP_USER_MODEL_ID_DEV`.
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-880-taskbar-icon.mjs
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';

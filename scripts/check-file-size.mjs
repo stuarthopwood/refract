@@ -1,16 +1,7 @@
 #!/usr/bin/env node
-// Static guard for #806 ("No god files"): a 600-line soft cap on source files. Baselined offenders may stay over the cap but never grow;
-// a file not in the baseline that is over the cap is a hard failure.
-//
-// Usage: node scripts/check-file-size.mjs [--update]
-//   --update  Rewrite scripts/file-size-baseline.json to record shrinkage only: entries are lowered
-//             (never raised) and dropped when the file is gone or <= 600 lines. It never adds an entry.
-//
-// Scans .ts/.tsx/.mjs under src/ and scripts/, and .rs under src-tauri/src/ (skipped if absent). Excludes test/spec files,
-// vendored shadcn components (src/renderer/components/ui/) and generated files (a gen/ directory, or `AUTO-GENERATED`/`@generated` in the first 5 lines).
-//
-// Exits 1 if any new-file-over-cap or baseline-growth violation is found, 2 if no matching files
-// were scanned at all, 0 otherwise.
+// 600-line soft cap on source files; baselined offenders may stay over the cap but never grow.
+// Usage: node scripts/check-file-size.mjs [--update]  (--update only lowers/drops baseline entries, never adds)
+// Exit: 1 on violation, 2 if no files were scanned, 0 otherwise.
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -68,7 +59,6 @@ export function isExcludedPath(relative) {
   return false;
 }
 
-// Generated if a known marker appears in the first 5 lines; needs file content, so it is separate from isExcludedPath.
 function isGeneratedContent(lines) {
   return lines.slice(0, 5).some((line) => GENERATED_MARKER_RE.test(line));
 }
@@ -80,7 +70,6 @@ function countLines(content) {
   return lines.length;
 }
 
-// Walks the roots under baseDir and returns [{ relative, lineCount }] for files that match an extension and aren't excluded.
 export function scanFiles(baseDir = repoRoot, roots = DEFAULT_SCAN_ROOTS) {
   const results = [];
   for (const { subdir, exts } of roots) {
@@ -97,8 +86,6 @@ export function scanFiles(baseDir = repoRoot, roots = DEFAULT_SCAN_ROOTS) {
   return results;
 }
 
-// Over SOFT_CAP fails if absent from the baseline (a new god file) or above its baseline value (growth); baselined files at or below it pass.
-// Returns the full offender table (for display) and the failing subset.
 export function checkAgainstBaseline(files, baseline) {
   const offenders = [];
   const failures = [];
@@ -114,7 +101,6 @@ export function checkAgainstBaseline(files, baseline) {
   return { offenders, failures };
 }
 
-// Baseline entries whose file is gone or now <= SOFT_CAP: reported, not failed.
 export function findRemovableBaselineEntries(files, baseline) {
   const current = new Map(files.map((f) => [f.relative, f.lineCount]));
   const removable = [];

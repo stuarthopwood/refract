@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for #1043: the Theme submenu is a real radio list (shared DropdownMenuRadioItem) in
-// every preset, plus the Reasoning picker (its other caller). Drives the real DOM over CDP; the only
-// non-UI calls are read-only `window.refract.theme.set`/`sessions.list()` round-trip confirmations.
-// A registry.json `lastThinkingLevel` seed was dropped: the post-attach session resync overwrites it.
-// Forced-colours rendering can't be emulated over WebView2 CDP, so it is checked structurally (class
-// present plus compiled `@media (forced-colors)` rule on disk) and the real OS render is `notExercised`.
-// Every launched app and CDP connection is registered in `openHandles` and torn down in one `finally`.
+// Live CDP check for #1043: the Theme submenu and Reasoning picker are real radio lists (shared DropdownMenuRadioItem).
+// Only read-only non-UI calls are used for confirmation. Forced-colours can't be emulated over WebView2 CDP, so it is
+// checked structurally (class plus compiled `@media (forced-colors)` rule on disk); the real OS render is `notExercised`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
@@ -48,9 +44,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1043_SHOTS_DIR || path.join(tmpdir(), 'refract-1043-shots');
-// Fixed folder (not mkdtemp per run): cleared by exact literal filename so stale shots from earlier
-// runs can't linger, never by a recursive delete of an overridable path. The `*-zoom.png`,
-// `*-theme-submenu-zoom2.png` and `*-reopen-*.log` names are stale leftovers from an older cut.
+// Fixed folder (not mkdtemp): cleared by exact literal filename, never a recursive delete of an overridable path.
 const SHOT_NAMES_1043 = [
   ...THEMES_1043.map((theme) => `${theme.id}-theme-submenu.png`),
   ...THEMES_1043.map((theme) => `${theme.id}-theme-submenu-zoom2.png`),

@@ -1,20 +1,8 @@
 #!/usr/bin/env node
-// Proves an OMP RPC schema change shows up as a diff, against a vendored copy of OMP's published wire schema. Full codegen of
-// `frames.ts`/Rust wire structs is out of scope (#519/#795): those files are the most shared in the repo and in flux across lanes.
-//
-// Two checks. The "channels with no similarly-named OMP command" table is informational only and never sets the exit code:
-// Refract's `IPC_REQUESTS`/`IPC_EVENTS` (src/shared/ipc.ts) are Tauri channels, a different namespace from OMP's RPC commands,
-// and extraction degrades to a warning if that file's shape changes. The real drift check cross-references every OMP wire
-// command or frame/part "type" tag that Refract code references by string literal (`scanTargets`) against the schema's declared
-// vocabulary (`x-rpc.commands[].name` plus `const`/`enum` values in `$defs`) and the `KNOWN_TRANSPORT_ONLY_LITERALS` allowlist.
-// Matching against full schema text would false-pass typos and removed commands that prose still mentions. Only this check
-// sets a non-zero exit code.
+// Detects OMP RPC schema drift against a vendored copy of OMP's wire schema. Only the literal cross-reference check sets a
+// non-zero exit; the channel-name table is informational. Matching full schema text would false-pass typos in prose.
 //
 // Usage: `node scripts/check-omp-schema-drift.mjs [--check-pin | --self-test]`
-//   --check-pin   also non-fatally compares the PROVENANCE.md pinned package version with the npm registry; always exits 0.
-//   --self-test   seeds undeclared literals and asserts the detector flags them, proving it can fail; exits 1 on a failed assertion.
-//
-// Regex-based scan, not a TS/Rust parser: it recognises a small curated set of syntactic shapes (`extractReferencedWireLiterals`).
 
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";

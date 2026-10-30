@@ -14,18 +14,10 @@ async function allNoticeTexts(cdp) {
   return cdp.evaluate(`(${NOTICE_FINDER}).map((row) => (row.querySelector(':scope > span.min-w-0.flex-1')?.textContent ?? '').trim())`);
 }
 
-/** Gate round 1 fix (High, item 14), reworked gate round 2 (High, item 12): the leak scan
- * itself must run BEFORE this script's own first visible `/advisor status` (its real reply,
- * e.g. `Advisor "default" is running.`, would otherwise match the same pattern and fail this
- * check for a reason that has nothing to do with the silent probe -- the caller now runs this
- * right after Session creation, not after a cycle that has already sent one). Proves no
- * status-reply-shaped notice leaked into the transcript (`Advisor is ...`, `Advisor "..."`, any
- * `Spend` figure) and that the probe's own command text was never echoed as a user message.
- * Gate round 2 (High, item 12): this script has no way to prove the silent probe actually FIRED
- * (no RPC trace/app.log instrumentation reaches that deep) -- a clean scan here is consistent
- * with "the probe ran and nothing leaked" but equally consistent with "the probe never ran at
- * all" (omp build without `advisor` listed yet, or still mid-idle-wait); `notExercised` records
- * that honestly rather than reporting a pass this script cannot actually back up. */
+/** Leak scan: must run BEFORE this script's own first `/advisor status` (its real reply would match
+ * the same pattern). Proves no status-reply-shaped notice (`Advisor is ...`, `Spend` figure) leaked
+ * and the probe's command text was never echoed as a user message. A clean scan cannot prove the
+ * silent probe actually fired, so the caller records that in `notExercised`. */
 export async function assertNoProbeLeak(cdp, findings, failures, notExercised, label) {
   const texts = await allNoticeTexts(cdp);
   // `Spend` is scoped to lines starting "Advisor ", so an unrelated cost notice is not flagged as a leak.
@@ -57,12 +49,8 @@ async function clearComposer(cdp) {
   await cdp.waitFor(`(${MESSAGE_FINDER}?.value ?? '') === ''`, { timeoutMs: 5_000, label: 'Composer cleared' });
 }
 
-/** Sends a slash command as real, visible typed text (used for `/advisor on` to seed each cycle,
- * and for the final `/advisor status` log -- never for the silent attach/resume probe, which
- * this script cannot drive without a second app restart, see the main script's own
- * `notExercised` entry). Waits for a NEWLY-mounted notice matching `expectedPattern`, same
- * not-just-the-latest-notice reasoning `verify-917-advisor-command.mjs` already documents (an
- * ambient signed-in profile can mount an unrelated system notice in the same short window). */
+/** Sends a slash command as real typed text and waits for a NEWLY-mounted notice matching
+ * `expectedPattern` (an ambient profile can mount an unrelated system notice in the same window). */
 export async function sendSlashCommand(cdp, command, expectedPattern, { timeoutMs = 60_000 } = {}) {
   await clearComposer(cdp);
   const before = (await allNoticeTexts(cdp)).length;
@@ -79,18 +67,13 @@ export async function sendSlashCommand(cdp, command, expectedPattern, { timeoutM
   throw new Error(`sendSlashCommand: no notice matching ${expectedPattern} appeared within ${timeoutMs}ms for "${command}".`);
 }
 
-/** The Advisor chip's own `ReadoutItem` button, found by its `aria-hidden` visible-text span
- * (set by `AdvisorReadout`) rather than by any text on the icon itself (the icon is also
- * `aria-hidden` but carries no text, so this never double-matches). `null` once the chip is
- * hidden (advisor off) -- the caller's own absence checks treat that as the expected, not an
- * error. */
+/** The Advisor chip's `ReadoutItem` button, found by its `aria-hidden` text span (the icon carries
+ * no text, so it never double-matches). `null` once the chip is hidden (advisor off). */
 const ADVISOR_CHIP_FINDER =
   `Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor')`;
 
-/** Any OTHER status-line Readout chip, for the geometry comparison (item 3 of the issue's own
- * brief): picks the first `[data-slot="readout-chip"]` that is NOT the Advisor chip. `null`
- * (not a failure) when none of the session's other Readouts happen to be visible -- Settings'
- * own per-kind visibility means this is a genuine, loggable `notExercised` case, not a bug. */
+/** Any OTHER `[data-slot="readout-chip"]` than the Advisor chip, for geometry comparison. `null`
+ * is a loggable `notExercised` case (Settings' per-kind visibility), not a failure. */
 const OTHER_CHIP_FINDER =
   `Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() !== 'Advisor')`;
 
@@ -120,22 +103,16 @@ export async function advisorChipPresent(cdp) {
   return cdp.evaluate(`!!(${ADVISOR_CHIP_FINDER})`);
 }
 
-/** The composer's shared attachment live region (`MessageInput.tsx`'s
- * `#${sessionId}-attachments-status`, `role="status" aria-live="polite"`) -- found by its own
- * `-attachments-status` id suffix rather than a hardcoded session id, since this script's own
- * scratch Session's id is never known in advance. Exactly one composer is ever mounted in this
- * script's single, unsplit pane, so the suffix match is unambiguous. */
+/** The composer's shared attachment live region (`#${sessionId}-attachments-status`), found by id
+ * suffix because the scratch Session id is unknown; one composer is mounted, so it is unambiguous. */
 const LIVE_REGION_FINDER = `document.querySelector('[id$="-attachments-status"]')`;
 
 export async function readLiveRegionText(cdp) {
   return cdp.evaluate(`(${LIVE_REGION_FINDER})?.textContent ?? null`);
 }
 
-/** Gate round 1 fix (High, item 13): tags whatever span currently occupies the live region (if
- * any) with a marker attribute BEFORE a cycle activates the chip -- `useDraftStore`'s own
- * `attachmentAnnouncement.seq` gives each real announcement a fresh DOM node (`key={seq}`), so
- * the marker is never carried over onto a genuinely NEW announcement, only onto a stale one
- * left over from an earlier cycle or an unrelated attachment event. */
+/** Tags the span currently in the live region with a marker BEFORE a cycle activates the chip;
+ * each real announcement gets a fresh DOM node (`key={seq}`), so the marker only sticks to stale ones. */
 export async function markLiveRegionSeen(cdp) {
   await cdp.evaluate(
     `(() => { const el = (${LIVE_REGION_FINDER})?.firstElementChild; if (el) el.setAttribute('data-937-seen', '1'); return true; })()`
@@ -143,10 +120,7 @@ export async function markLiveRegionSeen(cdp) {
 }
 
 /** Polls for a NEW (unmarked by `markLiveRegionSeen`) live-region span containing
- * `expectedSubstring`, or returns false at timeout -- gate round 1 fix (High, item 13): the
- * plain "does the CURRENT text contain it" check this replaces could pass on a stale span left
- * over from an earlier cycle's own announcement, never proving THIS cycle actually announced
- * anything. */
+ * `expectedSubstring`; a plain text check could pass on a stale span from an earlier cycle. */
 export async function waitForFreshLiveRegionText(cdp, expectedSubstring, { timeoutMs = 10_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -163,15 +137,10 @@ export async function activeElementIsMessageBox(cdp) {
   return cdp.evaluate(`document.activeElement === ${MESSAGE_FINDER}`);
 }
 
-/** Gate round 2 fix (High, falsified against a DOM read, item 11): the status line (and so the
- * Advisor chip) renders BEFORE the message textarea in `MessageInput.tsx`'s own JSX -- a
- * FORWARD Tab chain from the textarea can never reach it. Walks a real Shift+Tab chain
- * BACKWARD from the message textarea instead until an element whose `aria-label` starts with
- * "Advisor on." is focused, or throws after `stepCap` tabs -- the Advisor chip renders LAST in
- * `ComposerStatusLine.tsx`'s own left group (gate round 1 decision, right before the `ml-auto`
- * Current time chip, itself off by default in a fresh scratch profile), so a small cap still
- * reaches it; a larger cap would hide a real regression (the chip moved, or stopped rendering,
- * far enough away that "eventually reachable" no longer means "where FR-078 sits"). */
+/** Walks a real Shift+Tab chain BACKWARD from the message textarea until an element whose
+ * `aria-label` starts with "Advisor on." is focused, or throws after `stepCap` tabs. The status
+ * line renders BEFORE the textarea, so forward Tab never reaches it; the chip is last in the
+ * left group, so a small cap catches a regression where it moves or stops rendering. */
 export async function tabToAdvisorChip(cdp, pressShiftTab, { stepCap = 8 } = {}) {
   for (let i = 0; i < stepCap; i++) {
     await pressShiftTab(cdp);
@@ -182,13 +151,9 @@ export async function tabToAdvisorChip(cdp, pressShiftTab, { stepCap = 8 } = {})
   return false;
 }
 
-/** One full on -> toggle-off cycle, driven either by a real mouse click or a real keyboard
- * Shift+Tab+Enter (never a scripted `.click()`/`.focus()` call), asserting every outcome the
- * issue's own brief lists for each activation method: the chip appears with "Advisor on. Turn
- * off", a repeat activation during the busy window is a no-op, the authoritative "Advisor
- * disabled." notice (plus a supplementary, real `/advisor status` -- its own wording not
- * asserted to a fixed pattern, per `session::advisor`'s own documented ambiguity), the chip
- * leaves the AX tree, focus lands on the message textarea, and "Advisor off" is announced. */
+/** One full on -> toggle-off cycle via a real mouse click or real keyboard Shift+Tab+Enter,
+ * asserting the chip, busy-window no-op, "Advisor disabled." notice, AX removal, focus return
+ * to the textarea and the "Advisor off" announcement. */
 export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnterKey, shotsDir, findings, failures }) {
 
   const tag = `[${mode}]`;

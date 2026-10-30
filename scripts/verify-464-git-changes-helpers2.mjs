@@ -23,17 +23,10 @@ import {
   readCommitAnnouncementText
 } from './verify-464-git-changes-helpers.mjs';
 
-/** Check: an external write to an unrelated file while a diff is open must not tear the diff
- * down or steal focus (a background refetch only shows 'loading' for a genuinely new diff).
- * Polls that `.diff-view` never disappears, then confirms the unrelated file was picked up.
- * Runs as Check 7b: README.md is committed by Check 12, so later it has no row to click.
- * `untrackedBaseline` is whatever Untracked holds at the call site.
- *
- * The refresh is proven to land while the diff is open by two independent checks: a direct
- * `gitChanges.list` IPC call, and a single un-retried read right after Back (`onBack` is a pure
- * local-state toggle that fires no load). `window.__refractStores` and the tab badge cannot be
- * used: the build runs vite in production mode and the badge only renders in multi-panel mode.
- * Assumes the panel is showing the groups list. */
+/** Check 7b: an external write to an unrelated file while a diff is open must not tear the diff
+ * down or steal focus. README.md is committed by Check 12, so later it has no row to click.
+ * Back fires no load, so a single un-retried read after it proves the refresh landed while open.
+ * `window.__refractStores` and the tab badge are unusable (production build, multi-panel only). */
 export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, sessionId, untrackedBaseline, shot, findings, failures) {
   const unrelatedFileName = 'an-unrelated-external-change-for-verify-464.txt';
   await cdp.click(fileRowOpenButtonFinder(FIXTURE.readme));

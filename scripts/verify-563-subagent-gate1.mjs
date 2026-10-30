@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-// Real-omp live gate check for #563: the fake-omp tape cannot exercise the multi-Stage chain, a visible Running/Cancelled status
-// word, or Show-thinking-toggle independence. Uses the ambient signed-in profile (no OMP_PROFILE), a scratch repo and scratch data
-// dirs, so the real Session list is never touched; spends a few real model tokens on tiny subagent prompts.
-//   (a) two parallel task() calls then a serial one: chain row renders, panel opens pre-selected, closing returns focus.
-//   (b) one task() call Stopped mid-run: Cancelled word in StageGroupRow's `meta` slot, not overlapping the agent name.
-//   (c) the (a) turn re-rendered with Show thinking off: Stage count and numbering must be identical.
-// The built exe is copied to a private scratch dir first because a concurrent lane can overwrite the shared CARGO_TARGET_DIR exe.
+// Real-omp live gate check for #563: the fake-omp tape can't exercise the multi-Stage chain, a visible Running/Cancelled
+// word, or Show-thinking independence. Uses the ambient signed-in profile with scratch repo/data dirs; spends a few real tokens.
+//   (a) two parallel task() calls then a serial one: chain row renders, panel pre-selected, closing returns focus.
+//   (b) one task() call Stopped mid-run: Cancelled word in StageGroupRow's `meta` slot.
+//   (c) (a) re-rendered with Show thinking off: Stage count and numbering identical.
+// The exe is copied to a private dir first because a concurrent lane can overwrite the shared CARGO_TARGET_DIR exe.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';

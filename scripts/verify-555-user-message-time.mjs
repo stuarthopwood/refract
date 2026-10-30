@@ -47,14 +47,8 @@ function expectedLabelFor(date, now) {
   return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
 }
 
-/** Picks one real instant per day-aware bucket (today, yesterday, earlier this year, a past
- * year), relative to "now", then SELF-VALIDATES every candidate against `expectedLabelFor`'s
- * own bucketing rule before handing any of them back -- throws rather than silently asserting
- * the wrong bucket. Every candidate but "yesterday" (calendar subtraction, exactly one day back)
- * is a RELATIVE offset from "now", so the same code stays correct on any day it runs on. Known
- * narrow gap: within the first ~20 days of January, or the first minute after local midnight,
- * there is no valid "earlier this year"/"today" instant -- self-validation throws instead of
- * asserting the wrong bucket; rerun later. */
+/** One real instant per day-aware bucket (today, yesterday, earlier this year, past year), self-validated against
+ * `expectedLabelFor`. Known gap: in early January or just after local midnight no valid instant exists; it throws, rerun later. */
 function computeHistoryTimestamps() {
   const now = new Date();
   const dayDiffFrom = (d) => {
@@ -108,13 +102,9 @@ function worktreesDirFor(repoDir) {
   return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
 }
 
-/** Reads the `<time>` element rendered anywhere inside the bubble's own
- * `[data-slot="message-scroller-item"]` wrapper -- never only `bubble.previousElementSibling`
- * (gate round 1: that made "outside the bubble's box" true by construction) -- or `null` if
- * `item.at === 0`/non-finite/`hideTime` hid it (`UserMessageTime` returns `null`). A missing
- * WRAPPER is its own `error` (gate round 2: never inferred as "hidden"). Also reports the
- * wrapper's own class list (turn-gap margin) and whether a `TimeGapDivider` (`[data-slot="time-gap-divider"]`)
- * sits as the wrapper's own immediately preceding sibling. */
+/** Reads the `<time>` element anywhere inside the bubble's `[data-slot="message-scroller-item"]` wrapper, or `null` if hidden.
+ * A missing wrapper is its own `error`, never inferred as "hidden". Also reports the wrapper's class list (turn-gap margin)
+ * and whether a `TimeGapDivider` is its immediately preceding sibling. */
 function timeAndMarginProbeExpr(messageText) {
   return `
     (() => {

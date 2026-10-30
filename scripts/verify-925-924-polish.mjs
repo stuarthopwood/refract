@@ -1,23 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for #925 (diff-stat colouring: `+N` green, `-N` red, zero muted), #924 (the
-// Reasoning gauge needle follows the level) and #919 (the Pull requests Changes tab's per-file
-// diff header gains `+/-` counts).
-//
-// Drives the real Tauri debug build with its own `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/
-// `REFRACT_IMPORT_SOURCE_DIR`, never the real `%APPDATA%/refract-tauri`. Real data only: a scratch
-// git repo with one tracked file (0 files `+0 -0`, then `+3 -1` after an on-disk edit and a local
-// "New conversation" click that fires `schedule_readout_update`; no model tokens), and a shallow
-// clone of `stuarthopwood/refract` for real PR data (best effort: scans the first 5 rows for one
-// with both additions and deletions, to reach the red branch).
-//
-// Per theme (Dark, Obsidian, Dark high contrast): the status-line Changes chip, the Session
-// details card diff line, and the Changes tab aggregate line and first file header, each checked
-// for class, computed `color` and contrast against the real backdrop. The gauge needle (#924) is
-// checked once, since geometry is theme-independent, at all 8 levels against the component's own
-// 7-step formula, then the details card icon is read once as a same-Session cross-check.
-//
+// Live CDP check: diff-stat colouring (`+N` green, `-N` red, zero muted), the Reasoning gauge needle following the level,
+// and `+/-` counts on the Pull requests Changes tab's per-file diff header.
+// Drives the real Tauri debug build with its own `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`, never the real
+// `%APPDATA%/refract-tauri`. Uses a scratch git repo plus a shallow clone of `stuarthopwood/refract` for real PR data.
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node scripts/verify-925-924-polish.mjs
-// (needs a prior `pnpm tauri build --debug --no-bundle`).
 
 import { mkdtempSync, mkdirSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -85,9 +71,8 @@ function makeGithubScratchClone(dir) {
   return dir;
 }
 
-// Ties the exe to this commit via `diff-added`/`diff-removed` and `reasoning-gauge`. The needle
-// path is built from a template literal at runtime, so it never appears as a bundle literal, and
-// the arc path is lucide's `gauge` data, which cannot distinguish this story.
+// The needle path is built at runtime so it never appears as a bundle literal, and the arc path is lucide's `gauge`
+// data, so `reasoning-gauge` is the only marker.
 function assertBundleContainsStory925924Markers() {
   const bundleRoot = path.join(REPO_ROOT, 'out', 'tauri-web');
   if (!existsSync(bundleRoot)) {

@@ -1,12 +1,9 @@
 // Token pairs rendered by this codebase, imported by check-theme-contrast.mjs (split out for the file-size ratchet).
 // The composited checks below share contrast-math.mjs's blend primitives; a private copy once drifted to a wrong blend.
-//
 // `min: 4.5` = WCAG AA body/UI text; `min: 3` = large text and non-text UI (rings, control edges, icons).
 // `--divider` is a decorative edge, not a control edge; `--border` is a control edge in every theme.
-//
-// `onlyThemes` restricts a pair to the named theme ids (e.g. `--composer-background` is transparent in most themes).
-// `informationalThemes` also restricts, but the ratio is printed and never counted as a failure: an accepted
-// WCAG departure (docs/design/accessibility.md "Accepted departures").
+// `onlyThemes` restricts a pair to the named themes; `informationalThemes` also restricts, but the ratio is printed
+// and never counted as a failure (accepted departure, docs/design/accessibility.md).
 
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 import { createHighlighter } from 'shiki'

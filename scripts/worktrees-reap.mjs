@@ -1,11 +1,8 @@
 // Post-merge worktree reap (#658). Dry run by default; `--apply` acts; `--check` guards wave start.
-// Usage: node scripts/worktrees-reap.mjs [--apply | --check] [--repo <path>] [--root <path>]
-//          [--registry <path>] [--no-registry]
-// Exit codes: 0 success; 1 --check problem or --apply failure; 2 bad usage, refused (--apply
-//   without a registry file unless --no-registry), or crashed.
+// Usage: node scripts/worktrees-reap.mjs [--apply | --check] [--repo <path>] [--root <path>] [--registry <path>] [--no-registry]
+// Exit: 0 ok; 1 --check problem or --apply failure; 2 bad usage, refused (--apply needs a registry unless --no-registry), or crash.
 // --pr-fixture <json> replaces the `gh` lookup; honoured only when --root and --repo are under the OS temp dir.
 // node_modules goes first via `rmdir /s /q` on a \\?\ path because git cannot delete pnpm junctions (#1181).
-// A worktree holding ignored paths beyond rebuildable output (see below) is skipped.
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'

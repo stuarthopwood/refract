@@ -1,13 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for #891 (Delete Session dead-ends on a full/held worktree), against the built app with scratch data:
-//   (a) a registered worktree with pnpm-style junctions (to an outside canary), >260-char paths, read-only
-//       files and thousands of files deletes completely; the canary survives and the admin entry is gone;
-//   (b) a leftover unregistered full folder deletes completely;
-//   (c) a `cmd.exe` with its cwd in the worktree makes Delete refuse (Session kept, nothing deleted); killing it lets Retry succeed;
-//   (d) a PowerShell holding a file open is NAMED in the refusal (Restart Manager); killing it lets Retry succeed;
-//   (e) the dialog shows the leftover summary;
-//   (f) Delete clicked while the summary walk is still running cancels that walk cleanly (no false refusal).
-// Dialog driving and scratch-content generation live in verify-891-delete-leftovers-helpers.mjs.
+// Live CDP check for #891 (Delete Session on a full/held worktree), scratch data. Covers: junction/long-path/
+// read-only worktree deletes fully (canary survives); unregistered leftover folder deletes; a held cwd or open
+// file refuses and NAMES the holder (Restart Manager), Retry succeeds once killed; leftover summary shown;
+// Delete during the summary walk cancels it cleanly. Helpers: verify-891-delete-leftovers-helpers.mjs.
 
 import { mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

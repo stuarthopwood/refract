@@ -1,15 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for #802 (two vertical scrollbars at the right edge of the Side chat panel when
-// the answer is taller than the pane). Drives the real UI (rail click, typed question, Enter, the
-// Min/Max width presets), never `window.refract.*`, so the measurement sees a developer's DOM.
-//
-// The fixture needs a wide table and long code block, and the probe scans every element for a
+// Live CDP check for #802 (two vertical scrollbars at the right edge of the Side chat panel when the answer
+// is taller than the pane). Drives the real UI, never `window.refract.*`; the probe scans every element for a
 // rendered vertical scrollbar (`offsetWidth - clientWidth > 0 && scrollHeight > clientHeight`).
-// Hypothesis: those wrappers set only `overflow-x`, so CSS computes `overflow-y: auto` too, and
-// subpixel rounding could add a second scrollbar. Reverting `h-full` alone did not reproduce it.
-//
-// Not covered (see `notExercised`): the main transcript and Agents panel, streaming answers (a
-// different code path), and wide tables or code blocks elsewhere in the app.
+// Hypothesis: wide table/code wrappers set only `overflow-x`, so `overflow-y: auto` is computed too.
+// Not covered (see `notExercised`): main transcript, Agents panel, streaming answers.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
