@@ -6,6 +6,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { OPTION_FILL_CLASS } from '@/components/ui/checkbox'
+import { cn } from '@/lib/utils'
 import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
 import { CollapsedLine } from './CollapsedLine'
@@ -410,7 +412,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                   variant="outline"
                   disabled={busy}
                   data-choice-item
-                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal border-transparent bg-muted py-1 text-left hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] dark:border-transparent dark:bg-muted dark:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
+                  className={cn("h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal py-1 text-left", OPTION_FILL_CLASS)
                   onClick={() => void answer({ value: option }, 'answered', displayLabel)}
                 >
                   <span className="w-full min-w-0 break-words text-sm">

@@ -61,7 +61,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
         if (target) {
           void window.refract.spellcheck.suggest(target.word, navigator.language).then((result) => {
             if (result.ok && epoch === spellEpochRef.current) setSpell({ ...target, suggestions: result.value })
-          })
+          }).catch(() => undefined)
         }
         copyTextRef.current = el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0)
         setState({ hasSelection: el.selectionStart !== el.selectionEnd, editable: !el.readOnly && !el.disabled, hasText: el.value !== '' })
