@@ -1,4 +1,4 @@
-# Analysis: spec 069
+# Analysis: spec 071
 
 - Every FR maps to a task (T1 to T4) and a doc update (T5). No unmapped requirement.
 - Overlap risk: other lanes touch transcript menus, the composer and the updater; this diff avoids those files.

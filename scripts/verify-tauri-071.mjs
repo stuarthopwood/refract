@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live CDP check that the app-wide polish (#1399, #1395, #1387, #1385) renders, against a real built Tauri debug exe with fake
 // `omp`/`gh`, a scratch REFRACT_DATA_DIR and its own debugging port (never %APPDATA%\refract-tauri).
-// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_069_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-069.mjs
+// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_071_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-071.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,7 +16,7 @@ import { addRepository, createSessionViaQuickCreate, clickMenuItem, groupTrigger
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_069_SHOTS_DIR || path.join(tmpdir(), 'refract-069-shots');
+const SHOTS_DIR = process.env.REFRACT_071_SHOTS_DIR || path.join(tmpdir(), 'refract-071-shots');
 mkdirSync(SHOTS_DIR, { recursive: true });
 
 const REPORT = [];
@@ -39,8 +39,8 @@ if (a[0] === 'auth' && a[1] === 'status') {
   process.stdout.write(JSON.stringify({ hosts: { 'github.com': [{ host: 'github.com', login: 'octocat', active: true, state: 'success' }] } }));
   process.exit(0);
 }
-if (a[0] === 'auth' && a[1] === 'token') { process.stdout.write('fake-token-069\\n'); process.exit(0); }
-process.stderr.write('fake gh 069: unsupported ' + JSON.stringify(a) + '\\n');
+if (a[0] === 'auth' && a[1] === 'token') { process.stdout.write('fake-token-071\\n'); process.exit(0); }
+process.stderr.write('fake gh 071: unsupported ' + JSON.stringify(a) + '\\n');
 process.exit(1);
 `;
 
@@ -165,15 +165,15 @@ async function runChecks(cdp, { repoA, repoAName }) {
 }
 async function main() {
   const head = gitHead(REPO_ROOT);
-  log(`verify-tauri-069: head ${head}, shots ${SHOTS_DIR}`);
+  log(`verify-tauri-071: head ${head}, shots ${SHOTS_DIR}`);
   let shimDir, dataDir, importDir, repoA, repoB_unused, exeDir, child, cdp;
   try {
-    shimDir = mkdtempSync(path.join(tmpdir(), 'refract-069-shim-'));
-    dataDir = mkdtempSync(path.join(tmpdir(), 'refract-069-data-'));
-    importDir = mkdtempSync(path.join(tmpdir(), 'refract-069-import-'));
-    exeDir = mkdtempSync(path.join(tmpdir(), 'refract-069-exe-'));
-    repoA = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-069-repoA-')), 'A');
-    repoB_unused = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-069-repoB_unused-')), 'B');
+    shimDir = mkdtempSync(path.join(tmpdir(), 'refract-071-shim-'));
+    dataDir = mkdtempSync(path.join(tmpdir(), 'refract-071-data-'));
+    importDir = mkdtempSync(path.join(tmpdir(), 'refract-071-import-'));
+    exeDir = mkdtempSync(path.join(tmpdir(), 'refract-071-exe-'));
+    repoA = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-071-repoA-')), 'A');
+    repoB_unused = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-071-repoB_unused-')), 'B');
     const { ghLog } = buildShims(shimDir);
     const launcherExe = buildLauncher(shimDir);
     const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
@@ -209,7 +209,7 @@ async function main() {
     copyFileSync(ghLog, path.join(SHOTS_DIR, 'fake-gh-calls.log'));
     assert(ompCalls > 0, 'the fake omp was used (call log is non-empty)');
     assert(ghCalls > 0, 'the fake gh was used (call log is non-empty)');
-    log(`verify-tauri-069: ALL PASS (${passed} checks) at head ${head}`);
+    log(`verify-tauri-071: ALL PASS (${passed} checks) at head ${head}`);
   } finally {
     writeFileSync(path.join(SHOTS_DIR, 'report.txt'), REPORT.join('\n'));
     cdp?.close();
@@ -219,7 +219,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('verify-tauri-069: FAIL');
+  console.error('verify-tauri-071: FAIL');
   console.error(err);
   process.exitCode = 1;
 });

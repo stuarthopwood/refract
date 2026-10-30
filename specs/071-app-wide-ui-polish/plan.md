@@ -1,4 +1,4 @@
-# Plan: spec 069
+# Plan: spec 071
 
 Renderer only. Shared pieces first, call sites second.
 

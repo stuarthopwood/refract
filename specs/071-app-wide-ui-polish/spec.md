@@ -1,4 +1,4 @@
-# spec 069: App-wide UI polish (#1399, #1395, #1387, #1385)
+# spec 071: App-wide UI polish (#1399, #1395, #1387, #1385)
 
 Four renderer-only changes in one batch. No Rust, no IPC change.
 
