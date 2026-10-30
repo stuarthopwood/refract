@@ -17,9 +17,10 @@ interface FieldState {
 }
 
 // IPC for both directions: the webview's Clipboard API can raise a permission prompt or resolve without reaching the OS clipboard.
-async function writeClipboard(text: string): Promise<void> {
+async function writeClipboard(text: string): Promise<boolean> {
   const result = await window.refract.clipboard.writeText(text)
   if (!result.ok) notify(result.error)
+  return result.ok
 }
 
 async function readClipboard(): Promise<string | null> {
@@ -29,14 +30,16 @@ async function readClipboard(): Promise<string | null> {
     return null
   }
   if (result.value === '') {
-    notify({ code: 'clipboard-failed', message: 'The clipboard has no text' })
+    notify({ code: 'clipboard-failed', message: 'The clipboard has no text. Use Ctrl+V to paste images or files.' })
     return null
   }
   return result.value
 }
 
 async function runAction(field: HTMLTextAreaElement, action: FieldAction): Promise<void> {
-  const selected = field.value.slice(field.selectionStart, field.selectionEnd)
+  const start = field.selectionStart
+  const end = field.selectionEnd
+  const selected = field.value.slice(start, end)
   switch (action) {
     case 'select-all':
       field.select()
@@ -45,7 +48,9 @@ async function runAction(field: HTMLTextAreaElement, action: FieldAction): Promi
       await writeClipboard(selected)
       return
     case 'cut':
-      await writeClipboard(selected)
+      // Delete only after a confirmed write, and only if the selection did not move meanwhile.
+      if (!(await writeClipboard(selected))) return
+      if (field.selectionStart !== start || field.selectionEnd !== end) return
       document.execCommand('delete')
       return
     case 'paste':
@@ -88,6 +93,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
+        aria-label="Message actions"
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           const el = field()

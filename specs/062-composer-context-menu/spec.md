@@ -20,7 +20,7 @@
 
 - **FR-001** Right-click, Shift+F10 or the Menu key in the composer text field opens the themed menu with Cut, Copy, Paste, Paste as plain text, Select all.
 - **FR-002** Cut and Copy are disabled with no selection; Cut, Paste and Paste as plain text are disabled when the field is read-only or disabled; Select all is disabled when the field is empty.
-- **FR-003** Cut and Copy put exactly the selected text on the clipboard (renderer first, then `clipboard.writeText`); Cut also removes it as an undoable edit.
+- **FR-003** Cut and Copy put exactly the selected text on the clipboard (through the `clipboard.writeText` IPC only: the webview's Clipboard API can resolve without reaching the OS clipboard); Cut also removes it as an undoable edit, and only after the write succeeded.
 - **FR-004** Paste inserts the clipboard text at the caret, replacing the selection, through the composer paste handler. Paste as plain text inserts it verbatim, bypassing that handler.
 - **FR-005** An empty or unreadable clipboard shows a failure notice and changes nothing.
 - **FR-006** Closing the menu returns focus to the field with the selection intact.
