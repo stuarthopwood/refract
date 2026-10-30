@@ -29,8 +29,13 @@ import { focusSessionSearchInput } from './sessionSearchSelector'
  *  "Restored X"), and letting both race to move focus for the same unmount is unnecessary and
  *  unpredictable. An unrelated unmount (archive, delete) already has its own explicit focus
  *  redirect and must not be second-guessed by this one when no search is even active. */
-export function useFocusSearchOnStrandedUnmount(rootRef: RefObject<HTMLElement | null>, restoreInFlightRef?: RefObject<boolean>): void {
+export function useFocusSearchOnStrandedUnmount(
+  rootRef: RefObject<HTMLElement | null>,
+  restoreInFlightRef?: RefObject<boolean>,
+  enabled = true
+): void {
   useLayoutEffect(() => {
+    if (!enabled) return
     return () => {
       if (useSessionListStore.getState().query.trim() === '') return
       if (restoreInFlightRef?.current) return
