@@ -172,7 +172,7 @@ Whichever of a **Split**'s two **Chat panes** currently receives a session-row c
 _Avoid_: Active pane, selected pane
 
 **Home**:
-The left-nav entry and the main view that shows when no **Chat pane** is open: what needs the developer and their recent work across all **Projects** (Sessions waiting on them, recent **Sessions**, their pull requests and issues).
+The left-nav entry and the main view that shows when no **Chat pane** is open: what needs the developer and their recent work across all **Projects** (Sessions waiting on them, recent **Sessions**, their pull requests and issues, and a Tidy up list of Sessions whose pull request merged or closed). Its nav item shows the count of Sessions that need the developer.
 _Avoid_: Home pane, dashboard, start page
 
 **Holiday touches**:
