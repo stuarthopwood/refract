@@ -1,14 +1,3 @@
-// FDB Knowledge placeholder panel (spec 013 FR-018 to FR-022, issue://393). Two states driven
-// by `Settings.showSampleData` (T026, research.md decision 6): off (default) renders the honest
-// three-part empty state from `docs/design/patterns.md` ("Empty-state shape") -- no Settings
-// dependency beyond reading the flag itself, no network call, no stored state (FR-018). On
-// renders believable, clearly labelled sample content instead (FR-021, `docs/design/patterns.md`
-// "Placeholders and 'coming soon'"): each sample row carries its own visible "Sample data" badge
-// (`SampleDataRow.tsx`, shared with `AgentBuilderPanel.tsx`), so no element is ever shown
-// unlabelled (SC-006). The sample rows are inert (no `onClick`, no real search/ask/tool-call
-// behaviour) -- there is nothing real behind them yet (FR-021: sample content is never mixed with
-// real content), and a fake-but-interactive control would itself read as the "disabled control
-// with a reason" pattern FR-019 forbids.
 import { MessageCircleIcon, SearchIcon, WrenchIcon, LibraryIcon } from 'lucide-react'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { useSettingsStore } from '@/state'
@@ -41,6 +30,7 @@ function SampleSection({ heading, rows }: { heading: string; rows: SampleRow[] }
   )
 }
 
+/** Placeholder panel: empty state, or inert labelled sample rows when `showSampleData` is on. */
 export function FdbKnowledgePanel() {
   const showSampleData = useSettingsStore((state) => state.settings.showSampleData)
 

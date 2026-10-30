@@ -1,47 +1,31 @@
-// Shared attach-loop/notify core for a path-based drop (#432/#793 gate fix, generalised to any
-// file type by #926): the Tauri `onFileDrop` path (`useTauriFileDrop.ts`, real OS paths) and
-// `ChatPane.tsx`'s own (now Electron-dead, `getPathForFile` is always absent since the Electron
-// build was deleted at the Rust cutover, #796) DOM `drop` path both go through this one function
-// instead of two near-identical copies of the same loop.
 import { notify, useDraftStore } from '@/state'
 import { MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
 import type { ImagePathAttachFailureReason } from './attachments'
 import { buildAnyPathAttachment, describeAnyAttachFailureReason } from './anyFileAttachments'
 import type { FileAttachFailureReason } from './anyFileAttachments'
 
+/** A resolved dropped item. */
 export interface ResolvedDropItem {
-  /** Basename only (never a full path, FR-029), for the honest-but-private failure notice. */
+  /** Basename only, never a full path (FR-029). */
   name: string
   filePath: string
 }
 
-/** How many of this Session's CURRENTLY pending images/files together still fit, per issue
- * #432's PER-MESSAGE cap (#926: now shared across both kinds) -- both callers compute
- * `capped`/`overflowCount` against this before resolving paths, so neither a `File[]` nor a
- * `string[]` drop ever resolves more paths than could ever be attached. */
+/** How many more images/files still fit under the per-message cap (#432). */
 export function remainingAttachmentSlots(sessionId: string): number {
   const attachments = useDraftStore.getState().bySession[sessionId]?.attachments
   const alreadyPending = (attachments?.images.length ?? 0) + (attachments?.files.length ?? 0)
   return Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
 }
 
-/** Gate round 3 (UI3/Code3 Medium): the one overflow-cap wording string every attach path
- * shares (drop, picker, paste) -- used to be two independent near-identical copies (this file's
- * own inline text below, and `attachImage.ts`'s own `attachPastedFiles`) that could drift. */
+/** The overflow-cap wording shared by every attach path (drop, picker, paste). */
 export function buildOverflowCapMessage(remainingSlots: number, overflowCount: number): string {
   return remainingSlots === 0
     ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
     : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; ${overflowCount} ${overflowCount === 1 ? 'was' : 'were'} skipped.`
 }
 
-/** Runs the attach loop over already-resolved paths and announces/notifies the result, exactly
- * once per drop regardless of which build's listener produced `resolved`. `preFailed` are items
- * whose path could not even be resolved (Electron's `getPathForFile` throw case only); `dropped`
- * is the total item count before capping, used to compute how many overflowed the per-message cap.
- * Gate round 2 (UI2 Medium): `source` picks "attached"/"attached from dropped files." wording --
- * the Attach-button PICKER shares this exact loop but is not itself a "drop"; a folder is
- * counted and worded separately from an inline/path-sent FILE (`isDirectory` on the attachment
- * itself), never folded into one ambiguous "file" count. */
+/** Attaches already-resolved paths and notifies once with the result; `preFailed` could not be resolved, `dropped` is the pre-cap total, and `source` picks the wording. */
 export async function attachResolvedPaths(
   sessionId: string,
   resolved: ResolvedDropItem[],
@@ -92,9 +76,6 @@ export async function attachResolvedPaths(
   const skipped = failedFiles.length + overflowCount
   if (skipped === 0) return
   const overflowText = overflowCount > 0 ? buildOverflowCapMessage(remainingSlots, overflowCount) : null
-  // Gate round 2 (Code2 Medium, item 10): EVERY failed file is named with its own reason, never
-  // folded into a bare count once there is more than one -- a developer attaching several bad
-  // files at once used to see only "N files could not be attached," with no way to tell which.
   const failureText =
     failedFiles.length > 0
       ? failedFiles.map((f) => `"${f.name}" ${f.reason ? describeAnyAttachFailureReason(f.reason) : 'could not be attached'}.`).join(' ')

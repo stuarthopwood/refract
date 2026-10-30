@@ -13,29 +13,14 @@ interface UserMessageRowProps {
   userName: string | undefined
   /** #505: shared photo data URL; initials when absent. */
   userAvatarUrl?: string
-  /** Issue #555 amendment (Stuart, 2026-10-16): true when a `TimeGapDivider` already renders
-   * directly above this turn (it shows the same date and time already) -- the per-message row
-   * would just repeat it. */
+  /** True when a `TimeGapDivider` directly above already shows the time. */
   hideTime?: boolean
 }
 
-// Locale-aware "yesterday" (issue #555, amended 2026-10-16, Stuart's own call, gate round 1
-// finding M1): `Intl.RelativeTimeFormat` gives the real localised word ("yesterday", "hier",
-// "ayer", ...) instead of a hardcoded English string; `numeric: 'auto'` is what lets it return
-// the word form at all (`numeric: 'always'` would give "1 day ago").
+// `numeric: 'auto'` yields the localised word ("yesterday") instead of "1 day ago".
 const RELATIVE_DAY_FORMAT = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 
-// Day-aware absolute time (issue #555, amended 2026-10-16 by Stuart after the gate round 1
-// roundtable flagged M1: a message from another day showed a bare clock time with no date,
-// since `TimeGapDivider` only ever renders BETWEEN two turns and never above the very first
-// turn of a reopened, multi-day Conversation). Four tiers, all locale-aware (`undefined` locale
-// argument, matching every other time format in this file): today -- bare time ("13:45");
-// yesterday -- the localised day word (capitalised for its sentence-initial use here) plus time
-// ("Yesterday 13:45"); same year -- day, short month, time ("14 Oct 13:45"); a different year --
-// day, short month, year, then a comma before the time ("16 Oct 2025, 13:14"), the one tier that
-// visually sets a full date apart from the terser forms above it. The day-diff compares each
-// date's own local midnight (not a raw 24h-multiple of milliseconds), so a DST shift within the
-// gap can never misclassify "yesterday" as "today" or vice versa.
+// Day diff uses local midnights, not 24h multiples, so DST can't misclassify yesterday/today.
 function formatMessageTime(date: Date): string {
   const now = new Date()
   const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -51,22 +36,8 @@ function formatMessageTime(date: Date): string {
   return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`
 }
 
-// Per-message timestamp above the user bubble (issue #555, decided 2026-10-16, `ui-architect-v3`
-// roundtable; date rule amended 2026-10-16 by Stuart after gate round 1, see
-// `formatMessageTime` above): absolute wall-clock time in the user's locale, the same
-// locale-aware primitive `TimeGapDivider` (Transcript.tsx) already relies on, rather than a new
-// relative/"N min ago" or elapsed-since-session concept (no reliable session-start anchor for a
-// reopened, multi-day Conversation). Renders as a plain, unboxed row (zero-box rule,
-// docs/design/components.md "Cards and boxes") -- never inside `MessageHeader`/`MessageFooter`,
-// which render inside the bubble's own (grandfathered) box. Hidden entirely when `at` is the
-// sentinel `0` (a history entry OMP never timestamped, FR-046) -- hide rather than invent, the
-// same guard Transcript.tsx's `TurnTotalLine` already uses for the same sentinel -- OR when `at`
-// is otherwise not a usable instant (gate round 1 finding M2: a nanosecond epoch or a corrupt/
-// hand-edited session file can carry a JSON number outside the +-8.64e15ms range `Date` can
-// hold; `new Date(at)` then becomes an Invalid Date, and `toISOString()` throws a `RangeError`
-// mid-render, which the chat pane's `ErrorBoundary` would otherwise turn into a dead pane on
-// every reopen of that Conversation). `Number.isFinite(date.getTime())` catches both the
-// Invalid-Date case and any other non-finite result in one guard.
+// Hidden for `at === 0` (never timestamped) and for out-of-range values: an Invalid Date makes
+// `toISOString()` throw mid-render and kill the pane.
 function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }) {
   if (hide) return null
   if (at === 0) return null
@@ -80,11 +51,7 @@ function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }
   )
 }
 
-// Right-aligned bubble with a left indent, paired with a right-aligned avatar (docs/design/product-chat.md
-// "Self vs. other layout"): `Message align="end"` reverses the row and pushes it to the end;
-// `w-fit max-w-[85%]` keeps the bubble sized to its own content and caps it well short of the
-// transcript's left edge, so it never touches it regardless of message length.
-// `UserMessageTime` renders as a sibling ABOVE this whole `Message`, never inside it.
+/** Right-aligned user bubble; the timestamp is a sibling above the whole `Message`. */
 export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: UserMessageRowProps) {
   const name = userName ?? 'You'
   return (
@@ -96,10 +63,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
         </MessageAvatar>
         <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-4 py-2">
           <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
-          {/* #926: the attached files/folders as chips, never the raw inlined text or path
-              line the actual message carries for the agent -- a 256 KB file would otherwise
-              flood the transcript. Parsed server-side out of the plain message text
-              (`transcript.rs`'s own `extract_file_attachments`), so this is restart-safe too. */}
+          {/* Chips instead of the raw inlined file text, which could flood the transcript (#926). */}
           {item.fileAttachments && item.fileAttachments.length > 0 && (
             <div role="group" aria-label="Attached files" className="mb-1 flex flex-wrap items-center gap-2">
               {item.fileAttachments.map((file) => (
@@ -109,7 +73,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
           )}
           {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-2" />}
           {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} className="text-chat-foreground" />}
-          {/* #744: an image-only message whose images are missing still says so rather than render an empty bubble. */}
+          {/* An image-only message whose images are missing still says so (#744). */}
           {item.text.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
         </MessageContent>
       </Message>

@@ -1,26 +1,14 @@
-// Spec 018 slice 1 (issue #464), gate round 1 (item 7): shared focus-restoration helpers for
-// the Git changes panel. Every query is scoped to THIS Session's own panel instance via
-// `data-git-changes-session` (set on `GitChangesPanel.tsx`'s own root element) -- a plain
-// `document.querySelector` would also match a Split's OTHER pane if it happened to show the
-// same path/group kind, or (FR-022) the same Session rendered in both panes at once.
 import type { GitChangesGroupKind } from '../../../../shared/model'
 
-// FR-002's own order: Conflicts/Staged/Changes/Untracked. Owned in this neutral leaf module
-// (imported by `GitChangesGroup.tsx`, `GitChangesFileRow.tsx`, and `GitChangesPanel.tsx` alike)
-// rather than any one of those three, since `GitChangesPanel.tsx` imports `GitChangesGroup.tsx`
-// which imports `GitChangesFileRow.tsx` -- defining it in either of the latter two would make
-// the other's own import of it circular.
+// Neutral leaf module: defining this in the panel/group/row files would make their imports circular.
 export const GROUP_ORDER: readonly GitChangesGroupKind[] = ['conflicts', 'staged', 'changes', 'untracked']
 
+// Scoped by session so a Split's other pane showing the same path can't match.
 function gitChangesRoot(sessionId: string): ParentNode | null {
   return document.querySelector(`[data-git-changes-session="${CSS.escape(sessionId)}"]`)
 }
 
-/** Focuses the row for `path` within this Session's own panel, if it is currently rendered
- * (its group may have changed, but `data-git-row-path` is set on every group's own rows the
- * same way) -- UNSCOPED by group, since a single-file stage/unstage's own destination group
- * genuinely differs from its source (this is the right lookup for that case: `GitChangesFileRow
- * .tsx`'s own `handleStage`/`handleUnstage`). Returns whether a row was found and focused. */
+/** Focuses the row for `path` in this Session's panel in any group; returns whether it was found. */
 export function focusGitRow(sessionId: string, path: string): boolean {
   const el = gitChangesRoot(sessionId)?.querySelector<HTMLElement>(`[data-git-row-path="${CSS.escape(path)}"]`)
   if (!el) return false
@@ -28,15 +16,7 @@ export function focusGitRow(sessionId: string, path: string): boolean {
   return true
 }
 
-/** Gate round 2 item 3: a group-SCOPED row lookup, via each group's own `data-git-group-list`
- * wrapper (`GitChangesGroup.tsx`'s own `<ul>`). Needed because a partially staged file (gate
- * round 1 item 5) renders the SAME path as two independent rows, one per group, both carrying
- * the identical `data-git-row-path` -- the unscoped `focusGitRow` above always finds whichever
- * one happens to come first in DOM order (Staged, since it renders before Changes in
- * `GROUP_ORDER`), which is wrong when "Back"/Escape from an open diff needs to return to the
- * SPECIFIC half (`group`) that diff was actually opened from (`GitChangesPanel.tsx`'s own
- * `lastSelectionRef.current.group`). Returns whether a row was found, in THAT group, and
- * focused -- never silently falls through to the other group's own matching row. */
+/** Focuses the row for `path` within `group` only; a partially staged file renders in two groups, so the unscoped lookup would pick the wrong half. */
 export function focusGitRowInGroup(sessionId: string, group: GitChangesGroupKind, path: string): boolean {
   const el = gitChangesRoot(sessionId)?.querySelector<HTMLElement>(
     `[data-git-group-list="${CSS.escape(group)}"] [data-git-row-path="${CSS.escape(path)}"]`
@@ -46,9 +26,7 @@ export function focusGitRowInGroup(sessionId: string, group: GitChangesGroupKind
   return true
 }
 
-/** Focuses `kind`'s own group trigger within this Session's own panel, if that group currently
- * renders at all (an empty group is not rendered, so its trigger does not exist). Returns
- * whether a trigger was found and focused. */
+/** Focuses `kind`'s group trigger if that group is rendered; returns whether it was found. */
 export function focusGitGroupTrigger(sessionId: string, kind: GitChangesGroupKind): boolean {
   const el = gitChangesRoot(sessionId)?.querySelector<HTMLElement>(`[data-git-group-trigger="${kind}"]`)
   if (!el) return false
@@ -56,12 +34,7 @@ export function focusGitGroupTrigger(sessionId: string, kind: GitChangesGroupKin
   return true
 }
 
-/** Item 7's "the nearest surviving row or group trigger" fallback: walks `GROUP_ORDER` starting
- * right AFTER `afterKind` (wrapping back around to the start, `afterKind` itself last), and
- * focuses the first group trigger found still rendered. Used both as the Stage-all/Unstage-all
- * "focus the next group's trigger" rule, and as a single-row stage/unstage's own fallback when
- * the moved row itself can no longer be found anywhere (its new group collapsed to empty, the
- * rarer case -- `focusGitRow` is tried first by every caller). */
+/** Focuses the first rendered group trigger after `afterKind` in `GROUP_ORDER`, wrapping around. */
 export function focusNearestGroupTrigger(sessionId: string, afterKind: GitChangesGroupKind): void {
   const startIndex = GROUP_ORDER.indexOf(afterKind)
   const ordered = startIndex < 0 ? GROUP_ORDER : [...GROUP_ORDER.slice(startIndex + 1), ...GROUP_ORDER.slice(0, startIndex + 1)]
