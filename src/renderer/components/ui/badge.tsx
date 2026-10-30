@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 text-xs font-normal whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-focus-glow aria-invalid:border-destructive aria-invalid:ring-invalid-ring dark:aria-invalid:ring-invalid-ring [&>svg]:pointer-events-none [&>svg]:size-4!",
+  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 text-xs font-normal whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-focus-glow aria-invalid:border-destructive aria-invalid:ring-invalid-ring [&>svg]:pointer-events-none [&>svg]:size-4!",
   {
     variants: {
       variant: {

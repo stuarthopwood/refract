@@ -3,7 +3,6 @@ import { useEnterOnAppear } from '@/components/useEnterOnAppear'
 import { HiddenMarker } from './HiddenMarker'
 import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -14,7 +13,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
@@ -230,13 +228,10 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             </span>
             <span className="absolute right-2 top-1 flex h-5 items-center gap-1">
               {canResume && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      ref={resumeButtonRef}
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label={`Resume ${session.name}`}
+                <IconButton
+                    ref={resumeButtonRef}
+                    size="icon-xs"
+                    label={`Resume ${session.name}`}
                       aria-disabled={resuming || undefined}
                       className={cn('aria-disabled:opacity-50', ROW_ACTION_HOVER_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
                       onClick={() => void handleResume()}
@@ -246,10 +241,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                       ) : (
                         <RotateCwIcon aria-hidden className="size-4" />
                       )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Resume {session.name}</TooltipContent>
-                </Tooltip>
+                    </IconButton>
               )}
               <SessionAgentsButton
                 sessionId={session.id}

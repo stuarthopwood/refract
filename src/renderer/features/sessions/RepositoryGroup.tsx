@@ -2,12 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
 import { InlineStatus } from '@/components/InlineStatus'
-import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Kbd, KbdGroup } from '@/components/ui/kbd'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
@@ -235,49 +232,31 @@ export function RepositoryGroup({
             />
           )}
           {/* These buttons' total width feeds `GROUP_HEADER_ACTIONS_OFFSET_PX` and `GROUP_HEADER_ACTIONS_WIDTH_PX` (GroupHeader.tsx); change size or count in both or #908 marker drift returns. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
+          <IconButton
+            size="icon-xs"
+            label={`New session from ${repository.defaultBranch} in ${repository.name}`}
+            shortcut={['Ctrl', 'N']}
+            aria-disabled={creating || undefined}
+            className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100', 'aria-disabled:[&_svg]:opacity-50')}
+            // No `aria-keyshortcuts`: Ctrl+N reaches only one repository's button, so others would advertise a false chord.
+            // Ctrl+N's fallback focuses the first `[data-quick-create-session]` in DOM order (App.tsx).
+            data-quick-create-session
+            onClick={() => void handleQuickCreate()}
+          >
+            {creating ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <PlusIcon aria-hidden />}
+          </IconButton>
+          <NewSessionDialog
+            repository={repository}
+            trigger={
+              <IconButton
                 size="icon-xs"
-                aria-label={`New session from ${repository.defaultBranch} in ${repository.name}`}
-                aria-disabled={creating || undefined}
-                className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100', 'aria-disabled:[&_svg]:opacity-50')}
-                // No `aria-keyshortcuts`: Ctrl+N reaches only one repository's button, so others would advertise a false chord.
-                // Ctrl+N's fallback focuses the first `[data-quick-create-session]` in DOM order (App.tsx).
-                data-quick-create-session
-                onClick={() => void handleQuickCreate()}
+                label={`New session from a branch in ${repository.name}`}
+                className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
               >
-                {creating ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <PlusIcon aria-hidden />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              New session from {repository.defaultBranch}
-              {/* The Ctrl+N hint goes on this tooltip only; the branch picker below is a different action. */}
-              <KbdGroup>
-                <Kbd>Ctrl</Kbd>
-                <Kbd>N</Kbd>
-              </KbdGroup>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <NewSessionDialog
-              repository={repository}
-              trigger={
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`New session from a branch in ${repository.name}`}
-                    className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
-                  >
-                    <GitBranchPlusIcon aria-hidden />
-                  </Button>
-                </TooltipTrigger>
-              }
-            />
-            <TooltipContent>New session from a branch…</TooltipContent>
-          </Tooltip>
+                <GitBranchPlusIcon aria-hidden />
+              </IconButton>
+            }
+          />
           <ProjectColorPopover
             repository={repository}
             open={colorOpen}

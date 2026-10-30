@@ -17,7 +17,7 @@ export function IconButton({ label, shortcut, side, variant = 'ghost', size = 'i
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type={type} variant={variant} size={size} aria-label={label} {...props}>
+        <Button type={type} variant={variant} size={size} {...props} aria-label={label}>
           {children}
         </Button>
       </TooltipTrigger>

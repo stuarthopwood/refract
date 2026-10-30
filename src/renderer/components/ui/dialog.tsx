@@ -70,7 +70,7 @@ function DialogContent({
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            <IconButton label="Close" shortcut={["Esc"]} className="absolute top-2 right-2">
+            <IconButton label="Close" className="absolute top-2 right-2">
               <XIcon />
             </IconButton>
           </DialogPrimitive.Close>

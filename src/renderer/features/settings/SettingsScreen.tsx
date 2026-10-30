@@ -37,7 +37,7 @@ export function SettingsScreen() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
-        <IconButton label="Back to chat" className="no-drag-region" onClick={handleBackToChat}>
+        <IconButton label="Back to chat" side="bottom" className="no-drag-region" onClick={handleBackToChat}>
           <ArrowLeftIcon aria-hidden />
         </IconButton>
         <SettingsBrand />
