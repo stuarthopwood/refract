@@ -5,4 +5,4 @@
 - [x] T3 `ghost-destructive`, `CardFooter`, action-row reorders (FR-3)
 - [x] T4 Chrome changes (FR-4)
 - [x] T5 Docs and PLAN rows
-- [ ] T6 `pnpm ci:local`, live check, reviewer gate
+- [x] T6 `pnpm ci:local`, live check, reviewer gate

@@ -103,7 +103,7 @@ async function runChecks(cdp, { repoA, repoAName }) {
   await cdp.screenshot(path.join(SHOTS_DIR, '01-sidebar-chrome.png'));
   const chrome = await cdp.evaluate(`(() => {
     const strips = Array.from(document.querySelectorAll('.titlebar-surface'));
-    const sep = document.querySelector('[role="separator"].border-divider');
+    const sep = (Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project')?.closest('.p-2')?.previousElementSibling ?? null);
     return {
       stripBackgrounds: strips.map((el) => getComputedStyle(el).backgroundColor),
       logoImgs: document.querySelectorAll('aside img, nav img').length,
