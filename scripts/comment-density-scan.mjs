@@ -1,7 +1,7 @@
 // Comment scanners and per-file line metrics for check-comment-density.mjs.
 // Both scanners return comment character ranges; metrics are derived from the ranges alone.
 
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 
 function scriptKindFor(ext) {
   if (ext === '.tsx') return ts.ScriptKind.TSX;
@@ -16,7 +16,7 @@ export function scanTypeScriptComments(text, ext) {
   const ranges = [];
   const seen = new Set();
   const visit = (node) => {
-    const children = node.getChildren(sf);
+    const children = node.getChildren(sf).filter((c) => !ts.isJSDoc(c));
     if (children.length === 0) {
       if (node.kind === ts.SyntaxKind.JsxText) return;
       for (const c of ts.getLeadingCommentRanges(text, node.getFullStart()) ?? []) {

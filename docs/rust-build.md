@@ -9,7 +9,7 @@ The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron bui
 normally.
 
 - Build, test and gate commands: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`,
-  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:file-size`, and `pnpm
+  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:file-size`, `check:comment-density`, and `pnpm
   check:parity` (generated IPC parity table, `src/shared/ipc.ts` against `src-tauri/src`).
   For `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
   (run with `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri`
