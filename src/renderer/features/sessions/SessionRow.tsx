@@ -7,15 +7,11 @@ import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -32,6 +28,15 @@ import { StateIcon, displayLabel, displayStatus, formatRelativeTimeShort } from 
 import { useSessionRowActions } from './useSessionRowActions'
 import { useSessionRowActivity } from './useSessionRowActivity'
 import { SessionAgentsButton } from './SessionAgentsButton'
+import { SessionRowTable } from './SessionRowTable'
+import {
+  ContextActionItems,
+  DropdownActionItems,
+  SessionRenameInput,
+  onContextMenuOpenChange,
+  onDropdownOpenChange
+} from './SessionRowParts'
+import type { SessionRowSurface } from './sessionRowSurface'
 
 // Gate round 1 fix (High, code/a11y/architect): a `hidden` (display:none) trigger can never take
 // focus, so every keyboard close path (Escape, a dropdown item, Delete > Cancel, Shift+F10) that
@@ -99,17 +104,24 @@ function lineTwoKind(
   return 'branch'
 }
 
-export const SessionRow = memo(function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
+export type SessionRowProps =
+  | { layout?: 'list'; session: SessionSummary; repository: Repository }
+  // The table layout is how another screen (Manage sessions, #934) renders this same row: a flat,
+  // cross-Project line with its own columns. `surface` supplies that screen's focus, announcement
+  // and open behaviour; `repository` is `undefined` when the Project could not be resolved.
+  | { layout: 'table'; session: SessionSummary; repository: Repository | undefined; projectName: string; surface: SessionRowSurface }
+
+export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
+  const { session } = props
+  const row = useSessionRowActions(session, props.repository, props.layout === 'table' ? props.surface : undefined)
   const {
     isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open,
-    renaming, draftName, setDraftName, deleteOpen, setDeleteOpen, resuming,
-    resumeButtonRef, worktreeMissing, rowRef, openButtonRef, menuTriggerRef, renameInputRef,
-    createRequestedRef, createOriginRef, contextMenuOpenerRef,
-    settledCreateRef, settledRestoreRef, restoreRequestedRef,
+    renaming, deleteOpen, setDeleteOpen, resuming,
+    resumeButtonRef, worktreeMissing, rowRef, openButtonRef, menuTriggerRef,
     focusListContainer, startRenaming, canResume, handleResume,
-    commitRename, handleNameKeyDown, handleOpenButtonKeyDown,
+    handleOpenButtonKeyDown,
     actions, handleMenuCloseAutoFocus
-  } = useSessionRowActions(session, repository)
+  } = row
   useEnterOnAppear(rowRef, session.createdAt)
 
   // #567 decision 11: one shared app-level tick instead of a timer per row -- this row's own
@@ -119,6 +131,10 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
 
   const runningAgents = session.status === 'stopped' ? 0 : (session.activity?.runningSubagents ?? 0)
   const activityText = useSessionRowActivity(session)
+  if (props.layout === 'table') {
+    return <SessionRowTable session={session} projectName={props.projectName} surface={props.surface} row={row} />
+  }
+  const { repository } = props
   const lineTwo = lineTwoKind(session, activityText)
   // Gate round 1 fix (Medium, a11y/architect): "focused pane" is only meaningful while a real
   // Split is open (decision 14 frames it that way; on `main` it was gated on `isSplitOpen` too)
@@ -155,35 +171,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
       {/* Issue #1122: the shared `ActiveIndicatorBar` (square, flush full-height, 2px) replaces
           this row's own hand-copied rounded-pill/inset span. */}
       {isVisible && <ActiveIndicatorBar />}
-      <ContextMenu
-        onOpenChange={(open) => {
-          if (!open) return
-          // A11y-review fix (gate round 4, Low): reopening this menu while a previous create's
-          // settle is still stashed means Radix's own close-autofocus for that earlier close may
-          // never fire at all (superseded by this new open) -- run it now, before overwriting
-          // `createOriginRef` for this new open, so the stashed `finish` still resolves the
-          // origin it actually belongs to.
-          const settled = settledCreateRef.current
-          settledCreateRef.current = null
-          createRequestedRef.current = false
-          settled?.()
-          // Gate round 2 fix (Low): mirrors the create cleanup above -- reopening this menu
-          // while a previous restore's own settle is still stashed means Radix's close-
-          // autofocus for that earlier close may never fire again; run it now, before this new
-          // open can overwrite anything it reads.
-          const settledRestore = settledRestoreRef.current
-          settledRestoreRef.current = null
-          restoreRequestedRef.current = false
-          settledRestore?.()
-          createOriginRef.current = 'context'
-          // A11y-review fix (gate round 2, LOW): Shift+F10/the Menu key opens this menu from
-          // whatever element already has focus (for example the "..." trigger itself), not
-          // always the row's open button -- prefer that element when it is genuinely inside
-          // this row.
-          const active = document.activeElement
-          contextMenuOpenerRef.current = active instanceof HTMLElement && rowRef.current?.contains(active) ? active : null
-        }}
-      >
+      <ContextMenu onOpenChange={(open) => onContextMenuOpenChange(row, open)}>
         <ContextMenuTrigger asChild>
           {/* #567 decision 8: the whole row is one 44px two-line card surface, square-cornered
               (`data-choice-item` on the `<li>` above, FR-054) -- this div, not the open button's
@@ -210,16 +198,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
             )}
           >
             {renaming ? (
-              <input
-                ref={renameInputRef}
-                autoFocus
-                value={draftName}
-                onChange={(event) => setDraftName(event.target.value)}
-                onBlur={() => void commitRename()}
-                onKeyDown={handleNameKeyDown}
-                aria-label="Session name"
-                className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1 text-sm outline-none"
-              />
+              <SessionRenameInput row={row} />
             ) : (
               <SessionDetailsCard
                 session={session}
@@ -393,22 +372,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                 <span aria-hidden className={cn(TRAILING_TIME_CLASS, runningAgents > 0 && '[@media(hover:none)]:hidden')}>
                   {formatRelativeTimeShort(session.lastActivityAt)}
                 </span>
-                <DropdownMenu
-                  onOpenChange={(open) => {
-                    if (!open) return
-                    const settled = settledCreateRef.current
-                    settledCreateRef.current = null
-                    createRequestedRef.current = false
-                    settled?.()
-                    // Gate round 2 fix (Low): mirrors the create cleanup above -- see the
-                    // matching ContextMenu comment.
-                    const settledRestore = settledRestoreRef.current
-                    settledRestoreRef.current = null
-                    restoreRequestedRef.current = false
-                    settledRestore?.()
-                    createOriginRef.current = 'dropdown'
-                  }}
-                >
+                <DropdownMenu onOpenChange={(open) => onDropdownOpenChange(row, open)}>
                   <DropdownMenuTrigger asChild>
                     <Button
                       ref={menuTriggerRef}
@@ -421,20 +385,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>
-                    {actions.map((action, index) =>
-                      action.kind === 'separator' ? (
-                        <DropdownMenuSeparator key={`sep-${index}`} />
-                      ) : (
-                        <DropdownMenuItem
-                          key={action.key}
-                          variant={action.variant}
-                          disabled={action.disabled}
-                          onSelect={action.onSelect}
-                        >
-                          <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-                        </DropdownMenuItem>
-                      )
-                    )}
+                    <DropdownActionItems actions={actions} />
                   </DropdownMenuContent>
                 </DropdownMenu>
               </span>
@@ -444,20 +395,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
         {/* Right-click opens the same options the "..." trigger does (T117 new feature): one
             action list, never a second menu to maintain. */}
         <ContextMenuContent className="max-w-80" onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>
-          {actions.map((action, index) =>
-            action.kind === 'separator' ? (
-              <ContextMenuSeparator key={`sep-${index}`} />
-            ) : (
-              <ContextMenuItem
-                key={action.key}
-                variant={action.variant}
-                disabled={action.disabled}
-                onSelect={action.onSelect}
-              >
-                <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-              </ContextMenuItem>
-            )
-          )}
+          <ContextActionItems actions={actions} />
         </ContextMenuContent>
       </ContextMenu>
       <DeleteDialog
