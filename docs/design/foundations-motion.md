@@ -67,13 +67,12 @@ Subtle enter-only motion when content changes (#678, spec 058). Tokens in `globa
 
 | Surface | Utility | Motion |
 |---|---|---|
-| View switch (chat, Settings, Manage sessions) | `motion-enter` | 150ms fade, 4px rise |
-| Session switch | `motion-enter-fade` | 120ms fade, opacity only |
-| Right pane opens | `motion-enter-panel` | 200ms fade, 8px slide; the panel size changes instantly |
-| Panel switch | `motion-enter-fade` | 120ms fade |
-| Panel tab | `motion-tab-underline` | 150ms underline fade and scale |
+| View switch (chat area, Settings, Manage sessions; the session list and rail stay still) | `motion-enter` | 150ms fade, 4px rise |
+| Session switch | `motion-enter-fade` | `--motion-fade` 120ms, opacity only; pills do not also crossfade |
+| Right pane opens and panel switch | `motion-enter-panel` | 200ms fade, 8px slide of the content only; the panel size and frame change instantly; closing never animates |
+| Panel tab | `motion-tab-underline` | 150ms underline fade and grow in place |
 | Model, reasoning, Approval pills | `motion-crossfade` | 100ms fade on change only |
-| New session row, group expand | `motion-enter` | 150ms fade, 4px rise |
+| New session row (created in the last 3s only) | `motion-enter` | 150ms fade, 4px rise; restore, remount, search, archive and group expand never animate |
 | Settings section | `motion-enter-fade` | 120ms fade |
 | Dialogs, menus, popovers, tooltips | none added | audited onto the tokens only |
 

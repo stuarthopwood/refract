@@ -100,7 +100,7 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
               ) : (
                 <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-4" />
               )}
-              <ValueCrossfade value={triggerLabel} />
+              <ValueCrossfade scope={sessionId} value={triggerLabel} />
               {nextLabel && pendingLabel === null && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}
             </button>
           </DropdownMenuTrigger>

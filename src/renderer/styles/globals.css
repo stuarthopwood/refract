@@ -256,6 +256,7 @@ samp {
      and every shadcn dialog, menu, popover and tooltip. */
   --motion-fast: 100ms;
   --motion-base: 150ms;
+  --motion-fade: 120ms;
   --motion-panel: 200ms;
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   /* Theme-independent values only (spec 007 T008): everything else that used to live here as an
@@ -1967,7 +1968,7 @@ samp {
 }
 @utility motion-enter-fade {
   @apply animate-in fade-in;
-  --tw-animation-duration: 120ms;
+  --tw-animation-duration: var(--motion-fade);
   --tw-ease: var(--ease-out);
 }
 @utility motion-enter-panel {

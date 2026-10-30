@@ -85,11 +85,11 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
             className={cn(PICKER_TRIGGER_CLASS, 'max-w-80 min-w-0 shrink', className)}
           >
             <shown.Icon aria-hidden className="size-4 shrink-0" />
-            <ValueCrossfade className="shrink-0" value={shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')} />
+            <ValueCrossfade className="shrink-0" scope={sessionId} value={shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')} />
             {shown.roleLabel && shown.model && (
               <span className="flex min-w-0 gap-1 @max-[400px]:hidden">
                 <span aria-hidden>·</span>
-                <ValueCrossfade className="truncate" value={shortModelName(shown.model)} />
+                <ValueCrossfade className="truncate" scope={sessionId} value={shortModelName(shown.model)} />
               </span>
             )}
             {queued && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}

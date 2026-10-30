@@ -16,7 +16,7 @@ Cross-check of `spec.md`, `plan.md`, `tasks.md` against the implementation.
 
 Findings:
 
-- Group expand and search-filter reveals also fade rows in, because `useEnterOnAppear` cannot tell them from a new session. Accepted: still opacity and 4px, never height.
+- Rows animate only when the Session was created in the last 3s (gate round 1); group expand, search, archive and remount do not animate. The tab indicator fades and grows in place (FR-006 wording follows the docs).
 - The Health check dialog is covered by the dialog token audit; it gets no extra motion.
 - File-size: `ChatPane.tsx` +2 lines at its cap check, `App.tsx` 724 of 727; the check reports 0 violations.
 - No tests added (prototyping phase). Verification is the live check.

@@ -502,17 +502,17 @@ export function App() {
           `isSplit` like the region above, since closing the single, non-split pane down to
           zero is the one case that region's own gate would otherwise miss. */}
       <div aria-live="polite" className="sr-only">{chatAreaAnnouncement}</div>
-            <div ref={viewRef} className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
         ) : view === 'settings' ? (
-          <ErrorBoundary>
+          <div ref={viewRef} className="h-full"><ErrorBoundary>
             <SettingsScreen />
-          </ErrorBoundary>
+          </ErrorBoundary></div>
         ) : view === 'manage-sessions' ? (
-          <ErrorBoundary>
+          <div ref={viewRef} className="h-full"><ErrorBoundary>
             <ManageSessionsScreen />
-          </ErrorBoundary>
+          </ErrorBoundary></div>
         ) : (
           <div className="flex h-full overflow-hidden">
           <ResizablePanelGroup orientation="horizontal" className="h-full flex-1 min-w-0">
@@ -543,7 +543,7 @@ export function App() {
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />
             <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
-              <ErrorBoundary>
+              <div ref={viewRef} className="h-full"><ErrorBoundary>
                 {view === 'pull-requests' ? (
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : view === 'issues' ? (
@@ -627,7 +627,7 @@ export function App() {
                     </ResizablePanel>
                   </ResizablePanelGroup>
                 )}
-              </ErrorBoundary>
+              </ErrorBoundary></div>
             </ResizablePanel>
             <RightPaneResizeHandle disabled={view !== 'chat'} />
             <ResizablePanel

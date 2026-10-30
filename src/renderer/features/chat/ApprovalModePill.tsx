@@ -94,7 +94,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
           )}
         >
           <CurrentIcon aria-hidden className="size-4" />
-          <ValueCrossfade value={current.label} />
+          <ValueCrossfade scope={sessionId} value={current.label} />
           {pendingLabel && <span className="text-muted-foreground">&middot; {pendingLabel}</span>}
         </button>
       </DropdownMenuTrigger>

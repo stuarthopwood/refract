@@ -22,10 +22,10 @@ Session 2026-10-30. Answered by Skippy, delegated by Stuart.
 - FR-002: `useEnterOnSwitch(key, variant)` (components) returns a ref. When `key` changes after the first render, it restarts the variant's animation on the ref element, unless the previous switch was under 150ms ago, in which case it clears the animation.
 - FR-003: View switch (chat, Pull requests, Issues, Settings, Manage sessions): content uses `motion-enter`.
 - FR-004: Session switch: the chat area uses `motion-enter-fade` keyed by the front Session id. Scroll restore and land-at-end are untouched.
-- FR-005: Right pane open: the shell content uses `motion-enter-panel`, keyed by the open state. Panel switch: panel content uses `motion-enter-fade` keyed by the active panel id.
-- FR-006: Selected-tab indicator in `PanelTabBar` moves with a 150ms transform.
+- FR-005: Right pane open: the pane content (not its frame) uses `motion-enter-panel`, keyed by the open state and active panel id; closing never animates. A panel switch uses the same key.
+- FR-006: Selected-tab indicator in `PanelTabBar` fades and grows in place over 150ms.
 - FR-007: Model, thinking-level and Approval mode pill labels crossfade (`motion-crossfade`) when the value changes, never on mount.
-- FR-008: A new Session list row fades in with a 4px rise. Group expand fades the revealed rows (no height tween). Archive and delete do not animate.
+- FR-008: A new Session list row fades in with a 4px rise. Only a Session created in the last 3s animates; restore, remount, search, group expand, archive and delete do not.
 - FR-009: Settings section content fades in when a section is first shown.
 - FR-010: shadcn dialog, popover, dropdown-menu, tooltip use the token duration and easing.
 - FR-011: Under `prefers-reduced-motion: reduce` every switch is instant (the existing global rule). Behaviour never waits on `animationend`.

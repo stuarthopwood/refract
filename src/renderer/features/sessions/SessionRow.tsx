@@ -110,7 +110,7 @@ export const SessionRow = memo(function SessionRow({ session, repository }: { se
     commitRename, handleNameKeyDown, handleOpenButtonKeyDown,
     actions, handleMenuCloseAutoFocus
   } = useSessionRowActions(session, repository)
-  useEnterOnAppear(rowRef)
+  useEnterOnAppear(rowRef, session.createdAt)
 
   // #567 decision 11: one shared app-level tick instead of a timer per row -- this row's own
   // time text (`formatRelativeTimeShort` below) is recomputed on every render, and this is the

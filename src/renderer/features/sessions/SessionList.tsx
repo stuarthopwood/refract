@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef } from 'react'
-import { useMarkEnterListSettled } from '@/components/useEnterOnAppear'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
@@ -30,7 +29,6 @@ import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
 export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
-  useMarkEnterListSettled(sessions.length > 0)
   // Issue #1048 (Holiday touches): the sidebar accessory beside the "Refract" wordmark below.
   const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
   const activeHolidayId = useHolidayStore((state) => state.activeHoliday)

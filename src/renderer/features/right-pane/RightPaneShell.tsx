@@ -34,10 +34,11 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
   const paneOpen = useRightPaneStore((s) => s.open)
-  // Panel size changes instantly (#678); only the shell's content fades and slides in on open, and
-  // the active panel's content fades in on a panel switch.
-  const shellRef = useEnterOnSwitch(paneOpen, 'panel')
-  useEnterOnSwitch(activePanelId, 'fade', contentRef)
+  // Panel size changes instantly (#678); only the content (launcher or active panel) fades and slides in, on open and on a panel switch;
+  // closing is ignored.
+  const panelKey = paneOpen ? activePanelId : null
+  const launcherRef = useEnterOnSwitch<HTMLDivElement>(paneOpen ? 'launcher' : null, 'panel')
+  useEnterOnSwitch(panelKey, 'panel', contentRef)
   // Seeded from the store so a panel restored from settings (spec 024) is not mistaken for a
   // genuine open and does not steal focus at launch.
   const prevOpenPanelIdsRef = useRef<PanelId[]>(useRightPaneStore.getState().openPanelIds)
@@ -71,9 +72,9 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
 
   if (openPanelIds.length === 0) {
     return (
-      <div ref={shellRef} data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
+      <div data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
         <WindowControlsSpacerRow />
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div ref={launcherRef} className="min-h-0 flex-1 overflow-hidden">
           <PanelLauncher sessionId={sessionId} />
         </div>
         <HandleHitStrip />
@@ -84,7 +85,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const isTabBar = openPanelIds.length >= 2
 
   return (
-    <div ref={shellRef} id="right-pane-active-panel" data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
+    <div id="right-pane-active-panel" data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
       <PanelTabBar sessionId={sessionId} />
       <div
         ref={contentRef}

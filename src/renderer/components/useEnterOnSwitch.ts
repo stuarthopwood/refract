@@ -11,7 +11,7 @@ const VARIANT_CLASS = {
 
 export type EnterVariant = keyof typeof VARIANT_CLASS
 
-/** A switch sooner than this after the previous one skips straight to the final state. */
+/** A switch sooner than this (= `--motion-base`) after the previous one skips straight to the final state. */
 const RAPID_SWITCH_MS = 150
 
 /**
