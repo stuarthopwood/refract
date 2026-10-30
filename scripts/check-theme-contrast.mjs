@@ -11,7 +11,7 @@ import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
 import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
 import { contextUsageContrastRows } from './context-usage-contrast.mjs'; import { findNavContrastRows } from './find-nav-contrast.mjs'
-import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
+import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
 import { css, cssPath, repoRoot, themes, sidebarBorderAliasesDivider } from './theme-tokens.mjs'
 
 // A ThemeId declared in themes.ts with no `.theme-<id>` block would silently drop out of the table and still
