@@ -7,6 +7,7 @@ import { useState, type ComponentType } from 'react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { MenuItemIcon } from '@/components/ui/menu-item-icon'
 import { cn } from '@/lib/utils'
 import type { CheckOutcome, PullRequestCheck, PullRequestDetail } from '../../../shared/github'
 import { CHECK_STATE_DISPLAY } from './PullRequestRow'
@@ -79,9 +80,9 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isHttpUrl(check.detailsUrl) ? (
-            <DropdownMenuItem asChild icon={ExternalLinkIcon}>
+            <DropdownMenuItem asChild>
               <a href={check.detailsUrl} target="_blank" rel="noreferrer noopener">
-                Open details<span className="sr-only"> (opens in browser)</span>
+                <MenuItemIcon icon={ExternalLinkIcon} />Open details<span className="sr-only"> (opens in browser)</span>
               </a>
             </DropdownMenuItem>
           ) : (

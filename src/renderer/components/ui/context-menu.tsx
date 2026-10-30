@@ -116,8 +116,7 @@ function ContextMenuItem({
       )}
       {...props}
     >
-      <MenuItemIcon icon={icon} />
-      {children}
+      {props.asChild ? children : <><MenuItemIcon icon={icon} />{children}</>}
     </ContextMenuPrimitive.Item>
   )
 }

@@ -91,8 +91,7 @@ function DropdownMenuItem({
       className={cn(MENU_ITEM_CLASS, MENU_ITEM_DESTRUCTIVE_CLASS, className)}
       {...props}
     >
-      <MenuItemIcon icon={icon} />
-      {children}
+      {props.asChild ? children : <><MenuItemIcon icon={icon} />{children}</>}
     </DropdownMenuPrimitive.Item>
   )
 }
