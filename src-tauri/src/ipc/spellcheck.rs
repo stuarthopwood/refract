@@ -23,7 +23,9 @@ fn word_and_language(args: &[Value], method: &str) -> Result<(String, String), I
                 && !word.chars().any(char::is_whitespace)
                 && !language.is_empty()
                 && language.len() <= 35
-                && language.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') =>
+                && language
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-') =>
         {
             Ok((word.to_string(), language.to_string()))
         }
@@ -61,7 +63,9 @@ fn spellcheck_add(_state: AppState, args: Vec<Value>) -> HandlerFuture {
 mod platform {
     use windows::core::{HSTRING, PWSTR};
     use windows::Win32::Foundation::S_OK;
-    use windows::Win32::Globalization::{ISpellChecker, ISpellCheckerFactory, SpellCheckerFactory};
+    use windows::Win32::Globalization::{
+        ISpellChecker, ISpellCheckerFactory, ISpellingError, SpellCheckerFactory,
+    };
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
         COINIT_APARTMENTTHREADED,
@@ -106,8 +110,9 @@ mod platform {
         };
         let text = HSTRING::from(word);
         let errors = unsafe { checker.Check(&text) }.map_err(|e| e.to_string())?;
-        // `Next` errors once the enumeration is empty, i.e. the word is spelled correctly.
-        if unsafe { errors.Next() }.is_err() {
+        // `Next` returns S_FALSE with no item when the word is spelled correctly.
+        let mut first: Option<ISpellingError> = None;
+        if unsafe { errors.Next(&mut first) } != S_OK || first.is_none() {
             return Ok(Vec::new());
         }
         let list = unsafe { checker.Suggest(&text) }.map_err(|e| e.to_string())?;
@@ -130,7 +135,9 @@ mod platform {
     pub fn add(word: &str, language: &str) -> Result<(), String> {
         let _com = ComScope::new();
         match open(language)? {
-            Some(checker) => unsafe { checker.Add(&HSTRING::from(word)) }.map_err(|e| e.to_string()),
+            Some(checker) => {
+                unsafe { checker.Add(&HSTRING::from(word)) }.map_err(|e| e.to_string())
+            }
             None => Ok(()),
         }
     }
