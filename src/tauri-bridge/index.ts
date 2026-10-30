@@ -12,6 +12,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import { chatPauseBridge } from './chatPause'
 import { usageBridge } from './usage'
+import type { AdvisorRoster, AdvisorRosterDetected } from '../shared/ipc-advisor-roster'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch } from '../shared/ipc-issues'
@@ -195,7 +196,14 @@ const refract: RefractApi = {
 
   clipboard: {
     writeText: (text) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_TEXT, text),
-    readText: () => request<string>(IPC_REQUESTS.CLIPBOARD_READ_TEXT)
+    readText: () => request<string>(IPC_REQUESTS.CLIPBOARD_READ_TEXT),
+    writeImage: (pngBase64) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_IMAGE, pngBase64),
+    saveImage: (pngBase64, suggestedName) => request<string | null>(IPC_REQUESTS.CLIPBOARD_SAVE_IMAGE, pngBase64, suggestedName)
+  },
+
+  advisorRoster: {
+    detect: (sessionId) => request<AdvisorRoster | null>(IPC_REQUESTS.ADVISOR_ROSTER_DETECT, sessionId),
+    open: (sessionId) => request<void>(IPC_REQUESTS.ADVISOR_ROSTER_OPEN, sessionId)
   },
 
   spellcheck: {
@@ -441,6 +449,7 @@ const refract: RefractApi = {
   onTokenGuardLaunchWarning: (handler) =>
     on<TokenGuardLaunchWarning>(IPC_EVENTS.TOKEN_GUARD_LAUNCH_WARNING, handler),
   onTokenGuardCalls: (handler) => on<TokenGuardCalls>(IPC_EVENTS.TOKEN_GUARD_CALLS, handler),
+  onAdvisorRosterDetected: (handler) => on<AdvisorRosterDetected>(IPC_EVENTS.ADVISOR_ROSTER_DETECTED, handler),
   onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
   onSubagentsUpdate: (handler) =>
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),

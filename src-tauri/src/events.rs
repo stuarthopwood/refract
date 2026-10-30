@@ -20,6 +20,7 @@ pub const UI_OPEN_SESSION: &str = "ui:open-session";
 pub const MEMORY_WARNING: &str = "memory:warning";
 pub const TOKEN_GUARD_LAUNCH_WARNING: &str = "token-guard:launch-warning";
 pub const TOKEN_GUARD_CALLS: &str = "token-guard:calls";
+pub const ADVISOR_ROSTER_DETECTED: &str = "advisor-roster:detected";
 pub const READOUT_UPDATE: &str = "readout:update";
 pub const ADVISOR_UPDATE: &str = "advisor:update";
 pub const SESSION_HEALTH: &str = "session:health";
@@ -182,6 +183,18 @@ impl EventSink {
                 "conversationId": conversation_id,
                 "calls": calls
             }),
+        );
+    }
+
+    /// `advisor-roster:detected`: a WATCHDOG.yml roster was found at this Session's launch.
+    pub fn emit_advisor_roster_detected(
+        &self,
+        session_id: &str,
+        roster: &crate::omp::advisor_roster::Roster,
+    ) {
+        self.send(
+            ADVISOR_ROSTER_DETECTED,
+            serde_json::json!({ "sessionId": session_id, "roster": roster }),
         );
     }
 

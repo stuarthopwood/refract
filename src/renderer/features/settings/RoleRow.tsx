@@ -2,7 +2,7 @@
 // the current model as text, and the "Change" dropdown. Used for every role, including Advisor,
 // whose value lives in Refract's token guard store rather than OMP's config (`AdvisorModelRow`).
 import { useState } from 'react'
-import { Loader2Icon, OctagonXIcon } from 'lucide-react'
+import { Loader2Icon, OctagonXIcon, TriangleAlertIcon } from 'lucide-react'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { Button } from '@/components/ui/button'
 import { ROLE_ICONS } from '@/components/icons/role-icons'
@@ -28,6 +28,8 @@ export interface RoleRowProps {
   isPending: boolean
   saveError?: string
   overrideNote?: string
+  /** A roster or other override that makes the shown model not the effective one; rendered with a warning triangle. */
+  warning?: string
   selectedProvider: string | null
   unsetLabel: string
   onCommit(value: string | null, announcement?: string): void
@@ -46,6 +48,7 @@ export function RoleRow({
   isPending,
   saveError,
   overrideNote,
+  warning,
   selectedProvider,
   unsetLabel,
   onCommit,
@@ -57,11 +60,12 @@ export function RoleRow({
   const selectId = `model-role-${role}`
   const saveErrorId = `${selectId}-save-error`
   const overrideNoteId = `${selectId}-override-note`
+  const warningId = `${selectId}-warning`
   const catalogErrorId = `model-role-catalog-error-${kind}`
   const displayCatalog = isChat ? filterCatalogByProvider(catalog, selectedProvider) : (catalog ?? [])
   // `catalog === undefined` with no error means "not fetched yet", never "this model is unknown".
   const catalogStatus: 'loading' | 'loaded' | 'error' = catalogError ? 'error' : catalog === undefined ? 'loading' : 'loaded'
-  const describedBy = [`${selectId}-description`, `${selectId}-current`, saveError ? saveErrorId : null, overrideNote ? overrideNoteId : null, catalogError ? catalogErrorId : null]
+  const describedBy = [`${selectId}-description`, `${selectId}-current`, saveError ? saveErrorId : null, overrideNote ? overrideNoteId : null, warning ? warningId : null, catalogError ? catalogErrorId : null]
     .filter(Boolean)
     .join(' ')
   const current = describeRoleCurrent(role, value, roles, catalog)
@@ -83,6 +87,14 @@ export function RoleRow({
       {!saveError && overrideNote && (
         <p id={overrideNoteId} className="text-xs text-muted-foreground">
           Saved, but {overrideNote} still controls the effective model for this role.
+        </p>
+      )}
+      {warning && (
+        <p id={warningId} className="flex items-start gap-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+          <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-severity-warning forced-colors:text-[CanvasText]" />
+          <span>
+            <strong className="font-medium text-foreground">Warning:</strong> {warning}
+          </span>
         </p>
       )}
     </>

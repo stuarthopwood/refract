@@ -250,6 +250,8 @@ const REQUEST_LANES = {
   ATTACHMENTS_READ_IMAGE_FILE: 'R4', // #787, ipc/attachments.rs
   CLIPBOARD_WRITE_TEXT: 'R1', // scaffold; clipboard.rs not reassigned to a later lane
   CLIPBOARD_READ_TEXT: 'R1',
+  CLIPBOARD_WRITE_IMAGE: 'R1',
+  CLIPBOARD_SAVE_IMAGE: 'R1',
   SPELLCHECK_SUGGEST: 'R1',
   SPELLCHECK_ADD: 'R1',
   CONVERSATIONS_LIST: 'R1', // scaffold; conversations.rs not reassigned
@@ -319,6 +321,8 @@ const REQUEST_LANES = {
   TOKEN_GUARD_SET: 'TG',
   TOKEN_GUARD_RESET: 'TG',
   TOKEN_GUARD_HANDOFF: 'TG',
+  ADVISOR_ROSTER_DETECT: 'TG', // #1409, ipc/advisor_roster.rs
+  ADVISOR_ROSTER_OPEN: 'TG',
   COPILOT_PLAN_USAGE: 'R9', // #1238, ipc/copilot_plan.rs
   ACCOUNTS_GITHUB_LIST: 'R9', // #792, accounts.rs
   ACCOUNTS_GITHUB_ADD_START: 'R9',
@@ -363,6 +367,7 @@ const EVENT_LANES = {
   MEMORY_WARNING: 'R5', // #788, "memory warning" in R5's own work description
   TOKEN_GUARD_LAUNCH_WARNING: 'TG', // #1212, token guard launch warning
   TOKEN_GUARD_CALLS: 'TG', // #1212, per-Conversation model-call count
+  ADVISOR_ROSTER_DETECTED: 'TG', // #1409, roster found at Session launch
   READOUT_UPDATE: 'R5',
   SUBAGENTS_UPDATE: 'R5',
   SUBAGENT_PATCH: 'R5',

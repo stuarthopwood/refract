@@ -19,9 +19,10 @@ export interface CopyButtonProps {
   className?: string
   tabIndex?: number
   disabled?: boolean
+  icon?: React.ComponentType<{ "aria-hidden"?: boolean }>
 }
 
-export function CopyButton({ getText, onCopy, label, announcement, className, tabIndex, disabled }: CopyButtonProps) {
+export function CopyButton({ getText, onCopy, label, announcement, className, tabIndex, disabled, icon: Icon = CopyIcon }: CopyButtonProps) {
   const [copied, setCopied] = React.useState(false)
   const [polite, announcePolite] = useClearedAnnouncement()
   const [assertive, announceAssertive] = useClearedAnnouncement()
@@ -106,7 +107,7 @@ export function CopyButton({ getText, onCopy, label, announcement, className, ta
             onClick={(event) => void handleCopy(event)}
             className={cn("shrink-0", className)}
           >
-            {copied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
+            {copied ? <CheckIcon aria-hidden /> : <Icon aria-hidden />}
           </Button>
         </TooltipTrigger>
         <TooltipContent>{name}</TooltipContent>

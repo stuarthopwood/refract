@@ -81,8 +81,15 @@ fn main() {
         r#"[{"name":"bug","color":"d73a4a","description":""},{"name":"enhancement","color":"a2eeef","description":""},{"name":"docs","color":"0075ca","description":""}]"#.to_string()
     } else if joined.starts_with("issue list") {
         let state = flag(&args, "--state").unwrap_or_else(|| "open".into());
-        let label = flag(&args, "--label");
-        let search = flag(&args, "--search").map(|s| s.to_lowercase());
+        let raw_search = flag(&args, "--search").unwrap_or_default().to_lowercase();
+        let (text, label_clause) = match raw_search.find("label:") {
+            Some(at) => (raw_search[..at].trim().to_string(), Some(raw_search[at + 6..].to_string())),
+            None => (raw_search.trim().to_string(), None),
+        };
+        let labels: Vec<String> = label_clause
+            .map(|c| c.split(',').map(|n| n.trim().trim_matches('"').to_string()).collect())
+            .unwrap_or_default();
+        let search = if text.is_empty() { None } else { Some(text) };
         let assignee = flag(&args, "--assignee").is_some();
         let author = flag(&args, "--author").is_some();
         let mention = flag(&args, "--mention").is_some();
@@ -93,7 +100,7 @@ fn main() {
             .filter(|i| !assignee || i.assignee)
             .filter(|i| !author || i.author_me)
             .filter(|i| !mention || i.mention)
-            .filter(|i| label.as_ref().map_or(true, |l| i.labels.contains(&l.as_str())))
+            .filter(|i| labels.is_empty() || labels.iter().any(|l| i.labels.contains(&l.as_str())))
             .filter(|i| search.as_ref().map_or(true, |s| i.title.to_lowercase().contains(s)))
             .map(|i| row(i, false))
             .collect();

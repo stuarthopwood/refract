@@ -31,6 +31,8 @@ export interface UsageFilters {
   model?: string | null
   reasoning?: string | null
   agentType?: 'main' | 'subagent' | null
+  /** A Refract Session directory; counts every conversation file at or below it. */
+  sessionDir?: string | null
 }
 
 export interface UsageStatus {

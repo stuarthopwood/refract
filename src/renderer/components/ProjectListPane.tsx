@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronRightIcon, FunnelIcon, SearchXIcon } from 'lucide-react'
 import { FilterTabs } from '@/components/FilterTabs'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
+import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { SearchField } from '@/components/SearchField'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -62,6 +63,10 @@ export interface ProjectListPaneProps<Tab extends string> {
   /** Filters this view adds beside State and Project (for example Issues' Label), and how many are set. */
   extraFilters?: ReactNode
   extraActiveCount?: number
+  /** Chips for the chosen extra filters, shown beneath the pickers (for example dismissible label pills). */
+  filterChips?: ReactNode
+  /** Blurs the rows behind a Loading card while refetching, when rows are already shown. */
+  blurWhileLoading?: boolean
   loading: boolean
   fetchedAt: string | null
   error: IpcError | null
@@ -186,6 +191,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             />
             {props.extraFilters}
           </div>
+          {props.filterChips}
         </div>
       )}
       <div className="text-xs text-muted-foreground" role="status" aria-live="polite">
@@ -246,6 +252,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           )
         ) : (
           <>
+            <LoadingOverlay loading={Boolean(props.blurWhileLoading) && loading && itemCount > 0}>
             <div
               ref={listRef}
               tabIndex={-1}
@@ -253,6 +260,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             >
               {props.children}
             </div>
+            </LoadingOverlay>
             {failedLoadMore && error && (
               <div role="alert" className="p-2 text-center text-xs text-destructive">
                 {ERROR_MESSAGES[error.code] ?? error.message} Try Show more again.

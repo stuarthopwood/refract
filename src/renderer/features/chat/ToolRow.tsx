@@ -12,6 +12,7 @@ import { commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
+import { ToolRowMenu } from './ToolRowMenu'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -105,6 +106,7 @@ interface ToolCallRowProps {
 
 function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
   const showToolNames = useShowToolNames()
+  const [open, setOpen] = React.useState(defaultOpen ?? false)
   const display = resolveToolDisplay(item.tool, item.target)
   const rawId = showToolNames ? display.rawId : undefined
   const label = toolRowLabel(item.tool, item.target, item.intent, item.status)
@@ -117,6 +119,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
     memberDuration
   ])
   return (
+    <ToolRowMenu item={item} open={open} onOpenChange={setOpen}>
     <CollapsedLine
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={display.rawId}
@@ -128,11 +131,13 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       meta={toolRowMeta(item.status, callMeta(item))}
       triggerAriaLabel={memberAriaLabel}
       detail={item.status === 'error' ? errorLine(item) : undefined}
-      defaultOpen={defaultOpen}
+      open={open}
+      onOpenChange={setOpen}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
     </CollapsedLine>
+    </ToolRowMenu>
   )
 }
 
@@ -143,6 +148,7 @@ interface ToolGroupRowProps {
 }
 
 export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps) {
+  const [open, setOpen] = React.useState(false)
   const [openDialogItemIdState, setOpenDialogItemId] = React.useState<string | null>(null)
   const openDialogItemId =
     openDialogItemIdState != null && group.items.some((item) => item.id === openDialogItemIdState) ? openDialogItemIdState : null
@@ -214,10 +220,13 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
       ])
 
   return (
+    <ToolRowMenu item={solo ? last : undefined} open={open} onOpenChange={setOpen}>
     <CollapsedLine
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={display.rawId}
       label={visibleLabel}
+      open={open}
+      onOpenChange={setOpen}
       labelShimmer={shimmer && isRunning}
       labelClassName={failed ? 'text-severity-error' : undefined}
       summary={summary}
@@ -271,5 +280,6 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
         </SpineList>
       )}
     </CollapsedLine>
+    </ToolRowMenu>
   )
 }

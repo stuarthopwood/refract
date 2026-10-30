@@ -11,6 +11,7 @@ import { SideChatPanel } from './side-chat/SideChatPanel'
 import { FileExplorerPanel } from './file-explorer/FileExplorerPanel'
 import { GitChangesPanel } from './git-changes/GitChangesPanel'
 import { OutlinePanel } from './outline/OutlinePanel'
+import { SessionUsagePanel } from '@/features/usage/SessionUsagePanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
@@ -90,6 +91,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         {activePanelId === 'file-explorer' && <FileExplorerPanel sessionId={sessionId} />}
         {activePanelId === 'git-changes' && <GitChangesPanel sessionId={sessionId} />}
         {activePanelId === 'outline' && <OutlinePanel sessionId={sessionId} />}
+        {activePanelId === 'session-usage' && <SessionUsagePanel sessionId={sessionId} />}
       </div>
       <HandleHitStrip />
     </div>
