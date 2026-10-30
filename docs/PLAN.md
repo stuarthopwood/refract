@@ -875,6 +875,8 @@ Also filed 2026-10-30: **#1391** (`p1`), Pull requests and Issues Filters panel:
 
 Also filed 2026-10-30: **#1393** (`p1`), Pull requests detail header: Merge, Review and New session are hidden (not disabled) on a merged or closed pull request, the state pill explaining why; open pull requests keep the disabled-with-reason Merge; placed as an index line after #1391's line.
 
+Also filed 2026-10-30: **#1395** (`p1`), App-wide text fields: `Input` and `Textarea` lose their fill and take a soft border in the four non-high-contrast dark themes, the focus halo is removed (border-only focus, 2px ring in Dark high contrast), and the Clone project and Add project Browse buttons become ghost buttons; extends the #927 quiet composer departure in `docs/design/accessibility.md`; placed as an index line after #1393's line.
+
 Also filed 2026-10-27: **#1242** (`p1`), composer status text styling; placed as a row after #1238.
 
 Also filed 2026-10-27: **#1246** (`p1`), Geist and Geist Mono defaults with a lighter weight scale; placed as a row after #1242.
