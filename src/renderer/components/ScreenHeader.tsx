@@ -26,7 +26,7 @@ export function ScreenHeader({ title, headingRef, backLabel, onBack, count, chil
     <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
       {backLabel && onBack && (
         <IconButton label={backLabel} side="bottom" className="no-drag-region" onClick={onBack}>
-              <ArrowLeftIcon aria-hidden />
+          <ArrowLeftIcon aria-hidden />
         </IconButton>
       )}
       <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">

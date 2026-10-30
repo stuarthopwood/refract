@@ -229,19 +229,19 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             <span className="absolute right-2 top-1 flex h-5 items-center gap-1">
               {canResume && (
                 <IconButton
-                    ref={resumeButtonRef}
-                    size="icon-xs"
-                    label={`Resume ${session.name}`}
-                      aria-disabled={resuming || undefined}
-                      className={cn('aria-disabled:opacity-50', ROW_ACTION_HOVER_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
-                      onClick={() => void handleResume()}
-                    >
-                      {resuming ? (
-                        <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
-                      ) : (
-                        <RotateCwIcon aria-hidden className="size-4" />
-                      )}
-                    </IconButton>
+                  ref={resumeButtonRef}
+                  size="icon-xs"
+                  label={`Resume ${session.name}`}
+                  aria-disabled={resuming || undefined}
+                  className={cn('aria-disabled:opacity-50', ROW_ACTION_HOVER_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
+                  onClick={() => void handleResume()}
+                >
+                  {resuming ? (
+                    <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
+                  ) : (
+                    <RotateCwIcon aria-hidden className="size-4" />
+                  )}
+                </IconButton>
               )}
               <SessionAgentsButton
                 sessionId={session.id}
