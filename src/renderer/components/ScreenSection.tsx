@@ -52,7 +52,7 @@ export function ScreenSection({ title, count, actions, note, error, loading = fa
       {note && <p className="text-xs text-muted-foreground">{note}</p>}
       {!loading && error && (
         <p className="flex items-start gap-2 text-xs text-muted-foreground">
-          <TriangleAlertIcon aria-hidden className="mt-1 size-3.5 shrink-0" />
+          <TriangleAlertIcon aria-hidden className="size-4 shrink-0" />
           <span>{error}</span>
         </p>
       )}
