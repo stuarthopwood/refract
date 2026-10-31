@@ -9,21 +9,32 @@ import type { ThemeId } from '../../../shared/themes'
 /** Import, export, remove and folder actions for custom theme files; each failure surfaces as a toast. */
 export function useThemeFileActions() {
   const refresh = useThemeStore((s) => s.refreshCustomThemes)
-  const [pendingRemove, setPendingRemove] = useState<CustomTheme | null>(null)
+  const [pendingRemove, setPendingRemoveRaw] = useState<CustomTheme | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const setPendingRemove = (t: CustomTheme | null) => {
+    setRemoveError(null)
+    setPendingRemoveRaw(t)
+  }
   const removed = useRef(false)
 
   async function importTheme() {
+    if (importing) return
     setImportError(null)
-    const result = await window.refract.themes.import()
-    if (!result.ok) {
-      setImportError(result.error.message)
-      notify(result.error)
-      return
+    setImporting(true)
+    try {
+      const result = await window.refract.themes.import()
+      if (!result.ok) {
+        setImportError(result.error.message)
+        return
+      }
+      await refresh()
+      if (result.value) toast.success(`Imported ${result.value.name}.`)
+    } finally {
+      setImporting(false)
     }
-    await refresh()
-    if (result.value) toast.success(`Imported ${result.value.name}.`)
   }
 
   async function exportJson(name: string, json: string) {
@@ -44,19 +55,22 @@ export function useThemeFileActions() {
   async function confirmRemove() {
     if (!pendingRemove) return
     setBusy(true)
+    setRemoveError(null)
+    let succeeded = false
     try {
       const result = await window.refract.themes.remove(pendingRemove.id)
       if (!result.ok) {
-        notify(result.error)
+        setRemoveError(result.error.message)
         return
       }
+      succeeded = true
       removed.current = true
       await refresh()
-      setPendingRemove(null)
     } finally {
       setBusy(false)
+      if (succeeded) setPendingRemove(null)
     }
   }
 
-  return { importTheme, importError, exportCustom, exportBuiltin, showInFolder, pendingRemove, setPendingRemove, confirmRemove, busy, removed }
+  return { importTheme, importing, importError, exportCustom, exportBuiltin, showInFolder, pendingRemove, setPendingRemove, confirmRemove, removeError, busy, removed }
 }

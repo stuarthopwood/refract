@@ -57,6 +57,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
   const activeId = useActiveThemeId()
   const customId = useThemeStore((s) => s.customId)
   const customThemes = useThemeStore((s) => s.customThemes)
+  const effectiveCustomId = customThemes.some((t) => t.id === customId) ? customId : null
   const [open, setOpen] = useState(false)
   const subContentRef = useRef<HTMLDivElement>(null)
   const activeItemRef = useRef<HTMLDivElement>(null)
@@ -87,7 +88,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent ref={subContentRef} className="max-w-64" sideOffset={4} alignOffset={-4} collisionPadding={8}>
         <DropdownMenuRadioGroup
-          value={customId ? `custom:${customId}` : activeId}
+          value={effectiveCustomId ? `custom:${effectiveCustomId}` : activeId}
           onValueChange={(value) => {
             if (value.startsWith('custom:')) {
               const custom = customThemes.find((t) => `custom:${t.id}` === value)
@@ -98,8 +99,9 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
             if (theme && (theme.id !== activeId || customId)) chooseTheme(theme.id, theme.name)
           }}
         >
+          {customThemes.length > 0 && <DropdownMenuLabel>Built-in</DropdownMenuLabel>}
           {THEME_LIST.map((theme) => {
-            const isActive = theme.id === activeId && !customId
+            const isActive = theme.id === activeId && !effectiveCustomId
             return (
               <DropdownMenuRadioItem
                 key={theme.id}
@@ -114,7 +116,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
           })}
           {customThemes.length > 0 && <DropdownMenuLabel>Custom</DropdownMenuLabel>}
           {customThemes.map((t) => (
-            <DropdownMenuRadioItem key={t.id} value={`custom:${t.id}`} ref={t.id === customId ? activeItemRef : undefined}>
+            <DropdownMenuRadioItem key={t.id} value={`custom:${t.id}`} ref={t.id === effectiveCustomId ? activeItemRef : undefined}>
               <span className="min-w-0 flex-1 truncate">{t.name}</span>
               <ThemeSwatchChip swatch={t.tokens.background ?? THEMES[t.base].swatch} swatchPrimary={t.tokens.primary ?? THEMES[t.base].swatchPrimary} />
             </DropdownMenuRadioItem>

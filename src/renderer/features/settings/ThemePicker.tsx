@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { AlertTriangleIcon, DownloadIcon, FolderOpenIcon, FolderSearchIcon, Trash2Icon, UploadIcon } from 'lucide-react'
+import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, FolderOpenIcon, FolderSearchIcon, Trash2Icon, UploadIcon } from 'lucide-react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
 import { RowKebabMenu } from '@/components/RowKebabMenu'
@@ -97,7 +97,28 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
     const nameId = `theme-option-${e.key}-name`
     return (
       <div key={e.key}>
-        <RowKebabMenu entries={entries} label={`Actions for ${e.name}`}>
+        <RowKebabMenu
+          entries={entries}
+          label={`Actions for ${e.name}`}
+          below={
+            warnings.length > 0 && (
+              <div className="px-2 pb-1">
+                <Badge asChild variant="warning">
+                  <button type="button" id={`${nameId}-warn`} aria-expanded={open === e.key} aria-controls={`${nameId}-warn-list`} onClick={() => setOpen(open === e.key ? null : e.key)}>
+                    <AlertTriangleIcon aria-hidden />
+                    {warnings.length} contrast {warnings.length === 1 ? 'warning' : 'warnings'}
+                    <ChevronDownIcon aria-hidden className={cn('transition-transform', open === e.key && 'rotate-180')} />
+                  </button>
+                </Badge>
+                {open === e.key && (
+                  <ul id={`${nameId}-warn-list`} className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
+                    {warnings.map((w) => <li key={w.label}>{describeWarning(w)}</li>)}
+                  </ul>
+                )}
+              </div>
+            )
+          }
+        >
           <button
             ref={(node) => {
               buttonRefs.current[index] = node
@@ -120,21 +141,6 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             <ThemeSwatchChip swatch={e.swatch} swatchPrimary={e.swatchPrimary} />
           </button>
         </RowKebabMenu>
-        {warnings.length > 0 && (
-          <div className="px-2 pb-1">
-            <Badge asChild variant="warning">
-              <button type="button" id={`${nameId}-warn`} aria-expanded={open === e.key} onClick={() => setOpen(open === e.key ? null : e.key)}>
-                <AlertTriangleIcon aria-hidden />
-                {warnings.length} contrast {warnings.length === 1 ? 'warning' : 'warnings'}
-              </button>
-            </Badge>
-            {open === e.key && (
-              <ul className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
-                {warnings.map((w) => <li key={w.label}>{describeWarning(w)}</li>)}
-              </ul>
-            )}
-          </div>
-        )}
       </div>
     )
   }
@@ -142,18 +148,28 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   return (
     <div className="max-w-sm">
       <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
-        <p className="px-2 pt-1 text-xs text-muted-foreground">Built-in</p>
-        {builtins.map((e, i) => renderRow(e, i))}
-        {customs.length > 0 && <p className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
-        {customs.map((e, i) => renderRow(e, builtins.length + i))}
+        <p id="theme-builtin-label" className="px-2 pt-1 text-xs text-muted-foreground">Built-in</p>
+        <div role="group" aria-labelledby="theme-builtin-label" className="flex flex-col gap-1">
+          {builtins.map((e, i) => renderRow(e, i))}
+        </div>
+        {customs.length > 0 && <p id="theme-custom-label" className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
+        {customs.length > 0 && (
+          <div role="group" aria-labelledby="theme-custom-label" className="flex flex-col gap-1">
+            {customs.map((e, i) => renderRow(e, builtins.length + i))}
+          </div>
+        )}
       </div>
-      {rejected.map((r) => (
-        <InlineStatus key={r.file} tone="error" density="compact" className="mt-2">Couldn&apos;t load {r.file}: {r.error}</InlineStatus>
-      ))}
+      {rejected.length > 0 && (
+        <div role="alert">
+          {rejected.map((r) => (
+            <InlineStatus key={r.file} density="compact" className="mt-2 text-destructive">Couldn&apos;t load {r.file}: {r.error}</InlineStatus>
+          ))}
+        </div>
+      )}
       {actions.importError && <InlineStatus tone="error" density="compact" className="mt-2">{actions.importError}</InlineStatus>}
       <div className="mt-4 flex gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => void actions.importTheme()}>
-          <UploadIcon aria-hidden /> Import theme…
+        <Button type="button" variant="outline" size="sm" disabled={actions.importing} onClick={() => void actions.importTheme()}>
+          <UploadIcon aria-hidden /> {actions.importing ? 'Importing…' : 'Import theme…'}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => void actions.showInFolder()}>
           <FolderOpenIcon aria-hidden /> Open themes folder
@@ -172,6 +188,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
         confirmLabel="Remove"
         busyLabel="Removing…"
         onCancel={() => actions.setPendingRemove(null)}
+        error={actions.removeError}
         onConfirm={() => void actions.confirmRemove()}
         onCloseAutoFocus={() => {
           const target = actions.removed.current ? all.findIndex(isActive) : pendingIndex.current

@@ -1,5 +1,5 @@
 import './styles/globals.css'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { TooltipProvider } from './components/ui/tooltip'
@@ -15,6 +15,20 @@ initTypographyStore(bootstrap.typography)
 
 initStores()
 
+// Sibling effects run in order, so rendering this after <Toaster /> fires once the Toaster has subscribed.
+function BootstrapNotice() {
+  useEffect(() => {
+    if (!notice) return
+    toast.warning(
+      notice === 'reset'
+        ? 'Custom theme disabled because of --reset-theme. Refract is using your built-in theme.'
+        : 'Your custom theme file is missing or invalid, so Refract is using a built-in theme.',
+      { duration: Infinity, closeButton: true, action: { label: 'Appearance settings', onClick: () => useViewStore.getState().openSettings('appearance') } }
+    )
+  }, [])
+  return null
+}
+
 const notice = bootstrap.customThemeNotice
 const container = document.getElementById('root')
 if (!container) throw new Error('#root element missing from index.html')
@@ -25,18 +39,7 @@ createRoot(container).render(
       <App />
       <AppContextMenu />
       <Toaster />
+      <BootstrapNotice />
     </TooltipProvider>
   </StrictMode>
 )
-
-// Sonner's Toaster only shows toasts published after it subscribes, so wait for the first mount.
-if (notice) {
-  setTimeout(() => {
-    toast.warning(
-      notice === 'reset'
-        ? 'Custom theme disabled because of --reset-theme. Refract is using your built-in theme.'
-        : 'Your custom theme file is missing or invalid, so Refract is using a built-in theme.',
-      { duration: Infinity, closeButton: true, action: { label: 'Appearance settings', onClick: () => useViewStore.getState().openSettings('appearance') } }
-    )
-  }, 500)
-}

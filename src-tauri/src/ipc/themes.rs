@@ -87,7 +87,7 @@ pub fn themes_import(state: AppState, _args: Vec<Value>) -> HandlerFuture {
         let meta = tokio::fs::metadata(&path)
             .await
             .map_err(|_| bad_theme(format!("Couldn't read {file_name}")))?;
-        if !meta.is_file() || meta.len() > 64 * 1024 {
+        if !meta.is_file() || meta.len() > theme_files::MAX_FILE_BYTES {
             return Err(bad_theme(format!(
                 "Couldn't load {file_name}: not a theme file under 64 KiB"
             )));
@@ -156,10 +156,10 @@ pub fn themes_remove(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let id = arg_str(&args, 0)
             .ok_or_else(|| bad_theme("themes.remove expects a theme id"))?
             .to_string();
-        clear_if_active(&state, &id).await?;
         theme_files::remove(&theme_files::themes_dir(&state.data_dir), &id)
             .await
             .map_err(bad_theme)?;
+        clear_if_active(&state, &id).await?;
         Ok(Value::Null)
     })
 }
