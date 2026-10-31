@@ -47,14 +47,14 @@ export function buildMermaidThemeVariables(read: MermaidTokenReader): MermaidThe
     v[`pie${i + 1}`] = c
   })
   range(11).forEach((i) => {
-    v[`cScale${i}`] = palette[i]
+    v[`cScale${i}`] = palette[i] ?? ''
   })
   range(12).forEach((i) => {
     v[`cScaleInv${i}`] = line
   })
   range(8).forEach((i) => {
     v[`fillType${i}`] = read(`fill-${i + 1}`)
-    v[`git${i}`] = palette[i]
+    v[`git${i}`] = palette[i] ?? ''
     v[`gitBranchLabel${i}`] = ink
   })
   return v

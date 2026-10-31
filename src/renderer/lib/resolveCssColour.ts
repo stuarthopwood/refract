@@ -14,10 +14,10 @@ export function withResolvedTokens<T>(prefix: string, fn: (read: (name: string) 
     const computed = getComputedStyle(probe).color
     if (!ctx) return computed
     ctx.clearRect(0, 0, 1, 1)
-    ctx.fillStyle = '#000'
+    ctx.fillStyle = 'transparent'
     ctx.fillStyle = computed
     ctx.fillRect(0, 0, 1, 1)
-    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+    const [r = 0, g = 0, b = 0] = ctx.getImageData(0, 0, 1, 1).data
     return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`
   }
   try {

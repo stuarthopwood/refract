@@ -99,7 +99,8 @@ export function CodeBlock({
   streaming = false,
   expandable
 }: CodeBlockProps) {
-  const syntaxTheme = useSyntaxTheme() = React.useState<string | null>(null)
+  const syntaxTheme = useSyntaxTheme()
+  const [html, setHtml] = React.useState<string | null>(null)
   const [wrapOn, setWrapOn] = React.useState(wrap)
   React.useEffect(() => setWrapOn(wrap), [wrap])
 
