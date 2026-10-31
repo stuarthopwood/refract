@@ -55,6 +55,8 @@ import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import { stopAndRestore } from './restoreQueue'
 import { useComposerFocusHandoff } from './useComposerFocusHandoff'
+import { useComposerIndent } from './useComposerIndent'
+import { ComposerIndentHint } from './ComposerIndentHint'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import type { QueuedMessages } from './useQueuedMessages'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
@@ -137,6 +139,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const composerHintId = `${sessionId}-composer-hint`
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const indent = useComposerIndent(textareaRef, announceAttachment)
+  const indentHintId = `${sessionId}-indent-hint`
   // #897: Chromium fires no blur when a focused element unmounts, so this still reads true after
   // Stop disappears at the end of a turn.
   const stopHadFocusRef = useRef(false)
@@ -481,6 +485,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       setAnnouncedSuggestion(null)
       return
     }
+    if (indent.handleKeyDown(event)) return
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       void (enterQueuedFollowUp.applies ? queued.sendNow(enterQueuedFollowUp.chip) : handleSend())
@@ -686,7 +691,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     ? describeStopReason(stopReason, stopDetail)
     : ''
   const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length + attachments.files.length
-  const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId, composerHintId].filter(Boolean).join(' ')
+  const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId, composerHintId, indentHintId].filter(Boolean).join(' ')
   const composerClearanceRef = useComposerClearanceCallbackRef() // #980 gate round 2: hoisted out of JSX for clarity
 
   return (
@@ -770,6 +775,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               if (commandPillOverlayRef.current) commandPillOverlayRef.current.scrollTop = scrollTop // FR-092, #1050
             }}
             onKeyDown={handleKeyDown}
+            onBlur={indent.resetFocusMode}
             disabled={disabled}
             placeholder={placeholder}
             // The disabled placeholder carries the stop reason, so `ComposerTextarea` brightens it under the dim.
@@ -849,6 +855,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           <AttachButton sessionId={sessionId} disabled={disabled} />
         </ComposerFooter>
       </ComposerBox>
+      <ComposerIndentHint id={indentHintId} tabMovesFocus={indent.tabMovesFocus} />
     </div>
   )
 }

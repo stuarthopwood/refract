@@ -50,7 +50,9 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 | Action | Shortcut |
 |---|---|
 | Send message | Enter |
-| Newline in message | Shift+Enter |
+| Newline in message (continues a markdown list) | Shift+Enter |
+| Indent or outdent the line or selection | Tab, Shift+Tab |
+| Toggle "Tab moves focus" (WCAG 2.1.2 way out) | Ctrl+M |
 | Clear the message box | Esc |
 | Stop the running turn | Ctrl+Shift+X |
 | New session | Ctrl+N |
