@@ -28,7 +28,7 @@ interface ThemePickerProps {
 }
 
 export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
-  const { builtins, customs, customThemes, customId, isActive, choose: chooseEntry } = useThemeEntries()
+  const { builtins, customs, all, customThemes, customId, isActive, choose: chooseEntry } = useThemeEntries()
   const rejected = useThemeStore((s) => s.rejected)
   const actions = useThemeFileActions()
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -40,7 +40,6 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   useEffect(() => {
     void refresh()
   }, [refresh])
-  const all = [...builtins, ...customs]
   const choose = (e: ThemeEntry) => void chooseEntry(e)
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -121,7 +120,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   return (
     <div className="max-w-sm">
       <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
-        <p className="px-2 pt-1 text-xs text-muted-foreground">Built-in</p>
+        <p className="px-2 pt-1 text-xs text-muted-foreground">Built-in themes</p>
         {builtins.map((e, i) => renderRow(e, i))}
         {customs.length > 0 && <p className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
         {customs.map((e, i) => renderRow(e, builtins.length + i))}
