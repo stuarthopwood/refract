@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { isNeedsYouSession } from './sessionDisplay'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
 import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { ACTIVE_COUNT_CAP_AT } from '@/state/pull-requests-store'
 
 interface NavItemProps {
   active: boolean
@@ -60,11 +61,17 @@ export function ViewsNavGroup() {
   const defaultRepositoryId = useDefaultRepositoryId()
   const githubStatus = useAccountsStore((state) => state.githubStatus)
   const activeCount = usePullRequestsStore((state) => state.activeCount.count)
+  const activeCountPartial = usePullRequestsStore((state) => state.activeCount.partial)
   const repositories = useRepositoriesStore((state) => state.repositories)
   const repositoryIdsKey = repositories.map((repo) => repo.id).join('|')
   // `null` covers never fetched, zero and unavailable alike: all render as nothing (#569 decision 4).
+  const capped = activeCount !== null && activeCount >= ACTIVE_COUNT_CAP_AT
   const activeCountLabel =
-    githubStatus === 'ready' && activeCount !== null && activeCount > 0 ? (activeCount >= 30 ? '30+' : String(activeCount)) : null
+    githubStatus === 'ready' && activeCount !== null && activeCount > 0
+      ? capped
+        ? `${ACTIVE_COUNT_CAP_AT}+`
+        : `${activeCount}${activeCountPartial ? '+' : ''}`
+      : null
   // Fetches when GitHub is ready and the Project set changes, never on a timer; focus refresh and the
   // explicit Refresh live in `init-stores.ts` and the list. The count spans every Project.
   useEffect(() => {
@@ -95,12 +102,16 @@ export function ViewsNavGroup() {
         active={view === 'pull-requests'}
         icon={GitPullRequestIcon}
         text="Pull requests"
-        label={activeCountLabel ? `Pull requests, ${activeCountLabel} active` : 'Pull requests'}
+        label={
+          activeCountLabel
+            ? `Pull requests, ${activeCountLabel} open pull ${activeCount === 1 && !activeCountPartial ? 'request' : 'requests'} across your Projects`
+            : 'Pull requests'
+        }
         onClick={handleOpenPullRequests}
       >
-        {/* A plain trailing count, never a box or brackets; folded into the aria-label above. */}
+        {/* A plain trailing count, never a box or brackets; its text is part of the aria-label above. */}
         {activeCountLabel && (
-          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground">{activeCountLabel} active</span>
+          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground">{activeCountLabel} open</span>
         )}
       </NavItem>
       <NavItem active={view === 'issues'} icon={CircleDotIcon} text="Issues" label="Issues" onClick={openIssues} />

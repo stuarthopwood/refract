@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ComposerPanel, ComposerPanelBody } from '@/components/ComposerPanel'
 import { isFocusStranded } from '@/lib/focus'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from './pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { currentTaskKeyOf, TodoPhaseGroup } from './readout/TodoTree'
 import { deriveCurrentTask, deriveTodoTotals, hasTodoPlan, isTodoAllDone } from './readout/todoDerive'
 

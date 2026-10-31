@@ -3,7 +3,7 @@ import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { cn } from '@/lib/utils'
 import { formatOutlineTime, outlineItemLabel, type OutlineRow } from '../../chat-nav/outlineModel'
 

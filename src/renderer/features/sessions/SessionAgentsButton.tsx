@@ -5,7 +5,7 @@
 import { UsersIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { cn } from '@/lib/utils'
 

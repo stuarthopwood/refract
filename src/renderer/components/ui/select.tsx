@@ -30,13 +30,16 @@ function SelectValue({
 
 /** Ghost look shared by every select-type trigger (Select, MultiSelectChecklist): no border or fill at rest, hover fill, chevron as the affordance (#1399). */
 export const SELECT_TRIGGER_CLASS =
-  "flex h-8 w-fit items-center justify-between gap-2 rounded-lg border border-ghost-edge bg-transparent p-2 text-sm font-normal whitespace-nowrap transition-colors outline-none select-none hover:bg-muted aria-expanded:bg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:not-focus-visible:border-destructive aria-invalid:not-focus-visible:ring-1 aria-invalid:not-focus-visible:ring-destructive data-placeholder:text-muted-foreground *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 dark:hover:bg-row-hover-bg [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+  "flex h-8 w-fit items-center justify-between gap-2 rounded-lg border border-ghost-edge bg-transparent p-2 text-sm font-normal whitespace-nowrap transition-colors outline-none select-none hover:bg-muted aria-expanded:bg-muted focus-visible:border-ring focus-visible:ring-(length:--field-ring-width) focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:not-focus-visible:border-destructive aria-invalid:focus-visible:border-destructive aria-invalid:not-focus-visible:ring-1 aria-invalid:not-focus-visible:ring-destructive data-placeholder:text-muted-foreground *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 dark:hover:bg-row-hover-bg [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
 export const SELECT_CHEVRON_CLASS = "pointer-events-none size-4 text-muted-foreground"
 /** Height and text size shared by every item in a select panel. */
 export const SELECT_ITEM_BOX_CLASS = "min-h-7 py-1 text-sm"
 // Literal strings so Tailwind sees them: a panel is at least its trigger wide and never under 9rem.
 export const SELECT_PANEL_MIN_WIDTH_CLASS = "min-w-[max(var(--radix-select-trigger-width),9rem)]"
 export const POPOVER_PANEL_MIN_WIDTH_CLASS = "min-w-[max(var(--radix-popover-trigger-width),9rem)]"
+
+/** Fixed width of a Filters-panel picker (Project, Label): never the column width (#1391). */
+export const FILTER_PICKER_CLASS = "w-40 shrink-0"
 
 function SelectTrigger({
   className,
@@ -60,7 +63,7 @@ function SelectContent({
   className,
   children,
   position = "popper",
-  align = "center",
+  align = "start",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (

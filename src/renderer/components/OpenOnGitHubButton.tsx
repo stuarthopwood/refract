@@ -1,6 +1,6 @@
 import { ExternalLinkIcon } from 'lucide-react'
 import { IconButton } from '@/components/IconButton'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 
 /** The Issue and Pull request headers' Open on GitHub: a real anchor so it opens in the system browser (#1132). */
 export function OpenOnGitHubButton({ url }: { url: string }) {

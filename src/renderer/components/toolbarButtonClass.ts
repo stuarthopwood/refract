@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 
 /** The one ghost icon-button treatment for a sidebar or panel toolbar (Session list, Outline):
  * muted at rest, sidebar-border hover fill, and a disabled state that dims only the glyph so the

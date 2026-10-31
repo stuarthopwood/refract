@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ComposerContextMenu } from '@/components/ComposerContextMenu'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
+import { COMPOSER_DISABLED_OPACITY_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 
 /** The composer's type: the UI font at `--text-readout` (#839). `md:text-readout` replaces the

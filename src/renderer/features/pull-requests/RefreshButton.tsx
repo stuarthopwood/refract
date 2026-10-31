@@ -4,7 +4,8 @@
 import { RefreshCwIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
+import { COMPOSER_DISABLED_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 
 export interface RefreshButtonProps {
