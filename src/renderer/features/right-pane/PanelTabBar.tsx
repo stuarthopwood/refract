@@ -165,7 +165,8 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                 shortcut={['Delete']}
                 tabIndex={id === activePanelId ? 0 : -1}
                 data-panel-close
-                className={cn(FOCUS_VISIBLE, 'transition-none focus-visible:ring-0')} position: 'absolute', left: position.left, top: position.top }}
+                className={cn(FOCUS_VISIBLE, 'transition-none focus-visible:border-transparent focus-visible:outline-solid focus-visible:ring-0')}
+                style={{ position: 'absolute', left: position.left, top: position.top }}
                 onClick={() => closeTab(id)}
                 onKeyDown={(event) => {
                   if (event.key === 'Delete') {

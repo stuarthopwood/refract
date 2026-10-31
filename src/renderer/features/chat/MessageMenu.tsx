@@ -61,7 +61,7 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
     }
   }, [armed])
 
-  const snippet = messageSnippet(text)
+  const snippet = React.useMemo(() => messageSnippet(text), [text])
   const items = (kind: MenuKind) => (
     <>
       {actionMenuItem('transcript.copy-message', { kind, onSelect: () => void copyLinkText(text, 'Message copied', NOTHING) })}
