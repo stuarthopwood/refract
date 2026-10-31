@@ -62,6 +62,8 @@ pub struct Settings {
     pub theme: ThemeId,
     pub watermark_enabled: bool,
     pub chat_width: ChatWidth,
+    /// File id of the active custom theme (#458); `None` means the built-in `theme`.
+    pub custom_theme: Option<String>,
     /// Default `Full` (#1048).
     pub holiday_touches: HolidayTouches,
     /// How the status icon draws a state; default `Icons` (#482).
@@ -244,7 +246,14 @@ impl SettingsStore {
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
         let right_pane = right_pane::parse_from_disk(&object);
 
-        const KNOWN_FIELDS: [&str; 28] = [
+        let custom_theme = object
+            .get("customTheme")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty() && id.len() <= 48)
+            .map(str::to_string);
+
+        const KNOWN_FIELDS: [&str; 29] = [
+            "customTheme",
             "version",
             "approvalMode",
             "sessionReadout",
@@ -288,6 +297,7 @@ impl SettingsStore {
             theme,
             watermark_enabled,
             chat_width,
+            custom_theme,
             holiday_touches,
             status_style,
             chat_row_density,
@@ -354,6 +364,7 @@ impl SettingsStore {
             map.insert("watermarkEnabled".to_string(), json!(enabled));
         }
         map.insert("chatWidth".to_string(), json!(self.data.chat_width));
+        map.insert("customTheme".to_string(), json!(self.data.custom_theme));
         super::holiday_touches::write(&mut map, self.data.holiday_touches);
         status_style::write(&mut map, self.data.status_style);
         chat_row_density::write(&mut map, self.data.chat_row_density);

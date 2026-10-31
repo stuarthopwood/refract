@@ -34,6 +34,9 @@
   --color-composer-focus: var(--composer-focus);
   --color-composer-ring: var(--composer-ring);
   --color-row-hover-bg: var(--row-hover-bg);
+  --color-chat-user-bubble-bg: var(--chat-user-bubble-bg);
+  --color-chat-user-bubble-fg: var(--chat-user-bubble-fg);
+  --color-chat-user-bubble-border: var(--chat-user-bubble-border);
   --color-focus-glow: var(--focus-glow);
   --color-elevated-edge: var(--elevated-edge);
   --color-scrim-bg: var(--scrim-bg);
@@ -293,6 +296,10 @@ samp {
   --destructive-hover-bg: color-mix(in oklab, var(--destructive) 80%, transparent);
   --field-bg: color-mix(in oklab, var(--input) 30%, transparent);
   --field-hover-bg: color-mix(in oklab, var(--input) 50%, transparent);
+  /* #458: per-element tokens for the user bubble; a theme file can recolour it without touching hovers. */
+  --chat-user-bubble-bg: var(--row-hover-bg);
+  --chat-user-bubble-fg: var(--chat-foreground);
+  --chat-user-bubble-border: transparent;
 }
 
 /* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (Dark (high contrast) uses a bundled Shiki theme and never reads them). */

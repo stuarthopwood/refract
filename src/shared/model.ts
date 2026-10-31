@@ -75,7 +75,7 @@ export interface Settings {
   split: SplitLayout | null;
   theme: ThemeId;
   watermarkEnabled: boolean;
-  chatWidth: ChatWidth; holidayTouches: HolidayTouches; activityText?: ActivityText; statusStyle?: StatusStyle; chatRowDensity?: ChatRowDensity;
+  chatWidth: ChatWidth; customTheme: string | null; holidayTouches: HolidayTouches; activityText?: ActivityText; statusStyle?: StatusStyle; chatRowDensity?: ChatRowDensity;
   transcriptDisplay: TranscriptDisplaySettings;
   showSampleData: boolean;
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean;

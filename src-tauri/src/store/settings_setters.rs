@@ -5,6 +5,14 @@ use super::{
 };
 
 impl SettingsStore {
+    pub async fn set_custom_theme(&mut self, id: Option<String>) -> std::io::Result<Settings> {
+        let next = Settings {
+            custom_theme: id,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
     pub async fn set_chat_width(&mut self, width: ChatWidth) -> std::io::Result<Settings> {
         let next = Settings {
             chat_width: width,

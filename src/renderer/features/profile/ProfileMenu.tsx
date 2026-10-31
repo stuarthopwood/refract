@@ -55,12 +55,13 @@ export interface ProfileMenuContentProps {
 
 function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void }) {
   const activeId = useActiveThemeId()
+  const customId = useThemeStore((s) => s.customId)
+  const customThemes = useThemeStore((s) => s.customThemes)
   const [open, setOpen] = useState(false)
   const subContentRef = useRef<HTMLDivElement>(null)
   const activeItemRef = useRef<HTMLDivElement>(null)
 
   function chooseTheme(id: ThemeId, name: string): void {
-    if (id === activeId) return
     void useThemeStore.getState().save(id).then((ok) => {
       if (ok) onThemeApplied(name)
     })
@@ -72,6 +73,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
       onOpenChange={(next) => {
         setOpen(next)
         if (!next) return
+        void useThemeStore.getState().refreshCustomThemes()
         requestAnimationFrame(() => {
           if (subContentRef.current?.contains(document.activeElement)) {
             activeItemRef.current?.focus()
@@ -85,14 +87,19 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent ref={subContentRef} className="max-w-64" sideOffset={4} alignOffset={-4} collisionPadding={8}>
         <DropdownMenuRadioGroup
-          value={activeId}
+          value={customId ? `custom:${customId}` : activeId}
           onValueChange={(value) => {
+            if (value.startsWith('custom:')) {
+              const custom = customThemes.find((t) => `custom:${t.id}` === value)
+              if (custom && custom.id !== customId) void useThemeStore.getState().saveCustom(custom.id).then((ok) => ok && onThemeApplied(custom.name))
+              return
+            }
             const theme = THEME_LIST.find((candidate) => candidate.id === value)
-            if (theme) chooseTheme(theme.id, theme.name)
+            if (theme && (theme.id !== activeId || customId)) chooseTheme(theme.id, theme.name)
           }}
         >
           {THEME_LIST.map((theme) => {
-            const isActive = theme.id === activeId
+            const isActive = theme.id === activeId && !customId
             return (
               <DropdownMenuRadioItem
                 key={theme.id}
@@ -105,6 +112,13 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
               </DropdownMenuRadioItem>
             )
           })}
+          {customThemes.length > 0 && <DropdownMenuLabel>Custom</DropdownMenuLabel>}
+          {customThemes.map((t) => (
+            <DropdownMenuRadioItem key={t.id} value={`custom:${t.id}`} ref={t.id === customId ? activeItemRef : undefined}>
+              <span className="min-w-0 flex-1 truncate">{t.name}</span>
+              <ThemeSwatchChip swatch={t.tokens.background ?? THEMES[t.base].swatch} swatchPrimary={t.tokens.primary ?? THEMES[t.base].swatchPrimary} />
+            </DropdownMenuRadioItem>
+          ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => useViewStore.getState().openSettings('appearance')}>

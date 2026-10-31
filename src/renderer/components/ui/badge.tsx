@@ -23,6 +23,7 @@ const badgeVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         focused:
           "h-auto border-active-indicator bg-focused-badge-bg py-1 font-medium text-active-indicator-foreground",
+        warning: "h-auto border-severity-warning bg-severity-warning-bg py-1 text-severity-warning",
       },
     },
     defaultVariants: {
@@ -55,23 +56,27 @@ function Badge({
       className={cn(badgeVariants({ variant }), onDismiss && "max-w-full overflow-visible", className)}
       {...props}
     >
-      {onDismiss && !asChild ? <span className="min-w-0 truncate">{children}</span> : children}
-      {onDismiss && !asChild && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="-my-1 -mr-1 size-6 shrink-0 rounded-sm"
-              aria-label={dismissLabel ?? "Remove"}
-              onClick={onDismiss}
-            >
-              <XIcon aria-hidden className="size-3" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{dismissLabel ?? "Remove"}</TooltipContent>
-        </Tooltip>
+      {onDismiss && !asChild ? (
+        <>
+          <span className="min-w-0 truncate">{children}</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="-my-1 -mr-1 size-6 shrink-0 rounded-sm"
+                aria-label={dismissLabel ?? "Remove"}
+                onClick={onDismiss}
+              >
+                <XIcon aria-hidden className="size-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{dismissLabel ?? "Remove"}</TooltipContent>
+          </Tooltip>
+        </>
+      ) : (
+        children
       )}
     </Comp>
   )
