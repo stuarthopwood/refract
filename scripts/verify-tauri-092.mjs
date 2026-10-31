@@ -4,7 +4,7 @@
 // Fixtures: fixtures/omp-frames/stop-banner-1285.jsonl and secret-1295.jsonl (the `secret: true` frame is replayed, so no OMP 18.13.2 install is needed).
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_092_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-092.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -39,13 +39,36 @@ const shot = async (cdp, name) => {
 const ACTIVE = `(() => { const a = document.activeElement; return a ? { tag: a.tagName, label: a.getAttribute('aria-label'), isBody: a === document.body, inBanner: !!a.closest('[data-pane-banner]') } : null; })()`;
 const SECRET = 'hunter2-s3cret-1295';
 const MESSAGE = `document.querySelector('textarea[aria-label="Message"]')`;
-const SECRET_FIELD = `document.querySelector('input[aria-label="Secret"]')`;
+const SECRET_FIELD = `document.querySelector('input[data-secret-input]')`;
 const TOGGLE = `document.querySelector('button[aria-label="Show secret"]')`;
+const CANCEL_IN_FOOTER = `!!Array.from(document.querySelectorAll('[data-slot="card-footer"] button')).find((b) => b.textContent?.trim() === 'Cancel')`;
 
-async function withSession(scenario, tmp, exePath, launcherExe, shimDir, body) {
+function filesUnder(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...filesUnder(full));
+    else if (entry.isFile()) out.push(full);
+  }
+  return out;
+}
+
+/** FR-007: the secret must not reach the app log or anything the app wrote to its data dir (UTF-8 and UTF-16LE). */
+function assertSecretNotPersisted(dataDir, logFile) {
+  const needles = [Buffer.from(SECRET, 'utf8'), Buffer.from(SECRET, 'utf16le')];
+  const targets = [...filesUnder(dataDir), ...(existsSync(logFile) ? [logFile] : [])];
+  const leaked = targets.filter((file) => {
+    const bytes = readFileSync(file);
+    return needles.some((needle) => bytes.includes(needle));
+  });
+  assert(leaked.length === 0, `The secret is absent from the app log and ${targets.length - 1} scratch data files${leaked.length ? ` (found in ${leaked.join(', ')})` : ''}`);
+}
+
+async function withSession(scenario, tmp, exePath, launcherExe, shimDir, body, afterStop) {
   const dataDir = tmp(`data-${scenario}`);
   const importDir = tmp(`import-${scenario}`);
   const repoDir = makeScratchRepo(tmp(`repo-${scenario}`), `verify-092-${scenario}`);
+  const logFile = path.join(SHOTS_DIR, `app-${scenario}.log`);
   const port = await getFreePort();
   let child, cdp;
   try {
@@ -54,7 +77,7 @@ async function withSession(scenario, tmp, exePath, launcherExe, shimDir, body) {
       dataDir,
       importSourceDir: importDir,
       pathPrepend: shimDir,
-      logFile: path.join(SHOTS_DIR, `app-${scenario}.log`),
+      logFile,
       extraEnv: {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
@@ -80,6 +103,7 @@ async function withSession(scenario, tmp, exePath, launcherExe, shimDir, body) {
     cdp?.close();
     if (child) await stopLauncher(child).catch(() => {});
   }
+  afterStop?.(dataDir, logFile);
 }
 
 async function checkStopBannerFocus(cdp) {
@@ -91,7 +115,7 @@ async function checkStopBannerFocus(cdp) {
   assert(before?.label === 'Message', `The composer textarea holds focus before the agent exits (${JSON.stringify(before)})`);
   await cdp.waitFor(`!!document.querySelector('[data-pane-banner]')`, { timeoutMs: 30_000, label: 'Stop banner' });
   await cdp.waitFor(`${MESSAGE}?.disabled === true`, { timeoutMs: 10_000, label: 'Composer disabled' });
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await cdp.waitFor(`!!document.activeElement?.closest('[data-pane-banner]')`, { timeoutMs: 10_000, label: 'Focus inside the stop banner' });
   const stranded = await cdp.evaluate(ACTIVE);
   log(`focus after stop: ${JSON.stringify(stranded)}`);
   assert(!stranded?.isBody, 'Focus is not stranded on <body> once the composer disables');
@@ -101,7 +125,7 @@ async function checkStopBannerFocus(cdp) {
   await shot(cdp, '01-banner-focused.png');
   await cdp.click('document.activeElement');
   await cdp.waitFor(`!document.querySelector('[data-pane-banner]') && ${MESSAGE} && !${MESSAGE}.disabled`, { timeoutMs: 60_000, label: 'Composer re-enabled' });
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await cdp.waitFor(`document.activeElement === ${MESSAGE}`, { timeoutMs: 10_000, label: 'Focus back on the composer textarea' });
   const back = await cdp.evaluate(ACTIVE);
   log(`focus after re-enable: ${JSON.stringify(back)}`);
   assert(back?.label === 'Message', 'Focus returned to the composer textarea after the banner action');
@@ -122,10 +146,12 @@ async function checkSecretInput(cdp) {
   assert((await pressed()) === 'true', 'The reveal toggle reports pressed when revealed');
   await cdp.click(TOGGLE);
   await cdp.waitFor(`${SECRET_FIELD}.type === 'password'`, { timeoutMs: 5_000, label: 'Masked again' });
-  await cdp.typeIntoByLabel('Secret', SECRET);
+  await cdp.click(SECRET_FIELD);
+  await cdp.send('Input.insertText', { text: SECRET });
   await shot(cdp, '03-secret-masked.png');
   const typedValue = await cdp.evaluate(`${SECRET_FIELD}.value`);
-  assert(typedValue === SECRET, 'Typing and paste reach the masked field unchanged');
+  assert(typedValue === SECRET, 'Text inserted into the masked field (CDP insertText, not key events) arrives unchanged');
+  assert(await cdp.evaluate(CANCEL_IN_FOOTER), 'Cancel sits in the card footer, away from the reveal toggle');
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Send' && b.closest('[role="group"]'))`);
   await cdp.waitFor(`document.body.innerText.includes('t1295-done')`, { timeoutMs: 20_000, label: 'Agent received the secret and finished' });
   const page = await cdp.evaluate(`({ text: document.body.innerText, values: Array.from(document.querySelectorAll('input,textarea')).map((i) => i.value) })`);
@@ -151,7 +177,7 @@ async function main() {
     const launcherExe = buildLauncher(launcherDir);
     const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-092' });
     await withSession('stop-banner-1285', tmp, built.dest, launcherExe, shimDir, checkStopBannerFocus);
-    await withSession('secret-1295', tmp, built.dest, launcherExe, shimDir, checkSecretInput);
+    await withSession('secret-1295', tmp, built.dest, launcherExe, shimDir, checkSecretInput, assertSecretNotPersisted);
     log(`verify-tauri-092: ALL PASS (${passed} checks) at head ${head}`);
     ok = true;
   } finally {

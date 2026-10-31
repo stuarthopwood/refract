@@ -1,9 +1,11 @@
 // #746: the ChatPane stop/failure banner (Terminated unexpectedly, The agent stopped, start-failed,
 // Worktree missing) on the shared `PaneBanner`. `data-pane-banner` sits on the wrapper so
 // `focusPaneContent` (lib/focus.ts) focuses the first enabled button, which is always the primary.
+import { useId } from 'react'
 import type { Ref } from 'react'
 import { PaneBanner } from '@/components/PaneBanner'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { disclosureToggleClassName } from './linkStyles'
 
 type StopReason = string | undefined
@@ -62,15 +64,19 @@ export function StopBanner(p: StopBannerProps) {
   const busyAny = recovering || startingNew || resuming
   const busyStart = recovering || startingNew
   const text = bannerText(p.stopReason, p.stopDetail, p.showTerminatedTitle, p.pendingToolNames)
+  const titleId = useId()
   return (
     <div
       data-pane-banner
       role="group"
       tabIndex={-1}
-      aria-label={text.title}
-      className="shrink-0 px-4 pt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:-outline-offset-2"
+      aria-labelledby={titleId}
+      className={cn(
+        'shrink-0 px-4 pt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:-outline-offset-2',
+        !p.startFailureDetails && 'pb-2'
+      )}
     >
-      <PaneBanner title={text.title} detail={text.detail} detailMono={!text.prose}>
+      <PaneBanner title={text.title} titleId={titleId} detail={text.detail} detailMono={!text.prose}>
         {p.canResume && (
           <>
             {p.stopReason === 'agent-exited' && (
