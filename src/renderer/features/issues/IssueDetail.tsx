@@ -84,7 +84,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
               <span className="font-code">{detail.ownerRepo}</span> opened by {detail.author}
             </p>
           </div>
-          <div className="no-drag-region flex shrink-0 flex-wrap items-center gap-2">
+          <div className="no-drag-region flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 text-xs">
               <StateIcon aria-hidden className="size-4" />
               {open ? 'Open' : 'Closed'}

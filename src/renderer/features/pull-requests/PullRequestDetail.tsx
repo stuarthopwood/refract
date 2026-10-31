@@ -1,7 +1,7 @@
 // The pull request detail view: header, description, Overview/Changes tabs, check-status chip (polled while pending),
 // action row and comment composer. Action results show inline; disabled actions show their reason, and a
 // not-mergeable pull request shows that reason instead of Merge.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -50,6 +50,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
   const [error, setError] = useState<string | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
+  const reasonId = useId()
   const [forkWarningOpen, setForkWarningOpen] = useState(false)
   const [newSessionBusy, setNewSessionBusy] = useState(false)
   const [newSessionError, setNewSessionError] = useState<string | null>(null)
@@ -153,14 +154,19 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
   // `mergeableState === 'unknown'` (GitHub still computing) gets its own "still checking" text and only
   // disables Merge when nothing else explains why.
   const mergeStillChecking = detail.mergeDisabledReason === null && detail.mergeableState === 'unknown'
-  const mergeDisabledReason = detail.mergeDisabledReason ?? (mergeStillChecking ? 'GitHub is still checking whether this pull request can merge.' : null)
   const mergeBlocked = detail.mergeDisabledReason !== null || detail.mergeableState !== 'mergeable'
+  // A disabled button is not focusable, so a blocked Merge always needs visible text.
+  const mergeDisabledReason =
+    detail.mergeDisabledReason ??
+    (mergeStillChecking ? 'GitHub is still checking whether this pull request can merge.' : mergeBlocked ? 'This pull request cannot be merged right now.' : null)
   // Merged and closed pull requests hide their actions; the StatePill says why (#1393). Draft keeps them.
   const actionsHidden = detail.state === 'merged' || detail.state === 'closed'
   // A state-only disable already shows its reason via the StatePill; these lines show only while the
   // pull request is open (or draft) but a button is disabled (#1131).
   const showReviewReasonLine = detail.reviewDisabledReason !== null && !actionsHidden
   const showMergeReasonLine = mergeDisabledReason !== null && mergeDisabledReason !== detail.reviewDisabledReason && !actionsHidden
+  // A deduped Merge reason is explained by the Review line.
+  const mergeReasonLinkId = showMergeReasonLine ? `${reasonId}-merge` : mergeBlocked && showReviewReasonLine ? `${reasonId}-review` : undefined
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -203,8 +209,9 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
                   ref={reviewButtonRef}
                   size="sm"
                   variant="ghost"
-                  onClick={() => setReviewOpen(true)}
-                  disabled={detail.reviewDisabledReason !== null}
+                  onClick={() => detail.reviewDisabledReason === null && setReviewOpen(true)}
+                  aria-disabled={detail.reviewDisabledReason !== null || undefined}
+                  aria-describedby={showReviewReasonLine ? `${reasonId}-review` : undefined}
                   title={detail.reviewDisabledReason ?? undefined}
                 >
                   Review
@@ -213,8 +220,9 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
                   ref={mergeButtonRef}
                   size="sm"
                   variant="outline"
-                  onClick={() => setMergeOpen(true)}
-                  disabled={mergeBlocked}
+                  onClick={() => !mergeBlocked && setMergeOpen(true)}
+                  aria-disabled={mergeBlocked || undefined}
+                  aria-describedby={mergeReasonLinkId}
                   title={mergeDisabledReason ?? undefined}
                 >
                   Merge
@@ -229,12 +237,12 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
           </p>
         )}
         {showReviewReasonLine && (
-          <p data-review-reason className="mt-1 text-xs text-muted-foreground">
+          <p id={`${reasonId}-review`} data-review-reason className="mt-1 text-xs text-muted-foreground">
             Review: {detail.reviewDisabledReason}
           </p>
         )}
         {showMergeReasonLine && (
-          <p data-merge-reason className="mt-1 text-xs text-muted-foreground">
+          <p id={`${reasonId}-merge`} data-merge-reason className="mt-1 text-xs text-muted-foreground">
             Merge: {mergeDisabledReason}
           </p>
         )}

@@ -127,7 +127,7 @@ async function checkPullRequests(cdp) {
   const refreshFocus = await cdp.evaluate(ringProbe(`${headerOf}.querySelector('button[aria-label="Refresh this pull request"]')`));
   log(`focus parity: copy ${JSON.stringify(copyFocus)} refresh ${JSON.stringify(refreshFocus)}`);
   await shot(cdp, '02-copy-focus.png');
-  assert(copyFocus.outlineStyle === refreshFocus.outlineStyle && copyFocus.outlineWidth === refreshFocus.outlineWidth && copyFocus.boxShadow === refreshFocus.boxShadow, 'Copy link focus style matches Refresh');
+  assert(copyFocus.focusVisible && refreshFocus.focusVisible && copyFocus.outlineStyle === refreshFocus.outlineStyle && copyFocus.outlineWidth === refreshFocus.outlineWidth && copyFocus.boxShadow === refreshFocus.boxShadow && (copyFocus.boxShadow !== 'none' || copyFocus.outlineStyle !== 'none'), 'Copy link shows a focus ring that matches Refresh');
 
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 960, height: 800, deviceScaleFactor: 1, mobile: false });
   await sleep(400);
@@ -148,14 +148,13 @@ async function checkPullRequests(cdp) {
   await shot(cdp, '04-pr-draft-header.png');
   assert(draft.newSession, 'The New session button exists in the draft header');
   assert(draft.draftReason === 'Draft pull requests cannot start a Session.', 'Draft PR shows the visible draft reason line');
+  assert(draft.reviewReason !== null && draft.reviewReason.startsWith('Review: ') && draft.reviewTitle !== null && draft.reviewReason.endsWith(draft.reviewTitle), 'The draft PR review reason is a visible "Review:" line and the tooltip title is kept');
 
   await open(8);
   const conflict = await shape();
   log(`conflict PR header: ${JSON.stringify(conflict)}`);
   await shot(cdp, '05-pr-conflict-header.png');
-  assert(conflict.mergeReason !== null && conflict.mergeTitle !== null && conflict.mergeReason.endsWith(conflict.mergeTitle), 'The merge reason is a visible line and the tooltip title is kept');
-  if (conflict.reviewReason !== null) assert(conflict.reviewTitle !== null && conflict.reviewReason.endsWith(conflict.reviewTitle), 'The review reason is a visible line and the tooltip title is kept');
-  else log('conflict PR has no review reason in this fixture; review line covered by the draft/closed fixtures only if present');
+  assert(conflict.mergeReason !== null && conflict.mergeReason.startsWith('Merge: ') && conflict.mergeTitle !== null && conflict.mergeReason.endsWith(conflict.mergeTitle), 'The merge reason is a visible "Merge:" line and the tooltip title is kept');
 
   await open(1);
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Review')`);
@@ -178,14 +177,16 @@ async function checkIssues(cdp) {
       copy: !!header.querySelector('button[aria-label="Copy link"]'),
       newSession: Array.from(header.querySelectorAll('button')).some((b) => b.textContent.trim() === 'New session'),
       titleGrows: getComputedStyle(title).flexGrow,
-      actionsShrink: getComputedStyle(actions).flexShrink,
+      titleMinWidth: getComputedStyle(title).minWidth,
+      outerWrap: getComputedStyle(title.parentElement).flexWrap,
+      actionsWrap: getComputedStyle(actions).flexWrap,
       noDrag: actions.classList.contains('no-drag-region')
     };
   })()`);
   log(`issue header: ${JSON.stringify(s)}`);
   await shot(cdp, '07-issue-header.png');
   assert(s.copy && s.newSession, 'Issue header has Copy link and New session');
-  assert(s.titleGrows === '1' && s.actionsShrink === '0' && s.noDrag, 'Issue header matches the PR shape: growing title, non-shrinking no-drag actions');
+  assert(s.titleGrows === '1' && s.titleMinWidth === '200px' && s.actionsWrap === 'wrap' && s.noDrag, 'Issue header matches the PR shape: growing 200px-min title, wrapping no-drag actions');
 }
 
 // Sets aria-invalid on `selector`, focuses it and asserts the destructive border stays while focused; shoots the focused state.
@@ -238,7 +239,7 @@ async function checkManageSessions(cdp) {
   const inputFocus = await cdp.evaluate(ringProbe(INPUT));
   const triggerFocus = await cdp.evaluate(ringProbe(trigger));
   log(`field ring parity: input ${JSON.stringify(inputFocus)} trigger ${JSON.stringify(triggerFocus)}`);
-  assert(inputFocus.boxShadow === triggerFocus.boxShadow, 'The Select trigger focus ring uses the same width as an Input (--field-ring-width)');
+  assert(inputFocus.focusVisible && triggerFocus.focusVisible && inputFocus.boxShadow !== 'none' && inputFocus.boxShadow === triggerFocus.boxShadow, 'The Select trigger focus ring uses the same width as an Input (--field-ring-width)');
   await cdp.evaluate(`${INPUT}.blur()`);
   await invalidRing(cdp, INPUT, 'Input', '09-invalid-input.png');
   await invalidRing(cdp, trigger, 'Select trigger', '10-invalid-select-trigger.png');
