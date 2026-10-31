@@ -12,7 +12,9 @@ use crate::github::gh_pr_search_across::{ensure_search_budget, search_across};
 use crate::github::gh_pull_requests::SearchQualifierFlag;
 use crate::ipc::{invalid_argument, now_iso8601, AppState, HandlerFuture};
 
-use super::super::mapping::{map_actor, map_pull_request_state, PullRequestActor, PullRequestState};
+use super::super::mapping::{
+    map_actor, map_pull_request_state, PullRequestActor, PullRequestState,
+};
 use super::super::{
     map_gh_error, parse_filter_tab, repo_path_for, with_bounded_concurrency, FilterTab,
 };
