@@ -26,6 +26,7 @@ const FILE_NAMES: [&str; 4] = [
 ];
 const MAX_BYTES: u64 = 256 * 1024;
 const MAX_LEVELS: usize = 64;
+const MAX_LINES: usize = 2000;
 
 /// OMP's agent dir: `PI_CODING_AGENT_DIR`, else `~/.omp/agent`.
 pub fn agent_dir() -> Option<PathBuf> {
@@ -47,7 +48,13 @@ pub fn is_openable(path: &Path) -> bool {
     let named = path
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| FILE_NAMES.iter().any(|known| known.ends_with(name)));
+        .is_some_and(|name| {
+            FILE_NAMES.iter().any(|known| {
+                Path::new(known)
+                    .file_name()
+                    .is_some_and(|base| base == name)
+            })
+        });
     named && is_regular_file(path)
 }
 
@@ -132,7 +139,7 @@ fn unquote(value: &str) -> String {
 
 fn parse_lines(text: &str) -> Vec<Line> {
     let mut lines = Vec::new();
-    for raw in text.lines() {
+    for raw in text.lines().take(MAX_LINES) {
         let raw = strip_comment(raw).trim_end();
         let body = raw.trim_start();
         if body.is_empty() {

@@ -1,8 +1,8 @@
 // Hand-rolled radiogroup like ThemePicker: arrows save the choice, unlike the shared radio-group primitive (#554).
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
-import { CheckIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
 import { useActiveChatWidth, useChatWidthStore } from '@/state'
 import type { ChatWidth } from '../../../shared/chatWidth'
 
@@ -42,7 +42,7 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
   }
 
   return (
-    <>
+    <div className="max-w-sm">
       <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
         {CHAT_WIDTH_OPTIONS.map((option, index) => {
           const isActive = option.id === activeId
@@ -55,28 +55,25 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
               type="button"
               role="radio"
               aria-checked={isActive}
+              data-state={isActive ? 'checked' : 'unchecked'}
               aria-labelledby={`chat-width-option-${option.id}-name`}
               aria-describedby={`chat-width-option-${option.id}-desc`}
               tabIndex={isActive ? 0 : -1}
               onClick={() => choose(option.id)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
-                'flex w-full flex-col items-start gap-1 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none',
+                'group/radio-item flex w-full flex-col items-start gap-1 rounded-md border border-transparent py-2 pr-8 pl-2 text-left text-sm outline-none',
                 'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow',
                 isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-row-hover-bg hover:text-foreground'
               )}
             >
               <span className="flex w-full items-center gap-2">
-                <span aria-hidden className="size-4 shrink-0" />
+                <span aria-hidden className={RADIO_RING_CLASS}>
+                  {isActive && <span className={RADIO_DOT_CLASS} />}
+                </span>
                 <span id={`chat-width-option-${option.id}-name`} className="flex-1">{option.name}</span>
-                {isActive && (
-                  <span aria-hidden className="flex items-center gap-1 text-xs">
-                    <CheckIcon aria-hidden className="size-4" />
-                    <span>Current</span>
-                  </span>
-                )}
               </span>
-              <span id={`chat-width-option-${option.id}-desc`} className="text-xs text-muted-foreground">{option.description}</span>
+              <span id={`chat-width-option-${option.id}-desc`} className="pl-6 text-xs text-muted-foreground">{option.description}</span>
             </button>
           )
         })}
@@ -89,6 +86,6 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
           <div className="h-1.5 w-full rounded-full bg-muted-foreground/40" />
         </div>
       </div>
-    </>
+    </div>
   )
 }

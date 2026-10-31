@@ -23,7 +23,7 @@ export function FrustrationCard({ frustration }: { frustration: UsageFrustration
         <StatCard label="Mood" value={`${perMessage.toFixed(2)} per message`} caption={frustrationCaption(perMessage)} />
       </div>
       {frustration.daily.length > 1 && (
-        <Sparkline label="Mood by day, higher is angrier" values={frustration.daily.map((d) => d.mood)} />
+        <Sparkline label="Mood by day, higher is angrier" values={frustration.daily.map((d) => d.mood)} formatValue={(n) => n.toFixed(2)} />
       )}
     </ScreenSection>
   )

@@ -23,7 +23,7 @@ const SHOTS_DIR =
 // Matches `file_attachments.rs`'s MAX_INLINE_FILE_BYTES.
 const MAX_INLINE_FILE_BYTES = 262_144;
 
-// `name` is the Profile-menu Theme item text; theme.preview() only recolours the title bar, so a real menu switch is needed.
+// `name` is the Profile-menu Theme item text; a real menu switch is needed to change the theme class.
 const THEMES = [
   { id: 'dark', name: 'Dark' },
   { id: 'obsidian', name: 'Obsidian' },

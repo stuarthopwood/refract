@@ -42,7 +42,7 @@ function fromDateInput(value: string, endOfDay: boolean): number | undefined {
     requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-usage-filters] button[aria-label="Project"]')?.focus())
   }
 
-  const AGENT_TYPE_LABELS: Record<string, string> = { main: 'Main agent', subagent: 'Subagent' }
+  const AGENT_TYPE_LABELS: Record<string, string> = { main: 'Main agent', subagent: 'Subagent', advisor: 'Advisor' }
 
   export function UsageFilters() {
     const filters = useUsageStore((s) => s.filters)
@@ -106,9 +106,9 @@ function fromDateInput(value: string, endOfDay: boolean): number | undefined {
           />
           <OptionSelect
             label="Agent type"
-            anyLabel="Main and subagents"
+            anyLabel="All agent types"
             value={filters.agentType}
-            options={['main', 'subagent']}
+            options={['main', 'subagent', 'advisor']}
             optionLabel={(option) => AGENT_TYPE_LABELS[option] ?? option}
             onChange={(agentType) => patch({ agentType: agentType as Filters['agentType'] })}
           />
