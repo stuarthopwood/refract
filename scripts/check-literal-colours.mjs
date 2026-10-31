@@ -19,7 +19,7 @@ const HEX_QUOTED =
   /(?<!url\(["']?|href=["']|(?:querySelector(?:All)?|closest|matches)\(["'`])(?<=["'`[(])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
 const HEX_INLINE =
   /(?<=[\s,:])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|(?=[0-9a-fA-F]*[0-9])(?=[0-9]*[a-fA-F])[0-9a-fA-F]{3,4}|([a-fA-F])\1{2,3})(?![\w-])/g;
-const FUNCTIONAL = /(?<![\w-])(?:rgba?|hsla?|hwb|ok?lab|ok?lch)\(\s*[\d.]/g;
+const FUNCTIONAL = /(?<![\w-])(?:rgba?|hsla?|hwb|(?:ok)?lab|(?:ok)?lch)\(\s*[\d.]/g;
 const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target']);
 
 // Blanks comments with the TypeScript scanner so `//` inside a string is code and issue refs such as `(#1001)` are not colours.
