@@ -9,15 +9,12 @@ use serde_json::Value;
 use crate::github::gh::{owner_repo_for, GhError};
 use crate::github::gh_issues::clean_search_query;
 use crate::github::gh_pr_search_across::{ensure_search_budget, search_across};
-use crate::github::gh_pull_requests::{view_check_state, SearchQualifierFlag};
+use crate::github::gh_pull_requests::SearchQualifierFlag;
 use crate::ipc::{invalid_argument, now_iso8601, AppState, HandlerFuture};
 
-use super::super::mapping::{
-    map_actor, map_check_state, map_pull_request_state, PullRequestSummary,
-};
+use super::super::mapping::{map_actor, map_pull_request_state, PullRequestActor, PullRequestState};
 use super::super::{
     map_gh_error, parse_filter_tab, repo_path_for, with_bounded_concurrency, FilterTab,
-    CHECK_STATE_CONCURRENCY,
 };
 
 const MAX_PROJECTS: usize = 40;
@@ -30,8 +27,12 @@ const RESOLVE_CONCURRENCY: usize = 4;
 struct AcrossItem {
     repository_id: String,
     repository_name: String,
-    #[serde(flatten)]
-    summary: PullRequestSummary,
+    number: u64,
+    title: String,
+    state: PullRequestState,
+    repository: String,
+    updated_at: String,
+    author: PullRequestActor,
 }
 
 #[derive(Serialize)]
@@ -159,43 +160,16 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
                 FilterTab::Involves => Some(SearchQualifierFlag::Involves),
                 FilterTab::ReviewRequested => Some(SearchQualifierFlag::ReviewRequested),
             };
-            let entries = search_across(&cwd, &distinct, flag, gh_state, query.as_deref(), limit)
-                .await
-                .map_err(map_gh_error)?;
-            has_more = entries.len() >= limit;
+            // One extra row tells a list cut off at `limit` from one that ends exactly there.
+            let mut entries =
+                search_across(&cwd, &distinct, flag, gh_state, query.as_deref(), limit + 1)
+                    .await
+                    .map_err(map_gh_error)?;
+            has_more = entries.len() > limit;
+            entries.truncate(limit);
 
-            // The search has no `statusCheckRollup`; only open and draft pull requests show one.
-            let work: Vec<(PathBuf, String, u64, String, bool)> = entries
-                .iter()
-                .map(|e| {
-                    let path = owner_of
-                        .get(&e.repository.name_with_owner.to_lowercase())
-                        .map(|&i| projects[i].path.clone())
-                        .unwrap_or_else(|| cwd.clone());
-                    (
-                        path,
-                        e.repository.name_with_owner.clone(),
-                        e.number,
-                        e.updated_at.clone(),
-                        e.state.eq_ignore_ascii_case("open"),
-                    )
-                })
-                .collect();
-            let rollups = with_bounded_concurrency(
-                work,
-                CHECK_STATE_CONCURRENCY,
-                |(path, slug, number, updated_at, open)| async move {
-                    if !open {
-                        return None;
-                    }
-                    view_check_state(&path, &slug, number, &updated_at)
-                        .await
-                        .unwrap_or(None)
-                },
-            )
-            .await;
-
-            for (entry, rollup) in entries.into_iter().zip(rollups) {
+            // Rows carry search fields only; check state loads with the selected row's detail.
+            for entry in entries {
                 let Some(&index) = owner_of.get(&entry.repository.name_with_owner.to_lowercase())
                 else {
                     continue;
@@ -204,19 +178,15 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
                 items.push(AcrossItem {
                     repository_id: project.repository_id.clone(),
                     repository_name: project.repository_name.clone(),
-                    summary: PullRequestSummary {
-                        number: entry.number,
-                        title: entry.title,
-                        state: map_pull_request_state(&entry.state, entry.is_draft),
-                        check_state: map_check_state(rollup.as_deref()),
-                        repository: entry.repository.name_with_owner,
-                        updated_at: entry.updated_at,
-                        author: map_actor(Some(&entry.author)),
-                    },
+                    number: entry.number,
+                    title: entry.title,
+                    state: map_pull_request_state(&entry.state, entry.is_draft),
+                    repository: entry.repository.name_with_owner,
+                    updated_at: entry.updated_at,
+                    author: map_actor(Some(&entry.author)),
                 });
             }
         }
-
         let result = AcrossResult {
             items,
             has_more,

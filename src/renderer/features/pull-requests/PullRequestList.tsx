@@ -49,11 +49,8 @@ export function PullRequestList() {
       onQueryChange={store.setQuery}
       onRefresh={() => {
         void refresh(allIds)
-        // Issue #569: an explicit Refresh also refreshes the sidebar count for the Projects shown.
-        if (githubStatus === 'ready') {
-          const scope = store.repositoryIds.length > 0 ? store.repositoryIds : allIds
-          for (const id of scope) void store.refreshActiveCount(id)
-        }
+        // An explicit Refresh also refreshes the sidebar count.
+        if (githubStatus === 'ready') void store.refreshActiveCount(allIds)
       }}
       onClearFilters={store.clearFilters}
       loading={store.loading}

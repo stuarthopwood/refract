@@ -7,14 +7,14 @@ import type { Result } from './ipc';
 
 /** One row of the Pull requests view. Every text field comes from GitHub and is untrusted:
  * render it as text, never as markup. */
-export interface PullRequestAcrossItem extends PullRequestSummary {
+export interface PullRequestAcrossItem extends Omit<PullRequestSummary, 'checkState'> {
   repositoryId: string;
   repositoryName: string;
 }
 
 export interface PullRequestAcrossResult {
   items: PullRequestAcrossItem[];
-  /** True when GitHub returned as many rows as `limit`, so "Show more" can ask for more. */
+  /** True when GitHub has rows beyond `limit`, so "Show more" can ask for more. */
   hasMore: boolean;
   /** Projects that could not be listed (`no-github-remote`, `gh-unavailable`, ...). */
   skipped: IssueSkippedProject[];
