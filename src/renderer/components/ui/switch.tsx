@@ -4,12 +4,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
-// `dark:data-[state=unchecked]:bg-switch-off-dark-bg` (computed via the OKLab->linear-sRGB->WCAG
-// relative-luminance pipeline docs/DESIGN.md's "Chat text colour" note already uses) raises the Off
-// track's own contrast well past 3:1 -- an EARLIER attempt here used `bg-input/80`, which Tailwind
-// composites as 80% of `--input`'s own *already* mostly-transparent 15%-alpha value (0.15 0.8 =
-// 0.12 effective alpha), actually *lowering* contrast to ~1.33:1; caught live via a real
-// `getComputedStyle` read, not just visual inspection.
+// The dark Off track uses a token tuned to clear 3:1; g-input/80 composited to about 1.33:1.
 function Switch({
   className,
   ...props

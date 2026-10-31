@@ -218,7 +218,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(focusDiag.outlineOffset.trim().startsWith('-'), `row open button's focus ring must draw INSIDE the row (decision 15, negative outline-offset), measured ${focusDiag.outlineOffset}`);
   await cdp.screenshot(path.join(evidenceDir, '02-row-focused.png'));
 
-  const ellipsisFinder = `${rowFinder}.querySelector('button[aria-label$="actions"]')`;
+  const ellipsisFinder = `${rowFinder}.querySelector('button[aria-label^="More actions for "]')`;
   await proveTrailingSlotSwapAndHoverNone(cdp, evidenceDir, log, { rowFinder, ellipsisFinder });
 
   // Keyboard-only: clear any pointer position first so a hover-revealed "..." cannot pass.

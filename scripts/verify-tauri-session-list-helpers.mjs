@@ -145,7 +145,7 @@ export async function createSessionViaQuickCreate(cdp, repoName) {
 
 /** Finder for the first (most recent) Session row's "..." trigger in the named Project's group. */
 export function firstRowActionsFinder(repoName) {
-  return `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`;
+  return `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label^="More actions for "]')`;
 }
 
 /** Opens a row's "..." menu like a real user: the trigger is revealed by `group-hover`/`group-focus-within`, so a bare click can land before the hover style recalculates. Hovers first, waits for the trigger to be revealed and closed, clicks at a freshly computed rect (hover can shift layout), then waits for the menu; screenshots on timeout. */
@@ -183,7 +183,7 @@ export async function clickMenuItem(cdp, text) {
 /** Archives the first (most recent) Session row in the Repository group's list via its row menu. */
 export async function archiveFirstRowIn(cdp, repoName) {
   await cdp.click(
-    `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`
+    `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label^="More actions for "]')`
   );
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`, { timeoutMs: 10_000, label: 'Row menu open with Archive item' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`);
@@ -195,7 +195,7 @@ export async function restoreOnlyArchivedRow(cdp) {
     await cdp.click(ARCHIVED_TRIGGER_FINDER);
     await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + `.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Archived opened to reach the restore action' });
   }
-  await cdp.click(`document.querySelector('[data-archived-group]')?.querySelector('li button[aria-label$=" actions"]')`);
+  await cdp.click(`document.querySelector('[data-archived-group]')?.querySelector('li button[aria-label^="More actions for "]')`);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`, { timeoutMs: 10_000, label: 'Archived row menu open with Restore item' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`);
 }
@@ -340,7 +340,7 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
     { timeoutMs: 10_000, label: `hover target: ${rowFinder}` }
   );
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
-  const ellipsisFinder = `${rowFinder}.querySelector('button[aria-label$="actions"]')`;
+  const ellipsisFinder = `${rowFinder}.querySelector('button[aria-label^="More actions for "]')`;
   await cdp.waitFor(`getComputedStyle(${ellipsisFinder}).opacity > 0.5`, { timeoutMs: 5_000, label: '"..." visible before centring measurement' });
   const centering = await cdp.evaluate(
     `(() => { const btn = ${ellipsisFinder}; const line1 = ${rowFinder}.querySelector('.session-open-button > span:first-child'); const br = btn.getBoundingClientRect(); const lr = line1.getBoundingClientRect(); const buttonCentre = br.top + br.height / 2; const line1Centre = lr.top + lr.height / 2; return { buttonCentre, line1Centre, deltaPx: Math.abs(buttonCentre - line1Centre) }; })()`

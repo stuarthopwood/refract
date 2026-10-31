@@ -172,7 +172,7 @@ export async function killSpawned(child) {
 
 
 function rowActionsFinderByName(name) {
-  return `Array.from(document.querySelectorAll('[data-repository-id] li')).find((li) => li.querySelector('[data-session-open]')?.getAttribute('aria-label')?.startsWith(${JSON.stringify(name)}))?.querySelector('button[aria-label$=" actions"]')`;
+  return `Array.from(document.querySelectorAll('[data-repository-id] li')).find((li) => li.querySelector('[data-session-open]')?.getAttribute('aria-label')?.startsWith(${JSON.stringify(name)}))?.querySelector('button[aria-label^="More actions for "]')`;
 }
 
 /** Opens a named Session row's "..." menu and clicks "Delete", waiting for the AlertDialog to mount.

@@ -42,7 +42,7 @@ async function checkLabels(cdp, repoName) {
   const labels = await cdp.evaluate(`Array.from(document.querySelectorAll('button[aria-label]')).map((b) => b.getAttribute('aria-label')).filter((l) => /actions/i.test(l))`);
   log(`action labels: ${JSON.stringify(labels)}`);
   assert(labels.includes(`More actions for ${repoName}`), 'repository header trigger reads "More actions for <project>"');
-  assert(!labels.some((l) => /^Project actions for|^.+ actions$|^More actions, /.test(l)), 'no legacy overflow label wording remains');
+  assert(!labels.some((l) => /^Project actions for|^(?!More actions).+ actions$|^More actions, /.test(l)), 'no legacy overflow label wording remains');
 }
 
 async function checkStrip(cdp) {

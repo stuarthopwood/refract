@@ -68,7 +68,7 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.waitFor(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(`More actions for ${repoName}`)}`, { timeoutMs: 5_000, label: 'focus restored' });
   const focusName = await cdp.evaluate(`document.activeElement?.getAttribute('aria-label') ?? ''`);
   log(`focus after cancel: ${focusName}`);
-  assert(focusName === `More actions for ${repoName}`, 'focus returns to the Project actions trigger after Cancel');
+  assert(focusName === `More actions for ${repoName}`, 'focus returns to the More actions trigger after Cancel');
   await shot(cdp, '02-after-cancel.png');
 
   await openRemoveDialog(cdp, repoName);

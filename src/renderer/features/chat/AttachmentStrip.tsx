@@ -27,8 +27,9 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
       ref={containerRef}
       role="group"
       aria-label="Pending attachments"
-      // `p-2` leaves room for the Remove button's -top-2/-right-2 offset and focus ring, which overflow-y-auto would clip; `gap-3` keeps it off the next chip.
-      className="flex max-h-28 flex-wrap items-center gap-3 overflow-y-auto p-2"
+      // `p-3` leaves room for the Remove button's -top-2/-right-2 offset and focus ring, which overflow-y-auto clips.
+      // `gap-3` keeps the button off the next chip.
+      className="flex max-h-28 flex-wrap items-center gap-3 overflow-y-auto p-3"
     >
       {images.map((image, index) => (
         <div key={image.id} className="group relative">
