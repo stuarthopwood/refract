@@ -98,6 +98,17 @@ async function checkPullRequests(cdp) {
   assert(openPr.mergeClass && !/bg-primary/.test(openPr.mergeClass) && /border/.test(openPr.mergeClass), 'Merge is an outline button, not a filled one');
   assert(openPr.titleGrows === '1' && openPr.actionsWrap === 'nowrap' && openPr.actionsShrink === '0', 'PR title row grows and actions stay on one non-shrinking row');
   assert(openPr.draftReason === null, 'An open PR shows no draft reason');
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 960, height: 800, deviceScaleFactor: 1, mobile: false });
+  await sleep(400);
+  const narrow = await cdp.evaluate(`(() => {
+    const header = ${headerOf};
+    const merge = Array.from(header.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Merge');
+    return { mergeRight: Math.round(merge.getBoundingClientRect().right), headerRight: Math.round(header.getBoundingClientRect().right) };
+  })()`);
+  log(`narrow PR header: ${JSON.stringify(narrow)}`);
+  await shot(cdp, '08-pr-narrow-header.png');
+  await cdp.send('Emulation.clearDeviceMetricsOverride', {});
+  assert(narrow.mergeRight <= narrow.headerRight, 'Merge is not clipped in a 960px viewport');
   await open(5);
   const draft = await shape();
   log(`draft PR header: ${JSON.stringify(draft)}`);
@@ -163,11 +174,14 @@ async function checkManageSessions(cdp) {
     const before = getComputedStyle(input).boxShadow;
     input.setAttribute('aria-invalid', 'true');
     const after = getComputedStyle(input).boxShadow;
-    return { before, after };
+    input.focus();
+    const focused = getComputedStyle(input).boxShadow;
+    return { before, after, focused };
   })()`);
   log(`invalid ring: ${JSON.stringify(ring)}`);
   await shot(cdp, '07-invalid-field.png');
   assert(ring && ring.after !== ring.before && ring.after !== 'none', 'aria-invalid draws a ring on an Input');
+  assert(ring.focused !== ring.after, 'A focused invalid Input shows the focus ring, not the invalid ring');
 }
 
 async function main() {
