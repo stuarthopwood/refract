@@ -72,7 +72,7 @@ async function runChecks(cdp, repoDir) {
     const bg = await cdp.evaluate(`getComputedStyle(document.body).backgroundColor`);
     const cls = await cdp.evaluate(`document.documentElement.className`);
     assert(cls.includes(`theme-${name.toLowerCase()}`), `${name}: the document carries its theme class (${cls})`);
-    assert(/^rgb\(/.test(bg), `${name}: the page paints a resolved background (${bg})`);
+    assert(/^(rgb|oklab|oklch|color)\(/.test(bg), `${name}: the page paints a resolved background (${bg})`);
     seen[name] = bg;
     await shot(cdp, `theme-${name.toLowerCase()}.png`);
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
