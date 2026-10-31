@@ -12,7 +12,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { addRepository, groupTriggerFinder } from './verify-tauri-session-list-helpers.mjs';
-import { countLiteralColours } from './check-literal-colours.mjs';
+import { countLiteralColours, findFailures } from './check-literal-colours.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -46,6 +46,9 @@ function checkScript() {
   assert(countLiteralColours(`const a = 'text-green-600 hover:bg-black/50'`) === 2, 'the check counts palette classes with variants and opacity');
   assert(countLiteralColours(`const a = '#fff', b = "#112233aa"`) === 2, 'the check counts hex literals');
   assert(countLiteralColours(`// text-red-500 (#1001)\n/* bg-white */ const a = 'bg-background text-foreground'`) === 0, 'comments and theme-token classes never count');
+  assert(findFailures({ 'a.tsx': 2 }, { 'a.tsx': 1 }).length === 1, 'a count above its baseline fails');
+  assert(findFailures({}, { 'a.tsx': 1 }).length === 1, 'a stale baseline allowance fails, so the baseline can only shrink');
+  assert(findFailures({ 'a.tsx': 1 }, { 'a.tsx': 1 }).length === 0, 'a count equal to its baseline passes');
   const run = spawnSync(process.execPath, [path.join(__dirname, 'check-literal-colours.mjs')], { encoding: 'utf8', windowsHide: true });
   assert(run.status === 0 && /passed/.test(run.stdout), 'check:literal-colours passes against the tree');
 }
@@ -59,6 +62,7 @@ async function runChecks(cdp, repoDir) {
   await addRepository(cdp, repoDir);
   await cdp.waitFor(groupTriggerFinder(path.basename(repoDir)) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
 
+  const seen = {};
   for (const name of THEMES) {
     await openAppearance(cdp);
     await cdp.waitFor(`!!${radio(name)}`, { timeoutMs: 15_000, label: `${name} listed` });
@@ -66,12 +70,16 @@ async function runChecks(cdp, repoDir) {
     await cdp.waitFor(`${radio(name)}?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: `${name} checked` });
     await sleep(300);
     const bg = await cdp.evaluate(`getComputedStyle(document.body).backgroundColor`);
+    const cls = await cdp.evaluate(`document.documentElement.className`);
+    assert(cls.includes(`theme-${name.toLowerCase()}`), `${name}: the document carries its theme class (${cls})`);
     assert(/^rgb\(/.test(bg), `${name}: the page paints a resolved background (${bg})`);
+    seen[name] = bg;
     await shot(cdp, `theme-${name.toLowerCase()}.png`);
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
     await sleep(200);
     await shot(cdp, `chat-${name.toLowerCase()}.png`);
   }
+  assert(seen.Dark !== seen.Obsidian, `Dark and Obsidian paint different backgrounds (${seen.Dark} vs ${seen.Obsidian})`);
 }
 
 function buildShim(dir) {

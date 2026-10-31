@@ -11,14 +11,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'literal-colours-baseline.json');
 const PALETTE =
-  /(?<![\w-])(?:bg|text|ring|border|fill|stroke|shadow|outline|from|via|to|divide|decoration|caret|accent)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black)(?:-\d{2,3})?(?![\w-])/g;
-const HEX = /(?<=["'`[(])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
-const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target', 'assets']);
+  /(?<![\w-])(?:bg|text|ring|ring-offset|border|border-[xytrblse]|fill|stroke|shadow|drop-shadow|inset-ring|outline|from|via|to|divide|decoration|caret|accent|placeholder)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black)(?:-\d{2,3})?(?![\w-])/g;
+// Quoted hex, minus SVG refs (url(#id), href="#id"); inline hex after a space, comma or colon needs 6 or 8 digits or a letter, so "PR #123" is not a colour.
+const HEX_QUOTED = /(?<!url\(|href=["'])(?<=["'`[(])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
+const HEX_INLINE = /(?<=[\s,:])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|(?=[0-9]*[a-fA-F])[0-9a-fA-F]{3,4})(?![\w-])/g;
+const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target']);
 
 export function countLiteralColours(text) {
   // Comments are blanked first: issue refs such as `(#1001)` otherwise read as short hex colours.
   const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
-  return [...code.matchAll(PALETTE)].length + [...code.matchAll(HEX)].length;
+  return [PALETTE, HEX_QUOTED, HEX_INLINE].reduce((n, re) => n + [...code.matchAll(re)].length, 0);
 }
 
 function walk(dir, files) {
@@ -42,13 +44,22 @@ function scan() {
   return out;
 }
 
-function main() {
-  const baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+/** Failures for counts above the baseline, and for stale allowances (the baseline must shrink with the code). */
+export function findFailures(counts, baseline) {
   const failures = [];
-  for (const [rel, count] of Object.entries(scan())) {
+  for (const [rel, count] of Object.entries(counts)) {
     const allowed = baseline[rel] ?? 0;
     if (count > allowed) failures.push(`${rel}: ${count} literal colours (baseline ${allowed}); use a theme token`);
   }
+  for (const [rel, allowed] of Object.entries(baseline)) {
+    const count = counts[rel] ?? 0;
+    if (count < allowed) failures.push(`${rel}: ${count} literal colours, baseline ${allowed}; run pnpm check:literal-colours --write-baseline`);
+  }
+  return failures;
+}
+
+function main() {
+  const failures = findFailures(scan(), JSON.parse(readFileSync(BASELINE_PATH, 'utf8')));
   if (failures.length > 0) {
     console.error(failures.join('\n'));
     process.exit(1);
