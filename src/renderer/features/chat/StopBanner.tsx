@@ -63,7 +63,13 @@ export function StopBanner(p: StopBannerProps) {
   const busyStart = recovering || startingNew
   const text = bannerText(p.stopReason, p.stopDetail, p.showTerminatedTitle, p.pendingToolNames)
   return (
-    <div data-pane-banner className="shrink-0 px-4 pt-4">
+    <div
+      data-pane-banner
+      role="group"
+      tabIndex={-1}
+      aria-label={text.title}
+      className="shrink-0 px-4 pt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+    >
       <PaneBanner title={text.title} detail={text.detail} detailMono={!text.prose}>
         {p.canResume && (
           <>
