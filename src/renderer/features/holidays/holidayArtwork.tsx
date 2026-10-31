@@ -43,6 +43,24 @@ export function flightKeyframes(holiday: HolidayId): Keyframe[] | null {
   return holiday in FLIGHTS ? FLIGHTS[holiday as LoopHolidayId] : null
 }
 
+const TRANSLATE_RE = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/
+
+/** Clamps each frame's translation so the piece (at rest in `piece`) stays fully inside `bounds`; flight paths are fixed offsets, so a piece near an edge would otherwise clip (#1377). */
+export function clampFlightToBounds(keyframes: Keyframe[], piece: DOMRect, bounds: DOMRect): Keyframe[] {
+  const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), Math.max(min, max))
+  return keyframes.map((frame) => {
+    if (typeof frame.transform !== 'string') return frame
+    return {
+      ...frame,
+      transform: frame.transform.replace(TRANSLATE_RE, (_m, x: string, y: string) => {
+        const cx = clamp(Number(x), bounds.left - piece.left, bounds.right - piece.right)
+        const cy = clamp(Number(y), bounds.top - piece.top, bounds.bottom - piece.bottom)
+        return `translate(${cx}px, ${cy}px)`
+      })
+    }
+  })
+}
+
 function Spark() {
   return (
     <svg className="holiday-ambient-loop-bat" width="20" height="20" viewBox="0 0 20 20" fill="currentColor" focusable={false}>
@@ -60,7 +78,7 @@ function Snowflake() {
       viewBox="0 0 22 22"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="2"
       strokeLinecap="round"
       focusable={false}
     >

@@ -21,6 +21,8 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1048_SLICE2_SHOTS_DIR || path.join(tmpdir(), 'refract-1048-slice2-shots');
 const SHORT_FLIGHT_INTERVAL_MS = 3_000;
 const LONG_IDLE_MS = 600_000;
+const VIEWPORT = { width: 1800, height: 1000 };
+const SETTLE_MS = 500;
 
 const CASES = [
   { id: 'bonfire-night', date: '2026-11-03', icon: 'lucide-flame', loop: true, deepChecks: false },
@@ -38,6 +40,15 @@ function check(ok, label, extra) {
   report.push({ step: label, ok, ...(extra !== undefined ? { extra } : {}) });
   console.log(`${LOG}: ${ok ? 'PASS' : 'FAIL'} ${label}${extra !== undefined ? ` ${JSON.stringify(extra)}` : ''}`);
   if (!ok) throw new Error(`FAIL: ${label}`);
+}
+
+const RUNNING_LOOP_ANIMATIONS = `document.getAnimations().filter((a) => a.effect?.target?.classList?.contains('holiday-ambient-loop-bat-wrap') && a.playState === 'running').length`;
+
+async function dumpFailureDiagnostics(cdp) {
+  const text = await cdp.evaluate(`document.body.innerText.slice(0, 600)`).catch(() => '');
+  console.error(`${LOG}: page text at failure: ${JSON.stringify(text)}`);
+  const diag = await cdp.evaluate(`(() => { const l = document.querySelector('.holiday-ambient-loop'); const w = l && Array.from(l.querySelectorAll('.holiday-ambient-loop-bat-wrap')); return JSON.stringify({ paused: l?.getAttribute('data-paused'), count: l?.getAttribute('data-flight-count'), focus: document.hasFocus(), hidden: document.hidden, visible: w?.map((e) => e.offsetParent !== null) }); })()`).catch(() => '');
+  console.error(`${LOG}: loop diag: ${diag}`);
 }
 
 async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
@@ -71,7 +82,7 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
     // The loop pauses while the window lacks focus; a background-launched exe has none.
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     // Transcript-pane loops live in gutters that only exist above 86rem (1376px).
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1800, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await cdp.send('Emulation.setDeviceMetricsOverride', { ...VIEWPORT, deviceScaleFactor: 1, mobile: false });
     await cdp.waitFor(`!!(window.refract && window.refract.debug)`, { timeoutMs: 15_000, label: 'debug bridge' });
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen' });
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
@@ -84,20 +95,27 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(`!!document.querySelector('[data-repository-id]')`, { timeoutMs: 30_000, label: 'Project added' });
+    await cdp.waitFor(`!!document.querySelector('[data-chat-empty-state]')`, { timeoutMs: 15_000, label: `${c.id}: empty chat state shown` });
+    await settleForScreenshot(cdp);
+    const emptyWatermark = await cdp.evaluate(`document.querySelector('[data-chat-empty-state] .watermark-mark-holiday svg')?.getAttribute('class') ?? null`);
+    if (c.icon) check(!!emptyWatermark && emptyWatermark.includes(c.icon), `${c.id}: empty chat state shows the ${c.icon} holiday watermark`, emptyWatermark);
+    else check(emptyWatermark === null, `${c.id}: empty chat state shows no holiday watermark`, emptyWatermark);
+    await cdp.screenshot(shot('empty-state-watermark'));
     await createSessionViaQuickCreate(cdp, path.basename(repoDir));
     await cdp.evaluate(`window.refract.settings.setChatWidth('reading-column')`);
-    await sleep(500);
+    await sleep(SETTLE_MS);
     await settleForScreenshot(cdp);
 
     const presence = () =>
       cdp.evaluate(`(() => ({
         watermark: document.querySelector('.watermark-mark-holiday svg')?.getAttribute('class') ?? null,
+        plainWatermark: !!document.querySelector('.watermark-mark:not(.watermark-mark-holiday)'),
         sidebar: Array.from(document.querySelectorAll('.drag-region svg')).map((s) => s.getAttribute('class')).filter((k) => /lucide-/.test(k ?? '')),
         loop: !!document.querySelector('.holiday-ambient-loop')
       }))()`);
     const p = await presence();
     if (c.icon) {
-      check(!p.watermark, `${c.id} (${c.date}): session-pane watermark stays plain (#1256)`, p);
+      check(!p.watermark && p.plainWatermark, `${c.id} (${c.date}): session-pane watermark stays plain (#1256); the plain mark is present`, p);
       check(p.sidebar.some((k) => k.includes(c.icon)), `${c.id}: sidebar logo accessory is ${c.icon}`, p);
       check(p.loop === c.loop, `${c.id}: ambient loop ${c.loop ? 'present' : 'absent'} under Full`, p);
     } else {
@@ -110,8 +128,8 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
       await cdp.waitFor(`Number(document.querySelector('.holiday-ambient-loop')?.getAttribute('data-flight-count') ?? 0) > 0`, { timeoutMs: 30_000, label: `${c.id}: a loop flight starts` });
       const pieces = await cdp.evaluate(`document.querySelectorAll('.holiday-ambient-loop-bat-wrap').length`);
       check(pieces === 3, `${c.id}: three loop pieces`, pieces);
-      const flying = await cdp.evaluate(`document.getAnimations().filter((a) => a.effect?.target?.classList?.contains('holiday-ambient-loop-bat-wrap')).length`);
-      check(flying > 0, `${c.id}: a loop piece is actually animating`, flying);
+      await cdp.waitFor(`${RUNNING_LOOP_ANIMATIONS} > 0`, { timeoutMs: 10_000, label: `${c.id}: a loop piece is actually animating` });
+      check(true, `${c.id}: a loop piece is actually animating`, await cdp.evaluate(RUNNING_LOOP_ANIMATIONS));
       await cdp.screenshot(shot('loop-flight'));
     }
 
@@ -122,16 +140,19 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
       check(pa.sidebar.some((k) => k.includes(c.icon)), 'Artwork only: sidebar artwork stays', pa);
       await cdp.screenshot(shot('artwork-only'));
       await cdp.evaluate(`window.refract.settings.setHolidayTouches('off')`);
-      await sleep(500);
+      await sleep(SETTLE_MS);
       const po = await presence();
       check(!po.watermark && !po.loop && !po.sidebar.some((k) => k.includes(c.icon)), 'Off: no holiday artwork or loop', po);
       await cdp.screenshot(shot('off'));
       await cdp.evaluate(`window.refract.settings.setHolidayTouches('full')`);
       await cdp.waitFor(`!!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Full: loop remounts' });
+      // Without this a vacuous 0 would pass: prove a flight is running first.
+      await dispatchNeutralPointerdown(cdp);
+      await cdp.waitFor(`${RUNNING_LOOP_ANIMATIONS} > 0`, { timeoutMs: 30_000, label: 'A loop flight is running before reduced motion is emulated' });
       await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
       await cdp.waitFor(`getComputedStyle(document.querySelector('.holiday-ambient-loop')).display === 'none'`, { timeoutMs: 5_000, label: 'Reduced motion hides the loop layer' });
-      const running = await cdp.evaluate(`document.getAnimations().filter((a) => a.effect?.target?.classList?.contains('holiday-ambient-loop-bat-wrap') && a.playState === 'running').length`);
-      check(running === 0, 'Reduced motion: no running loop animations', running);
+      const running = await cdp.evaluate(RUNNING_LOOP_ANIMATIONS);
+      check(running === 0, 'Reduced motion: the running loop animation was cancelled', running);
       await cdp.screenshot(shot('reduced-motion'));
     }
 
@@ -158,10 +179,7 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
   } catch (err) {
     if (cdp) {
       await cdp.screenshot(shot('FAILED')).catch(() => {});
-      const text = await cdp.evaluate(`document.body.innerText.slice(0, 600)`).catch(() => '');
-      console.error(`${LOG}: page text at failure: ${JSON.stringify(text)}`);
-      const diag = await cdp.evaluate(`(() => { const l = document.querySelector('.holiday-ambient-loop'); const w = l && Array.from(l.querySelectorAll('.holiday-ambient-loop-bat-wrap')); return JSON.stringify({ paused: l?.getAttribute('data-paused'), count: l?.getAttribute('data-flight-count'), focus: document.hasFocus(), hidden: document.hidden, visible: w?.map((e) => e.offsetParent !== null) }); })()`).catch(() => '');
-      console.error(`${LOG}: loop diag: ${diag}`);
+      await dumpFailureDiagnostics(cdp);
     }
     throw err;
   } finally {
