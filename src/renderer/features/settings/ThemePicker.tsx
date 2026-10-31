@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { AlertTriangleIcon, DownloadIcon, FolderOpenIcon, FolderSearchIcon, Trash2Icon, UploadIcon } from 'lucide-react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
+import { InlineStatus } from '@/components/InlineStatus'
 import { RowKebabMenu } from '@/components/RowKebabMenu'
 import type { RowMenuEntry } from '@/components/RowKebabMenu'
 import { Badge } from '@/components/ui/badge'
@@ -38,15 +39,18 @@ interface ThemePickerProps {
 
 export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   const activeBuiltin = useActiveThemeId()
-  const customId = useThemeStore((s) => s.customId)
+  const storedCustomId = useThemeStore((s) => s.customId)
   const customThemes = useThemeStore((s) => s.customThemes)
+  const customId = customThemes.some((t) => t.id === storedCustomId) ? storedCustomId : null
   const rejected = useThemeStore((s) => s.rejected)
   const save = useThemeStore((s) => s.save)
   const saveCustom = useThemeStore((s) => s.saveCustom)
   const actions = useThemeFileActions()
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const pendingIndex = useRef(0)
   const [open, setOpen] = useState<string | null>(null)
   const refresh = useThemeStore((s) => s.refreshCustomThemes)
+  const contrast = useMemo(() => new Map(customThemes.map((t) => [t.id, checkThemeContrast(t)])), [customThemes])
 
   useEffect(() => {
     void refresh()
@@ -82,12 +86,12 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   function renderRow(e: Entry, index: number) {
     const active = isActive(e)
     const custom = e.customId === null ? null : customThemes.find((t) => t.id === e.customId)
-    const warnings = custom ? checkThemeContrast(custom) : []
+    const warnings = custom ? (contrast.get(custom.id) ?? []) : []
     const entries: RowMenuEntry[] = custom
       ? [
           { id: 'export', label: 'Export…', icon: DownloadIcon, onSelect: () => void actions.exportCustom(custom) },
           { id: 'show', label: 'Show in folder', icon: FolderSearchIcon, onSelect: () => void actions.showInFolder(custom.id) },
-          { id: 'remove', label: 'Remove…', icon: Trash2Icon, destructive: true, onSelect: () => actions.setPendingRemove(custom) }
+          { id: 'remove', label: 'Remove…', icon: Trash2Icon, destructive: true, onSelect: () => { pendingIndex.current = index; actions.removed.current = false; actions.setPendingRemove(custom) } }
         ]
       : [{ id: 'export', label: 'Export a copy…', icon: DownloadIcon, onSelect: () => void actions.exportBuiltin(e.builtin ?? 'dark', e.name) }]
     const nameId = `theme-option-${e.key}-name`
@@ -144,8 +148,9 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
         {customs.map((e, i) => renderRow(e, builtins.length + i))}
       </div>
       {rejected.map((r) => (
-        <p key={r.file} role="alert" className="mt-2 px-2 text-xs text-destructive">Couldn&apos;t load {r.file}: {r.error}</p>
+        <InlineStatus key={r.file} tone="error" density="compact" className="mt-2">Couldn&apos;t load {r.file}: {r.error}</InlineStatus>
       ))}
+      {actions.importError && <InlineStatus tone="error" density="compact" className="mt-2">{actions.importError}</InlineStatus>}
       <div className="mt-4 flex gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => void actions.importTheme()}>
           <UploadIcon aria-hidden /> Import theme…
@@ -161,14 +166,17 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
         title={`Remove ${actions.pendingRemove?.name ?? 'theme'}?`}
         description={
           actions.pendingRemove?.id === customId
-            ? 'This deletes the theme file. Refract will switch to Dark.'
+            ? 'This deletes the theme file. Refract will switch back to your built-in theme.'
             : 'This deletes the theme file.'
         }
         confirmLabel="Remove"
         busyLabel="Removing…"
         onCancel={() => actions.setPendingRemove(null)}
         onConfirm={() => void actions.confirmRemove()}
-        onCloseAutoFocus={() => false}
+        onCloseAutoFocus={() => {
+          const target = actions.removed.current ? all.findIndex(isActive) : pendingIndex.current
+          buttonRefs.current[Math.max(target, 0)]?.focus()
+        }}
       />
     </div>
   )

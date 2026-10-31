@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { buildStarterJson } from '@/lib/themeTokens'
 import { notify } from '@/state/notify'
@@ -11,10 +11,14 @@ export function useThemeFileActions() {
   const refresh = useThemeStore((s) => s.refreshCustomThemes)
   const [pendingRemove, setPendingRemove] = useState<CustomTheme | null>(null)
   const [busy, setBusy] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const removed = useRef(false)
 
   async function importTheme() {
+    setImportError(null)
     const result = await window.refract.themes.import()
     if (!result.ok) {
+      setImportError(result.error.message)
       notify(result.error)
       return
     }
@@ -40,15 +44,19 @@ export function useThemeFileActions() {
   async function confirmRemove() {
     if (!pendingRemove) return
     setBusy(true)
-    const result = await window.refract.themes.remove(pendingRemove.id)
-    setBusy(false)
-    if (!result.ok) {
-      notify(result.error)
-      return
+    try {
+      const result = await window.refract.themes.remove(pendingRemove.id)
+      if (!result.ok) {
+        notify(result.error)
+        return
+      }
+      removed.current = true
+      setPendingRemove(null)
+      await refresh()
+    } finally {
+      setBusy(false)
     }
-    setPendingRemove(null)
-    await refresh()
   }
 
-  return { importTheme, exportCustom, exportBuiltin, showInFolder, pendingRemove, setPendingRemove, confirmRemove, busy }
+  return { importTheme, importError, exportCustom, exportBuiltin, showInFolder, pendingRemove, setPendingRemove, confirmRemove, busy, removed }
 }

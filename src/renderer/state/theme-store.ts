@@ -46,7 +46,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   const result = await window.refract.themes.setCustom(id)
   if (result.ok) {
    set({ customId: result.value.customTheme ?? null })
-   if (id !== null) toast.info('Custom theme applied. If it is hard to read, press Ctrl+Shift+0 to reset to Dark.')
+   if (id !== null) toast.info('Custom theme applied. If it is hard to read, press Ctrl+Shift+0 to reset to Dark.', { id: 'custom-theme-applied' })
    return true
   }
   notify(result.error)
@@ -55,18 +55,30 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
  refreshCustomThemes: async () => {
   const result = await window.refract.themes.list()
-  if (result.ok) set({ customThemes: result.value.themes, rejected: result.value.rejected })
-  else notify(result.error)
+  if (!result.ok) {
+   notify(result.error)
+   return
+  }
+  const { themes, rejected } = result.value
+  const known = new Set(get().rejected.map((r) => r.file))
+  const fresh = rejected.filter((r) => !known.has(r.file))
+  if (fresh.length > 0 && listedOnce) {
+   toast.error(`Couldn't load ${fresh.length === 1 ? fresh[0]?.file : `${fresh.length} theme files`}. See Settings > Appearance.`, { id: 'theme-rejected' })
+  }
+  listedOnce = true
+  set({ customThemes: themes, rejected })
  },
 
  setTheme: (theme, customId) => set(customId === undefined ? { theme } : { theme, customId }),
 
  resetToDark: async () => {
   const ok = await get().save('dark')
-  if (ok) notify({ code: 'unsupported', message: 'Theme reset to Dark.' })
+  if (ok) toast.success('Theme reset to Dark.', { id: 'theme-reset' })
   return ok
  }
 }))
+
+let listedOnce = false
 
 /** The custom theme the user has active, or null when a built-in is showing. */
 export function activeCustomTheme(state: Pick<ThemeState, 'customId' | 'customThemes'>): CustomTheme | null {
@@ -99,7 +111,12 @@ function applyTheme(state: Pick<ThemeState, 'theme' | 'customId' | 'customThemes
  appliedProps = custom ? applyTokens(root, custom.tokens) : []
 }
 
-useThemeStore.subscribe((state) => {
+function sameCustom(a: CustomTheme | null, b: CustomTheme | null): boolean {
+ return a === b || (a !== null && b !== null && a.id === b.id && a.base === b.base && JSON.stringify(a.tokens) === JSON.stringify(b.tokens))
+}
+
+useThemeStore.subscribe((state, prev) => {
+ if (state.theme === prev.theme && state.customId === prev.customId && sameCustom(activeCustomTheme(state), activeCustomTheme(prev))) return
  applyTheme(state)
 })
 

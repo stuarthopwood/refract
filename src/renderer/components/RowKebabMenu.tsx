@@ -1,8 +1,8 @@
+import { Fragment, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { MoreHorizontalIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { MoreVerticalIcon } from 'lucide-react'
+import { IconButton } from '@/components/IconButton'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 export interface RowMenuEntry {
   id: string
@@ -12,38 +12,36 @@ export interface RowMenuEntry {
   onSelect(): void
 }
 
-const DESTRUCTIVE = 'text-destructive focus:text-destructive'
-
-/** A row's actions as one list behind a visible kebab and the same list on right-click. */
+/** A row's actions as one list behind a visible kebab; right-click on the row opens the same menu. */
 export function RowKebabMenu({ entries, label, children }: { entries: readonly RowMenuEntry[]; label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const firstDestructive = entries.findIndex((e) => e.destructive)
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div className="flex items-center gap-1">
-          {children}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="icon-xs" aria-label={label} className="shrink-0 text-muted-foreground aria-expanded:opacity-100">
-                <MoreHorizontalIcon aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {entries.map((e) => (
-                <DropdownMenuItem key={e.id} icon={e.icon} className={e.destructive ? DESTRUCTIVE : undefined} onSelect={e.onSelect}>
-                  {e.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        {entries.map((e) => (
-          <ContextMenuItem key={e.id} icon={e.icon} className={e.destructive ? DESTRUCTIVE : undefined} onSelect={e.onSelect}>
-            {e.label}
-          </ContextMenuItem>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <div
+        className="flex items-center gap-1"
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setOpen(true)
+        }}
+      >
+        {children}
+        <DropdownMenuTrigger asChild>
+          <IconButton label={label} size="icon-xs" className="shrink-0 text-muted-foreground aria-expanded:opacity-100">
+            <MoreVerticalIcon aria-hidden />
+          </IconButton>
+        </DropdownMenuTrigger>
+      </div>
+      <DropdownMenuContent align="end">
+        {entries.map((e, i) => (
+          <Fragment key={e.id}>
+            {i === firstDestructive && i > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuItem icon={e.icon} variant={e.destructive ? 'destructive' : undefined} onSelect={e.onSelect}>
+              {e.label}
+            </DropdownMenuItem>
+          </Fragment>
         ))}
-      </ContextMenuContent>
-    </ContextMenu>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

@@ -221,8 +221,14 @@ fn slug(name: &str) -> String {
     }
     let out = out.trim_matches('-');
     let out: String = out.chars().take(40).collect();
+    let reserved = matches!(out.as_str(), "con" | "prn" | "aux" | "nul")
+        || ((out.starts_with("com") || out.starts_with("lpt"))
+            && out.len() == 4
+            && out.ends_with(|c: char| c.is_ascii_digit()));
     if out.is_empty() {
         "theme".to_string()
+    } else if reserved {
+        format!("theme-{out}")
     } else {
         out
     }
