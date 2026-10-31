@@ -4,12 +4,12 @@
 mod handlers;
 mod types;
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
-use tokio::sync::{Mutex as AsyncMutex, OnceCell};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::events;
 use crate::github::cli::{self, GhAuthHostEntry, GhLoginFlow};
@@ -54,15 +54,37 @@ static ADD_FLOW_SEQ: AtomicU64 = AtomicU64::new(0);
 /// The newest acquired ticket wins; the mutex makes the check-and-emit atomic on tokio's runtime.
 static LATEST_BROADCAST_TICKET: StdMutex<u64> = StdMutex::new(0);
 
-/// Opened lazily and reused. A failed open is not cached, so the next call retries.
-static PROFILE_CACHE_STORE: OnceCell<AsyncMutex<ProfileCacheStore>> = OnceCell::const_new();
+/// One store per data dir, opened lazily and reused. A failed open is not cached, so the next call retries.
+static PROFILE_CACHE_STORES: LazyLock<
+    AsyncMutex<HashMap<PathBuf, &'static AsyncMutex<ProfileCacheStore>>>,
+> = LazyLock::new(|| AsyncMutex::new(HashMap::new()));
+
+/// Accounts with a profile refresh already running; a second request for the same one is dropped.
+static REFRESH_IN_FLIGHT: LazyLock<StdMutex<HashSet<String>>> =
+    LazyLock::new(|| StdMutex::new(HashSet::new()));
+
+struct RefreshGuard(String);
+
+impl Drop for RefreshGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = REFRESH_IN_FLIGHT.lock() {
+            set.remove(&self.0);
+        }
+    }
+}
 
 async fn get_profile_cache(
     data_dir: &Path,
 ) -> std::io::Result<&'static AsyncMutex<ProfileCacheStore>> {
-    PROFILE_CACHE_STORE
-        .get_or_try_init(|| async { ProfileCacheStore::open(data_dir).await.map(AsyncMutex::new) })
-        .await
+    let mut stores = PROFILE_CACHE_STORES.lock().await;
+    if let Some(cell) = stores.get(data_dir) {
+        return Ok(*cell);
+    }
+    let store = ProfileCacheStore::open(data_dir).await?;
+    // Leaked once per data dir (one in production) so callers can hold a `'static` handle.
+    let cell: &'static AsyncMutex<ProfileCacheStore> = Box::leak(Box::new(AsyncMutex::new(store)));
+    stores.insert(data_dir.to_path_buf(), cell);
+    Ok(cell)
 }
 
 fn acquire_broadcast_ticket() -> u64 {
@@ -127,31 +149,44 @@ async fn read_github_accounts(data_dir: &Path) -> Result<Vec<GitHubAccount>, Ipc
 }
 
 /// Best-effort. A failed fetch leaves the cache untouched, and `force` bypasses the age check.
+/// Returns whether the cache entry was written.
 async fn refresh_profile_cache(
     cache_cell: &AsyncMutex<ProfileCacheStore>,
     host: &str,
     login: &str,
     force: bool,
-) {
+) -> bool {
     if host != "github.com" {
         // Skip non-github.com hosts before reading any token.
-        return;
+        return false;
     }
-    let previous_avatar_data_url = {
+    let key = format!("{host}/{login}");
+    if !REFRESH_IN_FLIGHT
+        .lock()
+        .expect("REFRESH_IN_FLIGHT mutex poisoned")
+        .insert(key.clone())
+    {
+        return false;
+    }
+    let _guard = RefreshGuard(key);
+    let (previous_avatar_data_url, generation) = {
         let cache = cache_cell.lock().await;
         if !force && !types::is_profile_refresh_due(cache.get(host, login), now_epoch_millis()) {
-            return;
+            return false;
         }
-        cache
-            .get(host, login)
-            .and_then(|e| e.avatar_data_url.clone())
+        (
+            cache
+                .get(host, login)
+                .and_then(|e| e.avatar_data_url.clone()),
+            cache.delete_generation(),
+        )
     };
     // The lock is released before the network calls, so a slow avatar fetch never blocks `list()`.
     let profile = match fetch_profile(host, login).await {
         Ok(profile) => profile,
         Err(_) => {
             log::debug!("accounts: opportunistic profile refresh failed for an account on {host}");
-            return;
+            return false;
         }
     };
     let mut avatar_data_url = previous_avatar_data_url;
@@ -164,7 +199,11 @@ async fn refresh_profile_cache(
         }
     }
     let mut cache = cache_cell.lock().await;
-    let _ = cache
+    // A sign-out since the fetch began deleted the entry; writing now would resurrect it.
+    if cache.delete_generation() != generation {
+        return false;
+    }
+    cache
         .set(
             host,
             login,
@@ -174,7 +213,8 @@ async fn refresh_profile_cache(
                 fetched_at: super::now_iso8601(),
             },
         )
-        .await;
+        .await
+        .is_ok()
 }
 
 /// Finds the new account by diffing `authStatus()` before and after, then refreshes its profile.
@@ -211,7 +251,7 @@ async fn finish_completed_add(
         .iter()
         .filter(|e| e.host == "github.com" && !before.contains(&format!("{}/{}", e.host, e.login)))
     {
-        refresh_profile_cache(cache_cell, &entry.host, &entry.login, true).await;
+        let _ = refresh_profile_cache(cache_cell, &entry.host, &entry.login, true).await;
     }
     let accounts = {
         let cache = cache_cell.lock().await;

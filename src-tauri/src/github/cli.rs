@@ -51,7 +51,7 @@ async fn gh(args: &[&str]) -> Result<String, GhError> {
             GhErrorCode::GhFailed,
             format!(
                 "gh {} failed: {}",
-                args.join(" "),
+                args.iter().take(2).copied().collect::<Vec<_>>().join(" "),
                 if detail.is_empty() {
                     "no output"
                 } else {
@@ -261,6 +261,8 @@ pub enum GhLoginFlowEvent {
 
 /// Last 2 KB of stderr, only to classify a failed exit; never logged or emitted.
 const STDERR_TAIL_BYTES: usize = 2 * 1024;
+const MAX_LINE_BUF_BYTES: usize = 8 * 1024;
+const HARD_KILL_WAIT_MS: u64 = 5_000;
 
 struct FlowShared {
     stdout_buf: StdMutex<String>,
@@ -297,17 +299,27 @@ impl FlowShared {
     }
 
     fn on_stream_data(&self, chunk: &[u8]) {
-        let text = String::from_utf8_lossy(chunk);
         let mut buf = self.stdout_buf.lock().expect("stdout_buf mutex poisoned");
-        buf.push_str(&text);
+        self.feed_lines(&mut buf, chunk);
+    }
+
+    /// gh prints the code on stderr, so stderr gets its own line buffer (task-local).
+    fn on_stderr_lines(&self, buf: &mut String, chunk: &[u8]) {
+        self.feed_lines(buf, chunk);
+    }
+
+    fn feed_lines(&self, buf: &mut String, chunk: &[u8]) {
+        buf.push_str(&String::from_utf8_lossy(chunk));
         while let Some(newline_index) = buf.find('\n') {
             let line = buf[..newline_index].trim().to_string();
-            *buf = buf[newline_index + 1..].to_string();
+            buf.drain(..=newline_index);
             if !line.is_empty() {
-                drop(buf);
                 self.handle_line(&line);
-                buf = self.stdout_buf.lock().expect("stdout_buf mutex poisoned");
             }
+        }
+        // A newline-free run this long is not a code line; drop it rather than grow without bound.
+        if buf.len() > MAX_LINE_BUF_BYTES {
+            buf.clear();
         }
     }
 
@@ -404,7 +416,8 @@ impl GhLoginFlow {
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
 
         let mut child = command.spawn().map_err(|err| {
             let code = if err.kind() == std::io::ErrorKind::NotFound {
@@ -447,14 +460,19 @@ impl GhLoginFlow {
             let shared = shared.clone();
             tokio::spawn(async move {
                 let mut buf = [0u8; 4096];
+                let mut line_buf = String::new();
                 loop {
                     match stderr.read(&mut buf).await {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
-                            shared.on_stream_data(&buf[..n]);
+                            shared.on_stderr_lines(&mut line_buf, &buf[..n]);
                             shared.on_stderr_tail_data(&buf[..n]);
                         }
                     }
+                }
+                let remaining = line_buf.trim();
+                if !remaining.is_empty() {
+                    shared.handle_line(remaining);
                 }
             });
         }
@@ -518,9 +536,8 @@ impl GhLoginFlow {
             .stderr(std::process::Stdio::null())
             .status()
             .await;
-        // taskkill /F is reliable; wait for the real exit rather than a second timeout.
-        let mut rx = self.exit_rx.clone();
-        let _ = rx.wait_for(|exited| *exited).await;
+        // Bounded so a stuck child can never hang cancel() forever.
+        self.wait_for_exit(HARD_KILL_WAIT_MS).await;
     }
 
     async fn wait_for_exit(&self, timeout_ms: u64) -> bool {

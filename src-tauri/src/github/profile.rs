@@ -20,8 +20,10 @@ const AVATAR_HOST: &str = "avatars.githubusercontent.com";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 // Profile JSON is a few hundred bytes; the cap stops a malicious response being buffered.
 const MAX_PROFILE_RESPONSE_BYTES: usize = 64 * 1024;
-// Comfortably above GitHub's largest served avatar.
-const MAX_AVATAR_BYTES: usize = 256 * 1024;
+// A 96px PNG/JPEG avatar is a few KB; this leaves headroom while keeping the cache file small.
+const MAX_AVATAR_BYTES: usize = 64 * 1024;
+const AVATAR_SIZE_PX: &str = "96";
+pub const MAX_DISPLAY_NAME_CHARS: usize = 100;
 const MAX_AVATAR_REDIRECTS: u32 = 5;
 
 /// Built once; redirects are never auto-followed (`fetch_avatar` re-validates each hop).
@@ -170,8 +172,7 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
     let display_name = record
         .get("name")
         .and_then(Value::as_str)
-        .map(str::to_owned);
-    let avatar_url = record
+        .map(|name| name.chars().take(MAX_DISPLAY_NAME_CHARS).collect::<String>());
         .get("avatar_url")
         .and_then(Value::as_str)
         .map(str::to_owned);
@@ -273,6 +274,16 @@ async fn request_avatar_once(url: &Url) -> Result<AvatarResponse, AvatarFetchErr
 /// Callers fall back to initials on `Err`.
 pub async fn fetch_avatar(avatar_url: &str) -> Result<String, AvatarFetchError> {
     let mut current = parse_avatar_url(avatar_url)?;
+    let kept: Vec<(String, String)> = current
+        .query_pairs()
+        .filter(|(key, _)| key != "s")
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    current
+        .query_pairs_mut()
+        .clear()
+        .extend_pairs(kept)
+        .append_pair("s", AVATAR_SIZE_PX);
     let mut response = request_avatar_once(&current).await?;
 
     let mut redirects = 0u32;
