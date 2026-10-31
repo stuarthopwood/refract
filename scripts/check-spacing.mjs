@@ -73,6 +73,7 @@ function main() {
     }
   }
   for (const a of allow) {
+    if (!a.reason) failures.push(`allowlist entry without a reason: ${a.file} "${a.text}"`);
     const key = `${a.file}|${a.text}`;
     if ((used.get(key) ?? 0) < (a.count ?? 1)) {
       failures.push(`stale allowlist entry: ${a.file} "${a.text}"`);

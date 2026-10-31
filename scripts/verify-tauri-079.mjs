@@ -58,8 +58,6 @@ async function runChecks(cdp, { repoDir }) {
   }
 
   await setTheme(cdp, 'theme-dark');
-  const profile = await cdp.evaluate(`!!document.querySelector('[aria-label*="rofile" i], [aria-label*="ccount" i]')`);
-  log(`profile trigger present: ${profile}`);
 }
 
 function buildShim(dir) {

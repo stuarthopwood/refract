@@ -8,7 +8,7 @@ Slices D (#1466), E (#1467) and F (#1468) of the #579 design sweep. Slices A to 
 - Out: ContextShakeMenu, DeleteDialog, ReviewDialog, transcript menus (spec 076).
 
 ## Slice E: spacing and the 40 px panel header (#1467)
-- FR-003 New shared `components/PanelHeader.tsx`: 40 px row, no bottom divider, title left, `no-drag-region` actions right, optional window-controls spacer. Used by `ChatHeader`, `PanelTabBar` row 1 and `ScreenHeader`; `SettingsScreen` switches to `ScreenHeader`.
+- FR-003 New shared `components/PanelHeader.tsx`: 40 px row, no bottom divider, title left, `no-drag-region` actions right, optional window-controls spacer. Used by `ChatHeader`, `PanelTabBar` row 1 and `ScreenHeader`; `SettingsScreen` uses `PanelHeader` directly: its header is Back + `SettingsBrand` + "/" + h1, which `ScreenHeader`'s single-title shape cannot hold (amended after round 1, Skippy delegated by Stuart 2026-10-31).
 - FR-004 `PANEL_HEADER_HEIGHT_CLASS` (one constant) for the 40 px rows that are not title rows.
 - FR-005 `check:spacing` also catches `p-px`/`m-px` and half-steps in positional utilities; surviving positional offsets are allowlisted with a reason.
 
