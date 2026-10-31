@@ -62,6 +62,9 @@ const probeAll = (tokens) => `(() => {
   return out;
 })()`;
 
+const EXPECTED_TOKENS = 39;
+const IMPORT_BTN = `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.includes('Import theme'))`;
+
 async function runChecks(cdp, repoDir) {
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 120_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
@@ -70,7 +73,7 @@ async function runChecks(cdp, repoDir) {
   );
   await addRepository(cdp, repoDir);
   await cdp.waitFor(groupTriggerFinder(path.basename(repoDir)) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
-  assert(TOKENS.length === 39, `the shared default block declares 39 tokens (found ${TOKENS.length})`);
+  assert(TOKENS.length === EXPECTED_TOKENS, `the shared default block declares ${EXPECTED_TOKENS} tokens (found ${TOKENS.length})`);
 
   for (const name of BUILTINS) {
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`).catch(() => {});
@@ -99,15 +102,16 @@ async function runChecks(cdp, repoDir) {
 
   const custom = await cdp.evaluate(probeAll(TOKENS));
   const wrong = TOKENS.filter((t) => custom[t] !== toRgb(CUSTOM_TOKENS[t]));
-  assert(wrong.length === 0, `custom theme recolours all 39 tokens independently (mismatches: ${wrong.join(', ') || 'none'})`);
+  assert(wrong.length === 0, `custom theme recolours all ${EXPECTED_TOKENS} tokens independently (mismatches: ${wrong.join(', ') || 'none'})`);
   await shot(cdp, 'theme-custom-per-element.png');
 
-  const outlineFg = await cdp.evaluate(`getComputedStyle(Array.from(document.querySelectorAll('button')).find((b) => b.textContent.includes('Import theme'))).color`);
+  assert(await cdp.evaluate(`!!(${IMPORT_BTN})`), 'the Import theme button exists');
+  const outlineFg = await cdp.evaluate(`getComputedStyle(${IMPORT_BTN}).color`);
   assert(outlineFg === toRgb(CUSTOM_TOKENS['button-outline-fg']), 'the real Import button (outline) paints --button-outline-fg');
-  const outlineBg = await cdp.evaluate(`getComputedStyle(Array.from(document.querySelectorAll('button')).find((b) => b.textContent.includes('Import theme'))).backgroundColor`);
+  const outlineBg = await cdp.evaluate(`getComputedStyle(${IMPORT_BTN}).backgroundColor`);
   assert(outlineBg === toRgb(CUSTOM_TOKENS['button-outline-bg']), 'the real Import button (outline) paints --button-outline-bg');
 
-  const pe = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find((x) => x.textContent.includes('Import theme')); b.setAttribute('aria-disabled', 'true'); const v = getComputedStyle(b).pointerEvents; b.removeAttribute('aria-disabled'); return v; })()`);
+  const pe = await cdp.evaluate(`(() => { const b = ${IMPORT_BTN}; b.setAttribute('aria-disabled', 'true'); const v = getComputedStyle(b).pointerEvents; b.removeAttribute('aria-disabled'); return v; })()`);
   assert(pe !== 'none', 'an aria-disabled Button keeps pointer events so its reason tooltip can open');
 
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
