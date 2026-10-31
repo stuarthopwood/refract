@@ -61,7 +61,7 @@ export async function checkGithubCliAndUpdate(cdp, { nameButton, assert, log }) 
   const update = items.find((t) => UPDATE_LABELS.some((l) => t.startsWith(l)));
   assert(!!update, `the update entry reads one of the FR-021 verbs ("${update}")`);
   await pickItem(cdp, 'Manage accounts');
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"] #github-accounts-heading')`, { timeoutMs: 20_000, label: 'Manage accounts open' });
+  await cdp.waitFor(`!!document.querySelector('[role="dialog"] section[aria-labelledby]')`, { timeoutMs: 20_000, label: 'Manage accounts open' });
   const dialog = await cdp.evaluate(`(() => { const d = document.querySelector('[role="dialog"]'); return { install: !!d.querySelector('a[href="https://cli.github.com"]'), text: d.innerText }; })()`);
   assert(dialog.install === hasInstall, 'Manage accounts shows the Install link exactly when the profile menu does (FR-014)');
   if (!hasInstall) assert(/sign in/i.test(dialog.text), 'Manage accounts offers a Sign in action when gh is installed but signed out (FR-009, FR-014)');

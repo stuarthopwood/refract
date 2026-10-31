@@ -151,6 +151,9 @@ async function runChecks(cdp, { repoDir }) {
   const dueAt = Math.ceil((Date.now() + 5_000) / 60_000) * 60_000;
   await addAlarm(cdp, hhmm(dueAt), 'Fires soon');
   await saveAlarm(cdp);
+  await sleep(1200);
+  // Focus loss from other desktop activity can close the popover; reopen it so the listing check is not environmental.
+  if (!(await cdp.evaluate(`!!${DIALOG}`))) await cdp.click(clockButton);
   await cdp.waitFor(`${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]').length === 2`, { timeoutMs: 10_000, label: 'second alarm listed' });
   await shot(cdp, '07-popover-two-alarms.png');
   await cdp.waitFor(`Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).some((el) => /Fires soon, Fired/.test(el.getAttribute('aria-label')))`, {

@@ -120,8 +120,8 @@ async function runChecks(cdp, { repoDir }) {
   // Manage accounts: GitHub and OMP sections stay separate; OMP is read-only (FR-016, FR-017 deferred).
   await openMenu(cdp);
   await clickMenuItem(cdp, 'Manage accounts');
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"]') && !!document.querySelector('#omp-providers-heading')`, { timeoutMs: 20_000, label: 'Manage accounts with OMP section' });
-  assert(await cdp.evaluate(`!!document.querySelector('#github-accounts-heading')`), 'Manage accounts has a labelled GitHub section (FR-008)');
+  await cdp.waitFor(`!!document.querySelector('[role="dialog"]') && Array.from(document.querySelectorAll('[role="dialog"] h2, [role="dialog"] h3')).some((h) => /OMP/i.test(h.textContent))`, { timeoutMs: 20_000, label: 'Manage accounts with OMP section' });
+  assert(await cdp.evaluate(`Array.from(document.querySelectorAll('[role="dialog"] section[aria-labelledby]')).some((s) => /GitHub/i.test(s.textContent))`), 'Manage accounts has a labelled GitHub section (FR-008)');
   const dialogText = await cdp.evaluate(`document.querySelector('[role="dialog"]').innerText`);
   assert(/omp/i.test(dialogText) && /terminal|\/login/i.test(dialogText), 'OMP section is read-only and points at the terminal sign-in (FR-016, FR-017 deferred)');
   assert((await cdp.evaluate(SCOPE_UNNAMED(`document.querySelector('[role="dialog"]')`))).length === 0, 'every Manage accounts control has an accessible name (FR-027)');
