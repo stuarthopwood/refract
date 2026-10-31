@@ -38,6 +38,25 @@ interface AccountsState {
 
 let ompRefreshSequence = 0
 
+function sameAccounts(a: GitHubAccount[], b: GitHubAccount[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((x, i) => {
+      const y = b[i]
+      return (
+        y !== undefined &&
+        x.host === y.host &&
+        x.login === y.login &&
+        x.active === y.active &&
+        x.state === y.state &&
+        x.problem === y.problem &&
+        x.displayName === y.displayName &&
+        x.avatarDataUrl === y.avatarDataUrl
+      )
+    })
+  )
+}
+
 export const useAccountsStore = create<AccountsState>((set, get) => ({
   github: [],
   githubStatus: 'loading',
@@ -51,11 +70,14 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
   ompStatus: 'idle',
   ompRefreshing: false,
   setGithub: (accounts) =>
-    set((state) => ({
-      github: accounts,
-      githubStatus: accounts.length === 0 ? 'signed-out' : 'ready',
-      githubRefreshTicket: state.githubRefreshTicket + 1
-    })),
+    set((state) => {
+      const status = accounts.length === 0 ? 'signed-out' : 'ready'
+      // Keep the old list reference when nothing changed so a focus refresh re-renders no account row; waiters still see the ticket.
+      if (state.githubStatus === status && sameAccounts(state.github, accounts)) {
+        return { githubRefreshTicket: state.githubRefreshTicket + 1 }
+      }
+      return { github: accounts, githubStatus: status, githubRefreshTicket: state.githubRefreshTicket + 1 }
+    }),
   setGithubMissingCli: () =>
     set((state) => ({ github: [], githubStatus: 'missing-cli', githubRefreshTicket: state.githubRefreshTicket + 1 })),
   setGithubError: () => set((state) => ({ githubStatus: 'error', githubRefreshTicket: state.githubRefreshTicket + 1 })),

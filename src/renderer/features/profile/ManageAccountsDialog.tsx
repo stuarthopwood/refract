@@ -3,18 +3,18 @@ import type { Ref } from 'react'
 import {
   AtSignIcon,
   CheckIcon,
-  ExternalLinkIcon,
   GlobeIcon,
   LoaderCircleIcon,
   TriangleAlertIcon
 } from 'lucide-react'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { ExternalLink } from '@/components/ExternalLink'
+import { InlineStatus } from '@/components/InlineStatus'
+import { UserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { findReauthenticatedAccount } from '@/lib/account-format'
-import { initials } from '@/lib/initials'
-import { cn } from '@/lib/utils'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useAccountsStore } from '@/state'
 import type { GitHubAccount } from '../../../shared/accounts'
@@ -77,6 +77,7 @@ export function ManageAccountsDialog({
   const githubRefreshing = useAccountsStore((state) => state.githubRefreshing)
 
   const [starting, setStarting] = useState(false)
+  const [reauthLogin, setReauthLogin] = useState<string | null>(null)
   const [cancellingFlow, setCancellingFlow] = useState(false)
   const [polite, announcePolite] = useClearedAnnouncement()
   const [assertive, announceAssertive] = useClearedAnnouncement()
@@ -163,8 +164,9 @@ export function ManageAccountsDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [github])
 
-  async function startAddFlow(): Promise<void> {
+  async function startAddFlow(reauth: string | null = null): Promise<void> {
     if (addFlow?.status === 'waiting' || starting) return
+    setReauthLogin(reauth)
     if (addFlow?.status === 'failed') useAccountsStore.getState().setAddFlow(null)
     setCancellingFlow(false)
     setStarting(true)
@@ -297,6 +299,21 @@ export function ManageAccountsDialog({
     onOpenChange(next)
   }
 
+  const headerCheckAgain = (
+    <Button
+      ref={checkAgainHeaderRef}
+      variant="outline"
+      size="sm"
+      className="shrink-0 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+      aria-disabled={githubRefreshing || undefined}
+      onClick={() => {
+        if (!githubRefreshing) void handleHeaderCheckAgain()
+      }}
+    >
+      {githubRefreshing ? 'Checking…' : 'Check again'}
+    </Button>
+  )
+
   const orderedAccounts = [...github.filter((a) => a.active), ...github.filter((a) => !a.active)]
 
   return (
@@ -331,21 +348,18 @@ export function ManageAccountsDialog({
         <section aria-labelledby="github-accounts-heading" className="min-w-0">
           {githubStatus === 'missing-cli' ? (
             <div className="flex min-w-0 flex-col gap-2">
-              <h3 id="github-accounts-heading" className="text-sm font-medium">
-                GitHub CLI not found
-              </h3>
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <h3 id="github-accounts-heading" className="truncate text-sm font-medium">
+                  GitHub CLI not found
+                </h3>
+                {headerCheckAgain}
+              </div>
               <p className="text-sm text-muted-foreground">Refract signs in through the GitHub CLI so it never stores your token.</p>
-              <a
-                ref={installLinkRef}
-                href="https://cli.github.com"
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex w-fit items-center gap-2 text-sm underline underline-offset-2"
-              >
-                <ExternalLinkIcon aria-hidden className="size-4" />
-                Install GitHub CLI
-                <span className="sr-only"> Opens in your browser</span>
-              </a>
+              <Button asChild variant="outline" size="sm" className="w-fit">
+                <ExternalLink ref={installLinkRef} href="https://cli.github.com">
+                  Install GitHub CLI
+                </ExternalLink>
+              </Button>
             </div>
           ) : githubStatus === 'loading' ? (
             <div className="flex min-w-0 items-center gap-2" aria-busy="true">
@@ -355,27 +369,15 @@ export function ManageAccountsDialog({
               </h3>
             </div>
           ) : githubStatus === 'error' ? (
-            <div className="flex min-w-0 flex-col gap-2">
-              <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />
-                <h3 id="github-accounts-heading" className="text-sm font-medium">
+                <h3 id="github-accounts-heading" className="truncate text-sm font-medium">
                   Couldn't read your GitHub CLI accounts.
                 </h3>
               </div>
-              <Button
-                ref={checkAgainHeaderRef}
-                variant="outline"
-                size="sm"
-                className="w-fit aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                aria-disabled={githubRefreshing || undefined}
-                onClick={() => {
-                  if (!githubRefreshing) void handleHeaderCheckAgain()
-                }}
-              >
-                {githubRefreshing ? 'Checking…' : 'Check again'}
-              </Button>
-            </div>
-          ) : (
+              {headerCheckAgain}
+            </div>          ) : (
             <div className="flex min-w-0 flex-col gap-2">
               <div className="flex min-w-0 items-center justify-between gap-2">
                 <h3 id="github-accounts-heading" className="truncate text-sm font-medium">
@@ -395,7 +397,7 @@ export function ManageAccountsDialog({
                 </Button>
               </div>
 
-              <AddAccountPanel flow={addFlow} starting={starting} cancelling={cancellingFlow} onCancel={handleCancelFlow} onRetry={() => void startAddFlow()} />
+              <AddAccountPanel flow={addFlow} starting={starting} cancelling={cancellingFlow} reauthLogin={reauthLogin} onCancel={handleCancelFlow} onRetry={() => void startAddFlow(reauthLogin)} />
 
               {orderedAccounts.length === 0 ? (
                 <div className="flex flex-col gap-1">
@@ -403,7 +405,7 @@ export function ManageAccountsDialog({
                   <p className="text-sm text-muted-foreground">Sign in to review pull requests and check for updates.</p>
                 </div>
               ) : (
-                <ul role="list" className="flex min-w-0 max-h-48 flex-col gap-2 overflow-y-auto">
+                <ul role="list" className="flex min-w-0 flex-col gap-2">
                   {orderedAccounts.map((account) => {
                     const key = rowKey(account.host, account.login)
                     const name = account.displayName ?? account.login
@@ -422,15 +424,10 @@ export function ManageAccountsDialog({
                         aria-labelledby={`account-name-${account.host}-${account.login}`}
                         aria-current={account.active ? 'true' : undefined}
                         aria-busy={busy || undefined}
-                        className={cn(
-                          'flex min-w-0 items-center gap-2 rounded-md border border-transparent p-2',
-                          account.active && 'border-l-2 border-l-active-indicator'
-                        )}
+                        className="relative flex min-w-0 items-center gap-2 rounded-md p-2"
                       >
-                        <Avatar>
-                          <AvatarImage src={account.avatarDataUrl ?? undefined} alt="" />
-                          <AvatarFallback>{initials(name)}</AvatarFallback>
-                        </Avatar>
+                        {account.active && <ActiveIndicatorBar />}
+                        <UserAvatar name={name} src={account.avatarDataUrl ?? undefined} />
                         <div className="flex min-w-0 flex-1 flex-col leading-tight">
                           <div className="flex min-w-0 items-center gap-2">
                             <span id={`account-name-${account.host}-${account.login}`} className="truncate text-sm">
@@ -453,37 +450,23 @@ export function ManageAccountsDialog({
                               <span className="truncate">{account.host}</span>
                             </span>
                           </span>
-                          {/* UI N5 / A11y M2 (quality-gate remediation, gate-3): the status
-                              line is now ONE plain sentence with no embedded "@login" (it used
-                              to wrap mid-name) -- the login stays available in the recovery
-                              button's own accessible name below instead. Three distinct causes,
-                              icon + text, never colour alone: unreachable (Sign in again cannot
-                              fix that), an expired/revoked credential (Sign in again can), or an
-                              unknown `gh` error with no more specific cause to report. */}
                           {authProblem && (
-                            <span className="flex items-center gap-1 text-xs text-state-needs-you">
+                            <InlineStatus tone="notice" density="compact" className="flex items-center gap-1 p-0 text-state-needs-you">
                               <TriangleAlertIcon aria-hidden className="size-4" />
                               {unreachable
                                 ? "Couldn't reach GitHub."
                                 : account.problem === 'expired'
                                   ? 'Sign-in expired.'
                                   : 'Sign-in needs attention.'}
-                            </span>
+                            </InlineStatus>
                           )}
                           {authProblem && !unreachable && account.host !== 'github.com' && (
-                            <span className="min-w-0 break-all text-xs text-muted-foreground">
+                            <InlineStatus density="compact" className="min-w-0 break-all p-0">
                               Sign in again from a terminal with gh auth login --hostname {account.host}.
-                            </span>
+                            </InlineStatus>
                           )}
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
-                          {/* UI M1 (quality-gate remediation): moved out of the text column into
-                              this trailing action cluster, before Sign out, so it sits next to
-                              Switch/Sign out instead of far away on its own row. A11y M1 / UI N3
-                              (quality-gate remediation, gate-3): guarded by `githubRefreshing`
-                              (shows "Checking…", same pattern as Add account) -- `refreshGithub`
-                              re-reads every account, not just this one, so the aria-label says
-                              so rather than implying a narrower per-account retry. */}
                           {authProblem && unreachable && (
                             <Button
                               ref={(el) => {
@@ -514,7 +497,7 @@ export function ManageAccountsDialog({
                               className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
                               aria-label={`Sign in again as @${account.login}`}
                               onClick={() => {
-                                if (!starting && addFlow?.status !== 'waiting') void startAddFlow()
+                                if (!starting && addFlow?.status !== 'waiting') void startAddFlow(account.login)
                               }}
                             >
                               Sign in again
@@ -541,9 +524,8 @@ export function ManageAccountsDialog({
                               if (el) signOutRefs.current.set(key, el)
                               else signOutRefs.current.delete(key)
                             }}
-                            variant="ghost"
+                            variant="ghost-destructive"
                             size="sm"
-                            className="text-destructive"
                             aria-label={`Sign out ${name}`}
                             onClick={() => onRequestSignOut(account)}
                           >

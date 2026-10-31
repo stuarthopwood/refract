@@ -120,14 +120,17 @@ export function ManageSessionsScreen() {
         count={sessionCountLabel(sessions.length, distinctRepositoryCount(sessions))}
       />
 
-      <ManageSessionsToolbar
-        filters={filters}
-        repositories={repositories}
-        searchInputRef={searchInputRef}
-        onFiltersChange={setFilters}
-        shownCount={visible.length}
-        totalCount={sessions.length}
-      />
+      <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+      {sessions.length > 0 && (
+        <ManageSessionsToolbar
+          filters={filters}
+          repositories={repositories}
+          searchInputRef={searchInputRef}
+          onFiltersChange={setFilters}
+          shownCount={visible.length}
+          totalCount={sessions.length}
+        />
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {sessions.length === 0 ? (
@@ -137,7 +140,7 @@ export function ManageSessionsScreen() {
                 <FolderKanbanIcon aria-hidden />
               </EmptyMedia>
               <EmptyTitle>No sessions yet</EmptyTitle>
-              <EmptyDescription>Create a session from a project in the left nav.</EmptyDescription>
+              <EmptyDescription>Go back to chat and start a session from a project.</EmptyDescription>
               <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
             </EmptyHeader>
             <EmptyContent>
@@ -153,7 +156,7 @@ export function ManageSessionsScreen() {
                 <SearchXIcon aria-hidden />
               </EmptyMedia>
               <EmptyTitle>No matching sessions</EmptyTitle>
-              <EmptyDescription>No session's name, branch, project, or archive state matches the current filters.</EmptyDescription>
+              <EmptyDescription>No session's name or branch matches your search, or none fit the selected tab and project.</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" onClick={handleClearFilters}>
@@ -183,6 +186,7 @@ export function ManageSessionsScreen() {
             ))}
           </ul>
         )}
+      </div>
       </div>
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">

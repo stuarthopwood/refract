@@ -20,9 +20,11 @@ export interface CopyButtonProps {
   tabIndex?: number
   disabled?: boolean
   icon?: LucideIcon
+  /** Shows `label` as visible text on an outline button; the accessible name is then the visible text. */
+  showLabel?: boolean
 }
 
-export function CopyButton({ getText, onCopy, label, announcement, className, tabIndex, disabled, icon: Icon = CopyIcon }: CopyButtonProps) {
+export function CopyButton({ getText, onCopy, label, announcement, className, tabIndex, disabled, icon: Icon = CopyIcon, showLabel = false }: CopyButtonProps) {
   const [copied, setCopied] = React.useState(false)
   const [polite, announcePolite] = useClearedAnnouncement()
   const [assertive, announceAssertive] = useClearedAnnouncement()
@@ -93,25 +95,42 @@ export function CopyButton({ getText, onCopy, label, announcement, className, ta
 
   const name = copied ? "Copied" : label
 
+  const icon = copied ? <CheckIcon aria-hidden /> : <Icon aria-hidden />
+
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={name}
-            tabIndex={tabIndex}
-            disabled={disabled}
-            onClick={(event) => void handleCopy(event)}
-            className={cn("shrink-0", className)}
-          >
-            {copied ? <CheckIcon aria-hidden /> : <Icon aria-hidden />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{name}</TooltipContent>
-      </Tooltip>
+      {showLabel ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          tabIndex={tabIndex}
+          disabled={disabled}
+          onClick={(event) => void handleCopy(event)}
+          className={cn("shrink-0", className)}
+        >
+          {icon}
+          {name}
+        </Button>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={name}
+              tabIndex={tabIndex}
+              disabled={disabled}
+              onClick={(event) => void handleCopy(event)}
+              className={cn("shrink-0", className)}
+            >
+              {icon}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{name}</TooltipContent>
+        </Tooltip>
+      )}
       <span aria-live="polite" aria-atomic="true" className="sr-only">
         {polite}
       </span>

@@ -114,7 +114,6 @@ export function ProfileAlertRows() {
           actionAriaLabel="Open memory triage"
           onAction={() => setTriageOpen(true)}
           dismissAriaLabel="Dismiss low memory alert"
-          dismissTooltip="Dismiss this alert"
           onDismiss={() => {
             redirectFocusFrom('memory')
             dismissMemory()
@@ -131,7 +130,6 @@ export function ProfileAlertRows() {
           actionAriaLabel="Open Health check"
           onAction={() => setHealthOpen(true)}
           dismissAriaLabel="Dismiss unverified version alert"
-          dismissTooltip="Dismiss this alert"
           onDismiss={() => {
             redirectFocusFrom('ompVersion')
             dismissOmpVersion()

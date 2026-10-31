@@ -263,8 +263,8 @@ correctly and are fully keyboard-accessible.
 
 ## Phase 8: Polish & cross-cutting concerns
 
-- [ ] T029 (#343) Accessibility pass across every control this spec added (FR-005, FR-027, FR-028, SC-006, SC-008): confirm the profile item, cog, every menu item, the Theme submenu's checked state, Manage accounts' active-account marker and every action, and Manage sessions' rows all have an accessible name, convey every distinguishing state (active account, active theme, sign-in state, archived) by icon or text and never colour alone, truncate a long display name with an ellipsis rather than wrapping, and keep a visible focus indicator throughout; fix any finding before closing this task.
-- [ ] T030 (#347) Final full run: on the built app in an isolated instance, run every check in [quickstart.md](quickstart.md) Stories 1 through 5 in one pass (not story-by-story), confirming nothing an earlier story's task touched regressed; `pnpm typecheck` and `pnpm build` both pass with no warnings.
+- [X] T029 (#343) Accessibility pass across every control this spec added (FR-005, FR-027, FR-028, SC-006, SC-008): confirm the profile item, cog, every menu item, the Theme submenu's checked state, Manage accounts' active-account marker and every action, and Manage sessions' rows all have an accessible name, convey every distinguishing state (active account, active theme, sign-in state, archived) by icon or text and never colour alone, truncate a long display name with an ellipsis rather than wrapping, and keep a visible focus indicator throughout; fix any finding before closing this task.
+- [X] T030 (#347) Final full run: on the built app in an isolated instance, run every check in [quickstart.md](quickstart.md) Stories 1 through 5 in one pass (not story-by-story), confirming nothing an earlier story's task touched regressed; `pnpm typecheck` and `pnpm build` both pass with no warnings.
 
 ---
 

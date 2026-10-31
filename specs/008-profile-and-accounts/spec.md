@@ -2,7 +2,7 @@
 
 **Feature Branch**: `008-profile-and-accounts` (no branch created; work lands on `main`)
 **Created**: 2026-10-02
-**Status**: Draft
+**Status**: Implemented (converged 2026-10-30, Skippy delegated by Stuart; FR-017 deferred)
 **Input**: Stuart's request: "#13 In bottom left or top left show a profile item, with settings
 cog icon. Settings icon opens settings pages. Profile opens menu with theme switcher, profile
 switcher (See item 14), keyboard shortcuts display. Could be a place to put update process. #14
@@ -312,7 +312,7 @@ a session, confirming each action's confirmation names what will be lost.
 - **FR-002**: Selecting the cog MUST open the Settings screen (spec 004); this replaces spec 004
   FR-011's left-nav "Settings" entry as the way Settings is reached.
 - **FR-003**: Selecting the profile item anywhere other than the cog MUST open the profile menu.
-- **FR-004**: When no GitHub account is signed in, the profile item MUST show a generic avatar and
+- **FR-004**: When no GitHub account is signed in, the profile item MUST show a generic placeholder avatar (initials fallback, "?" with no name) and
   the text "Sign in" in place of a name, and the profile menu MUST offer a Sign in action in place
   of the account header and Sign out.
 - **FR-005**: The profile item and its cog MUST both be reachable by keyboard, in tab order, each
@@ -343,7 +343,8 @@ a session, confirming each action's confirmation names what will be lost.
   update checks (spec 006) use; a request already in progress when the active account changes
   MUST finish with the account it started with.
 - **FR-014**: When the GitHub CLI is not installed, the profile item and Manage accounts MUST say
-  so and offer the Install action from the first-run readiness screen (spec 006); when it is
+  so and offer an Install link to cli.github.com (converged 2026-10-30: the readiness screen's
+  Install action is not reused); when it is
   installed but signed out, both MUST offer a Sign in action instead.
 - **FR-015**: While offline, the profile item MUST show the active account's last cached name and
   avatar rather than an error or a blank state.
@@ -352,7 +353,10 @@ a session, confirming each action's confirmation names what will be lost.
   section.
 - **FR-017**: The OMP section MUST let the developer sign in to or out of a provider through OMP's
   own sign-in flow; signing out MUST require a confirmation naming the provider and warning that
-  sessions currently running use it.
+  sessions currently running use it. **Deferred (converged 2026-10-30):** FINDINGS item 43 proved
+  OMP's `/login` and `/logout` cannot be driven over rpc-ui, so the section stays read-only and
+  shows the "run omp in a terminal" instruction; `accounts.omp.signIn`/`signOut` return
+  `unsupported`. Revisit when OMP exposes the commands over rpc-ui.
 - **FR-018**: The profile menu MUST list its items in this fixed order: the account header,
   Manage accounts, Manage sessions, Theme, Keyboard shortcuts, the update entry, Health check,
   What's new, and Sign out, with Sign out visually set apart from the rest.

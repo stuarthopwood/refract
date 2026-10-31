@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckIcon, ChevronDownIcon, CopyIcon, LoaderCircleIcon, MinusIcon, TriangleAlertIcon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon, MinusIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { InlineStatus } from '@/components/InlineStatus'
 import { cn } from '@/lib/utils'
 import { ompSummaryLine, splitOmpProviders } from '@/lib/account-format'
-import { notify, useAccountsStore } from '@/state'
+import { useAccountsStore } from '@/state'
 
 export interface OmpProvidersSectionProps {
   announcePolite(message: string): void
@@ -18,21 +20,17 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
   const refreshing = useAccountsStore((state) => state.ompRefreshing)
 
   const [expanded, setExpanded] = useState(false)
-  const [copied, setCopied] = useState(false)
   const checkAgainRef = useRef<HTMLButtonElement>(null)
-  const retryRef = useRef<HTMLButtonElement>(null)
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Guards against setting local state after this section unmounts (closing the dialog mid-read
   // is safe: the store call itself still completes and stores its result regardless).
   const mountedRef = useRef(true)
   useEffect(() => {
     // StrictMode mounts, unmounts, then remounts every component in development: without resetting
     // this on mount, the cleanup below would leave the guard false for good and every post-await
-    // step (announcement, focus, "Copied") would be skipped.
+    // step (announcement, focus) would be skipped.
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
     }
   }, [])
 
@@ -40,7 +38,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
   const total = providers.length
   const initialLoading = status === 'loading'
 
-  async function handleRefresh(fromRetry: boolean): Promise<void> {
+  async function handleRefresh(): Promise<void> {
     const result = await useAccountsStore.getState().refreshOmpProviders()
     if (!mountedRef.current) return
     if (result.ok) {
@@ -50,27 +48,8 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
       checkAgainRef.current?.focus()
     } else {
       announceAssertive('Could not read OMP providers')
-      if (fromRetry) retryRef.current?.focus()
-      else checkAgainRef.current?.focus()
+      checkAgainRef.current?.focus()
     }
-  }
-
-  async function handleCopy(): Promise<void> {
-    // Same reason as AddAccountPanel.tsx's handleCopy: the sandboxed renderer denies every
-    // Clipboard API permission, so this goes straight through main's own allowlisted channel.
-    const result = await window.refract.clipboard.writeText('omp login')
-    if (!mountedRef.current) return
-    if (!result.ok) {
-      notify(result.error)
-      announceAssertive('Could not copy the command')
-      return
-    }
-    setCopied(true)
-    announcePolite('Command copied to clipboard')
-    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
-    copyTimeoutRef.current = setTimeout(() => {
-      if (mountedRef.current) setCopied(false)
-    }, 2000)
   }
 
   return (
@@ -86,39 +65,43 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {refreshing && total > 0 && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
+            <InlineStatus tone="loading" density="compact" className="p-0">
               Checking…
-            </span>
+            </InlineStatus>
           )}
           <Button
             ref={checkAgainRef}
-            variant="ghost"
-            size="xs"
+            variant="text"
+            size="sm"
             aria-disabled={refreshing || undefined}
             className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={() => {
-              if (!refreshing) void handleRefresh(false)
+              if (!refreshing) void handleRefresh()
             }}
           >
             Check again
           </Button>
         </div>
       </div>
-
       {initialLoading ? (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-muted-foreground">Checking OMP providers…</p>
+          <InlineStatus tone="loading" density="compact" className="p-0">
+            Checking OMP providers…
+          </InlineStatus>
           <Skeleton className="h-8" />
           <Skeleton className="h-8" />
           <Skeleton className="h-8" />
         </div>
       ) : total > 0 ? (
         <>
-          <p className="text-xs text-muted-foreground">{ompSummaryLine(signedIn.length, total)}</p>
+          <InlineStatus density="compact" className="p-0">
+            {ompSummaryLine(signedIn.length, total)}
+          </InlineStatus>
 
           {signedIn.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No provider is signed in.</p>
+            <InlineStatus density="compact" className="p-0">
+              No provider is signed in.
+            </InlineStatus>
           ) : (
             <ul role="list" aria-label="Signed in OMP providers" className="flex flex-col gap-1">
               {signedIn.map((provider) => (
@@ -138,13 +121,13 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
           {other.length > 0 && (
             <Collapsible open={expanded} onOpenChange={setExpanded}>
               <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="xs" className="w-fit">
+                <Button variant="text" size="sm" className="w-fit">
                   <ChevronDownIcon aria-hidden className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
                   {expanded ? 'Show signed in only' : `Show all ${total} providers…`}
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <ul role="list" aria-label="Other OMP providers" className="mt-2 flex max-h-36 flex-col gap-1 overflow-y-auto pr-4">
+                <ul role="list" aria-label="Other OMP providers" className="mt-2 flex flex-col gap-1">
                   {other.map((provider) => (
                     <li key={provider.id} className="flex min-w-0 items-center justify-between gap-2">
                       <span className="truncate font-code text-xs" title={provider.id}>
@@ -162,47 +145,22 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
           )}
         </>
       ) : status === 'ready' ? (
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">No providers reported by OMP</p>
-          <p className="text-xs text-muted-foreground">OMP returned an empty provider list.</p>
-        </div>
+        <InlineStatus density="compact" className="p-0">
+          OMP returned an empty provider list.
+        </InlineStatus>
       ) : null}
 
       {status === 'error' && (
-        <div className="flex flex-col gap-1 rounded-md border border-border p-2">
-          <span className="flex items-center gap-1 text-xs text-state-needs-you">
-            <TriangleAlertIcon aria-hidden className="size-4" />
-            Could not read OMP providers
-          </span>
-          <p className="text-xs text-muted-foreground">OMP did not respond or returned an error.</p>
-          <div className="flex justify-end">
-            <Button
-              ref={retryRef}
-              variant="outline"
-              size="xs"
-              aria-disabled={refreshing || undefined}
-              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-              onClick={() => {
-                if (!refreshing) void handleRefresh(true)
-              }}
-            >
-              Retry
-            </Button>
-          </div>
-        </div>
+        <InlineStatus tone={total > 0 ? 'notice' : 'error'} density="compact" className="p-0">
+          {total > 0 ? 'Could not refresh OMP providers. Showing the last result.' : 'Could not read OMP providers. OMP did not respond or returned an error.'}
+        </InlineStatus>
       )}
 
-      <div className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border p-2">
-        <p className="min-w-0 text-xs text-muted-foreground">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <InlineStatus density="compact" className="min-w-0 p-0">
           To sign in to another provider, run <code className="font-code">omp login</code> in a terminal.
-        </p>
-        {/* No `aria-label` (WCAG 2.5.3 Label in Name, quality-gate remediation accessibility-
-            auditor Low): the accessible name now matches the visible "Copy command"/"Copied"
-            text exactly, the same fix AddAccountPanel.tsx's own Copy code button already has. */}
-        <Button variant="outline" size="xs" className="shrink-0" onClick={() => void handleCopy()}>
-          {copied ? <CheckIcon aria-hidden className="size-4" /> : <CopyIcon aria-hidden className="size-4" />}
-          {copied ? 'Copied' : 'Copy command'}
-        </Button>
+        </InlineStatus>
+        <CopyButton showLabel getText={() => 'omp login'} label="Copy command" announcement="Command copied to clipboard" />
       </div>
     </section>
   )
