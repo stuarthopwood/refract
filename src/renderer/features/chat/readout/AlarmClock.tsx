@@ -1,14 +1,15 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { BellIcon } from 'lucide-react'
+import { BellIcon, BellRingIcon } from 'lucide-react'
 import { READOUT_KIND_ICONS } from '@/components/icons/readout-icons'
 import { ListCardButton } from '@/components/ListCardButton'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { InlineStatus } from '@/components/InlineStatus'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/state'
+import { useAlarmFiredStore } from '@/state/alarm-fired-store'
 import { notifyAlarmDeleted, setAlarmListOpen } from '@/state/notify'
 import { MAX_ALARMS, MAX_ALARM_LABEL_CHARS } from '../../../../shared/model'
 import type { Alarm } from '../../../../shared/model'
@@ -56,7 +57,6 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    // Not `disabled` while saving: a disabled Save would drop keyboard focus.
     if (fireAtMs === null || saving) return
     setSaving(true)
     setFailed(false)
@@ -102,8 +102,8 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" aria-disabled={saving || undefined} disabled={fireAtMs === null}>
-          {saving ? 'Saving' : 'Save'}
+        <Button type="submit" loading={saving} disabled={fireAtMs === null}>
+          Save
         </Button>
       </div>
     </form>
@@ -116,12 +116,13 @@ interface AlarmRowProps {
   highlighted: boolean
   onEdit: () => void
   onDismiss: () => void
+  onRearm: (alarm: Alarm, ok: boolean) => void
   onDeleted: (alarm: Alarm) => void
 }
 
-function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onDeleted }: AlarmRowProps) {
+function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onRearm, onDeleted }: AlarmRowProps) {
   const deleteAlarm = useSettingsStore((s) => s.deleteAlarm)
-  const upsertAlarm = useSettingsStore((s) => s.upsertAlarm)
+  const [rearming, setRearming] = useState(false)
   const rowRef = useRef<HTMLDivElement | null>(null)
   const time = timeFormat.format(alarm.fireAtMs)
   const name = alarm.label ? `${time} ${alarm.label}` : time
@@ -130,7 +131,7 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onDeleted }: Ala
     if (highlighted) rowRef.current?.scrollIntoView({ block: 'nearest' })
   }, [highlighted])
   return (
-    <div ref={rowRef} data-alarm-row="">
+    <div ref={rowRef} data-alarm-row="" data-alarm-id={alarm.id}>
       <ListCardButton
         ariaLabel={`Edit alarm ${name}${hint ? `, ${hint}` : ''}`}
         onClick={onEdit}
@@ -139,15 +140,20 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onDeleted }: Ala
           <>
             {highlighted && (
               <>
-                <Button type="button" variant="ghost" aria-label={`Dismiss alarm ${name}`} onClick={onDismiss}>
+                <Button type="button" variant="text" size="sm" aria-label={`Dismiss alarm ${name}`} onClick={onDismiss}>
                   Dismiss
                 </Button>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
+                  size="sm"
+                  loading={rearming}
                   aria-label={`Re-arm alarm ${name}`}
                   onClick={async () => {
-                    if (await upsertAlarm({ ...alarm, fireAtMs: nextOccurrence(toInputTime(alarm.fireAtMs), Date.now()), active: true })) onDismiss()
+                    setRearming(true)
+                    const ok = await useSettingsStore.getState().upsertAlarm({ ...alarm, fireAtMs: nextOccurrence(toInputTime(alarm.fireAtMs), Date.now()), active: true })
+                    setRearming(false)
+                    onRearm(alarm, ok)
                   }}
                 >
                   Re-arm
@@ -157,6 +163,7 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onDeleted }: Ala
             <Button
               type="button"
               variant="ghost-destructive"
+              size="sm"
               aria-label={`Delete alarm ${name}`}
               onClick={async () => {
                 if (await deleteAlarm(alarm.id)) onDeleted(alarm)
@@ -183,20 +190,24 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
   const clockRef = useRef<HTMLButtonElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const contentId = useId()
-  const prevActive = useRef<Set<string>>(new Set())
-  const [firedIds, setFiredIds] = useState<ReadonlySet<string>>(new Set())
+  const firedIds = useAlarmFiredStore((s) => s.firedIds)
+  const [status, setStatus] = useState<{ tone: 'error' | 'notice'; text: string } | null>(null)
   const nowMs = now.getTime()
   const armed = alarms.filter((a) => a.active).length
   const full = alarms.length >= MAX_ALARMS
-  const sorted = [...alarms].sort((a, b) => Number(b.active) - Number(a.active) || a.fireAtMs - b.fireAtMs)
+  const sorted = [...alarms].sort(
+    (a, b) => Number(firedIds.has(b.id)) - Number(firedIds.has(a.id)) || Number(b.active) - Number(a.active) || a.fireAtMs - b.fireAtMs
+  )
   const hasFired = firedIds.size > 0
   const alarmsSet = armed > 0 ? `, ${armed} ${armed === 1 ? 'alarm' : 'alarms'} set` : ''
   const name = `Current time ${formatted}${alarmsSet}${hasFired ? ', alarm fired' : ''}. Open alarms`
   // The focused control unmounts on save, cancel and delete; park focus on a visible control so keyboard users keep their place.
-  const parkFocus = () =>
+  const parkFocus = (rowId?: string) =>
     requestAnimationFrame(() => {
       const root = contentRef.current
-      const target = root?.querySelector<HTMLElement>('[data-alarm-add]:not(:disabled)') ?? root?.querySelector<HTMLElement>('[data-alarm-row] button')
+      const target =
+        (rowId ? root?.querySelector<HTMLElement>(`[data-alarm-id="${rowId}"] button`) : null) ??
+        root?.querySelector<HTMLElement>('[data-alarm-add]:not(:disabled)') ?? root?.querySelector<HTMLElement>('[data-alarm-row] button')
       ;(target ?? root)?.focus()
     })
 
@@ -204,28 +215,28 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
     setOpen(next)
     setAlarmListOpen(next)
     if (!next) setForm(null)
+    setStatus(null)
   }
   // The module flag outlives this component, so clear it if the chip is hidden while open.
   useEffect(() => () => setAlarmListOpen(false), [])
 
   // An armed alarm turning inactive is a fire; it stays marked (row and bell) until dismissed, popover open or not.
   useEffect(() => {
-    const active = new Set(alarms.filter((a) => a.active).map((a) => a.id))
-    const fired = alarms.filter((a) => !a.active && prevActive.current.has(a.id)).map((a) => a.id)
-    prevActive.current = active
-    const inactive = new Set(alarms.filter((a) => !a.active).map((a) => a.id))
-    setFiredIds((prev) => {
-      const next = new Set([...prev, ...fired].filter((id) => inactive.has(id)))
-      return next.size === prev.size && [...next].every((id) => prev.has(id)) ? prev : next
-    })
+    useAlarmFiredStore.getState().sync(alarms)
   }, [alarms])
 
-  const dismiss = (id: string) =>
-    setFiredIds((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
+  const dismiss = (id: string) => {
+    useAlarmFiredStore.getState().dismiss(id)
+    parkFocus(id)
+  }
+
+  const onRearm = (alarm: Alarm, ok: boolean) => {
+    if (ok) {
+      useAlarmFiredStore.getState().dismiss(alarm.id)
+      setStatus({ tone: 'notice', text: 'Alarm re-armed.' })
+      parkFocus(alarm.id)
+    } else setStatus({ tone: 'error', text: 'Could not re-arm the alarm. Try again.' })
+  }
 
   const onDeleted = (alarm: Alarm) => {
     notifyAlarmDeleted(() => void useSettingsStore.getState().upsertAlarm(alarm))
@@ -248,8 +259,8 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
           <span aria-hidden>{formatted}</span>
           {(armed > 0 || hasFired) && (
             <span aria-hidden data-alarm-fired={hasFired ? '' : undefined} className="inline-flex items-center gap-1">
-              <BellIcon className={cn('size-4', hasFired && 'text-active-indicator')} />
-              <span className="tabular-nums">{armed}</span>
+              {hasFired ? <BellRingIcon className="size-4 text-active-indicator" /> : <BellIcon className="size-4" />}
+              {armed > 0 && <span className="tabular-nums">{armed}</span>}
             </span>
           )}
         </ReadoutItem>
@@ -303,6 +314,11 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
               }}
             />
           )}
+          {status && !form && (
+            <InlineStatus tone={status.tone} density="compact">
+              {status.text}
+            </InlineStatus>
+          )}
           {!form && (
             <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
               {sorted.map((alarm) => (
@@ -313,6 +329,7 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
                   highlighted={firedIds.has(alarm.id)}
                   onEdit={() => setForm({ editing: alarm })}
                   onDismiss={() => dismiss(alarm.id)}
+                  onRearm={onRearm}
                   onDeleted={onDeleted}
                 />
               ))}

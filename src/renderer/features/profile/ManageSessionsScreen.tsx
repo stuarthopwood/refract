@@ -144,6 +144,11 @@ export function ManageSessionsScreen() {
                 <EmptyDescription>Go back to chat and start a session from a project.</EmptyDescription>
                 <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
               </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" onClick={handleBackToChat}>
+                  Back to chat
+                </Button>
+              </EmptyContent>
             </Empty>
           ) : visible.length === 0 ? (
             <Empty>

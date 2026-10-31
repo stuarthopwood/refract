@@ -40,6 +40,7 @@ export function TranscriptKebab({
   lazy?: boolean
 }) {
   const [armed, setArmed] = React.useState(!lazy)
+  const [openOnArm, setOpenOnArm] = React.useState(false)
   const focusOnArmRef = React.useRef(false)
   const wrapRef = React.useRef<HTMLSpanElement>(null)
   React.useLayoutEffect(() => {
@@ -59,7 +60,18 @@ export function TranscriptKebab({
           size="icon-xs"
           aria-label={label}
           className={buttonClass}
-          onPointerEnter={() => setArmed(true)}
+          aria-haspopup="menu"
+          aria-expanded="false"
+          onPointerEnter={(e) => {
+            // Touch fires enter right before down; swapping here would eat the tap.
+            if (e.pointerType === 'mouse') setArmed(true)
+          }}
+          onPointerDown={(e) => {
+            if (e.pointerType === 'mouse') return
+            e.preventDefault()
+            setOpenOnArm(true)
+            setArmed(true)
+          }}
           onFocus={() => {
             focusOnArmRef.current = true
             setArmed(true)
@@ -72,7 +84,7 @@ export function TranscriptKebab({
   }
   return (
     <span ref={wrapRef} className="contents">
-      <DropdownMenu>
+      <DropdownMenu defaultOpen={openOnArm}>
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>

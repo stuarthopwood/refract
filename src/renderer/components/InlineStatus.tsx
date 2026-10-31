@@ -32,7 +32,7 @@ export function InlineStatus({
       {tone === 'error' && (
         <>
           {!leading && <CircleAlertIcon aria-hidden className="mr-1 inline size-[1em] align-[-0.125em]" />}
-          <span className="sr-only">Error: </span>
+          {children ? <span className="sr-only">Error: </span> : null}
         </>
       )}
       {children}

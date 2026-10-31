@@ -68,7 +68,7 @@ function Button({
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
-    /** Shows a spinner before the label, sets aria-busy and disables the button. Ignored with `asChild`. */
+    /** Shows a spinner before the label, sets aria-busy and aria-disabled (not `disabled`, so focus stays) and blocks clicks. Ignored with `asChild`. */
     loading?: boolean
   }) {
   const Comp = asChild ? Slot.Root : "button"
@@ -79,8 +79,9 @@ function Button({
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
-      {...(loading && !asChild ? { "aria-busy": true, disabled: true } : { disabled })}
+      {...(loading && !asChild ? { "aria-busy": true, "aria-disabled": true, disabled } : { disabled })}
       {...props}
+      onClick={loading && !asChild ? (e) => e.preventDefault() : props.onClick}
     >
       {loading && !asChild ? (
         <>

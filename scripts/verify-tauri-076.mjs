@@ -149,7 +149,7 @@ async function main() {
     await closeMenu();
 
     // Tool row: kebab revealed on hover/focus, never mounted while running.
-    const toolKebab = `Array.from(document.querySelectorAll('button[aria-label="More actions"]')).find((b) => b.closest('[data-slot="collapsible"]'))`;
+    const toolKebab = `Array.from(document.querySelectorAll('button[aria-label^="More actions,"]')).find((b) => b.closest('[data-slot="collapsible"]'))`;
     const toolRow = `Array.from(document.querySelectorAll('button, [role="button"]')).find((b) => b.textContent.includes('echo menu-output-065'))`;
     await mouse('mouseMoved', await centre(toolRow));
     await waitFor(`!!(${toolKebab})`, 'tool row kebab mounted');

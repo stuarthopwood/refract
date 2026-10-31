@@ -1,8 +1,9 @@
 // "Save image..." for the Mermaid export (#471, #1454): kept out of the clipboard module because it writes a file, not the clipboard.
 
 use serde_json::Value;
-use tokio::sync::Mutex;
 use tauri_plugin_dialog::DialogExt;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 
 use super::clipboard::decode_png_bytes;
 use super::{AppState, Dispatcher, HandlerFuture, IpcError};
@@ -20,10 +21,21 @@ fn sanitise_file_name(raw: Option<&str>) -> String {
     let stem = cleaned.trim().trim_matches('.').trim_end_matches(".png");
     let stem = stem.trim().trim_matches('.');
     let stem: String = stem.chars().take(100).collect();
+    let stem = stem.trim_end_matches([' ', '.']);
     if stem.is_empty() {
         "image.png".to_string()
     } else {
-        format!("{stem}.png")
+        let device = stem.split('.').next().unwrap_or("").to_ascii_uppercase();
+        let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || ((device.starts_with("COM") || device.starts_with("LPT"))
+                && device.len() == 4
+                && device.as_bytes()[3].is_ascii_digit()
+                && device.as_bytes()[3] != b'0');
+        if reserved {
+            format!("_{stem}.png")
+        } else {
+            format!("{stem}.png")
+        }
     }
 }
 
@@ -74,7 +86,20 @@ pub fn save_image(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
         temp_name.push(".refract-tmp");
         let temp = path.with_file_name(temp_name);
-        if let Err(err) = tokio::fs::write(&temp, bytes).await {
+        // create_new refuses to follow or overwrite a pre-existing file or symlink at the temp path.
+        let written = match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .await
+        {
+            Ok(mut file) => match file.write_all(&bytes).await {
+                Ok(()) => file.flush().await,
+                err => err,
+            },
+            Err(err) => return Err(save_err(err)),
+        };
+        if let Err(err) = written {
             let _ = tokio::fs::remove_file(&temp).await;
             return Err(save_err(err));
         }
