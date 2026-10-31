@@ -6,8 +6,8 @@ use crate::git::worktrees::{add_worktree_from_pull_request_branch, remove_worktr
 use crate::github::gh_mutations::{self, MergeMethod, PinnedReview, ReviewVerdict};
 use crate::github::gh_pull_requests;
 use crate::ipc::{
-    invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, AppState,
-    HandlerFuture, IpcError,
+    invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, session_kickoff,
+    AppState, HandlerFuture, IpcError,
 };
 use crate::store::registry::Session;
 
@@ -477,6 +477,7 @@ pub(super) fn pull_requests_new_session_from_pull_request(
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,
             pinned_model: false,
+            origin_issue: None,
         };
 
         if let Err(err) = state
@@ -491,7 +492,8 @@ pub(super) fn pull_requests_new_session_from_pull_request(
             return Err(map_registry_error(err));
         }
         state.session_manager.notify_list_changed();
-        Ok(serde_json::to_value(session).expect("Session is always JSON-serialisable"))
+        let kickoff = session_kickoff::pull_request_kickoff(repo_path, number, view.as_ref()).await;
+        Ok(serde_json::json!({ "session": session, "kickoff": kickoff }))
     })
 }
 

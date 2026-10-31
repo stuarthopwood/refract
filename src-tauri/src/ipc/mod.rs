@@ -39,6 +39,7 @@ pub mod readiness;
 pub mod repositories;
 pub mod repositories_clone;
 pub mod repositories_color;
+pub mod session_kickoff;
 pub mod sessions_agent;
 pub mod sessions_lifecycle;
 pub mod sessions_visibility;

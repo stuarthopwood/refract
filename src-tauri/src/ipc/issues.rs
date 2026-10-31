@@ -26,6 +26,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register("issues.create", issues_create);
     d.register("issues.list", issues_list);
     d.register("issues.view", issues_view);
+    d.register(
+        "issues.newSession",
+        super::session_kickoff::issues_new_session,
+    );
 }
 
 #[derive(Serialize)]

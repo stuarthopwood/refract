@@ -2,6 +2,7 @@
 // to keep `ipc.ts` at its file-size baseline (issue #806), same precedent as `ipc-git-changes.ts`.
 
 import type { Result } from './ipc';
+import type { Session } from './model';
 
 export interface IssueLabel {
   name: string;
@@ -61,6 +62,10 @@ export interface IssueListResult {
   fetchedAt: string;
 }
 
+/** `autoSend` is true only when the item's author has write access; otherwise the prompt is prefilled with `notice`. */
+export interface Kickoff { prompt: string; autoSend: boolean; notice: string | null }
+export interface SessionWithKickoff { session: Session; kickoff: Kickoff | null }
+
 /** `issues.view`: the same fields plus the markdown body (untrusted; render through the
  * sanitised markdown path only). */
 export interface IssueDetail {
@@ -96,4 +101,6 @@ export interface IssuesApi {
   ): Promise<Result<IssueListResult>>;
   /** One issue with its body. */
   view(repositoryId: string, number: number): Promise<Result<IssueDetail>>;
+  /** Creates the Session on issue-<n>-<slug>; the renderer sends or prefills the kickoff prompt. */
+  newSession(repositoryId: string, number: number): Promise<Result<SessionWithKickoff>>;
 }

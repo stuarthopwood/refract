@@ -82,6 +82,7 @@ fn make_session_for_notice(last_message_count: Option<i64>) -> crate::store::reg
         stopped_on_request_conversation: None,
         stopped_on_request_at_size: None,
         pinned_model: false,
+        origin_issue: None,
     }
 }
 
