@@ -53,6 +53,9 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
   const [shown, setShown] = useState<ShakeAction | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const [tipOpen, setTipOpen] = useState(false)
+  // Returning focus after the dialog must not pop the tooltip open.
+  const suppressTipRef = useRef(false)
   // Right-click, Shift+F10 and the Menu key open the same menu as a left click.
   const openOnContextMenu = (event: ReactMouseEvent): void => {
     event.preventDefault()
@@ -88,16 +91,12 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
   return (
     <>
       <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
-        {notice ? (
-          <Tooltip>
-            <TooltipTrigger asChild aria-describedby={undefined}>
-              <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-80">{notice}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
-        )}
+        <Tooltip open={Boolean(notice) && tipOpen} onOpenChange={(next) => !suppressTipRef.current && setTipOpen(next)}>
+          <TooltipTrigger asChild aria-describedby={undefined}>
+            <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
+          </TooltipTrigger>
+          {notice && <TooltipContent className="max-w-80">{notice}</TooltipContent>}
+        </Tooltip>
         <DropdownMenuContent align="start" side="top">
           {figure && <DropdownMenuLabel className="text-foreground">{figure}</DropdownMenuLabel>}
           {!idle && (
@@ -147,7 +146,9 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
           setConfirming(null)
         }}
         onCloseAutoFocus={() => {
+          suppressTipRef.current = true
           triggerRef.current?.focus()
+          suppressTipRef.current = false
         }}
       />
     </>

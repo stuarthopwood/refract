@@ -47,7 +47,7 @@ export function spellingItems({ misspelt, suggestions, word, onReplace, onAdd }:
   return (
     <>
       {suggestions.length === 0 && (
-        <ContextMenuItem disabled className="pl-8 data-disabled:forced-colors:text-[GrayText]">
+        <ContextMenuItem aria-disabled inset onSelect={(event) => event.preventDefault()} className="opacity-50 focus:bg-transparent focus:shadow-none forced-colors:text-[GrayText]">
           No suggestions
         </ContextMenuItem>
       )}

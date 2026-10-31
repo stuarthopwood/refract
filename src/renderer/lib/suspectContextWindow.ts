@@ -3,6 +3,7 @@ import { compactNumber } from './compactNumber'
 
 export const SUSPECT_WINDOW_ISSUE_URL = 'https://github.com/can1357/oh-my-pi/issues/17481'
 export const SUSPECT_WINDOW_LINK_LABEL = 'Why this window may be wrong (oh-my-pi#17481)'
+export const SUSPECT_WINDOWS_LINK_LABEL = 'Why these windows may be wrong (oh-my-pi#17481)'
 const LONG_SUFFIX = '-1m'
 
 export interface SuspectWindow {

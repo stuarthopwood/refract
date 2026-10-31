@@ -12,7 +12,7 @@ export function stepToMessage(sessionId: string, direction: StepDirection): bool
   const canScroll =
     direction === 'previous'
       ? entry.view.scrollable.start || entry.bridge.getHiddenTurnCount() > 0
-      : entry.view.scrollable.end
+      : entry.view.scrollable.end || currentId !== null // the last screen can still hold messages below the topmost one
   const target = canScroll
     ? resolveStepTarget({
         direction,

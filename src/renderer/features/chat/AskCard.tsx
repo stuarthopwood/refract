@@ -454,7 +454,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                     aria-disabled={busy}
                     aria-labelledby={labelId}
                     aria-describedby={option.description ? descId : undefined}
-                    onClick={() => !arrowKeyRef.current && onPickSingle(option.label)}
+                    onClick={(event) => !arrowKeyRef.current && event.detail < 2 && onPickSingle(option.label)} // a double-click's 2nd click would pick the same slot in the next question
                     className={OPTION_ROW_CLASS}
                   >
                     <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
