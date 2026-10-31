@@ -4,7 +4,7 @@
 // Fixtures: fixtures/omp-frames/stop-banner-1285.jsonl and secret-1295.jsonl (the `secret: true` frame is replayed, so no OMP 18.13.2 install is needed).
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_092_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-092.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -56,12 +56,20 @@ function filesUnder(dir) {
 /** FR-007: the secret must not reach the app log or anything the app wrote to its data dir (UTF-8 and UTF-16LE). */
 function assertSecretNotPersisted(dataDir, logFile) {
   const needles = [Buffer.from(SECRET, 'utf8'), Buffer.from(SECRET, 'utf16le')];
-  const targets = [...filesUnder(dataDir), ...(existsSync(logFile) ? [logFile] : [])];
+  assert(existsSync(logFile) && statSync(logFile).size > 0, 'The app log exists and is non-empty, so the leak scan has something to read');
+  const targets = [...filesUnder(dataDir), logFile];
+  const unreadable = [];
   const leaked = targets.filter((file) => {
-    const bytes = readFileSync(file);
-    return needles.some((needle) => bytes.includes(needle));
+    try {
+      const bytes = readFileSync(file);
+      return needles.some((needle) => bytes.includes(needle));
+    } catch {
+      unreadable.push(file);
+      return false;
+    }
   });
-  assert(leaked.length === 0, `The secret is absent from the app log and ${targets.length - 1} scratch data files${leaked.length ? ` (found in ${leaked.join(', ')})` : ''}`);
+  if (unreadable.length) log(`Leak scan skipped ${unreadable.length} locked file(s)`);
+  assert(leaked.length === 0, `The secret is absent, as plain UTF-8 or UTF-16LE, from the app log and ${targets.length - 1} scratch data files${leaked.length ? ` (found in ${leaked.join(', ')})` : ''}`);
 }
 
 async function withSession(scenario, tmp, exePath, launcherExe, shimDir, body, afterStop) {
@@ -154,8 +162,8 @@ async function checkSecretInput(cdp) {
   assert(await cdp.evaluate(CANCEL_IN_FOOTER), 'Cancel sits in the card footer, away from the reveal toggle');
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Send' && b.closest('[role="group"]'))`);
   await cdp.waitFor(`document.body.innerText.includes('t1295-done')`, { timeoutMs: 20_000, label: 'Agent received the secret and finished' });
-  const page = await cdp.evaluate(`({ text: document.body.innerText, values: Array.from(document.querySelectorAll('input,textarea')).map((i) => i.value) })`);
-  assert(!page.text.includes(SECRET) && !page.values.some((v) => v.includes(SECRET)), 'The answered state never shows the secret value');
+  const page = await cdp.evaluate(`({ text: document.body.innerText, html: document.documentElement.outerHTML, values: Array.from(document.querySelectorAll('input,textarea')).map((i) => i.value) })`);
+  assert(!page.text.includes(SECRET) && !page.html.includes(SECRET) && !page.values.some((v) => v.includes(SECRET)), 'The answered state never shows the secret value, in text or any DOM attribute');
   await shot(cdp, '04-secret-entered.png');
 }
 

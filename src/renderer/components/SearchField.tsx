@@ -108,7 +108,7 @@ export function SearchField({
         {hasValue && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <InputActionButton aria-label={clearLabel} aria-describedby={undefined} onClick={clear}>
+              <InputActionButton aria-label={clearLabel} onClick={clear}>
                 <XIcon aria-hidden />
               </InputActionButton>
             </TooltipTrigger>

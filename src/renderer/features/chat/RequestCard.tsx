@@ -463,7 +463,11 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                 aria-label={groupAriaLabelledBy ? undefined : 'Secret'}
               />
             ) : (
-              <Input {...textFieldProps} />
+              <Input
+                {...textFieldProps}
+                aria-labelledby={groupAriaLabelledBy}
+                aria-label={groupAriaLabelledBy ? undefined : 'Answer'}
+              />
             )}
             <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: answerValue }, 'answered', answerSummary)}>
               Send
