@@ -11,24 +11,13 @@ import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
 import { ThemeSwatchChip } from '@/components/ui/theme-swatch-chip'
 import { checkThemeContrast, describeWarning } from '@/lib/themeContrast'
 import { cn } from '@/lib/utils'
-import { useActiveThemeId, useThemeStore } from '@/state'
-import { THEMES } from '../../../shared/themes'
-import type { ThemeId } from '../../../shared/themes'
+import { useThemeEntries } from '@/lib/useThemeEntries'
+import type { ThemeEntry } from '@/lib/useThemeEntries'
+import { useThemeStore } from '@/state'
 import { useThemeFileActions } from './useThemeFileActions'
 
 // Hand-rolled radiogroup (roving tabindex): arrows and Home/End both move focus and save the choice.
 // Not migrated to ui/radio-group.tsx, whose Home/End only move focus (#498).
-const THEME_LIST = Object.values(THEMES)
-
-interface Entry {
-  key: string
-  name: string
-  swatch: string
-  swatchPrimary: string
-  builtin: ThemeId | null
-  customId: string | null
-}
-
 const ROW_CLASS = 'group/radio-item flex min-w-0 flex-1 items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow'
 
 interface ThemePickerProps {
@@ -38,13 +27,8 @@ interface ThemePickerProps {
 }
 
 export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
-  const activeBuiltin = useActiveThemeId()
-  const storedCustomId = useThemeStore((s) => s.customId)
-  const customThemes = useThemeStore((s) => s.customThemes)
-  const customId = customThemes.some((t) => t.id === storedCustomId) ? storedCustomId : null
+  const { builtins, customs, customThemes, customId, isActive, choose: chooseEntry } = useThemeEntries()
   const rejected = useThemeStore((s) => s.rejected)
-  const save = useThemeStore((s) => s.save)
-  const saveCustom = useThemeStore((s) => s.saveCustom)
   const actions = useThemeFileActions()
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
   const pendingIndex = useRef(0)
@@ -55,20 +39,8 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   useEffect(() => {
     void refresh()
   }, [refresh])
-  const builtins: Entry[] = THEME_LIST.map((t) => ({ key: t.id, name: t.name, swatch: t.swatch, swatchPrimary: t.swatchPrimary, builtin: t.id, customId: null }))
-  const customs: Entry[] = customThemes.map((t) => {
-    const base = THEMES[t.base]
-    return { key: `custom-${t.id}`, name: t.name, swatch: t.tokens.background ?? base.swatch, swatchPrimary: t.tokens.primary ?? base.swatchPrimary, builtin: null, customId: t.id }
-  })
   const all = [...builtins, ...customs]
-  const isActive = (e: Entry) => (e.customId !== null ? e.customId === customId : customId === null && e.builtin === activeBuiltin)
-
-  // Choosing the active entry is a no-op so `save` doesn't round-trip over IPC for nothing.
-  function choose(e: Entry) {
-    if (isActive(e)) return
-    if (e.customId !== null) void saveCustom(e.customId)
-    else if (e.builtin) void save(e.builtin)
-  }
+  const choose = (e: ThemeEntry) => void chooseEntry(e)
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     let next: number | null = null
@@ -83,7 +55,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
     buttonRefs.current[next]?.focus()
   }
 
-  function renderRow(e: Entry, index: number) {
+  function renderRow(e: ThemeEntry, index: number) {
     const active = isActive(e)
     const custom = e.customId === null ? null : customThemes.find((t) => t.id === e.customId)
     const warnings = custom ? (contrast.get(custom.id) ?? []) : []
@@ -91,7 +63,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
       ? [
           { id: 'export', label: 'Export…', icon: DownloadIcon, onSelect: () => void actions.exportCustom(custom) },
           { id: 'show', label: 'Show in folder', icon: FolderSearchIcon, onSelect: () => void actions.showInFolder(custom.id) },
-          { id: 'remove', label: 'Remove…', icon: Trash2Icon, destructive: true, onSelect: () => { pendingIndex.current = index; actions.removed.current = false; actions.setPendingRemove(custom) } }
+          { id: 'remove', label: 'Remove…', icon: Trash2Icon, destructive: true, onSelect: () => { pendingIndex.current = index; actions.setPendingRemove(custom) } }
         ]
       : [{ id: 'export', label: 'Export a copy…', icon: DownloadIcon, onSelect: () => void actions.exportBuiltin(e.builtin ?? 'dark', e.name) }]
     const nameId = `theme-option-${e.key}-name`
