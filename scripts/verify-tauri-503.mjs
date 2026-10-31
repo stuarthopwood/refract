@@ -78,7 +78,7 @@ async function main() {
     const rect = await cdp.evaluate(`(() => { const r = ${triggerSel}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
     await cdp.click(triggerSel);
-    const itemSel = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Report an issue…')`;
+    const itemSel = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'GitHub report…')`;
     await cdp.waitFor(`!!${itemSel}`, { timeoutMs: 10_000, label: 'Report an issue menu item' });
     await shot(cdp, '01-menu-item.png');
     pass('Repository menu shows "Report an issue…"');

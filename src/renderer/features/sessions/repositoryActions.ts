@@ -12,9 +12,9 @@ interface RepositoryActionHandlers {
 export function buildRepositoryActions(handlers: RepositoryActionHandlers, hasGithubRemote: boolean): SessionRowAction[] {
   return [
     { kind: 'item', key: 'rename', icon: PencilIcon, label: 'Rename', onSelect: handlers.onRename },
-    { kind: 'item', key: 'colour', icon: PaletteIcon, label: 'Colour…', onSelect: handlers.onColour },
+    { kind: 'item', key: 'colour', icon: PaletteIcon, label: 'Project colour…', onSelect: handlers.onColour },
     ...(hasGithubRemote
-      ? ([{ kind: 'item', key: 'report', icon: FlagIcon, label: 'Report an issue…', onSelect: handlers.onReport }] as const)
+      ? ([{ kind: 'item', key: 'report', icon: FlagIcon, label: 'GitHub report…', onSelect: handlers.onReport }] as const)
       : []),
     { kind: 'separator' },
     { kind: 'item', key: 'remove', icon: Trash2Icon, label: 'Remove project…', variant: 'destructive', onSelect: handlers.onRemove }
