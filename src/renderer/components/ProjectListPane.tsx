@@ -11,9 +11,9 @@ import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { SearchField } from '@/components/SearchField'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { FILTER_PICKER_CLASS, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { RefreshButton } from '@/features/pull-requests/RefreshButton'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { cn } from '@/lib/utils'
@@ -21,9 +21,6 @@ import type { IpcError } from '../../shared/ipc'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
 
 export type ListStateFilter = 'open' | 'closed' | 'all'
-
-/** Fixed width of the Filters panel's Project and Label pickers: never the column width (#1391). */
-export const FILTER_PICKER_CLASS = 'w-40 shrink-0'
 
 const STATE_OPTIONS: Array<{ value: ListStateFilter; label: string }> = [
   { value: 'open', label: 'Open' },

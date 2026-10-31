@@ -9,7 +9,8 @@ import { extractAdvisoryLocations, type AdvisoryLocation } from '@/lib/advisory-
 import { notify, useSessionsStore } from '@/state'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
+import { COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { CONCERN_RUN_THRESHOLD, type AdvisoryRun } from './groupAdvisoryItems'
 
 type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>

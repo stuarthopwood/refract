@@ -7,7 +7,7 @@ import { useId, type ComponentProps, type ReactNode, type Ref } from 'react'
 import { ChevronDownIcon } from 'lucide-react'
 import { create } from 'zustand'
 import { Button } from '@/components/ui/button'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { cn } from '@/lib/utils'
 
 /** The tallest any panel or banner above the composer grows before it scrolls. */

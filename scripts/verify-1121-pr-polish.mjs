@@ -214,9 +214,9 @@ async function main() {
         const merge = Array.from(header.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Merge');
         return {
           reasonLineText: reasonLine ? reasonLine.textContent.trim() : null,
-          reviewDisabled: review ? review.disabled : null,
+          reviewDisabled: review ? review.getAttribute('aria-disabled') === 'true' : null,
           reviewTitle: review ? review.title : null,
-          mergeDisabled: merge ? merge.disabled : null,
+          mergeDisabled: merge ? merge.getAttribute('aria-disabled') === 'true' : null,
           mergeTitle: merge ? merge.title : null
         };
       })()`);
@@ -326,7 +326,7 @@ async function main() {
       await openDetail(number);
       const shape = await detailShape();
       const name = `#${number} (${label}): reason line visible with the exact reason text, Review stays enabled`;
-      const ok = shape && shape.reasonLineText === reason && shape.reviewDisabled === false && shape.mergeDisabled === true && shape.mergeTitle === reason;
+      const ok = shape && shape.reasonLineText === `Merge: ${reason}` && shape.reviewDisabled === false && shape.mergeDisabled === true && shape.mergeTitle === reason;
       if (ok) checkPass(name, JSON.stringify(shape));
       else checkFail(name, JSON.stringify(shape));
     }
@@ -458,7 +458,7 @@ async function main() {
     await openDetail(8);
     const hcShape = await detailShape();
     await cdp.screenshot(path.join(SHOTS_DIR, '03-theme-dark-high-contrast-conflict-reason.png'));
-    if (hcShape && hcShape.reasonLineText === REASON.conflict) {
+    if (hcShape && hcShape.reasonLineText === `Merge: ${REASON.conflict}`) {
       checkPass('Dark (high contrast): PR #8 conflict reason line visible, screenshot captured', JSON.stringify(hcShape));
     } else {
       checkFail('Dark (high contrast): PR #8 conflict reason line visible, screenshot captured', JSON.stringify(hcShape));
