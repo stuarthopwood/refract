@@ -14,10 +14,11 @@ type IconButtonProps = Omit<React.ComponentProps<typeof Button>, 'aria-label' | 
 
 /** The one icon-only button: ghost, 24px, with the Tooltip every icon-only control requires (#579). */
 export function IconButton({ label, shortcut, side, variant = 'ghost', size = 'icon-sm', type = 'button', children, ...props }: IconButtonProps) {
+  const keyShortcuts = shortcut?.map((key) => (key === 'Ctrl' ? 'Control' : key === 'Esc' ? 'Escape' : key)).join('+')
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type={type} variant={variant} size={size} {...props} aria-label={label}>
+        <Button type={type} variant={variant} size={size} aria-keyshortcuts={keyShortcuts} {...props} aria-label={label}>
           {children}
         </Button>
       </TooltipTrigger>

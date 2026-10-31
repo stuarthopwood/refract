@@ -54,6 +54,7 @@ export function ChatHeader({
                   className="h-6 max-w-40 gap-2 px-2 text-xs"
                   onClick={onSwapToOther}
                   aria-label={`Switch to ${otherSessionName}`}
+                  aria-describedby={undefined}
                 >
                   <SplitSquareHorizontalIcon aria-hidden className="size-4 shrink-0" />
                   <span className="truncate">{otherSessionName}</span>
@@ -78,12 +79,11 @@ export function ChatHeader({
             shortcut={['Ctrl', 'F']}
             onClick={(event) => (findOpen ? closeChatFind(sessionId) : openChatFind(sessionId, event.currentTarget))}
             aria-expanded={findOpen}
-            aria-keyshortcuts="Control+F"
           >
             <SearchIcon aria-hidden className="size-4" />
           </IconButton>
           {onClose && (
-            <IconButton label={`Close ${session.name} chat pane`} shortcut={['Ctrl', 'W']} onClick={onClose} aria-keyshortcuts="Control+W">
+            <IconButton label={`Close ${session.name} chat pane`} shortcut={['Ctrl', 'W']} onClick={onClose}>
               <MessageSquareXIcon aria-hidden className="size-4" />
             </IconButton>
           )}

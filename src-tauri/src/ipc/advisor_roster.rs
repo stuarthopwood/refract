@@ -43,15 +43,15 @@ fn advisor_roster_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await?
             .ok_or_else(|| not_found("No advisor roster file found."))?;
         let path = PathBuf::from(&roster.path);
-        if !advisor_roster::is_openable(&path) {
-            return Err(not_found("No advisor roster file found."));
-        }
         let opened = tokio::task::spawn_blocking(move || {
-            tauri_plugin_opener::open_path(roster.path, None::<&str>)
+            let target = advisor_roster::openable_target(&path)
+                .ok_or_else(|| not_found("No advisor roster file found."))?;
+            tauri_plugin_opener::open_path(target.to_string_lossy().into_owned(), None::<&str>)
+                .map_err(|err| IpcError::new("open-failed", err.to_string()))
         })
         .await
         .map_err(|err| IpcError::new("open-failed", err.to_string()))?;
-        opened.map_err(|err| IpcError::new("open-failed", err.to_string()))?;
+        opened?;
         Ok(Value::Null)
     })
 }

@@ -160,11 +160,11 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                 key={id}
                 label={`Close ${descriptor.name} panel`}
                 shortcut={['Delete']}
-                aria-keyshortcuts="Delete"
                 tabIndex={id === activePanelId ? 0 : -1}
                 data-panel-close
                 className={cn(
                   INSET_FOCUS_OUTLINE_CLASS,
+                  // The dark: hover class overrides the ghost variant's dark:hover:bg-row-hover-bg.
                   'transition-none focus-visible:border-transparent focus-visible:ring-0 text-muted-foreground hover:text-foreground focus-visible:text-foreground',
                   id === activePanelId && 'text-foreground hover:bg-tab-close-hover-bg! dark:hover:bg-tab-close-hover-bg!'
                 )}
