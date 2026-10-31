@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useIssuesStore, useRepositoriesStore } from '@/state'
 import type { IssueTab } from '../../../shared/ipc-issues'
+import { NewSessionRowMenu } from '@/components/NewSessionRowMenu'
 import { IssueRow } from './IssueRow'
 import { useIssueLabelOptions } from './useIssueLabelOptions'
 
@@ -112,12 +113,16 @@ export function IssueList() {
       projectCount={new Set(store.items.map((issue) => issue.repositoryId)).size}
     >
       {store.items.map((issue) => (
-        <IssueRow
+        <NewSessionRowMenu
           key={`${issue.repositoryId}#${issue.number}`}
-          issue={issue}
-          selected={store.selected?.repositoryId === issue.repositoryId && store.selected.number === issue.number}
-          onSelect={() => store.select({ repositoryId: issue.repositoryId, number: issue.number })}
-        />
+          item={{ kind: 'issue', repositoryId: issue.repositoryId, number: issue.number }}
+        >
+          <IssueRow
+            issue={issue}
+            selected={store.selected?.repositoryId === issue.repositoryId && store.selected.number === issue.number}
+            onSelect={() => store.select({ repositoryId: issue.repositoryId, number: issue.number })}
+          />
+        </NewSessionRowMenu>
       ))}
     </ProjectListPane>
   )

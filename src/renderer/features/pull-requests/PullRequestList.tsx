@@ -5,6 +5,7 @@ import { ProjectListPane } from '@/components/ProjectListPane'
 import { MAX_ROWS } from '@/state/pull-requests-store'
 import { useAccountsStore, usePullRequestsStore, useRepositoriesStore } from '@/state'
 import type { FilterTab } from '../../../shared/github'
+import { NewSessionRowMenu } from '@/components/NewSessionRowMenu'
 import { PullRequestRow } from './PullRequestRow'
 
 const TABS: Array<{ value: FilterTab; label: string }> = [
@@ -67,12 +68,16 @@ export function PullRequestList() {
       }}
     >
       {store.items.map((pr) => (
-        <PullRequestRow
+        <NewSessionRowMenu
           key={`${pr.repositoryId}#${pr.number}`}
-          pullRequest={pr}
-          selected={store.selected?.repositoryId === pr.repositoryId && store.selected.number === pr.number}
-          onSelect={() => store.select({ repositoryId: pr.repositoryId, number: pr.number })}
-        />
+          item={{ kind: 'pull-request', repositoryId: pr.repositoryId, number: pr.number }}
+        >
+          <PullRequestRow
+            pullRequest={pr}
+            selected={store.selected?.repositoryId === pr.repositoryId && store.selected.number === pr.number}
+            onSelect={() => store.select({ repositoryId: pr.repositoryId, number: pr.number })}
+          />
+        </NewSessionRowMenu>
       ))}
     </ProjectListPane>
   )
