@@ -85,6 +85,19 @@ async fn reject_redirected_installer(
             updates_dir.display()
         )
     };
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let dir_meta = tokio::fs::symlink_metadata(updates_dir)
+            .await
+            .map_err(|err| format!("could not inspect {}: {err}", updates_dir.display()))?;
+        if dir_meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err(format!(
+                "updates directory {} is a junction or symlink",
+                updates_dir.display()
+            ));
+        }
+    }
     let real_dir = tokio::fs::canonicalize(updates_dir)
         .await
         .map_err(|err| format!("could not resolve {}: {err}", updates_dir.display()))?;
@@ -123,7 +136,7 @@ pub async fn schedule_install_on_quit(
         unix_seconds(),
         installer_path.display()
     );
-    tokio::fs::write(&log_path, header)
+    write_log_header(&log_path, &header)
         .await
         .map_err(|err| format!("could not write {}: {err}", log_path.display()))?;
 
@@ -202,6 +215,7 @@ $code = [int]::MinValue
 try {
   Wait-Process -Id ([int]$env:REFRACT_WAIT_PID) -ErrorAction SilentlyContinue
   $hash = (Get-FileHash -LiteralPath $env:REFRACT_INSTALLER_PATH -Algorithm SHA256 -ErrorAction Stop).Hash
+  # -ne is case-insensitive, which is right for hex digests; do not swap it for -cne. A swap in the window before Start-Process is not closable from script.
   if ($hash -ne $env:REFRACT_INSTALLER_SHA256) { throw 'installer changed after it was verified' }
   Log 'installer starting'
   $out = $log + '.out'; $err = $log + '.err'
@@ -240,11 +254,50 @@ fn encode_powershell_command(script: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+// Opens the log itself rather than a link planted at its name.
+fn no_follow(options: &mut tokio::fs::OpenOptions) -> &mut tokio::fs::OpenOptions {
+    #[cfg(windows)]
+    {
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    options
+}
+
+async fn reject_linked_log(log_path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if let Ok(meta) = tokio::fs::symlink_metadata(log_path).await {
+            if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+                return Err(std::io::Error::other("install.log is a link"));
+            }
+        }
+    }
+    let _ = log_path;
+    Ok(())
+}
+
+async fn write_log_header(log_path: &Path, header: &str) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    reject_linked_log(log_path).await?;
+    let mut file = no_follow(
+        tokio::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true),
+    )
+    .open(log_path)
+    .await?;
+    file.write_all(header.as_bytes()).await
+}
+
 async fn append_log(log_path: &Path, line: &str) {
     use tokio::io::AsyncWriteExt;
-    let opened = tokio::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
+    if reject_linked_log(log_path).await.is_err() {
+        return;
+    }
+    let opened = no_follow(tokio::fs::OpenOptions::new().create(true).append(true))
         .open(log_path)
         .await;
     if let Ok(mut file) = opened {
