@@ -21,7 +21,7 @@ const SHOTS_DIR = process.env.REFRACT_084_SHOTS_DIR || path.join(tmpdir(), 'refr
 const FIELD = `document.querySelector('[aria-label="Message"]')`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const CUSTOM = { 'mermaid-node-fill': '#c2185b', 'mermaid-node-fg': '#ffffff', 'syntax-keyword': '#ff6600', 'code-block-fg': '#00e5ff', 'scrollbar-thumb': '#00c853' };
+const CUSTOM = { 'mermaid-accent-fill': '#c2185b', 'mermaid-node-fg': '#ffffff', 'syntax-keyword': '#ff6600', 'code-block-fg': '#00e5ff', 'scrollbar-thumb': '#00c853' };
 const rgb = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
 const radio = (name) => `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => el.textContent.trim().startsWith(${JSON.stringify(name)}))`;
 const DIAGRAM = `Array.from(document.querySelectorAll('img')).find((i) => (i.getAttribute('alt') || i.getAttribute('aria-label') || '').toLowerCase().includes('diagram'))`;
@@ -120,8 +120,8 @@ async function main() {
     check(s.dark.thumb !== s.custom.thumb && s.custom.thumb === rgb(CUSTOM['scrollbar-thumb']), 'custom theme recolours --scrollbar-thumb live', { dark: s.dark.thumb, custom: s.custom.thumb });
     check(s.custom.realThumb === null || s.custom.realThumb === rgb(CUSTOM['scrollbar-thumb']), 'a real scroll-area thumb, when mounted, paints the custom colour', s.custom.realThumb);
     check(s.custom.codeFg === rgb(CUSTOM['code-block-fg']), 'custom theme recolours the code block foreground live', { custom: s.custom.codeFg });
-    check(s.custom.svg.includes(CUSTOM['mermaid-node-fill']), 'custom theme node fill appears in the rendered Mermaid SVG', { dark: s.dark.svg.includes(CUSTOM['mermaid-node-fill']) });
-    check(!s.dark.svg.includes(CUSTOM['mermaid-node-fill']), 'built-in Dark SVG does not contain the custom node fill');
+    check(s.custom.svg.includes(CUSTOM['mermaid-accent-fill']), 'custom theme node fill appears in the rendered Mermaid SVG', { dark: s.dark.svg.includes(CUSTOM['mermaid-accent-fill']) });
+    check(!s.dark.svg.includes(CUSTOM['mermaid-accent-fill']), 'built-in Dark SVG does not contain the custom node fill');
     check(s.custom.keyword === rgb(CUSTOM['syntax-keyword']), 'custom theme recolours the Shiki keyword token live', { custom: s.custom.keyword, dark: s.dark.keyword });
     check(s.dark.keyword !== s.custom.keyword, 'built-in Dark keyword colour differs from the custom one', s.dark.keyword);
   } catch (err) {
