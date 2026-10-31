@@ -24,7 +24,7 @@ export function SecretInput({ className, ...props }: SecretInputProps) {
         label="Show secret"
         aria-pressed={revealed}
         disabled={props.disabled}
-        className="absolute right-1 top-1/2 -translate-y-1/2"
+        className="absolute right-1 top-1"
         onClick={() => setRevealed((value) => !value)}
       >
         {revealed ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
