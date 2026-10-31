@@ -22,7 +22,7 @@ The spec 071 and 067 gates left Medium and Low findings: an empty 40px row above
 - FR-002 `SelectContent` defaults `position` to `popper`; `position="popper"` overrides at call sites are dropped.
 - FR-003 `WindowControlsSpacerRow.tsx` is deleted; `RightPaneShell` and `PanelTabBar` no longer render it or pass `windowControlsSpacerStyle`.
 - FR-004 `components/OpenOnGitHubButton.tsx` (ghost `icon-sm` anchor + tooltip) is used by `IssueDetail` and `PullRequestDetail`; both headers show `CopyButton` labelled "Copy link".
-- FR-005 The PR header title is `flex-1 min-w-0` (`line-clamp-2`); actions are `shrink-0` without wrap; the actions live in `PullRequestActions.tsx`.
+- FR-005 The PR header title is `flex-1 min-w-0` (`line-clamp-2`); actions are `shrink-0` without wrap, in place in `PullRequestDetail.tsx` (extraction skipped). The state pill and check status sit under the title so the actions fit a narrow pane.
 - FR-006 `IssueDetail` drops `border-b` from its header.
 - FR-007 The PR Merge button is `variant="outline"`.
 - FR-008 A draft pull request shows "Draft pull requests cannot start a Session." under the header; New session drops its `title`; only one reason line shows at a time.

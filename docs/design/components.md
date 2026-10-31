@@ -42,7 +42,7 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 | `outline` | The normal button everywhere. Cards and pane headers (Approve, Merge, Refresh) use `outline`, with emphasis coming from position and order, not weight. A banner's one primary action is `outline` too (see "Banners" below). Settles #531 (Merge no longer outweighs the title). |
 | `default` (filled) | The single commit action in a form, and in first run (Add project, Create, Save). A `ConfirmAlertDialog` confirm is `default` (or `destructive`), as the only filled button in the dialog. One filled button per surface. |
 | `ghost` | Icon-only toolbar and row actions. |
-| `ghost-destructive` | A destructive row or toolbar action that must not look filled (for example Remove). |
+| `ghost-destructive` | A destructive row or toolbar action that must not look filled (for example Close pull request). |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. The composer Stop button (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `text` | A non-primary action in a banner (#746): foreground text, no border or fill, underlined on hover and keyboard focus, 2px focus ring, 24px minimum target. `text-destructive` is the same shape with a red label, for a destructive action that opens a confirm dialog. |

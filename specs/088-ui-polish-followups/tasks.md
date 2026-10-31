@@ -4,7 +4,7 @@
 - [ ] T2 Shared primitives: invalid ring, popper default, select/checklist formatting, drop `destructive-outline`, CopyButton `aria-describedby` (FR-001, 002, 009, 012)
 - [ ] T3 Remove `WindowControlsSpacerRow` (FR-003)
 - [ ] T4 `OpenOnGitHubButton`, Copy link in both headers, Issue header divider (FR-004, 006, 013)
-- [ ] T5 `PullRequestActions`, single title row, Merge outline, draft reason (FR-005, 007, 008)
+- [ ] T5 PR header in place (`PullRequestActions` extraction skipped), single title row, Merge outline, draft reason (FR-005, 007, 008)
 - [ ] T6 RequestCard Cancel; Manage sessions filter width; threshold trigger width; App comment (FR-010, 011, 013)
 - [ ] T7 Docs: accessibility.md, components.md, PLAN.md row (FR-014)
 - [ ] T8 `verify-tauri-088.mjs` (FR-015)

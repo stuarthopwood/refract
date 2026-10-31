@@ -166,14 +166,16 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
               <span className="font-code">{detail.headBranch}</span> into <span className="font-code">{detail.baseBranch}</span> by{' '}
               {detail.author.name ?? detail.author.login}
             </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <StatePill state={detail.state} />
+              {/* Check status carries its own severity colour (`CHECK_STATE_DISPLAY.colorClass`, shared with `PullRequestRow.tsx`) (#1121). */}
+              <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
+                <CheckIcon aria-hidden className={cn('size-4', detail.checkState === 'pending' && 'animate-spin')} />
+                {check.label}
+              </span>
+            </div>
           </div>
           <div className="flex shrink-0 flex-nowrap items-center gap-2">
-            <StatePill state={detail.state} />
-            {/* Check status carries its own severity colour (`CHECK_STATE_DISPLAY.colorClass`, shared with `PullRequestRow.tsx`) (#1121). */}
-            <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
-              <CheckIcon aria-hidden className={cn('size-4', detail.checkState === 'pending' && 'animate-spin')} />
-              {check.label}
-            </span>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
             <OpenOnGitHubButton url={detail.url} />
             <CopyButton getText={() => detail.url} label="Copy link" announcement="Pull request link copied" />

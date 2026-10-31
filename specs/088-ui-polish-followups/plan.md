@@ -6,7 +6,7 @@ Renderer-only change in `src/renderer` plus docs and one live-check script. No R
 
 1. Shared primitives: `ui/input.tsx`, `ui/textarea.tsx`, `ui/select.tsx` (invalid ring, popper default, formatting), `ui/button.tsx` (drop `destructive-outline`), `ui/copy-button.tsx` (`aria-describedby`).
 2. Right pane: delete `WindowControlsSpacerRow.tsx`; `RightPaneShell.tsx` and `PanelTabBar.tsx` drop it.
-3. Detail headers: new `components/OpenOnGitHubButton.tsx`; new `features/pull-requests/PullRequestActions.tsx` (New session, Review, Merge, draft reason); `PullRequestDetail.tsx` and `IssueDetail.tsx` use them.
+3. Detail headers: new `components/OpenOnGitHubButton.tsx`; `PullRequestDetail.tsx` keeps its actions in place (the `PullRequestActions.tsx` extraction was skipped, it needs three forwarded focus refs); both detail headers use `OpenOnGitHubButton`.
 4. Small call sites: `RequestCard.tsx`, `ManageSessionsToolbar.tsx`, `PerModelThresholdTable.tsx`, `MultiSelectChecklist.tsx`, `App.tsx` comment, `SelectContent position="popper"` overrides.
 5. Docs: `accessibility.md`, `components.md`, `docs/PLAN.md` row.
 6. Live check: `scripts/verify-tauri-088.mjs`, modelled on `verify-tauri-087.mjs`.
