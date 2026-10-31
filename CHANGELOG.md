@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.20.0 (2026-10-31)
+
+### Features
+
+- feat(chat-header): PR and issue badges with pinned right-pane panels (https://github.com/stuarthopwood/refract/pull/1512)
+
+### Fixes
+
+- fix(gate-leftovers): spec 085 and 087 gate follow-ups (https://github.com/stuarthopwood/refract/pull/1505)
+- fix(gate-leftovers): updater hand-off, spellcheck and suspect-window follow-ups (https://github.com/stuarthopwood/refract/pull/1506)
+- fix(issues): New issue title, cross-Project PR count and list follow-ups (https://github.com/stuarthopwood/refract/pull/1509)
+- fix(composer-focus): stop-banner focus handoff and masked extension secret input (https://github.com/stuarthopwood/refract/pull/1510)
+- fix(composer): Tab indents, Ctrl+M focus toggle and list continuation (https://github.com/stuarthopwood/refract/pull/1513)
+
 ## v0.19.0 (2026-10-31)
 
 ### Features
