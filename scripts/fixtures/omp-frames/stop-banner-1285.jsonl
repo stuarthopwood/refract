@@ -15,5 +15,5 @@
 {"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
 {"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
 {"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"t1285-"}],"timestamp":0}}}
-{"__delay__":5000}
+{"__delay__":8000}
 {"__exit__":{"code":1}}

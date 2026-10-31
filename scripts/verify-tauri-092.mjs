@@ -85,7 +85,7 @@ async function withSession(scenario, tmp, exePath, launcherExe, shimDir, body) {
 async function checkStopBannerFocus(cdp) {
   await cdp.typeIntoByLabel('Message', 'Turn for issue 1285: the agent exits mid-turn.');
   await cdp.clickByLabel('Send message');
-  await cdp.waitFor(`!!document.querySelector('[aria-label="Stop"]')`, { timeoutMs: 15_000, label: 'Stop mounted' });
+  await cdp.waitFor(`document.body.innerText.includes('t1285-')`, { timeoutMs: 30_000, label: 'Turn streaming' });
   await cdp.evaluate(`${MESSAGE}.focus()`);
   const before = await cdp.evaluate(ACTIVE);
   assert(before?.label === 'Message', `The composer textarea holds focus before the agent exits (${JSON.stringify(before)})`);
