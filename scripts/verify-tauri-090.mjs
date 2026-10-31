@@ -58,7 +58,7 @@ async function checkQuestionCard(cdp) {
   await cdp.click(`Array.from(document.querySelectorAll('[role="tab"]')).find((t) => t.textContent.includes('Database'))`);
   await cdp.click(rowFinder('radio', 'Postgres'));
   await sleep(400);
-  const submitNow = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).some((b) => X);
+  const submitNow = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).some((b) => b.textContent.trim().startsWith('Submit'))`);
   assert(submitNow, 'With every question answered, only the Submit button submits (it is offered, the card is still open)');
   await shot(cdp, '03-question-all-answered.png');
 }
