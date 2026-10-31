@@ -12,7 +12,6 @@ import { useRightPaneStore } from '@/state'
 import { DiffStatCounts } from '../sessions/sessionDisplay'
 import { compactPanelCount, formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
-import { WINDOW_CONTROLS_SPACER_STYLE, WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 
 const COMPACT_HIDE = '@max-[17.5rem]:hidden'
 const CLOSE_BUTTON_PX = 24
@@ -81,7 +80,6 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
       <div className="flex shrink-0 flex-col">
         <PanelHeader
           ref={wrapperRef}
-          windowControlsSpacerStyle={WINDOW_CONTROLS_SPACER_STYLE}
           actions={
             <IconButton label={`Close ${descriptor.name} panel`} data-panel-close onClick={() => closeHostedPanel(id)}>
               <XIcon aria-hidden className="size-4" />
@@ -136,7 +134,6 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
 
   return (
     <div className="flex shrink-0 flex-col">
-      <WindowControlsSpacerRow />
       <div ref={wrapperRef} className={cn('no-drag-region flex shrink-0 items-center gap-1 px-2', PANEL_HEADER_HEIGHT_CLASS)}>
         <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
           <div ref={tabListRef} role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">

@@ -108,15 +108,7 @@ export function App() {
     // (e.g. an `sr-only` node at the end of a long scroller); with `h-screen overflow-hidden` none can
     // grow or scroll the document.
     <div className="relative flex h-screen flex-col overflow-hidden">
-      {/* Permanent drag strip (FR-057): Electron settles overlapping `-webkit-app-region` values
-          by DOM document order, not paint/z-index (confirmed live), so this being the FIRST
-          drag-region element in the tree means the left-nav header and the chat header (both
-          declared later, whenever the workspace is showing) always win over it for the pixels
-          they cover; the `-z-10` is cosmetic only (keeps it from ever visibly flashing), not what
-          makes it inert there. It is the *only* drag-region source on the Readiness screen and the
-          empty-chat state (especially with the session-list panel collapsed to 0 width) -- both
-          leave the top row entirely unpainted otherwise, and with `titleBarStyle: 'hidden'`
-          removing the real OS title bar, an unmovable window would result without it. */}
+      {/* Permanent drag strip (FR-057): first in DOM order so the later left-nav and chat header drag regions win where they overlap; the only drag source on the Readiness and empty-chat screens. */}
       <div aria-hidden className="drag-region fixed left-0 top-0 -z-10 flex h-10 w-full">
         <div
           aria-hidden

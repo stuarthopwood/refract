@@ -173,7 +173,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
               <SelectTrigger aria-label="State" className="shrink-0">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent position="popper">
+              <SelectContent>
                 {STATE_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
