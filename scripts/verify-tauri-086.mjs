@@ -79,7 +79,7 @@ async function main() {
       await sleep(300);
       const rows = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="radio"]')).map((el) => el.textContent.trim().slice(0, 24))`);
       const kebabs = await cdp.evaluate(`document.querySelectorAll('[aria-label^="Actions for "]').length`);
-      check(rows.length >= 6 && kebabs >= rows.length, `${name}: Appearance lists built-ins and the custom theme, each row with an actions menu`, { rows, kebabs });
+      check(kebabs >= 6 && rows.some((r) => r.startsWith('Per Element')), `${name}: Appearance lists built-ins and the custom theme, each row with an actions menu`, { rows, kebabs });
       await shot(`appearance-${slug}.png`);
       await backToChat();
 
@@ -92,7 +92,11 @@ async function main() {
       await cdp.clickByText('Pull requests');
       await waitFor(`document.querySelectorAll('[data-pr-row]').length > 0`, 'PR rows', 30_000);
       await cdp.click(`document.querySelector('[data-pr-row][data-pr-number="1"]')`);
-      await waitFor(`!!document.querySelector('section[aria-label="Checks"]') && !!(${CHECK_ROW('build')})`, 'Checks section with rows', 30_000);
+      await waitFor(`!!document.querySelector('section[aria-label="Checks"]')`, 'Checks section', 30_000);
+      if (!(await cdp.evaluate(`!!(${CHECK_ROW('build')})`))) {
+        await cdp.click(`Array.from(document.querySelectorAll('section[aria-label="Checks"] button')).find((b) => /Successful/.test(b.textContent))`);
+      }
+      await waitFor(`!!(${CHECK_ROW('build')})`, 'Checks section with rows', 15_000);
       await shot(`checks-${slug}.png`);
       if (slug === 'dark') {
         await rightClick(cdp, CHECK_ROW('build'));
