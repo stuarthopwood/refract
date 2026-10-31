@@ -6,5 +6,5 @@
 - [x] T4 SessionRow strip and AttachmentStrip Remove (FR-6, FR-7)
 - [x] T5 check-alpha-modifiers blind spots and baseline (FR-8)
 - [x] T6 verify-tauri-077 five presets (FR-9)
-- [ ] T7 verify-tauri-106 live check
-- [ ] T8 ci:local, gate, PLAN row
+- [x] T7 verify-tauri-106 live check
+- [x] T8 ci:local, gate, PLAN row
