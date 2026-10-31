@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort } from './verify-tauri-cdp.mjs';
 import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { addRepository } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -168,7 +169,7 @@ async function proveUs1(cdp, evidenceDir) {
   try {
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
-      { timeoutMs: 60_000, label: 'US1: readiness checklist all green (Add repository enabled)' },
+      { timeoutMs: 60_000, label: 'US1: readiness checklist all green (Add project enabled)' },
     );
   } catch (err) {
     const text = await cdp.evaluate(`document.body.innerText`);
@@ -176,7 +177,7 @@ async function proveUs1(cdp, evidenceDir) {
     throw err;
   }
   await cdp.screenshot(path.join(evidenceDir, 'us1-02-readiness-green.png'));
-  console.log('US1 PASS: window painted, readiness green, Add repository enabled.');
+  console.log('US1 PASS: window painted, readiness green, Add project enabled.');
 }
 
 // Requires an earlier poll to see a proper prefix of finalToken, proving this token streamed incrementally.
@@ -213,11 +214,7 @@ async function waitForStreamedReply(cdp, { finalToken, timeoutMs = 60_000, inter
 }
 
 async function proveUs4(cdp, evidenceDir, { repoDir, message }) {
-  await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
-  await cdp.click(`document.querySelector('[role="dialog"] input')`);
-  await cdp.send('Input.insertText', { text: repoDir });
-  await cdp.clickByText('Add repository', { inDialog: true });
+  await addRepository(cdp, repoDir);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`, {
     timeoutMs: 30_000,
     label: 'Repository added, session-list row rendered',
