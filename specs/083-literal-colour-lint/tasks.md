@@ -1,0 +1,6 @@
+# Tasks: spec 083
+
+- [x] T1 Script and baseline
+- [ ] T2 Wire `package.json` and `ci.yml`
+- [ ] T3 Docs (ADR 0001 note, design page, PLAN row)
+- [ ] T4 ci:local, live check `scripts/verify-tauri-083.mjs`, gate, follow-up issue
