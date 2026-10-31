@@ -1,1 +1,38 @@
-{}
+{
+  "src/renderer/App.tsx": {
+    "commentLines": 53,
+    "maxBlock": 19
+  },
+  "src/renderer/components/ui/dropdown-menu.tsx": {
+    "commentLines": 16,
+    "maxBlock": 15
+  },
+  "src/renderer/components/ui/scroll-area.tsx": {
+    "commentLines": 7,
+    "maxBlock": 7
+  },
+  "src/renderer/features/chat/SlashMenu.tsx": {
+    "commentLines": 19,
+    "maxBlock": 11
+  },
+  "src/renderer/features/right-pane/git-changes/GitChangesPanel.tsx": {
+    "commentLines": 17,
+    "maxBlock": 13
+  },
+  "src/renderer/features/right-pane/git-changes/GitCommitBox.tsx": {
+    "commentLines": 23,
+    "maxBlock": 10
+  },
+  "src/renderer/features/sessions/GroupHeader.tsx": {
+    "commentLines": 30,
+    "maxBlock": 9
+  },
+  "src/renderer/features/settings/ProviderSwitch.tsx": {
+    "commentLines": 15,
+    "maxBlock": 5
+  },
+  "src/renderer/features/subagents/SubagentPanel.tsx": {
+    "commentLines": 48,
+    "maxBlock": 11
+  }
+}

@@ -9,8 +9,8 @@ function scriptKindFor(ext) {
   return ts.ScriptKind.JS;
 }
 
-// Every comment is leading trivia of some token (end-of-file included), so one lookup per token
-// finds them all. JSX text is skipped: `//` there is text, not a comment.
+// Every comment is leading or same-line trailing trivia of some token (end-of-file included), so two lookups per token
+// find them all; `{/* ... */}` and `code(); /* ...` are only found as trailing trivia. JSX text is skipped: `//` there is text.
 export function scanTypeScriptComments(text, ext) {
   const sf = ts.createSourceFile('f' + ext, text, ts.ScriptTarget.Latest, false, scriptKindFor(ext));
   const ranges = [];
@@ -19,7 +19,11 @@ export function scanTypeScriptComments(text, ext) {
     const children = node.getChildren(sf).filter((c) => !ts.isJSDoc(c));
     if (children.length === 0) {
       if (node.kind === ts.SyntaxKind.JsxText) return;
-      for (const c of ts.getLeadingCommentRanges(text, node.getFullStart()) ?? []) {
+      const found = [
+        ...(ts.getLeadingCommentRanges(text, node.getFullStart()) ?? []),
+        ...(ts.getTrailingCommentRanges(text, node.getFullStart()) ?? [])
+      ];
+      for (const c of found) {
         if (!seen.has(c.pos)) {
           seen.add(c.pos);
           ranges.push([c.pos, c.end]);
@@ -30,7 +34,7 @@ export function scanTypeScriptComments(text, ext) {
     for (const child of children) visit(child);
   };
   visit(sf);
-  return ranges;
+  return ranges.sort((a, b) => a[0] - b[0]);
 }
 
 const isIdent = (ch) => ch !== undefined && /[A-Za-z0-9_]/.test(ch);
@@ -96,10 +100,11 @@ export function scanRustComments(text) {
   return ranges;
 }
 
-// A line is a comment line when it has content and every non-whitespace character is in a comment.
+// A line is a comment line when it has content and every non-whitespace character is in a comment, or when its last
+// content opens a comment that continues onto the next line (`code(); /* ...`), so such a block cannot dodge the cap.
 export function measureLines(text, ranges) {
-  const covered = new Uint8Array(text.length);
-  for (const [a, b] of ranges) covered.fill(1, a, b);
+  const endOf = new Int32Array(text.length);
+  for (const [a, b] of ranges) endOf.fill(b, a, b);
   let nonBlank = 0;
   let commentLines = 0;
   let maxBlock = 0;
@@ -110,17 +115,16 @@ export function measureLines(text, ranges) {
     if (end === -1) end = text.length;
     let content = false;
     let allComment = true;
+    let last = -1;
     for (let k = start; k < end; k++) {
       const c = text.charCodeAt(k);
       if (c === 32 || c === 9 || c === 13) continue;
       content = true;
-      if (!covered[k]) {
-        allComment = false;
-        break;
-      }
+      last = k;
+      if (!endOf[k]) allComment = false;
     }
     if (content) nonBlank++;
-    if (content && allComment) {
+    if (content && (allComment || endOf[last] > end)) {
       commentLines++;
       block++;
       if (block > maxBlock) maxBlock = block;
