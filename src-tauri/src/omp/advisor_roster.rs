@@ -49,9 +49,11 @@ pub fn is_openable(path: &Path) -> bool {
         .file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| {
-            FILE_NAMES
-                .iter()
-                .any(|known| Path::new(known).file_name().is_some_and(|base| base == name))
+            FILE_NAMES.iter().any(|known| {
+                Path::new(known)
+                    .file_name()
+                    .is_some_and(|base| base == name)
+            })
         });
     named && is_regular_file(path)
 }
