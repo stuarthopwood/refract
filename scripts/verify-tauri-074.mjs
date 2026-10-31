@@ -35,7 +35,7 @@ const DIALOG = `document.querySelector('[data-slot="alert-dialog-content"]')`;
 const shot = (cdp, name) => cdp.screenshot(path.join(SHOTS_DIR, name));
 
 async function openRemoveDialog(cdp, repoName) {
-  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`Project actions for ${repoName}`)}]')`);
+  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`More actions for ${repoName}`)}]')`);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove project…')`, { timeoutMs: 10_000, label: 'menu open' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove project…')`);
   await cdp.waitFor(`!!${DIALOG}`, { timeoutMs: 10_000, label: 'Remove project dialog open' });
@@ -65,10 +65,10 @@ async function runChecks(cdp, { repoDir }) {
 
   await cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Cancel')`);
   await cdp.waitFor(`!${DIALOG}`, { timeoutMs: 10_000, label: 'dialog closed by Cancel' });
-  await cdp.waitFor(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(`Project actions for ${repoName}`)}`, { timeoutMs: 5_000, label: 'focus restored' });
+  await cdp.waitFor(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(`More actions for ${repoName}`)}`, { timeoutMs: 5_000, label: 'focus restored' });
   const focusName = await cdp.evaluate(`document.activeElement?.getAttribute('aria-label') ?? ''`);
   log(`focus after cancel: ${focusName}`);
-  assert(focusName === `Project actions for ${repoName}`, 'focus returns to the Project actions trigger after Cancel');
+  assert(focusName === `More actions for ${repoName}`, 'focus returns to the Project actions trigger after Cancel');
   await shot(cdp, '02-after-cancel.png');
 
   await openRemoveDialog(cdp, repoName);

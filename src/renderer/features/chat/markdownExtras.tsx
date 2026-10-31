@@ -92,7 +92,7 @@ export function MarkdownTh({ className, node: _node, ...props }: React.Component
   return (
     <th
       className={cn(
-        githubStyle ? 'border border-divider px-4 py-2 font-semibold' : 'border border-border bg-row-hover-bg px-2 py-1 font-medium text-md-table-header-fg',
+        githubStyle ? 'border border-divider px-4 py-2 font-semibold' : 'border border-border bg-surface-subtle px-2 py-1 font-medium text-md-table-header-fg',
         className
       )}
       {...props}

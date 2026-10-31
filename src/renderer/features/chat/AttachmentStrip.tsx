@@ -27,8 +27,8 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
       ref={containerRef}
       role="group"
       aria-label="Pending attachments"
-      // `p-1` leaves room for the Remove button's -top-1/-right-1 offset and focus ring, which overflow-y-auto would clip.
-      className="flex max-h-28 flex-wrap items-center gap-2 overflow-y-auto p-1"
+      // `p-2` leaves room for the Remove button's -top-2/-right-2 offset and focus ring, which overflow-y-auto would clip; `gap-3` keeps it off the next chip.
+      className="flex max-h-28 flex-wrap items-center gap-3 overflow-y-auto p-2"
     >
       {images.map((image, index) => (
         <div key={image.id} className="group relative">
@@ -52,7 +52,7 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
             variant="outline"
             onClick={() => onRemoveImage(image.id)}
             // pointer-events-none while invisible so the 24px hit area can't be mis-clicked over the thumbnail.
-            className="pointer-events-none absolute -top-1 -right-1 rounded-full bg-surface-1 text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-surface-1 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100"
+            className="pointer-events-none absolute -top-2 -right-2 rounded-full bg-surface-1 text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-surface-1 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100"
           >
             <XIcon aria-hidden />
           </IconButton>

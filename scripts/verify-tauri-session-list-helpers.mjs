@@ -216,7 +216,7 @@ export async function addRepository(cdp, dir) {
 
 /** Removes an empty Repository via its header menu and the confirmation dialog; the prune check proves its id leaves `settings.json`, not just the renderer. */
 export async function removeRepository(cdp, repoName) {
-  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`Project actions for ${repoName}`)}]')`);
+  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`More actions for ${repoName}`)}]')`);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove project…')`, {
     timeoutMs: 10_000,
     label: 'Row menu open with Remove project item'
