@@ -148,9 +148,9 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   return (
     <div className="max-w-sm">
       <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
-        <p id="theme-builtin-label" className="px-2 pt-1 text-xs text-muted-foreground">Built-in</p>
+        <p className="px-2 pt-1 text-xs text-muted-foreground">Built-in</p>
         {builtins.map((e, i) => renderRow(e, i))}
-        {customs.length > 0 && <p id="theme-custom-label" className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
+        {customs.length > 0 && <p className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
         {customs.map((e, i) => renderRow(e, builtins.length + i))}
       </div>
       {rejected.map((r) => (
@@ -158,7 +158,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
       ))}
       {actions.importError && <InlineStatus tone="error" density="compact" className="mt-2">{actions.importError}</InlineStatus>}
       <div className="mt-4 flex gap-2">
-        <Button type="button" variant="outline" size="sm" aria-disabled={actions.importing} onClick={() => { if (!actions.importing) void actions.importTheme() }}>
+        <Button type="button" variant="outline" size="sm" className="aria-disabled:opacity-50" aria-disabled={actions.importing} onClick={() => { if (!actions.importing) void actions.importTheme() }}>
           <UploadIcon aria-hidden /> {actions.importing ? 'Importing…' : 'Import theme…'}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => void actions.showInFolder()}>
