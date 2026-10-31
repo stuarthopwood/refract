@@ -34,6 +34,7 @@ import { rightPaneRef } from '@/features/right-pane/right-pane-handle'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
 import { CommandPalette } from '@/features/palette/CommandPalette'
 import { StartSessionHost } from '@/features/sessions/StartSessionHost'
+import { ItemSessionDialogHost } from '@/features/sessions/ItemSessionDialogHost'
 import { usePaletteShortcut } from '@/features/palette/usePaletteShortcut'
 import { useChordDispatcher } from '@/features/palette/useChordDispatcher'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -130,6 +131,7 @@ export function App() {
       <div aria-live="polite" className="sr-only">{chatAreaAnnouncement}</div>
       {!showReadiness && <CommandPalette />}
       {!showReadiness && <StartSessionHost />}
+      {!showReadiness && <ItemSessionDialogHost />}
       <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
