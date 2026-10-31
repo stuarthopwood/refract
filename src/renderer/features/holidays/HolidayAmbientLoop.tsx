@@ -7,9 +7,11 @@ import { cn } from '@/lib/utils'
 import { useActiveChatWidth, useHolidayStore, useSettingsStore } from '@/state'
 import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
 import { HOLIDAY_CONTENT } from './holidayContent'
-import { flightKeyframes, LoopPieces } from './holidayArtwork'
+import { clampFlightToBounds, flightKeyframes, LoopPieces } from './holidayArtwork'
 
 const FLIGHT_FADE_OUT_MS = 400
+// The CSS hides the layer under all three; the scheduler must not fly pieces under any of them (#1377).
+const NO_MOTION_QUERY = '(prefers-reduced-motion: reduce), (forced-colors: active), (prefers-reduced-transparency: reduce)'
 
 /** A pause mid-flight freezes the bat and fades it out, then returns it to rest; reduced-motion/forced-colors cancels outright (#1256). */
 function fadeOutFlight(bat: HTMLElement, flight: Animation) {
@@ -30,9 +32,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
   const idleTimeoutMs = useHolidayStore((s) => s.idleTimeoutMs)
   const flightIntervalMsOverride = useHolidayStore((s) => s.flightIntervalMs)
   const [paused, setPaused] = useState(() => document.hidden || !document.hasFocus())
-  const [motionReducedOrForcedColors, setMotionReducedOrForcedColors] = useState(
-    () => window.matchMedia('(prefers-reduced-motion: reduce), (forced-colors: active)').matches
-  )
+  const [motionSuppressed, setMotionSuppressed] = useState(() => window.matchMedia(NO_MOTION_QUERY).matches)
   const [flightCount, setFlightCount] = useState(0)
   const idleTimerRef = useRef<number | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -43,9 +43,9 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
 
   // A reactive `matchMedia` listener so emulated media toggled mid-session cancels a running flight immediately.
   useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce), (forced-colors: active)')
+    const media = window.matchMedia(NO_MOTION_QUERY)
     function handleChange() {
-      setMotionReducedOrForcedColors(media.matches)
+      setMotionSuppressed(media.matches)
     }
     media.addEventListener('change', handleChange)
     return () => media.removeEventListener('change', handleChange)
@@ -136,7 +136,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
       remainingFlightDelayMsRef.current = null
       return
     }
-    if (paused || motionReducedOrForcedColors) return
+    if (paused || motionSuppressed) return
     let cancelled = false
     let flightTimer: number | undefined
     let currentAnimation: Animation | undefined
@@ -169,11 +169,15 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
         scheduleNextFlight()
         return
       }
-      const keyframes = holiday ? flightKeyframes(holiday) : null
-      if (!keyframes) {
+      const baseKeyframes = holiday ? flightKeyframes(holiday) : null
+      if (!baseKeyframes) {
         scheduleNextFlight()
         return
       }
+      const containerEl = containerRef.current
+      const keyframes = containerEl
+        ? clampFlightToBounds(baseKeyframes, bat.getBoundingClientRect(), containerEl.getBoundingClientRect())
+        : baseKeyframes
       setFlightCount((count) => count + 1)
       bat.style.willChange = 'transform'
       const animation = bat.animate(keyframes, { duration: 4_000, easing: 'ease-in-out', fill: 'none' })
@@ -207,12 +211,12 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
         remainingFlightDelayMsRef.current = Math.max(0, timerDelayMs - (Date.now() - timerStartedAt))
       }
       if (currentAnimation && currentBat) {
-        const reducedNow = window.matchMedia('(prefers-reduced-motion: reduce), (forced-colors: active)').matches
+        const reducedNow = window.matchMedia(NO_MOTION_QUERY).matches
         if (reducedNow || !currentBat.isConnected) currentAnimation.cancel()
         else fadeOutFlight(currentBat, currentAnimation)
       }
     }
-  }, [active, holiday, paused, motionReducedOrForcedColors, flightIntervalMsOverride])
+  }, [active, holiday, paused, motionSuppressed, flightIntervalMsOverride])
 
   if (!active || !holiday) return null
 
