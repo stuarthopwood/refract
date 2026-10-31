@@ -83,7 +83,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
           ref={wrapperRef}
           windowControlsSpacerStyle={WINDOW_CONTROLS_SPACER_STYLE}
           actions={
-            <IconButton label={`Close ${descriptor.name} panel`} shortcut={['Delete']} data-panel-close onClick={() => closeHostedPanel(id)}>
+            <IconButton label={`Close ${descriptor.name} panel`} data-panel-close onClick={() => closeHostedPanel(id)}>
               <XIcon aria-hidden className="size-4" />
             </IconButton>
           }
@@ -165,7 +165,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                 shortcut={['Delete']}
                 tabIndex={id === activePanelId ? 0 : -1}
                 data-panel-close
-                style={{ position: 'absolute', left: position.left, top: position.top }}
+                className={cn(FOCUS_VISIBLE, 'transition-none focus-visible:ring-0')} position: 'absolute', left: position.left, top: position.top }}
                 onClick={() => closeTab(id)}
                 onKeyDown={(event) => {
                   if (event.key === 'Delete') {
