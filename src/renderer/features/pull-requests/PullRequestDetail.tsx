@@ -209,6 +209,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
                   ref={reviewButtonRef}
                   size="sm"
                   variant="ghost"
+                  className="aria-disabled:opacity-50"
                   onClick={() => detail.reviewDisabledReason === null && setReviewOpen(true)}
                   aria-disabled={detail.reviewDisabledReason !== null || undefined}
                   aria-describedby={showReviewReasonLine ? `${reasonId}-review` : undefined}
@@ -220,6 +221,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
                   ref={mergeButtonRef}
                   size="sm"
                   variant="outline"
+                  className="aria-disabled:opacity-50"
                   onClick={() => !mergeBlocked && setMergeOpen(true)}
                   aria-disabled={mergeBlocked || undefined}
                   aria-describedby={mergeReasonLinkId}
