@@ -25,12 +25,20 @@ const MAX_AVATAR_BYTES: usize = 64 * 1024;
 const AVATAR_SIZE_PX: &str = "96";
 pub const MAX_DISPLAY_NAME_CHARS: usize = 100;
 
-/// Drops control characters (so a name cannot forge a line or escape sequence), then caps the length.
+/// Drops control and invisible format/bidi characters (so a name cannot forge a line, escape sequence or
+/// reordered text), then caps the length.
 pub fn truncate_display_name(name: &str) -> String {
     name.chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && !is_invisible_format(*c))
         .take(MAX_DISPLAY_NAME_CHARS)
         .collect()
+}
+
+fn is_invisible_format(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x00AD | 0x061C | 0x180E | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0x2066..=0x206F | 0xFEFF
+    )
 }
 const MAX_AVATAR_REDIRECTS: u32 = 5;
 
@@ -180,7 +188,8 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
     let display_name = record
         .get("name")
         .and_then(Value::as_str)
-        .map(truncate_display_name);
+        .map(truncate_display_name)
+        .filter(|name| !name.trim().is_empty());
     let avatar_url = record
         .get("avatar_url")
         .and_then(Value::as_str)
