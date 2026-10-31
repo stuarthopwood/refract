@@ -119,7 +119,7 @@ async function main() {
     const bothProjects = (l) => l.includes('"octocat/hello-world"') && l.includes('"octocat/spoon-knife"') && !l.includes('@me')
     // Home's "all" tab issues the identical query, so the allowance is one Home call plus one badge call.
     check(beforeView.filter(bothProjects).length <= 2, 'Startup fires one badge search for the full Project set, not two', `${beforeView.filter(bothProjects).length} both-Project all-tab search call(s) (max 2: Home + badge)`);
-    const lastSearch = beforeView[beforeView.length - 1] ?? '';
+    const lastSearch = beforeView.filter(bothProjects).pop() ?? '';
     check(bothProjects(lastSearch), 'The search behind the badge spans both Projects in one call');
     await shot(cdp, '01-sidebar-count.png');
 
