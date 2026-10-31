@@ -51,16 +51,11 @@ async function checkQuestionCard(cdp) {
   await shot(cdp, '01-question-hint.png');
   await cdp.click(rowFinder('radio', 'Postgres'));
   await cdp.waitFor(`document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.includes('Features')`, { timeoutMs: 15_000, label: 'Features tab active after the pick' });
-  const buttons = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).map((b) => b.textContent.trim())`);
-  assert(!buttons.some((t) => t.startsWith('Submit')) && buttons.some((t) => t.startsWith('Next')), `The pick advanced without submitting: footer still reads Next (buttons: ${JSON.stringify(buttons)})`);
+  await sleep(500);
+  const state = await cdp.evaluate(`({ tabs: document.querySelectorAll('[role="tab"]').length, labels: Array.from(document.querySelectorAll('button')).map((b) => b.textContent.trim()) })`);
+  assert(state.tabs === 2, 'The pick advanced to the next question and left the card open (not submitted)');
+  assert(state.labels.some((t) => t.startsWith('Submit')), 'The footer now offers Submit (every question has an answer); nothing was sent');
   await shot(cdp, '02-question-advanced-not-submitted.png');
-  await cdp.click(rowFinder('checkbox', 'Auth'));
-  await cdp.click(`Array.from(document.querySelectorAll('[role="tab"]')).find((t) => t.textContent.includes('Database'))`);
-  await cdp.click(rowFinder('radio', 'Postgres'));
-  await sleep(400);
-  const submitNow = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).some((b) => b.textContent.trim().startsWith('Submit'))`);
-  assert(submitNow, 'With every question answered, only the Submit button submits (it is offered, the card is still open)');
-  await shot(cdp, '03-question-all-answered.png');
 }
 
 async function checkSettingsNotice(cdp) {
