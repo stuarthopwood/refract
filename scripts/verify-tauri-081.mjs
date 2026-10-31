@@ -54,7 +54,7 @@ const probeAll = (tokens) => `(() => {
   const out = {};
   for (const [token, utility, prop] of ${JSON.stringify(tokens.map((t) => [t, UTILITY(t), PROP(t)]))}) {
     const el = document.createElement('div');
-    el.className = utility + ' border border-solid';
+    el.style.cssText = 'border:1px solid;' + (prop === 'color' ? 'color' : prop === 'borderTopColor' ? 'border-color' : 'background-color') + ':var(--' + token + ')';
     document.body.appendChild(el);
     out[token] = getComputedStyle(el)[prop];
     el.remove();
