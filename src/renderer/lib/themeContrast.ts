@@ -17,7 +17,17 @@ const PAIRS: ReadonlyArray<readonly [string, string, number, string]> = [
   ['chat-user-bubble-fg', 'chat-user-bubble-bg', 4.5, 'Your message text on its bubble'],
   ['foreground', 'sidebar-right', 4.5, 'Text on the side panel'],
   ['ring', 'background', 3, 'Focus ring on Background'],
-  ['border', 'background', 3, 'Control edges on Background']
+  ['border', 'background', 3, 'Control edges on Background'],
+  ['tool-row-fg', 'background', 4.5, 'Tool row text'],
+  ['tool-row-error-fg', 'background', 4.5, 'Tool row error text'],
+  ['notice-error-fg', 'background', 4.5, 'Error notice text'],
+  ['approval-card-fg', 'approval-card-bg', 4.5, 'Text on Approval card'],
+  ['composer-control-fg', 'background', 4.5, 'Composer control text'],
+  ['button-secondary-fg', 'button-secondary-bg', 4.5, 'Text on Secondary buttons'],
+  ['button-destructive-fg', 'button-destructive-bg', 4.5, 'Text on Destructive buttons'],
+  ['status-bar-fg', 'status-bar-bg', 4.5, 'Status bar text'],
+  ['tooltip-fg', 'tooltip-bg', 4.5, 'Tooltip text'],
+  ['session-row-selected-fg', 'session-row-selected-bg', 4.5, 'Selected session row text']
 ]
 
 type Rgba = [number, number, number, number]

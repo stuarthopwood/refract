@@ -37,6 +37,44 @@
   --color-chat-user-bubble-bg: var(--chat-user-bubble-bg);
   --color-chat-user-bubble-fg: var(--chat-user-bubble-fg);
   --color-chat-user-bubble-border: var(--chat-user-bubble-border);
+  --color-tool-row-fg: var(--tool-row-fg);
+  --color-tool-row-error-fg: var(--tool-row-error-fg);
+  --color-thinking-row-fg: var(--thinking-row-fg);
+  --color-thinking-row-active-fg: var(--thinking-row-active-fg);
+  --color-notice-info-fg: var(--notice-info-fg);
+  --color-notice-warning-fg: var(--notice-warning-fg);
+  --color-notice-error-fg: var(--notice-error-fg);
+  --color-approval-card-bg: var(--approval-card-bg);
+  --color-approval-card-fg: var(--approval-card-fg);
+  --color-approval-card-border: var(--approval-card-border);
+  --color-composer-control-fg: var(--composer-control-fg);
+  --color-composer-control-hover-bg: var(--composer-control-hover-bg);
+  --color-composer-control-hover-fg: var(--composer-control-hover-fg);
+  --color-composer-control-open-bg: var(--composer-control-open-bg);
+  --color-composer-control-open-fg: var(--composer-control-open-fg);
+  --color-button-secondary-bg: var(--button-secondary-bg);
+  --color-button-secondary-fg: var(--button-secondary-fg);
+  --color-button-secondary-hover-bg: var(--button-secondary-hover-bg);
+  --color-button-destructive-bg: var(--button-destructive-bg);
+  --color-button-destructive-fg: var(--button-destructive-fg);
+  --color-button-destructive-hover-bg: var(--button-destructive-hover-bg);
+  --color-button-outline-bg: var(--button-outline-bg);
+  --color-button-outline-border: var(--button-outline-border);
+  --color-button-outline-hover-bg: var(--button-outline-hover-bg);
+  --color-status-bar-bg: var(--status-bar-bg);
+  --color-status-bar-fg: var(--status-bar-fg);
+  --color-status-pill-attention-bg: var(--status-pill-attention-bg);
+  --color-status-pill-attention-fg: var(--status-pill-attention-fg);
+  --color-status-pill-attention-border: var(--status-pill-attention-border);
+  --color-status-pill-attention-hover-bg: var(--status-pill-attention-hover-bg);
+  --color-tooltip-bg: var(--tooltip-bg);
+  --color-tooltip-fg: var(--tooltip-fg);
+  --color-tooltip-border: var(--tooltip-border);
+  --color-session-row-fg: var(--session-row-fg);
+  --color-session-row-meta-fg: var(--session-row-meta-fg);
+  --color-session-row-hover-bg: var(--session-row-hover-bg);
+  --color-session-row-selected-bg: var(--session-row-selected-bg);
+  --color-session-row-selected-fg: var(--session-row-selected-fg);
   --color-focus-glow: var(--focus-glow);
   --color-elevated-edge: var(--elevated-edge);
   --color-scrim-bg: var(--scrim-bg);
@@ -300,6 +338,48 @@ samp {
   --chat-user-bubble-bg: var(--row-hover-bg);
   --chat-user-bubble-fg: var(--chat-foreground);
   --chat-user-bubble-border: transparent;
+}
+
+/* #1472: per-element tokens default to a role, so a theme file recolours one element alone. Declared on each theme class too, so the contrast probe resolves them against its own theme. */
+:is(:root, .theme-dark, .theme-obsidian, .theme-dark-high-contrast, .theme-nordic-frost, .theme-cyber-amber) {
+  --tool-row-fg: var(--muted-foreground);
+  --tool-row-error-fg: var(--severity-error);
+  --thinking-row-fg: var(--muted-foreground);
+  --thinking-row-active-fg: var(--state-working);
+  --notice-info-fg: var(--muted-foreground);
+  --notice-warning-fg: var(--severity-warning);
+  --notice-error-fg: var(--severity-error);
+  --approval-card-bg: var(--card);
+  --approval-card-fg: var(--card-foreground);
+  --approval-card-border: var(--elevated-edge);
+  --composer-control-fg: var(--muted-foreground);
+  --composer-control-hover-bg: var(--muted);
+  --composer-control-hover-fg: var(--foreground);
+  --composer-control-open-bg: var(--accent);
+  --composer-control-open-fg: var(--accent-foreground);
+  --button-secondary-bg: var(--secondary);
+  --button-secondary-fg: var(--secondary-foreground);
+  --button-secondary-hover-bg: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
+  --button-destructive-bg: var(--destructive);
+  --button-destructive-fg: var(--destructive-foreground);
+  --button-destructive-hover-bg: var(--destructive-hover-bg);
+  --button-outline-bg: var(--field-bg);
+  --button-outline-border: var(--input);
+  --button-outline-hover-bg: var(--field-hover-bg);
+  --status-bar-bg: var(--card);
+  --status-bar-fg: var(--muted-foreground);
+  --status-pill-attention-bg: color-mix(in oklab, var(--state-needs-you) 10%, transparent);
+  --status-pill-attention-fg: var(--state-needs-you);
+  --status-pill-attention-border: color-mix(in oklab, var(--state-needs-you) 50%, transparent);
+  --status-pill-attention-hover-bg: color-mix(in oklab, var(--state-needs-you) 20%, transparent);
+  --tooltip-bg: var(--popover);
+  --tooltip-fg: var(--popover-foreground);
+  --tooltip-border: var(--border);
+  --session-row-fg: var(--sidebar-foreground);
+  --session-row-meta-fg: var(--muted-foreground);
+  --session-row-hover-bg: var(--sidebar-accent);
+  --session-row-selected-bg: var(--sidebar-accent);
+  --session-row-selected-fg: var(--sidebar-accent-foreground);
 }
 
 /* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (Dark (high contrast) uses a bundled Shiki theme and never reads them). */

@@ -214,6 +214,28 @@ export const PAIRS = [
   { fg: 'border', bg: 'sidebar', min: 3 }, // #738 resize grip (bg-border) beside the session list
   { fg: 'border', bg: 'titlebar', min: 3 }, // resize grip rests on the titlebar-adjacent chrome
   { fg: 'accent-text', bg: 'sidebar', min: 3 }, // grip focus/drag beside the session list
+  // #1472 per-element tokens: one pair per fg/bg token on its real surface.
+  { fg: 'tool-row-fg', bg: 'background', min: 4.5 },
+  { fg: 'tool-row-error-fg', bg: 'background', min: 4.5 },
+  { fg: 'thinking-row-fg', bg: 'background', min: 4.5 },
+  { fg: 'thinking-row-active-fg', bg: 'background', min: 4.5 },
+  { fg: 'notice-info-fg', bg: 'background', min: 4.5 },
+  { fg: 'notice-warning-fg', bg: 'background', min: 4.5 },
+  { fg: 'notice-error-fg', bg: 'background', min: 4.5 },
+  { fg: 'approval-card-fg', bg: 'approval-card-bg', min: 4.5 },
+  { fg: 'composer-control-fg', bg: 'background', min: 4.5 },
+  { fg: 'composer-control-hover-fg', bg: 'composer-control-hover-bg', min: 4.5 },
+  { fg: 'composer-control-open-fg', bg: 'composer-control-open-bg', min: 4.5 },
+  { fg: 'button-secondary-fg', bg: 'button-secondary-bg', min: 4.5 },
+  { fg: 'button-destructive-fg', bg: 'button-destructive-bg', min: 4.5 },
+  { fg: 'button-outline-border', bg: 'background', min: 3 },
+  { fg: 'status-bar-fg', bg: 'status-bar-bg', min: 4.5 },
+  { fg: 'status-pill-attention-fg', bg: 'status-bar-bg', min: 4.5 },
+  { fg: 'tooltip-fg', bg: 'tooltip-bg', min: 4.5 },
+  { fg: 'tooltip-border', bg: 'tooltip-bg', min: 1 },
+  { fg: 'session-row-fg', bg: 'session-row-selected-bg', min: 4.5 },
+  { fg: 'session-row-meta-fg', bg: 'session-row-selected-bg', min: 4.5 },
+  { fg: 'session-row-selected-fg', bg: 'session-row-selected-bg', min: 4.5 },
 ]
 
 // The search field's `bg-input/30` fill always renders (`.dark` is always on `<html>`), and `--input` is itself
