@@ -232,6 +232,11 @@ export const PAIRS = [
   { fg: 'button-outline-fg', bg: 'button-outline-bg', on: 'background', min: 4.5 },
   { fg: 'button-outline-fg', bg: 'button-outline-hover-bg', on: 'background', min: 4.5 },
   { fg: 'tooltip-border', bg: 'tooltip-bg', min: 3 },
+  // Mermaid labels (#1491): the HC row keeps its stricter 7:1; the flowchart node uses its accent fill, covered by mermaidAccentRows.
+  { fg: 'mermaid-text', bg: 'mermaid-bg', min: 4.5 },
+  { fg: 'mermaid-text', bg: 'mermaid-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'mermaid-node-fg', bg: 'mermaid-node-fill', min: 4.5 },
+  { fg: 'mermaid-cscale-label-11', bg: 'mermaid-cscale-11', min: 4.5 },
   { fg: 'status-bar-fg', bg: 'status-bar-bg', min: 4.5 },
   { fg: 'status-pill-attention-fg', bg: 'status-bar-bg', min: 4.5 },
   { fg: 'status-pill-attention-fg', bg: 'status-pill-attention-bg', on: 'status-bar-bg', min: 4.5 },

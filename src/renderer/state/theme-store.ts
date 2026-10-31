@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { toast } from 'sonner'
 import { CSS_VARIABLES_SYNTAX_THEME, THEMES, isThemeId } from '../../shared/themes'
@@ -133,7 +134,11 @@ export function useActiveThemeId(): ThemeId {
 
 /** Changes whenever the applied theme's colours change (preset, custom pick, or custom token edit). */
 export function useThemeKey(): string {
- return useThemeStore((s) => `${s.theme}|${s.customId ?? ''}|${JSON.stringify(activeCustomTheme(s)?.tokens ?? {})}`)
+ const theme = useThemeStore((s) => s.theme)
+ const customId = useThemeStore((s) => s.customId)
+ const tokens = useThemeStore((s) => activeCustomTheme(s)?.tokens)
+ // Stringify only when the token object itself changes, not on every unrelated store update.
+ return useMemo(() => `${theme}|${customId ?? ''}|${JSON.stringify(tokens ?? {})}`, [theme, customId, tokens])
 }
 
 /** Shiki theme for code blocks: a custom theme that overrides any syntax token needs the CSS-variables theme. */

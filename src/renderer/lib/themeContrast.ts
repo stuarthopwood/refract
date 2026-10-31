@@ -26,6 +26,9 @@ const PAIRS: ReadonlyArray<readonly [string, string, number, string]> = [
   ['button-outline-fg', 'background', 4.5, 'Text on Outline buttons'],
   ['status-bar-fg', 'status-bar-bg', 4.5, 'Status bar text'],
   ['tooltip-fg', 'tooltip-bg', 4.5, 'Tooltip text'],
+  ['mermaid-text', 'mermaid-bg', 4.5, 'Diagram text'],
+  ['mermaid-node-fg', 'mermaid-node-fill', 4.5, 'Diagram node text'],
+  ['scrollbar-thumb', 'background', 3, 'Scrollbar thumb on Background'],
   ['button-outline-fg', 'button-outline-hover-bg', 4.5, 'Text on hovered Outline buttons'],
   ['button-secondary-fg', 'button-secondary-hover-bg', 4.5, 'Text on hovered Secondary buttons'],
   ['session-row-selected-fg', 'session-row-selected-bg', 4.5, 'Selected session row text']

@@ -448,7 +448,11 @@ for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows
 
 // The in-app custom-theme warnings must be a subset of this gate's pairs (same fg/bg, same or looser floor), or they drift apart.
 const inAppSrc = readFileSync(path.join(repoRoot, 'src/renderer/lib/themeContrast.ts'), 'utf-8')
-const gateKeys = new Map([...PAIRS, ...COMMAND_PILL_PAIRS, ...READOUT_CARD_PAIRS, ...MARKDOWN_PAIRS].map((p) => [`${p.fg}|${p.bg}`, p.min]))
+const gateKeys = new Map()
+for (const p of [...PAIRS, ...COMMAND_PILL_PAIRS, ...READOUT_CARD_PAIRS, ...MARKDOWN_PAIRS]) {
+  const key = `${p.fg}|${p.bg}`
+  gateKeys.set(key, Math.min(p.min, gateKeys.get(key) ?? Infinity))
+}
 // Gated by userBubbleContrastRows rather than a plain pair.
 gateKeys.set('chat-user-bubble-fg|chat-user-bubble-bg', 4.5)
 for (const m of inAppSrc.matchAll(/\[\s*'([\w-]+)',\s*'([\w-]+)',\s*([\d.]+),/g)) {

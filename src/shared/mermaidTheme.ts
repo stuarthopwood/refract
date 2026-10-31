@@ -40,8 +40,8 @@ export function buildMermaidThemeVariables(read: MermaidTokenReader): MermaidThe
     pieStrokeColor: ink,
     pieOuterStrokeColor: line,
     scaleLabelColor: ink,
-    cScale11: read('cscale-12'),
-    cScaleLabel11: read('cscale-label-12')
+    cScale11: read('cscale-11'),
+    cScaleLabel11: read('cscale-label-11')
   }
   palette.forEach((c, i) => {
     v[`pie${i + 1}`] = c
