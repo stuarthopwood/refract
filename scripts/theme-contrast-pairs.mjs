@@ -229,12 +229,16 @@ export const PAIRS = [
   { fg: 'button-secondary-fg', bg: 'button-secondary-bg', min: 4.5 },
   { fg: 'button-destructive-fg', bg: 'button-destructive-bg', min: 4.5 },
   { fg: 'button-outline-border', bg: 'background', min: 3 },
+  { fg: 'button-outline-fg', bg: 'background', min: 4.5 },
   { fg: 'status-bar-fg', bg: 'status-bar-bg', min: 4.5 },
   { fg: 'status-pill-attention-fg', bg: 'status-bar-bg', min: 4.5 },
   { fg: 'tooltip-fg', bg: 'tooltip-bg', min: 4.5 },
-  { fg: 'tooltip-border', bg: 'tooltip-bg', min: 1 },
   { fg: 'session-row-fg', bg: 'session-row-selected-bg', min: 4.5 },
   { fg: 'session-row-meta-fg', bg: 'session-row-selected-bg', min: 4.5 },
+  { fg: 'session-row-fg', bg: 'sidebar', min: 4.5 },
+  { fg: 'session-row-meta-fg', bg: 'sidebar', min: 4.5 },
+  { fg: 'session-row-fg', bg: 'session-row-hover-bg', min: 4.5 },
+  { fg: 'session-row-meta-fg', bg: 'session-row-hover-bg', min: 4.5 },
   { fg: 'session-row-selected-fg', bg: 'session-row-selected-bg', min: 4.5 },
 ]
 

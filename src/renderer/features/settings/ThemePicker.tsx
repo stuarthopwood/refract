@@ -104,7 +104,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             warnings.length > 0 && (
               <div className="px-2 pb-1">
                 <Badge asChild variant="warning">
-                  <button type="button" id={`${nameId}-warn`} aria-expanded={open === e.key} aria-controls={`${nameId}-warn-list`} onClick={() => setOpen(open === e.key ? null : e.key)}>
+                  <button type="button" id={`${nameId}-warn`} aria-expanded={open === e.key} aria-controls={open === e.key ? `${nameId}-warn-list` : undefined} onClick={() => setOpen(open === e.key ? null : e.key)}>
                     <AlertTriangleIcon aria-hidden />
                     {warnings.length} contrast {warnings.length === 1 ? 'warning' : 'warnings'}
                     <ChevronDownIcon aria-hidden className={cn('transition-transform', open === e.key && 'rotate-180')} />
@@ -112,7 +112,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
                 </Badge>
                 {open === e.key && (
                   <ul id={`${nameId}-warn-list`} className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
-                    {warnings.map((w) => <li key={w.label}>{describeWarning(w)}</li>)}
+                    {warnings.map((w) => <li key={`${w.fg}|${w.bg}`}>{describeWarning(w)}</li>)}
                   </ul>
                 )}
               </div>
@@ -149,26 +149,16 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
     <div className="max-w-sm">
       <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
         <p id="theme-builtin-label" className="px-2 pt-1 text-xs text-muted-foreground">Built-in</p>
-        <div role="group" aria-labelledby="theme-builtin-label" className="flex flex-col gap-1">
-          {builtins.map((e, i) => renderRow(e, i))}
-        </div>
+        {builtins.map((e, i) => renderRow(e, i))}
         {customs.length > 0 && <p id="theme-custom-label" className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
-        {customs.length > 0 && (
-          <div role="group" aria-labelledby="theme-custom-label" className="flex flex-col gap-1">
-            {customs.map((e, i) => renderRow(e, builtins.length + i))}
-          </div>
-        )}
+        {customs.map((e, i) => renderRow(e, builtins.length + i))}
       </div>
-      {rejected.length > 0 && (
-        <div role="alert">
-          {rejected.map((r) => (
-            <InlineStatus key={r.file} density="compact" className="mt-2 text-destructive">Couldn&apos;t load {r.file}: {r.error}</InlineStatus>
-          ))}
-        </div>
-      )}
+      {rejected.map((r) => (
+        <InlineStatus key={r.file} tone="error" density="compact" className="mt-2">Couldn&apos;t load {r.file}: {r.error}</InlineStatus>
+      ))}
       {actions.importError && <InlineStatus tone="error" density="compact" className="mt-2">{actions.importError}</InlineStatus>}
       <div className="mt-4 flex gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={actions.importing} onClick={() => void actions.importTheme()}>
+        <Button type="button" variant="outline" size="sm" aria-disabled={actions.importing} onClick={() => { if (!actions.importing) void actions.importTheme() }}>
           <UploadIcon aria-hidden /> {actions.importing ? 'Importing…' : 'Import theme…'}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => void actions.showInFolder()}>

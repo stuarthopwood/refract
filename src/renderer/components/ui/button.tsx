@@ -13,7 +13,7 @@ const buttonVariants = cva(
         // (no token exists for this mix).
         invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
         outline:
-          "border-button-outline-border bg-button-outline-bg hover:bg-button-outline-hover-bg hover:text-foreground aria-expanded:bg-button-outline-hover-bg aria-expanded:text-foreground",
+          "border-button-outline-border bg-button-outline-bg text-button-outline-fg hover:bg-button-outline-hover-bg aria-expanded:bg-button-outline-hover-bg",
         secondary:
           "bg-button-secondary-bg text-button-secondary-fg hover:bg-button-secondary-hover-bg aria-expanded:bg-button-secondary-bg aria-expanded:text-button-secondary-fg",
         ghost:

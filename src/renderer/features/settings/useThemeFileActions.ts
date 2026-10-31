@@ -6,7 +6,7 @@ import { useThemeStore } from '@/state'
 import type { CustomTheme } from '../../../shared/ipc-themes'
 import type { ThemeId } from '../../../shared/themes'
 
-/** Import, export, remove and folder actions for custom theme files; each failure surfaces as a toast. */
+/** Import, export, remove and folder actions for custom theme files; success is a toast; failures show inline. */
 export function useThemeFileActions() {
   const refresh = useThemeStore((s) => s.refreshCustomThemes)
   const [pendingRemove, setPendingRemoveRaw] = useState<CustomTheme | null>(null)

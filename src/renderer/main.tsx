@@ -23,7 +23,7 @@ function BootstrapNotice() {
       notice === 'reset'
         ? 'Custom theme disabled because of --reset-theme. Refract is using your built-in theme.'
         : 'Your custom theme file is missing or invalid, so Refract is using a built-in theme.',
-      { duration: Infinity, closeButton: true, action: { label: 'Appearance settings', onClick: () => useViewStore.getState().openSettings('appearance') } }
+      { id: 'theme-bootstrap-notice', duration: Infinity, closeButton: true, action: { label: 'Appearance settings', onClick: () => useViewStore.getState().openSettings('appearance') } }
     )
   }, [])
   return null

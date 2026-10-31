@@ -54,7 +54,7 @@ const probeAll = (tokens) => `(() => {
   const out = {};
   for (const [token, utility, prop] of ${JSON.stringify(tokens.map((t) => [t, UTILITY(t), PROP(t)]))}) {
     const el = document.createElement('div');
-    el.style.cssText = 'border:1px solid;' + (prop === 'color' ? 'color' : prop === 'borderTopColor' ? 'border-color' : 'background-color') + ':var(--' + token + ')';
+    el.style.cssText = 'border:1px solid;' + (prop === 'color' ? 'color' : prop === 'borderTopColor' ? 'border-color' : 'background-color') + ':var(--' + token + ', rgb(1, 2, 3))';
     document.body.appendChild(el);
     out[token] = getComputedStyle(el)[prop];
     el.remove();
@@ -70,7 +70,7 @@ async function runChecks(cdp, repoDir) {
   );
   await addRepository(cdp, repoDir);
   await cdp.waitFor(groupTriggerFinder(path.basename(repoDir)) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
-  assert(TOKENS.length === 38, `the shared default block declares 38 tokens (found ${TOKENS.length})`);
+  assert(TOKENS.length === 39, `the shared default block declares 39 tokens (found ${TOKENS.length})`);
 
   for (const name of BUILTINS) {
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`).catch(() => {});
@@ -81,7 +81,7 @@ async function runChecks(cdp, repoDir) {
     await cdp.waitFor(`${radio(name)}?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: `${name} checked` });
     await sleep(300);
     const colours = await cdp.evaluate(probeAll(TOKENS));
-    const unresolved = TOKENS.filter((t) => !colours[t] || colours[t] === 'rgba(0, 0, 0, 0)' && !t.includes('hover') && !t.includes('pill'));
+    const unresolved = TOKENS.filter((t) => !colours[t] || colours[t] === 'rgb(1, 2, 3)');
     assert(unresolved.length === 0, `${name}: every per-element token resolves to a colour (unresolved: ${unresolved.join(', ') || 'none'})`);
     await shot(cdp, `theme-${name.toLowerCase().replace(/[^a-z]+/g, '-')}.png`);
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
@@ -99,9 +99,11 @@ async function runChecks(cdp, repoDir) {
 
   const custom = await cdp.evaluate(probeAll(TOKENS));
   const wrong = TOKENS.filter((t) => custom[t] !== toRgb(CUSTOM_TOKENS[t]));
-  assert(wrong.length === 0, `custom theme recolours all 38 tokens independently (mismatches: ${wrong.join(', ') || 'none'})`);
+  assert(wrong.length === 0, `custom theme recolours all 39 tokens independently (mismatches: ${wrong.join(', ') || 'none'})`);
   await shot(cdp, 'theme-custom-per-element.png');
 
+  const outlineFg = await cdp.evaluate(`getComputedStyle(Array.from(document.querySelectorAll('button')).find((b) => b.textContent.includes('Import theme'))).color`);
+  assert(outlineFg === toRgb(CUSTOM_TOKENS['button-outline-fg']), 'the real Import button (outline) paints --button-outline-fg');
   const outlineBg = await cdp.evaluate(`getComputedStyle(Array.from(document.querySelectorAll('button')).find((b) => b.textContent.includes('Import theme'))).backgroundColor`);
   assert(outlineBg === toRgb(CUSTOM_TOKENS['button-outline-bg']), 'the real Import button (outline) paints --button-outline-bg');
 

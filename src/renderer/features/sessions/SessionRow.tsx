@@ -111,6 +111,8 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
     return <SessionRowTable session={session} projectName={props.projectName} surface={props.surface} row={row} />
   }
   const { repository } = props
+  const fg = isVisible ? 'text-session-row-selected-fg' : 'text-session-row-fg'
+  const metaFg = isVisible ? 'text-session-row-selected-fg' : 'text-session-row-meta-fg'
   const lineTwo = lineTwoKind(session, activityText)
   // "focused pane" is announced only while a Split is open; in a single pane it repeats `aria-current`.
   const accessibleName = [
@@ -193,17 +195,17 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     ) : (
                       <StateIcon status={displayStatus(session)} />
                     )}
-                    <span className={cn('truncate text-sm font-normal', session.hiddenAt ? 'text-session-row-meta-fg' : 'text-session-row-fg')}>{session.name}</span>
+                    <span className={cn('truncate text-sm font-normal', session.hiddenAt ? metaFg : fg)}>{session.name}</span>
                     {session.hiddenAt && <HiddenMarker compact />}
                   </span>
                   {lineTwo === 'start-progress' && session.startProgress ? (
-                    <span className="truncate pl-6 text-xs text-session-row-meta-fg" aria-hidden>
+                    <span className={cn('truncate pl-6 text-xs', metaFg)} aria-hidden>
                       {describeStartProgress(session.startProgress)}
                     </span>
                   ) : lineTwo === 'terminated' ? (
                     <span className="truncate pl-6 text-xs text-destructive">Terminated unexpectedly</span>
                   ) : lineTwo === 'archived' ? (
-                    <span className="flex min-w-0 items-center gap-1 pl-6 text-xs text-session-row-meta-fg">
+                    <span className={cn('flex min-w-0 items-center gap-1 pl-6 text-xs', metaFg)}>
                       <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
                       <span className="truncate">{repository.name}</span>
                     </span>
@@ -212,13 +214,13 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                       data-testid="session-activity-line"
                       className={cn(
                         'truncate pl-6 text-xs',
-                        session.status === 'needs-you' ? 'text-session-row-fg' : 'text-session-row-meta-fg'
+                        session.status === 'needs-you' ? fg : metaFg
                       )}
                     >
                       {activityText}
                     </span>
                   ) : (
-                    <span className="truncate pl-6 font-code text-xs text-session-row-meta-fg">{session.branch}</span>
+                    <span className={cn('truncate pl-6 font-code text-xs', metaFg)}>{session.branch}</span>
                   )}
                 </button>
               </SessionDetailsCard>

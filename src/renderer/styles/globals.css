@@ -59,6 +59,7 @@
   --color-button-destructive-fg: var(--button-destructive-fg);
   --color-button-destructive-hover-bg: var(--button-destructive-hover-bg);
   --color-button-outline-bg: var(--button-outline-bg);
+  --color-button-outline-fg: var(--button-outline-fg);
   --color-button-outline-border: var(--button-outline-border);
   --color-button-outline-hover-bg: var(--button-outline-hover-bg);
   --color-status-bar-bg: var(--status-bar-bg);
@@ -340,7 +341,7 @@ samp {
   --chat-user-bubble-border: transparent;
 }
 
-/* #1472: per-element tokens default to a role, so a theme file recolours one element alone. Declared on each theme class too, so the contrast probe resolves them against its own theme. */
+/* #1472: per-element tokens default to a role. Also declared per theme class so the contrast probe resolves them. */
 :is(:root, .theme-dark, .theme-obsidian, .theme-dark-high-contrast, .theme-nordic-frost, .theme-cyber-amber) {
   --tool-row-fg: var(--muted-foreground);
   --tool-row-error-fg: var(--severity-error);
@@ -364,6 +365,7 @@ samp {
   --button-destructive-fg: var(--destructive-foreground);
   --button-destructive-hover-bg: var(--destructive-hover-bg);
   --button-outline-bg: var(--field-bg);
+  --button-outline-fg: var(--foreground);
   --button-outline-border: var(--input);
   --button-outline-hover-bg: var(--field-hover-bg);
   --status-bar-bg: var(--card);
