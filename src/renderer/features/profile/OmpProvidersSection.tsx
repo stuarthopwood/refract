@@ -70,6 +70,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
             ref={checkAgainRef}
             variant="text"
             size="sm"
+            className="aria-disabled:opacity-50"
             aria-disabled={refreshing || undefined}
             onClick={() => {
               if (!refreshing) void handleRefresh()

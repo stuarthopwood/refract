@@ -84,9 +84,6 @@ async function runChecks(cdp, repoDir) {
     const unresolved = TOKENS.filter((t) => !colours[t] || colours[t] === 'rgb(1, 2, 3)');
     assert(unresolved.length === 0, `${name}: every per-element token resolves to a colour (unresolved: ${unresolved.join(', ') || 'none'})`);
     await shot(cdp, `theme-${name.toLowerCase().replace(/[^a-z]+/g, '-')}.png`);
-    const pe = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find((x) => x.textContent.includes('Import theme')); b.setAttribute('aria-disabled', 'true'); const v = getComputedStyle(b).pointerEvents; b.setAttribute('aria-disabled', 'false'); return v; })()`);
-  assert(pe !== 'none', 'an aria-disabled Button keeps pointer events so its reason tooltip can open');
-
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
     await sleep(200);
     await shot(cdp, `chat-${name.toLowerCase().replace(/[^a-z]+/g, '-')}.png`);
@@ -110,7 +107,7 @@ async function runChecks(cdp, repoDir) {
   const outlineBg = await cdp.evaluate(`getComputedStyle(Array.from(document.querySelectorAll('button')).find((b) => b.textContent.includes('Import theme'))).backgroundColor`);
   assert(outlineBg === toRgb(CUSTOM_TOKENS['button-outline-bg']), 'the real Import button (outline) paints --button-outline-bg');
 
-  const pe = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find((x) => x.textContent.includes('Import theme')); b.setAttribute('aria-disabled', 'true'); const v = getComputedStyle(b).pointerEvents; b.setAttribute('aria-disabled', 'false'); return v; })()`);
+  const pe = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find((x) => x.textContent.includes('Import theme')); b.setAttribute('aria-disabled', 'true'); const v = getComputedStyle(b).pointerEvents; b.removeAttribute('aria-disabled'); return v; })()`);
   assert(pe !== 'none', 'an aria-disabled Button keeps pointer events so its reason tooltip can open');
 
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);

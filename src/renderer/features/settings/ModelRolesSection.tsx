@@ -288,7 +288,7 @@ export function ModelRolesSection() {
           <AlertTitle>Could not read model roles</AlertTitle>
           <AlertDescription>{loadError}</AlertDescription>
           <div className="col-start-2 mt-2">
-            <Button ref={retryLoadRef} variant="outline" size="sm" aria-disabled={retryingLoad || undefined} onClick={() => void handleRetryLoad()}>
+            <Button ref={retryLoadRef} variant="outline" size="sm" className="aria-disabled:opacity-50" aria-disabled={retryingLoad || undefined} onClick={() => void handleRetryLoad()}>
               {retryingLoad ? 'Retrying…' : 'Retry'}
             </Button>
           </div>
