@@ -2165,6 +2165,15 @@ The developer types a slash command and finds the ones the agent offers. If a se
   every open Session and persists with the other settings (`settings.setShowFinishedTurnTimes`,
   contracts/ipc.md). The turn-time readout chip, and per-tool, thought-run and subagent durations,
   are unchanged.
+- **FR-120** (new, 2026-10-31, issue #1285; amends FR-103, FR-105): When a turn ends stopped and
+  the composer becomes disabled while the textarea (or the page body) holds focus, focus MUST move
+  to the first enabled button of the stop banner, or to the banner itself (`tabIndex` -1, labelled)
+  when it has none, and MUST NOT stay on `<body>` (WCAG 2.4.3). When the composer is enabled again
+  and focus is on the banner or on `<body>`, focus MUST return to the textarea; focus anywhere else
+  MUST be left alone. Each transition has one helper and one call site: `stopAndRestore` focuses
+  the composer exactly once. The composer's resting and focus outline in Dark (high contrast) were
+  measured against 3:1 (WCAG 1.4.11): focus ring 15.42:1, resting border 9.54:1, control border
+  5.27:1, so no theme token changes. Converge route; spec 092 records the folder choice.
 
 ### Key Entities
 

@@ -21,8 +21,8 @@ function toAttachment(image: StopResult['messages'][number]['images'][number]): 
 }
 
 /** Appends the withdrawn messages below whatever the developer already typed (blank line
- * between), adds their images, announces the count and focuses the composer. */
-export function restoreQueuedMessages(sessionId: string, restored: StopResult, focusComposer: () => void): void {
+ * between), adds their images and announces the count. */
+export function restoreQueuedMessages(sessionId: string, restored: StopResult): void {
   // The "[Image]" placeholder is only dropped when the entry carries images (a real typed "[Image]" stays).
   const texts = restored.messages
     .filter((message) => message.text.trim() !== '' && !(message.text === IMAGE_ONLY_QUEUE_TEXT && message.images.length > 0))
@@ -36,20 +36,20 @@ export function restoreQueuedMessages(sessionId: string, restored: StopResult, f
     if (texts.length > 0) store.setText(sessionId, [existing.trimEnd(), ...texts].filter((part) => part !== '').join('\n\n'))
     if (images.length > 0) store.setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, ...images] }))
     store.announceAttachment(sessionId, `${count} queued ${count === 1 ? 'message' : 'messages'} returned to the editor.`)
-    focusComposer()
   }
   if (images.length < accepted.length) toast.warning('Some restored images did not fit the attachment limit and were not returned.')
   if (restored.imagesDropped) toast.warning('Images in the returned queued messages were too large to restore and were dropped.')
   if (restored.truncated) toast.warning('Some queued messages were too large to restore and were not returned.')
 }
 
-/** Resolves true when the stop succeeded. */
+/** Resolves true when the stop succeeded; the one place that moves focus after a stop. */
 export async function stopAndRestore(sessionId: string, focusComposer: () => void): Promise<boolean> {
   const result = await window.refract.chat.stop(sessionId)
   if (!result.ok) {
     notify(result.error)
     return false
   }
-  restoreQueuedMessages(sessionId, result.value, focusComposer)
+  restoreQueuedMessages(sessionId, result.value)
+  focusComposer()
   return true
 }

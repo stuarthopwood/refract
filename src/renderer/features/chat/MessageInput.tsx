@@ -54,7 +54,7 @@ import { ComposerBranchLabel } from './ComposerBranchLabel'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import { stopAndRestore } from './restoreQueue'
-import { isFocusStranded } from '@/lib/focus'
+import { useComposerFocusHandoff } from './useComposerFocusHandoff'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import type { QueuedMessages } from './useQueuedMessages'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
@@ -188,16 +188,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   const isWorking = status === 'working'
-  // Layout effect: no frame without a focus ring. A disabled composer (stop banner) cannot take
-  // focus; that case is tracked in #1285.
-  useLayoutEffect(() => {
-    if (isWorking || !stopHadFocusRef.current) return
-    stopHadFocusRef.current = false
-    if (isFocusStranded(document.activeElement, null)) textareaRef.current?.focus()
-  }, [isWorking])
   // Any stop without a stop banner keeps the composer usable; a send starts the agent (#1205).
   const notStarted = status === 'stopped' && (stopReason === 'not-started' || stopReason === undefined)
   const disabled = status === 'stopped' && !notStarted
+  useComposerFocusHandoff({ textareaRef, isWorking, disabled, stopHadFocusRef })
 
   const { slashMatches, showSlashMenu, slashMenuKey, slashMenuViewProps, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey } = useSlashMenuCompletion({
     sessionId,

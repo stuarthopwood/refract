@@ -43,14 +43,23 @@ export function focusPaneContent(container: HTMLElement | null): void {
     textarea.focus()
     return
   }
-  const bannerButton = container.querySelector<HTMLElement>(
+  if (focusStopBanner(container)) return
+  container.focus()
+}
+
+/** Focuses the banner's first enabled button, else the banner itself; false when there is no banner. */
+export function focusStopBanner(container: HTMLElement | null): boolean {
+  const bannerButton = container?.querySelector<HTMLElement>(
     '[data-pane-banner] button:not(:disabled), [data-pane-banner] [href]'
   )
   if (bannerButton) {
     bannerButton.focus()
-    return
+    return true
   }
-  container.focus()
+  const banner = container?.querySelector<HTMLElement>('[data-pane-banner][tabindex="-1"]')
+  if (!banner) return false
+  banner.focus()
+  return true
 }
 
 export function focusSessionPane(sessionId: string): boolean {

@@ -1,0 +1,19 @@
+// SYNTHESIZED (issue #1285 live check): preamble copied from stop-focus-897.jsonl. The agent exits mid-turn so the Session stops, the stop banner shows and the composer disables while it held focus. Hand-written against the documented wire contract; not a fresh live capture of a real omp.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stop-banner-1285\\conversation.json","sessionId":"sess-1285-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"t1285-"}],"timestamp":0}}}
+{"__delay__":8000}
+{"__exit__":{"code":1}}

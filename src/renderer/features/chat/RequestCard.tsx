@@ -6,12 +6,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { SecretInput } from '@/components/SecretInput'
 import { OPTION_FILL_CLASS } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
 import { CollapsedLine } from './CollapsedLine'
-import { consumeAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
+import { consumeAskFocusPending, markAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { isFocusStranded } from '@/lib/focus'
 import { UserAvatar } from '@/components/UserAvatar'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
@@ -304,6 +305,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {
+    const hadFocus = document.activeElement !== document.body && document.activeElement !== null
     setBusy(true)
     setError(null)
     const result = await window.refract.chat.answer(sessionId, request.requestId, value)
@@ -312,7 +314,10 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
       setError(result.error.message)
       return
     }
+    // Armed at the swap, not before the await: busy disables the focused control and the summary row must claim focus.
+    if (hadFocus) markAskFocusPending(`${sessionId}:${request.requestId}`)
     setResolved({ kind, detail })
+    if (request.kind === 'question' && request.secret) setText('')
   }
 
   if (resolved) {
@@ -348,6 +353,17 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   const trimmedText = text.trim()
+  const answerValue = request.secret ? text : trimmedText
+  const answerSummary = request.secret ? 'Secret entered' : trimmedText
+  const textFieldProps = {
+    value: text,
+    disabled: busy,
+    placeholder: request.secret ? 'Enter the secret' : 'Type an answer',
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => setText(event.target.value),
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter' && trimmedText) void answer({ value: answerValue }, 'answered', answerSummary)
+    }
+  }
   const { heading, body } = splitQuestionHeading(request.title)
   const safeRequestId = request.requestId.replace(/[^a-zA-Z0-9_-]/g, '-')
   const headingTitleId = `${safeRequestId}-ask-heading-title`
@@ -429,19 +445,11 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {request.inputKind === 'text' && (
           <div className="flex gap-2">
-            <Input
-              value={text}
-              disabled={busy}
-              placeholder="Type an answer"
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && trimmedText) void answer({ value: trimmedText }, 'answered', trimmedText)
-              }}
-            />
+            {request.secret ? <SecretInput {...textFieldProps} aria-label="Secret" aria-describedby={groupAriaLabelledBy} /> : <Input {...textFieldProps} />}
             <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
               Cancel
             </Button>
-            <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: trimmedText }, 'answered', trimmedText)}>
+            <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: answerValue }, 'answered', answerSummary)}>
               Send
             </Button>
           </div>
