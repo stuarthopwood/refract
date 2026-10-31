@@ -73,6 +73,12 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
           open={newIssueOpen}
           onOpenChange={setNewIssueOpen}
           onCloseFocus={() => newIssueRef.current?.focus()}
+          title="New issue"
+          onCreated={(issue) => {
+            const store = useIssuesStore.getState()
+            store.select({ repositoryId: target.id, number: issue.number })
+            void store.refresh(repositories.map((repo) => repo.id))
+          }}
         />
       )}
     </div>
