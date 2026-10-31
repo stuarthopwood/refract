@@ -78,6 +78,12 @@ jobs:
       - name: Check opacity modifiers
         run: pnpm check:alpha-modifiers
 
+      - name: Check icon-only controls
+        run: pnpm check:icon-only-controls
+
+      - name: Check hit targets
+        run: pnpm check:hit-targets
+
       - name: Check advisor roster
         run: pnpm check:advisor-roster
 

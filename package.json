@@ -24,6 +24,8 @@
     "check:comment-density": "node scripts/check-comment-density.mjs",
     "check:spacing": "node scripts/check-spacing.mjs",
     "check:alpha-modifiers": "node scripts/check-alpha-modifiers.mjs",
+    "check:icon-only-controls": "node scripts/check-icon-only-controls.mjs",
+    "check:hit-targets": "node scripts/check-hit-targets.mjs",
     "check:advisor-roster": "node scripts/check-advisor-roster.mjs",
     "worktrees:reap": "node scripts/worktrees-reap.mjs",
     "check:omp-schema": "node scripts/check-omp-schema-drift.mjs",
