@@ -11,8 +11,8 @@
 - [x] T9 MessageMenu kebab label (emoji-safe) and Copy placeholder (FR-007)
 - [x] T10 Rust: `truncate_display_name`, `image_save` retry, `cli.rs` wrapper (FR-008)
 - [x] T11 `verify-tauri-082-ui.mjs` and chained `verify-tauri-082.mjs` (FR-009)
-- [ ] T12 `pnpm ci:local` under the build slot
-- [ ] T13 Debug build and `verify-tauri-082.mjs` from committed HEAD; screenshots; `report.json.gitHead` equals HEAD
-- [ ] T14 Six-reviewer gate, fix rounds, final-delta review after any later code change
-- [ ] T15 One follow-up issue for remaining Lows/Mediums and the skipped items
-- [ ] T16 Final report to the director
+- [x] T12 `pnpm ci:local` under the build slot
+- [x] T13 Debug build and `verify-tauri-082.mjs` from committed HEAD; screenshots; `report.json.gitHead` equals HEAD
+- [x] T14 Six-reviewer gate, fix rounds, final-delta review after any later code change
+- [x] T15 One follow-up issue for remaining Lows/Mediums and the skipped items
+- [x] T16 Final report to the director
