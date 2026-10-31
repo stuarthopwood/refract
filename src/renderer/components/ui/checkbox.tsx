@@ -39,8 +39,11 @@ export const CHECKBOX_LIST_ITEM_CLASS =
 // Question-card option row (#1434): a fill, not a border; the dot or tick shows the pick. Transparent border keeps a forced-colors edge.
 export const OPTION_FILL_CLASS =
   "border-transparent bg-muted hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] dark:border-transparent dark:bg-muted dark:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
+// Busy rows keep their resting fill on hover, so they do not look pressable. Literal classes: Tailwind cannot see interpolated ones.
+const OPTION_BUSY_HOVER =
+  "aria-disabled:hover:bg-muted dark:aria-disabled:hover:bg-muted aria-disabled:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] dark:aria-disabled:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
 export const OPTION_ROW_CLASS =
-  OPTION_FILL_CLASS + " grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 min-h-9 py-1 aria-disabled:opacity-50 data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] data-[state=checked]:border-transparent focus-visible:border-transparent forced-colors:data-[state=checked]:border-[Highlight]"
+  OPTION_FILL_CLASS + " " + OPTION_BUSY_HOVER + " grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 min-h-9 py-1 aria-disabled:opacity-50 data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] data-[state=checked]:border-transparent focus-visible:border-transparent forced-colors:data-[state=checked]:border-[Highlight]"
 /** Mark column for an option row: centred on the whole row, spanning label and description. */
 export const OPTION_MARK_CLASS = "row-span-2 self-center"
 export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center rounded-sm border border-muted-foreground"

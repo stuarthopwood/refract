@@ -32,7 +32,10 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
     // One forced refresh per run so a stale cached catalog cannot hide or invent a warning.
     const force = !catalogRefreshed
     catalogRefreshed = true
-    void useModelRolesStore.getState().loadCatalog('chat', force)
+    void useModelRolesStore.getState().loadCatalog('chat', force).then(() => {
+      // A failed first load must not spend the one forced refresh.
+      if (useModelRolesStore.getState().catalogErrors.chat) catalogRefreshed = false
+    })
   }, [sessionId, model?.id])
   const suspect = findSuspectWindow(catalog, model)
   const notice = suspect ? suspectWindowNote(suspect) : undefined
