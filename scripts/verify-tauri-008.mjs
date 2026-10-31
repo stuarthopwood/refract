@@ -187,6 +187,9 @@ async function main() {
       extraEnv: {
         REFRACT_IMPORT_SOURCE_DIR: importDir,
         GH_CONFIG_DIR: ghCfgDir,
+        GH_TOKEN: '',
+        GITHUB_TOKEN: '',
+        GH_HOST: '',
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath
       }
