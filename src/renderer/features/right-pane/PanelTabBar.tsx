@@ -160,7 +160,6 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                 key={id}
                 label={`Close ${descriptor.name} panel`}
                 shortcut={['Delete']}
-                aria-keyshortcuts="Delete"
                 tabIndex={id === activePanelId ? 0 : -1}
                 data-panel-close
                 className={cn(

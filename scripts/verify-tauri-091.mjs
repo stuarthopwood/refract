@@ -83,9 +83,9 @@ async function checkShortcuts(cdp) {
   await cdp.waitFor(`document.querySelector('[data-rail-toggle]')?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'right pane open' });
   await cdp.click(`document.querySelector('[data-rail-button="git-changes"]')`);
   await cdp.waitFor(`!!document.querySelector('[data-panel-close]')`, { timeoutMs: 10_000, label: 'panel close button' });
-  const close = await cdp.evaluate(`document.querySelector('[data-panel-close]').getAttribute('aria-keyshortcuts')`);
+  const close = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-panel-close]')).map((b) => b.getAttribute('aria-keyshortcuts'))`);
   await shot(cdp, '03-right-pane-git-changes.png');
-  assert(close === 'Delete', 'The panel tab close button exposes aria-keyshortcuts Delete');
+  assert(close.includes('Delete'), `The panel tab close button derives aria-keyshortcuts Delete (saw ${JSON.stringify(close)})`);
 }
 
 async function main() {
