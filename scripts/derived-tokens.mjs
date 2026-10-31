@@ -67,11 +67,13 @@ export function addDerivedTokens(props, rawProps) {
     const b = linearToOklab(second.linear)
     const alpha = first.alpha * weight + second.alpha * (1 - weight)
     if (alpha === 0) continue
+    // Percentages under 100% leave the remainder transparent (CSS Color 5), so the result's alpha scales down.
+    const resultAlpha = alpha * Math.min((p1 + p2) / 100, 1)
     const mixed =
       match[1].toLowerCase() === 'oklch'
         ? mixOklch(a, b, weight, first.alpha, second.alpha, alpha)
         : a.map((v, i) => (v * first.alpha * weight + b[i] * second.alpha * (1 - weight)) / alpha)
-    props[name] = { raw, alpha, linear: oklabToLinear(mixed) }
+    props[name] = { raw, alpha: resultAlpha, linear: oklabToLinear(mixed) }
   }
   return props
 }

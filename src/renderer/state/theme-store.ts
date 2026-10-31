@@ -14,7 +14,7 @@ interface ThemeState {
  rejected: RejectedTheme[]
  save(id: ThemeId): Promise<boolean>
  saveCustom(id: string | null): Promise<boolean>
- refreshCustomThemes(): Promise<void>
+ refreshCustomThemes(): Promise<boolean>
  resetToDark(): Promise<boolean>
  setTheme(theme: ThemeId, customId?: string | null): void
 }
@@ -24,17 +24,17 @@ let latestSaveId = 0
 let confirmedCustomId: string | null = null
 
 // Does not bump latestSaveId: a bump would make an in-flight built-in save look stale and drop its result.
-async function clearStaleCustom(): Promise<boolean> {
+async function clearStaleCustom(quiet = false): Promise<boolean> {
  try {
   const result = await window.refract.themes.setCustom(null)
   if (result.ok) {
    confirmedCustomId = result.value.customTheme ?? null
    return true
   }
-  notify(result.error)
+  if (!quiet) notify(result.error)
  } catch (err: unknown) {
   console.error('themes.setCustom threw', err)
-  notify({ code: 'unsupported', message: 'Could not save custom theme.' })
+  if (!quiet) notify({ code: 'unsupported', message: 'Could not save custom theme.' })
  }
  return false
 }
@@ -60,7 +60,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (requestId !== latestSaveId) return true
     set({ theme: result.value.theme })
     // Picking a built-in preset leaves any custom theme.
-    if (confirmedCustomId !== null) return get().saveCustom(null)
+    if (confirmedCustomId !== null && !(await clearStaleCustom(true))) {
+     // The built-in preset saved, so this still counts as applied; the custom theme keeps winning until it clears.
+     if (requestId === latestSaveId) set({ customId: confirmedCustomId })
+     toast.warning('Theme saved, but your custom theme could not be cleared and is still in use.')
+    }
     return true
    }
    rollback()
@@ -112,11 +116,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   } catch (err: unknown) {
    console.error('themes.list threw', err)
    notify({ code: 'unsupported', message: 'Could not load custom themes.' })
-   return
+   return false
   }
   if (!result.ok) {
    notify(result.error)
-   return
+   return false
   }
   const { themes, rejected } = result.value
   const known = new Set(get().rejected.map((r) => r.file))
@@ -126,6 +130,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   }
   listedOnce = true
   set({ customThemes: themes, rejected })
+  return true
  },
 
  setTheme: (theme, customId) => {

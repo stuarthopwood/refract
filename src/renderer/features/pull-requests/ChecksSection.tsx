@@ -62,7 +62,8 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
         {display.label}
       </span>
       <span className="min-w-0 flex-1 truncate">{check.name}</span>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
+      {!isHttpsUrl(check.detailsUrl) && <span className="shrink-0 text-xs text-muted-foreground">No details link</span>}
+      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{duration}</span>
     </div>
   )
   // A menu with nothing to choose is a dead end, so a check without a link shows the reason inline instead.
@@ -70,7 +71,7 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
     return (
       <li className="flex items-center gap-1 py-1 pl-6 text-sm">
         {summary}
-        <span className="shrink-0 text-xs text-muted-foreground">No details link</span>
+        <span aria-hidden className="size-6 shrink-0" />
       </li>
     )
   }

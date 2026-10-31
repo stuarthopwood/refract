@@ -78,7 +78,8 @@ export function useThemeFileActions() {
       }
       succeeded = true
       removed.current = true
-      await refresh()
+      if (pendingRemove.id === useThemeStore.getState().customId) toast.dismiss('custom-theme-applied')
+      if (!(await refresh())) toast.error('Theme removed, but the theme list could not be refreshed.')
     } catch (err) {
       if (!succeeded) setRemoveError(errorMessage(err))
     } finally {

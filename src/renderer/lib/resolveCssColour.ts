@@ -11,6 +11,7 @@ export function withResolvedTokens<T>(prefix: string, fn: (read: (name: string) 
   canvas.width = canvas.height = 1
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   let computed = ''
+  let backdrop: [number, number, number, number] | false | undefined
   const rgba = (name: string): [number, number, number, number] | null => {
     probe.style.color = `var(--${prefix}${name})`
     computed = getComputedStyle(probe).color
@@ -28,7 +29,8 @@ export function withResolvedTokens<T>(prefix: string, fn: (read: (name: string) 
     const own = computed
     if (!c) return own
     if (c[3] === 255) return hex(c)
-    const bg = rgba('bg')
+    backdrop ??= rgba('bg') ?? false
+    const bg = backdrop || null
     // A fully transparent token resolves to the backdrop, never the raw `rgba(0, 0, 0, 0)` string libraries reject.
     if (!bg || bg[3] !== 255) return c[3] === 0 ? own : hex(c)
     const k = c[3] / 255
