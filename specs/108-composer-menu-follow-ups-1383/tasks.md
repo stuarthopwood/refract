@@ -3,7 +3,7 @@
 - [x] T1 Keyboard anchor: `src/renderer/lib/menuAnchor.ts`, `components/ui/context-menu.tsx`
 - [x] T2 Focus guard in `ComposerContextMenu.tsx` `onCloseAutoFocus`
 - [x] T3 ARIA on `textEditItems` in `features/palette/menuItems.tsx`
-- [ ] T4 Ctrl+Shift+V hint: keep or remove per the live chord result
+- [x] T4 Ctrl+Shift+V hint removed (chord chips large pastes; see spec)
 - [x] T5 Contrast step across all presets in the live script
 - [x] T6 Fixed `writeText` error, `src-tauri/src/ipc/clipboard.rs`
 - [x] T7 `readText` main-window gate, `clipboard.rs` and `lib.rs`

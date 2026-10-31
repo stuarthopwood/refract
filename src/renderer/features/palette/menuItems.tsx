@@ -89,9 +89,8 @@ export function textEditItems({ editable, hasSelection, hasText, onSelect }: Tex
         Paste
         <ContextMenuShortcut aria-hidden>Ctrl+V</ContextMenuShortcut>
       </ContextMenuItem>
-      <ContextMenuItem icon={ClipboardTypeIcon} disabled={!editable} onSelect={() => onSelect('paste-text')} aria-keyshortcuts="Control+Shift+V">
+      <ContextMenuItem icon={ClipboardTypeIcon} disabled={!editable} onSelect={() => onSelect('paste-text')}>
         Paste as plain text
-        <ContextMenuShortcut aria-hidden>Ctrl+Shift+V</ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem icon={TextSelectIcon} disabled={!hasText} onSelect={() => onSelect('select-all')} aria-keyshortcuts="Control+A">

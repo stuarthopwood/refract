@@ -15,7 +15,7 @@ Decisions are in the issue comment https://github.com/stuarthopwood/refract/issu
 
 ## Ctrl+Shift+V decision
 
-Recorded after the live check. If the chord chips a large paste instead of inserting it literally, the hint and its `aria-keyshortcuts` value are removed.
+Removed. The browser's native Ctrl+Shift+V (pasteAndMatchStyle) fires a `paste` event, so `MessageInput.handlePaste` would chip a large paste, while the menu item inserts literal text. The hint and its `aria-keyshortcuts` value would advertise behaviour the key does not have. The live script still records the chord result and fails if a hint ever appears without a literal chord.
 
 ## Verification
 

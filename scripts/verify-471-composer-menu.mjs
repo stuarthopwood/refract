@@ -225,7 +225,7 @@ async function main() {
     // 7. Select all.
     await openMenu();
     await clickItem('Select all');
-    await until(async () => (await sel())[1] === big.length, 'select all');
+    await until(async () => { const s = await sel(); return s[0] === 0 && s[1] === big.length; }, 'select all');
     const all = await sel();
     check(all[0] === 0 && all[1] === big.length, 'Select all selects the whole draft', all);
 
@@ -289,11 +289,13 @@ async function main() {
     await setClipboard(bigChord);
     await cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(0, f.value.length); return true; })()`);
     await key('Delete', 'Delete', 46);
-    await key('v', 'KeyV', 86, 10);
-    const chordLiteral = await until(async () => (await value()) === bigChord, 'chord result', 2_500).catch(() => false);
+    // CDP sends no editing commands on its own; Blink's keymap turns Ctrl+Shift+V into pasteAndMatchStyle.
+    await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86, modifiers: 10, commands: ['pasteAndMatchStyle'] });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86, modifiers: 10 });
+    const chordLiteral = await until(async () => (await value()) === bigChord, 'chord result', 2_500).catch((e) => { if (/timed out/i.test(String(e?.message))) return false; throw e; });
     const chordValue = (await value()).slice(0, 60);
     const hintShown = items.some((i) => i.text.includes('Paste as plain text') && i.text.includes('Ctrl+Shift+V'));
-    check(Boolean(chordLiteral) === hintShown, `Ctrl+Shift+V hint shown (${hintShown}) matches whether the chord pastes literal text (${Boolean(chordLiteral)})`, { chordValue });
+    check(!hintShown || Boolean(chordLiteral), `Ctrl+Shift+V hint (shown: ${hintShown}) is only allowed when the chord pastes literal text (${Boolean(chordLiteral)})`, { chordValue: chordValue.slice(0, 60) });
 
     // Item 5: hint-text contrast in every built-in theme (no light theme ships; these are the five presets).
     await cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(0, f.value.length); return true; })()`);
@@ -306,7 +308,9 @@ async function main() {
       await key('F10', 'F10', 121, 8);
       await menuOpen();
       const ratio = await cdp.evaluate(`(() => {
-        const parse = (c) => { const m = c.match(/[\\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+        const cx = document.createElement('canvas'); cx.width = cx.height = 1;
+        const g2 = cx.getContext('2d', { willReadFrequently: true });
+        const parse = (c) => { g2.clearRect(0, 0, 1, 1); g2.fillStyle = '#000'; g2.fillStyle = c; g2.fillRect(0, 0, 1, 1); const d = g2.getImageData(0, 0, 1, 1).data; return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 }; };
         const over = (f, b) => ({ r: f.r * f.a + b.r * (1 - f.a), g: f.g * f.a + b.g * (1 - f.a), b: f.b * f.a + b.b * (1 - f.a), a: 1 });
         const lum = (c) => { const ch = [c.r, c.g, c.b].map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]; };
         const page = parse(getComputedStyle(document.body).backgroundColor);

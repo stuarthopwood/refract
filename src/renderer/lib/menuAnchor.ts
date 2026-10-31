@@ -45,5 +45,5 @@ export function keyboardMenuAnchor(target: Element): MenuPoint {
     if (point) return point
   }
   const rect = target.getBoundingClientRect()
-  return { x: rect.left, y: rect.bottom }
+  return { x: rect.left, y: Math.min(rect.bottom, window.innerHeight) }
 }
