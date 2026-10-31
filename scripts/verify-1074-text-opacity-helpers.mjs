@@ -112,7 +112,7 @@ export async function scrollTranscriptToShow(cdp, finderExpr) {
   return true;
 }
 
-// `taskTextColor` per theme (`src/shared/mermaidThemeData.ts`), hardcoded since a .mjs script cannot import TS.
+// `taskTextColor` per theme (`--mermaid-task-text` in globals.css), hardcoded since a .mjs script cannot import TS.
 // Mermaid's per-mount scoping re-serializes colours in `themeCSS` to `rgb(r, g, b)`, so the check converts the hex first.
 export const JOURNEY_TASK_TEXT_COLOUR = {
   dark: '#fafafa',

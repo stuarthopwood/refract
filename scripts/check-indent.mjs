@@ -15,7 +15,6 @@ const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git']);
 
 // Known pre-existing odd-indent damage; allowed so new instances still fail. Remove when fixed (#593).
 const ALLOWED_FILES = new Set([
-  'src/shared/mermaidTheme.ts',
   'src/renderer/state/theme-store.ts',
   'src/renderer/lib/use-cleared-announcement.ts'
 ]);

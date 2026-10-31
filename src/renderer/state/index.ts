@@ -68,7 +68,7 @@ export { usePullRequestsStore }
 export { useIssuesStore }
 export type { PullRequestsActiveCount } from './pull-requests-store'
 export { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore }
-export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
+export { useThemeStore, activeThemeId, useActiveThemeId, useThemeKey, useSyntaxTheme, themeClassName, initThemeStore } from './theme-store'
 export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-width-store'
 export { useUpdateStore }
 export { useStageToggleStore }
