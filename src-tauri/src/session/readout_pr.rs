@@ -215,11 +215,21 @@ pub(super) async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> P
     lookup
 }
 
+/// Redacted, length-capped gh error text, safe to log.
+fn log_detail(message: &str) -> String {
+    let redacted = crate::omp::redact::redact_secrets(message);
+    redacted.chars().take(300).collect()
+}
+
 async fn lookup_uncached(repo_path: &Path, branch: &str) -> PullRequestLookup {
     let (owner, name) = match owner_repo_for(repo_path).await {
         Ok(pair) => pair,
         Err(err) => {
-            log::warn!("readout PR lookup: {}: {}", err.code.as_str(), err.message);
+            log::warn!(
+                "readout PR lookup: {}: {}",
+                err.code.as_str(),
+                log_detail(&err.message)
+            );
             return PullRequestLookup::Unavailable;
         }
     };
@@ -236,7 +246,11 @@ async fn lookup_uncached(repo_path: &Path, branch: &str) -> PullRequestLookup {
     {
         Ok(data) => data,
         Err(err) => {
-            log::warn!("readout PR lookup: {}: {}", err.code.as_str(), err.message);
+            log::warn!(
+                "readout PR lookup: {}: {}",
+                err.code.as_str(),
+                log_detail(&err.message)
+            );
             return PullRequestLookup::Unavailable;
         }
     };
