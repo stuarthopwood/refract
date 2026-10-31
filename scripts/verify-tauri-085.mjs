@@ -81,7 +81,7 @@ async function runChecks(cdp, { repoDir }) {
   const hoverBg = await cdp.evaluate(`getComputedStyle(document.elementFromPoint(${close.x}, ${close.y}).closest('[data-panel-close]')).backgroundColor`);
   log(`active-tab close hover background: ${hoverBg}`);
   await shot(cdp, '04-tab-close-hover.png');
-  assert(!/^rgba\(\d+, \d+, \d+, 0\)$|^transparent$/.test(hoverBg), 'Active-tab close hover paints a visible background');
+  assert(hoverBg !== 'oklab(0.269 0 0 / 0.5)' && !/^rgba\(\d+, \d+, \d+, 0\)$|^transparent$/.test(hoverBg), 'Active-tab close hover paints the tab-close token, not the ghost row hover');
 
   const src = readFileSync(path.join(REPO_ROOT, 'src', 'renderer', 'components', 'ui', 'button.tsx'), 'utf8');
   assert(src.includes('not-aria-disabled:translate-y-px'), 'Button press nudge is suppressed when aria-disabled (source check)');

@@ -169,7 +169,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                 className={cn(
                   INSET_FOCUS_OUTLINE_CLASS,
                   'transition-none focus-visible:border-transparent focus-visible:ring-0 text-muted-foreground hover:text-foreground focus-visible:text-foreground',
-                  id === activePanelId && 'text-foreground hover:bg-tab-close-hover-bg dark:hover:bg-tab-close-hover-bg'
+                  id === activePanelId && 'text-foreground hover:bg-tab-close-hover-bg! dark:hover:bg-tab-close-hover-bg!'
                 )}
                 style={{ position: 'absolute', left: position.left, top: position.top }}
                 onClick={() => closeTab(id)}
