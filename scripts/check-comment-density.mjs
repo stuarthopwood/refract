@@ -124,12 +124,12 @@ if (isMain) {
     console.log(`FAIL ${o.relative}: ${o.commentLines}/${o.nonBlank} comment lines, largest block ${o.maxBlock}${was}`);
   }
   if (stale.length > 0) {
-    console.log(`${stale.length} stale baseline entr${stale.length === 1 ? 'y' : 'ies'} (file gone or now within the caps); run --write-baseline to prune:`);
+    console.log(`FAIL ${stale.length} stale baseline entr${stale.length === 1 ? 'y' : 'ies'} (file gone or now within the caps); run --write-baseline to prune:`);
     for (const relative of stale) console.log(`  ${relative}`);
   }
   if (failures.length > 0) {
     console.log(`${failures.length} file(s) over the comment caps (${MAX_RATIO * 100}% of lines, blocks over ${MAX_BLOCK} lines); see AGENTS.md "Comments"`);
-    process.exit(1);
   }
+  if (failures.length > 0 || stale.length > 0) process.exit(1);
   console.log(`0 comment-density violations across ${files.length} files (${offenders.length} baselined offenders, ${stale.length} stale entries)`);
 }

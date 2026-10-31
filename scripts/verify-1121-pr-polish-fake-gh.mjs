@@ -40,9 +40,10 @@ export const REASON = {
 };
 
 function checksToRollup(checks) {
-  if (checks === 'passed') return [{ status: 'COMPLETED', conclusion: 'SUCCESS', state: null }];
-  if (checks === 'failed') return [{ status: 'COMPLETED', conclusion: 'FAILURE', state: null }];
-  if (checks === 'pending') return [{ status: 'IN_PROGRESS', conclusion: null, state: null }];
+  const run = { name: 'build', detailsUrl: 'https://github.com/fake-owner/fake-repo-1121/actions/runs/1' };
+  if (checks === 'passed') return [{ ...run, status: 'COMPLETED', conclusion: 'SUCCESS', state: null }, { name: 'lint (no link)', status: 'COMPLETED', conclusion: 'SUCCESS', state: null }];
+  if (checks === 'failed') return [{ ...run, status: 'COMPLETED', conclusion: 'FAILURE', state: null }];
+  if (checks === 'pending') return [{ ...run, status: 'IN_PROGRESS', conclusion: null, state: null }];
   return null;
 }
 

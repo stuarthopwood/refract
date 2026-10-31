@@ -106,6 +106,8 @@ For both kinds:
 
 Copy feedback follows one rule (spec 080, #1469): an inline copy control is a `CopyButton` (check icon plus a polite announcement naming what was copied); a menu item that copies shows a toast, because the menu closes and takes its focus with it. Right-click "Copy image" therefore stays a toast while the inline Mermaid button shows the check. A kebab's accessible name is contextual per row ("More actions, <command or language>"), and a transcript kebab mounts its menu only on first hover or focus (`TranscriptKebab` `lazy`).
 
+`RowKebabMenu` (`components/RowKebabMenu.tsx`) is the shared kebab for a list row whose actions live behind one visible trigger: pass `entries` (`onSelect`, or `href` for a new-tab link, plus `disabled` and `destructive`), a per-row `label` and the row `children`. Right-click, Shift+F10 and the Menu key on the row (not its `below` content) open the same menu. Settings > Appearance theme rows and the Pull request Checks rows use it.
+
 Evidence at `origin/main` 9f23d22: action-menu items carry no icons today (`SessionList.tsx:309-327` and `:420-422`, `ManageSessionRow.tsx:422-439`); the Profile and Approval mode menus already have a leading icon on nearly every item.
 
 Decided (Stuart, 2026-10-19, #1043; swatch ruling amended 2026-10-20, ui-architect-v3): the Profile menu's theme submenu is a radio group; each theme's colour swatch is a small two-colour chip (the theme's own `--background` and `--primary`, split down the middle) after the name, never a round mark that could read as a radio. Settled in #1466 (Skippy, delegated by Stuart 2026-10-31): `ThemeSwatchChip` stays and the theme radio items are the one documented exception to the leading-icon rule.
