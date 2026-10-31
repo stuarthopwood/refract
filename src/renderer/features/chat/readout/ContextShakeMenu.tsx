@@ -56,6 +56,7 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
   const [tipOpen, setTipOpen] = useState(false)
   // Returning focus after the dialog must not pop the tooltip open.
   const suppressTipRef = useRef(false)
+  const clickedOutsideRef = useRef(false)
   // Right-click, Shift+F10 and the Menu key open the same menu as a left click.
   const openOnContextMenu = (event: ReactMouseEvent): void => {
     event.preventDefault()
@@ -100,8 +101,15 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
         <DropdownMenuContent
           align="start"
           side="top"
+          // Keep focus where an outside click put it; only Escape and item picks return it to the trigger.
+          onInteractOutside={() => {
+            clickedOutsideRef.current = true
+          }}
           onCloseAutoFocus={(event) => {
             event.preventDefault()
+            const clickedOutside = clickedOutsideRef.current
+            clickedOutsideRef.current = false
+            if (clickedOutside) return
             suppressTipRef.current = true
             triggerRef.current?.focus()
             suppressTipRef.current = false
