@@ -52,13 +52,13 @@ async function checkQuestionCard(cdp) {
   await cdp.click(rowFinder('radio', 'Postgres'));
   await cdp.waitFor(`document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.includes('Features')`, { timeoutMs: 15_000, label: 'Features tab active after the pick' });
   const buttons = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).map((b) => b.textContent.trim())`);
-  assert(!buttons.includes('Submit') && buttons.includes('Next'), 'The pick advanced without submitting: footer still reads Next');
+  assert(!buttons.some((t) => t.startsWith('Submit')) && buttons.some((t) => t.startsWith('Next')), 'The pick advanced without submitting: footer still reads Next');
   await shot(cdp, '02-question-advanced-not-submitted.png');
   await cdp.click(rowFinder('checkbox', 'Auth'));
   await cdp.click(`Array.from(document.querySelectorAll('[role="tab"]')).find((t) => t.textContent.includes('Database'))`);
   await cdp.click(rowFinder('radio', 'Postgres'));
   await sleep(400);
-  const submitNow = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).some((b) => b.textContent.trim() === 'Submit')`);
+  const submitNow = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).some((b) => X);
   assert(submitNow, 'With every question answered, only the Submit button submits (it is offered, the card is still open)');
   await shot(cdp, '03-question-all-answered.png');
 }
