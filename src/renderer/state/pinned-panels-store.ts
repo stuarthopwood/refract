@@ -10,7 +10,7 @@ interface PinnedTarget {
   number: number
   /** The Session the panel was opened from; null when opened outside a Session. */
   sessionId: string | null
-  // Held in the store, not a ref: the header button and the panel live in different trees; unpin checks `isConnected`.
+  // In the store, not a ref: the header button and the panel live in different trees.
   opener: HTMLElement | null
 }
 
