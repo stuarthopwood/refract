@@ -56,23 +56,27 @@ function Badge({
       className={cn(badgeVariants({ variant }), onDismiss && "max-w-full overflow-visible", className)}
       {...props}
     >
-      {onDismiss && !asChild ? <span className="min-w-0 truncate">{children}</span> : children}
-      {onDismiss && !asChild && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="-my-1 -mr-1 size-6 shrink-0 rounded-sm"
-              aria-label={dismissLabel ?? "Remove"}
-              onClick={onDismiss}
-            >
-              <XIcon aria-hidden className="size-3" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{dismissLabel ?? "Remove"}</TooltipContent>
-        </Tooltip>
+      {onDismiss && !asChild ? (
+        <>
+          <span className="min-w-0 truncate">{children}</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="-my-1 -mr-1 size-6 shrink-0 rounded-sm"
+                aria-label={dismissLabel ?? "Remove"}
+                onClick={onDismiss}
+              >
+                <XIcon aria-hidden className="size-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{dismissLabel ?? "Remove"}</TooltipContent>
+          </Tooltip>
+        </>
+      ) : (
+        children
       )}
     </Comp>
   )

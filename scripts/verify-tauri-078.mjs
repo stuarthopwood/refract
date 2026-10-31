@@ -57,6 +57,7 @@ async function runChecks(cdp, repoDir) {
   );
   await addRepository(cdp, repoDir);
   await cdp.waitFor(groupTriggerFinder(path.basename(repoDir)) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
+  await cdp.evaluate(`window.__errs = []; const o = console.error; console.error = (...a) => { window.__errs.push(a.map(String).join(' ').slice(0, 800)); o(...a); }`);
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
   await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Appearance')`);
@@ -138,6 +139,10 @@ async function main() {
     log(`verify-tauri-078: ALL PASS (${passed} checks) at head ${head}`);
     ok = true;
   } finally {
+    if (!ok && cdp) {
+      await shot(cdp, 'failure.png').catch(() => {});
+      console.error(await cdp.evaluate(`JSON.stringify(window.__errs ?? [])`).catch(() => 'no errs'));
+    }
     writeFileSync(path.join(SHOTS_DIR, 'report.txt'), REPORT.join('\n'));
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, log: REPORT }, null, 2));
     cdp?.close();
