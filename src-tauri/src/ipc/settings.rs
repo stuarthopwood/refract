@@ -95,14 +95,13 @@ fn parse_approval_mode(value: &str) -> Option<ApprovalMode> {
     serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
-/// The eight known `ReadoutKind` values; an unrecognised one is `invalid-argument` here (the
+/// The seven known `ReadoutKind` values; an unrecognised one is `invalid-argument` here (the
 /// store also no-ops on one).
-const READOUT_KINDS: [&str; 8] = [
+const READOUT_KINDS: [&str; 7] = [
     "changes",
     "context-usage",
     "turn-time",
     "current-time",
-    "pull-request",
     "subagents",
     "todo-progress",
     "current-work",

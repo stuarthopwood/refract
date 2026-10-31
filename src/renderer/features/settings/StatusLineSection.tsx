@@ -24,7 +24,6 @@ const CHIP_TOGGLES: ReadoutToggleDescriptor[] = [
   },
   { kind: 'turn-time', label: 'Turn time', description: 'Elapsed time while a turn is running.' },
   { kind: 'current-time', label: 'Current time', description: 'The current time of day, updating at the top of each minute.' },
-  { kind: 'pull-request', label: 'Pull request', description: "The open pull request for the Session's branch, if any." },
   { kind: 'subagents', label: 'Subagents', description: 'How many subagents are running or finished for the current turn.' },
   { kind: 'todo-progress', label: 'Todo progress', description: "How many of the agent's current tasks are done." }
 ]

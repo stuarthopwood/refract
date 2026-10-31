@@ -4,7 +4,6 @@ import {
   AdvisorReadout,
   ChangesReadout,
   CurrentTimeReadout,
-  PullRequestReadout,
   SubagentsReadout,
   TodoProgressReadout,
   TurnTimeReadout
@@ -24,7 +23,6 @@ export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: stri
       <AiCreditsReadout sessionId={sessionId} />
       {sessionReadout['turn-time'] && <TurnTimeReadout sessionId={sessionId} />}
       {sessionReadout.subagents && <SubagentsReadout sessionId={sessionId} />}
-      {sessionReadout['pull-request'] && <PullRequestReadout sessionId={sessionId} />}
       <AdvisorReadout sessionId={sessionId} textareaRef={textareaRef} />
       <LongConversationChip sessionId={sessionId} />
       <RpcSlowReadout sessionId={sessionId} />

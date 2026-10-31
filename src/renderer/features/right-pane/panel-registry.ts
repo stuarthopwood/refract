@@ -1,7 +1,15 @@
-import { BotIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, CircleDotIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, GitPullRequestIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
 
-export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage'
+export type PanelId =
+  | 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage'
+  | PinnedPanelId
+
+export type PinnedPanelId = 'pull-request' | 'issue'
+
+export function isPinnedPanelId(id: string): id is PinnedPanelId {
+  return id === 'pull-request' || id === 'issue'
+}
 
 export interface HostedPanelDescriptor {
   id: PanelId
@@ -21,8 +29,14 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   { id: 'session-usage', name: 'Session usage', icon: GaugeIcon, hasCount: false }
 ]
 
+// Opened only from the chat header, so they stay out of the rail, launcher and saved layout.
+const PINNED_PANELS: HostedPanelDescriptor[] = [
+  { id: 'pull-request', name: 'Pull request', icon: GitPullRequestIcon, hasCount: false },
+  { id: 'issue', name: 'Issue', icon: CircleDotIcon, hasCount: false }
+]
+
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {
-  return HOSTED_PANELS.find((panel) => panel.id === id)
+  return HOSTED_PANELS.find((panel) => panel.id === id) ?? PINNED_PANELS.find((panel) => panel.id === id)
 }
 
 // data-model.md `PanelCount`: per-render, computed -- never stored on the descriptor itself.

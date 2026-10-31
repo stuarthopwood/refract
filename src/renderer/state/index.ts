@@ -22,6 +22,7 @@ import { useSubagentPanelStore } from './subagent-store'
 import { SIDE_CHAT_LOADING_HINT, useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
 import { useGitChangesStore } from './git-changes-store'
+import { usePinnedPanelsStore } from './pinned-panels-store'
 import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore } from './right-pane-store'
 import { useSplitStore } from './split-store'
 import { useSessionListStore } from './session-list-store'
@@ -62,6 +63,7 @@ export { SIDE_CHAT_LOADING_HINT, useSideChatStore }
 export { useFileExplorerStore }
 export { useGitChangesStore }
 export { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore }
+export { usePinnedPanelsStore } from './pinned-panels-store'
 export { useSplitStore }
 export { useSessionListStore }
 export { usePullRequestsStore }
@@ -99,6 +101,7 @@ export interface RefractDevStores {
   fileExplorer: typeof useFileExplorerStore
   gitChanges: typeof useGitChangesStore
   rightPane: typeof useRightPaneStore
+  pinnedPanels: typeof usePinnedPanelsStore
   split: typeof useSplitStore
   pullRequests: typeof usePullRequestsStore
   pullRequestsLayout: typeof usePullRequestsLayoutStore
@@ -142,6 +145,7 @@ if (import.meta.env.DEV) {
     fileExplorer: useFileExplorerStore,
     gitChanges: useGitChangesStore,
     rightPane: useRightPaneStore,
+    pinnedPanels: usePinnedPanelsStore,
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
     pullRequestsLayout: usePullRequestsLayoutStore,

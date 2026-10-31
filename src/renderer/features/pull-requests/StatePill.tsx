@@ -15,9 +15,11 @@ const STATE_PILL_CLASS: Record<PullRequestState, string> = {
 export interface StatePillProps {
   state: PullRequestState
   className?: string
+  /** Classes for the label word, so a narrow host can hide it and keep the icon. */
+  labelClassName?: string
 }
 
-export function StatePill({ state, className }: StatePillProps) {
+export function StatePill({ state, className, labelClassName }: StatePillProps) {
   const display = PULL_REQUEST_STATE_DISPLAY[state]
   const Icon = display.icon
 
@@ -30,7 +32,7 @@ export function StatePill({ state, className }: StatePillProps) {
       )}
     >
       <Icon aria-hidden className="size-4" />
-      {display.label}
+      <span className={labelClassName}>{display.label}</span>
     </span>
   )
 }

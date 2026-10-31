@@ -4,7 +4,7 @@ import {
   RIGHT_PANE_MIN_WIDTH_PX,
   useRightPaneStore
 } from '../../state/right-pane-store'
-import { HOSTED_PANELS, type PanelId } from './panel-registry'
+import { HOSTED_PANELS, isPinnedPanelId, type PanelId } from './panel-registry'
 
 // Spec 024 FR-005 to FR-007 (#538): the single writer of `Settings.rightPane`, mirroring
 // `pull-requests-layout-store.ts`'s debounced persist. `restoreRightPane` seeds the store from
@@ -20,7 +20,10 @@ let started = false
 
 function snapshot(): RightPaneSettings {
   const { open, widthPx, openPanelIds, activePanelId, panelOrder } = useRightPaneStore.getState()
-  return { open, widthPx: Math.round(widthPx), openPanelIds: [...openPanelIds], activePanelId, panelOrder: [...panelOrder] }
+  // Pinned panels are per-window and transient, so they never reach the saved row.
+  const savedIds = openPanelIds.filter((id) => !isPinnedPanelId(id))
+  const savedActive = activePanelId && !isPinnedPanelId(activePanelId) ? activePanelId : (savedIds.at(-1) ?? null)
+  return { open, widthPx: Math.round(widthPx), openPanelIds: savedIds, activePanelId: savedActive, panelOrder: [...panelOrder] }
 }
 
 export function restoreRightPane(saved: RightPaneSettings | undefined): void {
