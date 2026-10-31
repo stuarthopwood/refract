@@ -48,7 +48,7 @@ async function runChecks(cdp, { repoDir }) {
     const q = (l) => document.querySelector('button[aria-label="' + l + '"]');
     const box = (b) => { const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; };
     const find = q('Find in chat');
-    const pause = q('Pause after this turn');
+    const pause = document.querySelector('button[aria-label^="Pause "][aria-label$=" after this turn"]');
     const close = document.querySelector('button[aria-label^="Close "][aria-label$=" chat pane"]');
     return { find: box(find), findKeys: find.getAttribute('aria-keyshortcuts'), pause: pause ? box(pause) : null, close: close ? box(close) : null, closeKeys: close?.getAttribute('aria-keyshortcuts') ?? null };
   })()`);

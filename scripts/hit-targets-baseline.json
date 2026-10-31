@@ -27,7 +27,7 @@
   "src/renderer/features/issues/IssueRow.tsx": 1,
   "src/renderer/features/pull-requests/PullRequestRow.tsx": 1,
   "src/renderer/features/right-pane/PanelLauncher.tsx": 1,
-  "src/renderer/features/right-pane/PanelTabBar.tsx": 2,
+  "src/renderer/features/right-pane/PanelTabBar.tsx": 1,
   "src/renderer/features/right-pane/git-changes/GitChangesFileRow.tsx": 1,
   "src/renderer/features/right-pane/git-changes/GitCommitBox.tsx": 1,
   "src/renderer/features/sessions/IssueLabelPicker.tsx": 1,

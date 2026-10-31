@@ -82,7 +82,7 @@ export function RecentSessionsSection({ sessions }: { sessions: SessionSummary[]
       count={sessions.length}
       empty={sessions.length === 0 ? 'No other Sessions yet.' : null}
       actions={
-        <Button type="button" variant="outline" size="sm" onClick={openManageSessions}>
+        <Button type="button" variant="outline" size="sm" aria-label="Show all sessions" onClick={openManageSessions}>
           Show all
         </Button>
       }

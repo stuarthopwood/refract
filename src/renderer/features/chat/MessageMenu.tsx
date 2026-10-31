@@ -14,10 +14,21 @@ import { TranscriptKebab, TranscriptMenu } from './TranscriptMenu'
 const NOTHING = 'Nothing to copy: this message only contains hidden characters'
 
 // Distinguishes one row's kebab from the next by the message's opening words.
+const SNIPPET_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
 function messageSnippet(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  const chars = Array.from(flat)
-  return chars.length > 32 ? `${chars.slice(0, 32).join('').trimEnd()}…` : flat
+  // 256 UTF-16 units cover 32 graphemes of real text; segmenting the whole message is wasted work.
+  const source = text.trimStart()
+  const cut = source.length > 256
+  const flat = source.slice(0, 256).replace(/\s+/g, ' ').trim()
+  const graphemes: string[] = []
+  for (const { segment } of SNIPPET_SEGMENTER.segment(flat)) {
+    graphemes.push(segment)
+    if (graphemes.length > 32) break
+  }
+  // A cut slice may end mid-cluster, so its last grapheme is dropped before the ellipsis.
+  if (graphemes.length > 32) return `${graphemes.slice(0, 32).join('').trimEnd()}…`
+  return cut ? `${graphemes.slice(0, -1).join('').trimEnd()}…` : flat
 }
 
 function ScrollToPromptItem({ sessionId, messageId, kind }: { sessionId: string; messageId: string; kind: MenuKind }) {
@@ -61,7 +72,7 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
     }
   }, [armed])
 
-  const snippet = React.useMemo(() => messageSnippet(text), [text])
+  const snippet = messageSnippet(text)
   const items = (kind: MenuKind) => (
     <>
       {actionMenuItem('transcript.copy-message', { kind, onSelect: () => void copyLinkText(text, 'Message copied', NOTHING) })}

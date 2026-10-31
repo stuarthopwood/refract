@@ -292,7 +292,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
             variant="ghost"
             aria-disabled={busy}
             aria-busy={busyAction === 'cancel'}
-            className="dark:hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            className="dark:hover:bg-muted aria-disabled:opacity-50"
             onClick={() => !busy && void cancel()}
           >
             {busyAction === 'cancel' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
@@ -302,7 +302,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
             size="sm"
             aria-disabled={busy}
             aria-busy={busyAction === 'submit'}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            className="aria-disabled:opacity-50"
             onClick={() => !busy && handlePrimary()}
           >
             {busyAction === 'submit' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}

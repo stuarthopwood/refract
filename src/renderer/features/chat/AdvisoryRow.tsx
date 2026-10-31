@@ -2,6 +2,7 @@ import * as React from 'react'
 import { EyeIcon, InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { SourceTag } from '@/components/SourceTag'
 import { CopyButton } from '@/components/ui/copy-button'
 import { extractAdvisoryLocations, type AdvisoryLocation } from '@/lib/advisory-locations'
@@ -286,7 +287,7 @@ export function AdvisoryRunRow({ group, sessionId, onReveal, onQueuedAnnounce }:
           type="button"
           variant="ghost"
           size="sm"
-          className="px-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-solid focus-visible:outline-ring focus-visible:ring-0"
+          className={cn('px-2 focus-visible:ring-0', INSET_FOCUS_OUTLINE_CLASS)}
           onClick={() => {
             onReveal?.()
             setShowAll(true)
