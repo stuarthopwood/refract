@@ -123,9 +123,24 @@ async function main() {
     };
     let lastPsError = '';
     const clipboard = async () => ps(`$ErrorActionPreference='Stop'; Get-Clipboard -Raw`).replace(/\r?\n$/, '');
+    // The text travels in an environment variable, so no quote character (curly ones included) can end a PowerShell literal.
     const setClipboard = async (t) => {
-      ps(`$ErrorActionPreference='Stop'; Set-Clipboard -Value '${t.replace(/'/g, "''")}'`);
-      return true;
+      for (let i = 0; i < 12; i++) {
+        const r = spawnSync('powershell', ['-NoProfile', '-Command', `$ErrorActionPreference='Stop'; Set-Clipboard -Value $env:REFRACT_471_CLIP`], { encoding: 'utf8', env: { ...process.env, REFRACT_471_CLIP: t } });
+        if (r.status === 0) return true;
+        lastPsError = r.stderr.trim();
+        await sleep(250 * (i + 1));
+      }
+      throw new Error(`clipboard still unavailable after retries: ${lastPsError}`);
+    };
+    const until = async (fn, label, timeoutMs = 8_000) => {
+      const end = Date.now() + timeoutMs;
+      for (;;) {
+        const got = await fn();
+        if (got) return got;
+        if (Date.now() > end) throw new Error(`${LOG}: timed out waiting for ${label}`);
+        await sleep(50);
+      }
     };
     const openMenu = async () => {
       // A right-click outside a selection moves the caret, so collapsed carets open via the keyboard.
@@ -139,7 +154,7 @@ async function main() {
 
     await cdp.click(FIELD);
     await cdp.send('Input.insertText', { text: 'hello world' });
-    await sleep(200);
+    await until(async () => (await value()) === 'hello world', 'typed text');
 
     // 1. Right-click with a selection: all five items, Cut/Copy enabled.
     await select(0, 5);
@@ -151,7 +166,7 @@ async function main() {
     // 2. Copy puts exactly the selection on the OS clipboard; focus and selection return.
     await clickItem('Copy');
     await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'closed' });
-    await sleep(500);
+    await until(async () => (await clipboard()) === 'hello', 'clipboard to hold the selection');
     check((await clipboard()) === 'hello', 'Copy writes the selection to the clipboard', await clipboard());
     check(await cdp.evaluate(`document.activeElement === ${FIELD}`), 'focus returns to the composer after the menu closes');
     check(JSON.stringify(await sel()) === '[0,5]', 'selection intact after Copy', await sel());
@@ -168,7 +183,7 @@ async function main() {
     await select(0, 6);
     await openMenu();
     await clickItem('Cut');
-    await sleep(600);
+    await until(async () => (await value()) === 'world' && (await clipboard()) === 'hello ', 'Cut to finish');
     check((await value()) === 'world' && (await clipboard()) === 'hello ', 'Cut removes and clipboards the selection', { value: await value(), clip: await clipboard() });
 
     // 5. Paste at the caret, from a marker seeded straight into the OS clipboard.
@@ -176,7 +191,7 @@ async function main() {
     await select(5, 5);
     await openMenu();
     await clickItem('Paste');
-    await sleep(600);
+    await until(async () => (await value()) === 'worldmarker-471 ', 'Paste to land');
     check((await value()) === 'worldmarker-471 ', 'Paste inserts the OS clipboard text at the caret', await value());
 
     // 6. Paste collapses a large block into a chip; Paste as plain text inserts it verbatim.
@@ -186,7 +201,7 @@ async function main() {
     await key('Delete', 'Delete', 46);
     await openMenu();
     await clickItem('Paste');
-    await sleep(800);
+    await until(async () => (await value()).includes('(900 chars)'), 'chip label');
     const afterPaste = await value();
     check(afterPaste.length < 200 && afterPaste.includes('(900 chars)'), 'Paste runs the composer paste handler (large block becomes a chip label)', afterPaste.slice(0, 80));
     await shot('03-large-paste-chip.png');
@@ -194,7 +209,7 @@ async function main() {
     await key('Delete', 'Delete', 46);
     await openMenu();
     await clickItem('Paste as plain text');
-    await sleep(800);
+    await until(async () => (await value()) === big, 'literal paste');
     check((await value()) === big, 'Paste as plain text inserts the literal block, bypassing the handler', (await value()).length);
 
     // Over the 1 MB cap the IPC refuses; the draft stays as it was.
@@ -203,14 +218,14 @@ async function main() {
     await key('F10', 'F10', 121, 8);
     await menuOpen();
     await clickItem('Paste as plain text');
-    await sleep(800);
+    await until(() => cdp.evaluate(`document.body.textContent.includes('too large to paste')`), 'too-large notice');
     const tooLarge = await cdp.evaluate(`window.refract.clipboard.readText().then((r) => (r.ok ? 'ok' : r.error.code))`);
     check(tooLarge === 'clipboard-too-large' && (await value()) === big, 'Over 1 MB: the IPC returns clipboard-too-large and the draft is unchanged', { tooLarge, len: (await value()).length });
 
     // 7. Select all.
     await openMenu();
     await clickItem('Select all');
-    await sleep(300);
+    await until(async () => (await sel())[1] === big.length, 'select all');
     const all = await sel();
     check(all[0] === 0 && all[1] === big.length, 'Select all selects the whole draft', all);
 
@@ -231,7 +246,79 @@ async function main() {
       check(await cdp.evaluate(`document.activeElement === ${FIELD}`), `${label}: Esc closes and focus returns to the composer`);
     }
 
-    // 9. Fake tools: the logs prove neither the real omp nor the real gh ran.
+    // 9. Menu semantics and keyboard anchor (#1383).
+    await cdp.evaluate(`window.__ctx = []; window.addEventListener('contextmenu', (e) => window.__ctx.push({ x: e.clientX, y: e.clientY }), true); true`);
+    const closeMenu = async () => {
+      await key('Escape', 'Escape', 27);
+      await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'closed' });
+    };
+    const lastCtx = () => cdp.evaluate(`window.__ctx[window.__ctx.length - 1]`);
+    const fieldGeo = () => cdp.evaluate(`(() => { const f = ${FIELD}; const r = f.getBoundingClientRect(); const s = getComputedStyle(f); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, lh: parseFloat(s.lineHeight) || 20, pt: parseFloat(s.paddingTop) }; })()`);
+    await cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(0, f.value.length); return true; })()`);
+    await key('Delete', 'Delete', 46);
+    await cdp.send('Input.insertText', { text: 'first line\nsecond line\nthird line\nfourth line end' });
+    await until(async () => (await value()).endsWith('fourth line end'), 'multi-line draft');
+    const geo = await fieldGeo();
+    await select(0, 0);
+    await key('F10', 'F10', 121, 8);
+    await menuOpen();
+    const atStart = await lastCtx();
+    items = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).map((i) => ({ keys: i.getAttribute('aria-keyshortcuts'), hidden: Array.from(i.querySelectorAll('[data-slot="context-menu-shortcut"]')).every((s) => s.getAttribute('aria-hidden') === 'true'), hasHint: !!i.querySelector('[data-slot="context-menu-shortcut"]'), text: i.textContent }))`);
+    check(items.every((i) => i.keys && i.hidden), 'every item has aria-keyshortcuts and its hint text is aria-hidden', items);
+    await closeMenu();
+    const end = (await value()).length;
+    await select(end, end);
+    await key('F10', 'F10', 121, 8);
+    await menuOpen();
+    const atEnd = await lastCtx();
+    await shot('05-menu-at-caret-end.png');
+    await closeMenu();
+    check(atStart.x >= geo.left && atStart.x <= geo.right && Math.abs(atStart.y - (geo.top + geo.pt + geo.lh)) <= geo.lh, 'keyboard menu anchors under the caret at the start of the draft', { atStart, geo });
+    check(atEnd.y - atStart.y >= geo.lh * 2.5 && atEnd.x > atStart.x, 'keyboard menu follows the caret to the end of a multi-line draft', { atStart, atEnd, geo });
+    const rowBtn = await cdp.evaluate(`(() => { const b = document.querySelector('[data-repository-id] li button'); if (!b) return null; const r = b.getBoundingClientRect(); return { left: r.left, bottom: r.bottom }; })()`);
+    if (rowBtn) {
+      await cdp.evaluate(`document.querySelector('[data-repository-id] li button').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 0, clientY: 0 }))`);
+      await menuOpen();
+      const onElement = await lastCtx();
+      await closeMenu();
+      check(Math.abs(onElement.x - rowBtn.left) <= 1 && Math.abs(onElement.y - rowBtn.bottom) <= 1, 'keyboard menu on a non-text element anchors at its bottom-left corner', { onElement, rowBtn });
+    } else check(false, 'session row button exists for the non-text anchor check');
+
+    // Item 4: the hint on "Paste as plain text" is shown only if the real chord inserts the literal text.
+    const bigChord = 'z'.repeat(900);
+    await setClipboard(bigChord);
+    await cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(0, f.value.length); return true; })()`);
+    await key('Delete', 'Delete', 46);
+    await key('v', 'KeyV', 86, 10);
+    const chordLiteral = await until(async () => (await value()) === bigChord, 'chord result', 2_500).catch(() => false);
+    const chordValue = (await value()).slice(0, 60);
+    const hintShown = items.some((i) => i.text.includes('Paste as plain text') && i.text.includes('Ctrl+Shift+V'));
+    check(Boolean(chordLiteral) === hintShown, `Ctrl+Shift+V hint shown (${hintShown}) matches whether the chord pastes literal text (${Boolean(chordLiteral)})`, { chordValue });
+
+    // Item 5: hint-text contrast in every built-in theme (no light theme ships; these are the five presets).
+    await cdp.evaluate(`(() => { const f = ${FIELD}; f.focus(); f.setSelectionRange(0, f.value.length); return true; })()`);
+    await key('Delete', 'Delete', 46);
+    await cdp.send('Input.insertText', { text: 'hello world' });
+    await until(async () => (await value()) === 'hello world', 'short draft');
+    for (const cls of ['theme-dark', 'theme-obsidian', 'theme-dark-high-contrast', 'theme-nordic-frost', 'theme-cyber-amber']) {
+      await cdp.evaluate(`(() => { const r = document.documentElement; Array.from(r.classList).filter((c) => c.startsWith('theme-')).forEach((c) => r.classList.remove(c)); r.classList.add(${JSON.stringify(cls)}); })()`);
+      await select(0, 5);
+      await key('F10', 'F10', 121, 8);
+      await menuOpen();
+      const ratio = await cdp.evaluate(`(() => {
+        const parse = (c) => { const m = c.match(/[\\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+        const over = (f, b) => ({ r: f.r * f.a + b.r * (1 - f.a), g: f.g * f.a + b.g * (1 - f.a), b: f.b * f.a + b.b * (1 - f.a), a: 1 });
+        const lum = (c) => { const ch = [c.r, c.g, c.b].map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]; };
+        const page = parse(getComputedStyle(document.body).backgroundColor);
+        const menu = over(parse(getComputedStyle(document.querySelector('[role="menu"]')).backgroundColor), over(page, { r: 0, g: 0, b: 0, a: 1 }));
+        return Array.from(document.querySelectorAll('[role="menu"] [data-slot="context-menu-shortcut"]')).map((s) => { const fg = over(parse(getComputedStyle(s).color), menu); const [hi, lo] = [lum(fg), lum(menu)].sort((a, b) => b - a); return (hi + 0.05) / (lo + 0.05); });
+      })()`);
+      await shot(`06-menu-${cls}.png`);
+      await closeMenu();
+      check(ratio.length > 0 && ratio.every((r) => r >= 4.5), `${cls}: hint text contrast is at least 4.5:1`, ratio.map((r) => Number(r.toFixed(2))));
+    }
+
+    // 10. Fake tools: the logs prove neither the real omp nor the real gh ran.
     const ghCalls = existsSync(ghLog) ? readFileSync(ghLog, 'utf8').split('\n').filter(Boolean) : [];
     const ompCalls = existsSync(ompLog) ? readFileSync(ompLog, 'utf8').split('\n').filter(Boolean) : [];
     writeFileSync(path.join(SHOTS_DIR, 'fake-gh-calls.log'), ghCalls.join('\n'));

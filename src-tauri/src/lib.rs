@@ -130,10 +130,14 @@ struct ManagedState {
 /// The one Tauri command. Always resolves with the `Result<T>` envelope, success or failure.
 #[tauri::command]
 async fn refract_request(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ManagedState>,
     channel: String,
     args: Vec<Value>,
 ) -> Result<Value, ()> {
+    if let Some(refusal) = ipc::clipboard::refuse_caller(&channel, window.label()) {
+        return Ok(refusal);
+    }
     Ok(state
         .dispatcher
         .dispatch(&channel, state.app_state.clone(), args)

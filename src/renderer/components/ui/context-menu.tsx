@@ -1,5 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { keyboardMenuAnchor } from "@/lib/menuAnchor"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { ChevronRightIcon, CheckIcon, type LucideIcon } from "lucide-react"
 import { isMenuOpen, useExclusiveMenu } from "@/components/ui/exclusive-menu"
@@ -24,14 +25,36 @@ function ContextMenu({
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} open={menu.open} onOpenChange={menu.onOpenChange} />
 }
 
+let reanchoring = false
+
+// A keyboard-raised contextmenu (Shift+F10, Menu key) reports (0, 0); Radix anchors at the event point, so replay it at the caret or the focused element's corner.
+function reanchorKeyboardMenu(event: React.MouseEvent<HTMLElement>) {
+  const target = event.target
+  if (reanchoring || event.clientX !== 0 || event.clientY !== 0 || !(target instanceof Element)) return
+  event.preventDefault()
+  event.stopPropagation()
+  const { x, y } = keyboardMenuAnchor(target)
+  reanchoring = true
+  try {
+    target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }))
+  } finally {
+    reanchoring = false
+  }
+}
+
 function ContextMenuTrigger({
   className,
+  onContextMenuCapture,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Trigger>) {
   return (
     <ContextMenuPrimitive.Trigger
       data-slot="context-menu-trigger"
       className={cn("select-none", className)}
+      onContextMenuCapture={(event) => {
+        onContextMenuCapture?.(event)
+        if (!event.defaultPrevented) reanchorKeyboardMenu(event)
+      }}
       {...props}
     />
   )
