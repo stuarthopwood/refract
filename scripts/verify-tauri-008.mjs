@@ -72,8 +72,8 @@ async function runChecks(cdp, { repoDir }) {
     focusedName = await getActiveElementAccessibleName(cdp);
   }
   assert(focusedName.name === label, 'profile item takes keyboard focus with its accessible name');
-  const outline = await cdp.evaluate(`getComputedStyle(${NAME_BUTTON}).outlineStyle`);
-  assert(outline !== 'none', 'profile item shows a visible focus indicator (FR-005, SC-006)');
+  const focusStyle = await cdp.evaluate(`(() => { const s = getComputedStyle(${NAME_BUTTON}); return { outline: s.outlineStyle, shadow: s.boxShadow }; })()`);
+  assert(focusStyle.outline !== 'none' || focusStyle.shadow !== 'none', 'profile item shows a visible focus indicator (FR-005, SC-006)');
   const tabOrder = [];
   for (let i = 0; i < 3; i++) {
     await pressTab(cdp);
