@@ -16,7 +16,7 @@ export function EmptyChatState() {
     >
       <TitlebarBand />
       <BrandWatermark variant="live" />
-      <HolidayAmbientLoop />
+      <HolidayAmbientLoop avoidTextColumn />
       <span>Select a Session or create one.</span>
       <HolidayEmptyStateLine className="text-xs" />
     </div>
