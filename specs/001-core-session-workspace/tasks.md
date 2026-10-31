@@ -5442,4 +5442,4 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `node scripts/ci-local.mjs` per FR-099 (missing)
 - [x] T412 Stop banner focus handoff: `focusStopBanner`, `useComposerFocusHandoff`, single
   `stopAndRestore` focus, per FR-120 (issue #1285)
-- [ ] T413 Live check `scripts/verify-tauri-092.mjs` for FR-120, then `ci:local` and gate
+- [x] T413 Live check `scripts/verify-tauri-092.mjs` for FR-120, then `ci:local` and gate
