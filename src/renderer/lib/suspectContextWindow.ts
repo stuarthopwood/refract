@@ -2,6 +2,7 @@ import type { ModelCatalogEntry } from '../../shared/model'
 import { compactNumber } from './compactNumber'
 
 export const SUSPECT_WINDOW_ISSUE_URL = 'https://github.com/can1357/oh-my-pi/issues/17481'
+export const SUSPECT_WINDOW_LINK_LABEL = 'Why this window may be wrong (oh-my-pi#17481)'
 const LONG_SUFFIX = '-1m'
 
 export interface SuspectWindow {
@@ -45,5 +46,5 @@ export function findSuspectWindow(
 /** The shared note for the readout tooltip and the Settings list. */
 export function suspectWindowNote(s: SuspectWindow): string {
   const size = compactNumber(s.windowTokens)
-  return `OMP reports the same ${size} window for ${s.name} (${s.id}) and ${s.siblingName} (${s.siblingId}). The percentage and auto-compaction may be wrong.`
+  return `OMP reports the same ${size} window for ${s.name} (${s.id}) and ${s.siblingName} (${s.siblingId}). The percentage and auto-compaction may be wrong. Use the ${LONG_SUFFIX} model variant, or set a window in modelOverrides.`
 }
