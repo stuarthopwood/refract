@@ -45,7 +45,7 @@ export function GitHubAccountsSection(props: GitHubAccountsSectionProps) {
       ref={props.checkAgainHeaderRef}
       variant="outline"
       size="sm"
-      className="shrink-0"
+      className="shrink-0 aria-disabled:opacity-50"
       aria-disabled={githubRefreshing || undefined}
       onClick={() => {
         if (!githubRefreshing) props.onHeaderCheckAgain()
@@ -103,6 +103,7 @@ export function GitHubAccountsSection(props: GitHubAccountsSectionProps) {
           ref={props.addAccountRef}
           variant={accounts.length === 0 ? 'default' : 'outline'}
           size="sm"
+          className="aria-disabled:opacity-50"
           aria-disabled={flowActive || undefined}
           onClick={() => {
             if (!flowActive) props.onAddAccount()
