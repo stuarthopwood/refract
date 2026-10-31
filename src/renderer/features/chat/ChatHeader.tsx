@@ -1,8 +1,9 @@
-import { MessageSquareXIcon, PauseIcon, PlayIcon, SearchIcon, SplitSquareHorizontalIcon } from 'lucide-react'
+import { MessageSquareXIcon, PauseIcon, PlayIcon, SearchIcon, SplitSquareHorizontalIcon, Undo2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PanelHeader, WINDOW_CONTROLS_OVERLAY_STYLE } from '@/components/PanelHeader'
 import { IconButton } from '@/components/IconButton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionsStore } from '@/state'
 import { closeChatFind, EMPTY_CHAT_FIND, openChatFind, useChatFindStore } from '@/state/chat-find-store'
 import { displayLabel, displayStatus, StateIcon } from '@/features/sessions/sessionDisplay'
@@ -17,6 +18,11 @@ interface ChatHeaderProps {
   otherSessionName?: string
   onSwapToOther?: () => void
   reservesWindowControls: boolean
+}
+
+function pauseLabel(pause: unknown, name: string): string {
+  if (pause === 'pausing') return `Cancel pause for ${name}`
+  return pause ? `Resume ${name}` : `Pause ${name} after this turn`
 }
 
 export function ChatHeader({
@@ -38,28 +44,32 @@ export function ChatHeader({
       actions={
         <>
           {otherSessionName && onSwapToOther && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-6 max-w-40 gap-2 px-2 text-xs"
-              onClick={onSwapToOther}
-              aria-label={`Switch to ${otherSessionName}`}
-              title={otherSessionName}
-            >
-              <SplitSquareHorizontalIcon aria-hidden className="size-4 shrink-0" />
-              <span className="truncate">{otherSessionName}</span>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 max-w-40 gap-2 px-2 text-xs"
+                  onClick={onSwapToOther}
+                  aria-label={`Switch to ${otherSessionName}`}
+                >
+                  <SplitSquareHorizontalIcon aria-hidden className="size-4 shrink-0" />
+                  <span className="truncate">{otherSessionName}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{`Switch to ${otherSessionName}`}</TooltipContent>
+            </Tooltip>
           )}
           <div className="shrink-0">
             <ConversationSwitcher sessionId={sessionId} />
           </div>
           {canTogglePause(session) && (
             <IconButton
-              label={session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause after this turn'}
+              label={pauseLabel(session.pause, session.name)}
               onClick={() => void setSessionPaused(sessionId, !session.pause)}
             >
-              {session.pause ? <PlayIcon aria-hidden className="size-4" /> : <PauseIcon aria-hidden className="size-4" />}
+              {session.pause === 'pausing' ? <Undo2Icon aria-hidden className="size-4" /> : session.pause ? <PlayIcon aria-hidden className="size-4" /> : <PauseIcon aria-hidden className="size-4" />}
             </IconButton>
           )}
           <IconButton

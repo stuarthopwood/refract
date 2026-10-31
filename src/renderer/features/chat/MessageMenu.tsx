@@ -16,8 +16,8 @@ const NOTHING = 'Nothing to copy: this message only contains hidden characters'
 // Distinguishes one row's kebab from the next by the message's opening words.
 function messageSnippet(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim()
-  const chars = Array.from(flat)
-  return chars.length > 32 ? `${chars.slice(0, 32).join('').trimEnd()}…` : flat
+  const graphemes = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(flat), (s) => s.segment)
+  return graphemes.length > 32 ? `${graphemes.slice(0, 32).join('').trimEnd()}…` : flat
 }
 
 function ScrollToPromptItem({ sessionId, messageId, kind }: { sessionId: string; messageId: string; kind: MenuKind }) {
@@ -61,7 +61,7 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
     }
   }, [armed])
 
-  const snippet = React.useMemo(() => messageSnippet(text), [text])
+  const snippet = messageSnippet(text)
   const items = (kind: MenuKind) => (
     <>
       {actionMenuItem('transcript.copy-message', { kind, onSelect: () => void copyLinkText(text, 'Message copied', NOTHING) })}

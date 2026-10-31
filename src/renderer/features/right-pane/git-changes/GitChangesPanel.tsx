@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeftIcon, CheckCircle2Icon, FileWarningIcon, FolderIcon } from 'lucide-react'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { useGitChangesStore } from '@/state'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
@@ -270,7 +272,7 @@ function GitChangesDiffPane({
           title={entry.path}
           aria-label={`Back to changes from ${fileName}`}
           onClick={onBack}
-          className="min-w-0 flex-1 justify-start gap-2 px-1 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+          className={cn('min-w-0 flex-1 justify-start gap-2 px-1 focus-visible:ring-0', INSET_FOCUS_OUTLINE_CLASS)}
         >
           <ArrowLeftIcon aria-hidden className="size-4 shrink-0" />
           <span aria-hidden className="min-w-0 truncate">
