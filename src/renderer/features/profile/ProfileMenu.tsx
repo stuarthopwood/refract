@@ -8,6 +8,7 @@ import {
   LoaderCircleIcon,
   LogInIcon,
   LogOutIcon,
+  DownloadIcon,
   PaletteIcon,
   RefreshCwIcon,
   SlidersHorizontalIcon,
@@ -284,7 +285,7 @@ export function ProfileMenuContent({
         </>
       ) : githubStatus === 'missing-cli' ? (
         <DropdownMenuItem key="first-row" asChild>
-          <ExternalLink href="https://cli.github.com" className="w-full"><span className="flex-1">Install GitHub CLI</span></ExternalLink>
+          <ExternalLink href="https://cli.github.com" className="w-full"><DownloadIcon aria-hidden /><span className="flex-1">Install GitHub CLI</span><span className="sr-only">Opens in your browser</span></ExternalLink>
         </DropdownMenuItem>
       ) : githubStatus === 'error' ? (
         <DropdownMenuItem
