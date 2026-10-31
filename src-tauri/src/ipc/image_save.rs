@@ -1,10 +1,31 @@
 // "Save image..." for the Mermaid export (#471, #1454): kept out of the clipboard module because it writes a file, not the clipboard.
 
 use serde_json::Value;
+use tokio::sync::Mutex;
 use tauri_plugin_dialog::DialogExt;
 
 use super::clipboard::decode_png_bytes;
 use super::{AppState, Dispatcher, HandlerFuture, IpcError};
+
+/// One save at a time, so two native dialogs never stack and two writes never race.
+static SAVE_LOCK: Mutex<()> = Mutex::const_new(());
+
+/// A bare file name ending in `.png`: separators, control characters and reserved characters are dropped.
+fn sanitise_file_name(raw: Option<&str>) -> String {
+    let cleaned: String = raw
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_control() && !"<>:\"/\\|?*".contains(*c))
+        .collect();
+    let stem = cleaned.trim().trim_matches('.').trim_end_matches(".png");
+    let stem = stem.trim().trim_matches('.');
+    let stem: String = stem.chars().take(100).collect();
+    if stem.is_empty() {
+        "image.png".to_string()
+    } else {
+        format!("{stem}.png")
+    }
+}
 
 pub fn register(d: &mut Dispatcher) {
     d.register("clipboard.saveImage", save_image);
@@ -13,16 +34,12 @@ pub fn register(d: &mut Dispatcher) {
 /// The user picks the path in a native dialog; null when cancelled.
 pub fn save_image(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let name = args
-            .get(1)
-            .and_then(Value::as_str)
-            .filter(|n| !n.is_empty() && n.len() <= 128 && !n.contains(['/', '\\']))
-            .unwrap_or("image.png")
-            .to_string();
+        let name = sanitise_file_name(args.get(1).and_then(Value::as_str));
         let bytes =
             tokio::task::spawn_blocking(move || decode_png_bytes(&args, "clipboard.saveImage"))
                 .await
                 .map_err(|err| IpcError::new("clipboard-failed", err.to_string()))??;
+        let _guard = SAVE_LOCK.lock().await;
         let app_handle = state
             .app_handle
             .lock()
@@ -47,12 +64,28 @@ pub fn save_image(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let path = picked.into_path().map_err(|_| {
             IpcError::new("clipboard-failed", "The chosen location is not a file path")
         })?;
-        tokio::fs::write(&path, bytes).await.map_err(|err| {
+        let save_err = |err: std::io::Error| {
             IpcError::new(
                 "clipboard-failed",
                 format!("The image could not be saved: {err}"),
             )
-        })?;
-        Ok(Value::String(path.to_string_lossy().into_owned()))
+        };
+        // Write beside the target, then rename, so a failed write never leaves a truncated PNG.
+        let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
+        temp_name.push(".refract-tmp");
+        let temp = path.with_file_name(temp_name);
+        if let Err(err) = tokio::fs::write(&temp, bytes).await {
+            let _ = tokio::fs::remove_file(&temp).await;
+            return Err(save_err(err));
+        }
+        if let Err(err) = tokio::fs::rename(&temp, &path).await {
+            let _ = tokio::fs::remove_file(&temp).await;
+            return Err(save_err(err));
+        }
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "image.png".to_string());
+        Ok(Value::String(file_name))
     })
 }

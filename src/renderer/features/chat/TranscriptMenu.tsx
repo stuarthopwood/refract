@@ -25,24 +25,69 @@ function MenuItems({ items, kind }: { items: (kind: MenuKind) => React.ReactNode
   return <>{items(kind)}</>
 }
 
-/** The visible More actions trigger for the same items a right-click shows (#1454). */
-export function TranscriptKebab({ items, label = 'More actions', className }: { items: (kind: MenuKind) => React.ReactNode; label?: string; className?: string }) {
+/** The visible More actions trigger for the same items a right-click shows (#1454). `lazy` renders a plain placeholder button until first pointer or focus, so a long transcript mounts no menus. */
+export function TranscriptKebab({
+  items,
+  label = 'More actions',
+  className,
+  align = 'end',
+  lazy = false
+}: {
+  items: (kind: MenuKind) => React.ReactNode
+  label?: string
+  className?: string
+  align?: 'start' | 'end'
+  lazy?: boolean
+}) {
+  const [armed, setArmed] = React.useState(!lazy)
+  const focusOnArmRef = React.useRef(false)
+  const wrapRef = React.useRef<HTMLSpanElement>(null)
+  React.useLayoutEffect(() => {
+    if (armed && focusOnArmRef.current) {
+      focusOnArmRef.current = false
+      wrapRef.current?.querySelector('button')?.focus()
+    }
+  }, [armed])
+  const buttonClass = cn('shrink-0 text-muted-foreground aria-expanded:opacity-100', className)
+
+  if (!armed) {
+    return (
+      <span ref={wrapRef} className="contents">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={label}
+          className={buttonClass}
+          onPointerEnter={() => setArmed(true)}
+          onFocus={() => {
+            focusOnArmRef.current = true
+            setArmed(true)
+          }}
+        >
+          <MoreHorizontalIcon aria-hidden />
+        </Button>
+      </span>
+    )
+  }
   return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label={label} className={cn('shrink-0 text-muted-foreground aria-expanded:opacity-100', className)}>
-              <MoreHorizontalIcon aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end">
-        <MenuItems items={items} kind="dropdown" />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <span ref={wrapRef} className="contents">
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label={label} className={buttonClass}>
+                <MoreHorizontalIcon aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align={align}>
+          <MenuItems items={items} kind="dropdown" />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
   )
 }
 

@@ -35,10 +35,13 @@ function toolRowItems(item: ToolItem | undefined, open: boolean, onOpenChange: (
 /** The row header's `More actions` kebab; absent while the call runs or for a multi-call group. */
 export function ToolRowKebab({ item, open, onOpenChange }: Omit<ToolRowMenuProps, 'children'>) {
   if (!item || item.status === 'running') return null
+  const command = commandRowText(item)
   return (
     <TranscriptKebab
+      lazy
       items={toolRowItems(item, open, onOpenChange)}
-      className="opacity-0 transition-opacity motion-reduce:transition-none focus-visible:opacity-100 group-focus-within/transcript-menu:opacity-100 group-hover/transcript-menu:opacity-100 data-[state=open]:opacity-100"
+      label={command === '' ? 'More actions' : `More actions, ${command.slice(0, 60)}`}
+      className="mt-0.5 opacity-0 transition-opacity motion-reduce:transition-none focus-visible:opacity-100 group-focus-within/tool-row:opacity-100 group-hover/tool-row:opacity-100 data-[state=open]:opacity-100"
     />
   )
 }
@@ -46,7 +49,11 @@ export function ToolRowKebab({ item, open, onOpenChange }: Omit<ToolRowMenuProps
 /** The tool row's context menu (#471): copy the command and output, and expand or collapse the row; none while it runs. */
 export function ToolRowMenu({ item, open, onOpenChange, children }: ToolRowMenuProps) {
   return (
-    <TranscriptMenu disabled={!item || item.status === 'running'} items={toolRowItems(item, open, onOpenChange)}>
+    <TranscriptMenu
+      disabled={!item || item.status === 'running'}
+      items={toolRowItems(item, open, onOpenChange)}
+      className={item ? 'group/tool-row' : undefined}
+    >
       {children}
     </TranscriptMenu>
   )

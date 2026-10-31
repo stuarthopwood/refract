@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react'
+import { CircleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Tone = 'info' | 'loading' | 'notice' | 'error'
@@ -11,6 +12,7 @@ export function InlineStatus({
   tone = 'info',
   density = 'block',
   className,
+  children,
   ...props
 }: Omit<ComponentProps<'p'>, 'role'> & { tone?: Tone; density?: 'block' | 'compact' }) {
   return (
@@ -24,6 +26,14 @@ export function InlineStatus({
         className
       )}
       {...props}
-    />
+    >
+      {tone === 'error' && (
+        <>
+          <CircleAlertIcon aria-hidden className="mr-1 inline size-[1em] align-[-0.125em]" />
+          <span className="sr-only">Error: </span>
+        </>
+      )}
+      {children}
+    </p>
   )
 }
