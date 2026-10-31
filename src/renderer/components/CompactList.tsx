@@ -22,12 +22,12 @@ export function CompactList({ label, items, className, footer }: { label: string
       <ul aria-label={label} className="flex min-w-0 flex-col divide-y divide-border">
         {items.map((item) => {
           const row = (
-            <li key={item.key} tabIndex={item.title ? 0 : undefined} className={cn('flex min-w-0 items-baseline justify-between gap-2 py-2 text-sm', item.title && INSET_FOCUS_OUTLINE_CLASS)}>
+            <li key={item.key} tabIndex={item.title ? 0 : undefined} className={cn('flex min-w-0 items-baseline justify-between gap-2 py-2 text-sm', item.title && cn('px-2', INSET_FOCUS_OUTLINE_CLASS))}>
               <span className="flex min-w-0 flex-col">
                 <span className="break-words">{item.label}</span>
                 {item.caption && <span className="break-words text-xs text-muted-foreground">{item.caption}</span>}
               </span>
-              <span className="max-w-[50%] shrink-0 break-words text-right tabular-nums text-muted-foreground">{item.value}</span>
+              <span className="shrink-0 whitespace-nowrap text-right tabular-nums text-muted-foreground">{item.value}</span>
             </li>
           )
           if (!item.title) return row

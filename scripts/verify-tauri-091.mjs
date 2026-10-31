@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live CDP check for spec 091 (busy-button hover, derived aria-keyshortcuts) against a built Tauri debug exe with a fake `omp`,
+// Live CDP check for spec 091 (aria-disabled buttons never hover or look enabled, derived aria-keyshortcuts) against a built Tauri debug exe with a fake `omp`,
 // a scratch REFRACT_DATA_DIR and its own debugging port.
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_091_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-091.mjs
 
@@ -50,14 +50,24 @@ function buildShim(dir) {
 
 const FIND = `document.querySelector('button[aria-label="Find in chat"]')`;
 
+// Polls until the computed style stops changing, so a transition never races the read.
+async function settledStyle(cdp, finder, prop) {
+  let last = null;
+  for (let stable = 0, i = 0; i < 40 && stable < 3; i += 1) {
+    const value = await cdp.evaluate(`getComputedStyle(${finder}).${prop}`);
+    stable = value === last ? stable + 1 : 0;
+    last = value;
+    await sleep(50);
+  }
+  return last;
+}
+
 async function hoverBackground(cdp, finder) {
   const point = await cdp.evaluate(`(() => { const r = ${finder}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
-  await sleep(300);
-  const idle = await cdp.evaluate(`getComputedStyle(${finder}).backgroundColor`);
+  const idle = await settledStyle(cdp, finder, 'backgroundColor');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
-  await sleep(400);
-  const hovered = await cdp.evaluate(`getComputedStyle(${finder}).backgroundColor`);
+  const hovered = await settledStyle(cdp, finder, 'backgroundColor');
   const under = await cdp.evaluate(`document.elementFromPoint(${point.x}, ${point.y}) === ${finder} || ${finder}.contains(document.elementFromPoint(${point.x}, ${point.y}))`);
   return { idle, hovered, under };
 }
@@ -68,6 +78,18 @@ async function checkButtons(cdp) {
   assert(free.under, 'The pointer lands on the Find in chat button');
   assert(free.hovered !== free.idle, 'A normal ghost IconButton changes background on hover');
   await shot(cdp, '01-ghost-hover.png');
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+  // A clone with aria-disabled exercises the shared neutraliser without needing a feature to be busy.
+  await cdp.evaluate(`(() => { const c = ${FIND}.cloneNode(true); c.id = 'verify-disabled-clone'; c.setAttribute('aria-disabled', 'true'); c.removeAttribute('aria-label'); c.setAttribute('aria-hidden', 'true'); ${FIND}.after(c); })()`);
+  const CLONE = `document.getElementById('verify-disabled-clone')`;
+  const off = await hoverBackground(cdp, CLONE);
+  const cursor = await cdp.evaluate(`getComputedStyle(${CLONE}).cursor`);
+  log(`disabled ghost hover: ${JSON.stringify({ ...off, cursor })}`);
+  assert(off.under, 'The pointer lands on the aria-disabled clone');
+  assert(off.hovered === off.idle, 'An aria-disabled button keeps its idle background on hover');
+  assert(cursor === 'not-allowed', 'An aria-disabled button shows the not-allowed cursor');
+  await shot(cdp, '02-disabled-hover.png');
+  await cdp.evaluate(`${CLONE}.remove()`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
 }
 
@@ -83,10 +105,12 @@ async function checkShortcuts(cdp) {
   await cdp.waitFor(`document.querySelector('[data-rail-toggle]')?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'right pane open' });
   await cdp.click(`document.querySelector('[data-rail-button="git-changes"]')`);
   await cdp.waitFor(`!!document.querySelector('[data-panel-close]')`, { timeoutMs: 10_000, label: 'panel close button' });
+  // The Delete chord lives on the tab-bar close buttons, which only render with two or more open panels.
+  await cdp.click(`Array.from(document.querySelectorAll('[data-rail-button]')).find((b) => b.getAttribute('data-rail-button') !== 'git-changes')`);
+  await cdp.waitFor(`document.querySelectorAll('[data-panel-close]').length >= 2`, { timeoutMs: 10_000, label: 'panel tab bar' });
   const close = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-panel-close]')).map((b) => b.getAttribute('aria-keyshortcuts'))`);
-  await shot(cdp, '03-right-pane-git-changes.png');
-  if (close.includes('Delete')) assert(true, 'The panel tab close button derives aria-keyshortcuts Delete');
-  else skip('panel-tab-close-shortcut', `The tab-bar close with the Delete chord is not rendered in this layout (saw ${JSON.stringify(close)}); the derivation is proven on Find in chat.`);
+  await shot(cdp, '03-right-pane-tab-bar.png');
+  assert(close.includes('Delete'), 'The panel tab close button derives aria-keyshortcuts Delete');
 }
 
 async function main() {

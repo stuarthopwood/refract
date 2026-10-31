@@ -237,7 +237,6 @@ export function App() {
                       variant="outline"
                       className="absolute top-1/2 z-20 -translate-x-1/2 -translate-y-10 bg-background text-muted-foreground hover:bg-muted"
                       style={{ left: `${liveDividerPercent}%` }}
-                      aria-keyshortcuts="Control+Shift+\"
                       onClick={() => useSplitStore.getState().focusOther()}
                     >
                       <ArrowLeftRightIcon aria-hidden />

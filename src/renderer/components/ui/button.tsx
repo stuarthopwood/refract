@@ -5,31 +5,32 @@ import { LoaderCircleIcon } from "lucide-react"
 import { Slot } from "radix-ui"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 active:not-aria-[haspopup]:not-aria-disabled:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-invalid-ring dark:aria-invalid:border-destructive/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 active:not-aria-[haspopup]:not-aria-disabled:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed forced-colors:aria-disabled:text-[GrayText] aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-invalid-ring dark:aria-invalid:border-destructive/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
+      // Each variant ends with an `aria-disabled:hover:` neutraliser: it outranks a caller's plain `hover:` override, so a busy button never looks clickable.
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary-hover-bg",
+        default: "bg-primary text-primary-foreground hover:bg-primary-hover-bg aria-disabled:hover:bg-primary",
         // Solid neutral, never red: stopping a turn keeps the work. Hover mixes 15% background
         // (no token exists for this mix).
-        invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
+        invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)] aria-disabled:hover:bg-foreground",
         outline:
-          "border-button-outline-border bg-button-outline-bg text-button-outline-fg hover:bg-button-outline-hover-bg aria-expanded:bg-button-outline-hover-bg",
+          "border-button-outline-border bg-button-outline-bg text-button-outline-fg hover:bg-button-outline-hover-bg aria-expanded:bg-button-outline-hover-bg aria-disabled:hover:bg-button-outline-bg",
         secondary:
-          "bg-button-secondary-bg text-button-secondary-fg hover:bg-button-secondary-hover-bg aria-expanded:bg-button-secondary-bg aria-expanded:text-button-secondary-fg",
+          "bg-button-secondary-bg text-button-secondary-fg hover:bg-button-secondary-hover-bg aria-expanded:bg-button-secondary-bg aria-expanded:text-button-secondary-fg aria-disabled:hover:bg-button-secondary-bg",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-(--ghost-hover-bg,var(--row-hover-bg)) font-normal",
+          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-(--ghost-hover-bg,var(--row-hover-bg)) aria-disabled:hover:bg-transparent dark:aria-disabled:hover:bg-transparent font-normal",
         destructive:
-          "bg-button-destructive-bg text-button-destructive-fg hover:bg-button-destructive-hover-bg focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
+          "bg-button-destructive-bg text-button-destructive-fg hover:bg-button-destructive-hover-bg focus-visible:border-destructive/40 focus-visible:ring-destructive/80 aria-disabled:hover:bg-button-destructive-bg",
         // Borderless, red label: a destructive action that must not compete with the surface's one filled button (#1387).
         "ghost-destructive":
-          "text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:hover:bg-(--ghost-hover-bg,var(--row-hover-bg)) font-normal",
+          "text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:hover:bg-(--ghost-hover-bg,var(--row-hover-bg)) aria-disabled:hover:bg-transparent dark:aria-disabled:hover:bg-transparent font-normal",
         link: "text-primary underline underline-offset-4 font-normal",
         // Non-primary action beside an `outline` primary (#746); underlines on hover and focus, with a ring since it has no border.
-        text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
+        text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2 aria-disabled:hover:no-underline",
         // Same shape as `text`, red label, for actions that open a confirm dialog.
         "text-destructive":
-          "min-h-6 rounded-md text-destructive hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
+          "min-h-6 rounded-md text-destructive hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2 aria-disabled:hover:no-underline",
       },
       size: {
         default:
