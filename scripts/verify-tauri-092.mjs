@@ -69,7 +69,12 @@ async function withSession(scenario, tmp, exePath, launcherExe, shimDir, body) {
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
     await addRepository(cdp, repoDir);
     await createSessionViaQuickCreate(cdp, path.basename(repoDir));
-    await body(cdp);
+    try {
+      await body(cdp); (err) {
+      await shot(cdp, `fail-${scenario}.png`).catch(() => {});
+      log(`${scenario} page text: ${await cdp.evaluate('document.body.innerText.slice(0, 800)').catch(() => '?')}`);
+      throw err;
+    }
   } finally {
     cdp?.close();
     if (child) await stopLauncher(child).catch(() => {});
