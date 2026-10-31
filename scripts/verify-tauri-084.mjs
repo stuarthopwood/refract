@@ -93,6 +93,7 @@ async function main() {
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await waitFor(`!!(${DIAGRAM}) && !!(${CODE_WRAP})`, 'diagram and code block rendered', 60_000);
 
+    const prevSvg = { v: '' };
     const pick = async (name) => {
       await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
       await waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, 'Settings opened');
@@ -102,21 +103,24 @@ async function main() {
       await waitFor(`${radio(name)}?.getAttribute('aria-checked') === 'true'`, `${name} checked`);
       await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
       await waitFor(`!!(${DIAGRAM}) && !!(${CODE_WRAP})`, `${name}: diagram and code block back`);
-      await sleep(1500);
+      await waitFor(`(() => { const i = ${DIAGRAM}; return !!i && decodeURIComponent(i.src.split(',').slice(1).join(',')).toLowerCase() !== ${JSON.stringify(prevSvg.v)}; })()`, `${name}: diagram re-rendered`, 30_000);
+      await sleep(300);
     };
 
     const snaps = {};
     for (const [name, slug] of [['Dark', 'dark'], ['Obsidian', 'obsidian'], ['Per Element', 'custom']]) {
       await pick(name);
       snaps[slug] = await cdp.evaluate(SNAPSHOT);
+      prevSvg.v = snaps[slug].svg;
       await shot(`chat-${slug}.png`);
     }
     const s = snaps;
     check(s.dark.svg.includes('<svg') && s.obsidian.svg.includes('<svg'), 'built-in themes render a Mermaid SVG');
     check(s.dark.svg !== s.obsidian.svg, 'Mermaid SVG differs between Dark and Obsidian', null);
     check(s.dark.thumb !== s.custom.thumb && s.custom.thumb === rgb(CUSTOM['scrollbar-thumb']), 'custom theme recolours --scrollbar-thumb live', { dark: s.dark.thumb, custom: s.custom.thumb });
-    if (s.custom.realThumb) check(s.custom.realThumb === rgb(CUSTOM['scrollbar-thumb']), 'a real scroll-area thumb paints the custom colour', s.custom.realThumb);
-    check(s.custom.svg.includes(CUSTOM['mermaid-node-fill']), 'custom theme node fill appears in the rendered Mermaid SVG', { dark: s.dark.svg.includes('#c2185b') });
+    check(s.custom.realThumb === null || s.custom.realThumb === rgb(CUSTOM['scrollbar-thumb']), 'a real scroll-area thumb, when mounted, paints the custom colour', s.custom.realThumb);
+    check(s.custom.codeFg === rgb(CUSTOM['code-block-fg']), 'custom theme recolours the code block foreground live', { custom: s.custom.codeFg });
+    check(s.custom.svg.includes(CUSTOM['mermaid-node-fill']), 'custom theme node fill appears in the rendered Mermaid SVG', { dark: s.dark.svg.includes(CUSTOM['mermaid-node-fill']) });
     check(!s.dark.svg.includes(CUSTOM['mermaid-node-fill']), 'built-in Dark SVG does not contain the custom node fill');
     check(s.custom.keyword === rgb(CUSTOM['syntax-keyword']), 'custom theme recolours the Shiki keyword token live', { custom: s.custom.keyword, dark: s.dark.keyword });
     check(s.dark.keyword !== s.custom.keyword, 'built-in Dark keyword colour differs from the custom one', s.dark.keyword);

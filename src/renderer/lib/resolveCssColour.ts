@@ -17,7 +17,8 @@ export function withResolvedTokens<T>(prefix: string, fn: (read: (name: string) 
     ctx.fillStyle = 'transparent'
     ctx.fillStyle = computed
     ctx.fillRect(0, 0, 1, 1)
-    const [r = 0, g = 0, b = 0] = ctx.getImageData(0, 0, 1, 1).data
+    const [r = 0, g = 0, b = 0, a = 0] = ctx.getImageData(0, 0, 1, 1).data
+    if (a === 0) return computed
     return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`
   }
   try {
