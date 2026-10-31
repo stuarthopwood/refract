@@ -123,7 +123,7 @@ async function main() {
     await waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`, 'Remove entry');
     await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`);
     await waitFor(`!!document.querySelector('[role="alertdialog"], [role="dialog"]')`, 'Remove dialog');
-    await cdp.clickByText('Remove', { inDialog: true });
+    await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button, [role="dialog"] button')).find((el) => el.textContent.trim() === 'Remove')`);
     await waitFor(`!${radio('Per Element')}`, 'custom theme row gone', 20_000);
     const fallback = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="radio"][aria-checked="true"]')).length`);
     check(fallback === 1, 'removing the active custom theme leaves exactly one built-in selected', fallback);
