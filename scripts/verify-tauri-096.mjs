@@ -38,7 +38,7 @@ const shot = async (cdp, name) => {
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const CTRL = 2;
-const DIALOG = `document.querySelector('[role="dialog"]')`;
+const DIALOG = `(document.getElementById('session-item') ? document.getElementById('session-item').closest('[role="dialog"]') : null)`;
 const ITEM = `document.getElementById('session-item')`;
 
 async function openPalette(cdp) {

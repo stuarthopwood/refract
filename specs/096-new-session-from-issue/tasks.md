@@ -1,15 +1,15 @@
 # Tasks: spec 096
 
-- [ ] T1 `Session.originIssue` (Rust registry, TS model, literals)
-- [ ] T2 `add_worktree_for_issue` and the slug
-- [ ] T3 `gh_permission.rs` write-access check
-- [ ] T4 `session_kickoff.rs`: builder, `issues.newSession`, PR command returns `{ session, kickoff }`
-- [ ] T5 Bridge and IPC types
-- [ ] T6 `startSessionFromItem`, existing-Session prompt, kickoff apply, composer notice
-- [ ] T7 Entry points: Issues row, PR row menu, palette, New session URL, PR detail
-- [ ] T8 Header origin issue
-- [ ] T9 `pnpm ci:local`, live check `scripts/verify-tauri-096.mjs`
-- [ ] T10 Six-reviewer gate
+- [x] T1 `Session.originIssue` (Rust registry, TS model, literals)
+- [x] T2 `add_worktree_for_issue` and the slug
+- [x] T3 `gh_permission.rs` write-access check
+- [x] T4 `session_kickoff.rs`: builder, `issues.newSession`, PR command returns `{ session, kickoff }`
+- [x] T5 Bridge and IPC types
+- [x] T6 `startSessionFromItem`, existing-Session prompt, kickoff apply, composer notice
+- [x] T7 Entry points: Issues row, PR row menu, palette, New session URL, PR detail
+- [x] T8 Header origin issue
+- [x] T9 `pnpm ci:local`, live check `scripts/verify-tauri-096.mjs`
+- [x] T10 Six-reviewer gate
 
 ## Analysis
 
