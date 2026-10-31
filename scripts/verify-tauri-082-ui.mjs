@@ -3,7 +3,7 @@
 // a scratch REFRACT_DATA_DIR and its own debugging port (never %APPDATA%\refract-tauri).
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_082_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-082-ui.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -56,8 +56,10 @@ async function runChecks(cdp, { repoDir }) {
   await shot(cdp, '01-chat-header.png');
   assert(header.find.w >= 24 && header.find.h >= 24, 'ChatHeader find button is at least 24 px');
   assert(!!header.findKeys, 'ChatHeader find button exposes aria-keyshortcuts');
-  if (header.pause) assert(header.pause.w >= 24 && header.pause.h >= 24, 'ChatHeader pause button is at least 24 px and named like its tooltip');
+  if (header.pause) assert(header.pause.w >= 24 && header.pause.h >= 24, 'ChatHeader pause button is at least 24 px');
+  else log('SKIP: no pause button on an idle session; covered by the IconButton label contract');
   if (header.close) assert(header.close.w >= 24 && !!header.closeKeys, 'ChatHeader close button is at least 24 px with aria-keyshortcuts');
+  else log('SKIP: single pane has no chat close button');
 
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
@@ -69,7 +71,8 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
   await sleep(400);
 
-  assert(await cdp.evaluate(`!document.body.textContent.includes('See all')`), 'No "See all" link remains (Show all wording)');
+  const homeSources = ['HomeGitHubSections.tsx', 'HomeSessionSections.tsx'].map((f) => readFileSync(path.join(REPO_ROOT, 'src', 'renderer', 'features', 'home', f), 'utf8'));
+  assert(homeSources.every((s) => !s.includes('See all')) && homeSources.some((s) => s.includes('Show all')), 'Home sections say "Show all", never "See all" (source check; the scratch repo has no GitHub sections)');
   await shot(cdp, '03-after-settings.png');
 }
 

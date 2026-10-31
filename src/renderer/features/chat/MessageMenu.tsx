@@ -77,7 +77,7 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
           (armed ? (
             <>
               <CopyButton getText={() => text} label="Copy message" announcement="Message copied" className={REVEAL_CLASS} />
-              <TranscriptKebab items={items} align={align} label={`More actions, ${messageSnippet(text)}`} className={REVEAL_CLASS} />
+              <TranscriptKebab items={items} align={align} label={messageSnippet(text) ? `More actions, ${messageSnippet(text)}` : 'More actions'} className={REVEAL_CLASS} />
             </>
           ) : (
             <IconButton

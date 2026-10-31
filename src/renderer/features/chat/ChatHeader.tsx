@@ -38,18 +38,18 @@ export function ChatHeader({
       actions={
         <>
             {otherSessionName && onSwapToOther && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-6 gap-2 px-2 text-xs"
-              onClick={onSwapToOther}
-              aria-label={`Switch to ${otherSessionName}`}
-            >
-              <SplitSquareHorizontalIcon aria-hidden className="size-4" />
-              {otherSessionName}
-            </Button>
-          )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 max-w-40 gap-2 px-2 text-xs"
+                onClick={onSwapToOther}
+                aria-label={`Switch to ${otherSessionName}`}
+              >
+                <SplitSquareHorizontalIcon aria-hidden className="size-4 shrink-0" />
+                <span className="truncate">{otherSessionName}</span>
+              </Button>
+            )}
           <div className="shrink-0">
             <ConversationSwitcher sessionId={sessionId} />
           </div>
