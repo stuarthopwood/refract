@@ -166,6 +166,11 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
     if (sequence !== refreshSequence) return
     if (!result.ok) {
+      if (!more && sharesActiveCountSearch({ tab, state, repositoryIds, query, limit }, allRepositoryIds)) {
+        activeCountSequence += 1
+        activeCountInFlight = null
+        set({ activeCount: emptyActiveCount() })
+      }
       set(
         more
           ? { loading: false, error: result.error }

@@ -5,7 +5,7 @@ Status: in progress. Source: follow-ups from the #1347 and #1361 gates, decision
 ## Requirements
 
 - FR-1 The sidebar Pull requests badge uses `HOME_PROJECTS_MAX` from `shared/ipc-home.ts` instead of a private copy of the Project limit.
-- FR-2 The badge shows `30+` when the count is partial (over 40 Projects, or any Project skipped) and its aria-label reads "Pull requests, N open pull requests across your Projects".
+- FR-2 The badge shows `30+` at 30 or more, `N+` when the count is partial (over 40 Projects, or any Project skipped), and reads "N open"; its aria-label is "Pull requests, N open pull requests across your Projects" so the visible text is part of the name. A failed shared list search clears the badge.
 - FR-3 On default filters (tab all, state open, no Project chosen, empty query, one page, at most 40 Projects) the list search also feeds the badge, so opening the view and Refresh issue one search, and the startup badge fetch is deduped per Project set.
 - FR-4 The "Showing the first 200" note shows at exactly 200 results with no Show more button.
 - FR-5 After Show more, focus lands on the first newly loaded row, including at the cap; with no new row it falls back to the cap note or the list.

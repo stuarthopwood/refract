@@ -101,6 +101,11 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   }
 
   const showCapNote = Boolean(paging?.atCap) && !loading
+  // A filter change replaces the rows, so a pending Show more focus hand-off must not steal focus.
+  const filterKey = `${state}|${repositoryIds.join(',')}|${props.appliedQuery}`
+  useEffect(() => {
+    askedForMore.current = null
+  }, [filterKey])
   // After "Show more", focus the first newly loaded row; if none arrived, fall back to the cap
   // note or the list so focus is not lost with the button.
   useEffect(() => {

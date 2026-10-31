@@ -22,6 +22,18 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
   const newIssueRef = useRef<HTMLButtonElement>(null)
   const createdIssueRef = useRef(false)
   const [newIssueOpen, setNewIssueOpen] = useState(false)
+  const pendingRowFocus = useRef(false)
+  const issuesLoading = useIssuesStore((s) => s.loading)
+  const issueCount = useIssuesStore((s) => s.items.length)
+
+  // The list is inert while it reloads, so the created row takes focus once loading ends.
+  useEffect(() => {
+    if (!pendingRowFocus.current || issuesLoading) return
+    const row = document.querySelector<HTMLElement>('[data-issue-row][aria-current="true"]')
+    if (!row) return
+    pendingRowFocus.current = false
+    row.focus()
+  }, [issuesLoading, issueCount])
 
   // Lands keyboard and screen-reader users on the view instead of the nav button just activated.
   useEffect(() => {
@@ -76,6 +88,7 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
           onCloseFocus={() => {
             // After a create, land on the new issue's row when it is listed, else the New issue button.
             const row = createdIssueRef.current ? document.querySelector<HTMLElement>('[data-issue-row][aria-current="true"]') : null
+            pendingRowFocus.current = createdIssueRef.current && !row
             createdIssueRef.current = false
             ;(row ?? newIssueRef.current)?.focus()
           }}
