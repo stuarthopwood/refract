@@ -1,5 +1,5 @@
-import { useRightPaneStore, useSubagentPanelStore } from '@/state'
-import type { PanelId } from './panel-registry'
+import { useRightPaneStore, useSubagentPanelStore, usePinnedPanelsStore } from '@/state'
+import { isPinnedPanelId, type PanelId } from './panel-registry'
 
 
 export function openHostedPanel(
@@ -15,6 +15,11 @@ export function openHostedPanel(
 export function closeHostedPanel(id: PanelId, options?: { skipFocusFallback?: boolean }): void {
   const panelEl = document.getElementById('right-pane-active-panel')
   const wasInside = panelEl?.contains(document.activeElement) ?? false
+  if (isPinnedPanelId(id)) {
+    useRightPaneStore.getState().closePanel(id)
+    usePinnedPanelsStore.getState().unpin(id, { restoreFocus: !options?.skipFocusFallback && wasInside })
+    return
+  }
   if (id === 'subagents') {
     useSubagentPanelStore.getState().closePanel({ restoreFocus: !options?.skipFocusFallback })
   } else {

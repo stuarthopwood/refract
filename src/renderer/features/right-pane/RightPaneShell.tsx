@@ -11,6 +11,8 @@ import { FileExplorerPanel } from './file-explorer/FileExplorerPanel'
 import { GitChangesPanel } from './git-changes/GitChangesPanel'
 import { OutlinePanel } from './outline/OutlinePanel'
 import { SessionUsagePanel } from '@/features/usage/SessionUsagePanel'
+import { PinnedIssuePanel } from './pinned/PinnedIssuePanel'
+import { PinnedPullRequestPanel } from './pinned/PinnedPullRequestPanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
@@ -90,6 +92,8 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         {activePanelId === 'git-changes' && <GitChangesPanel sessionId={sessionId} />}
         {activePanelId === 'outline' && <OutlinePanel sessionId={sessionId} />}
         {activePanelId === 'session-usage' && <SessionUsagePanel sessionId={sessionId} />}
+        {activePanelId === 'pull-request' && <PinnedPullRequestPanel />}
+        {activePanelId === 'issue' && <PinnedIssuePanel />}
       </div>
       <HandleHitStrip />
     </div>
