@@ -94,9 +94,9 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
         <Input id={labelId} maxLength={MAX_ALARM_LABEL_CHARS} value={label} onChange={(e) => setLabel(e.target.value)} />
       </div>
       {failed && (
-        <p role="alert" className="text-xs text-destructive">
+        <InlineStatus tone="error" density="compact">
           Could not save the alarm. Try again.
-        </p>
+        </InlineStatus>
       )}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onDone}>
@@ -137,47 +137,45 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onRearm, onDelet
         onClick={onEdit}
         highlighted={highlighted}
         actions={
-          <>
-            {highlighted && (
-              <>
-                <Button type="button" variant="text" size="sm" aria-label={`Dismiss alarm ${name}`} onClick={onDismiss}>
-                  Dismiss
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  loading={rearming}
-                  aria-label={`Re-arm alarm ${name}`}
-                  onClick={async () => {
-                    setRearming(true)
-                    const ok = await useSettingsStore.getState().upsertAlarm({ ...alarm, fireAtMs: nextOccurrence(toInputTime(alarm.fireAtMs), Date.now()), active: true })
-                    setRearming(false)
-                    onRearm(alarm, ok)
-                  }}
-                >
-                  Re-arm
-                </Button>
-              </>
-            )}
-            <Button
-              type="button"
-              variant="ghost-destructive"
-              size="sm"
-              aria-label={`Delete alarm ${name}`}
-              onClick={async () => {
-                if (await deleteAlarm(alarm.id)) onDeleted(alarm)
-              }}
-            >
-              Delete
-            </Button>
-          </>
+          <Button
+            type="button"
+            variant="ghost-destructive"
+            size="sm"
+            aria-label={`Delete alarm ${name}`}
+            onClick={async () => {
+              if (await deleteAlarm(alarm.id)) onDeleted(alarm)
+            }}
+          >
+            Delete
+          </Button>
         }
       >
         <span className={alarm.active ? 'font-medium tabular-nums' : 'tabular-nums text-muted-foreground'}>{time}</span>
         {alarm.label && <span className="truncate text-muted-foreground">{alarm.label}</span>}
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </ListCardButton>
+      {highlighted && (
+        <div className="mt-1 flex justify-end gap-2">
+          <Button type="button" variant="text" size="sm" aria-label={`Dismiss alarm ${name}`} onClick={onDismiss}>
+            Dismiss
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            loading={rearming}
+            aria-label={`Re-arm alarm ${name}`}
+            onClick={async () => {
+              setRearming(true)
+              const ok = await useSettingsStore.getState().upsertAlarm({ ...alarm, fireAtMs: nextOccurrence(toInputTime(alarm.fireAtMs), Date.now()), active: true })
+              setRearming(false)
+              onRearm(alarm, ok)
+            }}
+          >
+            Re-arm
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
