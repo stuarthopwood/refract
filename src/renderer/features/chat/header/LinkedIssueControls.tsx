@@ -39,6 +39,7 @@ const ViewIssueButton = forwardRef<HTMLButtonElement, { label: string } & React.
 /** The header's linked-issue badge, "+N" count and View issue button (a menu when there are several). */
 export function LinkedIssueControls({ repositoryId, issues }: LinkedIssueControlsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const pinnedRef = useRef(false)
   const first = issues[0]
   if (!first) return null
   const extra = issues.length - 1
@@ -59,9 +60,21 @@ export function LinkedIssueControls({ repositoryId, issues }: LinkedIssueControl
             <ViewIssueButton ref={triggerRef} label="View issue" />
           </DropdownMenuTrigger>
           {/* Radix would hand focus back to the trigger and undo the move into the panel. */}
-          <DropdownMenuContent align="end" onCloseAutoFocus={(event) => event.preventDefault()}>
+          <DropdownMenuContent
+            align="end"
+            onCloseAutoFocus={(event) => {
+              if (pinnedRef.current) event.preventDefault()
+              pinnedRef.current = false
+            }}
+          >
             {issues.map((issue) => (
-              <DropdownMenuItem key={issue.number} onSelect={() => pin(issue)}>
+              <DropdownMenuItem
+                key={issue.number}
+                onSelect={() => {
+                  pinnedRef.current = true
+                  pin(issue)
+                }}
+              >
                 <IssueIcon issue={issue} />
                 <span className="sr-only">{issue.state}</span>
                 <span className="max-w-64 truncate">#{issue.number} {issue.title}</span>

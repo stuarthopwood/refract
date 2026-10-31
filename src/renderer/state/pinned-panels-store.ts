@@ -38,7 +38,7 @@ export const usePinnedPanelsStore = create<PinnedPanelsState>((set, get) => ({
     set({ [key]: { repositoryId, number, opener } } as Partial<PinnedPanelsState>)
     pane.openPanel(kind)
     // The shell only moves focus on a fresh open; a swap of the pinned item must still move it in.
-    if (alreadyActive) requestAnimationFrame(() => document.getElementById('right-pane-active-panel')?.focus())
+    if (alreadyActive) requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-right-pane-content]')?.focus())
   },
   unpin: (kind, options) => {
     const key = kind === 'pull-request' ? 'pullRequest' : 'issue'
@@ -52,7 +52,9 @@ export const usePinnedPanelsStore = create<PinnedPanelsState>((set, get) => ({
     }
   },
   publishPullRequestState: (repositoryId, number, state) => {
-    const live = get().livePullRequest
+    const { livePullRequest: live, pullRequest: pinned } = get()
+    // A load that resolves after unpin or a swap must not resurrect stale state.
+    if (!pinned || pinned.repositoryId !== repositoryId || pinned.number !== number) return
     if (live && live.repositoryId === repositoryId && live.number === number && live.state === state) return
     set({ livePullRequest: { repositoryId, number, state } })
   }

@@ -1,5 +1,6 @@
 
 import type { ThemeId } from './themes'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity'; import type { ActivityReadoutFields, ActivityText } from './activity'; import type { RightPaneSettings } from './rightPane';
+import type { PullRequestState } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
 import type { TodoPhase } from './todo'; import type { TranscriptImageRef } from './ipc-images';
@@ -234,7 +235,7 @@ export interface DiffStat {
   partial: boolean;
 }
 
-export type PullRequestDisplayState = import('./github').PullRequestState;
+export type PullRequestDisplayState = PullRequestState;
 export type PullRequestChecks = 'pass' | 'fail' | 'pending';
 
 export interface LinkedIssue {
