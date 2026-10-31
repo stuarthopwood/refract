@@ -42,6 +42,17 @@
 
 [Gates determined based on constitution file]
 
+### Design checklist (UI features; items 1-6 are the gate)
+
+- [ ] 1. One primary button per section; destructive last, destructive variant, never icon-only.
+- [ ] 2. Icon-only controls use `IconButton` (label = tooltip = aria-label, plus Kbd), at least 24 px.
+- [ ] 3. Every menu item has a leading 16 px icon or a documented exception; right-click and kebab menus share one item builder.
+- [ ] 4. Panel and screen headers use `PanelHeader`/`ScreenHeader`: 40 px, no bottom divider, actions right, no hand-written drag regions.
+- [ ] 5. 4/8 grid spacing; off-grid offsets are allowlisted with a reason.
+- [ ] 6. Semantic tokens only; contrast holds in every preset including High contrast.
+- [ ] 7. Loading, empty, error and success states; errors sit beside their field and focus moves to the first one.
+- [ ] 8. One-column forms with labels above fields; advanced detail and logs collapsed.
+
 ## Project Structure
 
 ### Documentation (this feature)

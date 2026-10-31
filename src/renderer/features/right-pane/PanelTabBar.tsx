@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
+import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
@@ -79,11 +80,10 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
 
     return (
       <div className="flex shrink-0 flex-col">
-        <div ref={wrapperRef} className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
-          <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-medium">
-            {descriptor.name}
-          </h2>
-          <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">
+        <PanelHeader
+          ref={wrapperRef}
+          windowControlsSpacerStyle={WINDOW_CONTROLS_SPACER_STYLE}
+          actions={
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -99,9 +99,12 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
               </TooltipTrigger>
               <TooltipContent>{`Close ${descriptor.name} panel`}</TooltipContent>
             </Tooltip>
-            <div aria-hidden className="shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
-          </div>
-        </div>
+          }
+        >
+          <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-medium">
+            {descriptor.name}
+          </h2>
+        </PanelHeader>
       </div>
     )
   }
@@ -147,7 +150,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   return (
     <div className="flex shrink-0 flex-col">
       <WindowControlsSpacerRow />
-      <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 px-2">
+      <div ref={wrapperRef} className={cn('no-drag-region flex shrink-0 items-center gap-1 px-2', PANEL_HEADER_HEIGHT_CLASS)}>
         <div ref={wrapRef} className="@container relative flex min-w-0 flex-1 items-center overflow-x-auto">
           <div ref={tabListRef} role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
             {openPanelIds.map((id) => (

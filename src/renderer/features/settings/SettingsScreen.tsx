@@ -18,6 +18,7 @@ import { SettingsBrand } from './SettingsBrand'
 import { SettingsNav } from './SettingsNav'
 import { StatusLineSection } from './StatusLineSection'
 import { IconButton } from '@/components/IconButton'
+import { PanelHeader } from '@/components/PanelHeader'
 
 export function SettingsScreen() {
   const settingsSection = useViewStore((state) => state.settingsSection) ?? 'appearance'
@@ -36,14 +37,14 @@ export function SettingsScreen() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
+      <PanelHeader>
         <IconButton label="Back to chat" side="bottom" className="no-drag-region" onClick={handleBackToChat}>
           <ArrowLeftIcon aria-hidden />
         </IconButton>
         <SettingsBrand />
         <span aria-hidden className="text-sm text-muted-foreground">/</span>
-        <span className="text-sm font-medium">Settings</span>
-      </div>
+        <h1 className="text-sm font-medium">Settings</h1>
+      </PanelHeader>
       <div className="flex min-h-0 flex-1">
         <SettingsNav active={settingsSection} onSelect={openSettings} />
         <div ref={sectionRef} className="min-h-0 flex-1 overflow-y-auto p-6">

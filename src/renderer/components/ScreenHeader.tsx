@@ -5,6 +5,7 @@
 import type { ReactNode, Ref } from 'react'
 import { ArrowLeftIcon } from 'lucide-react'
 import { IconButton } from '@/components/IconButton'
+import { PanelHeader, WINDOW_CONTROLS_OVERLAY_STYLE } from '@/components/PanelHeader'
 
 export interface ScreenHeaderProps {
   title: string
@@ -25,8 +26,12 @@ export interface ScreenHeaderProps {
 
 export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children, reservesWindowControls = false, contained = false }: ScreenHeaderProps) {
   return (
-    <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center">
-      <div className={`flex h-full min-w-0 flex-1 items-center gap-2 px-4${contained ? ' mx-auto max-w-5xl' : ''}`}>
+    <PanelHeader
+      className={contained ? 'px-0' : undefined}
+      actions={contained ? undefined : children}
+      windowControlsSpacerStyle={reservesWindowControls ? WINDOW_CONTROLS_OVERLAY_STYLE : undefined}
+    >
+      <div className={contained ? 'mx-auto flex h-full min-w-0 max-w-5xl flex-1 items-center gap-2 px-4' : 'contents'}>
         {backLabel && onBack && (
           <IconButton label={backLabel} side="bottom" className="no-drag-region" onClick={onBack}>
             <ArrowLeftIcon aria-hidden />
@@ -36,11 +41,8 @@ export function ScreenHeader({ title, headingRef, backLabel, onBack, count, chil
           {title}
         </h1>
         {count && <span className="truncate text-xs text-muted-foreground">{count}</span>}
-        {children && <div className="no-drag-region ml-auto flex items-center gap-2">{children}</div>}
+        {contained && children && <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">{children}</div>}
       </div>
-      {reservesWindowControls && (
-        <div aria-hidden className="no-drag-region shrink-0" style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }} />
-      )}
-    </div>
+    </PanelHeader>
   )
 }
