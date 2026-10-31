@@ -2399,6 +2399,8 @@ samp {
 *::-webkit-scrollbar-button { display: none; }
 [data-slot='message-scroller-viewport'] { scrollbar-width: auto; scrollbar-color: auto; }
 [data-slot='message-scroller-viewport'][data-autoscrolling]::-webkit-scrollbar-thumb { background: transparent; }
+/* WebView2 draws its own reveal button on password inputs; SecretInput ships one toggle. */
+[data-secret-input]::-ms-reveal, [data-secret-input]::-ms-clear { display: none; }
 
 /* #572 FR-054: `[role='checkbox']` added so the ask card's new tick-box rows are squared the
  * same way every other choice/option/tab control already is -- a round dot against a square

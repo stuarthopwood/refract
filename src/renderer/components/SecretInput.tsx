@@ -18,6 +18,7 @@ export function SecretInput({ className, ...props }: SecretInputProps) {
         autoCapitalize="off"
         spellCheck={false}
         data-1p-ignore
+        data-secret-input
         className={`pr-10 ${className ?? ''}`}
       />
       <IconButton
