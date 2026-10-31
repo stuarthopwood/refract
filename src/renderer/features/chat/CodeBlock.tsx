@@ -8,8 +8,7 @@ import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { actionMenuItem, menuSeparator, type MenuKind } from '@/features/palette/menuItems'
 import { cn } from '@/lib/utils'
-import { useActiveThemeId } from '@/state'
-import { THEMES } from '../../../shared/themes'
+import { useSyntaxTheme } from '@/state'
 import { copyLinkText } from './linkClipboard'
 import { getHighlighter, highlightToHtml } from './shikiHighlighter'
 import { TranscriptKebab, TranscriptMenu } from './TranscriptMenu'
@@ -100,8 +99,7 @@ export function CodeBlock({
   streaming = false,
   expandable
 }: CodeBlockProps) {
-  const activeThemeId = useActiveThemeId()
-  const [html, setHtml] = React.useState<string | null>(null)
+  const syntaxTheme = useSyntaxTheme() = React.useState<string | null>(null)
   const [wrapOn, setWrapOn] = React.useState(wrap)
   React.useEffect(() => setWrapOn(wrap), [wrap])
 
@@ -121,7 +119,6 @@ export function CodeBlock({
         }
         if (cancelled) return
         // #975/#456: the body shares `bg-code-block` with the header/gutter; `highlightToHtml` neutralises Shiki's own root background.
-        const syntaxTheme = THEMES[activeThemeId].syntaxTheme
         setHtml(highlightToHtml(highlighter, code, lang, syntaxTheme))
       } catch {
         if (!cancelled) setHtml(null)
@@ -130,7 +127,7 @@ export function CodeBlock({
     return () => {
       cancelled = true
     }
-  }, [code, lang, activeThemeId])
+  }, [code, lang, syntaxTheme])
 
   const label = html ? lang! : 'text'
   const fullText = copyText ?? code

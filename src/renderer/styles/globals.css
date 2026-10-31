@@ -343,6 +343,43 @@ samp {
 
 /* #1472: per-element tokens default to a role. Also declared per theme class so the contrast probe resolves them. */
 :is(:root, .theme-dark, .theme-obsidian, .theme-dark-high-contrast, .theme-nordic-frost, .theme-cyber-amber) {
+  --mermaid-bg: #0a0a0a;
+  --mermaid-node-fill: #1f1f1f;
+  --mermaid-node-fg: #e8e8e8;
+  --mermaid-border: #747474;
+  --mermaid-line: #9d9d9d;
+  --mermaid-secondary: #2b2b2b;
+  --mermaid-tertiary: #3d3d3d;
+  --mermaid-text: #e7e7e7;
+  --mermaid-note-bg: #1f1f1f;
+  --mermaid-note-fg: #cccccc;
+  --mermaid-task-text: #fafafa;
+  --mermaid-ink: #000000;
+  --mermaid-crit: #db0000;
+  --mermaid-cscale-12: #a85400;
+  --mermaid-cscale-label-12: #fafafa;
+  --mermaid-accent: #7375f2;
+  --mermaid-accent-fill: #2d2e52;
+  --mermaid-palette-1: #76a9ff;
+  --mermaid-palette-2: #21df9b;
+  --mermaid-palette-3: #ffb734;
+  --mermaid-palette-4: #d492ff;
+  --mermaid-palette-5: #ff8492;
+  --mermaid-palette-6: #ffe066;
+  --mermaid-palette-7: #9bf6ff;
+  --mermaid-palette-8: #ffadad;
+  --mermaid-palette-9: #b3b3ff;
+  --mermaid-palette-10: #7affc4;
+  --mermaid-palette-11: #ffab73;
+  --mermaid-palette-12: #c9ff6b;
+  --mermaid-fill-1: #2d71b6;
+  --mermaid-fill-2: #247e51;
+  --mermaid-fill-3: #966420;
+  --mermaid-fill-4: #954bcb;
+  --mermaid-fill-5: #ca3359;
+  --mermaid-fill-6: #816d1b;
+  --mermaid-fill-7: #287989;
+  --mermaid-fill-8: #c73e32;
   --tool-row-fg: var(--muted-foreground);
   --tool-row-error-fg: var(--severity-error);
   --thinking-row-fg: var(--muted-foreground);
@@ -793,6 +830,18 @@ samp {
  * divider, status-bar and composer top borders). Registered in src/shared/themes.ts; #551
  * covers Nordic Frost/Cyber Amber, not this issue. */
 .theme-obsidian {
+  --mermaid-bg: #0f1014;
+  --mermaid-node-fill: #1c1f28;
+  --mermaid-node-fg: #e8e9e9;
+  --mermaid-border: #6f7c9d;
+  --mermaid-line: #9f9fa1;
+  --mermaid-secondary: #2a3040;
+  --mermaid-tertiary: #353d4d;
+  --mermaid-note-bg: #242834;
+  --mermaid-note-fg: #cfd0d2;
+  --mermaid-task-text: #f8fafc;
+  --mermaid-accent: #8588f4;
+  --mermaid-accent-fill: #303255;
   --role-default: oklch(0.78 0.11 197);
   --role-smol: oklch(0.78 0.12 340);
   --role-slow: oklch(0.78 0.12 101);
@@ -1066,6 +1115,20 @@ samp {
  * `dark-high-contrast` swatch comment, so every other token's margin is measured against the
  * starkest possible background this design system can express. */
 .theme-dark-high-contrast {
+  --mermaid-bg: #000000;
+  --mermaid-node-fill: #090909;
+  --mermaid-node-fg: #ffffff;
+  --mermaid-border: #808080;
+  --mermaid-line: #cecece;
+  --mermaid-secondary: #242424;
+  --mermaid-tertiary: #363636;
+  --mermaid-text: #ffffff;
+  --mermaid-note-bg: #090909;
+  --mermaid-note-fg: #ffffff;
+  --mermaid-task-text: #ffffff;
+  --mermaid-cscale-label-12: #ffffff;
+  --mermaid-accent: #76a9ff;
+  --mermaid-accent-fill: #233451;
   --role-default: oklch(0.86 0.11 191);
   --role-smol: oklch(0.86 0.12 327);
   --role-slow: oklch(0.86 0.12 101);
@@ -1348,6 +1411,19 @@ samp {
  * case at 4.91:1, just over the 4.5:1 floor `--destructive`/`--muted` enforces).
  */
 .theme-nordic-frost {
+  --mermaid-bg: #060f1e;
+  --mermaid-node-fill: #101b2b;
+  --mermaid-node-fg: #e7e8ea;
+  --mermaid-border: #79818c;
+  --mermaid-line: #9b9fa5;
+  --mermaid-secondary: #293342;
+  --mermaid-tertiary: #34404f;
+  --mermaid-text: #e6e7e8;
+  --mermaid-note-bg: #1c2738;
+  --mermaid-note-fg: #cdcfd3;
+  --mermaid-task-text: #eff7fb;
+  --mermaid-accent: #1ad1d1;
+  --mermaid-accent-fill: #11464c;
   --role-default: oklch(0.78 0.11 327);
   --role-smol: oklch(0.78 0.12 355);
   --role-slow: oklch(0.78 0.12 101);
@@ -1652,6 +1728,8 @@ samp {
  * own (the retune above), the two themes' composited text colours stay identical too. Every
  * pair re-verified by `scripts/check-theme-contrast.mjs`. */
 .theme-cyber-amber {
+  --mermaid-accent: #fb923c;
+  --mermaid-accent-fill: #553522;
   --role-default: oklch(0.78 0.11 125);
   --role-smol: oklch(0.78 0.12 340);
   --role-slow: oklch(0.78 0.12 233);
