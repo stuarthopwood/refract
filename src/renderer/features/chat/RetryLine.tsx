@@ -35,7 +35,7 @@ export function RetryLine({ sessionId }: { sessionId: string }) {
     if (stopping.current) return
     stopping.current = true
     try {
-      if (await stopAndRestore(sessionId, () => focusSessionPane(sessionId))) focusSessionPane(sessionId)
+      await stopAndRestore(sessionId, () => focusSessionPane(sessionId))
     } finally {
       stopping.current = false
     }
