@@ -154,7 +154,7 @@ export function ProjectColorPopover({
           />
           {hexTouched && hexInvalid && (
             <p id={hexErrorId} className="text-xs text-destructive">
-              Enter a hex colour like #1a9 or #11aa99.
+              Enter a 3 or 6 digit hex colour starting with #.
             </p>
           )}
         </div>

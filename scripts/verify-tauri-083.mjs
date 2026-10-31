@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live CDP check for spec 083 (#1473 literal colour lint) against a real built Tauri debug exe with fake `omp`,
 // a scratch REFRACT_DATA_DIR and its own debugging port (never %APPDATA%\refract-tauri).
-// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_083_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-083.mjs
+// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_083_SHOTS_DIR=<evidence dir, default $TMP/refract-083-shots> node scripts/verify-tauri-083.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget, clearKnownOutputFiles } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { addRepository, groupTriggerFinder } from './verify-tauri-session-list-helpers.mjs';
 import { countLiteralColours, findFailures } from './check-literal-colours.mjs';
@@ -17,8 +17,12 @@ import { countLiteralColours, findFailures } from './check-literal-colours.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_083_SHOTS_DIR || mkdtempSync(path.join(tmpdir(), 'refract-083-shots-'));
+const DEFAULT_SHOTS_DIR = path.join(tmpdir(), 'refract-083-shots');
+const SHOTS_DIR = process.env.REFRACT_083_SHOTS_DIR || DEFAULT_SHOTS_DIR;
+const SHOT_NAMES = ['theme-dark.png', 'chat-dark.png', 'theme-obsidian.png', 'chat-obsidian.png', 'failure.png', 'app.log', 'report.txt', 'report.json'];
 mkdirSync(SHOTS_DIR, { recursive: true });
+// The default dir is fixed so runs do not leak temp dirs; only known file names are cleared, never the folder.
+if (SHOTS_DIR === DEFAULT_SHOTS_DIR) clearKnownOutputFiles(SHOTS_DIR, 'refract-083-shots', SHOT_NAMES);
 
 const REPORT = [];
 let passed = 0;
@@ -38,7 +42,7 @@ const THEMES = ['Dark', 'Obsidian'];
 // Computed colours end in `, 0)` only for rgba(), or `/ 0)` (oklab, color) when fully transparent; rgb(r, g, 0) is opaque.
 const isTransparent = (colour) => /^rgba\((?:[^,]+,){3}\s*0(?:\.0+)?\s*\)$/.test(colour) || /\/\s*0(?:\.0+)?%?\s*\)$/.test(colour);
 const radio = (name) =>
-  `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === ${JSON.stringify(name)})`;
+  `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => (el.getAttribute('aria-labelledby') ?? '').split(/\\s+/).filter(Boolean).map((id) => document.getElementById(id)?.textContent.trim() ?? '').join(' ') === ${JSON.stringify(name)})`;
 const openAppearance = async (cdp) => {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
@@ -50,6 +54,8 @@ function checkScript() {
   assert(countLiteralColours(`const a = '#fff', b = "#112233aa"`) === 2, 'the check counts hex literals');
   assert(countLiteralColours(`// text-red-500 (#1001)\n/* bg-white */ const a = 'bg-background text-foreground'`) === 0, 'comments and theme-token classes never count');
   assert(countLiteralColours(`const a = "url('#grad')", b = 'url(#g)', c = root.querySelector('#bad')`) === 0, 'SVG refs and DOM selectors never count');
+  assert(countLiteralColours(`const a = 'color-mix(in srgb, var(--a), red)', b = 'rgb(from var(--a) r g b)'`) === 2, 'color-mix() and relative colour functions count');
+  assert(countLiteralColours(`const a = el.matches('div #fff'), b = el.closest('.a')`) === 1, 'only selector-shaped DOM arguments are exempt');
   assert(countLiteralColours(`const a = '//', b = '#fff'`) === 1, 'a // inside a string does not hide a colour');
   assert(countLiteralColours(`const a = 'color: #fff; border: hsl(0 100% 50%)'`) === 2, 'inline hex and hsl() literals count');
   assert(findFailures({ 'a.tsx': 2 }, { 'a.tsx': 1 }).length === 1, 'a count above its baseline fails');
@@ -57,6 +63,30 @@ function checkScript() {
   assert(findFailures({ 'a.tsx': 1 }, { 'a.tsx': 1 }).length === 0, 'a count equal to its baseline passes');
   const run = spawnSync(process.execPath, [path.join(__dirname, 'check-literal-colours.mjs')], { encoding: 'utf8', windowsHide: true });
   assert(run.status === 0 && /passed/.test(run.stdout), 'check:literal-colours passes against the tree');
+}
+
+// A url(#id) paint is only meaningful if the element it names exists, so resolve the refs in the live DOM and a probe.
+async function checkSvgGradientRefs(cdp) {
+  const result = JSON.parse(
+    await cdp.evaluate(`JSON.stringify((() => {
+      const refId = (v) => /url\\(["']?#([^"')]+)/.exec(v ?? '')?.[1];
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.innerHTML = '<defs><linearGradient id="grad-083-probe"><stop offset="0"/><stop offset="1"/></linearGradient></defs><rect width="10" height="10" fill="url(#grad-083-probe)"/>';
+      document.body.appendChild(svg);
+      let probe;
+      try {
+        const target = document.getElementById(refId(getComputedStyle(svg.querySelector('rect')).fill) ?? '');
+        probe = { tag: target?.tagName, stops: target?.querySelectorAll('stop').length };
+      } finally {
+        svg.remove();
+      }
+      const refs = Array.from(document.querySelectorAll('[fill^="url("],[stroke^="url("]')).flatMap((el) => [el.getAttribute('fill'), el.getAttribute('stroke')]).map(refId).filter(Boolean);
+      return { probe, refs: refs.length, unresolved: refs.filter((id) => !document.getElementById(id)) };
+    })())`)
+  );
+  assert(result.probe.tag === 'linearGradient' && result.probe.stops === 2, 'environment sanity: a url(#id) paint resolves to its gradient element in a probe');
+  assert(result.unresolved.length === 0, `every url(#id) paint attribute in the app resolves to an element (${result.refs} found, zero is allowed)`);
 }
 
 async function runChecks(cdp, repoDir) {
@@ -86,6 +116,7 @@ async function runChecks(cdp, repoDir) {
     await shot(cdp, `chat-${name.toLowerCase()}.png`);
   }
   assert(seen.Dark !== seen.Obsidian, `Dark and Obsidian paint different backgrounds (${seen.Dark} vs ${seen.Obsidian})`);
+  await checkSvgGradientRefs(cdp);
 }
 
 function buildShim(dir) {

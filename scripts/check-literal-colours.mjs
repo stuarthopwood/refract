@@ -2,6 +2,7 @@
 // Static guard (#1473, ADR 0001): src/renderer code must not use hex literals or Tailwind palette
 // colour classes (text-green-600, bg-black); colour comes from theme tokens. Existing uses are
 // baselined per file in literal-colours-baseline.json and may shrink, never grow.
+// Accepted limits (won't fix): an inline all-letter short hex such as #abc is not counted, and string concatenation defeats the regexes.
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -13,13 +14,16 @@ const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'literal-colours-baseline.json');
 const PALETTE =
   /(?<![\w-])(?:bg|text|ring|ring-offset|border|border-[xytrblse]|fill|stroke|shadow|drop-shadow|inset-ring|outline|from|via|to|divide|decoration|caret|accent|placeholder)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black)(?:-\d{2,3})?(?![\w-])/g;
-// Quoted hex, minus SVG refs (url(#id), url("#id"), href="#id") and DOM selector arguments. Inline hex after a space, comma or colon
+// Quoted hex, minus SVG refs (url(#id), url("#id"), href="#id"); selector arguments are blanked beforehand. Inline hex after a space, comma or colon
 // needs 6 or 8 digits, a digit plus a letter, or one repeated letter (#fff), so "PR #123" and "#bad" are not colours.
 const HEX_QUOTED =
-  /(?<!url\(["']?|href=["']|(?:querySelector(?:All)?|closest|matches)\(["'`])(?<=["'`[(])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
+  /(?<!url\(["']?|href=["'])(?<=["'`[(])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
 const HEX_INLINE =
   /(?<=[\s,:])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|(?=[0-9a-fA-F]*[0-9])(?=[0-9]*[a-fA-F])[0-9a-fA-F]{3,4}|([a-fA-F])\1{2,3})(?![\w-])/g;
 const FUNCTIONAL = /(?<![\w-])(?:rgba?|hsla?|hwb|(?:ok)?lab|(?:ok)?lch)\(\s*[\d.]/g;
+const COLOUR_FN_RELATIVE = /(?<![\w-])(?:color-mix\(|(?:rgba?|hsla?|hwb|(?:ok)?lab|(?:ok)?lch)\(\s*from\b)/g;
+const SELECTOR_ARG = /\b(?:querySelector(?:All)?|closest|matches)\(\s*(["'`])([#.[][^"'`\n]*?)\1/g;
+const COLOUR_IN_SELECTOR = /(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color-mix)\(/i;
 const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target']);
 
 // Blanks comments with the TypeScript scanner so `//` inside a string is code and issue refs such as `(#1001)` are not colours.
@@ -33,9 +37,14 @@ function blankComments(text, ext) {
   return out + text.slice(last);
 }
 
+// A selector-shaped argument (#id, .cls, [attr], no colour function) is not a colour; anything else passed there is counted.
+function blankSelectorArgs(code) {
+  return code.replace(SELECTOR_ARG, (m, _q, arg) => (COLOUR_IN_SELECTOR.test(arg) ? m : m.replace(/[^\n]/g, ' ')));
+}
+
 export function countLiteralColours(text, ext = '.tsx') {
-  const code = blankComments(text, ext);
-  return [PALETTE, HEX_QUOTED, HEX_INLINE, FUNCTIONAL].reduce((n, re) => n + [...code.matchAll(re)].length, 0);
+  const code = blankSelectorArgs(blankComments(text, ext));
+  return [PALETTE, HEX_QUOTED, HEX_INLINE, FUNCTIONAL, COLOUR_FN_RELATIVE].reduce((n, re) => n + [...code.matchAll(re)].length, 0);
 }
 
 function walk(dir, files) {
