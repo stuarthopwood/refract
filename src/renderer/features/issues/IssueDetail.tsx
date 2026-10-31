@@ -89,12 +89,12 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
               <StateIcon aria-hidden className="size-4" />
               {open ? 'Open' : 'Closed'}
             </span>
-            <Button size="sm" variant="ghost" onClick={() => void requestSessionFromItem({ kind: 'issue', repositoryId, number })}>
-              New session
-            </Button>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this issue" />
             <OpenOnGitHubButton url={detail.url} />
             <CopyButton getText={() => detail.url} label="Copy link" announcement="Issue link copied" />
+            <Button size="sm" variant="ghost" onClick={() => void requestSessionFromItem({ kind: 'issue', repositoryId, number })}>
+              New session
+            </Button>
           </div>
         </div>
         {error && (

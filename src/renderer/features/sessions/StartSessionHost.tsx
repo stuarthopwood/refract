@@ -17,7 +17,7 @@ export function StartSessionHost() {
         description={
           <>
             <span className="block">
-              This pull request comes from a fork{pending.owner ? ` owned by ${pending.owner}` : ''}, not this project's GitHub repository.
+              This pull request may come from a fork{pending.owner ? ` owned by ${pending.owner}` : ''}, not this project's GitHub repository.
             </span>
             <span className="mt-2 block">
               Its branch may contain code, commit messages, or an AGENTS.md written by someone you don't control, which an agent session would then read and could act on.

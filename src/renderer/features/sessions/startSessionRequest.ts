@@ -31,8 +31,9 @@ export async function requestSessionFromItem(ref: ItemRef): Promise<void> {
   }
   if (ref.kind === 'pull-request') {
     const detail = await window.refract.pullRequests.detail(ref.repositoryId, ref.number)
-    if (detail.ok && detail.value.isFork) {
-      useStartSessionRequestStore.setState({ pending: { kind: 'fork', ref, owner: detail.value.headRepositoryOwner ?? null } })
+    // Fail closed: an unverifiable pull request gets the untrusted-code warning.
+    if (!detail.ok || detail.value.isFork) {
+      useStartSessionRequestStore.setState({ pending: { kind: 'fork', ref, owner: detail.ok ? (detail.value.headRepositoryOwner ?? null) : null } })
       return
     }
   }
