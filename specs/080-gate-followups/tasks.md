@@ -2,11 +2,11 @@
 
 Status is kept per item in the final report; each item is `done + file:line` or `skipped + why`.
 
-- [ ] A: every bullet of #1463.
-- [ ] B: every bullet of #1469 except Skipped.
-- [ ] C: Rust bullets of #1477.
-- [ ] D: UI bullets of #1477.
-- [ ] E: live-check script bullets of #1477 plus verify-tauri-080.mjs.
+- [x] A: every bullet of #1463.
+- [x] B: every bullet of #1469 except Skipped.
+- [x] C: Rust bullets of #1477.
+- [x] D: UI bullets of #1477.
+- [x] E: live-check script bullets of #1477 plus verify-tauri-080.mjs.
 
 ## Skipped (reason recorded on the issue)
 
