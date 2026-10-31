@@ -159,7 +159,13 @@ pub fn themes_remove(state: AppState, args: Vec<Value>) -> HandlerFuture {
         theme_files::remove(&theme_files::themes_dir(&state.data_dir), &id)
             .await
             .map_err(bad_theme)?;
-        clear_if_active(&state, &id).await?;
+        // The file is already gone, so a settings write failure must not fail the removal (#1485).
+        if let Err(err) = clear_if_active(&state, &id).await {
+            log::warn!(
+                "themes.remove: could not clear the active theme: {}",
+                err.message
+            );
+        }
         Ok(Value::Null)
     })
 }

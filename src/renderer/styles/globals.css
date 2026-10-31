@@ -343,7 +343,7 @@ samp {
   --chat-user-bubble-border: transparent;
 }
 
-/* #1472 per-element tokens default to a role; #1474 `--mermaid-*` hold each built-in theme's literal colours (numbering is 1-based: palette-N feeds cScale(N-1)). Declared per theme class so the contrast probe resolves them. */
+/* #1472 per-element tokens default to a role; #1474 `--mermaid-*` hold each built-in theme's literal colours (palette-N feeds cScale(N-1)). Declared per theme class so the contrast probe resolves them. */
 :is(:root, .theme-dark, .theme-obsidian, .theme-dark-high-contrast, .theme-nordic-frost, .theme-cyber-amber) {
   --mermaid-bg: #0a0a0a;
   --mermaid-node-fill: #1f1f1f;
@@ -358,8 +358,8 @@ samp {
   --mermaid-task-text: #fafafa;
   --mermaid-ink: #000000;
   --mermaid-crit: #db0000;
-  --mermaid-cscale-12: #a85400;
-  --mermaid-cscale-label-12: #fafafa;
+  --mermaid-cscale-11: #a85400;
+  --mermaid-cscale-label-11: #fafafa;
   --mermaid-accent: #7375f2;
   --mermaid-accent-fill: #2d2e52;
   --mermaid-palette-1: #76a9ff;
@@ -423,7 +423,7 @@ samp {
   --session-row-selected-fg: var(--sidebar-accent-foreground);
 }
 
-/* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (built-in Dark (high contrast) keeps its bundled Shiki theme and never reads them). */
+/* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (built-in Dark (high contrast) keeps its bundled Shiki theme unless a custom theme overrides a syntax token, see useSyntaxTheme). */
 :root {
   --shiki-foreground: var(--code-block-fg);
   --shiki-background: transparent;
@@ -1128,7 +1128,7 @@ samp {
   --mermaid-note-bg: #090909;
   --mermaid-note-fg: #ffffff;
   --mermaid-task-text: #ffffff;
-  --mermaid-cscale-label-12: #ffffff;
+  --mermaid-cscale-label-11: #ffffff;
   --mermaid-accent: #76a9ff;
   --mermaid-accent-fill: #233451;
   --role-default: oklch(0.86 0.11 191);

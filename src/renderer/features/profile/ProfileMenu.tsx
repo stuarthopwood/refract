@@ -30,13 +30,11 @@ import {
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { updateUnavailableReasonText } from '@/lib/updateStatus'
-import { useAccountsStore, useActiveThemeId, useThemeStore, useUpdateStore, useViewStore } from '@/state'
+import { useThemeEntries } from '@/lib/useThemeEntries'
+import type { ThemeEntry } from '@/lib/useThemeEntries'
+import { useAccountsStore, useThemeStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
-import { THEMES } from '../../../shared/themes'
-import type { ThemeId } from '../../../shared/themes'
 import type { GitHubAccount } from '../../../shared/accounts'
-
-const THEME_LIST = Object.values(THEMES)
 
 export interface ProfileMenuContentProps {
   account: GitHubAccount | undefined
@@ -54,19 +52,17 @@ export interface ProfileMenuContentProps {
 }
 
 function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void }) {
-  const activeId = useActiveThemeId()
-  const customId = useThemeStore((s) => s.customId)
-  const customThemes = useThemeStore((s) => s.customThemes)
-  const effectiveCustomId = customThemes.some((t) => t.id === customId) ? customId : null
+  const { builtins, customs, isActive, choose } = useThemeEntries()
+  const activeEntry = [...builtins, ...customs].find(isActive)
+  const renderItem = (e: ThemeEntry) => (
+    <DropdownMenuRadioItem key={e.key} value={e.key} ref={e === activeEntry ? activeItemRef : undefined}>
+      <span className="min-w-0 flex-1 truncate">{e.name}</span>
+      <ThemeSwatchChip swatch={e.swatch} swatchPrimary={e.swatchPrimary} />
+    </DropdownMenuRadioItem>
+  )
   const [open, setOpen] = useState(false)
   const subContentRef = useRef<HTMLDivElement>(null)
   const activeItemRef = useRef<HTMLDivElement>(null)
-
-  function chooseTheme(id: ThemeId, name: string): void {
-    void useThemeStore.getState().save(id).then((ok) => {
-      if (ok) onThemeApplied(name)
-    })
-  }
 
   return (
     <DropdownMenuSub
@@ -88,39 +84,16 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent ref={subContentRef} className="max-w-64" sideOffset={4} alignOffset={-4} collisionPadding={8}>
         <DropdownMenuRadioGroup
-          value={effectiveCustomId ? `custom:${effectiveCustomId}` : activeId}
+          value={activeEntry?.key}
           onValueChange={(value) => {
-            if (value.startsWith('custom:')) {
-              const custom = customThemes.find((t) => `custom:${t.id}` === value)
-              if (custom && custom.id !== customId) void useThemeStore.getState().saveCustom(custom.id).then((ok) => ok && onThemeApplied(custom.name))
-              return
-            }
-            const theme = THEME_LIST.find((candidate) => candidate.id === value)
-            if (theme && (theme.id !== activeId || customId)) chooseTheme(theme.id, theme.name)
+            const entry = [...builtins, ...customs].find((e) => e.key === value)
+            if (entry) void choose(entry).then((ok) => ok && onThemeApplied(entry.name))
           }}
         >
-          {customThemes.length > 0 && <DropdownMenuLabel>Built-in</DropdownMenuLabel>}
-          {THEME_LIST.map((theme) => {
-            const isActive = theme.id === activeId && !effectiveCustomId
-            return (
-              <DropdownMenuRadioItem
-                key={theme.id}
-                value={theme.id}
-                ref={isActive ? activeItemRef : undefined}
-              >
-                <span className="min-w-0 flex-1 truncate">{theme.name}</span>
-                {/* #1043/#1070: the shared two-colour chip (`ThemeSwatchChip`), the same one Settings > Appearance draws. */}
-                <ThemeSwatchChip swatch={theme.swatch} swatchPrimary={theme.swatchPrimary} />
-              </DropdownMenuRadioItem>
-            )
-          })}
-          {customThemes.length > 0 && <DropdownMenuLabel>Custom</DropdownMenuLabel>}
-          {customThemes.map((t) => (
-            <DropdownMenuRadioItem key={t.id} value={`custom:${t.id}`} ref={t.id === effectiveCustomId ? activeItemRef : undefined}>
-              <span className="min-w-0 flex-1 truncate">{t.name}</span>
-              <ThemeSwatchChip swatch={t.tokens.background ?? THEMES[t.base].swatch} swatchPrimary={t.tokens.primary ?? THEMES[t.base].swatchPrimary} />
-            </DropdownMenuRadioItem>
-          ))}
+          {customs.length > 0 && <DropdownMenuLabel>Built-in</DropdownMenuLabel>}
+          {builtins.map(renderItem)}
+          {customs.length > 0 && <DropdownMenuLabel>Custom</DropdownMenuLabel>}
+          {customs.map(renderItem)}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => useViewStore.getState().openSettings('appearance')}>

@@ -22,6 +22,7 @@ import { TranscriptMenu } from './TranscriptMenu'
 const MERMAID_MAX_SOURCE_BYTES = 50_000
 const MERMAID_RENDER_TIMEOUT_MS = 5_000
 
+let initializedForThemeKey: string | null = null
 let mermaidPromise: Promise<typeof import('mermaid')> | null = null
 function getMermaid(): Promise<typeof import('mermaid')> {
   mermaidPromise ??= import('mermaid')
@@ -103,19 +104,23 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
     void (async () => {
       try {
         const mermaid = (await getMermaid()).default
-        const { themeVariables, themeCSS } = withResolvedTokens('mermaid-', (read) => ({
-          themeVariables: buildMermaidThemeVariables(read),
-          themeCSS: getMermaidThemeCSS(read)
-        }))
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          suppressErrorRendering: true,
-          theme: 'dark',
-          themeVariables,
-          // Patches Mermaid CSS gaps `themeVariables` can't reach (see `getMermaidThemeCSS`).
-          themeCSS
-        } satisfies MermaidConfig)
+        // Mermaid's config is global, so re-reading tokens and re-initialising only matters when the theme key changes.
+        if (initializedForThemeKey !== themeKey) {
+          const { themeVariables, themeCSS } = withResolvedTokens('mermaid-', (read) => ({
+            themeVariables: buildMermaidThemeVariables(read),
+            themeCSS: getMermaidThemeCSS(read)
+          }))
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            suppressErrorRendering: true,
+            theme: 'dark',
+            themeVariables,
+            // Patches Mermaid CSS gaps `themeVariables` can't reach (see `getMermaidThemeCSS`).
+            themeCSS
+          } satisfies MermaidConfig)
+          initializedForThemeKey = themeKey
+        }
         const rendered = await Promise.race([
           mermaid.render(`mermaid-${reactId}`, code),
           new Promise<never>((_resolve, reject) => {

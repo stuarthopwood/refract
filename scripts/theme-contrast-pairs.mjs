@@ -22,9 +22,13 @@ export const PAIRS = [
   { fg: 'send-foreground', bg: 'send', min: 3 },
   { fg: 'foreground', bg: 'viewer-tint', min: 4.5 }, { fg: 'muted-foreground', bg: 'viewer-tint', min: 4.5 }, // spec 038: the viewer's own PR card header text
   { fg: 'agent-message', bg: 'background', min: 4.5 }, { fg: 'agent-message', bg: 'muted', min: 4.5 }, // #838: AgentMessageRow glyph + label, at rest and on the trigger's hover:bg-muted
+  { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   // `--composer-background` is transparent except in Dark high contrast, so Send is measured against `--background` elsewhere (#927, #551).
   { fg: 'send', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
+  // Hint text sits on `--composer-background` (own per-theme fill), unlike the page `--background`.
+  { fg: 'muted-foreground', bg: 'composer-background', min: 4.5, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'composer-focus', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'composer-control-border', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'secondary-foreground', bg: 'secondary', min: 4.5 },
   { fg: 'muted-foreground', bg: 'background', min: 4.5 },
   { fg: 'accent-foreground', bg: 'accent', min: 4.5 },
@@ -139,9 +143,6 @@ export const PAIRS = [
   // `CheckRow` hint text sits directly on `--background`, so both need a real 4.5:1 text pair there.
   { fg: 'destructive', bg: 'background', min: 4.5 },
   { fg: 'state-needs-you', bg: 'background', min: 4.5 },
-  // Hint text sits on `--composer-background` (own per-theme fill), unlike the page `--background`.
-  // Scoped to Dark high contrast: elsewhere the composer is transparent (#927).
-  { fg: 'muted-foreground', bg: 'composer-background', min: 4.5, onlyThemes: ['dark-high-contrast'] },
   // `--composer-placeholder` (~40% white) on `--background` is an accepted departure: below 4.5:1 text, above 3:1
   // non-text (docs/design/accessibility.md "Accepted departures"). Dark high contrast keeps `--muted-foreground`.
   { fg: 'composer-placeholder', bg: 'background', min: 3.5, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
@@ -155,12 +156,9 @@ export const PAIRS = [
   // Ghost composer triggers focus with `--composer-focus` (not `--ring`, so check the token actually rendered).
   // Enforced only in Dark high contrast; Dark/Obsidian/Nordic Frost/Cyber Amber are an accepted WCAG 1.4.11
   // departure (docs/design/accessibility.md), surfaced as informational pairs against `--background` below.
-  { fg: 'composer-focus', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'composer-border', bg: 'background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
-  // Dark high contrast keeps an enforced resting border on the composer triggers.
-  { fg: 'composer-control-border', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
   // The agent-working spinner renders on the session list, that row selected/hovered (icon is the only status cue),
   // the chat header, and the hover card (`--popover`). `--card` is kept as a cheap fourth check.
   { fg: 'agent-spinner-core', bg: 'sidebar', min: 3 },
@@ -230,9 +228,23 @@ export const PAIRS = [
   { fg: 'button-destructive-fg', bg: 'button-destructive-bg', min: 4.5 },
   { fg: 'button-outline-border', bg: 'background', min: 3 },
   { fg: 'button-outline-fg', bg: 'background', min: 4.5 },
-  // TODO(#1485): unpaired because color-mix or :root-only values cannot be parsed: secondary/destructive/outline/pill hovers, button-outline-bg (so outline text is measured on background), approval-card-border, status-pill-attention-bg/border, tooltip-border.
+  // Translucent fills are measured over the surface they paint on (`on`). `approval-card-border` and the attention pill border are decorative edges like `--divider`, so unpaired.
+  { fg: 'button-secondary-fg', bg: 'button-secondary-hover-bg', on: 'background', min: 4.5 },
+  { fg: 'button-destructive-fg', bg: 'button-destructive-hover-bg', on: 'background', min: 4.5, onlyThemes: ['dark', 'obsidian', 'dark-high-contrast', 'nordic-frost'] },
+  // cyber-amber's hover reads 4.26:1; built-in colours stay unchanged, so the gap is recorded, not enforced (#1485).
+  { fg: 'button-destructive-fg', bg: 'button-destructive-hover-bg', on: 'background', min: 4.5, informationalThemes: ['cyber-amber'] },
+  { fg: 'button-outline-fg', bg: 'button-outline-bg', on: 'background', min: 4.5 },
+  { fg: 'button-outline-fg', bg: 'button-outline-hover-bg', on: 'background', min: 4.5 },
+  { fg: 'tooltip-border', bg: 'tooltip-bg', min: 3 },
+  // Mermaid labels (#1491): the HC row keeps its stricter 7:1; the flowchart node uses its accent fill, covered by mermaidAccentRows.
+  { fg: 'mermaid-text', bg: 'mermaid-bg', min: 4.5 },
+  { fg: 'mermaid-text', bg: 'mermaid-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'mermaid-node-fg', bg: 'mermaid-node-fill', min: 4.5 },
+  { fg: 'mermaid-cscale-label-11', bg: 'mermaid-cscale-11', min: 4.5 },
   { fg: 'status-bar-fg', bg: 'status-bar-bg', min: 4.5 },
   { fg: 'status-pill-attention-fg', bg: 'status-bar-bg', min: 4.5 },
+  { fg: 'status-pill-attention-fg', bg: 'status-pill-attention-bg', on: 'status-bar-bg', min: 4.5 },
+  { fg: 'status-pill-attention-fg', bg: 'status-pill-attention-hover-bg', on: 'status-bar-bg', min: 4.5 },
   { fg: 'tooltip-fg', bg: 'tooltip-bg', min: 4.5 },
   { fg: 'session-row-fg', bg: 'session-row-selected-bg', min: 4.5 },
   { fg: 'session-row-meta-fg', bg: 'session-row-selected-bg', min: 4.5 },

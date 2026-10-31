@@ -6,19 +6,22 @@ import { useThemeStore } from '@/state'
 import type { CustomTheme } from '../../../shared/ipc-themes'
 import type { ThemeId } from '../../../shared/themes'
 
+const errorMessage = (err: unknown) => (err instanceof Error ? err.message : 'Something went wrong.')
+
 /** Import, export, remove and folder actions for custom theme files; import and remove failures show inline; other outcomes toast. */
 export function useThemeFileActions() {
   const refresh = useThemeStore((s) => s.refreshCustomThemes)
   const [pendingRemove, setPendingRemoveRaw] = useState<CustomTheme | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const removed = useRef(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const setPendingRemove = (t: CustomTheme | null) => {
     setRemoveError(null)
+    if (t) removed.current = false
     setPendingRemoveRaw(t)
   }
-  const removed = useRef(false)
 
   async function importTheme() {
     if (importing) return
@@ -32,15 +35,21 @@ export function useThemeFileActions() {
       }
       await refresh()
       if (result.value) toast.success(`Imported ${result.value.name}.`)
+    } catch (err) {
+      setImportError(errorMessage(err))
     } finally {
       setImporting(false)
     }
   }
 
   async function exportJson(name: string, json: string) {
-    const result = await window.refract.themes.export(name, json)
-    if (!result.ok) notify(result.error)
-    else if (result.value) toast.success('Theme exported.')
+    try {
+      const result = await window.refract.themes.export(name, json)
+      if (!result.ok) notify(result.error)
+      else if (result.value) toast.success('Theme exported.')
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
   }
 
   const exportCustom = (t: CustomTheme) =>
@@ -48,8 +57,12 @@ export function useThemeFileActions() {
   const exportBuiltin = (id: ThemeId, name: string) => exportJson(`${name} copy`, buildStarterJson(`${name} copy`, id))
 
   async function showInFolder(id?: string) {
-    const result = await window.refract.themes.openFolder(id)
-    if (!result.ok) notify(result.error)
+    try {
+      const result = await window.refract.themes.openFolder(id)
+      if (!result.ok) notify(result.error)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
   }
 
   async function confirmRemove() {
@@ -66,6 +79,8 @@ export function useThemeFileActions() {
       succeeded = true
       removed.current = true
       await refresh()
+    } catch (err) {
+      if (!succeeded) setRemoveError(errorMessage(err))
     } finally {
       setBusy(false)
       if (succeeded) setPendingRemove(null)
