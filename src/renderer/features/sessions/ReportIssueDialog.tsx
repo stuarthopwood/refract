@@ -36,9 +36,13 @@ interface ReportIssueDialogProps {
   onOpenChange: (open: boolean) => void
   /** Where focus goes once the dialog has closed (the "…" menu trigger that opened it). */
   onCloseFocus: () => void
+  /** The dialog heading; the Issues page says New issue. */
+  title?: string
+  /** Called once the issue exists, before the result panel is shown. */
+  onCreated?: (issue: CreatedIssue) => void
 }
 
-export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus }: ReportIssueDialogProps) {
+export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus, title = 'Report an issue', onCreated }: ReportIssueDialogProps) {
   const login = useAccountsStore((state) => state.github.find((account) => account.active)?.login)
   const [form, setForm] = useState<IssueFormState>(EMPTY_FORM)
   const [submitted, setSubmitted] = useState(false)
@@ -85,8 +89,10 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
     setError(null)
     const outcome = await submitIssue(repository.id, form)
     setBusy(false)
-    if (outcome.ok) setCreated(outcome.issue)
-    else {
+    if (outcome.ok) {
+      setCreated(outcome.issue)
+      onCreated?.(outcome.issue)
+    } else {
       setError(outcome.message)
       // The submit button was disabled while busy, so focus fell to the body; put it back.
       requestAnimationFrame(() => submitRef.current?.focus())
@@ -111,7 +117,7 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
           }}
         >
           <DialogHeader>
-            <DialogTitle>Report an issue</DialogTitle>
+            <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{login ? `${slug} · as @${login}` : slug}</DialogDescription>
           </DialogHeader>
           {!login ? (
