@@ -6,21 +6,36 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scanTypeScriptComments } from './comment-density-scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'literal-colours-baseline.json');
 const PALETTE =
   /(?<![\w-])(?:bg|text|ring|ring-offset|border|border-[xytrblse]|fill|stroke|shadow|drop-shadow|inset-ring|outline|from|via|to|divide|decoration|caret|accent|placeholder)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black)(?:-\d{2,3})?(?![\w-])/g;
-// Quoted hex, minus SVG refs (url(#id), href="#id"); inline hex after a space, comma or colon needs 6 or 8 digits or a letter, so "PR #123" is not a colour.
-const HEX_QUOTED = /(?<!url\(|href=["'])(?<=["'`[(])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
-const HEX_INLINE = /(?<=[\s,:])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|(?=[0-9]*[a-fA-F])[0-9a-fA-F]{3,4})(?![\w-])/g;
+// Quoted hex, minus SVG refs (url(#id), url("#id"), href="#id") and DOM selector arguments. Inline hex after a space, comma or colon
+// needs 6 or 8 digits, a digit plus a letter, or one repeated letter (#fff), so "PR #123" and "#bad" are not colours.
+const HEX_QUOTED =
+  /(?<!url\(["']?|href=["']|(?:querySelector(?:All)?|closest|matches)\(["'`])(?<=["'`[(])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
+const HEX_INLINE =
+  /(?<=[\s,:])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|(?=[0-9a-fA-F]*[0-9])(?=[0-9]*[a-fA-F])[0-9a-fA-F]{3,4}|([a-fA-F])\1{2,3})(?![\w-])/g;
+const FUNCTIONAL = /(?<![\w-])(?:rgba?|hsla?)\(\s*[\d.]/g;
 const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target']);
 
-export function countLiteralColours(text) {
-  // Comments are blanked first: issue refs such as `(#1001)` otherwise read as short hex colours.
-  const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
-  return [PALETTE, HEX_QUOTED, HEX_INLINE].reduce((n, re) => n + [...code.matchAll(re)].length, 0);
+// Blanks comments with the TypeScript scanner so `//` inside a string is code and issue refs such as `(#1001)` are not colours.
+function blankComments(text, ext) {
+  let out = '';
+  let last = 0;
+  for (const [start, end] of scanTypeScriptComments(text, ext)) {
+    out += text.slice(last, start) + text.slice(start, end).replace(/[^\n]/g, ' ');
+    last = end;
+  }
+  return out + text.slice(last);
+}
+
+export function countLiteralColours(text, ext = '.tsx') {
+  const code = blankComments(text, ext);
+  return [PALETTE, HEX_QUOTED, HEX_INLINE, FUNCTIONAL].reduce((n, re) => n + [...code.matchAll(re)].length, 0);
 }
 
 function walk(dir, files) {
@@ -38,7 +53,7 @@ function scan() {
   walk(path.join(repoRoot, 'src', 'renderer'), files);
   const out = {};
   for (const file of files.sort()) {
-    const count = countLiteralColours(readFileSync(file, 'utf8'));
+    const count = countLiteralColours(readFileSync(file, 'utf8'), path.extname(file));
     if (count > 0) out[path.relative(repoRoot, file).split(path.sep).join('/')] = count;
   }
   return out;

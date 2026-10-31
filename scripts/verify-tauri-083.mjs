@@ -17,7 +17,7 @@ import { countLiteralColours, findFailures } from './check-literal-colours.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_083_SHOTS_DIR || path.join(tmpdir(), 'refract-083-shots');
+const SHOTS_DIR = process.env.REFRACT_083_SHOTS_DIR || mkdtempSync(path.join(tmpdir(), 'refract-083-shots-'));
 mkdirSync(SHOTS_DIR, { recursive: true });
 
 const REPORT = [];
@@ -35,7 +35,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = (cdp, name) => cdp.screenshot(path.join(SHOTS_DIR, name));
 
 const THEMES = ['Dark', 'Obsidian'];
-const radio = (name) => `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => el.textContent.trim().startsWith(${JSON.stringify(name)}))`;
+// Computed colours end in `, 0)` (legacy rgba) or `/ 0)` (oklab, color) when fully transparent.
+const isTransparent = (colour) => /(?:,|\/)\s*0(?:\.0+)?%?\s*\)$/.test(colour);
+const radio = (name) =>
+  `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === ${JSON.stringify(name)})`;
 const openAppearance = async (cdp) => {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
@@ -46,6 +49,9 @@ function checkScript() {
   assert(countLiteralColours(`const a = 'text-green-600 hover:bg-black/50'`) === 2, 'the check counts palette classes with variants and opacity');
   assert(countLiteralColours(`const a = '#fff', b = "#112233aa"`) === 2, 'the check counts hex literals');
   assert(countLiteralColours(`// text-red-500 (#1001)\n/* bg-white */ const a = 'bg-background text-foreground'`) === 0, 'comments and theme-token classes never count');
+  assert(countLiteralColours(`const a = "url('#grad')", b = 'url(#g)', c = root.querySelector('#bad')`) === 0, 'SVG refs and DOM selectors never count');
+  assert(countLiteralColours(`const a = '//', b = '#fff'`) === 1, 'a // inside a string does not hide a colour');
+  assert(countLiteralColours(`const a = 'color: #fff; border: hsl(0 100% 50%)'`) === 2, 'inline hex and hsl() literals count');
   assert(findFailures({ 'a.tsx': 2 }, { 'a.tsx': 1 }).length === 1, 'a count above its baseline fails');
   assert(findFailures({}, { 'a.tsx': 1 }).length === 1, 'a stale baseline allowance fails, so the baseline can only shrink');
   assert(findFailures({ 'a.tsx': 1 }, { 'a.tsx': 1 }).length === 0, 'a count equal to its baseline passes');
@@ -72,7 +78,7 @@ async function runChecks(cdp, repoDir) {
     const bg = await cdp.evaluate(`getComputedStyle(document.body).backgroundColor`);
     const cls = await cdp.evaluate(`document.documentElement.className`);
     assert(cls.includes(`theme-${name.toLowerCase()}`), `${name}: the document carries its theme class (${cls})`);
-    assert(/^(rgb|oklab|oklch|color)\(/.test(bg), `${name}: the page paints a resolved background (${bg})`);
+    assert(/^(rgb|oklab|oklch|color)\(/.test(bg) && !isTransparent(bg), `${name}: the page paints a resolved, non-transparent background (${bg})`);
     seen[name] = bg;
     await shot(cdp, `theme-${name.toLowerCase()}.png`);
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
