@@ -67,22 +67,22 @@ async function runChecks(cdp, { repoDir }) {
     assert(!!tip, 'Hovering an aria-disabled button shows its reason tooltip');
   } else assert(false, 'a visible aria-disabled button is reachable on the scratch session');
 
-  const closeAt = `(() => { const b = Array.from(document.querySelectorAll('[data-panel-close]')).find((x) => x.tabIndex === 0 && x.getBoundingClientRect().width > 0); if (!b) return null; const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`;
+  const closeAt = `(() => { const b = Array.from(document.querySelectorAll('[data-panel-close]')).find((x) => x.style.position === 'absolute' && x.tabIndex === 0 && x.getBoundingClientRect().width > 0); if (!b) return null; const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`;
   let close = await cdp.evaluate(closeAt);
-  if (!close) {
-    const opener = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find((x) => /^(Open|Show) .*(panel|changes|files)/i.test(x.getAttribute('aria-label') || '') && x.getBoundingClientRect().width > 0); if (!b) return null; b.click(); return b.getAttribute('aria-label'); })()`);
-    log(`panel opener: ${opener}`);
+  const railIds = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-rail-button]')).map((x) => x.getAttribute('data-rail-button'))`);
+  log(`rail buttons: ${railIds}`);
+  for (const id of railIds) {
+    if (close) break;
+    await cdp.evaluate(`(() => { const b = document.querySelector('[data-rail-button="${id}"]'); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); })()`);
     await sleep(900);
     close = await cdp.evaluate(closeAt);
-  }
-  assert(!!close, 'The active tab close button is reachable');
+  }  assert(!!close, 'A tab-bar close button is reachable with two panels open');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: close.x, y: close.y });
   await sleep(400);
-  const hoverBg = await cdp.evaluate(`getComputedStyle(document.elementFromPoint(${close.x}, ${close.y}).closest('[data-panel-close]')).backgroundColor`);
-  log(`active-tab close hover background: ${hoverBg}`);
+  const hover = await cdp.evaluate(`(() => { const b = document.elementFromPoint(${close.x}, ${close.y}).closest('[data-panel-close]'); const probe = document.createElement('div'); probe.style.background = 'var(--tab-close-hover-bg)'; document.body.append(probe); const token = getComputedStyle(probe).backgroundColor; probe.remove(); return { bg: getComputedStyle(b).backgroundColor, token }; })()`);
+  log(`active-tab close hover background: ${hover.bg} (token ${hover.token})`);
   await shot(cdp, '04-tab-close-hover.png');
-  assert(hoverBg !== 'oklab(0.269 0 0 / 0.5)' && !/^rgba\(\d+, \d+, \d+, 0\)$|^transparent$/.test(hoverBg), 'Active-tab close hover paints the tab-close token, not the ghost row hover');
-
+  assert(hover.bg === hover.token, 'Active-tab close hover paints the tab-close token, not the ghost row hover');
   const src = readFileSync(path.join(REPO_ROOT, 'src', 'renderer', 'components', 'ui', 'button.tsx'), 'utf8');
   assert(src.includes('not-aria-disabled:translate-y-px'), 'Button press nudge is suppressed when aria-disabled (source check)');
   await shot(cdp, '03-final.png');
