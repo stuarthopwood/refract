@@ -1589,6 +1589,16 @@ impl TranscriptState {
         &self.items
     }
 
+    /// Cheap (Arc-sharing) copy to diff against after a mutation.
+    pub fn snapshot(&self) -> Vec<Arc<TranscriptItem>> {
+        self.items.clone()
+    }
+
+    /// Consumes the state, handing over the items without a copy.
+    pub fn into_items(self) -> Vec<Arc<TranscriptItem>> {
+        self.items
+    }
+
     /// Replaces the item with the same `id` in place, or appends it.
     pub fn upsert_item(&mut self, item: TranscriptItem) {
         match self

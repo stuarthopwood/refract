@@ -146,7 +146,6 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.send('Input.insertText', { text: ' edited' });
   await saveAlarm(cdp);
   await cdp.waitFor(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')?.getAttribute('aria-label').includes('edited')`, { timeoutMs: 10_000, label: 'edit saved' });
-  assert(await cdp.evaluate(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]').getAttribute('aria-label').includes('edited')`), '#1426: editing an alarm updates its row');
 
   // Add one due at the next minute boundary, then wait for it to fire.
   const dueAt = Math.ceil((Date.now() + 5_000) / 60_000) * 60_000;

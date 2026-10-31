@@ -7,6 +7,7 @@ import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/state'
 import { notifyAlarmDeleted, setAlarmListOpen } from '@/state/notify'
 import { MAX_ALARMS, MAX_ALARM_LABEL_CHARS } from '../../../../shared/model'
@@ -14,6 +15,8 @@ import type { Alarm } from '../../../../shared/model'
 import { ReadoutItem } from './ReadoutItem'
 
 const DAY_MS = 86_400_000
+// Long enough that Save cannot race the alarm into firing within seconds.
+const DEFAULT_LEAD_MS = 5 * 60_000
 const NO_ALARMS: Alarm[] = []
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 
@@ -44,7 +47,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
   const timeId = useId()
   const labelId = useId()
   const hintId = useId()
-  const [time, setTime] = useState(() => toInputTime(editing?.fireAtMs ?? now + 60_000))
+  const [time, setTime] = useState(() => toInputTime(editing?.fireAtMs ?? now + DEFAULT_LEAD_MS))
   const [label, setLabel] = useState(editing?.label ?? '')
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -86,9 +89,9 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
       </div>
       <div className="flex flex-col gap-1">
         <label htmlFor={labelId} className="text-sm font-medium">
-          Label
+          Label (optional)
         </label>
-        <Input id={labelId} maxLength={MAX_ALARM_LABEL_CHARS} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Optional" />
+        <Input id={labelId} maxLength={MAX_ALARM_LABEL_CHARS} value={label} onChange={(e) => setLabel(e.target.value)} />
       </div>
       {failed && (
         <p role="alert" className="text-xs text-destructive">
@@ -100,7 +103,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
           Cancel
         </Button>
         <Button type="submit" aria-disabled={saving || undefined} disabled={fireAtMs === null}>
-          Save
+          {saving ? 'Saving' : 'Save'}
         </Button>
       </div>
     </form>
@@ -112,11 +115,13 @@ interface AlarmRowProps {
   now: number
   highlighted: boolean
   onEdit: () => void
+  onDismiss: () => void
   onDeleted: (alarm: Alarm) => void
 }
 
-function AlarmRow({ alarm, now, highlighted, onEdit, onDeleted }: AlarmRowProps) {
+function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onDeleted }: AlarmRowProps) {
   const deleteAlarm = useSettingsStore((s) => s.deleteAlarm)
+  const upsertAlarm = useSettingsStore((s) => s.upsertAlarm)
   const rowRef = useRef<HTMLDivElement | null>(null)
   const time = timeFormat.format(alarm.fireAtMs)
   const name = alarm.label ? `${time} ${alarm.label}` : time
@@ -125,22 +130,41 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDeleted }: AlarmRowProps)
     if (highlighted) rowRef.current?.scrollIntoView({ block: 'nearest' })
   }, [highlighted])
   return (
-    <div ref={rowRef}>
+    <div ref={rowRef} data-alarm-row="">
       <ListCardButton
         ariaLabel={`Edit alarm ${name}${hint ? `, ${hint}` : ''}`}
         onClick={onEdit}
         highlighted={highlighted}
         actions={
-          <Button
-            type="button"
-            variant="ghost-destructive"
-            aria-label={`Delete alarm ${name}`}
-            onClick={async () => {
-              if (await deleteAlarm(alarm.id)) onDeleted(alarm)
-            }}
-          >
-            Delete
-          </Button>
+          <>
+            {highlighted && (
+              <>
+                <Button type="button" variant="ghost" aria-label={`Dismiss alarm ${name}`} onClick={onDismiss}>
+                  Dismiss
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label={`Re-arm alarm ${name}`}
+                  onClick={async () => {
+                    if (await upsertAlarm({ ...alarm, fireAtMs: nextOccurrence(toInputTime(alarm.fireAtMs), Date.now()), active: true })) onDismiss()
+                  }}
+                >
+                  Re-arm
+                </Button>
+              </>
+            )}
+            <Button
+              type="button"
+              variant="ghost-destructive"
+              aria-label={`Delete alarm ${name}`}
+              onClick={async () => {
+                if (await deleteAlarm(alarm.id)) onDeleted(alarm)
+              }}
+            >
+              Delete
+            </Button>
+          </>
         }
       >
         <span className={alarm.active ? 'font-medium tabular-nums' : 'tabular-nums text-muted-foreground'}>{time}</span>
@@ -165,33 +189,43 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
   const armed = alarms.filter((a) => a.active).length
   const full = alarms.length >= MAX_ALARMS
   const sorted = [...alarms].sort((a, b) => Number(b.active) - Number(a.active) || a.fireAtMs - b.fireAtMs)
-  const name = armed > 0 ? `Current time ${formatted}, ${armed} ${armed === 1 ? 'alarm' : 'alarms'} set. Open alarms` : `Current time ${formatted}. Open alarms`
+  const hasFired = firedIds.size > 0
+  const alarmsSet = armed > 0 ? `, ${armed} ${armed === 1 ? 'alarm' : 'alarms'} set` : ''
+  const name = `Current time ${formatted}${alarmsSet}${hasFired ? ', alarm fired' : ''}. Open alarms`
   // The focused control unmounts on save, cancel and delete; park focus on a visible control so keyboard users keep their place.
   const parkFocus = () =>
     requestAnimationFrame(() => {
       const root = contentRef.current
-      const target = root?.querySelector<HTMLElement>('[data-alarm-add]:not(:disabled)') ?? root?.querySelector<HTMLElement>('button[aria-label^="Edit alarm"]')
+      const target = root?.querySelector<HTMLElement>('[data-alarm-add]:not(:disabled)') ?? root?.querySelector<HTMLElement>('[data-alarm-row] button')
       ;(target ?? root)?.focus()
     })
 
   const changeOpen = (next: boolean) => {
     setOpen(next)
     setAlarmListOpen(next)
-    if (!next) {
-      setForm(null)
-      setFiredIds(new Set())
-    }
+    if (!next) setForm(null)
   }
   // The module flag outlives this component, so clear it if the chip is hidden while open.
   useEffect(() => () => setAlarmListOpen(false), [])
 
-  // An armed alarm turning inactive is a fire; mark its row so it is noticed in the open list.
+  // An armed alarm turning inactive is a fire; it stays marked (row and bell) until dismissed, popover open or not.
   useEffect(() => {
     const active = new Set(alarms.filter((a) => a.active).map((a) => a.id))
     const fired = alarms.filter((a) => !a.active && prevActive.current.has(a.id)).map((a) => a.id)
     prevActive.current = active
-    if (open && fired.length > 0) setFiredIds((prev) => new Set([...prev, ...fired]))
-  }, [alarms, open])
+    const inactive = new Set(alarms.filter((a) => !a.active).map((a) => a.id))
+    setFiredIds((prev) => {
+      const next = new Set([...prev, ...fired].filter((id) => inactive.has(id)))
+      return next.size === prev.size && [...next].every((id) => prev.has(id)) ? prev : next
+    })
+  }, [alarms])
+
+  const dismiss = (id: string) =>
+    setFiredIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
 
   const onDeleted = (alarm: Alarm) => {
     notifyAlarmDeleted(() => void useSettingsStore.getState().upsertAlarm(alarm))
@@ -212,9 +246,9 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
           onActivate={() => changeOpen(!open)}
         >
           <span aria-hidden>{formatted}</span>
-          {armed > 0 && (
-            <span aria-hidden className="inline-flex items-center gap-1">
-              <BellIcon className="size-4" />
+          {(armed > 0 || hasFired) && (
+            <span aria-hidden data-alarm-fired={hasFired ? '' : undefined} className="inline-flex items-center gap-1">
+              <BellIcon className={cn('size-4', hasFired && 'text-active-indicator')} />
               <span className="tabular-nums">{armed}</span>
             </span>
           )}
@@ -278,6 +312,7 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
                   now={nowMs}
                   highlighted={firedIds.has(alarm.id)}
                   onEdit={() => setForm({ editing: alarm })}
+                  onDismiss={() => dismiss(alarm.id)}
                   onDeleted={onDeleted}
                 />
               ))}

@@ -357,7 +357,7 @@ impl SessionAgent {
 
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
-        let before = state.transcript.items().to_vec();
+        let before = state.transcript.snapshot();
         let turn_abort_requested = state.turn_abort_requested;
         state.transcript.apply_frame(frame, turn_abort_requested);
         let ops = diff_transcript(&before, state.transcript.items());
@@ -388,7 +388,7 @@ impl SessionAgent {
             return;
         }
         let state = self.state.lock().await;
-        let items: Vec<Arc<TranscriptItem>> = state.transcript.items().to_vec();
+        let items: Vec<Arc<TranscriptItem>> = state.transcript.snapshot();
         self.coalescer.queue(vec![TranscriptOp::Reset { items }]);
         drop(state);
         self.coalescer.flush_now();
@@ -414,7 +414,7 @@ impl SessionAgent {
     /// Generic transcript upsert for a lane's own `on_frame`.
     pub(super) async fn upsert_transcript_item(&self, item: TranscriptItem) {
         let mut state = self.state.lock().await;
-        let before = state.transcript.items().to_vec();
+        let before = state.transcript.snapshot();
         state.transcript.upsert_item(item);
         let ops = diff_transcript(&before, state.transcript.items());
         if !ops.is_empty() {
@@ -432,7 +432,7 @@ impl SessionAgent {
             return;
         }
         let mut state = self.state.lock().await;
-        let before = state.transcript.items().to_vec();
+        let before = state.transcript.snapshot();
         for (tool_call_id, spec_index, outcome, duration_ms) in settles {
             state
                 .transcript
