@@ -241,6 +241,7 @@
  * wording, declined); generates the `text-readout` utility, the one sanctioned named step
  * rather than a bare `text-[13px]` arbitrary value. */
 @theme {
+  --container-chat-narrow: 42rem;
   --font-ui: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-code: 'Geist Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
   --font-brand: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;

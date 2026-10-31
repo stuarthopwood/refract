@@ -1,63 +1,59 @@
 import { GitPullRequestIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { CHECK_STATE_DISPLAY, PULL_REQUEST_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
+import { READOUT_CHECK_DISPLAY } from '@/features/pull-requests/check-display'
+import { PULL_REQUEST_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
 import { StatePill } from '@/features/pull-requests/StatePill'
 import { usePinnedPanelsStore } from '@/state'
-import type { PullRequestChecks, PullRequestDisplayState, SessionPullRequest } from '../../../../shared/model'
-
-const CHECKS_TO_DISPLAY = { pass: 'passed', fail: 'failed', pending: 'pending' } as const satisfies Record<PullRequestChecks, keyof typeof CHECK_STATE_DISPLAY>
+import type { PullRequestDisplayState, SessionPullRequest } from '../../../../shared/model'
 
 interface PullRequestControlsProps {
+  sessionId: string
   repositoryId: string
   pullRequest: SessionPullRequest
   liveState: PullRequestDisplayState | null
 }
 
 /** The header's PR badge (state, number, checks) and the View PR button. */
-export function PullRequestControls({ repositoryId, pullRequest, liveState }: PullRequestControlsProps) {
-  const checks = pullRequest.checks ? CHECK_STATE_DISPLAY[CHECKS_TO_DISPLAY[pullRequest.checks]] : null
+export function PullRequestControls({ sessionId, repositoryId, pullRequest, liveState }: PullRequestControlsProps) {
+  const checks = pullRequest.checks ? READOUT_CHECK_DISPLAY[pullRequest.checks] : null
   const ChecksIcon = checks?.icon
   const label = `View pull request #${pullRequest.number}`
+  const state = liveState ?? pullRequest.state
 
   return (
     <div className="flex shrink-0 items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
-          <span tabIndex={0} className="inline-flex rounded-md focus-visible:ring-[3px] focus-visible:ring-focus-glow">
-            <StatePill state={liveState ?? pullRequest.state} labelClassName="@max-[42rem]/chat:sr-only" />
+          <span className="inline-flex rounded-md">
+            <StatePill state={state} variant="subtle" labelClassName="@max-chat-narrow/chat:sr-only" />
           </span>
         </TooltipTrigger>
-        <TooltipContent>{PULL_REQUEST_STATE_DISPLAY[liveState ?? pullRequest.state].label}</TooltipContent>
+        <TooltipContent>{PULL_REQUEST_STATE_DISPLAY[state].label}</TooltipContent>
       </Tooltip>
       <span className="text-xs text-muted-foreground">#{pullRequest.number}</span>
       {checks && ChecksIcon && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span tabIndex={0} role="img" aria-label={checks.label} className={cn('flex rounded-sm focus-visible:ring-[3px] focus-visible:ring-focus-glow', checks.colorClass)}>
+            <span
+              tabIndex={0}
+              role="img"
+              aria-label={checks.label}
+              className={cn('flex rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring forced-colors:text-[CanvasText] forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid', checks.colorClass)}
+            >
               <ChecksIcon aria-hidden className={cn('size-4', pullRequest.checks === 'pending' && 'animate-spin motion-reduce:animate-none')} />
             </span>
           </TooltipTrigger>
           <TooltipContent>{checks.label}</TooltipContent>
         </Tooltip>
       )}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-6 gap-1 px-2 text-xs"
-            aria-label={label}
-            onClick={(event) => usePinnedPanelsStore.getState().pin('pull-request', repositoryId, pullRequest.number, event.currentTarget)}
-          >
-            <GitPullRequestIcon aria-hidden className="size-4" />
-            <span className="@max-[42rem]/chat:hidden">View PR</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
+      <HeaderActionButton
+        icon={GitPullRequestIcon}
+        text="View PR"
+        label={label}
+        onClick={(event) => usePinnedPanelsStore.getState().pin('pull-request', { repositoryId, number: pullRequest.number, sessionId, opener: event.currentTarget })}
+      />
     </div>
   )
 }

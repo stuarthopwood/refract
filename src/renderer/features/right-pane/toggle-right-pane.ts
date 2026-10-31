@@ -2,6 +2,7 @@
 // the Ctrl+Shift+B shortcut, including the focus rules (collapsing with focus inside the pane
 // moves it to the active panel's rail button; expanding moves it into the active panel's content,
 // or the launcher when no panel is open).
+import { RIGHT_PANE_CONTENT_SELECTOR } from '@/lib/right-pane-selectors'
 import { useRightPaneStore } from '@/state'
 
 export function toggleRightPane(): void {
@@ -18,7 +19,7 @@ export function toggleRightPane(): void {
       return
     }
     const target =
-      document.querySelector<HTMLElement>('[data-right-pane-content]') ??
+      document.querySelector<HTMLElement>(RIGHT_PANE_CONTENT_SELECTOR) ??
       document.querySelector<HTMLElement>('[data-panel-launcher] button')
     target?.focus()
   })
