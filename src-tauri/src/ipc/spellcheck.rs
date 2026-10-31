@@ -38,10 +38,11 @@ fn word_and_language(args: &[Value], method: &str) -> Result<(String, String), I
 fn spellcheck_suggest(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (word, language) = word_and_language(&args, "spellcheck.suggest")?;
-        let (misspelt, suggestions) = tokio::task::spawn_blocking(move || platform::suggest(&word, &language))
-            .await
-            .map_err(|err| IpcError::new("spellcheck-failed", err.to_string()))?
-            .map_err(|message| IpcError::new("spellcheck-failed", message))?;
+        let (misspelt, suggestions) =
+            tokio::task::spawn_blocking(move || platform::suggest(&word, &language))
+                .await
+                .map_err(|err| IpcError::new("spellcheck-failed", err.to_string()))?
+                .map_err(|message| IpcError::new("spellcheck-failed", message))?;
         Ok(serde_json::json!({ "misspelt": misspelt, "suggestions": suggestions }))
     })
 }

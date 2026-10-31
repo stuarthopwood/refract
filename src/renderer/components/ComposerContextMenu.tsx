@@ -61,7 +61,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
         const epoch = ++spellEpochRef.current
         setSpell(NO_SPELL)
         const target = el.readOnly || el.disabled ? null : wordAt(el)
-        if (target && target.word.length >= MIN_SPELL_CHARS && target.word.length <= MAX_SPELL_CHARS) {
+        if (target && target.word.length >= MIN_SPELL_CHARS && target.word.length <= MAX_SPELL_CHARS && !/\p{Cc}/u.test(target.word)) {
           void window.refract.spellcheck.suggest(target.word, navigator.language).then((result) => {
             if (result.ok && epoch === spellEpochRef.current) setSpell({ ...target, ...result.value })
           }).catch(() => undefined)

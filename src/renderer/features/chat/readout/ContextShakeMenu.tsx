@@ -112,8 +112,8 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
                 {action.id === 'thinking' && <DropdownMenuSeparator />}
                 <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={(event) => handleSelect(action, event)} className="aria-disabled:cursor-default aria-disabled:forced-colors:text-[GrayText]">
                   <Icon aria-hidden className={cn('size-4', !idle && 'opacity-50')} />
-                  <div className="flex flex-col gap-1 py-1">
-                    <span className={idle ? undefined : 'opacity-50'}>{action.label}</span>
+                  <div className={cn('flex flex-col gap-1 py-1', !idle && 'opacity-50')}>
+                    <span>{action.label}</span>
                     <span className="text-xs text-muted-foreground">{action.hint}</span>
                   </div>
                 </DropdownMenuItem>

@@ -90,7 +90,7 @@ function AlertActions({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-actions"
-      className={cn("mt-1 flex flex-wrap items-center gap-2", className)}
+      className={cn("mt-1 flex flex-wrap items-center gap-2 group-has-[>svg]/alert:col-start-2", className)}
       {...props}
     />
   )

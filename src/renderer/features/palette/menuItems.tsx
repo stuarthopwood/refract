@@ -47,7 +47,7 @@ export function spellingItems({ misspelt, suggestions, word, onReplace, onAdd }:
   return (
     <>
       {suggestions.length === 0 && (
-        <ContextMenuItem icon={SpellCheckIcon} disabled>
+        <ContextMenuItem disabled className="pl-8 data-disabled:forced-colors:text-[GrayText]">
           No suggestions
         </ContextMenuItem>
       )}

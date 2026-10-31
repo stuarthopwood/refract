@@ -479,11 +479,6 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                 <span className="col-start-2 min-w-0 break-words">Other</span>
               </RadioGroupItem>
             </RadioGroup>
-            {advancesOnPick && (
-              <p id={hintId} className="text-sm text-muted-foreground">
-                Choosing an option moves to the next question.
-              </p>
-            )}
             <Input
               value={draft.customInput}
               readOnly={busy}
@@ -495,6 +490,11 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               onChange={(event) => onCustomInput(event.target.value)}
               onKeyDown={handleOtherKeyDown}
             />
+            {advancesOnPick && (
+              <p id={hintId} className="text-sm text-muted-foreground">
+                Choosing a listed option moves to the next unanswered question.
+              </p>
+            )}
           </>
         )}
         {showIncompleteNote && (

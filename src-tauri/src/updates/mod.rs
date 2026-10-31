@@ -144,11 +144,9 @@ pub async fn verify_downloaded_installer(
     )
     .await
     {
-        Ok(result) => {
-            result
-                .map(|_| ())
-                .map_err(|reason| (installer::UpdateErrorCode::ChecksumMismatch, reason))
-        }
+        Ok(result) => result
+            .map(|_| ())
+            .map_err(|reason| (installer::UpdateErrorCode::ChecksumMismatch, reason)),
         Err(_) => Err((
             installer::UpdateErrorCode::UpdateUnavailable,
             "Verifying the update timed out.".to_string(),

@@ -20,7 +20,7 @@ export function SuspectWindowsNotice({ catalog }: { catalog: readonly ModelCatal
         </ul>
       </AlertDescription>
       <AlertActions>
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="link" size="xs">
           <a href={SUSPECT_WINDOW_ISSUE_URL} target="_blank" rel="noreferrer noopener">
             <ExternalLinkIcon aria-hidden />
             {SUSPECT_WINDOW_LINK_LABEL}
