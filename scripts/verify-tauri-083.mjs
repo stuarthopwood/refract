@@ -42,7 +42,7 @@ const THEMES = ['Dark', 'Obsidian'];
 // Computed colours end in `, 0)` only for rgba(), or `/ 0)` (oklab, color) when fully transparent; rgb(r, g, 0) is opaque.
 const isTransparent = (colour) => /^rgba\((?:[^,]+,){3}\s*0(?:\.0+)?\s*\)$/.test(colour) || /\/\s*0(?:\.0+)?%?\s*\)$/.test(colour);
 const radio = (name) =>
-  `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).map((id) => document.getElementById(id)?.textContent.trim() ?? '').join(' ') === ${JSON.stringify(name)})`;
+  `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => (el.getAttribute('aria-labelledby') ?? '').split(/\\s+/).filter(Boolean).map((id) => document.getElementById(id)?.textContent.trim() ?? '').join(' ') === ${JSON.stringify(name)})`;
 const openAppearance = async (cdp) => {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
@@ -74,15 +74,19 @@ async function checkSvgGradientRefs(cdp) {
       const svg = document.createElementNS(ns, 'svg');
       svg.innerHTML = '<defs><linearGradient id="grad-083-probe"><stop offset="0"/><stop offset="1"/></linearGradient></defs><rect width="10" height="10" fill="url(#grad-083-probe)"/>';
       document.body.appendChild(svg);
-      const target = document.getElementById(refId(getComputedStyle(svg.querySelector('rect')).fill) ?? '');
-      const probe = { tag: target?.tagName, stops: target?.querySelectorAll('stop').length };
-      svg.remove();
+      let probe;
+      try {
+        const target = document.getElementById(refId(getComputedStyle(svg.querySelector('rect')).fill) ?? '');
+        probe = { tag: target?.tagName, stops: target?.querySelectorAll('stop').length };
+      } finally {
+        svg.remove();
+      }
       const refs = Array.from(document.querySelectorAll('[fill^="url("],[stroke^="url("]')).flatMap((el) => [el.getAttribute('fill'), el.getAttribute('stroke')]).map(refId).filter(Boolean);
       return { probe, refs: refs.length, unresolved: refs.filter((id) => !document.getElementById(id)) };
     })())`)
   );
-  assert(result.probe.tag === 'linearGradient' && result.probe.stops === 2, 'a url(#id) paint resolves to its gradient element with its stops');
-  assert(result.unresolved.length === 0, `every url(#id) paint in the app resolves to an element (${result.refs} checked)`);
+  assert(result.probe.tag === 'linearGradient' && result.probe.stops === 2, 'environment sanity: a url(#id) paint resolves to its gradient element in a probe');
+  assert(result.unresolved.length === 0, `every url(#id) paint attribute in the app resolves to an element (${result.refs} found, zero is allowed)`);
 }
 
 async function runChecks(cdp, repoDir) {
