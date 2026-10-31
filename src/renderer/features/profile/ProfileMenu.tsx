@@ -155,7 +155,10 @@ function UpdateMenuItem() {
     return (
       <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
         <RefreshCwIcon aria-hidden />
-        <span className="flex-1">Restart to update</span>
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span>Update downloaded</span>
+          <span className="text-xs text-muted-foreground">Installs when you quit</span>
+        </span>
         {updateState?.availableVersion && (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
             <span aria-hidden> </span>
@@ -252,7 +255,7 @@ export function ProfileMenuContent({
                 {account.state !== 'success' && (
                   <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />
                 )}
-                <span className="truncate">{account.displayName ?? account.login}</span>
+                <span className="truncate" title={account.displayName ?? account.login}>{account.displayName ?? account.login}</span>
               </span>
               <span className="truncate text-xs text-muted-foreground">
                 {account.state !== 'success'

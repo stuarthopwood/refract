@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
-import { useHealthStore } from '@/state'
+import { useAccountsStore, useHealthStore } from '@/state'
 import type { Check, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
 import { CHECK_LABELS, CHECK_ORDER, CheckRow } from '../readiness/CheckRow'
 
@@ -49,6 +49,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
   const [loading, setLoading] = useState(false)
   const [polite, announcePolite] = useClearedAnnouncement()
   const [assertive, announceAssertive] = useClearedAnnouncement()
+  const githubStatus = useAccountsStore((state) => state.githubStatus)
   const doneRef = useRef<HTMLButtonElement>(null)
   const checkAgainRef = useRef<HTMLButtonElement>(null)
   // Run-id guard: a stale first run's `finally` must not clear `loading` or overwrite a second run's results.
@@ -122,6 +123,9 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
             />
           ))}
         </ul>
+        {githubStatus !== 'ready' && githubStatus !== 'loading' && (
+          <p className="text-xs text-muted-foreground">GitHub isn't ready. Open Manage accounts from the profile menu to sign in or fix it.</p>
+        )}
         <div aria-live="polite" aria-atomic="true" className="sr-only">
           {polite}
         </div>

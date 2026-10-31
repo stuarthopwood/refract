@@ -39,7 +39,6 @@ export function UpdateAlertRow({ version }: { version: string }) {
         actionAriaLabel="Restart and install the update now"
         onAction={requestUpdateNow}
         dismissAriaLabel="Dismiss update notice"
-        dismissTooltip="Dismiss; it installs when you quit"
         onDismiss={() => {
           focusProfileItemName()
           dismissUpdate(version)

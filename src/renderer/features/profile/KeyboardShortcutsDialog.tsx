@@ -69,14 +69,14 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>The shortcuts Refract supports today.</DialogDescription>
         </DialogHeader>
-        <div className="flex min-w-0 flex-col gap-4 overflow-y-auto">
+        <div tabIndex={0} aria-label="Keyboard shortcuts list" className="flex min-w-0 flex-col gap-4 overflow-y-auto rounded-md focus-visible:outline-2 focus-visible:outline-ring">
           {groups.map((group) => (
             <div key={group.heading} className="flex min-w-0 flex-col gap-2">
               <h3 className="text-xs text-muted-foreground">{group.heading}</h3>
               <ul className="flex flex-col gap-2">
                 {group.rows.map((row) => (
                   <li key={row.action} className="flex min-w-0 items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-sm">{row.action}</span>
+                    <span className="min-w-0 text-sm">{row.action}</span>
                     <span className="flex shrink-0 items-center gap-2">
                       {row.chords.map((chord, index) => (
                         <span key={chord.join('+')} className="flex items-center gap-2">
@@ -97,7 +97,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
           ))}
         </div>
         <DialogFooter>
-          <Button ref={doneRef} onClick={() => onOpenChange(false)}>
+          <Button ref={doneRef} variant="outline" onClick={() => onOpenChange(false)}>
             Done
           </Button>
         </DialogFooter>
