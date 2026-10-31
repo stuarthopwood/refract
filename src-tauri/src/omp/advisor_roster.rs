@@ -59,7 +59,12 @@ pub fn openable_target(path: &Path) -> Option<PathBuf> {
         root.pop();
     }
     let root = dunce::canonicalize(root).ok()?;
-    (canonical == root.join(name)).then_some(canonical)
+    let expected = root.join(name);
+    // NTFS is case-insensitive: the on-disk case may differ from the known name, but a link changes the path shape.
+    let same = canonical == expected
+        || (cfg!(windows)
+            && canonical.to_string_lossy().eq_ignore_ascii_case(&expected.to_string_lossy()));
+    same.then_some(canonical)
 }
 
 fn find_in(dir: &Path) -> Option<PathBuf> {

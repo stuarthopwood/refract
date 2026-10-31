@@ -79,12 +79,11 @@ export function ChatHeader({
             shortcut={['Ctrl', 'F']}
             onClick={(event) => (findOpen ? closeChatFind(sessionId) : openChatFind(sessionId, event.currentTarget))}
             aria-expanded={findOpen}
-            aria-keyshortcuts="Control+F"
           >
             <SearchIcon aria-hidden className="size-4" />
           </IconButton>
           {onClose && (
-            <IconButton label={`Close ${session.name} chat pane`} shortcut={['Ctrl', 'W']} onClick={onClose} aria-keyshortcuts="Control+W">
+            <IconButton label={`Close ${session.name} chat pane`} shortcut={['Ctrl', 'W']} onClick={onClose}>
               <MessageSquareXIcon aria-hidden className="size-4" />
             </IconButton>
           )}

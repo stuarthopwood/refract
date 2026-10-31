@@ -9,27 +9,27 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground not-aria-disabled:hover:bg-primary-hover-bg",
+        default: "bg-primary text-primary-foreground hover:bg-primary-hover-bg",
         // Solid neutral, never red: stopping a turn keeps the work. Hover mixes 15% background
         // (no token exists for this mix).
-        invert: "bg-foreground text-background not-aria-disabled:hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
+        invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
         outline:
-          "border-button-outline-border bg-button-outline-bg text-button-outline-fg not-aria-disabled:hover:bg-button-outline-hover-bg aria-expanded:bg-button-outline-hover-bg",
+          "border-button-outline-border bg-button-outline-bg text-button-outline-fg hover:bg-button-outline-hover-bg aria-expanded:bg-button-outline-hover-bg",
         secondary:
-          "bg-button-secondary-bg text-button-secondary-fg not-aria-disabled:hover:bg-button-secondary-hover-bg aria-expanded:bg-button-secondary-bg aria-expanded:text-button-secondary-fg",
+          "bg-button-secondary-bg text-button-secondary-fg hover:bg-button-secondary-hover-bg aria-expanded:bg-button-secondary-bg aria-expanded:text-button-secondary-fg",
         ghost:
-          "not-aria-disabled:hover:bg-muted not-aria-disabled:hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground not-aria-disabled:dark:hover:bg-row-hover-bg font-normal",
+          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-row-hover-bg font-normal",
         destructive:
-          "bg-button-destructive-bg text-button-destructive-fg not-aria-disabled:hover:bg-button-destructive-hover-bg focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
+          "bg-button-destructive-bg text-button-destructive-fg hover:bg-button-destructive-hover-bg focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
         // Borderless, red label: a destructive action that must not compete with the surface's one filled button (#1387).
         "ghost-destructive":
-          "text-destructive not-aria-disabled:hover:bg-muted not-aria-disabled:hover:text-destructive aria-expanded:bg-muted not-aria-disabled:dark:hover:bg-row-hover-bg font-normal",
+          "text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:hover:bg-row-hover-bg font-normal",
         link: "text-primary underline underline-offset-4 font-normal",
         // Non-primary action beside an `outline` primary (#746); underlines on hover and focus, with a ring since it has no border.
-        text: "min-h-6 rounded-md text-foreground not-aria-disabled:hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
+        text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
         // Same shape as `text`, red label, for actions that open a confirm dialog.
         "text-destructive":
-          "min-h-6 rounded-md text-destructive not-aria-disabled:hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
+          "min-h-6 rounded-md text-destructive hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2",
       },
       size: {
         default:

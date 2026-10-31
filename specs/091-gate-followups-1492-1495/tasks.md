@@ -1,6 +1,6 @@
 # Tasks (spec 091)
 
-- [x] T1 FR-001 base Button `not-aria-disabled:` hover
+- [ ] T1 FR-001 SKIPPED: a `not-aria-disabled:` gate in `Button` outranks callers' plain `hover:` overrides (OutlineRowItem, FindResultsList, others); cost outweighs the gain
 - [x] T2 FR-002 to FR-006 small renderer fixes
 - [x] T3 FR-007 `openable_target`
 - [x] T4 FR-008 CompactList wrap and focusable titled rows

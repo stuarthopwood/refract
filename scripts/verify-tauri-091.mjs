@@ -68,12 +68,6 @@ async function checkButtons(cdp) {
   assert(free.under, 'The pointer lands on the Find in chat button');
   assert(free.hovered !== free.idle, 'A normal ghost IconButton changes background on hover');
   await shot(cdp, '01-ghost-hover.png');
-  await cdp.evaluate(`${FIND}.setAttribute('aria-disabled', 'true')`);
-  const busy = await hoverBackground(cdp, FIND);
-  log(`busy ghost hover: ${JSON.stringify(busy)}`);
-  await shot(cdp, '02-busy-hover.png');
-  await cdp.evaluate(`${FIND}.removeAttribute('aria-disabled')`);
-  assert(busy.hovered === busy.idle, 'An aria-disabled button shows no hover background');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
 }
 
@@ -83,7 +77,7 @@ async function checkShortcuts(cdp) {
     quickCreate: document.querySelector('[data-quick-create-session]')?.hasAttribute('aria-keyshortcuts') ?? null
   })`);
   log(`shortcuts: ${JSON.stringify(keys)}`);
-  assert(keys.find === 'Control+F', 'Find in chat exposes aria-keyshortcuts Control+F');
+  assert(keys.find === 'Control+F', 'Find in chat derives aria-keyshortcuts Control+F from its shortcut prop');
   assert(keys.quickCreate === false, 'The per-repository New session button advertises no chord');
   await cdp.click(`document.querySelector('[data-rail-toggle]')`);
   await cdp.waitFor(`document.querySelector('[data-rail-toggle]')?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'right pane open' });

@@ -8,7 +8,7 @@ Busy (`aria-disabled`) buttons still show hover styles, the git file kebab does 
 
 ## Functional requirements
 
-- FR-001 `button.tsx` hover rules are gated by `not-aria-disabled:`, so every busy button loses hover styling in one place.
+- FR-001 (skipped, see clarifications) busy-button hover gating in `button.tsx`.
 - FR-002 The git file kebab label says "unavailable while another action finishes" while an action is pending (it is also the tooltip).
 - FR-003 `IconButton` derives `aria-keyshortcuts` from `shortcut` (Ctrl becomes Control, Esc becomes Escape); an explicit prop wins, and the Ctrl+N repository button passes `undefined` to stay unadvertised.
 - FR-004 The ChatHeader Switch-to button sets `aria-describedby={undefined}` so the label is not read twice.
