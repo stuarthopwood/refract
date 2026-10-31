@@ -10,7 +10,7 @@ Status: in progress. Follows spec 077 (#579). Decisions: issue #1470 comment "De
 - FR-4: `input.tsx` and `textarea.tsx` have one disabled background (`bg-field-hover-bg`).
 - FR-5: Every overflow trigger is named "More actions" or "More actions for <item>".
 - FR-6: The `SessionRow` action strip is 24 px (`h-6`) to match its buttons.
-- FR-7: The AttachmentStrip image Remove button sits at `-top-2 -right-2` with `gap-4` and `p-4`, so it never covers a neighbour.
+- FR-7: The AttachmentStrip image Remove button sits at `-top-2 -right-2` with `gap-4` and `p-4`, so it never covers a neighbour. The strip is capped at `max-h-32` (two thumbnail rows) and scrolls beyond that, replacing 009 Decision 10 growth.
 - FR-8: `check-alpha-modifiers` also counts `placeholder-`, `inset-ring-`, `ring-offset-`, `drop-shadow-`, `text-shadow-` and arbitrary or decimal opacities; remaining blind spots are listed in the script header.
 - FR-9: `verify-tauri-077.mjs` covers all five theme presets.
 - FR-10: `SessionList.tsx` clear-filter button drops the classes `Button` already sets.
