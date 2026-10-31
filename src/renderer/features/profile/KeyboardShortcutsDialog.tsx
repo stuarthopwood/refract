@@ -28,7 +28,7 @@ const CONTEXTUAL_ROWS: Record<string, ShortcutRow[]> = {
     { action: 'Newline in message (continues a list)', chords: [['Shift', 'Enter']] },
     { action: 'Indent the line or selection', chords: [['Tab']] },
     { action: 'Outdent the line or selection', chords: [['Shift', 'Tab']] },
-    { action: 'Toggle Tab moves focus', chords: [['Ctrl', 'M']] },
+    { action: 'Switch Tab between indent and move focus', chords: [['Ctrl', 'M']] },
     { action: 'Clear the message box', chords: [['Esc']] }
   ],
   Pause: [{ action: 'Resume the focused paused session', chords: [['Space']] }],

@@ -457,6 +457,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       ghost &&
       ghost.text === text &&
       event.key === 'Tab' &&
+      !indent.tabMovesFocus &&
       !event.shiftKey &&
       !event.ctrlKey &&
       !event.altKey &&
@@ -854,9 +855,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           <ReasoningPicker sessionId={sessionId} />
           <ComposerBranchLabel sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
+          <ComposerIndentHint id={indentHintId} tabMovesFocus={indent.tabMovesFocus} />
         </ComposerFooter>
       </ComposerBox>
-      <ComposerIndentHint id={indentHintId} tabMovesFocus={indent.tabMovesFocus} />
     </div>
   )
 }

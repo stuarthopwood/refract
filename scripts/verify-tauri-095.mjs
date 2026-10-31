@@ -117,13 +117,13 @@ async function check(cdp) {
 
   await reset(cdp, 'a');
   await ctrlM(cdp);
-  assert(await cdp.evaluate(`document.body.innerText.includes('Tab moves focus · Ctrl+M to indent')`), 'Ctrl+M shows the "Tab moves focus" hint');
+  assert(await cdp.evaluate(`document.body.innerText.includes('to switch')`), 'Ctrl+M shows the "Tab moves focus" hint');
+  await shot(cdp, '03-tab-moves-focus.png');
   assert(await cdp.evaluate(`document.querySelector('[role="status"][aria-live="polite"]') !== null && Array.from(document.querySelectorAll('[role="status"]')).some((n) => n.textContent === 'Tab moves focus')`), 'The mode change is announced in the live region');
   await tab(cdp);
   assert(!(await activeIsMessage(cdp)), 'With focus mode on, Tab moves focus out of the composer');
   assert((await cdp.evaluate(VALUE)) === 'a', 'Tab did not edit the draft in focus mode');
-  await shot(cdp, '03-tab-moves-focus.png');
-  assert(!(await cdp.evaluate(`document.body.innerText.includes('Tab moves focus · Ctrl+M to indent')`)), 'The hint resets once focus leaves the box');
+  assert(!(await cdp.evaluate(`document.body.innerText.includes('to switch')`)), 'The hint resets once focus leaves the box');
   await cdp.evaluate(`${MESSAGE}.focus()`);
   await tab(cdp);
   assert((await cdp.evaluate(VALUE)) === '  a' && (await activeIsMessage(cdp)), 'After the reset Tab indents again');
