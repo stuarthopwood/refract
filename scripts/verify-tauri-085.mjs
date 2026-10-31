@@ -76,7 +76,8 @@ async function runChecks(cdp, { repoDir }) {
     await cdp.evaluate(`(() => { const b = document.querySelector('[data-rail-button="${id}"]'); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); })()`);
     await sleep(900);
     close = await cdp.evaluate(closeAt);
-  }  assert(!!close, 'A tab-bar close button is reachable with two panels open');
+  }
+  assert(!!close, 'A tab-bar close button is reachable with two panels open');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: close.x, y: close.y });
   await sleep(400);
   const hover = await cdp.evaluate(`(() => { const b = document.elementFromPoint(${close.x}, ${close.y}).closest('[data-panel-close]'); const probe = document.createElement('div'); probe.style.background = 'var(--tab-close-hover-bg)'; document.body.append(probe); const token = getComputedStyle(probe).backgroundColor; probe.remove(); return { bg: getComputedStyle(b).backgroundColor, token }; })()`);

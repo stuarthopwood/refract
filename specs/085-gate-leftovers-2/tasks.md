@@ -12,4 +12,4 @@
 - [x] T10 Remove local `aria-disabled:pointer-events-none`; base Button press nudge; kebab `onPointerDown` (FR-009)
 - [x] T11 `verify-tauri-085.mjs` (FR-010)
 - [x] T12 PLAN.md row, `docs/design/components.md` notes
-- [ ] T13 `pnpm ci:local` under the build slot
+- [x] T13 `pnpm ci:local` under the build slot
