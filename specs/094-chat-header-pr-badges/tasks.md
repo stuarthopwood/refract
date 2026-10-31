@@ -1,14 +1,14 @@
 # Tasks: spec 094
 
-- [ ] T1 Rust lookup `readout_pr.rs`, readout wiring, delete `pr_lookup.rs`
-- [ ] T2 Remove the `pull-request` kind (Rust settings, model.ts, StatusLineSection, ComposerStatusLine, Readouts)
-- [ ] T3 Shared `SessionPullRequest` type and readout store default
-- [ ] T4 Pinned panels store, registry descriptors, panels, shell wiring
-- [ ] T5 Header badges, buttons, issue menu, narrow layout
-- [ ] T6 Theme tokens and contrast pairs
-- [ ] T7 Live check `scripts/verify-tauri-094.mjs`
-- [ ] T8 `pnpm ci:local`
-- [ ] T9 Six-reviewer gate
+- [x] T1 Rust lookup `readout_pr.rs`, readout wiring, delete `pr_lookup.rs`
+- [x] T2 Remove the `pull-request` kind (Rust settings, model.ts, StatusLineSection, ComposerStatusLine, Readouts)
+- [x] T3 Shared `SessionPullRequest` type and readout store default
+- [x] T4 Pinned panels store, registry descriptors, panels, shell wiring
+- [x] T5 Header badges, buttons, issue menu, narrow layout
+- [x] T6 Theme tokens and contrast pairs
+- [x] T7 Live check `scripts/verify-tauri-094.mjs`
+- [x] T8 `pnpm ci:local`
+- [x] T9 Six-reviewer gate
 
 ## Analysis (2026-10-31)
 
