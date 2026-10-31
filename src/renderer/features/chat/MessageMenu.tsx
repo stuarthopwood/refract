@@ -16,7 +16,8 @@ const NOTHING = 'Nothing to copy: this message only contains hidden characters'
 // Distinguishes one row's kebab from the next by the message's opening words.
 function messageSnippet(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length > 32 ? `${flat.slice(0, 32).trimEnd()}…` : flat
+  const chars = Array.from(flat)
+  return chars.length > 32 ? `${chars.slice(0, 32).join('').trimEnd()}…` : flat
 }
 
 function ScrollToPromptItem({ sessionId, messageId, kind }: { sessionId: string; messageId: string; kind: MenuKind }) {
