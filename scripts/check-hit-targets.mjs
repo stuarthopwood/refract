@@ -3,37 +3,26 @@
 // Button/IconButton. Flags raw <button>/role="button" and Button/IconButton sized under 24px
 // (size-1..5, h-1..5). Existing uses are baselined per file and may shrink, never grow.
 
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rendererTsxFiles } from './renderer-tsx-files.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'hit-targets-baseline.json');
 const RAW_BUTTON = /<button\b|role=["']button["']/g;
-const SMALL_TARGET = /<(?:Button|IconButton)\b[^<]*?(?<![\w-])(?:size|h)-[1-5](?![\w.[/-])/g;
-const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target', 'assets']);
+// size-1..5, fractional (size-4.5) and arbitrary px under 24 (h-[20px]).
+const SMALL_TARGET = /<(?:Button|IconButton)\b[^<]*?(?<![\w-])(?:size|h)-(?:[1-5](?:\.5)?|\[(?:[0-9]|1[0-9]|2[0-3])px\])(?![\w.[/-])/g;
 const EXEMPT_FILES = new Set(['src/renderer/components/IconButton.tsx', 'src/renderer/components/ui/button.tsx']);
 
 export function countHitTargetIssues(text) {
   return [...text.matchAll(RAW_BUTTON)].length + [...text.matchAll(SMALL_TARGET)].length;
 }
 
-function walk(dir, files) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (!EXCLUDED_DIRS.has(entry.name)) walk(path.join(dir, entry.name), files);
-    } else if (/\.tsx$/.test(entry.name) && !/\.(test|spec)\./.test(entry.name)) {
-      files.push(path.join(dir, entry.name));
-    }
-  }
-}
-
 function scan() {
-  const files = [];
-  walk(path.join(repoRoot, 'src', 'renderer'), files);
   const out = {};
-  for (const file of files.sort()) {
+  for (const file of rendererTsxFiles(path.join(repoRoot, 'src', 'renderer'))) {
     const rel = path.relative(repoRoot, file).split(path.sep).join('/');
     if (EXEMPT_FILES.has(rel)) continue;
     const count = countHitTargetIssues(readFileSync(file, 'utf8'));

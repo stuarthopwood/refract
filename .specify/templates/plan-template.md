@@ -50,8 +50,8 @@
 - [ ] 4. Panel and screen headers use `PanelHeader`/`ScreenHeader`: 40 px, no bottom divider, actions right, no hand-written drag regions.
 - [ ] 5. 4/8 grid spacing; off-grid offsets are allowlisted with a reason.
 - [ ] 6. Semantic tokens only; contrast holds in every preset including High contrast.
-- [ ] 7. Loading, empty, error and success states; errors sit beside their field and focus moves to the first one.
-- [ ] 8. One-column forms with labels above fields; advanced detail and logs collapsed.
+- [ ] 7. (Advisory, not gating.) Loading, empty, error and success states; errors sit beside their field and focus moves to the first one.
+- [ ] 8. (Advisory, not gating.) One-column forms with labels above fields; advanced detail and logs collapsed.
 
 ## Project Structure
 

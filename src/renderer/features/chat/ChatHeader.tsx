@@ -2,8 +2,7 @@ import { MessageSquareXIcon, PauseIcon, PlayIcon, SearchIcon, SplitSquareHorizon
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PanelHeader, WINDOW_CONTROLS_OVERLAY_STYLE } from '@/components/PanelHeader'
-import { Kbd, KbdGroup } from '@/components/ui/kbd'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { IconButton } from '@/components/IconButton'
 import { useSessionsStore } from '@/state'
 import { closeChatFind, EMPTY_CHAT_FIND, openChatFind, useChatFindStore } from '@/state/chat-find-store'
 import { displayLabel, displayStatus, StateIcon } from '@/features/sessions/sessionDisplay'
@@ -38,83 +37,44 @@ export function ChatHeader({
       windowControlsSpacerStyle={reservesWindowControls ? WINDOW_CONTROLS_OVERLAY_STYLE : undefined}
       actions={
         <>
-        {otherSessionName && onSwapToOther && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-6 gap-2 px-2 text-xs"
-            onClick={onSwapToOther}
-            aria-label={`Switch to ${otherSessionName}`}
-          >
-            <SplitSquareHorizontalIcon aria-hidden className="size-4" />
-            {otherSessionName}
-          </Button>
-        )}
-        <div className="shrink-0">
-          <ConversationSwitcher sessionId={sessionId} />
-        </div>
-        {canTogglePause(session) && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => void setSessionPaused(sessionId, !session.pause)}
-                aria-label={session.pause === 'pausing' ? `Cancel pause for ${session.name}` : session.pause ? `Resume ${session.name}` : `Pause ${session.name}`}
-              >
-                {session.pause ? <PlayIcon aria-hidden className="size-4" /> : <PauseIcon aria-hidden className="size-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause after this turn'}</TooltipContent>
-          </Tooltip>
-        )}
-        <Tooltip>
-          <TooltipTrigger asChild>
+            {otherSessionName && onSwapToOther && (
             <Button
               type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={(event) => (findOpen ? closeChatFind(sessionId) : openChatFind(sessionId, event.currentTarget))}
-              aria-label="Find in chat"
-              aria-expanded={findOpen}
-              aria-keyshortcuts="Control+F"
+              variant="outline"
+              size="sm"
+              className="h-6 gap-2 px-2 text-xs"
+              onClick={onSwapToOther}
+              aria-label={`Switch to ${otherSessionName}`}
             >
-              <SearchIcon aria-hidden className="size-4" />
+              <SplitSquareHorizontalIcon aria-hidden className="size-4" />
+              {otherSessionName}
             </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            Find in chat
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
-              <Kbd>F</Kbd>
-            </KbdGroup>
-          </TooltipContent>
-        </Tooltip>
-        {onClose && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={onClose}
-                aria-label={`Close ${session.name} chat pane`}
-                aria-keyshortcuts="Control+W"
-              >
-                <MessageSquareXIcon aria-hidden className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              Close {session.name} chat pane
-              <KbdGroup>
-                <Kbd>Ctrl</Kbd>
-                <Kbd>W</Kbd>
-              </KbdGroup>
-            </TooltipContent>
-          </Tooltip>
-        )}
+          )}
+          <div className="shrink-0">
+            <ConversationSwitcher sessionId={sessionId} />
+          </div>
+          {canTogglePause(session) && (
+            <IconButton
+              label={session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause after this turn'}
+              onClick={() => void setSessionPaused(sessionId, !session.pause)}
+            >
+              {session.pause ? <PlayIcon aria-hidden className="size-4" /> : <PauseIcon aria-hidden className="size-4" />}
+            </IconButton>
+          )}
+          <IconButton
+            label="Find in chat"
+            shortcut={['Ctrl', 'F']}
+            onClick={(event) => (findOpen ? closeChatFind(sessionId) : openChatFind(sessionId, event.currentTarget))}
+            aria-expanded={findOpen}
+            aria-keyshortcuts="Control+F"
+          >
+            <SearchIcon aria-hidden className="size-4" />
+          </IconButton>
+          {onClose && (
+            <IconButton label={`Close ${session.name} chat pane`} shortcut={['Ctrl', 'W']} onClick={onClose} aria-keyshortcuts="Control+W">
+              <MessageSquareXIcon aria-hidden className="size-4" />
+            </IconButton>
+          )}
         </>
       }
     >

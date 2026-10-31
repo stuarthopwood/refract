@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/IconButton'
 import { Kbd } from '@/components/ui/kbd'
 import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -84,21 +84,9 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
           ref={wrapperRef}
           windowControlsSpacerStyle={WINDOW_CONTROLS_SPACER_STYLE}
           actions={
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  data-panel-close
-                  aria-label={`Close ${descriptor.name} panel`}
-                  onClick={() => closeHostedPanel(id)}
-                >
-                  <XIcon aria-hidden className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{`Close ${descriptor.name} panel`}</TooltipContent>
-            </Tooltip>
+            <IconButton label={`Close ${descriptor.name} panel`} data-panel-close onClick={() => closeHostedPanel(id)}>
+              <XIcon aria-hidden className="size-4" />
+            </IconButton>
           }
         >
           <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-medium">
