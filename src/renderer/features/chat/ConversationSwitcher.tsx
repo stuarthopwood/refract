@@ -3,6 +3,7 @@ import { HistoryIcon, PlusIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { notify, useChatScrollStore, useSessionsStore } from '@/state'
 import type { ConversationInfo } from '../../../shared/model'
@@ -78,19 +79,17 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <Button
-        variant="ghost"
-        size="sm"
+      <HeaderActionButton
+        icon={PlusIcon}
+        text="New conversation"
+        label="New conversation"
         aria-disabled={!canSwitch || creating || switching}
         className="aria-disabled:opacity-50"
         onClick={() => {
           if (!canSwitch || creating || switching) return
           void handleNewConversation()
         }}
-      >
-        <PlusIcon />
-        New conversation
-      </Button>
+      />
       <Dialog open={historyOpen} onOpenChange={(open) => void handleOpenChange(open)}>
         <DialogTrigger asChild>
           <IconButton label="Conversation history">
