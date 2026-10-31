@@ -118,6 +118,10 @@ async function main() {
     check(noLink === true, 'a check without a link still shows "No details link" and no actions menu', noLink);
 
     await openAppearance();
+    await cdp.click(radio('Dark'));
+    await waitFor(`?.getAttribute('aria-checked') === 'true'`, 'Dark checked');
+    await cdp.click(radio('Per Element'));
+    await waitFor(`document.body.innerText.includes('Custom theme applied')`, 'applied toast raised right before removal');
     await cdp.click(kebab('Actions for Per Element'));
     await waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`, 'Remove entry');
     await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`);

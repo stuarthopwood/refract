@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { EllipsisVerticalIcon } from 'lucide-react'
@@ -52,6 +52,7 @@ const CONTEXT_PARTS: MenuParts = { Item: ContextMenuItem, Separator: ContextMenu
 /** A row's actions as one list behind a visible kebab; right-click on the row (not its `below` content, so that text stays selectable) opens the same items at the pointer. */
 export function RowKebabMenu({ entries, label, children, below }: { entries: readonly RowMenuEntry[]; label: string; children: React.ReactNode; below?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
+  const lastInputWasKey = useRef(false)
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <div>
@@ -59,9 +60,11 @@ export function RowKebabMenu({ entries, label, children, below }: { entries: rea
           <ContextMenuTrigger asChild>
             <div
               className="flex items-center gap-1"
+              onKeyDownCapture={() => (lastInputWasKey.current = true)}
+              onPointerDownCapture={() => (lastInputWasKey.current = false)}
               onContextMenu={(event) => {
-                // A keyboard-raised event (Shift+F10) has no pointer position, so anchor on the kebab instead.
-                if (event.clientX === 0 && event.clientY === 0) {
+                // A keyboard-raised event (Shift+F10, Menu key) has no real pointer position, so anchor on the kebab instead.
+                if (lastInputWasKey.current || (event.clientX === 0 && event.clientY === 0)) {
                   event.preventDefault()
                   setOpen(true)
                 }
