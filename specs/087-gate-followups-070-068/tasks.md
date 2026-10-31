@@ -9,7 +9,7 @@
 - [x] T7 ChatWidthPicker match; autosave stale guard (FR-012, 015)
 - [x] T8 ShowHiddenToggle hook, announcement, toast dismiss (FR-016)
 - [x] T9 Remove `theme.preview` (FR-017)
-- [ ] T10 `verify-tauri-087.mjs` (FR-018)
-- [ ] T11 PLAN.md row
-- [ ] T12 `pnpm ci:local` under the build slot
+- [x] T10 `verify-tauri-087.mjs` (FR-018)
+- [x] T11 PLAN.md row
+- [x] T12 `pnpm ci:local` under the build slot
 
