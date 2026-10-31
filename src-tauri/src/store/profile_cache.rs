@@ -40,15 +40,11 @@ pub struct ProfileCacheStore {
 const MAX_AVATAR_DATA_URL_BYTES: usize = 100 * 1024;
 
 fn sanitize_entry(entry: &mut ProfileCacheEntry) {
-    if entry
-        .avatar_data_url
-        .as_deref()
-        .is_some_and(|url| {
-            url.len() > MAX_AVATAR_DATA_URL_BYTES
-                || !(url.starts_with("data:image/png;base64,")
-                    || url.starts_with("data:image/jpeg;base64,"))
-        })
-    {
+    if entry.avatar_data_url.as_deref().is_some_and(|url| {
+        url.len() > MAX_AVATAR_DATA_URL_BYTES
+            || !(url.starts_with("data:image/png;base64,")
+                || url.starts_with("data:image/jpeg;base64,"))
+    }) {
         entry.avatar_data_url = None;
     }
     if let Some(name) = entry.display_name.as_mut() {

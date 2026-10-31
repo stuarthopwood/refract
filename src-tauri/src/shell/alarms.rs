@@ -57,12 +57,7 @@ pub fn spawn(app: AppHandle, settings: Arc<AsyncMutex<SettingsStore>>) {
                 }
                 let changed = store.alarms() != before.as_slice();
                 let snapshot = changed.then(|| store.get());
-                (
-                    fired,
-                    snapshot,
-                    store.next_alarm_ms(),
-                    err.is_some(),
-                )
+                (fired, snapshot, store.next_alarm_ms(), err.is_some())
             };
             for alarm in &fired {
                 show_notification(&app, alarm);

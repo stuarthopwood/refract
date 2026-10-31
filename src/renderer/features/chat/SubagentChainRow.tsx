@@ -232,7 +232,7 @@ function ChainShowPanelButton({ sessionId }: { sessionId: string | null }) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="mr-1 mt-0.5"
+          className="mr-1 translate-y-0.5"
           aria-label="Show subagents panel"
           onClick={(event) => openHostedPanel('subagents', sessionId, { opener: event.currentTarget })}
         >

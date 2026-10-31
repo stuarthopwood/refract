@@ -169,12 +169,13 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
         ))
     })?;
 
-    let display_name = record
-        .get("name")
-        .and_then(Value::as_str)
-        .map(|name| name.chars().take(MAX_DISPLAY_NAME_CHARS).collect::<String>());
-            let avatar_url = record
-                .get("avatar_url")
+    let display_name = record.get("name").and_then(Value::as_str).map(|name| {
+        name.chars()
+            .take(MAX_DISPLAY_NAME_CHARS)
+            .collect::<String>()
+    });
+    let avatar_url = record
+        .get("avatar_url")
         .and_then(Value::as_str)
         .map(str::to_owned);
     let responded_login = record
