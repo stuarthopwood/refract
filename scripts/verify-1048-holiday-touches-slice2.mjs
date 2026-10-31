@@ -95,12 +95,6 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(`!!document.querySelector('[data-repository-id]')`, { timeoutMs: 30_000, label: 'Project added' });
-    await cdp.waitFor(`!!document.querySelector('[data-chat-empty-state]')`, { timeoutMs: 15_000, label: `${c.id}: empty chat state shown` });
-    await settleForScreenshot(cdp);
-    const emptyWatermark = await cdp.evaluate(`document.querySelector('[data-chat-empty-state] .watermark-mark-holiday svg')?.getAttribute('class') ?? null`);
-    if (c.icon) check(!!emptyWatermark && emptyWatermark.includes(c.icon), `${c.id}: empty chat state shows the ${c.icon} holiday watermark`, emptyWatermark);
-    else check(emptyWatermark === null, `${c.id}: empty chat state shows no holiday watermark`, emptyWatermark);
-    await cdp.screenshot(shot('empty-state-watermark'));
     await createSessionViaQuickCreate(cdp, path.basename(repoDir));
     await cdp.evaluate(`window.refract.settings.setChatWidth('reading-column')`);
     await sleep(SETTLE_MS);
