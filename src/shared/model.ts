@@ -58,7 +58,6 @@ export type ReadoutKind =
   | 'context-usage'
   | 'turn-time'
   | 'current-time'
-  | 'pull-request'
   | 'subagents'
   | 'todo-progress' | 'current-work';
 
@@ -167,7 +166,6 @@ export const DEFAULT_SESSION_READOUT: Record<ReadoutKind, boolean> = {
   'context-usage': true,
   'turn-time': true,
   'current-time': false,
-  'pull-request': true,
   subagents: true,
   'todo-progress': true, 'current-work': true,
 };
@@ -236,11 +234,29 @@ export interface DiffStat {
   partial: boolean;
 }
 
+export type PullRequestDisplayState = 'open' | 'draft' | 'merged' | 'closed';
+export type PullRequestChecks = 'pass' | 'fail' | 'pending';
+
+export interface LinkedIssue {
+  number: number;
+  state: 'open' | 'closed';
+  title: string;
+}
+
+/** The Session branch's PR as the header badge shows it; `linkedIssues` are its closing issues. */
+export interface SessionPullRequest {
+  number: number;
+  url: string;
+  state: PullRequestDisplayState;
+  checks: PullRequestChecks | null;
+  linkedIssues: LinkedIssue[];
+}
+
 export interface SessionReadout extends ActivityReadoutFields {
   changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
   contextUsage: ContextUsage | 'not-available' | null; aiCredits?: number | null;
   turnTime: { startedAt: number } | null;
-  pullRequest: { number: number; url: string } | null;
+  pullRequest: SessionPullRequest | null;
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null;
   todoTree: TodoPhase[] | null; branch?: { name: string; detached: boolean } | null;
   todoPhases: Array<{ name: string; pendingCount: number }> | null;

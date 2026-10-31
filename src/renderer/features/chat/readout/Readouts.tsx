@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent, RefObject } from 'react'
 import { EyeIcon, Loader2Icon, PinIcon } from 'lucide-react'
 import { READOUT_KIND_ICONS } from '@/components/icons/readout-icons'
-import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore, useViewStore } from '@/state'
+import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -80,33 +80,6 @@ export function CurrentTimeReadout({ className }: { className?: string } = {}) {
   }, [])
   const formatted = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)
   return <AlarmClock formatted={formatted} now={now} className={className} />
-}
-
-export function PullRequestReadout({ sessionId }: { sessionId: string }) {
-  const pullRequest = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.pullRequest)
-  const session = useSessionsStore((s) => s.sessions.find((candidate) => candidate.id === sessionId))
-  if (pullRequest === null) return null
-
-  // Opens the pull request in the in-app view, falling back to the external link if the repository cannot be resolved.
-  if (session) {
-    return (
-      <ReadoutItem
-        icon={READOUT_KIND_ICONS['pull-request']}
-        accessibleName={`Open pull request #${pullRequest.number}`}
-        onActivate={() => {
-          usePullRequestsStore.getState().openPullRequest(session.repositoryId, pullRequest.number)
-          useViewStore.getState().openPullRequests()
-        }}
-      >
-        <span aria-hidden>#{pullRequest.number}</span>
-      </ReadoutItem>
-    )
-  }
-  return (
-    <ReadoutItem icon={READOUT_KIND_ICONS['pull-request']} href={pullRequest.url} accessibleName={`Open pull request #${pullRequest.number}`}>
-      <span aria-hidden>#{pullRequest.number}</span>
-    </ReadoutItem>
-  )
 }
 
 export function SubagentsReadout({ sessionId }: { sessionId: string }) {
