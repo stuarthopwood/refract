@@ -1,6 +1,11 @@
 {
   "src/renderer/components/ColorPicker.tsx": 7,
-  "src/renderer/features/sessions/ProjectColorPopover.tsx": 3,
+  "src/renderer/components/ComposerBox.tsx": 1,
+  "src/renderer/components/ui/button.tsx": 1,
+  "src/renderer/components/ui/chart.tsx": 1,
+  "src/renderer/components/ui/checkbox.tsx": 5,
+  "src/renderer/features/chat/readout/ContextUsageReadout.tsx": 1,
+  "src/renderer/features/sessions/ProjectColorPopover.tsx": 1,
   "src/renderer/lib/projectColor.ts": 1,
   "src/renderer/lib/themeContrast.ts": 1,
   "src/renderer/lib/themeTokens.ts": 1

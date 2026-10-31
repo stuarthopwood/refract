@@ -1,5 +1,6 @@
 // Comment scanners and per-file line metrics for check-comment-density.mjs.
 // Both scanners return comment character ranges; metrics are derived from the ranges alone.
+// By design, a trailing `//` comment on a code line explains that line and never forms a comment block (#1499).
 
 import ts from '@typescript/typescript6';
 
