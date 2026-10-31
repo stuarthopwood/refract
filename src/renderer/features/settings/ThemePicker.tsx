@@ -125,7 +125,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
               </button>
             </Badge>
             {open === e.key && (
-              <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
+              <ul className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
                 {warnings.map((w) => <li key={w.label}>{describeWarning(w)}</li>)}
               </ul>
             )}
@@ -146,7 +146,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
       {rejected.map((r) => (
         <p key={r.file} role="alert" className="mt-2 px-2 text-xs text-destructive">Couldn&apos;t load {r.file}: {r.error}</p>
       ))}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-4 flex gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => void actions.importTheme()}>
           <UploadIcon aria-hidden /> Import theme…
         </Button>
