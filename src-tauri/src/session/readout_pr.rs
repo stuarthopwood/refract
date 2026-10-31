@@ -36,9 +36,10 @@ fn backed_off(key: &(String, String)) -> bool {
 
 fn back_off(key: (String, String)) {
     let mut guard = UNAVAILABLE_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
-    guard
-        .get_or_insert_with(HashMap::new)
-        .insert(key, Instant::now() + UNAVAILABLE_BACKOFF);
+    let map = guard.get_or_insert_with(HashMap::new);
+    let now = Instant::now();
+    map.retain(|_, until| *until > now);
+    map.insert(key, now + UNAVAILABLE_BACKOFF);
 }
 
 const QUERY: &str = "query($owner: String!, $name: String!, $branch: String!) { \

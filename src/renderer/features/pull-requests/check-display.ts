@@ -1,7 +1,17 @@
 import { CheckCircle2Icon, CircleDashedIcon, LoaderCircleIcon, XCircleIcon } from 'lucide-react'
 import type { PullRequestChecks } from '../../../shared/model'
 import type { PullRequestSummary } from '../../../shared/github'
-import type { CheckStateDisplay } from './PullRequestRow'
+import type { ComponentType } from 'react'
+
+export interface CheckDisplay {
+  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
+  label: string
+}
+
+export interface CheckStateDisplay extends CheckDisplay {
+  /** Severity colour on icon and label (#1121); `none` keeps `text-muted-foreground`. */
+  colorClass: string
+}
 
 /** Every non-`none` check state carries its own severity colour on icon and label (#1121); `none` stays muted. */
 export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckStateDisplay> = {

@@ -7,9 +7,10 @@ import {
   GitPullRequestDraftIcon,
   GitPullRequestIcon
 } from 'lucide-react'
-import { useId, type ComponentType } from 'react'
+import { useId } from 'react'
 import type { PullRequestState } from '../../../shared/github'
 import type { PullRequestAcrossItem } from '../../../shared/ipc-pull-requests'
+import type { CheckDisplay } from './check-display'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
 import { cn } from '@/lib/utils'
@@ -20,22 +21,7 @@ interface PullRequestRowProps {
   onSelect(): void
 }
 
-export interface CheckDisplay {
-  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
-  label: string
-}
-
-export interface CheckStateDisplay extends CheckDisplay {
-  /** Issue #1121 (2026-10-21 decision): every non-`none` check state now carries its own
-   * severity colour, on both the icon and the label word -- supersedes #568 decision 5 ("check
-   * status stays a plain icon+word, turning red only on failure") for PR checks only; tool-call
-   * rows elsewhere keep #570's own failure-only colour rule, unaffected. `none` keeps
-   * `text-muted-foreground`, the same colour both surfaces already showed. */
-  colorClass: string
-}
-
-// Re-exported for PullRequestDetail, still importing it from here (follow-up: lane #1501 owns that file).
-export { CHECK_STATE_DISPLAY } from './check-display'
+export { CHECK_STATE_DISPLAY, type CheckDisplay, type CheckStateDisplay } from './check-display'
 
 /** High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged was never
  * visibly conveyed anywhere -- neither the list row nor the detail header. Icon + text, same
