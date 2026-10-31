@@ -118,10 +118,16 @@ const themes = Object.create(null)
 // --sidebar-border/--divider/--border to the same literal independently, which a value compare would misreport.
 const sidebarBorderAliasesDivider = Object.create(null)
 
+// #1472: per-element defaults live in one `:is(:root, .theme-*)` block; every theme starts from them.
+const defaultProps = Object.create(null)
+for (const match of css.matchAll(/:is\(:root,[^)]*\)\s*\{([^}]*)\}/g)) {
+  for (const propMatch of match[1].matchAll(PROP_RE)) defaultProps[propMatch[1]] = propMatch[2].trim()
+}
+
 for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   const themeId = blockMatch[1]
   const body = blockMatch[2]
-  const rawProps = Object.create(null)
+  const rawProps = Object.assign(Object.create(null), defaultProps)
   for (const propMatch of body.matchAll(PROP_RE)) {
     rawProps[propMatch[1]] = propMatch[2].trim()
   }

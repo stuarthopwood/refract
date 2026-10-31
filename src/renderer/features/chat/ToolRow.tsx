@@ -84,12 +84,12 @@ function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProp
     <>
       {item.edit && <DiffView path={item.edit.path} oldText={item.edit.oldText} newText={item.edit.newText} capped />}
       {isDone && item.write && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-tool-row-fg">
           Wrote {writeLineCount} {writeLineCount === 1 ? 'line' : 'lines'} to <FileLinkButton path={item.write.path} />
         </p>
       )}
       {isDone && !item.write && summary && (
-        <p className="[overflow-wrap:anywhere] text-xs text-muted-foreground">{summary}</p>
+        <p className="[overflow-wrap:anywhere] text-xs text-tool-row-fg">{summary}</p>
       )}
       <ToolCallDialog item={item} open={dialogOpen} onOpenChange={onDialogOpenChange} />
     </>
@@ -124,7 +124,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={display.rawId}
       label={label}
-      labelClassName={failed ? 'text-severity-error' : undefined}
+      labelClassName={failed ? 'text-tool-row-error-fg' : undefined}
       summary={toolRowSummary(rawId, target)}
       summaryWrap={summaryWrap}
       wrapWhenOpen
@@ -196,7 +196,7 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
     solo
       ? callMeta(last)
       : joinMetaParts([
-          failedCount > 0 ? <span className="text-severity-error">{failedCount} failed</span> : undefined,
+          failedCount > 0 ? <span className="text-tool-row-error-fg">{failedCount} failed</span> : undefined,
           interruptedCount > 0 ? <span>{interruptedCount} interrupted</span> : undefined,
           cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined,
           totalDuration
@@ -229,7 +229,7 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
       open={open}
       onOpenChange={setOpen}
       labelShimmer={shimmer && isRunning}
-      labelClassName={failed ? 'text-severity-error' : undefined}
+      labelClassName={failed ? 'text-tool-row-error-fg' : undefined}
       summary={summary}
       summaryWrap={summaryWrap}
       wrapWhenOpen
@@ -247,7 +247,7 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
                     : failingCommandText
                 return truncatedPrefix ? (
                   <>
-                    <bdi className="inline-block max-w-[40%] truncate align-bottom text-muted-foreground">{truncatedPrefix}:</bdi>{' '}
+                    <bdi className="inline-block max-w-[40%] truncate align-bottom text-tool-row-fg">{truncatedPrefix}:</bdi>{' '}
                     {errorLine(lastFailedItem)}
                   </>
                 ) : (

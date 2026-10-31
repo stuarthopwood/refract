@@ -97,6 +97,7 @@ export function GitHubAccountRow({
             ref={mapRef(refs.checkAgain, key)}
             variant="outline"
             size="sm"
+            className="aria-disabled:opacity-50"
             aria-disabled={githubRefreshing || undefined}
             aria-label={githubRefreshing ? `Checking ${name}…` : `Check again for ${name}`}
             onClick={() => {
@@ -111,6 +112,7 @@ export function GitHubAccountRow({
             ref={mapRef(refs.signInAgain, key)}
             variant="outline"
             size="sm"
+            className="aria-disabled:opacity-50"
             aria-disabled={flowActive || undefined}
             aria-label={`Sign in again as @${account.login}`}
             onClick={() => {

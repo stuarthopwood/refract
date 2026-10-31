@@ -17,9 +17,9 @@ const THINKING_PREVIEW_CHARS = 120
 
 function thoughtIcon(streaming: boolean) {
   return streaming ? (
-    <Loader2Icon className="size-4 shrink-0 animate-spin text-state-working" />
+    <Loader2Icon className="size-4 shrink-0 animate-spin text-thinking-row-active-fg" />
   ) : (
-    <BrainIcon className="size-4 shrink-0 text-muted-foreground" />
+    <BrainIcon className="size-4 shrink-0 text-thinking-row-fg" />
   )
 }
 
@@ -37,7 +37,7 @@ function ThoughtItemRow({ item, defaultOpen }: { item: ThinkingItem; defaultOpen
       defaultOpen={defaultOpen}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-muted-foreground" />
+      <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-thinking-row-fg" />
     </CollapsedLine>
   )
 }
@@ -145,7 +145,7 @@ export function ThoughtRunRow({ group, shimmer }: ThoughtRunRowProps) {
       contentClassName={solo ? LABEL_COLUMN_CONTENT_CLASS : SPINE_HOST_CONTENT_CLASS}
     >
       {solo ? (
-        <Markdown id={soloItem.id} text={soloItem.text} streaming={soloItem.streaming} className="text-muted-foreground" />
+        <Markdown id={soloItem.id} text={soloItem.text} streaming={soloItem.streaming} className="text-thinking-row-fg" />
       ) : (
         <SpineList gap="member">
           {group.items.map((item) => (

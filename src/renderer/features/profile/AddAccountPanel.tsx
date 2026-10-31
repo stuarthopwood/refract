@@ -64,6 +64,7 @@ export function AddAccountPanel({ flow, starting, cancelling = false, reauthLogi
               ref={cancelRef}
               variant="ghost"
               size="sm"
+              className="aria-disabled:opacity-50"
               aria-disabled={!flow || cancelling || undefined}
               onClick={() => flow && !cancelling && onCancel(flow.flowId)}
             >
