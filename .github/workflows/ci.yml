@@ -81,6 +81,9 @@ jobs:
       - name: Check icon-only controls
         run: pnpm check:icon-only-controls
 
+      - name: Check literal colours
+        run: pnpm check:literal-colours
+
       - name: Check hit targets
         run: pnpm check:hit-targets
 
