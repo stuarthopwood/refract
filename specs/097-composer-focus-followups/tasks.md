@@ -6,4 +6,4 @@
 - [x] T4 `StopBanner` and `PaneBanner` labelling and padding (FR-3)
 - [x] T5 `useComposerFocusHandoff` fallback and lazy reads (FR-6)
 - [x] T6 Harden `scripts/verify-tauri-092.mjs` (FR-10)
-- [ ] T7 `ci:local`, live check, six-reviewer gate
+- [x] T7 `ci:local`, live check, six-reviewer gate
