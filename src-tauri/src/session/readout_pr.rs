@@ -117,7 +117,15 @@ fn pr_state(node: &PrNode) -> &'static str {
 }
 
 fn checks_state(node: &PrNode) -> Option<&'static str> {
-    let rollup = node.commits.nodes.iter().flatten().next()?.commit.rollup.as_ref()?;
+    let rollup = node
+        .commits
+        .nodes
+        .iter()
+        .flatten()
+        .next()?
+        .commit
+        .rollup
+        .as_ref()?;
     match rollup.state.as_str() {
         "SUCCESS" => Some("pass"),
         "FAILURE" | "ERROR" => Some("fail"),
@@ -134,7 +142,11 @@ fn to_state(node: &PrNode) -> PullRequestState {
         .flatten()
         .map(|i| LinkedIssueState {
             number: i.number,
-            state: if i.state == "CLOSED" { "closed" } else { "open" },
+            state: if i.state == "CLOSED" {
+                "closed"
+            } else {
+                "open"
+            },
             title: i.title.chars().take(TITLE_MAX_CHARS).collect(),
         })
         .collect();
