@@ -327,9 +327,8 @@ samp {
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
   --radius: 0.25rem;
-  /* Spec 012 (brand watermark, research.md decision 5, amended by #1298): the `:root` fallback
-     for the mark's opacity; every `.theme-*` block sets its own value so the mark reads at about
-     1.6:1 against that theme's `--background`. */
+  /* Spec 012 FR-004, #1369: the one home of the mark's opacity (about 1.6:1 over the Dark
+     background). A theme overrides it only where its own background needs a different value. */
   --watermark-opacity: 0.30;
   /* #1233, #1298: safe default for the Halloween artwork (bats and glyph); every `.theme-*` block
      overrides it with the value that gives about 1.6:1 against its own background. */
@@ -555,8 +554,7 @@ samp {
   /* #1233, #1298: plain watermark, Halloween bats and glyph opacity, tuned per theme so the artwork
    * reads at about 1.6:1 against `--background` (this value times the 60% muted alpha; measured
    * 1.64:1 at 0.30). Was about 3:1 (0.58) for the Halloween artwork and 1.06:1 (0.06) for the plain
-   * mark. */
-  --watermark-opacity: 0.30;
+   * mark. The plain mark uses the `:root` `--watermark-opacity`, which is this value. */
   --holiday-artwork-opacity: 0.30;
   --accent: oklch(0.269 0 0);
   --accent-foreground: var(--foreground);
@@ -1779,7 +1777,6 @@ samp {
    * popover are themselves byte-identical to Dark's own. */
   --foreground: oklch(1 0 0 / 90%);
   --muted-foreground: oklch(1 0 0 / 60%);
-  --watermark-opacity: 0.30;
   --holiday-artwork-opacity: 0.30; /* #1298: same as Dark (identical background) */
   --sidebar: oklch(0.205 0 0);
   /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
@@ -2000,8 +1997,8 @@ samp {
  * Per-holiday ambient loop layer (Full only, `HolidayAmbientLoop.tsx`): mounted in the SAME
  * `-z-10`/`isolate` background layer `BrandWatermark.tsx`'s own 'live' variant uses. Gate round
  * 3 fix (High, item 2, FR-008 regression): scoped to ONE pane's own transcript container
- * (`ChatPane.tsx`'s `showAmbientLoop` prop) or `EmptyChatState.tsx`'s own box (no session open
- * at all) -- never `ChatPane.tsx`'s own `!session` Empty fallback, and never the whole chat
+ * (`ChatPane.tsx`'s `showAmbientLoop` prop) -- never `ChatPane.tsx`'s own `!session` Empty
+ * fallback, and never the whole chat
  * panel a round 2 hoist briefly spanned, which let it paint UNDER the composer. Painting BEHIND
  * normal-flow content by construction satisfies "never over text or controls" and "never under
  * the composer's input area" (the composer is a separate sibling outside the transcript

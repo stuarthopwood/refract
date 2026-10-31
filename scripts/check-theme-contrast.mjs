@@ -51,11 +51,17 @@ if (Object.keys(themeMetadata).length !== declaredThemeIds.length) {
   process.exit(2)
 }
 
-// `--watermark-opacity` is theme-independent, declared once in `:root`.
+// `--watermark-opacity` has one `:root` default; a theme scope may override it where its background needs it.
 const ROOT_BLOCK_RE = /:root\s*\{([^}]*)\}/
+const WATERMARK_OPACITY_RE = /--watermark-opacity:\s*([\d.]+)\s*;/
 const rootMatch = css.match(ROOT_BLOCK_RE)
-const watermarkOpacityMatch = rootMatch ? rootMatch[1].match(/--watermark-opacity:\s*([\d.]+)\s*;/) : null
+const watermarkOpacityMatch = rootMatch ? rootMatch[1].match(WATERMARK_OPACITY_RE) : null
 const watermarkOpacity = watermarkOpacityMatch ? Number(watermarkOpacityMatch[1]) : null
+const themeWatermarkOpacity = (themeId) => {
+  const block = css.match(new RegExp(`\\.theme-${themeId}\\s*\\{([^}]*)\\}`))
+  const override = block ? block[1].match(WATERMARK_OPACITY_RE) : null
+  return override ? Number(override[1]) : watermarkOpacity
+}
 
 // Soft decorative dividers (`--divider`, never `--border`) carry no WCAG 1.4.11 floor, so presence only --
 // except where a preset's `--sidebar-border` aliases `--divider` (a real hover fill), which a check below floors.
@@ -344,7 +350,7 @@ if (watermarkOpacity === null) {
       continue
     }
     // `--muted-foreground` is itself translucent, and CSS `opacity` multiplies with it, so the mark's alpha is the product.
-    const markEntry = { raw: 'mark', alpha: mutedFg.alpha * watermarkOpacity, linear: mutedFg.linear }
+    const markEntry = { raw: 'mark', alpha: mutedFg.alpha * themeWatermarkOpacity(themeId), linear: mutedFg.linear }
     const markBackdropLinear = resolvedLinear(markEntry, background)
     const markBackdropEntry = { raw: 'mark-on-background', alpha: 1, linear: markBackdropLinear }
     for (const fg of ['muted-foreground', 'chat-foreground']) {
