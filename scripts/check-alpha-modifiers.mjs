@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Static guard (#579): colour utilities in src/renderer must not use Tailwind opacity modifiers;
 // translucent surfaces are tokens in globals.css. Baselined per file, may shrink, never grow.
-// Not detected: concatenated class fragments, `opacity-50`, `color-mix()` values, files outside src/renderer.
+// Not detected: concatenated class fragments, `bg-(--x)/50` and `bg-[#fff]/50` forms, `opacity-50`, `color-mix()` values, files outside src/renderer.
 // A modifier after a trailing `//` comment is counted (false positive).
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';

@@ -4,7 +4,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
-// The dark Off track uses a token tuned to clear 3:1; g-input/80 composited to about 1.33:1.
+// The dark Off track uses a token tuned to clear 3:1; the old bg-input/80 composited to about 1.33:1.
 function Switch({
   className,
   ...props
