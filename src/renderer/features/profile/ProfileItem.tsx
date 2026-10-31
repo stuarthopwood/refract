@@ -3,12 +3,11 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SettingsIcon, TriangleAlertIcon } from 'lucide-react'
 import { PauseAllButton } from './PauseAllButton'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { UserAvatar } from '@/components/UserAvatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { initials } from '@/lib/initials'
 import { HolidayAccessory } from '@/features/holidays/HolidayAccessory'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { notify, useAccountsStore, useViewStore } from '@/state'
@@ -164,18 +163,13 @@ export function ProfileItem() {
                 data-profile-name-button
                 className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-expanded:bg-muted"
               >
-                <Avatar size="sm">
-                  {!missingCli && !githubError && <AvatarImage src={account?.avatarDataUrl ?? undefined} alt="" />}
-                  <AvatarFallback className={githubError ? 'text-state-needs-you' : undefined}>
-                    {missingCli ? (
-                      '?'
-                    ) : githubError ? (
-                      <TriangleAlertIcon aria-hidden className="size-4" />
-                    ) : (
-                      initials(name ?? '?')
-                    )}
-                  </AvatarFallback>
-                </Avatar>
+                <UserAvatar
+                  size="sm"
+                  name={name ?? '?'}
+                  src={!missingCli && !githubError ? (account?.avatarDataUrl ?? undefined) : undefined}
+                  fallbackClassName={githubError ? 'text-state-needs-you' : undefined}
+                  fallback={missingCli ? '?' : githubError ? <TriangleAlertIcon aria-hidden className="size-4" /> : undefined}
+                />
                 <span className="min-w-0 flex-1 truncate text-sm">{name ?? 'Sign in'}</span>
                 {authProblem && <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />}
               </button>

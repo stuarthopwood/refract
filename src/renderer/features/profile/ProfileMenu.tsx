@@ -2,7 +2,6 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ActivityIcon,
-  DownloadIcon,
   ExternalLinkIcon,
   KeyboardIcon,
   LayersIcon,
@@ -16,7 +15,8 @@ import {
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ExternalLink } from '@/components/ExternalLink'
+import { UserAvatar } from '@/components/UserAvatar'
 import { ThemeSwatchChip } from '@/components/ui/theme-swatch-chip'
 import {
   DropdownMenuContent,
@@ -29,7 +29,6 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
-import { initials } from '@/lib/initials'
 import { updateUnavailableReasonText } from '@/lib/updateStatus'
 import { useAccountsStore, useActiveThemeId, useThemeStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
@@ -245,10 +244,7 @@ export function ProfileMenuContent({
       {signedIn && account ? (
         <>
           <DropdownMenuLabel className="flex items-center gap-2 font-normal">
-            <Avatar>
-              <AvatarImage src={account.avatarDataUrl ?? undefined} alt="" />
-              <AvatarFallback>{initials(account.displayName ?? account.login)}</AvatarFallback>
-            </Avatar>
+            <UserAvatar name={account.displayName ?? account.login} src={account.avatarDataUrl ?? undefined} />
             <div className="flex min-w-0 flex-1 flex-col leading-tight">
               {/* UI M4 (quality-gate remediation): icon plus text, never colour alone, when the
                   ACTIVE account's own GitHub sign-in needs attention. */}
@@ -271,12 +267,7 @@ export function ProfileMenuContent({
         </>
       ) : githubStatus === 'missing-cli' ? (
         <DropdownMenuItem key="first-row" asChild>
-          <a href="https://cli.github.com" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2">
-            <DownloadIcon aria-hidden />
-            <span className="flex-1">Install GitHub CLI</span>
-            <ExternalLinkIcon aria-hidden className="size-4" />
-            <span className="sr-only"> Opens in your browser</span>
-          </a>
+          <ExternalLink href="https://cli.github.com" className="w-full"><span className="flex-1">Install GitHub CLI</span></ExternalLink>
         </DropdownMenuItem>
       ) : githubStatus === 'error' ? (
         <DropdownMenuItem

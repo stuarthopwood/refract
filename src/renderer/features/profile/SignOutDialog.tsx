@@ -19,13 +19,13 @@ export interface SignOutDialogProps {
 
 function signOutBody(account: GitHubAccount, accounts: GitHubAccount[]): string {
   if (!account.active) {
-    return `Sign out @${account.login} on ${account.host}? Your other accounts will remain signed in.`
+    return `This signs @${account.login} out on ${account.host}. Your other accounts stay signed in.`
   }
   const next = signOutSuccessor(accounts, account)
   if (next) {
-    return `Sign out @${account.login} on ${account.host}? @${next.login} will become the active account.`
+    return `This signs @${account.login} out on ${account.host}. @${next.login} becomes the active account.`
   }
-  return `Sign out @${account.login} on ${account.host}? No account will remain active.`
+  return `This signs @${account.login} out on ${account.host}. No account will be active afterwards.`
 }
 
 export function SignOutDialog({ account, accounts, onOpenChange, onCloseFocus }: SignOutDialogProps) {
