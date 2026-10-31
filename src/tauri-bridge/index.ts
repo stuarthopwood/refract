@@ -15,7 +15,7 @@ import { usageBridge } from './usage'
 import type { AdvisorRoster, AdvisorRosterDetected } from '../shared/ipc-advisor-roster'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { ClosedBranchesResult } from '../shared/ipc-home'
-import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch } from '../shared/ipc-issues'
+import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
@@ -348,7 +348,9 @@ const refract: RefractApi = {
       request<CreatedIssue>(IPC_REQUESTS.ISSUES_CREATE, repositoryId, title, body, labels),
     list: (tab, state, repositoryIds, label, query) =>
       request<IssueListResult>(IPC_REQUESTS.ISSUES_LIST, tab, state, repositoryIds, label, query),
-    view: (repositoryId, number) => request<IssueDetail>(IPC_REQUESTS.ISSUES_VIEW, repositoryId, number)
+    view: (repositoryId, number) => request<IssueDetail>(IPC_REQUESTS.ISSUES_VIEW, repositoryId, number),
+    newSession: (repositoryId, number) =>
+      request<SessionWithKickoff>(IPC_REQUESTS.ISSUES_NEW_SESSION, repositoryId, number)
   },
 
   home: {
@@ -375,7 +377,7 @@ const refract: RefractApi = {
     close: (repositoryId, number) => request<Record<string, never>>(IPC_REQUESTS.PULL_REQUESTS_CLOSE, repositoryId, number),
     fetchImage: (url) => request<{ dataUrl: string }>(IPC_REQUESTS.PULL_REQUESTS_FETCH_IMAGE, url),
     newSessionFromPullRequest: (repositoryId, number) =>
-      request<Session>(IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST, repositoryId, number)
+      request<SessionWithKickoff>(IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST, repositoryId, number)
   },
 
   theme: {
