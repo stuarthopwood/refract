@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.18.0 (2026-10-31)
+
+### Features
+
+- feat(design): icon buttons, hit targets and translucent tokens (#579) (https://github.com/stuarthopwood/refract/pull/1475)
+- feat(profile): finish profile menu and account management (spec 008) (https://github.com/stuarthopwood/refract/pull/1478)
+- feat(theming): custom theme files, contrast warnings and reset (#458) (https://github.com/stuarthopwood/refract/pull/1480)
+- feat(design): design sweep slices D-F (https://github.com/stuarthopwood/refract/pull/1483)
+- feat(design): per-element theme tokens and theme leftovers (https://github.com/stuarthopwood/refract/pull/1487)
+
+### Fixes
+
+- fix(chat): gate follow-ups for specs 075, 076 and 008 (https://github.com/stuarthopwood/refract/pull/1484)
+- fix(gate-leftovers): close #1481 and #1482 gate leftovers (https://github.com/stuarthopwood/refract/pull/1489)
+
+### Other
+
+- refactor(ui): migrate remaining confirm dialogs and polish transcript menus (https://github.com/stuarthopwood/refract/pull/1471)
+- chore(design): enforce no literal colours in the renderer (https://github.com/stuarthopwood/refract/pull/1490)
+
 ## v0.17.0 (2026-10-30)
 
 ### Features
