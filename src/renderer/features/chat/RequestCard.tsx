@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
 import { CollapsedLine } from './CollapsedLine'
-import { consumeAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
+import { consumeAskFocusPending, markAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { isFocusStranded } from '@/lib/focus'
 import { UserAvatar } from '@/components/UserAvatar'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
@@ -305,9 +305,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {
-    const active = document.activeElement
-    // The busy state disables the focused control and the card then swaps to the summary row, so hand focus on.
-    if (active && active !== document.body) markAskFocusPendingWithFallback(`${sessionId}:${request.requestId}`, sessionId)
+    const hadFocus = document.activeElement !== document.body && document.activeElement !== null
     setBusy(true)
     setError(null)
     const result = await window.refract.chat.answer(sessionId, request.requestId, value)
@@ -316,6 +314,8 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
       setError(result.error.message)
       return
     }
+    // Armed at the swap, not before the await: busy disables the focused control and the summary row must claim focus.
+    if (hadFocus) markAskFocusPending(`${sessionId}:${request.requestId}`)
     setResolved({ kind, detail })
     if (request.kind === 'question' && request.secret) setText('')
   }
@@ -361,7 +361,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
     placeholder: request.secret ? 'Enter the secret' : 'Type an answer',
     onChange: (event: React.ChangeEvent<HTMLInputElement>) => setText(event.target.value),
     onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === 'Enter' && trimmedText)       void answer({ value: answerValue }, 'answered', answerSummary)
+      if (event.key === 'Enter' && trimmedText) void answer({ value: answerValue }, 'answered', answerSummary)
     }
   }
   const { heading, body } = splitQuestionHeading(request.title)
