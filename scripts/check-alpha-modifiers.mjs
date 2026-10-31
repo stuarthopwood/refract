@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Static guard (#579): colour utilities in src/renderer must not use Tailwind opacity modifiers
-// (bg-muted/50); translucent surfaces are tokens in globals.css. Existing uses are baselined per
-// file in alpha-modifiers-baseline.json and may shrink, never grow.
+// Static guard (#579): colour utilities in src/renderer must not use Tailwind opacity modifiers;
+// translucent surfaces are tokens in globals.css. Baselined per file, may shrink, never grow.
+// Not detected: concatenated class fragments, `bg-(--x)/50` and `bg-[#fff]/50` forms, `opacity-50`, `color-mix()` values, files outside src/renderer.
+// A modifier after a trailing `//` comment is counted (false positive).
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -10,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'alpha-modifiers-baseline.json');
-const TOKEN = /(?<![\w/-])(?:bg|text|ring|border|fill|stroke|shadow|outline|from|via|to|divide|decoration|caret|accent)-[a-z][a-z0-9-]*\/\d+(?![\w/])/g;
+const TOKEN = /(?<![\w/-])(?:bg|text|ring|border|fill|stroke|shadow|outline|from|via|to|divide|decoration|caret|accent|placeholder|inset-ring|ring-offset|drop-shadow|text-shadow)-[a-z][a-z0-9-]*\/(?:\d+(?:\.\d+)?|\[[^\]\s]+\])(?![\w/])/g;
 const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target', 'assets']);
 
 export function countAlphaModifiers(text) {

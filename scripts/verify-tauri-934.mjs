@@ -82,7 +82,7 @@ async function sidebarSnapshot(cdp) {
       count: rows.length,
       tableOnly: rows.filter((li) => li.querySelector('.manage-session-open-button')).length,
       withSessionOpen: rows.filter((li) => li.querySelector('[data-session-open]')).length,
-      withMenuTrigger: rows.filter((li) => li.querySelector('button[aria-label$=" actions"]')).length,
+      withMenuTrigger: rows.filter((li) => li.querySelector('button[aria-label^="More actions for "]')).length,
       names: rows.map((li) => (li.querySelector('[data-session-open]')?.textContent || '').trim().slice(0, 40))
     };
   })()`);
@@ -119,7 +119,7 @@ async function runChecks(cdp, { repoA, repoB, repoAName, repoBName }) {
       count: rows.length,
       openButtons: rows.filter((li) => li.querySelector('button.manage-session-open-button')).length,
       quick: rows.filter((li) => li.querySelector('button[aria-label^="Archive session "]')).length,
-      menu: rows.filter((li) => li.querySelector('button[aria-label$=" actions"]')).length,
+      menu: rows.filter((li) => li.querySelector('button[aria-label^="More actions for "]')).length,
       projects: rows.map((li) => li.querySelector('.manage-session-open-button').children[2]?.textContent.trim()),
       cols,
       nestedButtons: rows.filter((li) => li.querySelector('.manage-session-open-button button')).length
@@ -152,7 +152,7 @@ async function runChecks(cdp, { repoA, repoB, repoAName, repoBName }) {
   assert(true, 'quick Restore returned the row to the active list');
 
   // ---- Row action: "..." menu shares the sidebar's items; Rename uses the shared input ----
-  await cdp.click(`${manageRows()}[0].querySelector('button[aria-label$=" actions"]')`);
+  await cdp.click(`${manageRows()}[0].querySelector('button[aria-label^="More actions for "]')`);
   const items = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menuitem"]')).map((el) => el.textContent.trim())`);
   log(`manage "..." menu items: ${JSON.stringify(items)}`);
   await cdp.screenshot(path.join(SHOTS_DIR, '05-manage-row-menu.png'));

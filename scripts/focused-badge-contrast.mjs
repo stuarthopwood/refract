@@ -33,12 +33,12 @@ export function focusedBadgeContrastRows(themes) {
       const fgLinear = resolvedLinear(entry, tintBackdrop)
       push(name, 'pane-focused', min, contrastRatio(relativeLuminance(fgLinear), tintLum), linearToHex(fgLinear), linearToHex(tintBackdrop.linear))
     }
-    const accent = props['accent']
-    if (accent) {
-      const bubble = { raw: 'bubble', alpha: 1, linear: resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, tintBackdrop) }
+    const muted = props['muted']
+    if (muted) {
+      const bubble = { raw: 'bubble', alpha: 1, linear: resolvedLinear({ raw: 'muted/50', alpha: 0.5, linear: muted.linear }, tintBackdrop) }
       for (const name of ['accent-text', 'chat-foreground']) {
         const fgLinear = resolvedLinear(props[name], bubble)
-        push(name, 'user-bubble (accent/50 on pane-focused)', 4.5, contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bubble.linear)), linearToHex(fgLinear), linearToHex(bubble.linear))
+        push(name, 'user-bubble (muted/50 on pane-focused)', 4.5, contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bubble.linear)), linearToHex(fgLinear), linearToHex(bubble.linear))
       }
     }
     const surfaceBackdrop = { raw: 'surface-1', alpha: 1, linear: resolvedLinear(surface1, background) }

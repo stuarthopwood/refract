@@ -82,7 +82,7 @@ async function sidebarSnapshot(cdp) {
       count: rows.length,
       tableOnly: rows.filter((li) => li.querySelector('.manage-session-open-button')).length,
       withSessionOpen: rows.filter((li) => li.querySelector('[data-session-open]')).length,
-      withMenuTrigger: rows.filter((li) => li.querySelector('button[aria-label$=" actions"]')).length,
+      withMenuTrigger: rows.filter((li) => li.querySelector('button[aria-label^="More actions for "]')).length,
       names: rows.map((li) => (li.querySelector('[data-session-open]')?.textContent || '').trim().slice(0, 40))
     };
   })()`);

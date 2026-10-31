@@ -71,7 +71,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
       <div key={e.key}>
         <RowKebabMenu
           entries={entries}
-          label={`Actions for ${e.name}`}
+          label={`More actions for ${e.name}`}
           below={
             warnings.length > 0 && (
               <div className="px-2 pb-1">

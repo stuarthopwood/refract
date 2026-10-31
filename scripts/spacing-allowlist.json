@@ -1,6 +1,7 @@
 [
   { "file": "src/renderer/components/ProjectListPane.tsx", "text": "right-0.5", "count": 1, "reason": "2px optical nudge of the unread dot against the row edge" },
   { "file": "src/renderer/components/ProjectListPane.tsx", "text": "top-0.5", "count": 1, "reason": "2px optical nudge of the unread dot against the row edge" },
+  { "file": "src/renderer/features/sessions/SessionRow.tsx", "text": "top-0.5", "count": 1, "reason": "centres the 24px h-6 action strip on the 20px title line below py-1" },
   { "file": "src/renderer/components/reorder/use-reorderable.ts", "text": "-top-[3px]", "count": 1, "reason": "drop indicator is centred on the 8px gap between rows" },
   { "file": "src/renderer/components/reorder/use-reorderable.ts", "text": "-bottom-[3px]", "count": 1, "reason": "drop indicator is centred on the 8px gap between rows" },
   { "file": "src/renderer/components/SearchField.tsx", "text": "left-[9px]", "count": 1, "reason": "centres the 16px icon in the 34px-tall field" },

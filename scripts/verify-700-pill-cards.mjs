@@ -192,7 +192,7 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
 async function openSessionInSplitViaMenu(cdp, sessionId) {
   const openBtnSelector = `document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`;
   await hoverElement(cdp, openBtnSelector);
-  const menuBtnFinder = `(() => { const openBtn = ${openBtnSelector}; const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label$=" actions"]') ?? null; })()`;
+  const menuBtnFinder = `(() => { const openBtn = ${openBtnSelector}; const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label^="More actions for "]') ?? null; })()`;
   await cdp.click(menuBtnFinder);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'Session row actions menu open' });
   const clicked = await cdp.evaluate(`(() => {

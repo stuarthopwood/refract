@@ -65,7 +65,7 @@ async function main() {
 
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`, { timeoutMs: 45_000, label: 'app ready' });
     await addRepository(cdp, repoDir);
-    const triggerSel = `document.querySelector('[aria-label="Project actions for hello-world"]')`;
+    const triggerSel = `document.querySelector('[aria-label="More actions for hello-world"]')`;
     await cdp.waitFor(`!!${triggerSel}`, { timeoutMs: 20_000, label: 'repository actions trigger' });
     pass('Added scratch repository with a github.com origin');
 
