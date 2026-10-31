@@ -25,7 +25,7 @@ export function PanelHeader({ as: Tag = 'div', ref, className, children, actions
   return (
     <Root ref={ref} className={cn('drag-region titlebar-surface flex shrink-0 items-center gap-2 px-4', PANEL_HEADER_HEIGHT_CLASS, className)}>
       {children}
-      {actions && <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="no-drag-region ml-auto flex min-w-0 shrink items-center gap-2">{actions}</div>}
       {windowControlsSpacerStyle && (
         <div aria-hidden className={cn('no-drag-region shrink-0', !actions && 'ml-auto')} style={windowControlsSpacerStyle} />
       )}

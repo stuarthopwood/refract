@@ -1,14 +1,13 @@
 import { useRef } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
+import { Separator } from '@/components/ui/separator'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
-import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
-import { useHolidayStore, useSettingsStore } from '@/state'
+import { useSettingsStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
 import { TextSizeGroup } from './TextSizeGroup'
@@ -24,8 +23,6 @@ export function AppearanceSection() {
   const setActivityText = useSettingsStore((state) => state.setActivityText)
   const animatedStatusText = useSettingsStore((state) => state.settings.animatedStatusText !== false)
   const setAnimatedStatusText = useSettingsStore((state) => state.setAnimatedStatusText)
-  const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
-  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   // SettingsPage focuses this heading (shared via headingRef) on mount, which covers every
@@ -53,24 +50,18 @@ export function AppearanceSection() {
         <TextSizeGroup />
         <ChatRowSpacingGroup />
         {/* Spec 012 (research.md decisions 9, 14) and #1048: these apply live. */}
+        <Separator className="mb-6 bg-divider" />
         <SettingsGroup title="Decoration">
           <div>
-            {/* Quality-gate remediation (accessibility-auditor, Low): only the title is the label;
-                the description is wired in via `aria-describedby` so it is announced once, as a hint. */}
-            <SettingRow
+            <SettingSwitchRow
               id="watermark-toggle"
               label="Background watermark"
-              description={holidayEntry ? 'A faint mark shown in the corner of the chat area — a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
-            >
-              <Switch
-                id="watermark-toggle"
-                aria-describedby="watermark-toggle-description"
-                checked={watermarkEnabled}
-                onCheckedChange={(checked) => void setWatermarkEnabled(checked)}
-              />
-            </SettingRow>
+              description="A faint Refract mark shown in the corner of the chat area."
+              checked={watermarkEnabled}
+              onCheckedChange={(checked) => void setWatermarkEnabled(checked)}
+            />
             <div className="mb-4 flex size-28 items-center justify-center rounded-md border border-border">
-              <BrandWatermark variant="preview" />
+              <BrandWatermark variant="preview" allowHoliday={false} />
             </div>
           </div>
           <SettingRow

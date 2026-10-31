@@ -55,7 +55,7 @@ async function launch(env) {
       REFRACT_FAKE_OMP_SCENARIO: 'session',
       REFRACT_883_CALL_LOG: path.join(env.shimDir, 'gh-calls.log'),
       // A date with no holiday, so the plain mark (not a seasonal glyph) renders.
-      REFRACT_DATE_OVERRIDE: '2026-06-15'
+      REFRACT_DATE_OVERRIDE: env.dateOverride ?? '2026-06-15'
     }
   });
   const cdp = await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 }));
@@ -75,6 +75,37 @@ async function openAppearance(cdp) {
   await sleep(300);
 }
 const switchState = (cdp) => cdp.evaluate(`document.getElementById('watermark-toggle')?.getAttribute('aria-checked')`);
+const pressTab = async (cdp, shift = false) => {
+  for (const type of ['rawKeyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, ...(shift ? { modifiers: 8 } : {}) });
+  await sleep(150);
+};
+const activeInfo = (cdp) => cdp.evaluate(`(() => { const a = document.activeElement; return { id: a?.id ?? '', tag: a?.tagName ?? '', inMark: !!a?.closest('.watermark-mark, .watermark-mark-holiday') }; })()`);
+
+// Real Tab key presses (not .focus()) through the Appearance switch, then the accessibility tree.
+async function runKeyboardAndA11yChecks(cdp) {
+  await openAppearance(cdp);
+  await cdp.send('Accessibility.enable');
+  await cdp.evaluate(`(() => { const sel = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'; const all = Array.from(document.querySelectorAll(sel)).filter((el) => !el.disabled && el.getClientRects().length); const i = all.findIndex((el) => el.id === 'watermark-toggle'); all[i - 1].focus(); })()`);
+  await pressTab(cdp);
+  const onSwitch = await activeInfo(cdp);
+  check(onSwitch.id === 'watermark-toggle', 'Tab from the previous control lands on the Background watermark switch', onSwitch);
+  const walked = [];
+  for (let i = 0; i < 6; i++) { await pressTab(cdp); walked.push(await activeInfo(cdp)); }
+  check(walked.every((w) => w.inMark === false && w.tag !== 'BODY'), 'Six more Tab presses never land inside a watermark mark', walked);
+  await pressTab(cdp, true);
+  for (let i = 0; i < 5; i++) await pressTab(cdp, true);
+  const back = await activeInfo(cdp);
+  check(back.inMark === false && back.tag !== 'BODY', 'Shift+Tab walk back never lands inside a watermark mark or on BODY', back);
+
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  const sw = nodes.filter((n) => n.role?.value === 'switch' && n.name?.value === 'Background watermark' && !n.ignored);
+  const described = sw[0]?.properties?.some((p) => p.name === 'describedby') || sw[0]?.description?.value?.includes('faint');
+  check(sw.length === 1 && !!described, 'Accessibility tree: one "Background watermark" switch, described by its hint', { count: sw.length, description: sw[0]?.description?.value });
+  const { result } = await cdp.send('Runtime.evaluate', { expression: `document.querySelector('.watermark-mark:not(.watermark-mark--live)')` });
+  const partial = result?.objectId ? await cdp.send('Accessibility.getPartialAXTree', { objectId: result.objectId, fetchRelatives: false }) : { nodes: [] };
+  check(partial.nodes.length > 0 && partial.nodes.every((n) => n.ignored === true), 'Accessibility tree: the preview mark is ignored (decorative)', partial.nodes.map((n) => ({ ignored: n.ignored, role: n.role?.value })));
+  await shot(cdp, '15-keyboard-a11y.png');
+}
 async function setSwitch(cdp, wanted) {
   await openAppearance(cdp);
   if ((await switchState(cdp)) !== String(wanted)) await cdp.click(`document.getElementById('watermark-toggle')`);
@@ -139,12 +170,16 @@ async function runLayoutChecks(cdp) {
   await cdp.evaluate(`(() => { const el = ${composerSel}; el.focus(); el.select(); document.execCommand('delete'); })()`);
   await sleep(300);
 
+  const chipOverlap = `(() => { const bad = []; let total = 0; for (const h of document.querySelectorAll('header')) { const H = h.getBoundingClientRect(); const els = [...h.querySelectorAll('button,[data-slot=badge]')].filter((e) => e.offsetWidth); total += els.length; els.forEach((a, i) => { const r = a.getBoundingClientRect(); if (r.left < H.left - 0.5 || r.right > H.right + 0.5) bad.push('overflow:' + (a.getAttribute('aria-label') || a.textContent.trim())); els.slice(i + 1).forEach((b) => { if (a.contains(b) || b.contains(a)) return; const s = b.getBoundingClientRect(); if (!(r.right <= s.left + 0.5 || s.right <= r.left + 0.5 || r.bottom <= s.top + 0.5 || s.bottom <= r.top + 0.5)) bad.push('overlap:' + (a.getAttribute('aria-label') || a.textContent.trim()) + '|' + (b.getAttribute('aria-label') || b.textContent.trim())); }); }); } if (total < 2) bad.push('measured:' + total); return bad; })()`;
   const sizes = [];
+  let chips620 = [];
   for (const width of [1100, 800, 620]) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 700, deviceScaleFactor: 1, mobile: false });
     await sleep(600);
     sizes.push({ width, ...(await layoutState(cdp)) });
+    if (width === 620) chips620 = await cdp.evaluate(chipOverlap);
   }
+  check(chips620.length === 0, 'Header chips at 620px: none overlap or overflow the header', chips620);
   await shot(cdp, '10-resized-narrow.png');
   await cdp.send('Emulation.clearDeviceMetricsOverride');
   await sleep(600);
@@ -297,6 +332,7 @@ async function main() {
     check((await cdp.evaluate(PREVIEW_COUNT)) === 1, 'Settings: exactly one preview mark', null);
     check((await switchState(cdp)) === 'true', 'Settings: switch defaults to on', null);
     await shot(cdp, '04-settings-on.png');
+    await runKeyboardAndA11yChecks(cdp);
 
     await setSwitch(cdp, false);
     check((await cdp.evaluate(PREVIEW_COUNT)) === 0, 'Switch off: preview disappears immediately', null);
@@ -362,6 +398,14 @@ async function main() {
       if (name === 'missing key') await shot(cdp, '08-hand-edited-missing-key.png');
     }
 
+    // A holiday date: the Settings preview must still show the plain mark, like the session pane (#1256).
+    env.dateOverride = '2026-10-31';
+    await restart();
+    await openAppearance(cdp);
+    const holidayPreview = await cdp.evaluate(`({ plain: document.querySelectorAll('.watermark-mark:not(.watermark-mark--live)').length, holiday: document.querySelectorAll('.watermark-mark-holiday').length, live: ${LIVE}.length })`);
+    check(holidayPreview.plain === 1 && holidayPreview.holiday === 0, 'Holiday date: the Settings preview is the plain mark, not holiday art', holidayPreview);
+    await shot(cdp, '16-settings-holiday-date.png');
+
     const ghLog = path.join(shimDir, 'gh-calls.log');
     let ghCalls = [];
     try { ghCalls = readFileSync(ghLog, 'utf8').split('\n').filter(Boolean); } catch {}
@@ -372,7 +416,9 @@ async function main() {
     try { if (session) await session.cdp.screenshot(path.join(SHOTS_DIR, 'crash.png')); } catch {}
     process.exitCode = 1;
   } finally {
-    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
+    const git = (...args) => spawnSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8', windowsHide: true }).stdout?.trim() ?? '';
+    const out = { gitHead: git('rev-parse', 'HEAD'), dirty: git('status', '--short').length > 0, failures: report.filter((r) => !r.ok).map((r) => r.step), results: report };
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(out, null, 2));
     if (session) {
       session.cdp.close();
       await stopLauncher(session.child).catch(() => {});
