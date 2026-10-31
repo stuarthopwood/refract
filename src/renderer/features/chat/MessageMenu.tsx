@@ -1,8 +1,7 @@
 import * as React from 'react'
 import { CopyIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/IconButton'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { actionMenuItem, menuSeparator, type MenuKind } from '@/features/palette/menuItems'
 import { cn } from '@/lib/utils'
 import { useChatNavStore } from '@/state/chat-nav-store'
@@ -13,6 +12,13 @@ import { markdownToPlainText } from './markdownPlainText'
 import { TranscriptKebab, TranscriptMenu } from './TranscriptMenu'
 
 const NOTHING = 'Nothing to copy: this message only contains hidden characters'
+
+// Distinguishes one row's kebab from the next by the message's opening words.
+function messageSnippet(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  const chars = Array.from(flat)
+  return chars.length > 32 ? `${chars.slice(0, 32).join('').trimEnd()}…` : flat
+}
 
 function ScrollToPromptItem({ sessionId, messageId, kind }: { sessionId: string; messageId: string; kind: MenuKind }) {
   const promptId = precedingUserMessageId(useChatNavStore.getState().bySession[sessionId]?.index ?? [], messageId)
@@ -55,6 +61,7 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
     }
   }, [armed])
 
+  const snippet = React.useMemo(() => messageSnippet(text), [text])
   const items = (kind: MenuKind) => (
     <>
       {actionMenuItem('transcript.copy-message', { kind, onSelect: () => void copyLinkText(text, 'Message copied', NOTHING) })}
@@ -71,28 +78,21 @@ export function MessageMenu({ id, text, streaming = false, sessionId, align = 's
           (armed ? (
             <>
               <CopyButton getText={() => text} label="Copy message" announcement="Message copied" className={REVEAL_CLASS} />
-              <TranscriptKebab items={items} align={align} className={REVEAL_CLASS} />
+              <TranscriptKebab items={items} align={align} label={snippet ? `More actions, ${snippet}` : 'More actions'} className={REVEAL_CLASS} />
             </>
           ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label="Copy message"
-                  className={cn('shrink-0', REVEAL_CLASS)}
-                  onClick={() => void copyLinkText(text, 'Message copied', NOTHING)}
-                  onFocus={() => {
-                    focusOnArmRef.current = true
-                    setArmed(true)
-                  }}
-                >
-                  <CopyIcon aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Copy message</TooltipContent>
-            </Tooltip>
+            <IconButton
+              label="Copy message"
+              size="icon-xs"
+              className={cn('shrink-0', REVEAL_CLASS)}
+              onClick={() => void copyLinkText(text, 'Message copied', NOTHING)}
+              onFocus={() => {
+                focusOnArmRef.current = true
+                setArmed(true)
+              }}
+            >
+              <CopyIcon aria-hidden />
+            </IconButton>
           ))}
       </div>
     </TranscriptMenu>

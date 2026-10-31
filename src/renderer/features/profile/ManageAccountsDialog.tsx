@@ -17,7 +17,7 @@ export interface ManageAccountsDialogProps {
   onCloseFocus?(): void
 }
 
-/** Imperative focus targets ProfileItem.tsx needs after the shared SignOutDialog closes (its own */
+/** Imperative focus targets ProfileItem.tsx needs after the shared SignOutDialog closes. */
 export interface ManageAccountsDialogHandle {
   focusAccountSignOutButton(host: string, login: string): boolean
   focusAddAccountButton(): boolean

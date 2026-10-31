@@ -2,36 +2,25 @@
 // Static guard (#1468): icon-only controls must be IconButton (label = tooltip = aria-label), not a
 // hand-built Button size="icon*". Existing uses are baselined per file and may shrink, never grow.
 
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rendererTsxFiles } from './renderer-tsx-files.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'icon-only-controls-baseline.json');
-const TOKEN = /<Button\b[^<]*?\bsize=(?:\{\s*)?["']icon[^"']*["']/g;
-const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target', 'assets']);
+// A conditional size (`size={cond ? 'icon-sm' : 'sm'}`) counts too.
+const TOKEN = /<Button\b[^<]*?\bsize=(?:\{[^}]*?)?["']icon[^"']*["']/g;
 const EXEMPT_FILES = new Set(['src/renderer/components/IconButton.tsx', 'src/renderer/components/ui/button.tsx']);
 
 export function countHandBuiltIconButtons(text) {
   return [...text.matchAll(TOKEN)].length;
 }
 
-function walk(dir, files) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (!EXCLUDED_DIRS.has(entry.name)) walk(path.join(dir, entry.name), files);
-    } else if (/\.tsx$/.test(entry.name) && !/\.(test|spec)\./.test(entry.name)) {
-      files.push(path.join(dir, entry.name));
-    }
-  }
-}
-
 function scan() {
-  const files = [];
-  walk(path.join(repoRoot, 'src', 'renderer'), files);
   const out = {};
-  for (const file of files.sort()) {
+  for (const file of rendererTsxFiles(path.join(repoRoot, 'src', 'renderer'))) {
     const rel = path.relative(repoRoot, file).split(path.sep).join('/');
     if (EXEMPT_FILES.has(rel)) continue;
     const count = countHandBuiltIconButtons(readFileSync(file, 'utf8'));

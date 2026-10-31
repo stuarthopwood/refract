@@ -92,7 +92,7 @@ export function MyIssuesSection({ hasGithubProjects }: { hasGithubProjects: bool
         <>
           <FilterTabs<HomeIssueTab> value={tab} onValueChange={setTab} tabs={ISSUE_TABS} ariaLabel="Issue filter" />
           <Button type="button" variant="outline" size="sm" onClick={openIssues}>
-            See all
+            Show all
           </Button>
         </>
       }

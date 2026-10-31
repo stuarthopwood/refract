@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { BellIcon, BellRingIcon } from 'lucide-react'
 import { READOUT_KIND_ICONS } from '@/components/icons/readout-icons'
+import { FieldLabel } from '@/components/FieldLabel'
 import { ListCardButton } from '@/components/ListCardButton'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
@@ -37,6 +38,8 @@ function nextOccurrence(hhmm: string, now: number): number {
 
 const isTomorrow = (ms: number, now: number): boolean => new Date(ms).toDateString() === new Date(now + DAY_MS).toDateString()
 
+const describedBy = (...ids: Array<string | undefined>): string | undefined => ids.filter(Boolean).join(' ') || undefined
+
 interface AlarmFormProps {
   editing: Alarm | null
   now: number
@@ -48,6 +51,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
   const timeId = useId()
   const labelId = useId()
   const hintId = useId()
+  const errorId = useId()
   const [time, setTime] = useState(() => toInputTime(editing?.fireAtMs ?? now + DEFAULT_LEAD_MS))
   const [label, setLabel] = useState(editing?.label ?? '')
   const [saving, setSaving] = useState(false)
@@ -69,17 +73,18 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <label htmlFor={timeId} className="text-sm font-medium">
-          Time
-        </label>
+        <FieldLabel htmlFor={timeId}>Time</FieldLabel>
         <Input
           id={timeId}
           type="time"
           required
           autoFocus
           value={time}
-          aria-describedby={showTomorrow ? hintId : undefined}
-          onChange={(e) => setTime(e.target.value)}
+          aria-describedby={describedBy(showTomorrow ? hintId : undefined, failed ? errorId : undefined)}
+          onChange={(e) => {
+            setTime(e.target.value)
+            setFailed(false)
+          }}
         />
         {showTomorrow && (
           <p id={hintId} className="text-xs text-muted-foreground">
@@ -88,13 +93,20 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
         )}
       </div>
       <div className="flex flex-col gap-1">
-        <label htmlFor={labelId} className="text-sm font-medium">
-          Label (optional)
-        </label>
-        <Input id={labelId} maxLength={MAX_ALARM_LABEL_CHARS} value={label} onChange={(e) => setLabel(e.target.value)} />
+        <FieldLabel htmlFor={labelId}>Label (optional)</FieldLabel>
+        <Input
+          id={labelId}
+          maxLength={MAX_ALARM_LABEL_CHARS}
+          value={label}
+          aria-describedby={failed ? errorId : undefined}
+          onChange={(e) => {
+            setLabel(e.target.value)
+            setFailed(false)
+          }}
+        />
       </div>
       {failed && (
-        <InlineStatus tone="error" density="compact">
+        <InlineStatus id={errorId} tone="error" density="compact">
           Could not save the alarm. Try again.
         </InlineStatus>
       )}
@@ -155,10 +167,7 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onRearm, onDelet
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </ListCardButton>
       {highlighted && (
-        <div className="mt-1 flex justify-end gap-2">
-          <Button type="button" variant="text" size="sm" aria-label={`Dismiss alarm ${name}`} onClick={onDismiss}>
-            Dismiss
-          </Button>
+        <div className="mt-2 flex justify-start gap-2">
           <Button
             type="button"
             variant="outline"
@@ -173,6 +182,9 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onRearm, onDelet
             }}
           >
             Re-arm
+          </Button>
+          <Button type="button" variant="text" size="sm" aria-label={`Dismiss alarm ${name}`} onClick={onDismiss}>
+            Dismiss
           </Button>
         </div>
       )}
@@ -222,6 +234,11 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
   useEffect(() => {
     useAlarmFiredStore.getState().sync(alarms)
   }, [alarms])
+
+  const openForm = (editing: Alarm | null) => {
+    setStatus(null)
+    setForm({ editing })
+  }
 
   const dismiss = (id: string) => {
     useAlarmFiredStore.getState().dismiss(id)
@@ -295,7 +312,7 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
           empty={alarms.length === 0 && !form ? 'No alarms set' : null}
           actions={
             !form && (
-              <Button type="button" size="sm" variant="outline" data-alarm-add="" disabled={full} onClick={() => setForm({ editing: null })}>
+              <Button type="button" size="sm" variant="outline" data-alarm-add="" disabled={full} onClick={() => openForm(null)}>
                 Add alarm
               </Button>
             )
@@ -325,7 +342,7 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
                   alarm={alarm}
                   now={nowMs}
                   highlighted={firedIds.has(alarm.id)}
-                  onEdit={() => setForm({ editing: alarm })}
+                  onEdit={() => openForm(alarm)}
                   onDismiss={() => dismiss(alarm.id)}
                   onRearm={onRearm}
                   onDeleted={onDeleted}

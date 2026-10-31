@@ -303,11 +303,6 @@ impl FlowShared {
         self.feed_lines(&mut buf, chunk);
     }
 
-    /// gh prints the code on stderr, so stderr gets its own line buffer (task-local).
-    fn on_stderr_lines(&self, buf: &mut String, chunk: &[u8]) {
-        self.feed_lines(buf, chunk);
-    }
-
     fn feed_lines(&self, buf: &mut String, chunk: &[u8]) {
         buf.push_str(&String::from_utf8_lossy(chunk));
         while let Some(newline_index) = buf.find('\n') {
@@ -465,7 +460,8 @@ impl GhLoginFlow {
                     match stderr.read(&mut buf).await {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
-                            shared.on_stderr_lines(&mut line_buf, &buf[..n]);
+                            // gh prints the code on stderr, so stderr gets its own line buffer.
+                            shared.feed_lines(&mut line_buf, &buf[..n]);
                             shared.on_stderr_tail_data(&buf[..n]);
                         }
                     }
