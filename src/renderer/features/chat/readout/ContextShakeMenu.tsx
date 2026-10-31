@@ -53,9 +53,14 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
   const [shown, setShown] = useState<ShakeAction | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const [tipOpen, setTipOpen] = useState(false)
+  // Returning focus after the dialog must not pop the tooltip open.
+  const suppressTipRef = useRef(false)
+  const clickedOutsideRef = useRef(false)
   // Right-click, Shift+F10 and the Menu key open the same menu as a left click.
   const openOnContextMenu = (event: ReactMouseEvent): void => {
     event.preventDefault()
+    clickedOutsideRef.current = false
     setMenuOpen(true)
   }
 
@@ -87,18 +92,34 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
 
   return (
     <>
-      <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
-        {notice ? (
-          <Tooltip>
-            <TooltipTrigger asChild aria-describedby={undefined}>
-              <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-80">{notice}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
-        )}
-        <DropdownMenuContent align="start" side="top">
+      <DropdownMenu modal={false} open={menuOpen} onOpenChange={(next) => {
+          if (next) clickedOutsideRef.current = false
+          setMenuOpen(next)
+          setTipOpen(false)
+        }}>
+        <Tooltip open={Boolean(notice) && tipOpen && !menuOpen} onOpenChange={(next) => !suppressTipRef.current && setTipOpen(next)}>
+          <TooltipTrigger asChild aria-describedby={undefined}>
+            <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
+          </TooltipTrigger>
+          {notice && <TooltipContent className="max-w-80">{notice}</TooltipContent>}
+        </Tooltip>
+        <DropdownMenuContent
+          align="start"
+          side="top"
+          // Keep focus where an outside click put it; only Escape and item picks return it to the trigger.
+          onInteractOutside={() => {
+            clickedOutsideRef.current = true
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            const clickedOutside = clickedOutsideRef.current
+            clickedOutsideRef.current = false
+            if (clickedOutside) return
+            suppressTipRef.current = true
+            triggerRef.current?.focus()
+            suppressTipRef.current = false
+          }}
+        >
           {figure && <DropdownMenuLabel className="text-foreground">{figure}</DropdownMenuLabel>}
           {!idle && (
             <DropdownMenuLabel id={IDLE_REASON_ID} className="font-normal">
@@ -110,7 +131,7 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
             return (
               <Fragment key={action.id}>
                 {action.id === 'thinking' && <DropdownMenuSeparator />}
-                <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={(event) => handleSelect(action, event)} className="aria-disabled:cursor-default aria-disabled:forced-colors:text-[GrayText]">
+                <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={(event) => handleSelect(action, event)}>
                   <Icon aria-hidden className={cn('size-4', !idle && 'opacity-50')} />
                   <div className={cn('flex flex-col gap-1 py-1', !idle && 'opacity-50')}>
                     <span>{action.label}</span>
@@ -147,7 +168,9 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
           setConfirming(null)
         }}
         onCloseAutoFocus={() => {
+          suppressTipRef.current = true
           triggerRef.current?.focus()
+          suppressTipRef.current = false
         }}
       />
     </>

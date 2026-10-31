@@ -35,6 +35,10 @@ function wordAt(el: HTMLTextAreaElement): { word: string; start: number; end: nu
   return { word, start: el.value.indexOf(word, start), end: el.value.indexOf(word, start) + word.length }
 }
 
+function isSpellable(word: string): boolean {
+  return word.length >= MIN_SPELL_CHARS && word.length <= MAX_SPELL_CHARS && !/\p{Cc}/u.test(word)
+}
+
 interface FieldState {
   hasSelection: boolean
   editable: boolean
@@ -61,7 +65,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
         const epoch = ++spellEpochRef.current
         setSpell(NO_SPELL)
         const target = el.readOnly || el.disabled ? null : wordAt(el)
-        if (target && target.word.length >= MIN_SPELL_CHARS && target.word.length <= MAX_SPELL_CHARS && !/\p{Cc}/u.test(target.word)) {
+        if (target && isSpellable(target.word)) {
           void window.refract.spellcheck.suggest(target.word, navigator.language).then((result) => {
             if (result.ok && epoch === spellEpochRef.current) setSpell({ ...target, ...result.value })
           }).catch(() => undefined)

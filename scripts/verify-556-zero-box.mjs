@@ -78,7 +78,7 @@ function assertBundleMatchesStory556() {
   const inlineAlertCount = combined.split(inlineAlertMarker).length - 1;
   assertTrue(inlineAlertCount >= 1, `built bundle is missing the Fix 1 Alert box="inline" variant className (${inlineAlertMarker})`);
   const callSites = [
-    { file: 'src/renderer/features/chat/AskCard.tsx', line: 321 },
+    { file: 'src/renderer/features/chat/AskCard.tsx', line: 281 },
     { file: 'src/renderer/features/chat/RequestCard.tsx', line: 419 },
     { file: 'src/renderer/features/chat/RequestCard.tsx', line: 586 },
   ];
@@ -466,7 +466,7 @@ async function main() {
   console.log(`verify-556: evidence written to ${SHOTS_DIR}`);
   await safeRmSync(buildDir, 'verify-556');
   if (!passed) process.exit(1);
-  console.log('verify-556: PASS (Phases A, B, C; the question-card site RequestCard.tsx:586 and the Ask-card site AskCard.tsx:321 stay code-verified only, see assertBundleMatchesStory556).');
+  console.log('verify-556: PASS (Phases A, B, C; the question-card site RequestCard.tsx:586 and the Ask-card site AskCard.tsx:281 stay code-verified only, see assertBundleMatchesStory556).');
 }
 
 main().catch((err) => {
