@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::atomic_json::{read_json_file, write_json_file};
-use crate::github::profile::MAX_DISPLAY_NAME_CHARS;
+use crate::github::profile::truncate_display_name;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,9 +48,7 @@ fn sanitize_entry(entry: &mut ProfileCacheEntry) {
         entry.avatar_data_url = None;
     }
     if let Some(name) = entry.display_name.as_mut() {
-        if name.chars().count() > MAX_DISPLAY_NAME_CHARS {
-            *name = name.chars().take(MAX_DISPLAY_NAME_CHARS).collect();
-        }
+        *name = truncate_display_name(name);
     }
 }
 

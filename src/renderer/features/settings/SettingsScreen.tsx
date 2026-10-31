@@ -43,7 +43,7 @@ export function SettingsScreen() {
         </IconButton>
         <SettingsBrand />
         <span aria-hidden className="text-sm text-muted-foreground">/</span>
-        <h1 className="text-sm font-medium">Settings</h1>
+        <h1 className="text-sm font-semibold">Settings</h1>
       </PanelHeader>
       <div className="flex min-h-0 flex-1">
         <SettingsNav active={settingsSection} onSelect={openSettings} />

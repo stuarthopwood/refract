@@ -83,22 +83,43 @@ pub fn save_image(state: AppState, args: Vec<Value>) -> HandlerFuture {
             )
         };
         // Write beside the target, then rename, so a failed write never leaves a truncated PNG.
-        let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
-        temp_name.push(".refract-tmp");
-        let temp = path.with_file_name(temp_name);
-        // create_new refuses to follow or overwrite a pre-existing file or symlink at the temp path.
-        let written = match tokio::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-            .await
-        {
-            Ok(mut file) => match file.write_all(&bytes).await {
-                Ok(()) => file.flush().await,
-                err => err,
-            },
-            Err(err) => return Err(save_err(err)),
+        // create_new refuses to follow or overwrite a pre-existing file or symlink at the temp path;
+        // a stale temp from a crash is skipped by trying the next numbered name.
+        let base_name = path.file_name().unwrap_or_default().to_os_string();
+        let mut opened = None;
+        for attempt in 0..8u32 {
+            let mut temp_name = base_name.clone();
+            if attempt == 0 {
+                temp_name.push(".refract-tmp");
+            } else {
+                temp_name.push(format!(".refract-tmp-{attempt}"));
+            }
+            let candidate = path.with_file_name(temp_name);
+            match tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+                .await
+            {
+                Ok(file) => {
+                    opened = Some((candidate, file));
+                    break;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(err) => return Err(save_err(err)),
+            }
+        }
+        let Some((temp, mut file)) = opened else {
+            return Err(save_err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "temporary file names are all in use",
+            )));
         };
+        let written = match file.write_all(&bytes).await {
+            Ok(()) => file.flush().await,
+            err => err,
+        };
+        drop(file);
         if let Err(err) = written {
             let _ = tokio::fs::remove_file(&temp).await;
             return Err(save_err(err));

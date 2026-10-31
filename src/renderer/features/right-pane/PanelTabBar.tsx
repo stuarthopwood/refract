@@ -2,8 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
-import { Button } from '@/components/ui/button'
-import { Kbd } from '@/components/ui/kbd'
+import { IconButton } from '@/components/IconButton'
 import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
@@ -84,21 +83,9 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
           ref={wrapperRef}
           windowControlsSpacerStyle={WINDOW_CONTROLS_SPACER_STYLE}
           actions={
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  data-panel-close
-                  aria-label={`Close ${descriptor.name} panel`}
-                  onClick={() => closeHostedPanel(id)}
-                >
-                  <XIcon aria-hidden className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{`Close ${descriptor.name} panel`}</TooltipContent>
-            </Tooltip>
+            <IconButton label={`Close ${descriptor.name} panel`} data-panel-close onClick={() => closeHostedPanel(id)}>
+              <XIcon aria-hidden className="size-4" />
+            </IconButton>
           }
         >
           <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-medium">
@@ -172,34 +159,24 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
             const descriptor = getPanelDescriptor(id)
             if (!position || !descriptor) return null
             return (
-              <Tooltip key={id}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    tabIndex={id === activePanelId ? 0 : -1}
-                    data-panel-close
-                    aria-label={`Close ${descriptor.name} panel`}
-                    style={{ position: 'absolute', left: position.left, top: position.top }}
-                    className={cn(
-                      'inline-flex size-6 items-center justify-center rounded text-current hover:bg-foreground/10',
-                      FOCUS_VISIBLE
-                    )}
-                    onClick={() => closeTab(id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Delete') {
-                        event.preventDefault()
-                        closeTab(id)
-                      }
-                    }}
-                  >
-                    <XIcon aria-hidden className="size-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {`Close ${descriptor.name} panel`}
-                  <Kbd>Delete</Kbd>
-                </TooltipContent>
-              </Tooltip>
+              <IconButton
+                key={id}
+                label={`Close ${descriptor.name} panel`}
+                shortcut={['Delete']}
+                tabIndex={id === activePanelId ? 0 : -1}
+                data-panel-close
+                className={cn(FOCUS_VISIBLE, 'transition-none focus-visible:border-transparent focus-visible:outline-solid focus-visible:ring-0')}
+                style={{ position: 'absolute', left: position.left, top: position.top }}
+                onClick={() => closeTab(id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Delete') {
+                    event.preventDefault()
+                    closeTab(id)
+                  }
+                }}
+              >
+                <XIcon aria-hidden className="size-4" />
+              </IconButton>
             )
           })}
         </div>

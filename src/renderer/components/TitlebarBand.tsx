@@ -4,7 +4,7 @@
 // invisible drag strip in `App.tsx` keeps the window draggable. `reservesWindowControls` leaves
 // room for the native caption buttons, mirroring `WINDOW_CONTROLS_SPACER_STYLE`.
 import { cn } from '@/lib/utils'
-import { PANEL_HEADER_HEIGHT_CLASS } from './PanelHeader'
+import { PANEL_HEADER_HEIGHT_CLASS } from '@/components/PanelHeader'
 
 export function TitlebarBand({ reservesWindowControls = false }: { reservesWindowControls?: boolean }) {
   return (

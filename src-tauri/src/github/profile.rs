@@ -24,6 +24,14 @@ const MAX_PROFILE_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_AVATAR_BYTES: usize = 64 * 1024;
 const AVATAR_SIZE_PX: &str = "96";
 pub const MAX_DISPLAY_NAME_CHARS: usize = 100;
+
+/// Drops control characters (so a name cannot forge a line or escape sequence), then caps the length.
+pub fn truncate_display_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_DISPLAY_NAME_CHARS)
+        .collect()
+}
 const MAX_AVATAR_REDIRECTS: u32 = 5;
 
 /// Built once; redirects are never auto-followed (`fetch_avatar` re-validates each hop).
@@ -169,11 +177,10 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
         ))
     })?;
 
-    let display_name = record.get("name").and_then(Value::as_str).map(|name| {
-        name.chars()
-            .take(MAX_DISPLAY_NAME_CHARS)
-            .collect::<String>()
-    });
+    let display_name = record
+        .get("name")
+        .and_then(Value::as_str)
+        .map(truncate_display_name);
     let avatar_url = record
         .get("avatar_url")
         .and_then(Value::as_str)
