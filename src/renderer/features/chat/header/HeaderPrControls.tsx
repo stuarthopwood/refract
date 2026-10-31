@@ -8,13 +8,14 @@ export function HeaderPrControls({ sessionId }: { sessionId: string }) {
   const repositoryId = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.repositoryId)
   const pullRequest = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.pullRequest ?? null)
   const live = usePinnedPanelsStore((s) => s.livePullRequest)
+  const readoutKey = pullRequest ? `${sessionId}:${pullRequest.number}` : null
   const readoutState = pullRequest?.state
-  const lastReadoutState = useRef(readoutState)
+  const last = useRef({ key: readoutKey, state: readoutState })
   useEffect(() => {
-    // A newer readout state means the pinned panel's snapshot is stale; let the readout win.
-    if (lastReadoutState.current !== readoutState) usePinnedPanelsStore.getState().clearLivePullRequest()
-    lastReadoutState.current = readoutState
-  }, [readoutState])
+    // A newer readout state for the same session and PR means the pinned panel's snapshot is stale.
+    if (last.current.key === readoutKey && last.current.state !== readoutState) usePinnedPanelsStore.getState().clearLivePullRequest()
+    last.current = { key: readoutKey, state: readoutState }
+  }, [readoutKey, readoutState])
   if (!repositoryId || !pullRequest) return null
   const liveState = live && live.repositoryId === repositoryId && live.number === pullRequest.number ? live.state : null
 
