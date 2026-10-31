@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { PANEL_HEADER_HEIGHT_CLASS } from '@/components/PanelHeader'
+import { cn } from '@/lib/utils'
 import { notify } from '@/state'
 import { openChatFind } from '@/state/chat-find-store'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -135,7 +137,7 @@ export function AppMenuBar() {
       ref={barRef}
       role="menubar"
       aria-label="App menu"
-      className="titlebar-surface no-drag-region fixed left-0 top-0 z-50 flex h-10 items-center gap-1 bg-sidebar px-2 text-sm text-sidebar-foreground"
+      className={cn('titlebar-surface no-drag-region fixed left-0 top-0 z-50 flex items-center gap-1 bg-sidebar px-2 text-sm text-sidebar-foreground', PANEL_HEADER_HEIGHT_CLASS)}
       style={{ width: 'env(titlebar-area-width, 100vw)' }}
     >
       {MENUS.map((menu, index) => (

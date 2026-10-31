@@ -1,1 +1,16 @@
-[]
+[
+  { "file": "src/renderer/components/ProjectListPane.tsx", "text": "right-0.5", "count": 1, "reason": "2px optical nudge of the unread dot against the row edge" },
+  { "file": "src/renderer/components/ProjectListPane.tsx", "text": "top-0.5", "count": 1, "reason": "2px optical nudge of the unread dot against the row edge" },
+  { "file": "src/renderer/components/reorder/use-reorderable.ts", "text": "-top-[3px]", "count": 1, "reason": "drop indicator is centred on the 8px gap between rows" },
+  { "file": "src/renderer/components/reorder/use-reorderable.ts", "text": "-bottom-[3px]", "count": 1, "reason": "drop indicator is centred on the 8px gap between rows" },
+  { "file": "src/renderer/components/SearchField.tsx", "text": "left-[9px]", "count": 1, "reason": "centres the 16px icon in the 34px-tall field" },
+  { "file": "src/renderer/components/ui/scroll-area.tsx", "text": "p-px", "count": 1, "reason": "1px inset keeps the scrollbar thumb off the border (shadcn primitive)" },
+  { "file": "src/renderer/components/ui/sheet.tsx", "text": "top-3", "count": 1, "reason": "shadcn close-button placement, aligned to the title baseline" },
+  { "file": "src/renderer/components/ui/sheet.tsx", "text": "right-3", "count": 1, "reason": "shadcn close-button placement" },
+  { "file": "src/renderer/components/ui/sidebar.tsx", "text": "top-3.5", "count": 1, "reason": "shadcn sidebar trigger centred in the row" },
+  { "file": "src/renderer/components/ui/sidebar.tsx", "text": "right-3", "count": 1, "reason": "shadcn sidebar trigger placement" },
+  { "file": "src/renderer/components/ui/sidebar.tsx", "text": "top-1.5", "count": 3, "reason": "shadcn menu-action centred on its row by size variant" },
+  { "file": "src/renderer/components/ui/sidebar.tsx", "text": "top-2.5", "count": 2, "reason": "shadcn menu-action centred on its row by size variant" },
+  { "file": "src/renderer/features/chat/readout/ContextUsageReadout.tsx", "text": "bottom-0.5", "count": 1, "reason": "2px baseline of the usage bar inside its track" },
+  { "file": "src/renderer/features/chat-nav/MessageStepButtons.tsx", "text": "bottom-[3.25rem]", "count": 1, "reason": "sits 52px above the composer so it clears the send row" }
+]

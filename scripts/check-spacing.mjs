@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Static guard (#1252): padding, margin, gap and space-x/y utilities in src/renderer must stay on
+// Static guard (#1252, #1467): padding, margin, gap, space-x/y and positional offsets in src/renderer must stay on
 // the 8px grid with a 4px half-step (multiples of 8px above 48). Sizing utilities are not gated.
 // Exceptions live in spacing-allowlist.json; a stale entry fails so exceptions cannot rot.
 
@@ -13,8 +13,8 @@ const ALLOWLIST_PATH = path.join(__dirname, 'spacing-allowlist.json');
 
 const ALLOWED_PX = new Set([0, 4, 8, 16, 24, 32, 40, 48]);
 const PROPS =
-  'p|px|py|pt|pb|pl|pr|ps|pe|m|mx|my|mt|mb|ml|mr|ms|me|gap|gap-x|gap-y|space-x|space-y';
-const TOKEN = new RegExp(`(?<=^|[\\s"'\`:!(])(-?)(${PROPS})-(\\[[^\\]\\s]+\\]|[0-9][0-9.]*)(?![\\w.-])`, 'g');
+  'p|px|py|pt|pb|pl|pr|ps|pe|m|mx|my|mt|mb|ml|mr|ms|me|gap|gap-x|gap-y|space-x|space-y|top|bottom|left|right|inset|inset-x|inset-y|start|end';
+const TOKEN = new RegExp(`(?<=^|[\\s"'\`:!(])(-?)(${PROPS})-(\\[[^\\]\\s]+\\]|[0-9][0-9.]*|px)(?![\\w.-])`, 'g');
 const EXTS = new Set(['.ts', '.tsx', '.css']);
 const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git', 'target', 'assets']);
 
@@ -24,7 +24,7 @@ function pxOf(value) {
     if (!m) return null;
     return Number(m[1]) * (m[2] === 'rem' ? 16 : 1);
   }
-  return Number(value) * 4;
+  return value === 'px' ? 1 : Number(value) * 4;
 }
 
 function allowed(px) {
@@ -73,6 +73,7 @@ function main() {
     }
   }
   for (const a of allow) {
+    if (!a.reason) failures.push(`allowlist entry without a reason: ${a.file} "${a.text}"`);
     const key = `${a.file}|${a.text}`;
     if ((used.get(key) ?? 0) < (a.count ?? 1)) {
       failures.push(`stale allowlist entry: ${a.file} "${a.text}"`);

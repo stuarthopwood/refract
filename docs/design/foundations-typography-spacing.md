@@ -120,7 +120,7 @@ Keep the rhythm as built (`Transcript.tsx`): `mt-6` (24px) between turns and rea
 
 ## Panel header height
 
-Use one fixed-height header row for every panel and pane (chat, Agents, Pull requests, FDB panes, side chat): title left, ghost icon-only actions right. **No bottom divider line** (Stuart, 2026-10-09): the header is separated from its content by a different surface shade and/or whitespace, not a border -- see "Panel header" in [components.md](components.md#panel-header).
+Use one fixed-height header row (`PanelHeader`, `PANEL_HEADER_HEIGHT_CLASS` in `components/PanelHeader.tsx`) for every panel and pane (chat, Agents, Pull requests, FDB panes, side chat): title left, ghost icon-only actions right. **No bottom divider line** (Stuart, 2026-10-09): the header is separated from its content by a different surface shade and/or whitespace, not a border -- see "Panel header" in [components.md](components.md#panel-header).
 
 The agenda item 8 decision proposed 40px, pending a measurement against today's chat header. Measured: `ChatHeader.tsx`'s `<header>` carries `flex h-10 shrink-0 items-center ... px-4`, with no bottom border -- #606 removed it outright, which is the accepted rule above, not a gap. Tailwind's `h-10` sets `height: 2.5rem` (40px at the project's default 16px root font size). Measured height: **40px**, confirming the proposed value — adopt 40px as the one panel header height everywhere.
 
