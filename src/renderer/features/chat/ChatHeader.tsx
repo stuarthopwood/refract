@@ -54,6 +54,7 @@ export function ChatHeader({
                   className="h-6 max-w-40 gap-2 px-2 text-xs"
                   onClick={onSwapToOther}
                   aria-label={`Switch to ${otherSessionName}`}
+                  aria-describedby={undefined}
                 >
                   <SplitSquareHorizontalIcon aria-hidden className="size-4 shrink-0" />
                   <span className="truncate">{otherSessionName}</span>

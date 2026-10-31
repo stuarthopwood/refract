@@ -10,6 +10,9 @@ import { cn } from '@/lib/utils'
 import { useSessionListStore, useSessionsStore } from '@/state'
 import { hiddenSummary } from './sessionDisplay'
 
+// Long enough to land after the "Unhid" announcement that precedes it.
+const UNHID_ANNOUNCE_DELAY_MS = 600
+
 function focusCollapseAll(): void {
   requestAnimationFrame(() =>
     document.querySelector<HTMLElement>('[data-collapse-all-groups], button[aria-label="Collapse all groups"]')?.focus()
@@ -47,7 +50,7 @@ export function ShowHiddenToggle() {
     useSessionListStore.getState().setShowHidden(false)
     // This component unmounts now, so its own live region cannot speak; use the app-level announcer.
     // Deferred, and deliberately not cleared on unmount (this component unmounts right now), so it follows an "Unhid" announcement instead of replacing it.
-    setTimeout(() => useChatAreaAnnouncer.getState().announce('Show hidden turned off, no hidden sessions'), 600)
+    setTimeout(() => useChatAreaAnnouncer.getState().announce('Show hidden turned off, no hidden sessions'), UNHID_ANNOUNCE_DELAY_MS)
     if (hadFocus) focusCollapseAll()
   }, [hidden, showHidden])
   if (hidden === 0 && !showHidden) return null

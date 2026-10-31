@@ -43,19 +43,23 @@ fn is_regular_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// True when `path` still names a roster file and is a regular file; called just before opening.
-pub fn is_openable(path: &Path) -> bool {
-    let named = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            FILE_NAMES.iter().any(|known| {
-                Path::new(known)
-                    .file_name()
-                    .is_some_and(|base| base == name)
-            })
-        });
-    named && is_regular_file(path)
+/// The canonical roster file to open, or `None` when `path` no longer names one. The file must resolve to
+/// exactly `<canonical root>/<known name>`, so a symlinked parent (for example `.omp`) or leaf is refused.
+pub fn openable_target(path: &Path) -> Option<PathBuf> {
+    let canonical = dunce::canonicalize(path).ok()?;
+    if !canonical.is_file() {
+        return None;
+    }
+    // Longest first, so `root/.omp/WATCHDOG.yml` is judged against `root`, not against `.omp`.
+    let mut names = FILE_NAMES;
+    names.sort_by_key(|name| std::cmp::Reverse(Path::new(name).components().count()));
+    let name = names.into_iter().find(|name| path.ends_with(name))?;
+    let mut root = path.to_path_buf();
+    for _ in Path::new(name).components() {
+        root.pop();
+    }
+    let root = dunce::canonicalize(root).ok()?;
+    (canonical == root.join(name)).then_some(canonical)
 }
 
 fn find_in(dir: &Path) -> Option<PathBuf> {
