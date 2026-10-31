@@ -34,6 +34,7 @@
   --color-composer-focus: var(--composer-focus);
   --color-composer-ring: var(--composer-ring);
   --color-row-hover-bg: var(--row-hover-bg);
+  --color-tab-close-hover-bg: var(--tab-close-hover-bg);
   --color-chat-user-bubble-bg: var(--chat-user-bubble-bg);
   --color-chat-user-bubble-fg: var(--chat-user-bubble-fg);
   --color-chat-user-bubble-border: var(--chat-user-bubble-border);
@@ -327,6 +328,7 @@ samp {
   --holiday-artwork-opacity: 0.30;
   /* #579: translucent surfaces as tokens instead of Tailwind opacity modifiers; same element as the theme class, so they follow each preset's base colours. */
   --row-hover-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --tab-close-hover-bg: color-mix(in oklab, var(--foreground) 10%, transparent);
   --focus-glow: color-mix(in oklab, var(--ring) 50%, transparent);
   --elevated-edge: color-mix(in oklab, var(--foreground) 10%, transparent);
   --scrim-bg: color-mix(in oklab, black 10%, transparent);

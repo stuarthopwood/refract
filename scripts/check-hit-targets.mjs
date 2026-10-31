@@ -13,7 +13,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'hit-targets-baseline.json');
 const RAW_BUTTON = /<button\b|role=["']button["']/g;
 // size-1..5, fractional (size-4.5) and arbitrary px under 24 (h-[20px]).
-const SMALL_TARGET = /<(?:Button|IconButton)\b[^<]*?(?<![\w-])(?:size|h)-(?:[1-5](?:\.5)?|\[(?:[0-9]|1[0-9]|2[0-3])px\])(?![\w.[/-])/g;
+const SMALL_TARGET = /<(?:Button|IconButton)\b[^<]*?(?<![\w-])(?:size|h)-(?:[1-5](?:\.5)?|\[(?:[0-9]|1[0-9]|2[0-3])px\]|\[(?:0?\.\d+|1(?:\.[0-4]\d*)?)rem\])(?![\w.[/-])/g;
 const EXEMPT_FILES = new Set(['src/renderer/components/IconButton.tsx', 'src/renderer/components/ui/button.tsx']);
 
 export function countHitTargetIssues(text) {

@@ -221,7 +221,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
                       size="xs"
                       aria-label={`Stop ${session.name}'s agent`}
                       aria-disabled={stoppingId === session.id || undefined}
-                      className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                      className="aria-disabled:opacity-50"
                       onClick={() => {
                         if (stoppingId !== null) return
                         setConfirmTarget(session)

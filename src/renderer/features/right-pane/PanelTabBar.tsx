@@ -4,6 +4,7 @@ import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
 import { IconButton } from '@/components/IconButton'
 import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
+import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { cn } from '@/lib/utils'
@@ -13,7 +14,6 @@ import { compactPanelCount, formatPanelCount, getPanelDescriptor, splitPanelCoun
 import { closeHostedPanel } from './hosted-panel-actions'
 import { WINDOW_CONTROLS_SPACER_STYLE, WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 
-const FOCUS_VISIBLE = 'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
 const COMPACT_HIDE = '@max-[17.5rem]:hidden'
 const CLOSE_BUTTON_PX = 24
 const CLOSE_BUTTON_INSET_PX = 4
@@ -163,9 +163,14 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                 key={id}
                 label={`Close ${descriptor.name} panel`}
                 shortcut={['Delete']}
+                aria-keyshortcuts="Delete"
                 tabIndex={id === activePanelId ? 0 : -1}
                 data-panel-close
-                className={cn(FOCUS_VISIBLE, 'transition-none focus-visible:border-transparent focus-visible:outline-solid focus-visible:ring-0')}
+                className={cn(
+                  INSET_FOCUS_OUTLINE_CLASS,
+                  'transition-none focus-visible:border-transparent focus-visible:ring-0 text-muted-foreground hover:text-foreground focus-visible:text-foreground',
+                  id === activePanelId && 'text-foreground hover:bg-tab-close-hover-bg! dark:hover:bg-tab-close-hover-bg!'
+                )}
                 style={{ position: 'absolute', left: position.left, top: position.top }}
                 onClick={() => closeTab(id)}
                 onKeyDown={(event) => {
@@ -221,7 +226,7 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       tabIndex={selected ? 0 : -1}
       className={cn(
         'inline-flex h-6 min-w-15 shrink items-center gap-1 rounded-md px-2 pr-8 text-sm',
-        FOCUS_VISIBLE,
+        INSET_FOCUS_OUTLINE_CLASS,
         selected
           ? cn('font-semibold', TAB_ACTIVE_UNDERLINE_CLASS)
           : 'font-medium text-muted-foreground hover:bg-row-hover-bg hover:text-foreground'

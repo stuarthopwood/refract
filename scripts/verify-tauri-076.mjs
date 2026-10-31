@@ -110,7 +110,7 @@ async function main() {
     await waitFor(`!!document.querySelector('.not-prose')`, 'final reply rendered', 60_000);
 
     // Message row: controls are lazy, then Copy plus the kebab; kebab items equal the right-click items.
-    const msgKebab = `Array.from(document.querySelectorAll('button[aria-label^="More actions"]')).filter((b) => !b.closest('.not-prose, [data-slot="collapsible"]')).pop()`;
+    const msgKebab = `Array.from(document.querySelectorAll('button[aria-label="More actions"], button[aria-label^="More actions,"]')).filter((b) => !b.closest('.not-prose, [data-slot="collapsible"]')).pop()`;
     await shot('00-message-before-arm.png');
     await mouse('mouseMoved', await centre(ASSISTANT_P));
     await waitFor(`!!(${msgKebab})`, 'message kebab mounted on hover');

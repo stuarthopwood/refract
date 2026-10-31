@@ -47,9 +47,11 @@ fn sanitize_entry(entry: &mut ProfileCacheEntry) {
     }) {
         entry.avatar_data_url = None;
     }
-    if let Some(name) = entry.display_name.as_mut() {
-        *name = truncate_display_name(name);
-    }
+    entry.display_name = entry
+        .display_name
+        .as_deref()
+        .map(truncate_display_name)
+        .filter(|name| !name.trim().is_empty());
 }
 
 impl ProfileCacheStore {

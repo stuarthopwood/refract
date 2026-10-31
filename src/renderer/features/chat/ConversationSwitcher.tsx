@@ -82,7 +82,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
         variant="ghost"
         size="sm"
         aria-disabled={!canSwitch || creating || switching}
-        className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+        className="aria-disabled:opacity-50"
         onClick={() => {
           if (!canSwitch || creating || switching) return
           void handleNewConversation()

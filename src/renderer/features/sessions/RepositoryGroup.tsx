@@ -82,7 +82,7 @@ export function RepositoryGroup({
   useFocusSearchOnStrandedUnmount(groupRootRef)
 
   async function handleQuickCreate(): Promise<void> {
-    // No early return: a second click reaches `create()`, which refuses it and shows an error toast.
+    // A second click while a create is in flight is ignored.
     if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) return
     const result = await createSession(repository.id, repository.defaultBranch)
     if (!result.ok) notify(result.error)

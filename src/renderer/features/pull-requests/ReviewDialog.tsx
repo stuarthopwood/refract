@@ -167,7 +167,7 @@ export function ReviewDialog({
                 aria-pressed={verdict === option.value}
                 aria-disabled={submitting}
                 size="sm"
-                className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                className="aria-disabled:opacity-50"
                 onClick={() => {
                   if (submitting) return
                   setVerdict(option.value)
@@ -196,7 +196,7 @@ export function ReviewDialog({
             <Button
               variant="outline"
               aria-disabled={submitting}
-              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+              className="aria-disabled:opacity-50"
               onClick={(event) => {
                 if (submitting) {
                   event.preventDefault()
@@ -210,7 +210,7 @@ export function ReviewDialog({
             </Button>
             <Button
               aria-disabled={submitting}
-              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+              className="aria-disabled:opacity-50"
               onClick={(event) => {
                 event.preventDefault()
                 if (submitting) return

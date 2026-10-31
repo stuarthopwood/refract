@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 // aria-disabled keeps the button focusable, so focus is not lost when the last page is reached.
-const PAGER_DISABLED_CLASS = 'aria-disabled:pointer-events-none aria-disabled:opacity-50'
+const PAGER_DISABLED_CLASS = 'aria-disabled:opacity-50'
 
 export type SortDirection = 'asc' | 'desc'
 
