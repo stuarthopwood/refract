@@ -79,11 +79,11 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
         })}
       </div>
       {/* Preview tile driven by activeId so it tracks the saved choice. */}
-      <div aria-hidden className="mt-2 w-full max-w-56 rounded-md border border-border bg-row-hover-bg p-2">
+      <div aria-hidden className="mt-2 w-full max-w-56 rounded-md border border-border bg-surface-subtle p-2">
         <div data-chat-width-preview-bars className={cn('mx-auto flex flex-col gap-1', activeId === 'reading-column' && 'w-2/3')}>
-          <div className="h-1.5 w-full rounded-full bg-muted-foreground/40" />
-          <div className="h-1.5 w-5/6 rounded-full bg-muted-foreground/40" />
-          <div className="h-1.5 w-full rounded-full bg-muted-foreground/40" />
+          <div className="h-1.5 w-full rounded-full bg-preview-bar-bg" />
+          <div className="h-1.5 w-5/6 rounded-full bg-preview-bar-bg" />
+          <div className="h-1.5 w-full rounded-full bg-preview-bar-bg" />
         </div>
       </div>
     </div>

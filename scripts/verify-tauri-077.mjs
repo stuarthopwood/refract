@@ -19,8 +19,8 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_077_SHOTS_DIR || path.join(tmpdir(), 'refract-077-shots');
 mkdirSync(SHOTS_DIR, { recursive: true });
 
-const THEMES = ['theme-dark', 'theme-dark-high-contrast'];
-const TOKENS = ['--row-hover-bg', '--focus-glow', '--elevated-edge', '--scrim-bg', '--invalid-ring', '--primary-hover-bg', '--destructive-hover-bg', '--field-bg', '--field-hover-bg'];
+const THEMES = ['theme-dark', 'theme-obsidian', 'theme-dark-high-contrast', 'theme-nordic-frost', 'theme-cyber-amber'];
+const TOKENS = ['--row-hover-bg', '--focus-glow', '--elevated-edge', '--scrim-bg', '--invalid-ring', '--primary-hover-bg', '--destructive-hover-bg', '--field-bg', '--field-hover-bg', '--surface-subtle', '--invalid-edge', '--secondary-hover-bg', '--destructive-tint-bg', '--destructive-tint-strong-bg', '--switch-off-dark-bg', '--preview-bar-bg'];
 
 const REPORT = [];
 let passed = 0;
@@ -69,7 +69,10 @@ async function runChecks(cdp, { repoDir }) {
     const missing = await cdp.evaluate(`${JSON.stringify(TOKENS)}.filter((t) => !getComputedStyle(document.documentElement).getPropertyValue(t).trim())`);
     assert(missing.length === 0, `all translucent tokens resolve in ${cls}`);
 
-    const label = `Project actions for ${repoName}`;
+    const resting = await cdp.evaluate(`(() => { const fill = (v) => { const d = document.createElement('div'); d.style.background = 'var(' + v + ')'; document.body.appendChild(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; }; return [fill('--surface-subtle'), fill('--row-hover-bg')]; })()`);
+    assert(resting[0] === resting[1] && resting[0] !== 'rgba(0, 0, 0, 0)', `--surface-subtle paints the same fill as --row-hover-bg in ${cls} (${resting[0]})`);
+
+    const label = `More actions for ${repoName}`;
     const rect = await hoverTooltip(cdp, label);
     assert(rect.w <= 24 && rect.h <= 24, `Project actions trigger is at most 24 px in ${cls} (${rect.w}x${rect.h})`);
     await sleep(500);
@@ -80,7 +83,7 @@ async function runChecks(cdp, { repoDir }) {
   }
 
   await setTheme(cdp, 'theme-dark');
-  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`Project actions for ${repoName}`)}]')`);
+  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`More actions for ${repoName}`)}]')`);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'menu open' });
   await shot(cdp, 'after-theme-dark-menu.png');
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });

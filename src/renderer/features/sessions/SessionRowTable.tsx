@@ -108,7 +108,7 @@ export function SessionRowTable({
                   <IconButton
                     ref={row.menuTriggerRef}
                     size="icon-xs"
-                    label={`${session.name} actions`}
+                    label={`More actions for ${session.name}`}
                     side="bottom"
                     className="text-muted-foreground"
                   >

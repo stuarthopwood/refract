@@ -83,7 +83,7 @@ async function main() {
     await waitFor(`${radio('Per Element')}?.getAttribute('aria-checked') === 'true'`, 'custom theme active');
     await waitFor(`document.body.innerText.includes('Custom theme applied')`, 'applied toast shown');
     await shot('appearance.png');
-    const size = await cdp.evaluate(`(() => { const r = document.querySelector('[aria-label^="Actions for "]').getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
+    const size = await cdp.evaluate(`(() => { const r = document.querySelector('[aria-label^="More actions for "]').getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
     check(size.w >= 24 && size.h >= 24, 'the row kebab is at least a 24px target', size);
     await backToChat();
 
@@ -114,7 +114,7 @@ async function main() {
     await shot('checks-menu.png');
     await pressEscape(cdp);
     await waitFor(`!document.querySelector('[role="menu"]')`, 'menu closed');
-    const noLink = await cdp.evaluate(`(() => { const li = ${CHECK_ROW('lint (no link)')}; return !!li && li.textContent.includes('No details link') && !li.querySelector('[aria-label^="Actions for "]'); })()`);
+    const noLink = await cdp.evaluate(`(() => { const li = ${CHECK_ROW('lint (no link)')}; return !!li && li.textContent.includes('No details link') && !li.querySelector('[aria-label^="More actions for "]'); })()`);
     check(noLink === true, 'a check without a link still shows "No details link" and no actions menu', noLink);
 
     await openAppearance();
@@ -122,7 +122,7 @@ async function main() {
     await waitFor(`${radio('Dark')}?.getAttribute('aria-checked') === 'true'`, 'Dark checked');
     await cdp.click(radio('Per Element'));
     await waitFor(`document.body.innerText.includes('Custom theme applied')`, 'applied toast raised right before removal');
-    await cdp.click(kebab('Actions for Per Element'));
+    await cdp.click(kebab('More actions for Per Element'));
     await waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`, 'Remove entry');
     await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`);
     await waitFor(`!!document.querySelector('[role="alertdialog"], [role="dialog"]')`, 'Remove dialog');

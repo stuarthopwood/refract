@@ -46,7 +46,7 @@ const TINTS = `Array.from(document.querySelectorAll('[data-focused-pane-tint]'))
 const MENU_LABELS = `Array.from(document.querySelectorAll('[role="menuitem"]')).map((el) => el.textContent.trim())`;
 
 async function checkRepoMenus(cdp, repoName) {
-  const trigger = `document.querySelector('[aria-label="Project actions for ${repoName}"]')`;
+  const trigger = `document.querySelector('[aria-label="More actions for ${repoName}"]')`;
   const rect = await cdp.evaluate(`(() => { const r = ${trigger}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
   await cdp.click(trigger);

@@ -78,7 +78,7 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   const entries: RowMenuEntry[] = [{ id: 'details', label: 'Open details', href: check.detailsUrl }]
   return (
     <li className="py-1 pl-6 text-sm">
-      <RowKebabMenu entries={entries} label={`Actions for ${check.name}`}>
+      <RowKebabMenu entries={entries} label={`More actions for ${check.name}`}>
         {summary}
       </RowKebabMenu>
     </li>

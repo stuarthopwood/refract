@@ -228,7 +228,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             <span role="status" className="sr-only">
               {resuming ? `Resuming ${session.name}…` : ''}
             </span>
-            <span className="absolute right-2 top-1 flex h-5 items-center gap-1">
+            <span className="absolute right-2 top-0.5 flex h-6 items-center gap-1">
               {canResume && (
                 <IconButton
                   ref={resumeButtonRef}
@@ -264,7 +264,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     <IconButton
                       ref={menuTriggerRef}
                       size="icon-xs"
-                      label={`${session.name} actions`}
+                      label={`More actions for ${session.name}`}
                       className={TRAILING_MENU_BUTTON_CLASS}
                     >
                       <EllipsisVerticalIcon aria-hidden className="size-4" />

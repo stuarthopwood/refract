@@ -9,7 +9,7 @@ export function NewSessionRowMenu({ item, title, children }: { item: ItemRef; ti
   const noun = item.kind === 'issue' ? 'issue' : 'pull request'
   return (
     <RowKebabMenu
-      label={`Actions for ${noun} #${item.number}: ${title}`}
+      label={`More actions for ${noun} #${item.number}: ${title}`}
       entries={[{ id: 'new-session', label: 'New session', icon: PlusIcon, onSelect: () => void requestSessionFromItem(item) }]}
     >
       <div className="min-w-0 flex-1">{children}</div>

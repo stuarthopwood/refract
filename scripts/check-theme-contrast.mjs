@@ -375,7 +375,7 @@ if (watermarkOpacity === null) {
 }
 
 // Destructive button variant (opaque fill) and the focus rings, checked against the real composited dialog footer
-// (`bg-muted/50` over `bg-popover`), not just the flat `--background` the PAIRS loop uses (#488).
+// (`bg-surface-subtle`, muted at 50%, over `bg-popover`), not just the flat `--background` the PAIRS loop uses (#488).
 for (const [themeId, props] of Object.entries(themes)) {
   const muted = props['muted']
   const popover = props['popover']

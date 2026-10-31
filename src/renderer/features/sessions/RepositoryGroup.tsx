@@ -261,7 +261,7 @@ export function RepositoryGroup({
               <IconButton
                 ref={menuTriggerRef}
                 size="icon-xs"
-                label={`Project actions for ${repository.name}`}
+                label={`More actions for ${repository.name}`}
                 className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
               >
                 <EllipsisVerticalIcon aria-hidden />

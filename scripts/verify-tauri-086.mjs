@@ -78,7 +78,7 @@ async function main() {
       await waitFor(`${radio(name)}?.getAttribute('aria-checked') === 'true'`, `${name} checked`);
       await sleep(300);
       const rows = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="radio"]')).map((el) => el.textContent.trim().slice(0, 24))`);
-      const kebabs = await cdp.evaluate(`document.querySelectorAll('[aria-label^="Actions for "]').length`);
+      const kebabs = await cdp.evaluate(`document.querySelectorAll('[aria-label^="More actions for "]').length`);
       check(kebabs >= 6 && rows.some((r) => r.startsWith('Per Element')), `${name}: Appearance lists built-ins and the custom theme, each row with an actions menu`, { rows, kebabs });
       await shot(`appearance-${slug}.png`);
       await backToChat();
@@ -106,8 +106,8 @@ async function main() {
         await pressEscape(cdp);
         await waitFor(`!document.querySelector('[role="menu"]')`, 'menu closed');
         const focused = await cdp.evaluate(`document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName`);
-        check(focused === 'Actions for build', 'closing the menu returns focus to the row actions button', focused);
-        const noLink = await cdp.evaluate(`(() => { const li = ${CHECK_ROW('lint (no link)')}; return !!li && li.textContent.includes('No details link') && !li.querySelector('[aria-label^="Actions for "]'); })()`);
+        check(focused === 'More actions for build', 'closing the menu returns focus to the row actions button', focused);
+        const noLink = await cdp.evaluate(`(() => { const li = ${CHECK_ROW('lint (no link)')}; return !!li && li.textContent.includes('No details link') && !li.querySelector('[aria-label^="More actions for "]'); })()`);
         check(noLink === true, 'a check without a link shows "No details link" inline and no actions menu', noLink);
       }
     }
@@ -115,13 +115,13 @@ async function main() {
     await openAppearance();
     await cdp.click(radio('Per Element'));
     await waitFor(`${radio('Per Element')}?.getAttribute('aria-checked') === 'true'`, 'custom theme active');
-    await cdp.click(kebab('Actions for Per Element'));
+    await cdp.click(kebab('More actions for Per Element'));
     await waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`, 'Remove entry');
     await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Remove'))`);
     await waitFor(`!!document.querySelector('[role="alertdialog"], [role="dialog"]')`, 'Remove dialog');
     await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button, [role="dialog"] button')).find((el) => el.textContent.trim() === 'Remove')`);
     await waitFor(`!${radio('Per Element')}`, 'custom theme row gone', 20_000);
-    const fallback = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="radio"][aria-checked="true"]')).filter((el) => el.parentElement.querySelector('[aria-label^="Actions for "]')).length`);
+    const fallback = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="radio"][aria-checked="true"]')).filter((el) => el.parentElement.querySelector('[aria-label^="More actions for "]')).length`);
     check(fallback === 1, 'removing the active custom theme leaves exactly one built-in selected', fallback);
     check(!existsSync(path.join(dirs.data, 'themes', 'per-element.json')), 'the theme file is deleted from the scratch themes folder');
     await shot('appearance-after-remove.png');

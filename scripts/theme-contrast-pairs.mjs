@@ -285,25 +285,25 @@ export function searchFieldContrastRows(themes) {
   return rows
 }
 
-// Links and chat prose composite over the user bubble's translucent fill (`bg-accent/50`), and `--chat-foreground`
+// Links and chat prose composite over the user bubble's translucent fill (`--chat-user-bubble-bg`, muted at 50%), and `--chat-foreground`
 // is itself translucent, so it composites twice. Blend the bubble over `--background`, then each foreground over that.
 export function userBubbleContrastRows(themes) {
   const rows = []
   for (const [themeId, props] of Object.entries(themes)) {
-    const accent = props['accent']
+    const muted = props['muted']
     const background = props['background']
     const accentText = props['accent-text']
     const chatForeground = props['chat-foreground']
-    if (!accent || !background || !accentText || !chatForeground) {
-      rows.push({ themeId, fg: 'accent-text/chat-foreground', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+    if (!muted || !background || !accentText || !chatForeground) {
+      rows.push({ themeId, fg: 'accent-text/chat-foreground', bg: 'user-bubble (muted/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    const bubble = { raw: 'bubble', alpha: 1, linear: resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background) }
+    const bubble = { raw: 'bubble', alpha: 1, linear: resolvedLinear({ raw: 'muted/50', alpha: 0.5, linear: muted.linear }, background) }
     const bubbleLum = relativeLuminance(bubble.linear)
     for (const [fg, entry] of [['accent-text', accentText], ['chat-foreground', chatForeground]]) {
       const fgLinear = resolvedLinear(entry, bubble)
       const ratio = contrastRatio(relativeLuminance(fgLinear), bubbleLum)
-      rows.push({ themeId, fg, bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio, pass: ratio >= 4.5, fgHex: linearToHex(fgLinear), bgHex: linearToHex(bubble.linear) })
+      rows.push({ themeId, fg, bg: 'user-bubble (muted/50 on background)', min: 4.5, ratio, pass: ratio >= 4.5, fgHex: linearToHex(fgLinear), bgHex: linearToHex(bubble.linear) })
     }
   }
   return rows

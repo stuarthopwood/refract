@@ -34,6 +34,13 @@
   --color-composer-focus: var(--composer-focus);
   --color-composer-ring: var(--composer-ring);
   --color-row-hover-bg: var(--row-hover-bg);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-invalid-edge: var(--invalid-edge);
+  --color-secondary-hover-bg: var(--secondary-hover-bg);
+  --color-destructive-tint-bg: var(--destructive-tint-bg);
+  --color-destructive-tint-strong-bg: var(--destructive-tint-strong-bg);
+  --color-switch-off-dark-bg: var(--switch-off-dark-bg);
+  --color-preview-bar-bg: var(--preview-bar-bg);
   --color-tab-close-hover-bg: var(--tab-close-hover-bg);
   --color-chat-user-bubble-bg: var(--chat-user-bubble-bg);
   --color-chat-user-bubble-fg: var(--chat-user-bubble-fg);
@@ -329,6 +336,14 @@ samp {
   --holiday-artwork-opacity: 0.30;
   /* #579: translucent surfaces as tokens instead of Tailwind opacity modifiers; same element as the theme class, so they follow each preset's base colours. */
   --row-hover-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  /* Resting (non-interactive) fills: same value as the hover fill today, but a theme can now split them. */
+  --surface-subtle: var(--row-hover-bg);
+  --invalid-edge: color-mix(in oklab, var(--destructive) 50%, transparent);
+  --secondary-hover-bg: color-mix(in oklab, var(--secondary) 80%, transparent);
+  --destructive-tint-bg: color-mix(in oklab, var(--destructive) 10%, transparent);
+  --destructive-tint-strong-bg: color-mix(in oklab, var(--destructive) 20%, transparent);
+  --switch-off-dark-bg: color-mix(in oklab, var(--foreground) 40%, transparent);
+  --preview-bar-bg: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
   --tab-close-hover-bg: color-mix(in oklab, var(--foreground) 10%, transparent);
   --focus-glow: color-mix(in oklab, var(--ring) 50%, transparent);
   --elevated-edge: color-mix(in oklab, var(--foreground) 10%, transparent);
@@ -339,7 +354,7 @@ samp {
   --field-bg: color-mix(in oklab, var(--input) 30%, transparent);
   --field-hover-bg: color-mix(in oklab, var(--input) 50%, transparent);
   /* #458: per-element tokens for the user bubble; a theme file can recolour it without touching hovers. */
-  --chat-user-bubble-bg: var(--row-hover-bg);
+  --chat-user-bubble-bg: var(--surface-subtle);
   --chat-user-bubble-fg: var(--chat-foreground);
   --chat-user-bubble-border: transparent;
 }

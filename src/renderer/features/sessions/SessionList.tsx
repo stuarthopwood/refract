@@ -214,8 +214,8 @@ export function SessionList() {
                       variant="outline"
                       size="sm"
                       onClick={handleClearSearch}
-      // Same focus-visible outline as the field's Input and clear button; `Button`'s box-shadow ring is stripped under forced colours.
-                      className="forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
+                      // Same offset as the field's Input and clear button; `Button` already sets the forced-colours outline.
+                      className="forced-colors:focus-visible:outline-offset-1"
                     >
                       Clear filter
                     </Button>

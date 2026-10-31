@@ -110,7 +110,7 @@ async function main() {
     await waitFor(`!!document.querySelector('.not-prose')`, 'final reply rendered', 60_000);
 
     // Message row: controls are lazy, then Copy plus the kebab; kebab items equal the right-click items.
-    const msgKebab = `Array.from(document.querySelectorAll('button[aria-label="More actions"], button[aria-label^="More actions,"]')).filter((b) => !b.closest('.not-prose, [data-slot="collapsible"]')).pop()`;
+    const msgKebab = `Array.from(document.querySelectorAll('button[aria-label="More actions"], button[aria-label^="More actions for "]')).filter((b) => !b.closest('.not-prose, [data-slot="collapsible"]')).pop()`;
     await shot('00-message-before-arm.png');
     await mouse('mouseMoved', await centre(ASSISTANT_P));
     await waitFor(`!!(${msgKebab})`, 'message kebab mounted on hover');
@@ -150,7 +150,7 @@ async function main() {
     await closeMenu();
 
     // Tool row: kebab revealed on hover/focus, never mounted while running.
-    const toolKebab = `Array.from(document.querySelectorAll('button[aria-label^="More actions,"]')).find((b) => b.closest('[data-slot="collapsible"]'))`;
+    const toolKebab = `Array.from(document.querySelectorAll('button[aria-label^="More actions for "]')).find((b) => b.closest('[data-slot="collapsible"]'))`;
     const toolRow = `Array.from(document.querySelectorAll('button, [role="button"]')).find((b) => b.textContent.includes('echo menu-output-065'))`;
     await mouse('mouseMoved', await centre(toolRow));
     await waitFor(`!!(${toolKebab})`, 'tool row kebab mounted');
@@ -186,7 +186,7 @@ $cancel.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
     check(dialog.includes('OPENED'), 'Save image: native Save dialog opened and was cancelled via UI Automation', dialog.trim());
 
     // DeleteDialog on the shared ConfirmAlertDialog: alertdialog, Cancel autofocused, Cancel closes it.
-    const actions = `Array.from(document.querySelectorAll('button[aria-label$=" actions"]')).find((b) => !b.getAttribute('aria-label').startsWith('Project actions'))`;
+    const actions = `Array.from(document.querySelectorAll('button[aria-label^="More actions for "]')).find((b) => { let n = b.parentElement; while (n && !n.querySelector('[data-session-open]')) n = n.parentElement; return !!n && n.querySelectorAll('[data-session-open]').length === 1; })`;
     await click(await centre(actions));
     await menuOpen();
     await click(await centre(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).find((i) => i.textContent.trim() === 'Delete…')`));
