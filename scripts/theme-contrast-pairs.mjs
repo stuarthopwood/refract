@@ -230,6 +230,7 @@ export const PAIRS = [
   { fg: 'button-destructive-fg', bg: 'button-destructive-bg', min: 4.5 },
   { fg: 'button-outline-border', bg: 'background', min: 3 },
   { fg: 'button-outline-fg', bg: 'background', min: 4.5 },
+  // Not paired: hover/composite bgs built with color-mix or declared on :root only (parser cannot resolve them): secondary, destructive, outline and pill hovers, approval-card-border, status-pill-attention-bg.
   { fg: 'status-bar-fg', bg: 'status-bar-bg', min: 4.5 },
   { fg: 'status-pill-attention-fg', bg: 'status-bar-bg', min: 4.5 },
   { fg: 'tooltip-fg', bg: 'tooltip-bg', min: 4.5 },
