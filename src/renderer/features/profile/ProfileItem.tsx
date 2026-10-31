@@ -3,12 +3,11 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SettingsIcon, TriangleAlertIcon } from 'lucide-react'
 import { PauseAllButton } from './PauseAllButton'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { UserAvatar } from '@/components/UserAvatar'
+import { IconButton } from '@/components/IconButton'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { initials } from '@/lib/initials'
 import { HolidayAccessory } from '@/features/holidays/HolidayAccessory'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { notify, useAccountsStore, useViewStore } from '@/state'
@@ -58,7 +57,15 @@ export function ProfileItem() {
   // Shared by every announcement this component itself makes (sign-out, Theme submenu) -- one polite live region is enough, since they never fire at the same moment.
   const [announcement, announce] = useClearedAnnouncement()
   const nameButtonRef = useRef<HTMLButtonElement>(null)
+  const nameTextRef = useRef<HTMLSpanElement>(null)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
   const manageAccountsRef = useRef<ManageAccountsDialogHandle>(null)
+
+  // The login tooltip only helps when the visible name is cut off.
+  function handleTooltipOpenChange(next: boolean): void {
+    const el = nameTextRef.current
+    setTooltipOpen(next && el !== null && el.scrollWidth > el.clientWidth)
+  }
 
   function focusNameButton(): boolean {
     const el = nameButtonRef.current
@@ -154,35 +161,40 @@ export function ProfileItem() {
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
       <HolidayAccessory />
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} modal={false}>
-        <Tooltip>
+        <Tooltip open={tooltipOpen && !menuOpen} onOpenChange={handleTooltipOpenChange}>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 ref={nameButtonRef}
                 type="button"
+                variant="ghost"
                 aria-label={label}
                 data-profile-name-button
-                className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-expanded:bg-muted"
+                className="h-10 min-w-0 flex-1 justify-start gap-2 px-2 text-left"
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  setMenuOpen(true)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowUp') return
+                  event.preventDefault()
+                  setMenuOpen(true)
+                }}
               >
-                <Avatar size="sm">
-                  {!missingCli && !githubError && <AvatarImage src={account?.avatarDataUrl ?? undefined} alt="" />}
-                  <AvatarFallback className={githubError ? 'text-state-needs-you' : undefined}>
-                    {missingCli ? (
-                      '?'
-                    ) : githubError ? (
-                      <TriangleAlertIcon aria-hidden className="size-4" />
-                    ) : (
-                      initials(name ?? '?')
-                    )}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="min-w-0 flex-1 truncate text-sm">{name ?? 'Sign in'}</span>
+                <UserAvatar
+                  size="sm"
+                  name={name ?? '?'}
+                  src={!missingCli && !githubError ? (account?.avatarDataUrl ?? undefined) : undefined}
+                  fallbackClassName={githubError ? 'text-state-needs-you' : undefined}
+                  fallback={missingCli ? '?' : githubError ? <TriangleAlertIcon aria-hidden className="size-4" /> : undefined}
+                />
+                <span ref={nameTextRef} className="min-w-0 flex-1 truncate text-sm">{name ?? 'Sign in'}</span>
                 {authProblem && <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />}
-              </button>
+              </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
           {/* Suppressed while the menu is open so the two surfaces never stack on the same trigger. */}
-          {name && !menuOpen && <TooltipContent side="top">{name}</TooltipContent>}
+          {account && <TooltipContent side="top">@{account.login} on {account.host}</TooltipContent>}
         </Tooltip>
         <ProfileMenuContent
           account={account}
@@ -200,30 +212,17 @@ export function ProfileItem() {
         />
       </DropdownMenu>
       <PauseAllButton />
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label="Settings"
-            aria-keyshortcuts="Control+,"
-            onClick={() => useViewStore.getState().openSettings()}
-          >
-            <SettingsIcon aria-hidden />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          Settings
-          <KbdGroup>
-            <Kbd>Ctrl</Kbd>
-            <Kbd>
-              <span aria-hidden>,</span>
-              <span className="sr-only">comma</span>
-            </Kbd>
-          </KbdGroup>
-        </TooltipContent>
-      </Tooltip>
+      <IconButton
+        label="Settings"
+        shortcut={['Ctrl', ',']}
+        size="icon"
+        side="top"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+        aria-keyshortcuts="Control+,"
+        onClick={() => useViewStore.getState().openSettings()}
+      >
+        <SettingsIcon aria-hidden />
+      </IconButton>
 
       <ManageAccountsDialog
         ref={manageAccountsRef}

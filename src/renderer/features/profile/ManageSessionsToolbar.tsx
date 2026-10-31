@@ -1,16 +1,20 @@
-// The Manage sessions screen's toolbar (spec 008 FR-025, T026; rebuilt on the shared ListToolbar
-// for #934): Filter tabs (All / Active / Archived), a Project select, a Sort select, the shared
-// SearchField, and a plain muted "Showing X of Y" line while filtering.
+// The Manage sessions toolbar on the shared ListToolbar: four filter tabs (All / Active /
+// Archived / Hidden), Project and Sort selects, the shared SearchField, and a "Showing X of Y" line while filtering.
 import type { RefObject } from 'react'
+import { FilterTabs } from '@/components/FilterTabs'
 import { ListToolbar } from '@/components/ListToolbar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Repository } from '../../../shared/model'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import { DEFAULT_FILTERS } from '@/state/view-store'
 import type { ArchiveFilter, SessionFilters, SortKey } from '@/state/view-store'
 
-const ARCHIVE_FILTER_VALUES: readonly ArchiveFilter[] = ['all', 'active', 'archived', 'hidden']
+const ARCHIVE_TABS: ReadonlyArray<{ value: ArchiveFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'archived', label: 'Archived' },
+  { value: 'hidden', label: 'Hidden' }
+]
 
 export interface ManageSessionsToolbarProps {
   filters: SessionFilters
@@ -56,22 +60,12 @@ export function ManageSessionsToolbar({
       }}
       countLine={filtering ? showingCountLabel(shownCount, totalCount) : undefined}
     >
-      <Tabs
+      <FilterTabs
         value={filters.archiveFilter}
-        onValueChange={(value) => onFiltersChange({ ...filters, archiveFilter: value as ArchiveFilter })}
-        className="gap-0"
-      >
-        <TabsList aria-label="Filter sessions">
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="active">Active</TabsTrigger>
-          <TabsTrigger value="archived">Archived</TabsTrigger>
-          <TabsTrigger value="hidden">Hidden</TabsTrigger>
-        </TabsList>
-        {/* Empty, hidden panels so each trigger's aria-controls resolves; the list itself lives in the screen body. */}
-        {ARCHIVE_FILTER_VALUES.map((value) => (
-          <TabsContent key={value} value={value} forceMount className="hidden" />
-        ))}
-      </Tabs>
+        onValueChange={(archiveFilter) => onFiltersChange({ ...filters, archiveFilter })}
+        tabs={ARCHIVE_TABS}
+        ariaLabel="Filter sessions"
+      />
 
       <Select value={filters.repositoryId} onValueChange={(value) => onFiltersChange({ ...filters, repositoryId: value })}>
         <SelectTrigger aria-label="Filter by project">
@@ -89,6 +83,7 @@ export function ManageSessionsToolbar({
 
       <Select value={filters.sort} onValueChange={(value) => onFiltersChange({ ...filters, sort: value as SortKey })}>
         <SelectTrigger aria-label="Sort sessions">
+          <span className="text-muted-foreground">Sort:</span>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

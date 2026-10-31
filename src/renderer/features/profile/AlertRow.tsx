@@ -1,8 +1,7 @@
 import type { RefObject } from 'react'
 import { AlertTriangleIcon, XIcon } from 'lucide-react'
+import { IconButton } from '@/components/IconButton'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 
 /** One quiet alert row: an icon, a quieter label, one amber text action, and a dismiss button.
@@ -19,7 +18,6 @@ interface AlertRowProps {
   actionAriaLabel: string
   onAction(): void
   dismissAriaLabel: string
-  dismissTooltip: string
   onDismiss(): void
 }
 
@@ -32,7 +30,6 @@ export function AlertRow({
   actionAriaLabel,
   onAction,
   dismissAriaLabel,
-  dismissTooltip,
   onDismiss
 }: AlertRowProps) {
   return (
@@ -45,26 +42,14 @@ export function AlertRow({
         variant="text"
         size="xs"
         aria-label={actionAriaLabel}
-        className={cn(COMPOSER_BUTTON_FOCUS_CLASS, '-mx-1 h-auto px-1 py-1 text-state-needs-you underline')}
+        className="-mx-1 h-auto px-1 py-1"
         onClick={onAction}
       >
         {actionLabel}
       </Button>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={dismissAriaLabel}
-            className={cn(COMPOSER_BUTTON_FOCUS_CLASS, 'text-state-needs-you hover:text-state-needs-you', wrapLabel && '-my-1')}
-            onClick={onDismiss}
-          >
-            <XIcon aria-hidden />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">{dismissTooltip}</TooltipContent>
-      </Tooltip>
+      <IconButton label={dismissAriaLabel} className={cn('text-muted-foreground', wrapLabel && '-my-1')} onClick={onDismiss}>
+        <XIcon aria-hidden />
+      </IconButton>
     </div>
   )
 }

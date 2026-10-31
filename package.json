@@ -17,6 +17,7 @@
     "check:display-profiles": "node scripts/check-display-profiles.mjs",
     "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs",
     "verify:tauri": "node scripts/verify-tauri.mjs",
+    "verify:tauri-008": "node scripts/verify-tauri-008.mjs",
     "verify:1238": "node scripts/verify-1238-ai-credits.mjs",
     "check:parity": "node scripts/check-parity.mjs",
     "check:file-size": "node scripts/check-file-size.mjs",
