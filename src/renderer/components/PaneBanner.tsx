@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils'
 interface PaneBannerProps extends Omit<React.ComponentProps<'div'>, 'title'> {
   severity?: 'error' | 'warning'
   title: React.ReactNode
+  /** Id on the title node, for a wrapper's `aria-labelledby`. */
+  titleId?: string
   detail?: React.ReactNode
   detailMono?: boolean
 }
@@ -12,6 +14,7 @@ interface PaneBannerProps extends Omit<React.ComponentProps<'div'>, 'title'> {
 function PaneBanner({
   severity = 'error',
   title,
+  titleId,
   detail,
   detailMono = true,
   role = 'alert',
@@ -30,7 +33,7 @@ function PaneBanner({
       <span className="flex h-5 items-center">
         <Icon aria-hidden className={cn('size-4', severity === 'warning' ? 'text-severity-warning' : 'text-destructive')} />
       </span>
-      <div className="font-medium text-foreground">{title}</div>
+      <div id={titleId} className="font-medium text-foreground">{title}</div>
       {detail != null && detail !== '' && (
         <div
           data-slot="pane-banner-detail"
