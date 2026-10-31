@@ -8,7 +8,7 @@ import { ReadoutItem } from './ReadoutItem'
 
 export const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
 
-const refreshedSessions = new Set<string>()
+let catalogRefreshed = false
 
 const STOPS = [0, 30, 70, 100] as const
 
@@ -29,9 +29,9 @@ export function ContextUsageReadout({ sessionId }: { sessionId: string }) {
   const model = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.lastModel)
   const catalog = useModelRolesStore((s) => s.catalogs.chat)
   useEffect(() => {
-    // One forced refresh per session per run so a stale cached catalog cannot hide or invent a warning.
-    const force = !refreshedSessions.has(sessionId)
-    refreshedSessions.add(sessionId)
+    // One forced refresh per run so a stale cached catalog cannot hide or invent a warning.
+    const force = !catalogRefreshed
+    catalogRefreshed = true
     void useModelRolesStore.getState().loadCatalog('chat', force)
   }, [sessionId, model?.id])
   const suspect = findSuspectWindow(catalog, model)

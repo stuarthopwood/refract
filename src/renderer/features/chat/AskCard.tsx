@@ -5,7 +5,7 @@ import type { AskQuestion, PendingRequest } from '../../../shared/model'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
+import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -29,7 +29,7 @@ interface AskCardProps {
   request: AskRequest
 }
 
-const ASK_ROW_CLASS = OPTION_ROW_CLASS
+const ASK_CHECKED_MARK_CLASS = 'group-data-[state=checked]/checkbox-item:border-foreground forced-colors:group-data-[state=checked]/checkbox-item:border-[Highlight]'
 
 function isQuestionComplete(question: AskQuestion, draft: AskDraftQuestion): boolean {
   if (question.multi) return draft.viewed
@@ -167,13 +167,13 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   const allComplete = questions.every((question) => isQuestionComplete(question, byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT))
   const activeIncomplete = !isQuestionComplete(activeQuestion, byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT)
 
-  // D13: pressing the primary button on an incomplete batch moves to the NEXT incomplete
-  // question after the active one, wrapping around; the inline note shows only when the active
-  // question is the ONLY one still incomplete (searching wraps all the way back to it).
-  function advance(answersBy: Record<string, AskDraftQuestion>) {
+  // D13: pressing the primary button, or picking a single-choice option, on an incomplete batch
+  // moves to the NEXT incomplete question after the active one, wrapping around; the inline note
+  // shows only when the active question is the ONLY one still incomplete. A pick never submits (#1448).
+  function advance(answersBy: Record<string, AskDraftQuestion>, submitWhenComplete = true) {
     const incomplete = (question: AskQuestion) => !isQuestionComplete(question, answersBy[question.id] ?? EMPTY_ASK_QUESTION_DRAFT)
     if (!questions.some(incomplete)) {
-      void submit(answersBy)
+      if (submitWhenComplete) void submit(answersBy)
       return
     }
     const activeIndex = questions.findIndex((question) => question.id === activeId)
@@ -193,11 +193,11 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     advance(byQuestionId)
   }
 
-  // #1435: a pointer click or Space on a single-choice option commits it; arrow keys only move the pick.
-  function handlePickSingle(label: string) {
+  // #1435: a pointer click or Space on a single-choice option commits it and moves on; arrow keys only move the pick.
+  const handlePickSingle = (label: string) => {
     if (busy) return
-    selectSingleOption(sessionId, request.requestId, activeQuestion!.id, label)
-    advance({ ...byQuestionId, [activeQuestion!.id]: { ...activeDraft, selectedOptions: [label], otherSelected: false } })
+    selectSingleOption(sessionId, request.requestId, activeQuestion.id, label)
+    advance({ ...byQuestionId, [activeQuestion.id]: { ...(byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT), selectedOptions: [label], otherSelected: false } }, false)
   }
 
   function handleTabChange(questionId: string) {
@@ -217,6 +217,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
       busy={busy}
       showIncompleteNote={incompleteNoteId === activeQuestion.id && activeIncomplete}
       groupIdPrefix={groupAriaId}
+      advancesOnPick={questions.length > 1 && questions.some((question) => question.id !== activeQuestion.id && !isQuestionComplete(question, byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT))}
       onSelectSingle={(label) => selectSingleOption(sessionId, request.requestId, activeQuestion.id, label)}
       onPickSingle={handlePickSingle}
       onSelectOther={() => selectOther(sessionId, request.requestId, activeQuestion.id)}
@@ -320,6 +321,7 @@ interface AskQuestionBodyProps {
   busy: boolean
   showIncompleteNote: boolean
   groupIdPrefix: string
+  advancesOnPick: boolean
   onSelectSingle: (label: string) => void
   onPickSingle: (label: string) => void
   onSelectOther: () => void
@@ -330,7 +332,7 @@ interface AskQuestionBodyProps {
 }
 
 const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(function AskQuestionBody(
-  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
+  { question, draft, busy, showIncompleteNote, groupIdPrefix, advancesOnPick, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
   ref
 ) {
   const arrowKeyRef = React.useRef(false)
@@ -339,7 +341,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
   const headingId = `${safeId}-heading`
   const noteId = `${safeId}-incomplete-note`
   const hintId = `${safeId}-hint`
-  const describedBy = showIncompleteNote ? noteId : undefined
+  const describedBy = [advancesOnPick ? hintId : null, showIncompleteNote ? noteId : null].filter(Boolean).join(' ') || undefined
   const multiDescribedBy = showIncompleteNote ? `${hintId} ${noteId}` : hintId
   const otherValue = otherSentinelFor(question.options)
 
@@ -380,13 +382,13 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                 <CheckboxItem
                   key={option.label}
                   checked={checked}
-                  disabled={busy}
-                  onCheckedChange={() => onToggleMulti(option.label)}
+                  aria-disabled={busy}
+                  onCheckedChange={() => !busy && onToggleMulti(option.label)}
                   aria-labelledby={labelId}
                   aria-describedby={option.description ? descId : undefined}
-                  className={ASK_ROW_CLASS}
+                  className={OPTION_ROW_CLASS}
                 >
-                  <span aria-hidden className={cn(OPTION_MARK_CLASS, "grid size-4 shrink-0 place-items-center rounded-md border border-muted-foreground group-data-[state=checked]/checkbox-item:border-foreground forced-colors:group-data-[state=checked]/checkbox-item:border-[Highlight]")}>
+                  <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, ASK_CHECKED_MARK_CLASS)}>
                     <CheckboxIndicator />
                   </span>
                   <span id={labelId} className="col-start-2 min-w-0 break-words">
@@ -403,12 +405,12 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
             })}
             <CheckboxItem
               checked={draft.otherTicked}
-              disabled={busy}
-              onCheckedChange={onToggleOtherTicked}
+              aria-disabled={busy}
+              onCheckedChange={() => !busy && onToggleOtherTicked()}
               aria-label="Other"
-              className={ASK_ROW_CLASS}
+              className={OPTION_ROW_CLASS}
             >
-              <span aria-hidden className={cn(OPTION_MARK_CLASS, "grid size-4 shrink-0 place-items-center rounded-md border border-muted-foreground group-data-[state=checked]/checkbox-item:border-foreground forced-colors:group-data-[state=checked]/checkbox-item:border-[Highlight]")}>
+              <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, ASK_CHECKED_MARK_CLASS)}>
                 <CheckboxIndicator />
               </span>
               <span className="col-start-2 min-w-0 break-words">Other</span>
@@ -437,8 +439,10 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               className="gap-2"
               onKeyDownCapture={(event) => { arrowKeyRef.current = /^(Arrow|Home$|End$)/.test(event.key) }}
               onKeyUpCapture={() => { arrowKeyRef.current = false }}
+              onBlurCapture={() => { arrowKeyRef.current = false }}
+              onPointerDownCapture={() => { arrowKeyRef.current = false }}
               value={draft.otherSelected ? otherValue : (draft.selectedOptions[0] ?? '')}
-              onValueChange={(value) => (value === otherValue ? onSelectOther() : onSelectSingle(value))}
+              onValueChange={(value) => { if (busy) return; if (value === otherValue) onSelectOther(); else onSelectSingle(value) }}
             >
               {question.options.map((option, index) => {
                 const labelId = `${safeId}-opt-${index}-label`
@@ -447,11 +451,11 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                   <RadioGroupItem
                     key={option.label}
                     value={option.label}
-                    disabled={busy}
+                    aria-disabled={busy}
                     aria-labelledby={labelId}
                     aria-describedby={option.description ? descId : undefined}
                     onClick={() => !arrowKeyRef.current && onPickSingle(option.label)}
-                    className={ASK_ROW_CLASS}
+                    className={OPTION_ROW_CLASS}
                   >
                     <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
                       <RadioGroupIndicator />
@@ -468,7 +472,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
                   </RadioGroupItem>
                 )
               })}
-              <RadioGroupItem value={otherValue} disabled={busy} aria-label="Other" className={ASK_ROW_CLASS}>
+              <RadioGroupItem value={otherValue} aria-disabled={busy} aria-label="Other" className={OPTION_ROW_CLASS}>
                 <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
                   <RadioGroupIndicator />
                 </span>
@@ -486,6 +490,11 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               onChange={(event) => onCustomInput(event.target.value)}
               onKeyDown={handleOtherKeyDown}
             />
+            {advancesOnPick && (
+              <p id={hintId} className="text-sm text-muted-foreground">
+                Choosing a listed option moves to the next unanswered question.
+              </p>
+            )}
           </>
         )}
         {showIncompleteNote && (

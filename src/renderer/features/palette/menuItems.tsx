@@ -41,11 +41,16 @@ export function actionMenuItem(id: string, options: ActionMenuItemOptions = {}) 
   )
 }
 
-/** Spelling suggestions for the word at the caret (#1431) plus "Add to dictionary", shown above the text-edit items. */
-export function spellingItems({ suggestions, word, onReplace, onAdd }: { suggestions: string[]; word: string; onReplace: (text: string) => void; onAdd: () => void }) {
-  if (suggestions.length === 0) return null
+/** Spelling suggestions for the word at the caret (#1431) plus "Add to dictionary", shown above the text-edit items. A misspelt word with no suggestions still offers Add. */
+export function spellingItems({ misspelt, suggestions, word, onReplace, onAdd }: { misspelt: boolean; suggestions: string[]; word: string; onReplace: (text: string) => void; onAdd: () => void }) {
+  if (!misspelt) return null
   return (
     <>
+      {suggestions.length === 0 && (
+        <ContextMenuItem disabled className="pl-8 data-disabled:forced-colors:text-[GrayText]">
+          No suggestions
+        </ContextMenuItem>
+      )}
       {suggestions.map((suggestion) => (
         <ContextMenuItem key={suggestion} icon={SpellCheckIcon} onSelect={() => onReplace(suggestion)}>
           {suggestion}

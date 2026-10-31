@@ -10,7 +10,7 @@ import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { SUSPECT_WINDOW_ISSUE_URL } from '@/lib/suspectContextWindow'
+import { SUSPECT_WINDOW_ISSUE_URL, SUSPECT_WINDOW_LINK_LABEL } from '@/lib/suspectContextWindow'
 import { notify, useDraftStore, useSessionsStore } from '@/state'
 
 interface ShakeAction {
@@ -112,8 +112,8 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
                 {action.id === 'thinking' && <DropdownMenuSeparator />}
                 <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={(event) => handleSelect(action, event)} className="aria-disabled:cursor-default aria-disabled:forced-colors:text-[GrayText]">
                   <Icon aria-hidden className={cn('size-4', !idle && 'opacity-50')} />
-                  <div className="flex flex-col gap-1 py-1">
-                    <span className={idle ? undefined : 'opacity-50'}>{action.label}</span>
+                  <div className={cn('flex flex-col gap-1 py-1', !idle && 'opacity-50')}>
+                    <span>{action.label}</span>
                     <span className="text-xs text-muted-foreground">{action.hint}</span>
                   </div>
                 </DropdownMenuItem>
@@ -126,7 +126,8 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
               <DropdownMenuItem asChild>
                 <a href={SUSPECT_WINDOW_ISSUE_URL} target="_blank" rel="noreferrer noopener">
                   <ExternalLinkIcon aria-hidden className="size-4" />
-                  Why this window may be wrong (oh-my-pi#17481)
+                  {SUSPECT_WINDOW_LINK_LABEL}
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </a>
               </DropdownMenuItem>
             </>
