@@ -18,13 +18,17 @@ const SNIPPET_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme
 
 function messageSnippet(text: string): string {
   // 256 UTF-16 units cover 32 graphemes of real text; segmenting the whole message is wasted work.
-  const flat = text.slice(0, 256).replace(/\s+/g, ' ').trim()
+  const source = text.trimStart()
+  const cut = source.length > 256
+  const flat = source.slice(0, 256).replace(/\s+/g, ' ').trim()
   const graphemes: string[] = []
   for (const { segment } of SNIPPET_SEGMENTER.segment(flat)) {
     graphemes.push(segment)
     if (graphemes.length > 32) break
   }
-  return graphemes.length > 32 ? `${graphemes.slice(0, 32).join('').trimEnd()}…` : flat
+  // A cut slice may end mid-cluster, so its last grapheme is dropped before the ellipsis.
+  if (graphemes.length > 32) return `${graphemes.slice(0, 32).join('').trimEnd()}…`
+  return cut ? `${graphemes.slice(0, -1).join('').trimEnd()}…` : flat
 }
 
 function ScrollToPromptItem({ sessionId, messageId, kind }: { sessionId: string; messageId: string; kind: MenuKind }) {
