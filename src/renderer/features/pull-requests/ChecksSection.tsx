@@ -2,15 +2,14 @@
 // grouped by outcome -- only Action required and Failing expanded; Pending, Successful, Neutral
 // and Skipped collapsed. Every row pairs its status icon with the outcome word (never colour
 // alone) and offers "Open details" through a plain http(s) anchor, as ChangesTab does (no IPC).
-import { ChevronRightIcon, CircleAlertIcon, EllipsisVerticalIcon, ExternalLinkIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
-import { useState, type ComponentType } from 'react'
+import { ChevronRightIcon, CircleAlertIcon, ExternalLinkIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
+import type { ComponentType } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { MenuItemIcon } from '@/components/ui/menu-item-icon'
+import { RowKebabMenu } from '@/components/RowKebabMenu'
+import type { RowMenuEntry } from '@/components/RowKebabMenu'
 import { cn } from '@/lib/utils'
 import type { CheckOutcome, PullRequestCheck, PullRequestDetail } from '../../../shared/github'
 import { CHECK_STATE_DISPLAY } from './PullRequestRow'
-import { IconButton } from '@/components/IconButton'
 
 interface OutcomeDisplay {
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
@@ -56,40 +55,21 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   const display = CHECK_OUTCOME_DISPLAY[check.outcome]
   const Icon = display.icon
   const duration = formatCheckDuration(check.startedAt, check.completedAt)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const entries: RowMenuEntry[] = isHttpUrl(check.detailsUrl)
+    ? [{ id: 'details', label: 'Open details', icon: ExternalLinkIcon, href: check.detailsUrl }]
+    : [{ id: 'details', label: 'Open details (no link available)', icon: ExternalLinkIcon, disabled: true }]
   return (
-    <li
-      className="flex items-center gap-2 py-1 pl-6 text-sm"
-      // Right-click, Shift+F10 and the Menu key all fire contextmenu; they open the same menu as the trigger.
-      onContextMenu={(event) => {
-        event.preventDefault()
-        setMenuOpen(true)
-      }}
-    >
-      <span className={cn('flex shrink-0 items-center gap-1 text-xs', display.colorClass)}>
-        <Icon aria-hidden className={cn('size-4', check.outcome === 'pending' && 'animate-spin')} />
-        {display.label}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{check.name}</span>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <IconButton size="icon-xs" label={`Actions for ${check.name}`}>
-            <EllipsisVerticalIcon aria-hidden />
-          </IconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {isHttpUrl(check.detailsUrl) ? (
-            <DropdownMenuItem asChild>
-              <a href={check.detailsUrl} target="_blank" rel="noreferrer noopener">
-                <MenuItemIcon icon={ExternalLinkIcon} />Open details<span className="sr-only"> (opens in browser)</span>
-              </a>
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem disabled icon={ExternalLinkIcon}>Open details (no link available)</DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <li className="py-1 pl-6 text-sm">
+      <RowKebabMenu entries={entries} label={`Actions for ${check.name}`}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className={cn('flex shrink-0 items-center gap-1 text-xs', display.colorClass)}>
+            <Icon aria-hidden className={cn('size-4', check.outcome === 'pending' && 'animate-spin')} />
+            {display.label}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{check.name}</span>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
+        </div>
+      </RowKebabMenu>
     </li>
   )
 }
