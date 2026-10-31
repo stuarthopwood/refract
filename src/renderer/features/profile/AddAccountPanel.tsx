@@ -77,7 +77,7 @@ export function AddAccountPanel({ flow, starting, cancelling = false, reauthLogi
             Starting sign-in…
           </InlineStatus>
         ) : (
-          <ol className="flex min-w-0 list-decimal flex-col gap-2 pl-5 text-sm">
+          <ol className="flex min-w-0 list-decimal flex-col gap-2 pl-6 text-sm">
             <li>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span aria-hidden className="font-code text-xl font-medium tracking-widest">
