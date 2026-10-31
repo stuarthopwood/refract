@@ -12,7 +12,7 @@ type IconButtonProps = Omit<React.ComponentProps<typeof Button>, 'aria-label' | 
   children: React.ReactNode
 }
 
-// Display key to its ria-keyshortcuts name.
+// Display key to its aria-keyshortcuts name.
 const KEY_SHORTCUT_NAMES: Record<string, string> = { Ctrl: 'Control', Esc: 'Escape', Cmd: 'Meta', Del: 'Delete' }
 
 /** The one icon-only button: ghost, 24px, with the Tooltip every icon-only control requires (#579). */
