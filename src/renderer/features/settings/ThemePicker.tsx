@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, FolderOpenIcon, Trash2Icon, UploadIcon } from 'lucide-react'
+import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, Trash2Icon, UploadIcon } from 'lucide-react'
 import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
@@ -163,7 +163,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
           <UploadIcon aria-hidden /> {actions.importing ? 'Importing…' : 'Import theme…'}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => void actions.showInFolder()}>
-          <FolderOpenIcon aria-hidden /> Open themes folder
+          <RevealActionIcon aria-hidden /> Show themes folder
         </Button>
       </div>
       <ConfirmAlertDialog

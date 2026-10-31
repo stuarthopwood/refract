@@ -15,9 +15,12 @@ export function AdvisorRosterNotice({ sessionId }: { sessionId: string }) {
   // A renderer reload loses the launch-time event; ask the backend once for a Session with no roster in the store.
   useEffect(() => {
     if (hasRoster) return
-    void window.refract.advisorRoster.detect(sessionId).then((result) => {
-      if (result.ok && result.value) useAdvisorRosterStore.getState().setDetected({ sessionId, roster: result.value })
-    })
+    void window.refract.advisorRoster
+      .detect(sessionId)
+      .then((result) => {
+        if (result.ok && result.value) useAdvisorRosterStore.getState().setDetected({ sessionId, roster: result.value })
+      })
+      .catch(() => {}) // a bridge rejection must not become an unhandled rejection
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount; a later roster arrives by event
   }, [sessionId])
   if (!roster || dismissedPath === roster.path) return null

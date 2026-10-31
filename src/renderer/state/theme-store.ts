@@ -28,6 +28,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
  save: async (id) => {
   const requestId = ++latestSaveId
+  const previous = { theme: get().theme, customId: get().customId }
+  // Optimistic so a fast A -> B -> A arrow sequence always lands on the last choice.
+  set({ theme: id, customId: null })
+  const rollback = () => {
+   if (requestId === latestSaveId) set(previous)
+  }
   try {
    const result = await window.refract.theme.set(id)
    if (result.ok) {
@@ -35,12 +41,14 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (requestId !== latestSaveId) return true
     set({ theme: result.value.theme })
     // Picking a built-in preset leaves any custom theme.
-    if (get().customId !== null) return get().saveCustom(null)
+    if (previous.customId !== null) return get().saveCustom(null)
     return true
    }
+   rollback()
    notify(result.error)
    return false
   } catch (err: unknown) {
+   rollback()
    console.error('theme.set threw', err)
    notify({ code: 'unsupported', message: 'Could not save theme.' })
    return false
@@ -49,6 +57,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
  saveCustom: async (id) => {
   const requestId = ++latestSaveId
+  const previousCustomId = get().customId
+  set({ customId: id })
   const result = await window.refract.themes.setCustom(id)
   if (result.ok) {
    if (requestId !== latestSaveId) return true
@@ -56,6 +66,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
    if (id !== null) toast.info('Custom theme applied. If it is hard to read, press Ctrl+Shift+0 to reset to Dark.', { id: 'custom-theme-applied' })
    return true
   }
+  if (requestId === latestSaveId) set({ customId: previousCustomId })
   notify(result.error)
   return false
  },

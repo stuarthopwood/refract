@@ -36,6 +36,7 @@ export function SpendChart({
           <Sparkline
             label={`Spend per ${unit}, ${values.length} ${unit}s: ${formatUsd(total)} total, peak ${formatUsd(Math.max(...values))}`}
             values={values}
+            formatValue={formatUsd}
           />
         )}
       </ScreenSection>

@@ -339,11 +339,18 @@ export interface SparklineProps {
   label: string
   values: number[]
   className?: string
+  /** Formats the latest, low and high figures in the accessible name. */
+  formatValue?: (n: number) => string
 }
 
-export function Sparkline({ label, values, className }: SparklineProps) {
+const roundTo2 = (n: number): string => String(Number(n.toFixed(2)))
+
+export function Sparkline({ label, values, className, formatValue = roundTo2 }: SparklineProps) {
   const max = Math.max(1e-9, ...values)
-  const summary = values.length > 0 ? `${label}, latest ${values[values.length - 1]}, low ${Math.min(...values)}, high ${Math.max(...values)}` : label
+  const summary =
+    values.length > 0
+      ? `${label}, latest ${formatValue(values[values.length - 1] ?? 0)}, low ${formatValue(Math.min(...values))}, high ${formatValue(Math.max(...values))}`
+      : label
   const step = values.length > 1 ? 100 / (values.length - 1) : 0
   const points = values.map((v, i) => `${(i * step).toFixed(2)},${(28 - (v / max) * 26).toFixed(2)}`).join(' ')
   const last = values.length > 0 ? points.split(' ')[values.length - 1]?.split(',') : null

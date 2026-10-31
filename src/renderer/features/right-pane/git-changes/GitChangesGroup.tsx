@@ -101,7 +101,7 @@ export function GitChangesGroup({
                   // Low item (#1111): `aria-disabled:opacity-50` -- every other busy control in
                   // this panel dims while pending (`GitChangesFileRow.tsx`'s kebab trigger, the
                   // Commit button); this one didn't.
-                  className={cn('shrink-0 aria-disabled:opacity-50', HEADER_ACTION_BUTTON_CLASS)}
+                  className={cn('shrink-0', HEADER_ACTION_BUTTON_CLASS, 'aria-disabled:pointer-events-none aria-disabled:opacity-50', bulkPending && 'opacity-100')}
                   onClick={() => void runBulkAction()}
                 >
                   {bulkPending ? <Loader2Icon aria-hidden className="size-4 animate-spin" /> : <bulk.icon aria-hidden className="size-4" />}

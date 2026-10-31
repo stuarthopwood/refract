@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate, groupTriggerFinder } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, groupTriggerFinder, hoverRow, openRowActionsMenu, clickMenuItem, pressKey, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -21,7 +21,12 @@ const SHOTS_DIR = process.env.REFRACT_087_SHOTS_DIR || path.join(tmpdir(), 'refr
 mkdirSync(SHOTS_DIR, { recursive: true });
 
 const REPORT = [];
+const SKIPPED = [];
 let passed = 0;
+function skip(name, reason) {
+  SKIPPED.push({ name, reason });
+  log(`SKIP: ${name}: ${reason}`);
+}
 function log(line) {
   console.log(line);
   REPORT.push(line);
@@ -38,20 +43,38 @@ const openSettingsSection = async (cdp, label) => {
 };
 
 async function checkDetailsCard(cdp, repoName) {
-  const trigger = `document.querySelector('[data-session-open], [data-slot="session-open"]') || Array.from(document.querySelectorAll('button')).find((b) => b.closest('li') && b.closest('li').querySelector('[data-session-row-actions], [aria-label*="actions" i]'))`;
-  const box = await cdp.evaluate(`(() => { const el = document.querySelector('[data-session-row] button') || (${trigger}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
-  assert(!!box, `A session row is present under ${repoName}`);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
+  const trigger = `document.querySelector('[data-repository-id] li button[data-session-open]')`;
+  assert(!!(await cdp.evaluate(`!!(${trigger})`)), `A session row is present under ${repoName}`);
+  // The hover card opens after a 750 ms delay on the row's open button.
+  await hoverRow(cdp, trigger);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Copy path"]')`, { timeoutMs: 8_000, label: 'Details card shows Copy path' });
   const layout = await cdp.evaluate(`(() => {
     const copy = document.querySelector('[aria-label="Copy path"]');
     const row = copy.parentElement;
-    const reveal = row.querySelector('[aria-label="Show in File Explorer"]');
-    return { sameRow: !!reveal, rowText: row.textContent.trim().slice(0, 80), copyRight: Math.round(copy.getBoundingClientRect().right), rowRight: Math.round(row.getBoundingClientRect().right) };
+    const path = row.querySelector('p');
+    const lastTwo = Array.from(row.children).slice(-2).map((el) => el.getAttribute('aria-label'));
+    return { hasPath: !!path && /[\\\\/]/.test(path.textContent), lastTwo, rowRight: Math.round(row.getBoundingClientRect().right), copyRight: Math.round(copy.getBoundingClientRect().right) };
   })()`);
   log(`details layout: ${JSON.stringify(layout)}`);
   await shot(cdp, '01-details-card.png');
-  assert(layout.sameRow, 'Copy path and Show in File Explorer share the path row');
+  assert(layout.hasPath, 'Details card row shows the worktree path text');
+  assert(layout.lastTwo.includes('Copy path') && layout.lastTwo.includes('Show in File Explorer'), 'Copy path and Show in File Explorer are the last two children of the path row');
+  await pressEscape(cdp);
+}
+
+async function checkShowHidden(cdp, repoName) {
+  await openRowActionsMenu(cdp, repoName, SHOTS_DIR, log);
+  await clickMenuItem(cdp, 'Hide');
+  await cdp.waitFor(`!!document.querySelector('[data-show-hidden-toggle]')`, { timeoutMs: 10_000, label: 'Show hidden toggle appears once a Session is hidden' });
+  await cdp.click(`document.querySelector('[data-show-hidden-toggle]')`);
+  await cdp.waitFor(`document.querySelector('[data-show-hidden-toggle]')?.getAttribute('aria-pressed') === 'true'`, { timeoutMs: 5_000, label: 'Show hidden pressed' });
+  await shot(cdp, '04-show-hidden.png');
+  assert(await cdp.evaluate(`!!document.querySelector('[data-collapse-all-groups]')`), 'Collapse all groups focus target exists beside Show hidden');
+  // Unhide so later checks keep a visible row; the toggle then removes itself.
+  await openRowActionsMenu(cdp, repoName, SHOTS_DIR, log);
+  await clickMenuItem(cdp, 'Unhide');
+  await cdp.waitFor(`!document.querySelector('[data-show-hidden-toggle]')`, { timeoutMs: 10_000, label: 'Show hidden toggle removes itself with nothing hidden' });
+  assert(await cdp.evaluate(`!document.querySelector('[data-show-hidden-toggle]')`), 'Show hidden toggle removed after the last hidden Session is unhidden');
 }
 
 async function checkSettings(cdp) {
@@ -60,30 +83,50 @@ async function checkSettings(cdp) {
   await openSettingsSection(cdp, 'Appearance');
   const group = `document.querySelector('[role="radiogroup"] [id^="chat-width-option-"]')?.closest('[role="radiogroup"]')`;
   await cdp.waitFor(`!!(${group})`, { timeoutMs: 10_000, label: 'Chat width picker mounted' });
-  const picker = await cdp.evaluate(`(() => { const g = ${group}; return { text: g.textContent, preview: g.nextElementSibling?.className ?? '', radios: g.querySelectorAll('[role="radio"]').length }; })()`);
+  const picker = await cdp.evaluate(`(() => { const g = ${group}; return { text: g.textContent, previewParent: g.parentElement?.className ?? '', radios: g.querySelectorAll('[role="radio"]').length }; })()`);
   log(`chat width picker: ${JSON.stringify(picker)}`);
   await shot(cdp, '02-settings-chat-width.png');
   assert(!picker.text.includes('Current'), 'Chat width no longer shows "Current"');
-  assert(picker.preview.includes('max-w-sm'), 'Chat width preview uses max-w-sm');
-  await cdp.click(`document.querySelector('#chat-width-option-reading-column-name').closest('button')`);
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 38, key: 'ArrowUp', code: 'ArrowUp' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 38, key: 'ArrowUp', code: 'ArrowUp' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 40, key: 'ArrowDown', code: 'ArrowDown' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 40, key: 'ArrowDown', code: 'ArrowDown' });
-  await sleep(1200);
-  const checked = await cdp.evaluate(`document.querySelector('[role="radio"][aria-checked="true"] [id^="chat-width-option-"]')?.id ?? null`);
-  log(`checked after quick ArrowUp, ArrowDown: ${checked}`);
-  assert(checked === 'chat-width-option-reading-column-name', 'Rapid arrow keys end on the last choice');
+  assert(picker.previewParent.includes('max-w-sm'), 'Chat width picker container uses max-w-sm');
+  await cdp.click(`document.querySelector('#chat-width-option-full-name').closest('button')`);
+  await pressKey(cdp, 40, 'ArrowDown', 'ArrowDown');
+  await pressKey(cdp, 38, 'ArrowUp', 'ArrowUp');
+  await sleep(1500);
+  const settled = await cdp.evaluate(`(() => { const radios = Array.from(${group}.querySelectorAll('[role="radio"]')); const checked = radios.filter((r) => r.getAttribute('aria-checked') === 'true'); return { checkedCount: checked.length, checkedIsFocused: checked[0] === document.activeElement, checkedId: checked[0]?.querySelector('[id^="chat-width-option-"]')?.id ?? null }; })()`);
+  log(`after quick ArrowDown, ArrowUp: ${JSON.stringify(settled)}`);
+  await shot(cdp, '02b-settings-chat-width-after-arrows.png');
+  assert(settled.checkedCount === 1, 'Exactly one chat width radio is checked after rapid arrows');
+  assert(settled.checkedIsFocused, 'The checked chat width radio is the focused one after rapid arrows');
+  assert(settled.checkedId === 'chat-width-option-full-name', 'Rapid ArrowDown then ArrowUp ends on Full');
 
   await openSettingsSection(cdp, 'Models');
-  await cdp.waitFor(`/WATCHDOG/i.test(document.body.textContent)`, { timeoutMs: 15_000, label: 'Advisor row shows the roster warning' });
+  const warning = `document.querySelector('#model-role-advisor-warning')`;
+  await cdp.waitFor(`!!(${warning})`, { timeoutMs: 15_000, label: 'Advisor row shows the roster warning' });
   await shot(cdp, '03-settings-advisor-warning.png');
-  assert(true, 'Settings Advisor row shows the roster warning');
+  assert(await cdp.evaluate(`/WATCHDOG/i.test(${warning}.textContent)`), 'Settings Advisor row warning mentions WATCHDOG');
 }
 
-async function checkIssuesAndUsage(cdp) {
-  const usageNav = await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button, [aria-label="Usage"]')).map((el) => el.textContent.trim() || el.getAttribute('aria-label'))`);
-  log(`nav entries: ${JSON.stringify(usageNav)}`);
+async function checkUsage(cdp) {
+  await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
+  await cdp.click(`document.querySelector('button[aria-label="Usage"]')`);
+  await cdp.waitFor(`!!document.querySelector('section[aria-label="Usage"]')`, { timeoutMs: 15_000, label: 'Usage view mounted' });
+  const trigger = `document.querySelector('[aria-label="Agent type"]')`;
+  await cdp.waitFor(`!!(${trigger})`, { timeoutMs: 10_000, label: 'Agent type filter present' });
+  const anyText = await cdp.evaluate(`${trigger}.textContent.trim()`);
+  await cdp.click(trigger);
+  await cdp.waitFor(`document.querySelectorAll('[role="option"]').length > 0`, { timeoutMs: 5_000, label: 'Agent type options open' });
+  const options = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="option"]')).map((o) => o.textContent.trim())`);
+  log(`agent type options: ${JSON.stringify(options)}, trigger: ${anyText}`);
+  await shot(cdp, '05-usage-agent-type.png');
+  assert(options.includes('Advisor'), 'Usage agent type filter offers Advisor');
+  assert(options.includes('All agent types') && anyText === 'All agent types', 'Usage agent type any-option reads "All agent types"');
+  await pressEscape(cdp);
+}
+
+function recordSkips() {
+  skip('issues-label-removal-announcement', 'The fake gh shim returns no labels, so no label pill exists to remove.');
+  skip('git-changes-header-hover-forced-colours', 'Needs a forced-colours emulation and a git-changes header with changes; the scratch repo has none.');
+  skip('paused-overlay', 'No helper pauses a Session; the fake omp cannot enter the paused state.');
 }
 
 function buildShim(dir) {
@@ -104,8 +147,10 @@ async function runChecks(cdp, { repoDir }) {
   await createSessionViaQuickCreate(cdp, repoName);
   await cdp.waitFor(`!!document.querySelector('button[aria-label="Find in chat"]')`, { timeoutMs: 15_000, label: 'ChatHeader mounted' });
   await checkDetailsCard(cdp, repoName);
+  await checkShowHidden(cdp, repoName);
   await checkSettings(cdp);
-  await checkIssuesAndUsage(cdp);
+  await checkUsage(cdp);
+  recordSkips();
   await shot(cdp, '99-final.png');
 }
 
@@ -151,7 +196,7 @@ async function main() {
     ok = true;
   } finally {
     writeFileSync(path.join(SHOTS_DIR, 'report.txt'), REPORT.join('\n'));
-    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, log: REPORT }, null, 2));
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, skipped: SKIPPED, log: REPORT }, null, 2));
     cdp?.close();
     if (child) await stopLauncher(child);
     for (const dir of [shimDir, dataDir, importDir, exeDir, agentDir, repoA]) if (dir) await safeRmSync(dir);

@@ -15,14 +15,14 @@ export const GROUP_HEADER_ACTIONS_OFFSET_PX = 88
 // Hidden at rest via opacity (stays in the Tab order); revealed on group hover/focus, own aria-expanded, and under (hover: none) (#567).
 // `dark:hover:` / `aria-expanded:` fills beat the Button base's `dark:hover:bg-row-hover-bg`, which equals the selected row; the focus class restores a forced-colours outline.
 export const HEADER_ACTION_BUTTON_CLASS = cn(
-  'text-muted-foreground opacity-0 transition-opacity duration-150',
+  'text-muted-foreground opacity-0 transition-opacity duration-150 motion-reduce:transition-none',
   'hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border aria-expanded:bg-sidebar-border',
-  'group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 focus-visible:opacity-100',
+  'group-hover/header:opacity-100 group-focus-within/header:opacity-100 aria-expanded:opacity-100 focus-visible:opacity-100',
   '[@media(hover:none)]:opacity-100',
   COMPOSER_BUTTON_FOCUS_CLASS
 )
 
-const GROUP_HEADER_ROW_BASE_CLASS = 'group flex items-center gap-1 px-1'
+const GROUP_HEADER_ROW_BASE_CLASS = 'group/header flex items-center gap-1 px-1'
 const GROUP_HEADER_ROW_FILL_CLASS =
   'rounded-md hover:bg-sidebar-accent has-[:focus-visible]:bg-sidebar-accent forced-colors:hover:outline forced-colors:hover:outline-1 forced-colors:hover:outline-[Highlight] forced-colors:has-[:focus-visible]:outline forced-colors:has-[:focus-visible]:outline-1 forced-colors:has-[:focus-visible]:outline-[Highlight]'
 

@@ -109,7 +109,7 @@ export function SessionDetailsCard({
             </div>
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
               <MapPinIcon aria-hidden className="size-4 shrink-0" />
-              <p className="min-w-0 break-all">
+              <p className="min-w-0 flex-1 break-all">
                 {worktreeMissing ? (
                   <>
                     {session.worktreePath} <span className="text-destructive">(missing)</span>
@@ -118,14 +118,22 @@ export function SessionDetailsCard({
                   session.worktreePath
                 )}
               </p>
-              {[
-                { label: 'Copy path', icon: CopyIcon, run: copyPath },
-                { label: REVEAL_ACTION_LABEL, icon: RevealActionIcon, run: reveal }
-              ].map(({ label, icon: Icon, run }) => (
-                <IconButton key={label} label={label} size="icon-xs" className="shrink-0" onClick={() => void run()}>
-                  <Icon aria-hidden />
+              <div className="-my-1 flex shrink-0 gap-1">
+                <IconButton
+                  label={worktreeMissing ? 'Worktree missing' : REVEAL_ACTION_LABEL}
+                  size="icon-xs"
+                  className="shrink-0 aria-disabled:opacity-50"
+                  aria-disabled={worktreeMissing || undefined}
+                  onClick={() => {
+                    if (!worktreeMissing) void reveal()
+                  }}
+                >
+                  <RevealActionIcon aria-hidden />
                 </IconButton>
-              ))}
+                <IconButton label="Copy path" size="icon-xs" className="shrink-0" onClick={() => void copyPath()}>
+                  <CopyIcon aria-hidden />
+                </IconButton>
+              </div>
             </div>
             {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
             <div className="flex flex-col gap-1">

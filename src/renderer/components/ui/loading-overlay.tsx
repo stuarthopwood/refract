@@ -28,10 +28,10 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
   }, [loading, delayMs])
   const visible = loading && (delayMs <= 0 || elapsed)
   return (
-    <div className={cn('relative', className)} aria-busy={loading}>
+    <div className={cn('relative', className)} aria-busy={loading && !overlay}>
       {visible &&
         (overlay ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center">{overlay}</div>
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-scrim-bg">{overlay}</div>
         ) : (
           // Zero-height sticky anchor keeps the card in view when the content scrolls.
           <div className="sticky top-0 z-10 h-0">

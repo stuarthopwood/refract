@@ -46,7 +46,8 @@ export function ShowHiddenToggle() {
     const hadFocus = document.activeElement?.hasAttribute('data-show-hidden-toggle') ?? false
     useSessionListStore.getState().setShowHidden(false)
     // This component unmounts now, so its own live region cannot speak; use the app-level announcer.
-    useChatAreaAnnouncer.getState().announce('Show hidden turned off, no hidden sessions')
+    // Deferred, and deliberately not cleared on unmount (this component unmounts right now), so it follows an "Unhid" announcement instead of replacing it.
+    setTimeout(() => useChatAreaAnnouncer.getState().announce('Show hidden turned off, no hidden sessions'), 600)
     if (hadFocus) focusCollapseAll()
   }, [hidden, showHidden])
   if (hidden === 0 && !showHidden) return null

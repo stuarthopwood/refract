@@ -10,11 +10,17 @@ interface ChatWidthState {
 
 let latestSaveId = 0
 
-export const useChatWidthStore = create<ChatWidthState>((set) => ({
+export const useChatWidthStore = create<ChatWidthState>((set, get) => ({
   chatWidth: 'full',
 
   save: async (width) => {
     const requestId = ++latestSaveId
+    const previous = get().chatWidth
+    // Optimistic so a fast A -> B -> A arrow sequence always lands on the last choice.
+    set({ chatWidth: width })
+    const rollback = () => {
+      if (requestId === latestSaveId) set({ chatWidth: previous })
+    }
     try {
       const result = await window.refract.settings.setChatWidth(width)
       if (result.ok) {
@@ -23,9 +29,11 @@ export const useChatWidthStore = create<ChatWidthState>((set) => ({
         set({ chatWidth: result.value.chatWidth })
         return true
       }
+      rollback()
       notify(result.error)
       return false
     } catch (err: unknown) {
+      rollback()
       console.error('settings.setChatWidth threw', err)
       notify({ code: 'unsupported', message: 'Could not save chat width.' })
       return false
