@@ -124,7 +124,7 @@ export function GitChangesFileRow({
           <IconButton
             ref={kebabTriggerRef}
             size="icon-xs"
-            label={actionPending ? `More actions for ${entry.path}, unavailable while another action finishes` : `More actions for ${entry.path}`}
+            label={`More actions for ${entry.path}`}
             aria-disabled={actionPending || undefined}
             onPointerDown={(event) => {
               if (actionPending) event.preventDefault()

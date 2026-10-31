@@ -336,7 +336,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                     size="icon-sm"
                     aria-label="Clear thread"
                     aria-disabled={clearBlocked}
-                    className="aria-disabled:cursor-not-allowed aria-disabled:opacity-60 focus-visible:aria-disabled:opacity-100"
+                    className="aria-disabled:opacity-60 focus-visible:aria-disabled:opacity-100"
                     onClick={() => {
                       if (clearBlocked) return
                       handleClearThread()

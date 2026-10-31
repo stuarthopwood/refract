@@ -50,7 +50,11 @@ export function ShowHiddenToggle() {
     useSessionListStore.getState().setShowHidden(false)
     // This component unmounts now, so its own live region cannot speak; use the app-level announcer.
     // Deferred, and deliberately not cleared on unmount (this component unmounts right now), so it follows an "Unhid" announcement instead of replacing it.
-    setTimeout(() => useChatAreaAnnouncer.getState().announce('Show hidden turned off, no hidden sessions'), UNHID_ANNOUNCE_DELAY_MS)
+    setTimeout(() => {
+      if (hiddenSummary(useSessionsStore.getState().sessions).hidden === 0 && !useSessionListStore.getState().showHidden) {
+        useChatAreaAnnouncer.getState().announce('Show hidden turned off, no hidden sessions')
+      }
+    }, UNHID_ANNOUNCE_DELAY_MS)
     if (hadFocus) focusCollapseAll()
   }, [hidden, showHidden])
   if (hidden === 0 && !showHidden) return null

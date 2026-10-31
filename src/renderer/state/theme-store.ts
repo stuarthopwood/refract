@@ -23,6 +23,22 @@ let latestSaveId = 0
 // Optimistic picks clear customId before the save lands, so the persisted custom theme is tracked separately.
 let confirmedCustomId: string | null = null
 
+// Does not bump latestSaveId: a bump would make an in-flight built-in save look stale and drop its result.
+async function clearStaleCustom(): Promise<boolean> {
+ try {
+  const result = await window.refract.themes.setCustom(null)
+  if (result.ok) {
+   confirmedCustomId = result.value.customTheme ?? null
+   return true
+  }
+  notify(result.error)
+ } catch (err: unknown) {
+  console.error('themes.setCustom threw', err)
+  notify({ code: 'unsupported', message: 'Could not save custom theme.' })
+ }
+ return false
+}
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
  theme: 'dark',
  customId: null,
@@ -66,7 +82,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   try {
    result = await window.refract.themes.setCustom(id)
   } catch (err: unknown) {
-   if (requestId === latestSaveId) set({ customId: previousCustomId })
+   // The IPC may have applied before it threw, so the persisted id is unknown; fall back to no custom theme.
+   confirmedCustomId = null
+   if (requestId === latestSaveId) set({ customId: null })
    console.error('themes.setCustom threw', err)
    notify({ code: 'unsupported', message: 'Could not save custom theme.' })
    return false
@@ -75,7 +93,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
    confirmedCustomId = result.value.customTheme ?? null
    if (requestId !== latestSaveId) {
     // A later built-in pick saw no custom theme saved yet and skipped clearing it.
-    if (confirmedCustomId !== null && get().customId === null) return get().saveCustom(null)
+    if (confirmedCustomId !== null && get().customId === null) return clearStaleCustom()
     return true
    }
    set({ customId: confirmedCustomId })
@@ -88,7 +106,14 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
  },
 
  refreshCustomThemes: async () => {
-  const result = await window.refract.themes.list()
+  let result: Awaited<ReturnType<typeof window.refract.themes.list>>
+  try {
+   result = await window.refract.themes.list()
+  } catch (err: unknown) {
+   console.error('themes.list threw', err)
+   notify({ code: 'unsupported', message: 'Could not load custom themes.' })
+   return
+  }
   if (!result.ok) {
    notify(result.error)
    return

@@ -108,7 +108,7 @@ export function ComposerSendButton({ blocked, dimWhenBlocked = true, onSend, too
           variant="default"
           size="icon-sm"
           className={cn(
-            'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
+            'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:hover:bg-send',
             dimWhenBlocked && COMPOSER_DISABLED_OPACITY_CLASS,
             COMPOSER_BUTTON_FOCUS_CLASS
           )}

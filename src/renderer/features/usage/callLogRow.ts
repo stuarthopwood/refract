@@ -10,7 +10,6 @@ export function callToListItem(row: UsageCallRow, extraCaption?: string): Compac
     key: `${row.sessionId}:${row.ts}:${row.model}:${row.totalTokens}`,
     label: row.model,
     caption,
-    value: formatUsd(row.usd),
-    title: `${row.model} · ${caption} · ${formatUsd(row.usd)}`
+    value: formatUsd(row.usd)
   }
 }

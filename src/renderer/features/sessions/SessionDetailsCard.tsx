@@ -122,7 +122,7 @@ export function SessionDetailsCard({
                 <IconButton
                   label={worktreeMissing ? 'Worktree missing' : REVEAL_ACTION_LABEL}
                   size="icon-xs"
-                  className="shrink-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 forced-colors:aria-disabled:text-[GrayText]"
+                  className="shrink-0 aria-disabled:opacity-50"
                   aria-disabled={worktreeMissing || undefined}
                   onClick={() => {
                     if (!worktreeMissing) void reveal()
