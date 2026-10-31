@@ -67,9 +67,12 @@ async function hoverBackground(cdp, finder) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
   const idle = await settledStyle(cdp, finder, 'backgroundColor');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
+  // :hover applies on the next lifecycle update, so force two frames before sampling.
+  await cdp.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
   const hovered = await settledStyle(cdp, finder, 'backgroundColor');
   const under = await cdp.evaluate(`document.elementFromPoint(${point.x}, ${point.y}) === ${finder} || ${finder}.contains(document.elementFromPoint(${point.x}, ${point.y}))`);
-  return { idle, hovered, under };
+  const isHover = await cdp.evaluate(`${finder}.matches(':hover')`);
+  return { idle, hovered, under, isHover };
 }
 
 async function checkButtons(cdp) {
@@ -85,7 +88,7 @@ async function checkButtons(cdp) {
   const off = await hoverBackground(cdp, CLONE);
   const cursor = await cdp.evaluate(`getComputedStyle(${CLONE}).cursor`);
   log(`disabled ghost hover: ${JSON.stringify({ ...off, cursor })}`);
-  assert(off.under, 'The pointer lands on the aria-disabled clone');
+  assert(off.under && off.isHover, 'The pointer hovers the aria-disabled clone');
   assert(off.hovered === off.idle, 'An aria-disabled button keeps its idle background on hover');
   assert(cursor === 'not-allowed', 'An aria-disabled button shows the not-allowed cursor');
   await shot(cdp, '02-disabled-hover.png');
@@ -106,7 +109,7 @@ async function checkShortcuts(cdp) {
   await cdp.click(`document.querySelector('[data-rail-button="git-changes"]')`);
   await cdp.waitFor(`!!document.querySelector('[data-panel-close]')`, { timeoutMs: 10_000, label: 'panel close button' });
   // The Delete chord lives on the tab-bar close buttons, which only render with two or more open panels.
-  await cdp.click(`Array.from(document.querySelectorAll('[data-rail-button]')).find((b) => b.getAttribute('data-rail-button') !== 'git-changes')`);
+  await cdp.click(`document.querySelector('[data-rail-button="file-explorer"]')`);
   await cdp.waitFor(`document.querySelectorAll('[data-panel-close]').length >= 2`, { timeoutMs: 10_000, label: 'panel tab bar' });
   const close = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-panel-close]')).map((b) => b.getAttribute('aria-keyshortcuts'))`);
   await shot(cdp, '03-right-pane-tab-bar.png');
