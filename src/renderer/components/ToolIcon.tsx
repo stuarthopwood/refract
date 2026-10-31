@@ -16,7 +16,7 @@ export function ToolIcon({ icon: Icon, tone = 'muted', className }: ToolIconProp
   return (
     <Icon
       aria-hidden="true"
-      className={cn('size-4 shrink-0', tone === 'error' ? 'text-severity-error' : 'text-muted-foreground', className)}
+      className={cn('size-4 shrink-0', tone === 'error' ? 'text-tool-row-error-fg' : 'text-tool-row-fg', className)}
     />
   )
 }

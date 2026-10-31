@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::theme_id::ThemeId;
 
-const MAX_FILE_BYTES: u64 = 64 * 1024;
+pub const MAX_FILE_BYTES: u64 = 64 * 1024;
 const MAX_FILES: usize = 100;
 const MAX_NAME_CHARS: usize = 40;
 const ALLOWLIST_JSON: &str = include_str!("../../../src/shared/theme-tokens.json");

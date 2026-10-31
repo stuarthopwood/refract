@@ -14,9 +14,9 @@ const NOTICE_ICON = {
 } as const satisfies Record<NoticeLevel, unknown>
 
 const NOTICE_CLASS = {
-  info: 'text-muted-foreground',
-  warning: 'text-severity-warning',
-  error: 'text-severity-error'
+  info: 'text-notice-info-fg',
+  warning: 'text-notice-warning-fg',
+  error: 'text-notice-error-fg'
 } as const satisfies Record<NoticeLevel, string>
 
 // Non-colour severity cue for screen readers; the icon is aria-hidden.
@@ -65,7 +65,7 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       summaryClassName={NOTICE_CLASS[level]}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</div>
+      <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-notice-info-fg [overflow-wrap:anywhere]">{text}</div>
     </CollapsedLine>
   )
 }

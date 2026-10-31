@@ -104,7 +104,11 @@ export function initStores(): void {
     const themeStore = useThemeStore.getState()
     // A freshly imported theme is not in the list yet; load it before the id is looked up.
     if (settings.customTheme && !themeStore.customThemes.some((t) => t.id === settings.customTheme)) {
-      void themeStore.refreshCustomThemes().then(() => useThemeStore.getState().setTheme(settings.theme, settings.customTheme))
+      void themeStore.refreshCustomThemes().then(() => {
+        // A newer settings event may have landed while the list loaded; apply the latest, not this one.
+        const latest = useSettingsStore.getState().settings
+        useThemeStore.getState().setTheme(latest.theme, latest.customTheme ?? null)
+      })
     } else {
       themeStore.setTheme(settings.theme, settings.customTheme ?? null)
     }

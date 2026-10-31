@@ -45,6 +45,7 @@ export function RoleCatalogStatus({ kind, catalog, error, isRetrying, onRetry }:
         id={`model-role-catalog-retry-${kind}`}
         variant="outline"
         size="xs"
+        className="aria-disabled:opacity-50"
         aria-disabled={isRetrying || undefined}
         // The accessible name follows the in-flight state the same way the visible text does.
         aria-label={isRetrying ? `Retrying ${kindLabel} models` : `Retry loading ${kindLabel} models`}

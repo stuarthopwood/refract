@@ -39,7 +39,7 @@ export function StatusBar() {
   const updateTroubled = updateState?.phase === 'failed' || updateUnavailable
 
   return (
-    <footer className="flex h-9 shrink-0 items-center justify-between gap-2 border-t border-divider bg-card px-4 text-xs text-muted-foreground">
+    <footer className="flex h-9 shrink-0 items-center justify-between gap-2 border-t border-divider bg-status-bar-bg px-4 text-xs text-status-bar-fg">
       <div className="flex items-center gap-2">
         {updateState &&
           (updateState.phase === 'available' ||
@@ -54,7 +54,7 @@ export function StatusBar() {
                   className={cn(
                     badgeVariants({ variant: 'outline' }),
                     updateTroubled
-                      ? 'h-6 gap-2 border-state-needs-you/50 bg-state-needs-you/10 px-2 text-state-needs-you hover:bg-state-needs-you/20'
+                      ? 'h-6 gap-2 border-status-pill-attention-border bg-status-pill-attention-bg px-2 text-status-pill-attention-fg hover:bg-status-pill-attention-hover-bg'
                       : 'h-6 gap-2 px-2 hover:bg-accent'
                   )}
                 >
