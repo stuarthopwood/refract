@@ -68,7 +68,7 @@ function assertSecretNotPersisted(dataDir, logFile) {
       return false;
     }
   });
-  if (unreadable.length) log(`Leak scan skipped ${unreadable.length} locked file(s)`);
+  if (unreadable.length) log(`Leak scan skipped locked file(s): ${unreadable.join(', ')}`);
   assert(leaked.length === 0, `The secret is absent, as plain UTF-8 or UTF-16LE, from the app log and ${targets.length - 1} scratch data files${leaked.length ? ` (found in ${leaked.join(', ')})` : ''}`);
 }
 

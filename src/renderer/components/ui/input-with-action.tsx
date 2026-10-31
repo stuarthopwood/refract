@@ -29,9 +29,10 @@ export function InputActionButton({ className, ...props }: React.ComponentProps<
       variant="ghost"
       size="icon-xs"
       {...props}
+      // Radix tooltip triggers add a description that contradicts the toggle's constant name.
       aria-describedby={undefined}
       className={cn(
-        'absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground focus-visible:ring-0',
+        'absolute inset-y-0 right-1 my-auto text-muted-foreground hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground focus-visible:ring-0',
         INSET_FOCUS_OUTLINE_CLASS,
         className
       )}
