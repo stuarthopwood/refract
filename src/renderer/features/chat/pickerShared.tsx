@@ -24,13 +24,13 @@ export const GHOST_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 f
 export const GHOST_BUTTON_FOCUS_CLASS = cn(GHOST_FOCUS_CLASS, 'focus-visible:outline-solid')
 
 /** One shared opacity value, applied unconditionally wherever `aria-disabled` is the only disabled signal (no separate native `disabled` attribute). */
-export const COMPOSER_DISABLED_OPACITY_CLASS = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-60 focus-visible:aria-disabled:opacity-100'
+export const COMPOSER_DISABLED_OPACITY_CLASS = 'aria-disabled:opacity-60 focus-visible:aria-disabled:opacity-100'
 export const COMPOSER_DISABLED_HOVER_RESET_CLASS = 'aria-disabled:hover:bg-transparent aria-disabled:hover:text-current'
 export const COMPOSER_DISABLED_CLASS = cn(COMPOSER_DISABLED_OPACITY_CLASS, COMPOSER_DISABLED_HOVER_RESET_CLASS)
 
 export const PICKER_TRIGGER_CLASS = cn(
   badgeVariants({ variant: 'ghost' }),
-  'h-6 shrink-0 gap-2 px-2 border border-composer-control-border cursor-pointer aria-disabled:cursor-not-allowed text-composer-control-fg hover:bg-composer-control-hover-bg hover:text-composer-control-hover-fg aria-expanded:bg-composer-control-hover-bg aria-expanded:text-composer-control-hover-fg dark:aria-disabled:hover:bg-transparent',
+  'h-6 shrink-0 gap-2 px-2 border border-composer-control-border cursor-pointer text-composer-control-fg hover:bg-composer-control-hover-bg hover:text-composer-control-hover-fg aria-expanded:bg-composer-control-hover-bg aria-expanded:text-composer-control-hover-fg dark:aria-disabled:hover:bg-transparent',
   COMPOSER_DISABLED_CLASS,
   GHOST_FOCUS_CLASS
 )

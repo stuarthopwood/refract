@@ -24,6 +24,13 @@ const FILE_NAMES: [&str; 4] = [
     ".omp/WATCHDOG.yml",
     ".omp/WATCHDOG.yaml",
 ];
+// Same names, longest first, so a nested name is judged before its bare leaf (`.omp/WATCHDOG.yml` before `WATCHDOG.yml`).
+const NAMES_LONGEST_FIRST: [&str; 4] = [
+    ".omp/WATCHDOG.yml",
+    ".omp/WATCHDOG.yaml",
+    "WATCHDOG.yml",
+    "WATCHDOG.yaml",
+];
 const MAX_BYTES: u64 = 256 * 1024;
 const MAX_LEVELS: usize = 64;
 const MAX_LINES: usize = 2000;
@@ -50,23 +57,45 @@ pub fn openable_target(path: &Path) -> Option<PathBuf> {
     if !canonical.is_file() {
         return None;
     }
-    // Longest first, so `root/.omp/WATCHDOG.yml` is judged against `root`, not against `.omp`.
-    let mut names = FILE_NAMES;
-    names.sort_by_key(|name| std::cmp::Reverse(Path::new(name).components().count()));
-    let name = names.into_iter().find(|name| path.ends_with(name))?;
+    let name = NAMES_LONGEST_FIRST
+        .into_iter()
+        .find(|name| path.ends_with(name))?;
     let mut root = path.to_path_buf();
     for _ in Path::new(name).components() {
         root.pop();
     }
     let root = dunce::canonicalize(root).ok()?;
     let expected = root.join(name);
-    // NTFS is case-insensitive: the on-disk case may differ from the known name, but a link changes the path shape.
-    let same = canonical == expected
-        || (cfg!(windows)
-            && canonical
-                .to_string_lossy()
-                .eq_ignore_ascii_case(&expected.to_string_lossy()));
-    same.then_some(canonical)
+    // The check-then-open gap before `open_path` is accepted: swapping the file there needs write access to the repo.
+    same_path(&canonical, &expected).then_some(canonical)
+}
+
+/// NTFS is case-insensitive: the on-disk case may differ from the known name, but a link changes the path shape.
+/// Compared per component because `expected` mixes `/` and `\` separators.
+fn same_path(canonical: &Path, expected: &Path) -> bool {
+    if canonical == expected {
+        return true;
+    }
+    if !cfg!(windows) {
+        return false;
+    }
+    let mut left = canonical.components();
+    let mut right = expected.components();
+    loop {
+        match (left.next(), right.next()) {
+            (None, None) => return true,
+            (Some(a), Some(b)) => {
+                let (a, b) = (
+                    a.as_os_str().to_string_lossy(),
+                    b.as_os_str().to_string_lossy(),
+                );
+                if !a.eq_ignore_ascii_case(&b) {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
 }
 
 fn find_in(dir: &Path) -> Option<PathBuf> {

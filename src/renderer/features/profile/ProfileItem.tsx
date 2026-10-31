@@ -218,7 +218,6 @@ export function ProfileItem() {
         size="icon"
         side="top"
         className="shrink-0 text-muted-foreground hover:text-foreground"
-        aria-keyshortcuts="Control+,"
         onClick={() => useViewStore.getState().openSettings()}
       >
         <SettingsIcon aria-hidden />

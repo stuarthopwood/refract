@@ -17,7 +17,7 @@ import {
 } from '../../../shared/tokenGuard'
 import { ReadoutItem } from './readout/ReadoutItem'
 
-const DISABLED_BUTTON_CLASS = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-50'
+const DISABLED_BUTTON_CLASS = 'aria-disabled:opacity-50'
 
 function useHandOff(sessionId: string) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
