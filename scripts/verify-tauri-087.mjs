@@ -50,15 +50,18 @@ async function checkDetailsCard(cdp, repoName) {
   await cdp.waitFor(`!!document.querySelector('[aria-label="Copy path"]')`, { timeoutMs: 8_000, label: 'Details card shows Copy path' });
   const layout = await cdp.evaluate(`(() => {
     const copy = document.querySelector('[aria-label="Copy path"]');
-    const row = copy.parentElement;
+    const actions = copy.parentElement;
+    const row = actions.parentElement;
     const path = row.querySelector('p');
-    const lastTwo = Array.from(row.children).slice(-2).map((el) => el.getAttribute('aria-label'));
-    return { hasPath: !!path && /[\\\\/]/.test(path.textContent), lastTwo, rowRight: Math.round(row.getBoundingClientRect().right), copyRight: Math.round(copy.getBoundingClientRect().right) };
+    const lastTwo = Array.from(actions.children).map((el) => el.getAttribute('aria-label'));
+    const atEnd = row.lastElementChild === actions && Math.round(actions.getBoundingClientRect().right) <= Math.round(row.getBoundingClientRect().right);
+    return { hasPath: !!path && /[\\\\/]/.test(path.textContent), lastTwo, atEnd };
   })()`);
   log(`details layout: ${JSON.stringify(layout)}`);
   await shot(cdp, '01-details-card.png');
   assert(layout.hasPath, 'Details card row shows the worktree path text');
-  assert(layout.lastTwo.includes('Copy path') && layout.lastTwo.includes('Show in File Explorer'), 'Copy path and Show in File Explorer are the last two children of the path row');
+  assert(layout.lastTwo.includes('Copy path') && layout.lastTwo.includes('Show in File Explorer'), 'Copy path and Show in File Explorer are the path row actions');
+  assert(layout.atEnd, 'Path row actions sit at the end of the row, inside its right edge');
   await pressEscape(cdp);
 }
 
