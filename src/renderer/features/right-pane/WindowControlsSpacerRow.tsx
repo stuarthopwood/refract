@@ -1,3 +1,5 @@
+import { PANEL_HEADER_HEIGHT_CLASS } from '@/components/PanelHeader'
+import { cn } from '@/lib/utils'
 import { RAIL_WIDTH_PX } from '../../../shared/layout'
 
 // Reserves the window-controls corner's width; `aria-hidden` as nothing in it is interactive.
@@ -5,7 +7,7 @@ export const WINDOW_CONTROLS_SPACER_STYLE = { width: `max(0px, calc(100vw - env(
 
 export function WindowControlsSpacerRow() {
   return (
-    <div aria-hidden className="drag-region titlebar-surface flex h-10 shrink-0 items-center px-2">
+    <div aria-hidden className={cn('drag-region titlebar-surface flex shrink-0 items-center px-2', PANEL_HEADER_HEIGHT_CLASS)}>
       <div className="no-drag-region ml-auto shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
     </div>
   )

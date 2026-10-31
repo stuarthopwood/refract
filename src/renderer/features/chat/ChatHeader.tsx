@@ -1,6 +1,7 @@
 import { MessageSquareXIcon, PauseIcon, PlayIcon, SearchIcon, SplitSquareHorizontalIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { PanelHeader, WINDOW_CONTROLS_OVERLAY_STYLE } from '@/components/PanelHeader'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionsStore } from '@/state'
@@ -32,18 +33,11 @@ export function ChatHeader({
   if (!session) return null
 
   return (
-    <header className="drag-region titlebar-surface flex h-10 shrink-0 items-center justify-between gap-2 px-4">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <StateIcon status={displayStatus(session)} />
-        <span className="sr-only">{displayLabel(session)}</span>
-        <span className="min-w-0 truncate text-sm font-medium" title={session.name}>{session.name}</span>
-        {session.hiddenAt && <HiddenMarker />}
-        <span className="min-w-0 truncate text-xs text-muted-foreground" title={session.branch}>{session.branch}</span>
-        {focused && (
-          <Badge variant="focused">Focused</Badge>
-        )}
-      </div>
-      <div className="no-drag-region flex shrink-0 items-center gap-2">
+    <PanelHeader
+      as="header"
+      windowControlsSpacerStyle={reservesWindowControls ? WINDOW_CONTROLS_OVERLAY_STYLE : undefined}
+      actions={
+        <>
         {otherSessionName && onSwapToOther && (
           <Button
             type="button"
@@ -121,10 +115,19 @@ export function ChatHeader({
             </TooltipContent>
           </Tooltip>
         )}
-        {reservesWindowControls && (
-          <div aria-hidden className="shrink-0" style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }} />
+        </>
+      }
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <StateIcon status={displayStatus(session)} />
+        <span className="sr-only">{displayLabel(session)}</span>
+        <span className="min-w-0 truncate text-sm font-medium" title={session.name}>{session.name}</span>
+        {session.hiddenAt && <HiddenMarker />}
+        <span className="min-w-0 truncate text-xs text-muted-foreground" title={session.branch}>{session.branch}</span>
+        {focused && (
+          <Badge variant="focused">Focused</Badge>
         )}
       </div>
-    </header>
+    </PanelHeader>
   )
 }
