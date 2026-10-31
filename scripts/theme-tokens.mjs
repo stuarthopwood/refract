@@ -120,6 +120,10 @@ const sidebarBorderAliasesDivider = Object.create(null)
 
 // #1472: per-element defaults live in one `:is(:root, .theme-*)` block; every theme starts from them.
 const defaultProps = Object.create(null)
+// Plain `:root` blocks hold theme-independent tokens (field-bg, elevated-edge, ...) that themes inherit; the `:is` block wins over them.
+for (const match of css.matchAll(/(?:^|\n)[ \t]*:root\s*\{([^}]*)\}/g)) {
+  for (const propMatch of match[1].matchAll(PROP_RE)) defaultProps[propMatch[1]] = propMatch[2].trim()
+}
 for (const match of css.matchAll(/:is\(:root,[^)]*\)\s*\{([^}]*)\}/g)) {
   for (const propMatch of match[1].matchAll(PROP_RE)) defaultProps[propMatch[1]] = propMatch[2].trim()
 }

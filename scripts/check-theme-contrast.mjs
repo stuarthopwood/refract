@@ -106,7 +106,7 @@ const READOUT_CARD_PAIRS = [
 ]
 // `COMMAND_PILL_PAIRS` lives in composer-selection-contrast.mjs; merged into the same per-theme loop.
 for (const [themeId, props] of Object.entries(themes)) {
-  for (const { fg, bg, min, onlyThemes, informationalThemes } of [...PAIRS, ...COMMAND_PILL_PAIRS, ...READOUT_CARD_PAIRS, ...MARKDOWN_PAIRS]) {
+  for (const { fg, bg, on, min, onlyThemes, informationalThemes } of [...PAIRS, ...COMMAND_PILL_PAIRS, ...READOUT_CARD_PAIRS, ...MARKDOWN_PAIRS]) {
     // `informationalThemes` pairs are computed and printed but never counted toward pass/fail (a ratio accepted below the floor on purpose).
     const scopedThemes = informationalThemes ?? onlyThemes
     if (scopedThemes && !scopedThemes.includes(themeId)) continue
@@ -120,8 +120,16 @@ for (const [themeId, props] of Object.entries(themes)) {
       rows.push({ themeId, fg, bg, min, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    const fgLinear = resolvedLinear(fgEntry, bgEntry)
-    const bgLinear = resolvedLinear(bgEntry, bgEntry)
+    // `on` names the opaque surface a translucent `bg` actually paints over.
+    const onEntry = on ? props[on] : bgEntry
+    if (!onEntry) {
+      checkedCount++
+      failCount++
+      rows.push({ themeId, fg, bg: `${bg} on ${on}`, min, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const bgLinear = resolvedLinear(bgEntry, onEntry)
+    const fgLinear = resolvedLinear(fgEntry, on ? { raw: 'composite', alpha: 1, linear: bgLinear } : bgEntry)
     const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear))
     const pass = ratio >= min
     if (informational) {
