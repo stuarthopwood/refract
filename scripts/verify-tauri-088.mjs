@@ -117,8 +117,8 @@ async function checkIssues(cdp) {
   await cdp.click(`document.querySelector('[data-issue-row]')`);
   await cdp.waitFor(`!!document.querySelector('a[data-open-on-github]')`, { timeoutMs: 15_000, label: 'issue detail' });
   const s = await cdp.evaluate(`(() => {
-    const a = document.querySelector('a[data-open-on-github]');
-    const header = a.closest('.shrink-0');
+    const header = document.querySelector('h2.line-clamp-2').closest('.shrink-0');
+    const a = header.querySelector('a[data-open-on-github]');
     return { label: a.getAttribute('aria-label'), copy: !!header.querySelector('button[aria-label="Copy link"]'), border: getComputedStyle(header).borderBottomWidth };
   })()`);
   log(`issue header: ${JSON.stringify(s)}`);
