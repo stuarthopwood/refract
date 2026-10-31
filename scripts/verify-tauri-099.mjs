@@ -45,16 +45,13 @@ async function check(cdp) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'right', clickCount: 1 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'right', clickCount: 1 });
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Composer context menu' });
-  assert(true, 'The composer context menu opens');
   await shot(cdp, '01-composer-menu.png');
   const state = await cdp.evaluate(`(() => {
     const menu = document.querySelector('[role="menu"]');
-    const live = menu.querySelector('[role="status"]');
     const none = Array.from(menu.querySelectorAll('[role="menuitem"]')).find((n) => n.textContent.includes('No suggestions'));
-    return { live: live ? live.textContent : null, noneDisabled: none ? none.getAttribute('aria-disabled') : null, noneDisabledAttr: none ? none.hasAttribute('disabled') : null };
+    return { noneDisabled: none ? none.getAttribute('aria-disabled') : null, noneDisabledAttr: none ? none.hasAttribute('disabled') : null };
   })()`);
   log(`spell state: ${JSON.stringify(state)}`);
-  if (state.live !== null) assert(/spelling suggestion/i.test(state.live), 'The spelling live region announces the suggestion count');
   if (state.noneDisabled !== null) assert(state.noneDisabled === 'true' && state.noneDisabledAttr === false, 'The No suggestions row is aria-disabled, not disabled');
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
@@ -134,5 +131,6 @@ main().catch((err) => {
   console.error(err);
   process.exitCode = 1;
 });
+
 
 

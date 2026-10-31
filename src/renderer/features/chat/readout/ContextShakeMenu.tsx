@@ -90,14 +90,23 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
 
   return (
     <>
-      <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
-        <Tooltip open={Boolean(notice) && tipOpen} onOpenChange={(next) => !suppressTipRef.current && setTipOpen(next)}>
+      <DropdownMenu modal={false} open={menuOpen} onOpenChange={(next) => { setMenuOpen(next); setTipOpen(false) }}>
+        <Tooltip open={Boolean(notice) && tipOpen && !menuOpen} onOpenChange={(next) => !suppressTipRef.current && setTipOpen(next)}>
           <TooltipTrigger asChild aria-describedby={undefined}>
             <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
           </TooltipTrigger>
           {notice && <TooltipContent className="max-w-80">{notice}</TooltipContent>}
         </Tooltip>
-        <DropdownMenuContent align="start" side="top">
+        <DropdownMenuContent
+          align="start"
+          side="top"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            suppressTipRef.current = true
+            triggerRef.current?.focus()
+            suppressTipRef.current = false
+          }}
+        >
           {figure && <DropdownMenuLabel className="text-foreground">{figure}</DropdownMenuLabel>}
           {!idle && (
             <DropdownMenuLabel id={IDLE_REASON_ID} className="font-normal">
@@ -109,7 +118,7 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
             return (
               <Fragment key={action.id}>
                 {action.id === 'thinking' && <DropdownMenuSeparator />}
-                <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={(event) => handleSelect(action, event)} className="aria-disabled:cursor-default aria-disabled:forced-colors:text-[GrayText]">
+                <DropdownMenuItem aria-disabled={!idle} aria-describedby={idle ? undefined : IDLE_REASON_ID} onSelect={(event) => handleSelect(action, event)}>
                   <Icon aria-hidden className={cn('size-4', !idle && 'opacity-50')} />
                   <div className={cn('flex flex-col gap-1 py-1', !idle && 'opacity-50')}>
                     <span>{action.label}</span>

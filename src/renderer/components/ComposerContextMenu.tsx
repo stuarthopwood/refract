@@ -96,11 +96,6 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
           else void runTextFieldAction(el, action, copyTextRef.current)
         }}
       >
-        {spell.misspelt && (
-          <div role="status" aria-live="polite" className="sr-only">
-            {spell.suggestions.length === 0 ? 'No spelling suggestions' : `${spell.suggestions.length} spelling suggestion${spell.suggestions.length === 1 ? '' : 's'} added`}
-          </div>
-        )}
         {spellingItems({ ...spell, onReplace: (replace) => (pendingRef.current = { replace }), onAdd: () => (pendingRef.current = 'add-word') })}
         {textEditItems({ ...state, onSelect: (action) => (pendingRef.current = action) })}
       </ContextMenuContent>

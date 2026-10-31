@@ -4,7 +4,7 @@
 const MENU_ICON_CLASS =
   "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-current focus:[&_svg:not([class*='text-'])]:text-current data-[variant=destructive]:[&_svg:not([class*='text-'])]:text-destructive"
 
-export const MENU_ITEM_CLASS = `relative flex w-full cursor-default items-center gap-2 px-2 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] forced-colors:focus:outline-2 forced-colors:focus:outline-solid forced-colors:focus:outline-offset-[-2px] forced-colors:focus:outline-[color:Highlight] data-disabled:pointer-events-none data-disabled:opacity-50 data-[inset=true]:pl-8 ${MENU_ICON_CLASS}`
+export const MENU_ITEM_CLASS = `relative flex w-full cursor-default items-center gap-2 px-2 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] forced-colors:focus:outline-2 forced-colors:focus:outline-solid forced-colors:focus:outline-offset-[-2px] forced-colors:focus:outline-[color:Highlight] data-disabled:pointer-events-none data-disabled:opacity-50 aria-disabled:cursor-default aria-disabled:forced-colors:text-[GrayText] data-[inset=true]:pl-8 ${MENU_ICON_CLASS}`
 
 export const MENU_ITEM_DESTRUCTIVE_CLASS =
   "data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:focus:shadow-[inset_2px_0_0_0_var(--color-destructive)]"
