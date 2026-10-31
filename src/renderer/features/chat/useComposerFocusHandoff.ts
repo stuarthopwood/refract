@@ -17,24 +17,29 @@ export function useComposerFocusHandoff({ textareaRef, isWorking, disabled, stop
   // Layout effect: no frame without a focus ring.
   useLayoutEffect(() => {
     const textarea = textareaRef.current
-    const pane = textarea?.closest<HTMLElement>('[data-session-pane]') ?? null
-    const active = document.activeElement
-    const stranded = isFocusStranded(active, pane)
     const becameDisabled = disabled && !wasDisabled.current
     const becameEnabled = !disabled && wasDisabled.current
     wasDisabled.current = disabled
+    const findPane = () => textarea?.closest<HTMLElement>('[data-session-pane]') ?? null
+    const isStranded = () => isFocusStranded(document.activeElement, findPane())
 
     if (disabled) {
       const stopTookFocus = !isWorking && stopHadFocusRef.current
       if (stopTookFocus) stopHadFocusRef.current = false
-      if ((stopTookFocus || becameDisabled) && (stranded || active === textarea)) focusStopBanner(pane)
+      if ((stopTookFocus || becameDisabled) && (isStranded() || document.activeElement === textarea)) {
+        const pane = findPane()
+        if (!focusStopBanner(pane)) pane?.focus()
+      }
       return
     }
     if (!isWorking && stopHadFocusRef.current) {
       stopHadFocusRef.current = false
-      if (stranded) textarea?.focus()
+      if (isStranded()) textarea?.focus()
       return
     }
-    if (becameEnabled && (active === document.body || !active || active.closest('[data-pane-banner]'))) textarea?.focus()
+    if (becameEnabled) {
+      const active = document.activeElement
+      if (active === document.body || !active || active.closest('[data-pane-banner]')) textarea?.focus()
+    }
   }, [isWorking, disabled, textareaRef, stopHadFocusRef])
 }

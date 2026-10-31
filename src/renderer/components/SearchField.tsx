@@ -1,11 +1,9 @@
 import { useId, useRef } from 'react'
 import type { InputHTMLAttributes, KeyboardEvent, RefObject } from 'react'
 import { SearchIcon, XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { InputActionButton, InputWithAction } from '@/components/ui/input-with-action'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 
 export interface SearchFieldProps {
@@ -83,8 +81,7 @@ export function SearchField({
 
   return (
     <div className={cn('relative', className)} onKeyDown={handleKeyDown}>
-      <SearchIcon aria-hidden className="pointer-events-none absolute left-[9px] top-2 size-4 text-muted-foreground" />
-      <Input
+      <InputWithAction
         ref={resolvedRef}
         type="text"
         role={combobox ? 'combobox' : 'searchbox'}
@@ -99,46 +96,35 @@ export function SearchField({
         placeholder={placeholder}
         aria-label={label}
         aria-describedby={hasValue && !onEscape ? clearHintId : undefined}
-        className="h-8 pl-8 pr-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
+        className="h-8 pl-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
         {...inputProps}
-      />
-      {hasValue && !onEscape && (
-        <span id={clearHintId} className="sr-only">
-          Press Escape to clear
-        </span>
-      )}
-      {hasValue && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={clearLabel}
-              aria-describedby={undefined}
-              // Not centred with `top-1/2 -translate-y-1/2`.
-              className={cn(
-                'absolute right-1 top-1 text-muted-foreground hover:text-foreground',
-                COMPOSER_BUTTON_FOCUS_CLASS,
-                'focus-visible:outline-offset-0'
-              )}
-              onClick={clear}
-            >
-              <XIcon aria-hidden />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side={tooltipSide}>
-            <span className="inline-flex items-center gap-2">
-              {clearLabel}
-              {!onEscape && (
-                <KbdGroup>
-                  <Kbd>Esc</Kbd>
-                </KbdGroup>
-              )}
-            </span>
-          </TooltipContent>
-        </Tooltip>
-      )}
+      >
+        <SearchIcon aria-hidden className="pointer-events-none absolute left-[9px] top-2 size-4 text-muted-foreground" />
+        {hasValue && !onEscape && (
+          <span id={clearHintId} className="sr-only">
+            Press Escape to clear
+          </span>
+        )}
+        {hasValue && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <InputActionButton aria-label={clearLabel} onClick={clear}>
+                <XIcon aria-hidden />
+              </InputActionButton>
+            </TooltipTrigger>
+            <TooltipContent side={tooltipSide}>
+              <span className="inline-flex items-center gap-2">
+                {clearLabel}
+                {!onEscape && (
+                  <KbdGroup>
+                    <Kbd>Esc</Kbd>
+                  </KbdGroup>
+                )}
+              </span>
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </InputWithAction>
     </div>
   )
 }

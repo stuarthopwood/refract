@@ -293,7 +293,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
             variant="ghost"
             aria-disabled={busy}
             aria-busy={busyAction === 'cancel'}
-            className="dark:hover:bg-muted aria-disabled:opacity-50"
+            className="aria-disabled:opacity-50"
             onClick={() => !busy && void cancel()}
           >
             {busyAction === 'cancel' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}

@@ -295,6 +295,14 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   const [error, setError] = React.useState<string | null>(null)
   const [resolved, setResolved] = React.useState<{ kind: ResolvedKind; detail?: string } | null>(null)
   const [text, setText] = React.useState('')
+  const refocusRef = React.useRef<HTMLElement | null>(null)
+  // A failed answer re-enables controls that `busy` disabled (and blurred); put focus back where it was.
+  React.useLayoutEffect(() => {
+    const target = refocusRef.current
+    if (busy || !target) return
+    refocusRef.current = null
+    if (target.isConnected && isFocusStranded(document.activeElement, null)) target.focus()
+  }, [busy])
   const approvalDetailBlock = React.useMemo(
     () => inferOutputBlock(request.kind === 'approval' ? request.details.join('\n') : ''),
     [request]
@@ -305,10 +313,12 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {
-    const hadFocus = document.activeElement !== document.body && document.activeElement !== null
+    const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const hadFocus = origin !== null && origin !== document.body
     setBusy(true)
     setError(null)
     const result = await window.refract.chat.answer(sessionId, request.requestId, value)
+    if (!result.ok) refocusRef.current = origin
     setBusy(false)
     if (!result.ok) {
       setError(result.error.message)
@@ -445,10 +455,20 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {request.inputKind === 'text' && (
           <div className="flex gap-2">
-            {request.secret ? <SecretInput {...textFieldProps} aria-label="Secret" aria-describedby={groupAriaLabelledBy} /> : <Input {...textFieldProps} />}
-            <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
-              Cancel
-            </Button>
+            {request.secret ? (
+              <SecretInput
+                {...textFieldProps}
+                wrapperClassName="flex-1"
+                aria-labelledby={groupAriaLabelledBy}
+                aria-label={groupAriaLabelledBy ? undefined : 'Secret'}
+              />
+            ) : (
+              <Input
+                {...textFieldProps}
+                aria-labelledby={groupAriaLabelledBy}
+                aria-label={groupAriaLabelledBy ? undefined : 'Answer'}
+              />
+            )}
             <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: answerValue }, 'answered', answerSummary)}>
               Send
             </Button>
@@ -460,13 +480,11 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </Alert>
         )}
       </CardContent>
-      {request.inputKind !== 'text' && (
-        <CardFooter>
-          <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
-            Cancel
-          </Button>
-        </CardFooter>
-      )}
+      <CardFooter>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+          Cancel
+        </Button>
+      </CardFooter>
     </Card>
   )
 }
