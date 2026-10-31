@@ -53,7 +53,7 @@ export function ChatHeader({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-6 min-w-0 max-w-40 shrink gap-2 px-2 text-xs"
+                  className="h-6 min-w-8 max-w-40 shrink gap-2 px-2 text-xs"
                   onClick={onSwapToOther}
                   aria-label={`Switch to ${otherSessionName}`}
                   aria-describedby={undefined}
@@ -91,7 +91,7 @@ export function ChatHeader({
         </>
       }
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+      <div className="flex min-w-24 flex-1 items-center gap-2 overflow-hidden">
         <StateIcon status={displayStatus(session)} />
         <span className="sr-only">{displayLabel(session)}</span>
         <span className="min-w-0 truncate text-sm font-medium" title={session.name}>{session.name}</span>
