@@ -14,7 +14,7 @@ export function ComposerIndentHint({ id, tabMovesFocus }: ComposerIndentHintProp
         {tabMovesFocus ? 'Tab moves focus. Press Control+M to make Tab indent instead.' : 'Tab indents. Press Control+M to make Tab move focus instead.'}
       </span>
       {tabMovesFocus && (
-        <p className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+        <p className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
           <Kbd>Tab</Kbd> moves focus
           <KbdGroup>
             <Kbd>Ctrl</Kbd>
