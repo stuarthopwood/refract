@@ -95,7 +95,7 @@ async function runKeyboardAndA11yChecks(cdp) {
   await pressTab(cdp, true);
   for (let i = 0; i < 5; i++) await pressTab(cdp, true);
   const back = await activeInfo(cdp);
-  check(back.inMark === false, 'Shift+Tab walk back never lands inside a watermark mark', back);
+  check(back.inMark === false && back.tag !== 'BODY', 'Shift+Tab walk back never lands inside a watermark mark or on BODY', back);
 
   const { nodes } = await cdp.send('Accessibility.getFullAXTree');
   const sw = nodes.filter((n) => n.role?.value === 'switch' && n.name?.value === 'Background watermark' && !n.ignored);
@@ -170,7 +170,7 @@ async function runLayoutChecks(cdp) {
   await cdp.evaluate(`(() => { const el = ${composerSel}; el.focus(); el.select(); document.execCommand('delete'); })()`);
   await sleep(300);
 
-  const chipOverlap = `(() => { const bad = []; for (const h of document.querySelectorAll('header')) { const H = h.getBoundingClientRect(); const els = [...h.querySelectorAll('button,[data-slot=badge]')].filter((e) => e.offsetWidth); els.forEach((a, i) => { const r = a.getBoundingClientRect(); if (r.left < H.left - 0.5 || r.right > H.right + 0.5) bad.push('overflow:' + (a.getAttribute('aria-label') || a.textContent.trim())); els.slice(i + 1).forEach((b) => { if (a.contains(b) || b.contains(a)) return; const s = b.getBoundingClientRect(); if (!(r.right <= s.left + 0.5 || s.right <= r.left + 0.5 || r.bottom <= s.top + 0.5 || s.bottom <= r.top + 0.5)) bad.push('overlap:' + (a.getAttribute('aria-label') || a.textContent.trim()) + '|' + (b.getAttribute('aria-label') || b.textContent.trim())); }); }); } return bad; })()`;
+  const chipOverlap = `(() => { const bad = []; let total = 0; for (const h of document.querySelectorAll('header')) { const H = h.getBoundingClientRect(); const els = [...h.querySelectorAll('button,[data-slot=badge]')].filter((e) => e.offsetWidth); total += els.length; els.forEach((a, i) => { const r = a.getBoundingClientRect(); if (r.left < H.left - 0.5 || r.right > H.right + 0.5) bad.push('overflow:' + (a.getAttribute('aria-label') || a.textContent.trim())); els.slice(i + 1).forEach((b) => { if (a.contains(b) || b.contains(a)) return; const s = b.getBoundingClientRect(); if (!(r.right <= s.left + 0.5 || s.right <= r.left + 0.5 || r.bottom <= s.top + 0.5 || s.bottom <= r.top + 0.5)) bad.push('overlap:' + (a.getAttribute('aria-label') || a.textContent.trim()) + '|' + (b.getAttribute('aria-label') || b.textContent.trim())); }); }); } if (total < 2) bad.push('measured:' + total); return bad; })()`;
   const sizes = [];
   let chips620 = [];
   for (const width of [1100, 800, 620]) {
@@ -416,7 +416,7 @@ async function main() {
     try { if (session) await session.cdp.screenshot(path.join(SHOTS_DIR, 'crash.png')); } catch {}
     process.exitCode = 1;
   } finally {
-    const git = (...args) => spawnSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8', windowsHide: true }).stdout.trim();
+    const git = (...args) => spawnSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8', windowsHide: true }).stdout?.trim() ?? '';
     const out = { gitHead: git('rev-parse', 'HEAD'), dirty: git('status', '--short').length > 0, failures: report.filter((r) => !r.ok).map((r) => r.step), results: report };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(out, null, 2));
     if (session) {
