@@ -141,6 +141,6 @@ export function useSyntaxTheme(): string {
  return useThemeStore((s) => {
   const tokens = activeCustomTheme(s)?.tokens ?? {}
   const overridden = Object.keys(tokens).some((k) => k === 'code-block-fg' || k.startsWith('syntax-'))
-  return overridden && activeThemeId(s) !== 'dark-high-contrast' ? CSS_VARIABLES_SYNTAX_THEME : THEMES[activeThemeId(s)].syntaxTheme
+  return overridden ? CSS_VARIABLES_SYNTAX_THEME : THEMES[activeThemeId(s)].syntaxTheme
  })
 }

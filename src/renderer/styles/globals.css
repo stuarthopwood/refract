@@ -341,7 +341,7 @@ samp {
   --chat-user-bubble-border: transparent;
 }
 
-/* #1472: per-element tokens default to a role. Also declared per theme class so the contrast probe resolves them. */
+/* #1472 per-element tokens default to a role; #1474 `--mermaid-*` hold each built-in theme's literal colours (numbering is 1-based: palette-N feeds cScale(N-1)). Declared per theme class so the contrast probe resolves them. */
 :is(:root, .theme-dark, .theme-obsidian, .theme-dark-high-contrast, .theme-nordic-frost, .theme-cyber-amber) {
   --mermaid-bg: #0a0a0a;
   --mermaid-node-fill: #1f1f1f;
@@ -421,7 +421,7 @@ samp {
   --session-row-selected-fg: var(--sidebar-accent-foreground);
 }
 
-/* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (Dark (high contrast) uses a bundled Shiki theme and never reads them). */
+/* #456: Shiki's css-variables theme reads these; each maps onto the active preset's own --syntax-* tokens (built-in Dark (high contrast) keeps its bundled Shiki theme and never reads them). */
 :root {
   --shiki-foreground: var(--code-block-fg);
   --shiki-background: transparent;
@@ -1331,7 +1331,15 @@ samp {
   --md-code-fg: oklch(0.93 0.06 264);
   --md-table-header-fg: var(--md-code-fg);
   --code-block-bg: var(--card);
-  /* No --syntax-* tokens: this preset keeps github-dark-high-contrast for code (#456 grill item 5). */
+  /* github-dark-high-contrast values; built-in HC keeps the bundled Shiki theme, a custom theme overriding any of these switches to css-variables. */
+  --syntax-keyword: #ff9492;
+  --syntax-function: #dbb7ff;
+  --syntax-string: #addcff;
+  --syntax-constant: #91cbff;
+  --syntax-parameter: #f0f3f6;
+  --syntax-punctuation: #f0f3f6;
+  --syntax-comment: #bdc4cc;
+  --code-block-fg: #f0f3f6;
   /* Issue #1050 (gate round 2 remediation, see `.theme-dark`'s own comment for the full
    * reasoning): two independent tokens. `--command-pill-bg` is a plain neutral step clearing
    * 1.4:1 against `--composer-background` (1.52:1). `--command-pill-fg` is the same hue as

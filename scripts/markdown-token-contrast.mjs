@@ -24,6 +24,8 @@ export const MARKDOWN_PAIRS = [
   ...['md-heading', 'md-marker', 'md-code-label', 'md-code-fg', 'md-table-header-fg'].map((fg) => ({ fg, bg: 'card', min: 7, onlyThemes: ['dark-high-contrast'] })),
   ...SYNTAX.map((fg) => ({ fg, bg: 'code-block-bg', min: 4.5, onlyThemes: NON_HC })),
   ...SYNTAX.map((fg) => ({ fg, bg: 'card', min: 4.5, onlyThemes: NON_HC })),
+  ...SYNTAX.map((fg) => ({ fg, bg: 'code-block-bg', min: 7, onlyThemes: ['dark-high-contrast'] })),
+  ...SYNTAX.map((fg) => ({ fg, bg: 'card', min: 7, onlyThemes: ['dark-high-contrast'] })),
 ]
 
 // Mermaid accent drift and contrast: accent == --accent-text (within rounding), accent stroke 3:1 on
@@ -40,7 +42,7 @@ export function mermaidAccentRows(themes) {
     const at = props['accent-text']
     const accentTok = props['mermaid-accent']
     const fillTok = props['mermaid-accent-fill']
-    if (!accentTok || !fillTok || !at || !props['background'] || !props['foreground']) {
+    if (!accentTok || !fillTok || !at || !props['background'] || !props['mermaid-node-fg']) {
       failCount++
       rows.push({ themeId, fg: 'mermaid accent', bg: 'accent-text', min: 1, ratio: null, pass: false, note: '--mermaid-accent/--mermaid-accent-fill or a token missing' })
       continue
@@ -53,7 +55,7 @@ export function mermaidAccentRows(themes) {
     const fl = relativeLuminance(fillTok.linear)
     add(themeId, 'mermaid accent stroke', 'mermaid node fill', 3, contrastRatio(relativeLuminance(a), fl), accent, fill)
     add(themeId, 'mermaid accent stroke', 'background', 3, contrastRatio(relativeLuminance(a), relativeLuminance(props['background'].linear)), accent, linearToHex(props['background'].linear))
-    add(themeId, 'foreground (node label)', 'mermaid node fill', 4.5, contrastRatio(relativeLuminance(props['foreground'].linear), fl), linearToHex(props['foreground'].linear), fill)
+    add(themeId, 'mermaid-node-fg (node label)', 'mermaid node fill', 4.5, contrastRatio(relativeLuminance(props['mermaid-node-fg'].linear), fl), linearToHex(props['mermaid-node-fg'].linear), fill)
   }
   return { rows, checkedCount: rows.length, failCount }
 }
