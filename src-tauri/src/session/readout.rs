@@ -10,10 +10,13 @@ use serde_json::{json, Value};
 
 use crate::git::diff_stat::diff_stat;
 use crate::git::git::git_raw;
-use crate::github::pr_lookup::{pull_request_for_branch, PullRequestLookup};
 use crate::omp::process::ReadyWaitStage;
 
 use super::agent::SessionAgent;
+
+#[path = "readout_pr.rs"]
+mod readout_pr;
+use readout_pr::{pull_request_for_branch, PullRequestLookup, PullRequestState};
 
 #[path = "readout_todo.rs"]
 mod readout_todo;
@@ -34,12 +37,6 @@ struct ContextUsageState {
     used_tokens: i64,
     window_tokens: i64,
     percent: f64,
-}
-
-#[derive(Debug, Clone)]
-struct PullRequestState {
-    number: u64,
-    url: String,
 }
 
 /// Readout runtime state, held inside `AgentState`.
@@ -398,7 +395,7 @@ async fn refresh_pull_request(agent: &SessionAgent, worktree_path: &str, branch:
     agent
         .with_readout_state(|s| {
             s.pull_request = match lookup {
-                PullRequestLookup::Found { number, url } => Some(PullRequestState { number, url }),
+                PullRequestLookup::Found(pr) => Some(pr),
                 PullRequestLookup::None => None,
                 // Indeterminate lookups keep the previous reading so the chip doesn't flicker.
                 PullRequestLookup::Unavailable => s.pull_request.clone(),
@@ -459,10 +456,7 @@ fn build_readout_value(
     let turn_time = s
         .turn_started_at
         .map(|started_at| json!({ "startedAt": started_at }));
-    let pull_request = s
-        .pull_request
-        .as_ref()
-        .map(|pr| json!({ "number": pr.number, "url": pr.url }));
+    let pull_request = s.pull_request.as_ref().map(PullRequestState::to_json);
     let mut readout = json!({
         "changes": changes,
         "contextUsage": context_usage,

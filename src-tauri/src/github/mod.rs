@@ -1,5 +1,4 @@
-// GitHub access through the user's own `gh` CLI (no stored token). `pr_lookup.rs` deliberately
-// does not share `gh.rs`/`cli.rs` (its own small `gh` call and owner/repo parse).
+// GitHub access through the user's own `gh` CLI (no stored token).
 
 pub mod cli;
 pub mod clone_destination;
@@ -14,7 +13,6 @@ pub mod gh_pr_search_across;
 pub mod gh_pull_requests;
 pub mod gh_viewer;
 pub mod images;
-pub mod pr_lookup;
 pub mod profile;
 pub mod repo_clone;
 pub mod repo_list;

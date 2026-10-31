@@ -11,6 +11,7 @@ import type { PauseState } from '../../../shared/ipc-pause'
 import { canTogglePause, setSessionPaused } from './pauseActions'
 import { HiddenMarker } from '@/features/sessions/HiddenMarker'
 import { ConversationSwitcher } from './ConversationSwitcher'
+import { HeaderPrControls } from './header/HeaderPrControls'
 
 interface ChatHeaderProps {
   sessionId: string
@@ -41,6 +42,7 @@ export function ChatHeader({
   return (
     <PanelHeader
       as="header"
+      className="@container/chat"
       windowControlsSpacerStyle={reservesWindowControls ? WINDOW_CONTROLS_OVERLAY_STYLE : undefined}
       actions={
         <>
@@ -63,6 +65,7 @@ export function ChatHeader({
               <TooltipContent>{`Switch to ${otherSessionName}`}</TooltipContent>
             </Tooltip>
           )}
+          <HeaderPrControls sessionId={sessionId} />
           <div className="shrink-0">
             <ConversationSwitcher sessionId={sessionId} />
           </div>

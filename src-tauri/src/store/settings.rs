@@ -23,8 +23,6 @@ pub struct SessionReadout {
     pub turn_time: bool,
     #[serde(rename = "current-time")]
     pub current_time: bool,
-    #[serde(rename = "pull-request")]
-    pub pull_request: bool,
     pub subagents: bool,
     #[serde(rename = "todo-progress")]
     pub todo_progress: bool,
@@ -447,7 +445,6 @@ impl SettingsStore {
             "context-usage" => readout.context_usage = visible,
             "turn-time" => readout.turn_time = visible,
             "current-time" => readout.current_time = visible,
-            "pull-request" => readout.pull_request = visible,
             "subagents" => readout.subagents = visible,
             "todo-progress" => readout.todo_progress = visible,
             "current-work" => readout.current_work = visible,

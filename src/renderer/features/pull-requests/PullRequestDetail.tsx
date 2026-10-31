@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { OpenOnGitHubButton } from '@/components/OpenOnGitHubButton'
 import { Markdown } from '@/features/chat/Markdown'
-import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { usePinnedPanelsStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
 import { CHECK_STATE_DISPLAY } from './PullRequestRow'
@@ -38,9 +38,11 @@ const POLL_INTERVAL_MS = 15_000
 interface PullRequestDetailProps {
   repositoryId: string
   number: number
+  /** Wraps the header actions so the view fits a narrow right-pane panel. */
+  compact?: boolean
 }
 
-export function PullRequestDetail({ repositoryId, number }: PullRequestDetailProps) {
+export function PullRequestDetail({ repositoryId, number, compact = false }: PullRequestDetailProps) {
   const [detail, setDetail] = useState<PullRequestDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -82,6 +84,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
       return
     }
     setDetail(result.value)
+    usePinnedPanelsStore.getState().publishPullRequestState(repositoryId, number, result.value.state)
   }
 
   useEffect(() => {
@@ -135,7 +138,12 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
     return <InlineStatus tone="loading">Loading…</InlineStatus>
   }
   if (error && !detail) {
-    return <InlineStatus tone="error">{error}</InlineStatus>
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <InlineStatus tone="error">{error}</InlineStatus>
+        <RefreshButton loading={loading} onClick={() => void load()} label="Retry loading this pull request" />
+      </div>
+    )
   }
   if (!detail) return null
 
@@ -157,7 +165,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
     <div className="flex h-full flex-col overflow-hidden">
       {/* drag-regions-allow: renders right of PullRequestList, below PullRequestsView's own h-10 drag-region header, so it never touches App.tsx's strip despite the same shape. */}
       <div className="shrink-0 p-4">
-        <div className="flex items-start justify-between gap-2">
+        <div className={cn('flex justify-between gap-2', compact ? 'flex-col' : 'items-start')}>
           <div className="min-w-0 flex-1">
             <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
@@ -175,7 +183,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
               </span>
             </div>
           </div>
-          <div className="flex shrink-0 flex-nowrap items-center gap-2">
+          <div className={cn('flex items-center gap-2', compact ? 'flex-wrap' : 'shrink-0 flex-nowrap')}>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
             <OpenOnGitHubButton url={detail.url} />
             <CopyButton getText={() => detail.url} label="Copy link" announcement="Pull request link copied" />
