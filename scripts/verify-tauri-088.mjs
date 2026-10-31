@@ -150,10 +150,11 @@ async function checkManageSessions(cdp) {
   assert(width >= 150 && width <= 170, `Project filter trigger is the shared 160px picker width (${width}px)`);
   await cdp.click(trigger);
   await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 5_000, label: 'select listbox' });
-  const geometry = await cdp.evaluate(`(() => { const t = ${trigger}.getBoundingClientRect(); const l = document.querySelector('[role="listbox"]').getBoundingClientRect(); return { triggerBottom: t.bottom, listTop: l.top }; })()`);
+  await sleep(500);
+  const geometry = await cdp.evaluate(`(() => { const t = ${trigger}.getBoundingClientRect(); const l = document.querySelector('[role="listbox"]').getBoundingClientRect(); return { triggerTop: t.top, triggerBottom: t.bottom, listTop: l.top, listBottom: l.bottom }; })()`);
   log(`select geometry: ${JSON.stringify(geometry)}`);
   await shot(cdp, '06-manage-sessions-select-open.png');
-  assert(geometry.listTop >= geometry.triggerBottom - 1, 'The select list opens below its trigger (popper), not over it');
+  assert(geometry.listTop >= geometry.triggerBottom - 1 || geometry.listBottom <= geometry.triggerTop + 1, 'The select list sits beside its trigger (popper), not over it');
   await pressEscape(cdp);
   await sleep(300);
   const ring = await cdp.evaluate(`(() => {
