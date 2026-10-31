@@ -33,18 +33,27 @@ export const usePinnedPanelsStore = create<PinnedPanelsState>((set, get) => ({
   livePullRequest: null,
   pin: (kind, repositoryId, number, opener = null) => {
     const key = kind === 'pull-request' ? 'pullRequest' : 'issue'
+    const pane = useRightPaneStore.getState()
+    const alreadyActive = pane.open && pane.activePanelId === kind
     set({ [key]: { repositoryId, number, opener } } as Partial<PinnedPanelsState>)
-    useRightPaneStore.getState().openPanel(kind)
+    pane.openPanel(kind)
+    // The shell only moves focus on a fresh open; a swap of the pinned item must still move it in.
+    if (alreadyActive) requestAnimationFrame(() => document.getElementById('right-pane-active-panel')?.focus())
   },
   unpin: (kind, options) => {
     const key = kind === 'pull-request' ? 'pullRequest' : 'issue'
     const opener = get()[key]?.opener ?? null
-    set({ [key]: null } as Partial<PinnedPanelsState>)
+    // The live state is only fresh while the PR panel polls, so it goes with the panel.
+    set({ [key]: null, ...(kind === 'pull-request' ? { livePullRequest: null } : {}) } as Partial<PinnedPanelsState>)
     if (options?.restoreFocus && opener) {
       requestAnimationFrame(() => {
         if (opener.isConnected) opener.focus()
       })
     }
   },
-  publishPullRequestState: (repositoryId, number, state) => set({ livePullRequest: { repositoryId, number, state } })
+  publishPullRequestState: (repositoryId, number, state) => {
+    const live = get().livePullRequest
+    if (live && live.repositoryId === repositoryId && live.number === number && live.state === state) return
+    set({ livePullRequest: { repositoryId, number, state } })
+  }
 }))

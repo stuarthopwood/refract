@@ -3,7 +3,7 @@ import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/stat
 
 export type PanelId =
   | 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage'
-  | 'pull-request' | 'issue'
+  | PinnedPanelId
 
 export type PinnedPanelId = 'pull-request' | 'issue'
 

@@ -234,7 +234,7 @@ export interface DiffStat {
   partial: boolean;
 }
 
-export type PullRequestDisplayState = 'open' | 'draft' | 'merged' | 'closed';
+export type PullRequestDisplayState = import('./github').PullRequestState;
 export type PullRequestChecks = 'pass' | 'fail' | 'pending';
 
 export interface LinkedIssue {

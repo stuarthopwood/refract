@@ -2,7 +2,7 @@ import { GitPullRequestIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { CHECK_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
+import { CHECK_STATE_DISPLAY, PULL_REQUEST_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
 import { StatePill } from '@/features/pull-requests/StatePill'
 import { usePinnedPanelsStore } from '@/state'
 import type { PullRequestChecks, PullRequestDisplayState, SessionPullRequest } from '../../../../shared/model'
@@ -23,12 +23,24 @@ export function PullRequestControls({ repositoryId, pullRequest, liveState }: Pu
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <StatePill state={liveState ?? pullRequest.state} labelClassName="@max-[42rem]/chat:sr-only" />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="inline-flex rounded-md focus-visible:ring-[3px] focus-visible:ring-focus-glow">
+            <StatePill state={liveState ?? pullRequest.state} labelClassName="@max-[42rem]/chat:sr-only" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{PULL_REQUEST_STATE_DISPLAY[liveState ?? pullRequest.state].label}</TooltipContent>
+      </Tooltip>
       <span className="text-xs text-muted-foreground">#{pullRequest.number}</span>
       {checks && ChecksIcon && (
-        <span role="img" aria-label={checks.label} title={checks.label} className={cn('flex', checks.colorClass)}>
-          <ChecksIcon aria-hidden className={cn('size-4', pullRequest.checks === 'pending' && 'animate-spin motion-reduce:animate-none')} />
-        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} role="img" aria-label={checks.label} className={cn('flex rounded-sm focus-visible:ring-[3px] focus-visible:ring-focus-glow', checks.colorClass)}>
+              <ChecksIcon aria-hidden className={cn('size-4', pullRequest.checks === 'pending' && 'animate-spin motion-reduce:animate-none')} />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{checks.label}</TooltipContent>
+        </Tooltip>
       )}
       <Tooltip>
         <TooltipTrigger asChild>

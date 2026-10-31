@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { forwardRef, useRef } from 'react'
 import { CircleCheckIcon, CircleDotIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,24 @@ function IssueIcon({ issue }: { issue: LinkedIssue }) {
   return <Icon aria-hidden className="size-4" />
 }
 
+// Spreads the trigger props a Radix `asChild` parent injects.
+const ViewIssueButton = forwardRef<HTMLButtonElement, { label: string } & React.ComponentProps<'button'>>(function ViewIssueButton(
+  { label, ...rest },
+  ref
+) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button ref={ref} type="button" variant="outline" size="sm" className="h-6 gap-1 px-2 text-xs" {...rest} aria-label={label}>
+          <CircleDotIcon aria-hidden className="size-4" />
+          <span className="@max-[42rem]/chat:hidden">View issue</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+})
+
 /** The header's linked-issue badge, "+N" count and View issue button (a menu when there are several). */
 export function LinkedIssueControls({ repositoryId, issues }: LinkedIssueControlsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -30,51 +48,29 @@ export function LinkedIssueControls({ repositoryId, issues }: LinkedIssueControl
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Badge variant="outline" title={first.title} aria-label={badgeText}>
+      <Badge variant="outline" role="img" title={first.title} aria-label={badgeText}>
         <IssueIcon issue={first} />
         <span aria-hidden>#{first.number}</span>
         {extra > 0 && <span aria-hidden>+{extra}</span>}
       </Badge>
       {extra > 0 ? (
         <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button ref={triggerRef} type="button" variant="outline" size="sm" className="h-6 gap-1 px-2 text-xs" aria-label="View issue">
-                  <CircleDotIcon aria-hidden className="size-4" />
-                  <span className="@max-[42rem]/chat:hidden">View issue</span>
-                </Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent>View issue</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end">
+          <DropdownMenuTrigger asChild>
+            <ViewIssueButton ref={triggerRef} label="View issue" />
+          </DropdownMenuTrigger>
+          {/* Radix would hand focus back to the trigger and undo the move into the panel. */}
+          <DropdownMenuContent align="end" onCloseAutoFocus={(event) => event.preventDefault()}>
             {issues.map((issue) => (
               <DropdownMenuItem key={issue.number} onSelect={() => pin(issue)}>
                 <IssueIcon issue={issue} />
+                <span className="sr-only">{issue.state}</span>
                 <span className="max-w-64 truncate">#{issue.number} {issue.title}</span>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              ref={triggerRef}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-6 gap-1 px-2 text-xs"
-              aria-label={`View issue #${first.number}`}
-              onClick={() => pin(first)}
-            >
-              <CircleDotIcon aria-hidden className="size-4" />
-              <span className="@max-[42rem]/chat:hidden">View issue</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{`View issue #${first.number}`}</TooltipContent>
-        </Tooltip>
+        <ViewIssueButton ref={triggerRef} label={`View issue #${first.number}`} onClick={() => pin(first)} />
       )}
     </div>
   )

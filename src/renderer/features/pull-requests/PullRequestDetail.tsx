@@ -138,7 +138,12 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
     return <InlineStatus tone="loading">Loading…</InlineStatus>
   }
   if (error && !detail) {
-    return <InlineStatus tone="error">{error}</InlineStatus>
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <InlineStatus tone="error">{error}</InlineStatus>
+        <RefreshButton loading={loading} onClick={() => void load()} label="Retry loading this pull request" />
+      </div>
+    )
   }
   if (!detail) return null
 
