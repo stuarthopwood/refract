@@ -12,9 +12,11 @@ interface IssueCreatedPanelProps {
   issue: CreatedIssue
   onClose: () => void
   onReportAnother: () => void
+  /** The issue is already shown in the app, so Close is the primary action. */
+  inApp?: boolean
 }
 
-export function IssueCreatedPanel({ issue, onClose, onReportAnother }: IssueCreatedPanelProps) {
+export function IssueCreatedPanel({ issue, onClose, onReportAnother, inApp = false }: IssueCreatedPanelProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => headingRef.current?.focus(), [])
   const href = safeUrl(issue.url)
@@ -28,13 +30,13 @@ export function IssueCreatedPanel({ issue, onClose, onReportAnother }: IssueCrea
       </div>
       <DialogFooter>
         <Button type="button" variant="text" onClick={onReportAnother}>
-          Report another
+          {inApp ? 'Create another' : 'Report another'}
         </Button>
-        <Button type="button" variant="outline" onClick={onClose}>
+        <Button type="button" variant={inApp ? 'default' : 'outline'} onClick={onClose}>
           Close
         </Button>
         {href && (
-          <Button asChild>
+          <Button asChild variant={inApp ? 'outline' : 'default'}>
             <a href={href} target="_blank" rel="noreferrer noopener">
               <ExternalLinkIcon aria-hidden />
               Open on GitHub

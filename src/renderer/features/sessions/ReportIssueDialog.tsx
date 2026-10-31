@@ -130,7 +130,7 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
               </DialogFooter>
             </>
           ) : created ? (
-            <IssueCreatedPanel issue={created} onClose={() => onOpenChange(false)} onReportAnother={reportAnother} />
+            <IssueCreatedPanel issue={created} onClose={() => onOpenChange(false)} onReportAnother={reportAnother} inApp={onCreated !== undefined} />
           ) : (
             <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void handleSubmit(event)}>
               <div className="flex flex-col gap-2">
