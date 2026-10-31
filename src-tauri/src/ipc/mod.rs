@@ -35,6 +35,7 @@ pub mod issues;
 pub mod model;
 pub mod model_roles;
 pub mod pull_requests;
+pub mod session_kickoff;
 pub mod readiness;
 pub mod repositories;
 pub mod repositories_clone;
