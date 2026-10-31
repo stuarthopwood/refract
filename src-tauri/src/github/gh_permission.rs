@@ -20,6 +20,7 @@ pub fn permission_grants_write(permission: &str) -> bool {
     matches!(permission.trim(), "write" | "maintain" | "admin")
 }
 
+/// Whether login has write access to owner/repo; fails closed on any error.
 pub async fn author_has_write_access(
     repo_path: &Path,
     owner: &str,

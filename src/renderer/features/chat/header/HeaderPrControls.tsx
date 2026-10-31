@@ -21,7 +21,7 @@ export function HeaderPrControls({ sessionId }: { sessionId: string }) {
   if (!repositoryId) return null
   const prIssues = pullRequest?.linkedIssues ?? []
   const linkedIssues: LinkedIssue[] = originIssue
-    ? [{ number: originIssue.number, state: 'open', title: originIssue.title }, ...prIssues.filter((issue) => issue.number !== originIssue.number)]
+    ? [prIssues.find((issue) => issue.number === originIssue.number) ?? { number: originIssue.number, state: 'open', title: originIssue.title }, ...prIssues.filter((issue) => issue.number !== originIssue.number)]
     : prIssues
   if (!pullRequest && linkedIssues.length === 0) return null
   const liveState = pullRequest && live && live.repositoryId === repositoryId && live.number === pullRequest.number ? live.state : null

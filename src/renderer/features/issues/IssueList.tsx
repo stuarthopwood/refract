@@ -116,6 +116,7 @@ export function IssueList() {
         <NewSessionRowMenu
           key={`${issue.repositoryId}#${issue.number}`}
           item={{ kind: 'issue', repositoryId: issue.repositoryId, number: issue.number }}
+          title={issue.title}
         >
           <IssueRow
             issue={issue}

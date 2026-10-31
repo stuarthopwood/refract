@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from 'react'
 import { CircleCheckIcon, CircleDotIcon } from 'lucide-react'
 import { ColourDot } from '@/components/ColourDot'
 import { OpenOnGitHubButton } from '@/components/OpenOnGitHubButton'
+import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
+import { requestSessionFromItem } from '@/features/sessions/startSessionRequest'
 import { Markdown } from '@/features/chat/Markdown'
 import { RefreshButton } from '@/features/pull-requests/RefreshButton'
 import { resolvePullRequestImage } from '@/features/pull-requests/prImages'
@@ -87,6 +89,9 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
               <StateIcon aria-hidden className="size-4" />
               {open ? 'Open' : 'Closed'}
             </span>
+            <Button size="sm" variant="ghost" onClick={() => void requestSessionFromItem({ kind: 'issue', repositoryId, number })}>
+              New session
+            </Button>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this issue" />
             <OpenOnGitHubButton url={detail.url} />
             <CopyButton getText={() => detail.url} label="Copy link" announcement="Issue link copied" />

@@ -71,6 +71,7 @@ export function PullRequestList() {
         <NewSessionRowMenu
           key={`${pr.repositoryId}#${pr.number}`}
           item={{ kind: 'pull-request', repositoryId: pr.repositoryId, number: pr.number }}
+          title={pr.title}
         >
           <PullRequestRow
             pullRequest={pr}

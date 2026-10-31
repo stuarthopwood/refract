@@ -62,13 +62,12 @@ export interface IssueListResult {
   fetchedAt: string;
 }
 
-/** `issues.view`: the same fields plus the markdown body (untrusted; render through the
- * sanitised markdown path only). */
-/** utoSend is true only when the item's author has write access; otherwise the prompt is prefilled with 
-otice. */
+/** `autoSend` is true only when the item's author has write access; otherwise the prompt is prefilled with `notice`. */
 export interface Kickoff { prompt: string; autoSend: boolean; notice: string | null }
 export interface SessionWithKickoff { session: Session; kickoff: Kickoff | null }
 
+/** `issues.view`: the same fields plus the markdown body (untrusted; render through the
+ * sanitised markdown path only). */
 export interface IssueDetail {
   ownerRepo: string;
   number: number;

@@ -21,6 +21,7 @@ use super::{
 };
 
 const MAX_BODY_CHARS: usize = 20_000;
+/// Composer notice shown when the prompt is prefilled instead of sent.
 pub const NO_WRITE_ACCESS_NOTICE: &str =
     "Not sent automatically: the author does not have write access.";
 
@@ -55,7 +56,14 @@ fn capped_body(body: &str) -> String {
     capped
 }
 
-fn build_prompt(heading: &str, link: &str, label: &str, extra: &str, title: &str, body: &str) -> String {
+fn build_prompt(
+    heading: &str,
+    link: &str,
+    label: &str,
+    extra: &str,
+    title: &str,
+    body: &str,
+) -> String {
     let inner = format!("Title: {title}\n{extra}\n{}", capped_body(body));
     let fence = fence_for(&inner);
     format!(
@@ -63,6 +71,7 @@ fn build_prompt(heading: &str, link: &str, label: &str, extra: &str, title: &str
     )
 }
 
+/// Kickoff prompt for an issue, with its untrusted text fenced.
 pub fn issue_prompt(number: u64, url: &str, title: &str, body: &str) -> String {
     build_prompt(
         &format!("Work on issue #{number}."),
@@ -74,6 +83,7 @@ pub fn issue_prompt(number: u64, url: &str, title: &str, body: &str) -> String {
     )
 }
 
+/// Kickoff prompt for a pull request, with its untrusted text fenced.
 pub fn pull_request_prompt(
     number: u64,
     url: &str,

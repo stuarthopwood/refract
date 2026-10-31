@@ -61,7 +61,7 @@ export function NewSessionDialog({ repository, trigger, open: controlledOpen, on
   const [itemText, setItemText] = useState('')
   const parsedItem = itemText.trim() ? parseItemRef(itemText, repository, presetKind) : null
   const itemRef = parsedItem?.ok ? parsedItem.ref : null
-  const itemMode = presetKind !== undefined || itemRef !== null
+  const itemMode = presetKind !== undefined || itemText.trim() !== ''
   // Issue #620, UX consult item 2 decision 6: the same per-repository in-flight guard the
   // header "+" and the row's "New session from {branch}" menu item share -- `create()` itself
   // enforces it (so a submit here while one of those is already running is refused, not a
@@ -70,7 +70,7 @@ export function NewSessionDialog({ repository, trigger, open: controlledOpen, on
   const creatingRepository = useSessionsStore((state) => state.creatingRepositoryIds.has(repository.id))
 
   useEffect(() => {
-    if (!open) return
+    if (!open || presetKind) return
     setError(null)
     setLoadingBranches(true)
     let cancelled = false
@@ -89,7 +89,7 @@ export function NewSessionDialog({ repository, trigger, open: controlledOpen, on
     return () => {
       cancelled = true
     }
-  }, [open, repository.id])
+  }, [open, repository.id, presetKind])
 
   function handleOpenChange(next: boolean): void {
     setOpen(next)
@@ -128,19 +128,10 @@ export function NewSessionDialog({ repository, trigger, open: controlledOpen, on
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New session in {repository.name}</DialogTitle>
+          <DialogTitle>{presetKind === 'issue' ? 'New session from an issue' : presetKind === 'pull-request' ? 'New session from a pull request' : 'New session'} in {repository.name}</DialogTitle>
           <DialogDescription>Refract names the Session and its branch automatically.</DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
-          <div className="flex flex-col gap-2">
-            <label htmlFor="session-item" className="text-sm">
-              {presetKind === 'issue' ? 'Issue number or link' : presetKind === 'pull-request' ? 'Pull request number or link' : 'Issue or pull request link (optional)'}
-            </label>
-            <Input id="session-item" value={itemText} onChange={(event) => setItemText(event.target.value)} aria-describedby="session-item-error" placeholder="https://github.com/owner/repo/issues/123" />
-            <p id="session-item-error" role="alert" className={cn('text-sm text-destructive', !(parsedItem && !parsedItem.ok) && 'sr-only')}>
-              {parsedItem && !parsedItem.ok ? parsedItem.message : ''}
-            </p>
-          </div>
           {!itemMode && (
           <div className="flex flex-col gap-2">
             <label htmlFor="base-branch" className="text-sm">
@@ -184,6 +175,15 @@ export function NewSessionDialog({ repository, trigger, open: controlledOpen, on
             </Select>
           </div>
           )}
+          <div className="flex flex-col gap-2">
+            <label htmlFor="session-item" className="text-sm">
+              {presetKind === 'issue' ? 'Issue number or link' : presetKind === 'pull-request' ? 'Pull request number or link' : 'Issue or pull request link (optional)'}
+            </label>
+            <Input id="session-item" value={itemText} onChange={(event) => setItemText(event.target.value)} aria-describedby="session-item-error" aria-invalid={parsedItem?.ok === false} placeholder="https://github.com/owner/repo/issues/123" />
+            <p id="session-item-error" role="alert" className={cn('text-sm text-destructive', !(parsedItem && !parsedItem.ok) && 'sr-only')}>
+              {parsedItem && !parsedItem.ok ? parsedItem.message : ''}
+            </p>
+          </div>
           <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
             {error ?? ''}
           </p>

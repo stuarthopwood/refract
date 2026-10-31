@@ -4,10 +4,7 @@ import { useSplitStore, useViewStore } from '@/state'
 import { createSessionFromItem, findExistingSession, type ItemRef } from './startSessionFromItem'
 import type { Session } from '../../../shared/model'
 
-interface Pending {
-  ref: ItemRef
-  existing: Session
-}
+type Pending = { kind: 'existing'; ref: ItemRef; existing: Session } | { kind: 'fork'; ref: ItemRef; owner: string | null }
 
 interface StartSessionRequestState {
   pending: Pending | null
@@ -19,15 +16,27 @@ export const useStartSessionRequestStore = create<StartSessionRequestState>((set
   clear: () => set({ pending: null })
 }))
 
-/** Entry point for every surface: asks first when an open Session already covers the item, else creates one. */
+/** Creates the Session and reports a failure as a toast. */
+export async function startSessionNow(ref: ItemRef): Promise<void> {
+  const message = await createSessionFromItem(ref)
+  if (message) toast.error(message, { duration: Infinity, closeButton: true })
+}
+
+/** Entry point for every surface: asks first when an open Session already covers the item or the pull request is from a fork, else creates one. */
 export async function requestSessionFromItem(ref: ItemRef): Promise<void> {
   const existing = findExistingSession(ref)
   if (existing) {
-    useStartSessionRequestStore.setState({ pending: { ref, existing } })
+    useStartSessionRequestStore.setState({ pending: { kind: 'existing', ref, existing } })
     return
   }
-  const message = await createSessionFromItem(ref)
-  if (message) toast.error(message, { duration: Infinity, closeButton: true })
+  if (ref.kind === 'pull-request') {
+    const detail = await window.refract.pullRequests.detail(ref.repositoryId, ref.number)
+    if (detail.ok && detail.value.isFork) {
+      useStartSessionRequestStore.setState({ pending: { kind: 'fork', ref, owner: detail.value.headRepositoryOwner ?? null } })
+      return
+    }
+  }
+  await startSessionNow(ref)
 }
 
 export function openExistingSession(session: Session): void {
