@@ -7,4 +7,4 @@
 - [x] T5 Cap skipped Project name (FR-6)
 - [x] T6 New issue clears hiding filters, selects and focuses (FR-7)
 - [x] T7 Fix stale "Add project" waits (FR-8)
-- [ ] T8 `verify-tauri-102.mjs` run green (FR-9)
+- [x] T8 `verify-tauri-102.mjs` run green (FR-9)
