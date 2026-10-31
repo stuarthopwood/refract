@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.21.0 (2026-10-31)
+
+### Features
+
+- feat(sessions): new session from an issue or pull request with a write-access-gated kickoff (https://github.com/stuarthopwood/refract/pull/1517)
+
+### Fixes
+
+- fix(gate-leftovers): harden updater install log and spec 090 leftovers (https://github.com/stuarthopwood/refract/pull/1522)
+- fix(ui): spec 088 UI polish leftovers (https://github.com/stuarthopwood/refract/pull/1523)
+- fix(issues): issue and pull request list follow-ups (https://github.com/stuarthopwood/refract/pull/1526)
+- fix(chat): header PR badge follow-ups (https://github.com/stuarthopwood/refract/pull/1528)
+- fix(palette): palette slice 2 follow-ups (UK Backslash chord, repo labels) (https://github.com/stuarthopwood/refract/pull/1529)
+- fix(themes): spec 086 gate leftovers (https://github.com/stuarthopwood/refract/pull/1531)
+
+### Other
+
+- refactor(composer-focus): shared input-with-action and focus follow-ups (https://github.com/stuarthopwood/refract/pull/1516)
+- refactor(gate-leftovers): centralise disabled button styling and spec 091 leftovers (https://github.com/stuarthopwood/refract/pull/1519)
+- chore(design): gate-script residual limits (https://github.com/stuarthopwood/refract/pull/1532)
+
 ## v0.20.0 (2026-10-31)
 
 ### Features
