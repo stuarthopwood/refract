@@ -20,7 +20,20 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
   const defaultRepositoryId = useDefaultRepositoryId()
   const headingRef = useRef<HTMLHeadingElement>(null)
   const newIssueRef = useRef<HTMLButtonElement>(null)
+  const createdIssueRef = useRef(false)
   const [newIssueOpen, setNewIssueOpen] = useState(false)
+  const pendingRowFocus = useRef(false)
+  const issuesLoading = useIssuesStore((s) => s.loading)
+  const issueCount = useIssuesStore((s) => s.items.length)
+
+  // The list is inert while it reloads, so the created row takes focus once loading ends.
+  useEffect(() => {
+    if (!pendingRowFocus.current || issuesLoading) return
+    const row = document.querySelector<HTMLElement>('[data-issue-row][aria-current="true"]')
+    if (!row) return
+    pendingRowFocus.current = false
+    row.focus()
+  }, [issuesLoading, issueCount])
 
   // Lands keyboard and screen-reader users on the view instead of the nav button just activated.
   useEffect(() => {
@@ -72,12 +85,33 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
           repository={target}
           open={newIssueOpen}
           onOpenChange={setNewIssueOpen}
-          onCloseFocus={() => newIssueRef.current?.focus()}
+          onCloseFocus={() => {
+            // After a create, land on the new issue's row when it is listed, else the New issue button.
+            const row = createdIssueRef.current ? document.querySelector<HTMLElement>('[data-issue-row][aria-current="true"]') : null
+            pendingRowFocus.current = createdIssueRef.current && !row
+            createdIssueRef.current = false
+            ;(row ?? newIssueRef.current)?.focus()
+          }}
           title="New issue"
           onCreated={(issue) => {
             const store = useIssuesStore.getState()
+            const allIds = repositories.map((repo) => repo.id)
+            createdIssueRef.current = true
+            // A new issue is open, unlabelled and in the target Project; clear filters that would hide it.
+            const hidden =
+              store.state === 'closed' ||
+              store.labels.length > 0 ||
+              store.appliedQuery.trim() !== '' ||
+              store.tab === 'assigned' ||
+              store.tab === 'mentions' ||
+              (store.repositoryIds.length > 0 && !store.repositoryIds.includes(target.id))
+            if (hidden) {
+              store.clearFilters()
+              store.setTab('all')
+            }
             store.select({ repositoryId: target.id, number: issue.number })
-            void store.refresh(repositories.map((repo) => repo.id))
+            // Cleared filters refetch through the list's effect; otherwise refetch here, submitted search only.
+            if (!hidden) void store.refresh(allIds, true)
           }}
         />
       )}

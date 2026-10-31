@@ -29,8 +29,8 @@ interface IssuesState {
   setQuery(query: string): void
   clearFilters(): void
   select(selected: { repositoryId: string; number: number } | null): void
-  /** `allRepositoryIds` is every added Project, used when no Project is chosen. */
-  refresh(allRepositoryIds: string[]): Promise<void>
+  /** `allRepositoryIds` is every added Project, used when no Project is chosen. `submittedOnly` refetches with the applied search, leaving half-typed text unapplied. */
+  refresh(allRepositoryIds: string[], submittedOnly?: boolean): Promise<void>
 }
 
 let refreshSequence = 0
@@ -60,8 +60,9 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   clearFilters: () =>
     set({ state: 'open', repositoryIds: [], labels: [], query: '', appliedQuery: '', selected: null }),
   select: (selected) => set({ selected }),
-  async refresh(allRepositoryIds) {
-    const { tab, state, repositoryIds, labels, query } = get()
+  async refresh(allRepositoryIds, submittedOnly = false) {
+    const { tab, state, repositoryIds, labels } = get()
+    const query = submittedOnly ? get().appliedQuery : get().query
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
     refreshSequence += 1
     const sequence = refreshSequence
