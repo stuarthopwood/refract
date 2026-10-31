@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { OpenOnGitHubButton } from '@/components/OpenOnGitHubButton'
 import { Markdown } from '@/features/chat/Markdown'
-import { usePinnedPanelsStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { usePinnedPanelsStore } from '@/state'
+import { createSessionFromItem, findExistingSession } from '@/features/sessions/startSessionFromItem'
+import { requestSessionFromItem } from '@/features/sessions/startSessionRequest'
 import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
 import { CHECK_STATE_DISPLAY } from './PullRequestRow'
@@ -55,7 +57,6 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
   // they reset when the repository or pull request changes.
   const [commentDraft, setCommentDraft] = useState('')
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({})
-  const openChat = useViewStore((s) => s.openChat)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const reviewButtonRef = useRef<HTMLButtonElement>(null)
@@ -110,22 +111,21 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.checkState, repositoryId, number])
 
-  // Creates a Session on the pull request's head branch and switches to it, like `sessions-store.ts`'s `create()`.
+  // Creates a Session on the pull request's head branch and switches to it, then sends or prefills the kickoff (#1310).
   async function handleNewSession(): Promise<void> {
     setNewSessionBusy(true)
     setNewSessionError(null)
-    const result = await window.refract.pullRequests.newSessionFromPullRequest(repositoryId, number)
+    const message = await createSessionFromItem({ kind: 'pull-request', repositoryId, number })
     setNewSessionBusy(false)
-    if (!result.ok) {
-      setNewSessionError(result.error.message)
-      return
-    }
-    await useSessionsStore.getState().refresh()
-    useSplitStore.getState().replaceFocused(result.value.id)
-    openChat()
+    if (message) setNewSessionError(message)
   }
 
   function handleNewSessionClick(): void {
+    const ref = { kind: 'pull-request' as const, repositoryId, number }
+    if (findExistingSession(ref)) {
+      void requestSessionFromItem(ref)
+      return
+    }
     // A fork pull request's head branch runs its author's code and AGENTS.md/prompt content, so warn first.
     if (detail?.isFork) {
       setForkWarningOpen(true)

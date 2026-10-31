@@ -3,7 +3,8 @@ import { canTogglePause, setAllPaused, setSessionPaused } from '@/features/chat/
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { stopAndRestore } from '@/features/chat/restoreQueue'
 import { toggleRightPane } from '@/features/right-pane/toggle-right-pane'
-import { focusedPaneSessionId, newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
+import { focusedPaneRepository, focusedPaneSessionId, newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
+import { useItemSessionDialogStore } from '@/features/sessions/ItemSessionDialogHost'
 import { focusSessionPane } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useThemeStore, useViewStore } from '@/state'
 import { registerActions, type PaletteAction } from './actionRegistry'
@@ -52,6 +53,24 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     keywords: ['create', 'worktree'],
     when: () => useViewStore.getState().view === 'chat',
     run: newSessionInFocusedPane
+  },
+  {
+    id: 'new-session-from-issue',
+    icon: PlusIcon,
+    label: 'New session from issue…',
+    group: 'Sessions',
+    keywords: ['github', 'issue', 'kickoff'],
+    when: () => !!focusedPaneRepository(),
+    run: () => useItemSessionDialogStore.getState().open('issue')
+  },
+  {
+    id: 'new-session-from-pull-request',
+    icon: PlusIcon,
+    label: 'New session from pull request…',
+    group: 'Sessions',
+    keywords: ['github', 'pr', 'review', 'kickoff'],
+    when: () => !!focusedPaneRepository(),
+    run: () => useItemSessionDialogStore.getState().open('pull-request')
   },
   {
     id: 'pause-session',

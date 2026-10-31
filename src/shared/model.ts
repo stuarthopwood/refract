@@ -50,6 +50,8 @@ export interface Session {
   currentTurnSubagents?: string[];
   stoppedOnRequestConversation?: string | null;
   stoppedOnRequestAtSize?: number | null;
+  /** The issue this Session was started from (#1310); absent for every other Session. */
+  originIssue?: { number: number; title: string; url: string };
 }
 /** The app-wide setting for how much the agent may do without asking. */
 export type ApprovalMode = 'ask' | 'ask-and-remember' | 'edit-freely' | 'auto';

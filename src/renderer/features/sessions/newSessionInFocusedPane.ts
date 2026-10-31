@@ -12,6 +12,14 @@ export function focusedPaneSessionId(): string | null {
   return paneSessionIds[Math.min(focusedIndex, paneSessionIds.length - 1)] ?? null
 }
 
+/** The focused pane's Project, or the only Project; undefined when ambiguous. */
+export function focusedPaneRepository() {
+  const frontSessionId = focusedPaneSessionId()
+  const focusedSession = frontSessionId ? useSessionsStore.getState().sessions.find((session) => session.id === frontSessionId) : undefined
+  const repositories = useRepositoriesStore.getState().repositories
+  return focusedSession ? repositories.find((candidate) => candidate.id === focusedSession.repositoryId) : repositories.length === 1 ? repositories[0] : undefined
+}
+
 /** New session in the focused pane's repo (or the only repo); otherwise focuses the quick-create "+" rather than guess (#6). */
 export function newSessionInFocusedPane(): void {
   const frontSessionId = focusedPaneSessionId()

@@ -112,6 +112,7 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,
             pinned_model: false,
+            origin_issue: None,
         };
 
         if let Err(err) = state

@@ -65,6 +65,17 @@ pub struct Session {
     /// `Some` while paused: queued message texts to resend on Resume; never auto-resumes (#477).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paused_held: Option<Vec<String>>,
+    /// The issue this Session was started from; absent for every other Session (#1310).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_issue: Option<OriginIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginIssue {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
