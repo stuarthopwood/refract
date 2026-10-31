@@ -63,7 +63,9 @@ pub fn openable_target(path: &Path) -> Option<PathBuf> {
     // NTFS is case-insensitive: the on-disk case may differ from the known name, but a link changes the path shape.
     let same = canonical == expected
         || (cfg!(windows)
-            && canonical.to_string_lossy().eq_ignore_ascii_case(&expected.to_string_lossy()));
+            && canonical
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&expected.to_string_lossy()));
     same.then_some(canonical)
 }
 
