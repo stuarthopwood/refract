@@ -7,10 +7,10 @@ import type { ReactNode } from 'react'
 import { PauseIcon, PlayIcon } from 'lucide-react'
 import { PaneBanner } from '@/components/PaneBanner'
 import { Button } from '@/components/ui/button'
+import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Kbd } from '@/components/ui/kbd'
 import { focusSessionPane } from '@/lib/focus'
-import { cn } from '@/lib/utils'
 import { useSessionsStore, useSplitStore } from '@/state'
 import { setSessionPaused } from './pauseActions'
 
@@ -24,7 +24,6 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
   const paused = pause === 'paused'
   const resumeRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
   const previous = useRef(pause)
   const [announcement, setAnnouncement] = useState('')
 
@@ -36,7 +35,7 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
     else if (pause === 'paused') setAnnouncement('Session paused')
     else if (was) setAnnouncement('Session resumed')
     const active = document.activeElement
-    const lost = !active || active === document.body || bodyRef.current?.contains(active) || rootRef.current?.contains(active)
+    const lost = !active || active === document.body || rootRef.current?.contains(active)
     if (pause === 'paused') {
       if (lost) resumeRef.current?.focus()
     } else if (was === 'paused' && lost) {
@@ -79,39 +78,40 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
           </Button>
         </PaneBanner>
       )}
-      <div
-        ref={bodyRef}
-        inert={paused}
-        className={cn('flex min-h-0 flex-1 flex-col', paused && 'pointer-events-none select-none blur-sm')}
+      <LoadingOverlay
+        loading={paused}
+        delayMs={0}
+        className="flex min-h-0 flex-1 flex-col"
+        contentClassName="flex min-h-0 flex-1 flex-col"
+        overlay={
+          <div role="group" aria-label="Session paused" className="rounded-md border border-border bg-background shadow-md">
+            <Empty className="flex-none">
+              <EmptyHeader>
+                <EmptyMedia>
+                  <PauseIcon aria-hidden className="size-16 text-state-paused" />
+                </EmptyMedia>
+                <EmptyTitle>Paused</EmptyTitle>
+                <EmptyDescription className="text-foreground">
+                  Press <Kbd>Space</Kbd> or select Resume
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button ref={resumeRef} type="button" variant={stopped ? 'outline' : 'default'} onClick={() => void setSessionPaused(sessionId, false)}>
+                  <PlayIcon aria-hidden />
+                  Resume
+                </Button>
+                {stopped && (
+                  <Button type="button" onClick={handleStart}>
+                    Start agent
+                  </Button>
+                )}
+              </EmptyContent>
+            </Empty>
+          </div>
+        }
       >
         {children}
-      </div>
-      {paused && (
-        <div role="group" aria-label="Session paused" className="absolute inset-0 z-10 flex items-center justify-center bg-background/80">
-          <Empty className="flex-none">
-            <EmptyHeader>
-              <EmptyMedia>
-                <PauseIcon aria-hidden className="size-16 text-state-paused" />
-              </EmptyMedia>
-              <EmptyTitle>Paused</EmptyTitle>
-              <EmptyDescription className="text-foreground">
-                Press <Kbd>Space</Kbd> or select Resume
-              </EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button ref={resumeRef} type="button" variant={stopped ? 'outline' : 'default'} onClick={() => void setSessionPaused(sessionId, false)}>
-                <PlayIcon aria-hidden />
-                Resume
-              </Button>
-              {stopped && (
-                <Button type="button" onClick={handleStart}>
-                  Start agent
-                </Button>
-              )}
-            </EmptyContent>
-          </Empty>
-        </div>
-      )}
+      </LoadingOverlay>
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </div>

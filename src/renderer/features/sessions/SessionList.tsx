@@ -150,6 +150,7 @@ export function SessionList() {
                   variant="ghost"
                   size="icon-xs"
                   aria-label="Collapse all groups"
+                  data-collapse-all-groups=""
                   aria-disabled={allCollapsed || undefined}
                   aria-describedby={allCollapsed ? collapseAllReasonId : undefined}
                   className={TOOLBAR_BUTTON_CLASS}

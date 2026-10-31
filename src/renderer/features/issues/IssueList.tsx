@@ -6,6 +6,7 @@ import { ColourDot } from '@/components/ColourDot'
 import { FILTER_PICKER_CLASS, ProjectListPane } from '@/components/ProjectListPane'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
 import { Badge } from '@/components/ui/badge'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useIssuesStore, useRepositoriesStore } from '@/state'
 import type { IssueTab } from '../../../shared/ipc-issues'
 import { IssueRow } from './IssueRow'
@@ -35,6 +36,7 @@ export function IssueList() {
     const index = store.labels.indexOf(name)
     pendingFocus.current = index < store.labels.length - 1 ? index : index - 1
     store.removeLabel(name)
+    useChatAreaAnnouncer.getState().announce(`Removed label filter ${name}`)
   }
   useEffect(() => {
     if (pendingFocus.current === null) return

@@ -5,7 +5,6 @@ import { InlineStatus } from '@/components/InlineStatus'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
 import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
@@ -14,7 +13,7 @@ import { notify, useRepositoriesStore, useSessionListStore, useSessionsStore, us
 import type { SessionSummary } from '../../../shared/ipc'
 import type { ProjectColor, Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
-import { GroupHeaderRow, GroupHeaderTrigger } from './GroupHeader'
+import { GroupHeaderRow, GroupHeaderTrigger, HEADER_ACTION_BUTTON_CLASS } from './GroupHeader'
 import { githubRemoteSlug, remoteHeaderIcon, remoteHeaderTooltip } from './remoteDisplay'
 import { ProjectColorPopover } from './ProjectColorPopover'
 import { ReportIssueDialog } from './ReportIssueDialog'
@@ -26,16 +25,6 @@ import { SessionRow } from './SessionRow'
 import { ContextActionItems, DropdownActionItems } from './SessionRowParts'
 import { buildRepositoryActions } from './repositoryActions'
 import { IconButton } from '@/components/IconButton'
-
-// Hidden at rest via opacity (stays in the Tab order); revealed on group hover/focus, own aria-expanded, and under (hover: none) (#567).
-// `dark:hover:` / `aria-expanded:` fills beat the Button base's `dark:hover:bg-row-hover-bg`, which equals the selected row; the focus class restores a forced-colours outline.
-const HEADER_ACTION_BUTTON_CLASS = cn(
-  'text-muted-foreground opacity-0 transition-opacity duration-150',
-  'hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border aria-expanded:bg-sidebar-border',
-  'group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 focus-visible:opacity-100',
-  '[@media(hover:none)]:opacity-100',
-  COMPOSER_BUTTON_FOCUS_CLASS
-)
 
 export function RepositoryGroup({
   repository,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, FolderOpenIcon, FolderSearchIcon, Trash2Icon, UploadIcon } from 'lucide-react'
+import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, Trash2Icon, UploadIcon } from 'lucide-react'
+import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
 import { RowKebabMenu } from '@/components/RowKebabMenu'
@@ -90,7 +91,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
     const entries: RowMenuEntry[] = custom
       ? [
           { id: 'export', label: 'Export…', icon: DownloadIcon, onSelect: () => void actions.exportCustom(custom) },
-          { id: 'show', label: 'Show in folder', icon: FolderSearchIcon, onSelect: () => void actions.showInFolder(custom.id) },
+          { id: 'show', label: REVEAL_ACTION_LABEL, icon: RevealActionIcon, onSelect: () => void actions.showInFolder(custom.id) },
           { id: 'remove', label: 'Remove…', icon: Trash2Icon, destructive: true, onSelect: () => { pendingIndex.current = index; actions.removed.current = false; actions.setPendingRemove(custom) } }
         ]
       : [{ id: 'export', label: 'Export a copy…', icon: DownloadIcon, onSelect: () => void actions.exportBuiltin(e.builtin ?? 'dark', e.name) }]
@@ -162,7 +163,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
           <UploadIcon aria-hidden /> {actions.importing ? 'Importing…' : 'Import theme…'}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => void actions.showInFolder()}>
-          <FolderOpenIcon aria-hidden /> Open themes folder
+          <RevealActionIcon aria-hidden /> Show themes folder
         </Button>
       </div>
       <ConfirmAlertDialog

@@ -378,7 +378,6 @@ const refract: RefractApi = {
   },
 
   theme: {
-    preview: (themeId) => request<void>(IPC_REQUESTS.THEME_PREVIEW, themeId),
     set: (themeId) => request<Settings>(IPC_REQUESTS.THEME_SET, themeId)
   },
   themes: {

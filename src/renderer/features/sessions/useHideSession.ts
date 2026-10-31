@@ -20,6 +20,7 @@ export function useHideSession(session: SessionSummary, options: HideSessionOpti
   const setHidden = useSessionsStore((state) => state.setHidden)
 
   function unhide(): void {
+    toast.dismiss(`hide-${session.id}`)
     void setHidden(session.id, false).then((ok) => {
       if (!ok) return
       options.onAnnounce?.(`Unhid ${session.name}`)
@@ -33,7 +34,7 @@ export function useHideSession(session: SessionSummary, options: HideSessionOpti
     else options.captureFocusFallback()
     void setHidden(session.id, true).then((ok) => {
       if (!ok) return
-      toast(`Hid ${session.name}`, { duration: 10000, action: { label: 'Undo', onClick: unhide } })
+      toast(`Hid ${session.name}`, { id: `hide-${session.id}`, duration: 10000, action: { label: 'Undo', onClick: unhide } })
     })
   }
 

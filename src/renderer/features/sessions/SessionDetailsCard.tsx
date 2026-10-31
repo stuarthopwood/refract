@@ -2,8 +2,8 @@ import { cloneElement, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
 import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
-import { Button } from '@/components/ui/button'
 import { useAnyMenuOpen } from '@/components/ui/exclusive-menu'
+import { IconButton } from '@/components/IconButton'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { useSessionsStore } from '@/state'
@@ -109,7 +109,7 @@ export function SessionDetailsCard({
             </div>
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
               <MapPinIcon aria-hidden className="size-4 shrink-0" />
-              <p className="min-w-0 break-all">
+              <p className="min-w-0 flex-1 break-all">
                 {worktreeMissing ? (
                   <>
                     {session.worktreePath} <span className="text-destructive">(missing)</span>
@@ -118,6 +118,22 @@ export function SessionDetailsCard({
                   session.worktreePath
                 )}
               </p>
+              <div className="-my-1 flex shrink-0 gap-1">
+                <IconButton
+                  label={worktreeMissing ? 'Worktree missing' : REVEAL_ACTION_LABEL}
+                  size="icon-xs"
+                  className="shrink-0 aria-disabled:opacity-50"
+                  aria-disabled={worktreeMissing || undefined}
+                  onClick={() => {
+                    if (!worktreeMissing) void reveal()
+                  }}
+                >
+                  <RevealActionIcon aria-hidden />
+                </IconButton>
+                <IconButton label="Copy path" size="icon-xs" className="shrink-0" onClick={() => void copyPath()}>
+                  <CopyIcon aria-hidden />
+                </IconButton>
+              </div>
             </div>
             {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
             <div className="flex flex-col gap-1">
@@ -151,16 +167,6 @@ export function SessionDetailsCard({
                   <DiffStatLine stat={diffStatResult} />
                 </span>
               )}
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <Button variant="ghost" size="xs" onClick={() => void copyPath()}>
-                <CopyIcon aria-hidden />
-                Copy path
-              </Button>
-              <Button variant="ghost" size="xs" onClick={() => void reveal()}>
-                <RevealActionIcon aria-hidden />
-                {REVEAL_ACTION_LABEL}
-              </Button>
             </div>
           </div>
         </HoverCardContent>

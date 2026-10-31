@@ -167,7 +167,7 @@ async function getAccessibleNameAndRole(cdp, selectorExpr) {
 // Auto mode must be seeded in settings.json: `setApprovalMode` only sets `pendingMode`, applied at the next settle,
 // which never happens for a Session that is not mid-turn. Ask mode would split the two bash calls into separate groups.
 
-/** Drives the real Profile-menu UI: `theme.preview(id)` only moves the title-bar overlay, not the `<html>` class the CSS tokens key off.
+/** Drives the real Profile-menu UI: no IPC call sets the `<html>` class the CSS tokens key off.
  * A real `mouseMoved` hover is needed to open Radix's `DropdownMenuSub`; theme rows are `role="menuitemradio"` (#1043). */
 async function switchTheme(cdp, themeId, themeName) {
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
