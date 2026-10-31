@@ -52,7 +52,9 @@ export function clampFlightToBounds(keyframes: Keyframe[], piece: DOMRect, bound
     if (typeof frame.transform !== 'string') return frame
     return {
       ...frame,
-      transform: frame.transform.replace(TRANSLATE_RE, (_m, x: string, y: string) => {
+      transform: frame.transform.replace(TRANSLATE_RE, (m, x: string, y: string) => {
+        // Rest frames stay at 0 so a piece never jumps at flight start or end.
+        if (Number(x) === 0 && Number(y) === 0) return m
         const cx = clamp(Number(x), bounds.left - piece.left, bounds.right - piece.right)
         const cy = clamp(Number(y), bounds.top - piece.top, bounds.bottom - piece.bottom)
         return `translate(${cx}px, ${cy}px)`

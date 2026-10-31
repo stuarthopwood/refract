@@ -32,7 +32,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
   const idleTimeoutMs = useHolidayStore((s) => s.idleTimeoutMs)
   const flightIntervalMsOverride = useHolidayStore((s) => s.flightIntervalMs)
   const [paused, setPaused] = useState(() => document.hidden || !document.hasFocus())
-  const [motionReducedOrForcedColors, setMotionReducedOrForcedColors] = useState(() => window.matchMedia(NO_MOTION_QUERY).matches)
+  const [motionSuppressed, setMotionSuppressed] = useState(() => window.matchMedia(NO_MOTION_QUERY).matches)
   const [flightCount, setFlightCount] = useState(0)
   const idleTimerRef = useRef<number | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -45,7 +45,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
   useEffect(() => {
     const media = window.matchMedia(NO_MOTION_QUERY)
     function handleChange() {
-      setMotionReducedOrForcedColors(media.matches)
+      setMotionSuppressed(media.matches)
     }
     media.addEventListener('change', handleChange)
     return () => media.removeEventListener('change', handleChange)
@@ -136,7 +136,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
       remainingFlightDelayMsRef.current = null
       return
     }
-    if (paused || motionReducedOrForcedColors) return
+    if (paused || motionSuppressed) return
     let cancelled = false
     let flightTimer: number | undefined
     let currentAnimation: Animation | undefined
@@ -216,7 +216,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
         else fadeOutFlight(currentBat, currentAnimation)
       }
     }
-  }, [active, holiday, paused, motionReducedOrForcedColors, flightIntervalMsOverride])
+  }, [active, holiday, paused, motionSuppressed, flightIntervalMsOverride])
 
   if (!active || !holiday) return null
 
