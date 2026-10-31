@@ -8,8 +8,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
+import { addRepository, groupTriggerFinder } from './verify-tauri-session-list-helpers.mjs';
 import { spawnSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,12 +49,14 @@ async function pressResetChord(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
 }
 
-async function runChecks(cdp) {
+async function runChecks(cdp, repoDir) {
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 120_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
     `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
     { timeoutMs: 60_000, label: 'Readiness green (fake omp)' }
   );
+  await addRepository(cdp, repoDir);
+  await cdp.waitFor(groupTriggerFinder(path.basename(repoDir)) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
   await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Appearance')`);
@@ -98,13 +101,14 @@ function buildShim(dir) {
 async function main() {
   const head = gitHead(REPO_ROOT);
   log(`verify-tauri-078: head ${head}, shots ${SHOTS_DIR}`);
-  let shimDir, dataDir, importDir, exeDir, child, cdp;
+  let shimDir, dataDir, importDir, exeDir, repoA, child, cdp;
   let ok = false;
   try {
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-078-shim-'));
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-078-data-'));
     importDir = mkdtempSync(path.join(tmpdir(), 'refract-078-import-'));
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-078-exe-'));
+    repoA = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-078-repoA-')), 'A');
     mkdirSync(path.join(dataDir, 'themes'));
     for (const [file, body] of Object.entries(THEME_FILES)) writeFileSync(path.join(dataDir, 'themes', file), JSON.stringify(body));
     buildShim(shimDir);
@@ -130,7 +134,7 @@ async function main() {
     cdp = await CdpSession.connect(wsUrl);
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target is not owned by the launched process');
     log(`app pid ${launched.targetPid}, port ${port}, data dir ${dataDir}`);
-    await runChecks(cdp);
+    await runChecks(cdp, repoA);
     log(`verify-tauri-078: ALL PASS (${passed} checks) at head ${head}`);
     ok = true;
   } finally {
@@ -138,7 +142,7 @@ async function main() {
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, log: REPORT }, null, 2));
     cdp?.close();
     if (child) await stopLauncher(child);
-    for (const dir of [shimDir, dataDir, importDir, exeDir]) if (dir) await safeRmSync(dir);
+    for (const dir of [shimDir, dataDir, importDir, exeDir, repoA]) if (dir) await safeRmSync(dir);
   }
 }
 
