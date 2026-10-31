@@ -81,7 +81,7 @@ function makeGithubScratchClone(dir) {
 }
 
 function independentActivePrCount(repoDir) {
-  const result = spawnSync_('gh', ['search', 'prs', '--repo', 'stuarthopwood/refract', '--involves', '@me', '--json', 'number', '--', 'is:open'], { cwd: repoDir });
+  const result = spawnSync_('gh', ['search', 'prs', '--repo', 'stuarthopwood/refract', '--json', 'number', '--', 'is:open'], { cwd: repoDir });
   if (result.status !== 0) return null;
   try {
     return JSON.parse(result.stdout).length;
@@ -222,14 +222,14 @@ async function main() {
     let independentCount = null;
     if (repoClone) {
       independentCount = independentActivePrCount(repoClone);
-      log(`verify-tauri-569: independent gh search prs count (involves @me, is:open): ${independentCount}`);
+      log(`verify-tauri-569: independent gh search prs count (is:open): ${independentCount}`);
 
       await addRepository(cdp, repoClone);
       checkPass('Added scratch stuarthopwood/refract clone as a Project');
       await createSessionViaQuickCreate(cdp, 'refract');
 
       await cdp
-        .waitFor(`(() => { const s = window.__refractStores?.pullRequests?.getState(); if (!s) return false; const entry = Object.values(s.activeCountByRepository)[0]; return !!entry && entry.loading === false; })()`, {
+        .waitFor(`(() => { const s = window.__refractStores?.pullRequests?.getState(); if (!s) return false; return s.activeCount.loading === false && s.activeCount.fetchedAt !== null; })()`, {
           timeoutMs: 30_000,
           label: 'active-count fetch settles'
         })

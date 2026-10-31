@@ -56,8 +56,6 @@ export const PULL_REQUEST_STATE_DISPLAY: Record<PullRequestState, CheckDisplay> 
 }
 
 export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestRowProps) {
-  const check = CHECK_STATE_DISPLAY[pullRequest.checkState]
-  const CheckIcon = check.icon
   const state = PULL_REQUEST_STATE_DISPLAY[pullRequest.state]
   const StateIcon = state.icon
   const authorLabel = pullRequest.author.name ?? pullRequest.author.login
@@ -95,11 +93,6 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
         <span className="flex items-center gap-1">
           <StateIcon aria-hidden className="size-4" />
           {state.label}
-        </span>
-        <span aria-hidden="true">{'\u00b7'}</span>
-        <span className={cn('flex items-center gap-1', check.colorClass)}>
-          <CheckIcon aria-hidden className={cn('size-4', pullRequest.checkState === 'pending' && 'animate-spin')} />
-          {check.label}
         </span>
         <span aria-hidden="true">{'\u00b7'}</span>
         <span className="truncate" data-pr-repository={pullRequest.repository}>{pullRequest.repositoryName}</span>

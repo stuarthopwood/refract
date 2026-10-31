@@ -1,15 +1,19 @@
 // Pull requests view state (issue #874, spec 057): one cross-Project list, so a flat store like
 // `issues-store.ts` rather than per-repository slices. Fetches on open, on a filter change, on
-// explicit Refresh and on "Show more" only, never on a timer. A separate per-Project "active
+// explicit Refresh and on "Show more" only, never on a timer. A separate cross-Project "active
 // count" slice (issue #569) feeds the sidebar badge and is independent of the list.
 import { create } from 'zustand'
-import type { IpcError, PullRequestListResult, Result } from '../../shared/ipc'
+import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
 import type { PullRequestAcrossItem } from '../../shared/ipc-pull-requests'
 
 export const PAGE_SIZE = 50
 export const MAX_ROWS = 200
+/** The smallest page the list IPC accepts; the badge shows "30+" from 30 rows. */
+export const ACTIVE_COUNT_LIMIT = 50
+/** The IPC rejects more than 40 Projects, so the badge covers the first 40. */
+export const ACTIVE_COUNT_PROJECTS = 40
 
 export interface PullRequestsActiveCount {
   count: number | null
@@ -21,7 +25,6 @@ function emptyActiveCount(): PullRequestsActiveCount {
   return { count: null, loading: false, fetchedAt: null }
 }
 
-// Stable reference for a Project with no entry yet, so a selector never returns a fresh object.
 export const EMPTY_PULL_REQUESTS_ACTIVE_COUNT: PullRequestsActiveCount = emptyActiveCount()
 
 export interface SelectedPullRequest {
@@ -57,28 +60,17 @@ interface PullRequestsState {
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. */
   refresh(allRepositoryIds: string[], more?: boolean): Promise<void>
   loadMore(allRepositoryIds: string[]): Promise<void>
-  activeCountByRepository: Record<string, PullRequestsActiveCount>
-  activeCountFor(repositoryId: string): PullRequestsActiveCount
-  /** Issue #569: `involves`/open for one Project, never polled; callers are the sidebar's mount
-   * effect, the window focus refresh and the account-change clear (`init-stores.ts`), and the
-   * list's own Refresh. */
-  refreshActiveCount(repositoryId: string): Promise<void>
-  /** The active GitHub account changed: every cached count is stale. */
+  /** The sidebar badge: open pull requests across every added Project, the set the view lists by default. */
+  activeCount: PullRequestsActiveCount
+  /** Never polled; callers are the sidebar mount effect, the window focus refresh, the account-change refetch and the list's Refresh. */
+  refreshActiveCount(allRepositoryIds: string[]): Promise<void>
+  /** The active GitHub account changed: the cached count is stale. */
   clearActiveCounts(): void
 }
 
 let refreshSequence = 0
-// Per-Project counter so a stale `involves` search never overwrites a newer one.
-const activeCountSequence: Record<string, number> = {}
-
-function patchActiveCount(
-  byRepository: Record<string, PullRequestsActiveCount>,
-  repositoryId: string,
-  changes: Partial<PullRequestsActiveCount>
-): Record<string, PullRequestsActiveCount> {
-  const current = byRepository[repositoryId] ?? emptyActiveCount()
-  return { ...byRepository, [repositoryId]: { ...current, ...changes } }
-}
+// So a stale count fetch never overwrites a newer one.
+let activeCountSequence = 0
 
 export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   tab: 'all',
@@ -159,58 +151,30 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     })
   },
   loadMore: (allRepositoryIds) => get().refresh(allRepositoryIds, true),
-  activeCountByRepository: {},
-  activeCountFor: (repositoryId) => get().activeCountByRepository[repositoryId] ?? EMPTY_PULL_REQUESTS_ACTIVE_COUNT,
-  refreshActiveCount: async (repositoryId) => {
-    activeCountSequence[repositoryId] = (activeCountSequence[repositoryId] ?? 0) + 1
-    const sequence = activeCountSequence[repositoryId]
-    set({
-      activeCountByRepository: patchActiveCount(get().activeCountByRepository, repositoryId, { loading: true })
-    })
-    // Issue #569 decision 1: `involves` already covers author/assignee/mentioned/review-requested
-    // in one search; only open pull requests count.
+  activeCount: EMPTY_PULL_REQUESTS_ACTIVE_COUNT,
+  refreshActiveCount: async (allRepositoryIds) => {
+    activeCountSequence += 1
+    const sequence = activeCountSequence
+    set({ activeCount: { ...get().activeCount, loading: true } })
     // A rejected IPC call must not leave `loading: true` stuck, which would silently disable the
     // window-focus refresh and the mount effect (both skip while loading).
-    let result: Result<PullRequestListResult>
+    let result: Result<{ items: PullRequestAcrossItem[]; fetchedAt: string }>
     try {
-      result = await window.refract.pullRequests.list(repositoryId, 'involves', 'open')
+      result = await window.refract.pullRequests.listAcross('all', 'open', allRepositoryIds.slice(0, ACTIVE_COUNT_PROJECTS), '', ACTIVE_COUNT_LIMIT)
     } catch {
-      if (activeCountSequence[repositoryId] !== sequence) return
-      set({
-        activeCountByRepository: patchActiveCount(get().activeCountByRepository, repositoryId, {
-          count: null,
-          loading: false,
-          fetchedAt: null
-        })
-      })
+      if (activeCountSequence === sequence) set({ activeCount: emptyActiveCount() })
       return
     }
-    if (activeCountSequence[repositoryId] !== sequence) return
-    if (!result.ok) {
-      // Decision 4: a failed fetch clears to `null` (renders as nothing), never a stale number.
-      set({
-        activeCountByRepository: patchActiveCount(get().activeCountByRepository, repositoryId, {
-          count: null,
-          loading: false,
-          fetchedAt: null
-        })
-      })
-      return
-    }
+    if (activeCountSequence !== sequence) return
+    // A failed fetch clears to `null` (renders as nothing), never a stale number.
     set({
-      activeCountByRepository: patchActiveCount(get().activeCountByRepository, repositoryId, {
-        count: result.value.items.length,
-        loading: false,
-        fetchedAt: result.value.fetchedAt
-      })
+      activeCount: result.ok
+        ? { count: result.value.items.length, loading: false, fetchedAt: result.value.fetchedAt }
+        : emptyActiveCount()
     })
   },
   clearActiveCounts: () => {
-    // Bumping every sequence makes an in-flight fetch started before this clear bail instead of
-    // resurrecting a stale, now-wrong-account count.
-    for (const key of Object.keys(activeCountSequence)) {
-      activeCountSequence[key] = (activeCountSequence[key] ?? 0) + 1
-    }
-    set({ activeCountByRepository: {} })
+    activeCountSequence += 1
+    set({ activeCount: EMPTY_PULL_REQUESTS_ACTIVE_COUNT })
   }
 }))

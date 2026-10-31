@@ -32,7 +32,6 @@ import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
 import { useChatWidthStore } from './chat-width-store'
 import { useUpdateStore } from './update-store'
-import { getDefaultRepositoryId } from '../lib/defaultRepository'
 
 // An error or rejected invoke falls back to the default instead of a cold-start toast; `ok` tells callers whether the value is real.
 async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: string): Promise<{ value: T; ok: boolean }> {
@@ -214,14 +213,14 @@ export function initStores(): void {
   let lastActiveCountFocusRefresh = 0
   function refreshActiveCountOnFocus(): void {
     if (useAccountsStore.getState().githubStatus !== 'ready') return
-    const repositoryId = getDefaultRepositoryId()
-    if (!repositoryId) return
+    const repositoryIds = useRepositoriesStore.getState().repositories.map((repo) => repo.id)
+    if (repositoryIds.length === 0) return
     // Checked before stamping the throttle so an in-flight fetch doesn't waste the slot.
-    if (usePullRequestsStore.getState().activeCountFor(repositoryId).loading) return
+    if (usePullRequestsStore.getState().activeCount.loading) return
     const now = Date.now()
     if (now - lastActiveCountFocusRefresh < 60000) return
     lastActiveCountFocusRefresh = now
-    void usePullRequestsStore.getState().refreshActiveCount(repositoryId)
+    void usePullRequestsStore.getState().refreshActiveCount(repositoryIds)
   }
   window.addEventListener('focus', refreshActiveCountOnFocus)
   document.addEventListener('visibilitychange', () => {
@@ -238,8 +237,8 @@ export function initStores(): void {
     usePullRequestsStore.getState().clearActiveCounts()
     // Refetch immediately for the new account so the sidebar isn't blank until the next focus.
     if (identity !== null && state.githubStatus === 'ready') {
-      const repositoryId = getDefaultRepositoryId()
-      if (repositoryId) void usePullRequestsStore.getState().refreshActiveCount(repositoryId)
+      const repositoryIds = useRepositoriesStore.getState().repositories.map((repo) => repo.id)
+      if (repositoryIds.length > 0) void usePullRequestsStore.getState().refreshActiveCount(repositoryIds)
     }
   })
 

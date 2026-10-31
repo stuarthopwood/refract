@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { isNeedsYouSession } from './sessionDisplay'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
-import { useAccountsStore, usePullRequestsStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 
 interface NavItemProps {
   active: boolean
@@ -59,20 +59,18 @@ export function ViewsNavGroup() {
   // Project control changes it afterward (issue #569: shared, reactive hook).
   const defaultRepositoryId = useDefaultRepositoryId()
   const githubStatus = useAccountsStore((state) => state.githubStatus)
-  const activeCount = usePullRequestsStore((state) =>
-    defaultRepositoryId ? state.activeCountFor(defaultRepositoryId).count : null
-  )
+  const activeCount = usePullRequestsStore((state) => state.activeCount.count)
+  const repositories = useRepositoriesStore((state) => state.repositories)
+  const repositoryIdsKey = repositories.map((repo) => repo.id).join('|')
   // `null` covers never fetched, zero and unavailable alike: all render as nothing (#569 decision 4).
   const activeCountLabel =
     githubStatus === 'ready' && activeCount !== null && activeCount > 0 ? (activeCount >= 30 ? '30+' : String(activeCount)) : null
-  // Issue #569 decision 2(a)/(b): fetches once per default repository with no cached count yet,
-  // never on a timer; focus refresh and the explicit Refresh live in `init-stores.ts` and the list.
+  // Fetches when GitHub is ready and the Project set changes, never on a timer; focus refresh and the
+  // explicit Refresh live in `init-stores.ts` and the list. The count spans every Project.
   useEffect(() => {
-    if (!defaultRepositoryId) return
-    if (githubStatus !== 'ready') return
-    if (usePullRequestsStore.getState().activeCountByRepository[defaultRepositoryId]) return
-    void usePullRequestsStore.getState().refreshActiveCount(defaultRepositoryId)
-  }, [defaultRepositoryId, githubStatus])
+    if (repositoryIdsKey === '' || githubStatus !== 'ready') return
+    void usePullRequestsStore.getState().refreshActiveCount(repositoryIdsKey.split('|'))
+  }, [repositoryIdsKey, githubStatus])
 
   function handleOpenPullRequests(): void {
     if (!defaultRepositoryId) return

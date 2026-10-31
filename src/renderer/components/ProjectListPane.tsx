@@ -37,6 +37,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   'rate-limited': 'GitHub rate limit reached. Try again in a few minutes.'
 }
 
+function withFullStop(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`
+}
+
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
@@ -88,6 +92,12 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   const capNoteRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const askedForMore = useRef(false)
+
+  // A Refresh replaces the rows, so a pending Show more focus hand-off no longer applies.
+  const refresh = () => {
+    askedForMore.current = false
+    props.onRefresh()
+  }
 
   const showCapNote = Boolean(paging?.atCap) && !loading
   // "Show more" keeps its focus while loading (aria-disabled). When the button then vanishes
@@ -150,7 +160,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             </TooltipTrigger>
             <TooltipContent>{filtersLabel}</TooltipContent>
           </Tooltip>
-          <RefreshButton loading={loading} onClick={props.onRefresh} label={`Refresh ${noun.plural}`} />
+          <RefreshButton loading={loading} onClick={refresh} label={`Refresh ${noun.plural}`} />
         </div>
       </div>
       {filtersOpen && (
@@ -160,9 +170,9 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             onValueChange={(value) => {
               props.onQueryChange(value)
               // Emptying a search that was applied refetches at once.
-              if (value === '' && props.appliedQuery !== '') props.onRefresh()
+              if (value === '' && props.appliedQuery !== '') refresh()
             }}
-            onSubmit={props.onRefresh}
+            onSubmit={refresh}
             label={`Search ${noun.plural}`}
             placeholder={`Search ${noun.plural}`}
             className="h-8"
@@ -204,7 +214,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             type="button"
             aria-expanded={skippedOpen}
             onClick={() => setSkippedOpen((open) => !open)}
-            className="flex items-center gap-1 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-ring"
+            className="flex items-center gap-1 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring"
           >
             <ChevronRightIcon aria-hidden className={cn('size-3.5 transition-transform', skippedOpen && 'rotate-90')} />
             {plural(skipped.length, 'project')} skipped
@@ -263,7 +273,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             </LoadingOverlay>
             {failedLoadMore && error && (
               <div role="alert" className="p-2 text-center text-xs text-destructive">
-                {ERROR_MESSAGES[error.code] ?? error.message} Try Show more again.
+                {withFullStop(ERROR_MESSAGES[error.code] ?? error.message)} Try Show more again.
               </div>
             )}
             {paging?.hasMore && (
