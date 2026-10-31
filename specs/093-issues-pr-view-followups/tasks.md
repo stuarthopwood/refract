@@ -6,5 +6,5 @@
 - [x] FR-8 no per-row detail fetch
 - [x] FR-9, FR-10, FR-12 list pane polish
 - [x] FR-1, FR-2, FR-6, FR-11 already on main
-- [ ] Live check `scripts/verify-tauri-093.mjs`
-- [ ] Six-reviewer gate
+- [x] Live check `scripts/verify-tauri-093.mjs`
+- [x] Six-reviewer gate
