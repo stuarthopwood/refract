@@ -174,14 +174,21 @@ async function checkManageSessions(cdp) {
     const before = getComputedStyle(input).boxShadow;
     input.setAttribute('aria-invalid', 'true');
     const after = getComputedStyle(input).boxShadow;
+    const invalidBorder = getComputedStyle(input).borderTopColor;
     input.focus();
     const focused = getComputedStyle(input).boxShadow;
-    return { before, after, focused };
+    const focusedBorder = getComputedStyle(input).borderTopColor;
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--ring)';
+    document.body.appendChild(probe);
+    const ringColour = getComputedStyle(probe).color;
+    probe.remove();
+    return { before, after, focused, invalidBorder, focusedBorder, ringColour, focusVisible: input.matches(':focus-visible') };
   })()`);
   log(`invalid ring: ${JSON.stringify(ring)}`);
   await shot(cdp, '07-invalid-field.png');
   assert(ring && ring.after !== ring.before && ring.after !== 'none', 'aria-invalid draws a ring on an Input');
-  assert(ring.focused !== ring.after, 'A focused invalid Input shows the focus ring, not the invalid ring');
+  assert(ring.focusVisible && ring.focusedBorder === ring.ringColour && ring.focusedBorder !== ring.invalidBorder, 'A focused invalid Input swaps its border to the --ring colour');
 }
 
 async function main() {
