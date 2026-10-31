@@ -454,9 +454,9 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
       </CardContent>
       {request.inputKind !== 'text' && (
         <CardFooter>
-        <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
-          Cancel
-        </Button>
+          <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+            Cancel
+          </Button>
         </CardFooter>
       )}
     </Card>

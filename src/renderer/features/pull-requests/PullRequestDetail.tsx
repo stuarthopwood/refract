@@ -157,8 +157,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
     <div className="flex h-full flex-col overflow-hidden">
       {/* drag-regions-allow: renders right of PullRequestList, below PullRequestsView's own h-10 drag-region header, so it never touches App.tsx's strip despite the same shape. */}
       <div className="shrink-0 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
             <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
@@ -167,7 +167,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
               {detail.author.name ?? detail.author.login}
             </p>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-nowrap items-center gap-2">
             <StatePill state={detail.state} />
             {/* Check status carries its own severity colour (`CHECK_STATE_DISPLAY.colorClass`, shared with `PullRequestRow.tsx`) (#1121). */}
             <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>

@@ -76,7 +76,7 @@ async function checkPullRequests(cdp) {
     const merge = find('Merge');
     const session = find('New session');
     const title = header.querySelector('h2').parentElement;
-    const actions = header.querySelector('[data-open-on-github]').parentElement.parentElement;
+    const actions = header.querySelector('a[data-open-on-github]').parentElement;
     return {
       openGh: header.querySelector('a[data-open-on-github]')?.getAttribute('aria-label'),
       copyLink: !!header.querySelector('button[aria-label="Copy link"]'),
