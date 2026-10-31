@@ -65,9 +65,10 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
   await sleep(600);
   const weight = await cdp.evaluate(`getComputedStyle(document.querySelector('h1')).fontWeight`);
-  log(`settings h1 weight: ${weight}`);
+  const semibold = await cdp.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--font-weight-semibold').trim()`);
+  log(`settings h1 weight: ${weight}, --font-weight-semibold: ${semibold}`);
   await shot(cdp, '02-settings.png');
-  assert(Number(weight) === 600, 'Settings h1 is semibold (600)');
+  assert(Number(weight) === Number(semibold) && Number(weight) > 0, 'Settings h1 uses the semibold token like ScreenHeader');
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
   await sleep(400);
 
