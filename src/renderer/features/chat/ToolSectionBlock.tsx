@@ -57,7 +57,7 @@ function SectionHeader({ section, children }: { section: Section; children?: Rea
       <span className="text-xs text-muted-foreground">{section.label}</span>
       <div className="flex items-center gap-1">
         {section.code !== '' && (
-          <CopyButton getText={() => section.code} label={`Copy ${section.label}`} announcement="Copied" />
+          <CopyButton getText={() => section.code} label={`Copy ${section.label}`} announcement={`${section.label} copied`} />
         )}
         {children}
       </div>

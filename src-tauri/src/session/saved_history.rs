@@ -125,7 +125,7 @@ fn parse_history_file(path: &Path) -> SavedHistory {
     drop(messages);
     state.set_terminated_unexpectedly(true);
     state.settle_interrupted_tool_rows();
-    SavedHistory::Items(Arc::new(state.items().to_vec()))
+    SavedHistory::Items(Arc::new(state.into_items()))
 }
 
 /// Discards the remainder of an over-long line without buffering it.

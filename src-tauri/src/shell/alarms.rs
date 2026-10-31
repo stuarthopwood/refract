@@ -48,30 +48,24 @@ pub fn spawn(app: AppHandle, settings: Arc<AsyncMutex<SettingsStore>>) {
     tauri::async_runtime::spawn(async move {
         loop {
             let now = now_ms();
-            let (fired, snapshot, next, save_failed, changed) = {
+            let (fired, snapshot, next, save_failed) = {
                 let mut store = settings.lock().await;
-                let before = store.get().alarms;
+                let before = store.alarms().to_vec();
                 let (fired, err) = store.take_due_alarms(now).await;
                 if let Some(err) = &err {
                     log::warn!("refract-tauri: failed to save fired alarms: {err}");
                 }
-                let snapshot = store.get();
-                let changed = snapshot.alarms != before;
-                (
-                    fired,
-                    snapshot,
-                    store.next_alarm_ms(),
-                    err.is_some(),
-                    changed,
-                )
+                let changed = store.alarms() != before.as_slice();
+                let snapshot = changed.then(|| store.get());
+                (fired, snapshot, store.next_alarm_ms(), err.is_some())
             };
             for alarm in &fired {
                 show_notification(&app, alarm);
                 emit(&app, ALARM_FIRED, alarm);
             }
             // An overdue alarm deactivated without notifying still changes the list the renderer shows.
-            if changed {
-                emit(&app, SETTINGS_CHANGED, &snapshot);
+            if let Some(snapshot) = &snapshot {
+                emit(&app, SETTINGS_CHANGED, snapshot);
             }
             match next {
                 None => WAKE.notified().await,

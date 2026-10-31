@@ -82,7 +82,7 @@ export function ManageSessionsToolbar({
       </Select>
 
       <Select value={filters.sort} onValueChange={(value) => onFiltersChange({ ...filters, sort: value as SortKey })}>
-        <SelectTrigger aria-label="Sort sessions">
+        <SelectTrigger aria-label={`Sort sessions, ${SORT_LABELS[filters.sort]}`}>
           <span className="text-muted-foreground">Sort:</span>
           <SelectValue />
         </SelectTrigger>

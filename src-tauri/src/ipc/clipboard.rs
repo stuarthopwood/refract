@@ -24,13 +24,17 @@ pub(super) fn decode_png_bytes(args: &[Value], method: &str) -> Result<Vec<u8>, 
     if encoded.len() > MAX_IMAGE_BYTES * 4 / 3 + 4 {
         return Err(IpcError::new(
             "clipboard-too-large",
-            "The image is too large",
+            "The image is too large to copy or save (limit 8 MiB)",
         ));
     }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(|_| invalid_argument(format!("{method} expects a base64 PNG")))?;
-    if !bytes.starts_with(&PNG_SIGNATURE) {
+    // Signature, then a first chunk that is a 13-byte IHDR.
+    let ihdr_ok = bytes
+        .get(8..16)
+        .is_some_and(|c| c == [0, 0, 0, 13, b'I', b'H', b'D', b'R']);
+    if !bytes.starts_with(&PNG_SIGNATURE) || !ihdr_ok {
         return Err(invalid_argument(format!("{method} expects a PNG image")));
     }
     Ok(bytes)
@@ -45,7 +49,7 @@ fn png_to_rgba(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), IpcError> {
     if u64::from(info.width) * u64::from(info.height) > MAX_IMAGE_PIXELS {
         return Err(IpcError::new(
             "clipboard-too-large",
-            "The image is too large",
+            "The image has too many pixels to copy or save",
         ));
     }
     let mut buf = vec![0; reader.output_buffer_size().ok_or_else(bad)?];

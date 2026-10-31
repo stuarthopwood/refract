@@ -292,7 +292,7 @@ impl SessionAgent {
         };
         {
             let mut state = self.state.lock().await;
-            let before = state.transcript.items().to_vec();
+            let before = state.transcript.snapshot();
             state.transcript.finalize_live_items(finalize_cause);
             let ops = diff_transcript(&before, state.transcript.items());
             if !ops.is_empty() {

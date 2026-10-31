@@ -25,9 +25,14 @@ export interface ScreenSectionProps {
   className?: string
   /** Lets the caller move focus to the heading, for example after the focused row disappears. */
   headingRef?: Ref<HTMLHeadingElement>
+  /** Heading level; 2 on a screen, 3 or 4 when the section nests inside a dialog or another section. */
+  headingLevel?: 2 | 3 | 4
+  /** Sets aria-busy on the section while its first read is in flight. */
+  busy?: boolean
 }
 
-export function ScreenSection({ title, count, actions, note, error, loading = false, empty, children, className, headingRef }: ScreenSectionProps) {
+export function ScreenSection({ title, count, actions, note, error, loading = false, empty, children, className, headingRef, headingLevel = 2, busy }: ScreenSectionProps) {
+  const Heading = `h${headingLevel}` as const
   const headingId = useId()
   const showCount = count !== undefined && !loading
   const emptyLine = (text: string) => (
@@ -36,12 +41,12 @@ export function ScreenSection({ title, count, actions, note, error, loading = fa
     </Empty>
   )
   return (
-    <section aria-labelledby={headingId} className={cn('flex min-w-0 flex-col gap-2', className)}>
+    <section aria-labelledby={headingId} aria-busy={busy || undefined} className={cn('flex min-w-0 flex-col gap-2', className)}>
       <div className="flex min-h-8 flex-wrap items-center gap-2">
-        <h2 id={headingId} ref={headingRef} tabIndex={headingRef ? -1 : undefined} className="text-sm font-semibold outline-none">
+        <Heading id={headingId} ref={headingRef} tabIndex={headingRef ? -1 : undefined} className="text-sm font-semibold outline-none">
           {title}
           {showCount && <span className="sr-only">, {count}</span>}
-        </h2>
+        </Heading>
         {showCount && (
           <span aria-hidden className="text-xs tabular-nums text-muted-foreground">
             {count}

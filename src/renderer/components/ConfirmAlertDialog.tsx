@@ -85,7 +85,7 @@ export function ConfirmAlertDialog({
             {error ?? ''}
           </InlineStatus>
         )}
-        <AlertDialogFooter className={cn(!confirmLabel && 'group-data-[size=sm]/alert-dialog-content:grid-cols-1 group-data-[size=sm]/alert-dialog-content:justify-items-end')}>
+        <AlertDialogFooter className={cn(!confirmLabel && 'max-sm:items-end group-data-[size=sm]/alert-dialog-content:grid-cols-1 group-data-[size=sm]/alert-dialog-content:justify-items-end')}>
           <AlertDialogCancel
             aria-disabled={busy}
             className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
@@ -102,7 +102,7 @@ export function ConfirmAlertDialog({
           {confirmLabel && (
             <AlertDialogAction
               variant={tone === 'destructive' ? 'destructive' : 'default'}
-            aria-disabled={busy || confirmDisabled}
+              aria-disabled={busy || confirmDisabled}
               className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
               onClick={(event) => {
                 event.preventDefault()

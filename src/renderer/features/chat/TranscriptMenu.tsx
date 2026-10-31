@@ -1,9 +1,8 @@
 import * as React from 'react'
 import { MoreHorizontalIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/IconButton'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { actionMenuItem, menuSeparator, type MenuKind } from '@/features/palette/menuItems'
 import { cn } from '@/lib/utils'
 import { copyLinkText } from './linkClipboard'
@@ -25,24 +24,74 @@ function MenuItems({ items, kind }: { items: (kind: MenuKind) => React.ReactNode
   return <>{items(kind)}</>
 }
 
-/** The visible More actions trigger for the same items a right-click shows (#1454). */
-export function TranscriptKebab({ items, label = 'More actions', className }: { items: (kind: MenuKind) => React.ReactNode; label?: string; className?: string }) {
+/** The visible More actions trigger for the same items a right-click shows (#1454). `lazy` renders a plain placeholder button until first pointer or focus, so a long transcript mounts no menus. */
+export function TranscriptKebab({
+  items,
+  label = 'More actions',
+  className,
+  align = 'end',
+  lazy = false
+}: {
+  items: (kind: MenuKind) => React.ReactNode
+  label?: string
+  className?: string
+  align?: 'start' | 'end'
+  lazy?: boolean
+}) {
+  const [armed, setArmed] = React.useState(!lazy)
+  const [openOnArm, setOpenOnArm] = React.useState(false)
+  const focusOnArmRef = React.useRef(false)
+  const wrapRef = React.useRef<HTMLSpanElement>(null)
+  React.useLayoutEffect(() => {
+    if (armed && focusOnArmRef.current) {
+      focusOnArmRef.current = false
+      wrapRef.current?.querySelector('button')?.focus()
+    }
+  }, [armed])
+  const buttonClass = cn('shrink-0 text-muted-foreground aria-expanded:opacity-100', className)
+
+  if (!armed) {
+    return (
+      <span ref={wrapRef} className="contents">
+        <IconButton
+          label={label}
+          size="icon-xs"
+          className={buttonClass}
+          aria-haspopup="menu"
+          aria-expanded="false"
+          onPointerEnter={(e) => {
+            // Touch fires enter right before down; swapping here would eat the tap.
+            if (e.pointerType === 'mouse') setArmed(true)
+          }}
+          onPointerDown={(e) => {
+            if (e.pointerType === 'mouse') return
+            e.preventDefault()
+            setOpenOnArm(true)
+            setArmed(true)
+          }}
+          onFocus={() => {
+            focusOnArmRef.current = true
+            setArmed(true)
+          }}
+        >
+          <MoreHorizontalIcon aria-hidden />
+        </IconButton>
+      </span>
+    )
+  }
   return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label={label} className={cn('shrink-0 text-muted-foreground aria-expanded:opacity-100', className)}>
-              <MoreHorizontalIcon aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end">
-        <MenuItems items={items} kind="dropdown" />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <span ref={wrapRef} className="contents">
+      <DropdownMenu defaultOpen={openOnArm}>
+        <DropdownMenuTrigger asChild>
+          <IconButton label={label} size="icon-xs" className={buttonClass}>
+            <MoreHorizontalIcon aria-hidden />
+          </IconButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={align}>
+          <MenuItems items={items} kind="dropdown" />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
   )
 }
 

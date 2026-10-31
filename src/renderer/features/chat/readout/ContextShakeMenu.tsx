@@ -50,9 +50,7 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
   const idle = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'idle')
   const [confirming, setConfirming] = useState<ShakeAction | null>(null)
   // Keeps the last action's text on screen while the dialog animates closed.
-  const shownRef = useRef<ShakeAction | null>(null)
-  if (confirming) shownRef.current = confirming
-  const shown = confirming ?? shownRef.current
+  const [shown, setShown] = useState<ShakeAction | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   // Right-click, Shift+F10 and the Menu key open the same menu as a left click.
@@ -81,8 +79,10 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
       event.preventDefault()
       return
     }
-    if (action.loss) setConfirming(action)
-    else run(action)
+    if (action.loss) {
+      setShown(action)
+      setConfirming(action)
+    } else run(action)
   }
 
   return (

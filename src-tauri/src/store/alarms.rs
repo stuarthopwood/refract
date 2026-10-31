@@ -116,6 +116,11 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
+    /// Borrowed alarm list, so callers need not clone the whole `Settings`.
+    pub fn alarms(&self) -> &[Alarm] {
+        &self.data.alarms
+    }
+
     /// Soonest active fire time, for the scheduler's single timer.
     pub fn next_alarm_ms(&self) -> Option<i64> {
         self.data

@@ -58,7 +58,7 @@ function CodeBlockHeader({ label, copyText, hideCopy, wrap, items }: CodeBlockHe
             className="-my-1 text-muted-foreground focus-visible:ring-inset"
           />
         )}
-        {items && <TranscriptKebab items={items} label={`More actions, ${label}`} className="-my-1" />}
+        {items && <TranscriptKebab lazy items={items} label={`More actions, ${label}`} className="-my-1" />}
       </div>
     </div>
   )
