@@ -200,7 +200,7 @@ export async function restoreOnlyArchivedRow(cdp) {
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`);
 }
 
-/** Adds a scratch repository via the Readiness screen's primary button (empty profile) or the list footer's "Add repository" control. */
+/** Adds a scratch repository via the Readiness screen's primary button (empty profile) or the list footer's "Add project" menu (Local folder…). */
 export async function addRepository(cdp, dir) {
   await cdp.click(
     `document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project')`
