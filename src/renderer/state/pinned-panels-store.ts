@@ -24,6 +24,7 @@ interface PinnedPanelsState {
   pin(kind: PinnedPanelKind, repositoryId: string, number: number, opener?: HTMLElement | null): void
   unpin(kind: PinnedPanelKind, options?: { restoreFocus?: boolean }): void
   publishPullRequestState(repositoryId: string, number: number, state: PullRequestState): void
+  clearLivePullRequest(): void
 }
 
 /** Per-window, never persisted: the pinned PR and issue panels follow the user across Sessions. */
@@ -35,7 +36,9 @@ export const usePinnedPanelsStore = create<PinnedPanelsState>((set, get) => ({
     const key = kind === 'pull-request' ? 'pullRequest' : 'issue'
     const pane = useRightPaneStore.getState()
     const alreadyActive = pane.open && pane.activePanelId === kind
-    set({ [key]: { repositoryId, number, opener } } as Partial<PinnedPanelsState>)
+    const previous = get().pullRequest
+    const swapped = kind === 'pull-request' && (previous?.repositoryId !== repositoryId || previous?.number !== number)
+    set({ [key]: { repositoryId, number, opener }, ...(swapped ? { livePullRequest: null } : {}) } as Partial<PinnedPanelsState>)
     pane.openPanel(kind)
     // The shell only moves focus on a fresh open; a swap of the pinned item must still move it in.
     if (alreadyActive) requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-right-pane-content]')?.focus())
@@ -57,5 +60,6 @@ export const usePinnedPanelsStore = create<PinnedPanelsState>((set, get) => ({
     if (!pinned || pinned.repositoryId !== repositoryId || pinned.number !== number) return
     if (live && live.repositoryId === repositoryId && live.number === number && live.state === state) return
     set({ livePullRequest: { repositoryId, number, state } })
-  }
+  },
+  clearLivePullRequest: () => set({ livePullRequest: null })
 }))
