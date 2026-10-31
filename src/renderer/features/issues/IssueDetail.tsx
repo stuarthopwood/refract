@@ -1,10 +1,10 @@
 // The selected issue's detail pane (issue #504, spec 051): title, state, labels, assignees, the
-// body through the sanitised `Markdown` path, and Open on GitHub / Copy Issue Link. Every field is
+// body through the sanitised `Markdown` path, and Open on GitHub / Copy link. Every field is
 // untrusted GitHub text and renders as text or sanitised Markdown only.
 import { useEffect, useRef, useState } from 'react'
-import { CircleCheckIcon, CircleDotIcon, ExternalLinkIcon } from 'lucide-react'
+import { CircleCheckIcon, CircleDotIcon } from 'lucide-react'
 import { ColourDot } from '@/components/ColourDot'
-import { Button } from '@/components/ui/button'
+import { OpenOnGitHubButton } from '@/components/OpenOnGitHubButton'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Markdown } from '@/features/chat/Markdown'
 import { RefreshButton } from '@/features/pull-requests/RefreshButton'
@@ -72,7 +72,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-border p-4">
+      <div className="shrink-0 p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 className="line-clamp-2 text-lg font-semibold">
@@ -88,13 +88,8 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
               {open ? 'Open' : 'Closed'}
             </span>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this issue" />
-            <Button asChild variant="outline" size="sm">
-              <a href={detail.url} target="_blank" rel="noreferrer noopener" data-open-on-github>
-                <ExternalLinkIcon aria-hidden className="size-4" />
-                Open on GitHub
-              </a>
-            </Button>
-            <CopyButton getText={() => detail.url} label="Copy Issue Link" announcement="Issue link copied" />
+            <OpenOnGitHubButton url={detail.url} />
+            <CopyButton getText={() => detail.url} label="Copy link" announcement="Issue link copied" />
           </div>
         </div>
         {error && (

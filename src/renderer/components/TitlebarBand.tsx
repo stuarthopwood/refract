@@ -2,7 +2,7 @@
 // own (Readiness, the empty chat state). Purely cosmetic: `aria-hidden`, `pointer-events-none`,
 // painted behind the screen's content (`-z-10`, so the parent must be `relative isolate`); the
 // invisible drag strip in `App.tsx` keeps the window draggable. `reservesWindowControls` leaves
-// room for the native caption buttons, mirroring `WINDOW_CONTROLS_SPACER_STYLE`.
+// room for the native caption buttons.
 import { cn } from '@/lib/utils'
 import { PANEL_HEADER_HEIGHT_CLASS } from '@/components/PanelHeader'
 

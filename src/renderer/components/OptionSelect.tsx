@@ -24,7 +24,7 @@ export function OptionSelect({ label, anyLabel, value, options, optionLabel, onC
       <SelectTrigger aria-label={label} className={className ?? 'min-w-0 max-w-44'}>
         <SelectValue />
       </SelectTrigger>
-      <SelectContent position="popper">
+      <SelectContent>
         <SelectItem value={ANY}>{anyLabel}</SelectItem>
         {options.map((option) => (
           <SelectItem key={option} value={option}>

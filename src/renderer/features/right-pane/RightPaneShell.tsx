@@ -4,7 +4,6 @@ import { useRightPaneStore, useSideChatStore, useSubagentPanelStore } from '@/st
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { PanelLauncher } from './PanelLauncher'
 import { PanelTabBar } from './PanelTabBar'
-import { WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 import { FdbKnowledgePanel } from './placeholders/FdbKnowledgePanel'
 import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
 import { SideChatPanel } from './side-chat/SideChatPanel'
@@ -48,7 +47,6 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   if (openPanelIds.length === 0) {
     return (
       <div data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
-        <WindowControlsSpacerRow />
         <div ref={launcherRef} className="min-h-0 flex-1 overflow-hidden">
           <PanelLauncher sessionId={sessionId} />
         </div>

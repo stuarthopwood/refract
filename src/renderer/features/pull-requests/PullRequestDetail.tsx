@@ -2,16 +2,15 @@
 // action row and comment composer. Action results show inline; disabled actions show their reason, and a
 // not-mergeable pull request shows that reason instead of Merge.
 import { useEffect, useRef, useState } from 'react'
-import { ExternalLinkIcon } from 'lucide-react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { CopyButton } from '@/components/ui/copy-button'
+import { OpenOnGitHubButton } from '@/components/OpenOnGitHubButton'
 import { Markdown } from '@/features/chat/Markdown'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
@@ -176,17 +175,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
               {check.label}
             </span>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
-            {/* A real anchor (`Button asChild`) so it opens in the system browser (#1132). */}
-            <Tooltip>
-              <TooltipTrigger asChild aria-describedby={undefined}>
-                <Button asChild variant="ghost" size="icon-sm" aria-label="Open on GitHub (opens in browser)" className={COMPOSER_BUTTON_FOCUS_CLASS}>
-                  <a href={detail.url} target="_blank" rel="noreferrer noopener" data-open-on-github>
-                    <ExternalLinkIcon aria-hidden className="size-4" />
-                  </a>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Open on GitHub</TooltipContent>
-            </Tooltip>
+            <OpenOnGitHubButton url={detail.url} />
+            <CopyButton getText={() => detail.url} label="Copy link" announcement="Pull request link copied" />
             {!actionsHidden && (
               <>
                 <Button
@@ -195,7 +185,6 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
                   variant="ghost"
                   onClick={handleNewSessionClick}
                   disabled={newSessionBusy || detail.state !== 'open'}
-                  title={detail.state !== 'open' ? 'Only an open pull request can start a Session.' : undefined}
                 >
                   {newSessionBusy ? 'Starting…' : 'New session'}
                 </Button>
@@ -212,6 +201,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
                 <Button
                   ref={mergeButtonRef}
                   size="sm"
+                  variant="outline"
                   onClick={() => setMergeOpen(true)}
                   disabled={mergeBlocked}
                   title={mergeDisabledReason ?? undefined}
@@ -222,6 +212,11 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             )}
           </div>
         </div>
+        {detail.state === 'draft' && !actionsHidden && (
+          <p data-draft-reason className="mt-1 text-xs text-muted-foreground">
+            Draft pull requests cannot start a Session.
+          </p>
+        )}
         {showMergeReasonLine && (
           <p data-merge-reason className="mt-1 text-xs text-muted-foreground">
             {mergeDisabledReason}
