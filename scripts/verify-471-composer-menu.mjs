@@ -264,7 +264,7 @@ async function main() {
     await menuOpen();
     const atStart = await lastCtx();
     items = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')).map((i) => ({ keys: i.getAttribute('aria-keyshortcuts'), hidden: Array.from(i.querySelectorAll('[data-slot="context-menu-shortcut"]')).every((s) => s.getAttribute('aria-hidden') === 'true'), hasHint: !!i.querySelector('[data-slot="context-menu-shortcut"]'), text: i.textContent }))`);
-    check(items.every((i) => i.keys && i.hidden), 'every item has aria-keyshortcuts and its hint text is aria-hidden', items);
+    check(items.every((i) => i.hidden && (i.hasHint ? i.keys : !i.keys)), 'every hinted item has aria-keyshortcuts and an aria-hidden hint; the hintless item has neither', items);
     await closeMenu();
     const end = (await value()).length;
     await select(end, end);

@@ -8,4 +8,4 @@
 - [x] T6 Fixed `writeText` error, `src-tauri/src/ipc/clipboard.rs`
 - [x] T7 `readText` main-window gate, `clipboard.rs` and `lib.rs`
 - [x] T8 Script polling and env-var clipboard
-- [ ] T9 `pnpm ci:local`, live check, gate
+- [x] T9 `pnpm ci:local`, live check, gate
