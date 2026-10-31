@@ -76,7 +76,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-[200px] flex-1">
             <h2 className="line-clamp-2 text-lg font-semibold">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
@@ -84,7 +84,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
               <span className="font-code">{detail.ownerRepo}</span> opened by {detail.author}
             </p>
           </div>
-          <div className="no-drag-region flex min-w-0 flex-wrap items-center gap-2">
+          <div className="no-drag-region flex shrink-0 flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 text-xs">
               <StateIcon aria-hidden className="size-4" />
               {open ? 'Open' : 'Closed'}

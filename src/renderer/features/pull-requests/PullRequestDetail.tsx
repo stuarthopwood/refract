@@ -157,16 +157,17 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
   const mergeBlocked = detail.mergeDisabledReason !== null || detail.mergeableState !== 'mergeable'
   // Merged and closed pull requests hide their actions; the StatePill says why (#1393). Draft keeps them.
   const actionsHidden = detail.state === 'merged' || detail.state === 'closed'
-  // A state-only disable already shows its reason via the StatePill; keep this line only while the pull
-  // request is open but blocked by a conflict, a blocked merge, or mergeability still computing (#1131).
-  const showMergeReasonLine = detail.reviewDisabledReason === null && mergeDisabledReason !== null && !actionsHidden
+  // A state-only disable already shows its reason via the StatePill; these lines show only while the
+  // pull request is open (or draft) but a button is disabled (#1131).
+  const showReviewReasonLine = detail.reviewDisabledReason !== null && !actionsHidden
+  const showMergeReasonLine = mergeDisabledReason !== null && mergeDisabledReason !== detail.reviewDisabledReason && !actionsHidden
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* drag-regions-allow: renders right of PullRequestList, below PullRequestsView's own h-10 drag-region header, so it never touches App.tsx's strip despite the same shape. */}
       <div className="shrink-0 p-4">
-        <div className={cn('flex justify-between gap-2', compact ? 'flex-col' : 'items-start')}>
-          <div className="min-w-0 flex-1">
+        <div className={cn('flex justify-between gap-2', compact ? 'flex-col' : 'flex-wrap items-start')}>
+          <div className="min-w-[200px] flex-1">
             <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
@@ -183,7 +184,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
               </span>
             </div>
           </div>
-          <div className={cn('flex items-center gap-2', compact ? 'flex-wrap' : 'shrink-0 flex-nowrap')}>
+          <div className="flex flex-wrap items-center gap-2">
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
             <OpenOnGitHubButton url={detail.url} />
             <CopyButton getText={() => detail.url} label="Copy link" announcement="Pull request link copied" />
@@ -227,9 +228,14 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
             Draft pull requests cannot start a Session.
           </p>
         )}
+        {showReviewReasonLine && (
+          <p data-review-reason className="mt-1 text-xs text-muted-foreground">
+            Review: {detail.reviewDisabledReason}
+          </p>
+        )}
         {showMergeReasonLine && (
           <p data-merge-reason className="mt-1 text-xs text-muted-foreground">
-            {mergeDisabledReason}
+            Merge: {mergeDisabledReason}
           </p>
         )}
         {newSessionError && (

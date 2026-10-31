@@ -3,7 +3,8 @@
 // filter and rows.
 import { useEffect, useRef } from 'react'
 import { ColourDot } from '@/components/ColourDot'
-import { FILTER_PICKER_CLASS, ProjectListPane } from '@/components/ProjectListPane'
+import { ProjectListPane } from '@/components/ProjectListPane'
+import { FILTER_PICKER_CLASS } from '@/components/ui/select'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
 import { Badge } from '@/components/ui/badge'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'

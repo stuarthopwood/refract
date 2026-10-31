@@ -141,7 +141,7 @@ export function NewSessionDialog({ repository, trigger, open: controlledOpen, on
               <SelectTrigger id="base-branch" className="w-full">
                 <SelectValue placeholder="Select a branch" />
               </SelectTrigger>
-              <SelectContent side="bottom" sideOffset={4}>
+              <SelectContent side="bottom">
                 <SelectGroup>
                   <SelectLabel className="flex items-center gap-2">
                     <GitBranchIcon aria-hidden className="size-4" />

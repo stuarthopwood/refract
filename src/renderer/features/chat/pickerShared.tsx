@@ -15,10 +15,6 @@ export function usePickerOpenState(disabled: boolean) {
   return { open, setOpen, onOpenChange }
 }
 
-/** Focus ring for `badgeVariants`-based triggers, which already draw an outline once a width utility is applied. */
-export const COMPOSER_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-export const COMPOSER_BUTTON_FOCUS_CLASS = cn(COMPOSER_FOCUS_CLASS, 'focus-visible:border-transparent focus-visible:outline-solid')
-
 /** Focus is never invisible, only muted. */
 export const GHOST_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-composer-focus focus-visible:border-transparent'
 export const GHOST_BUTTON_FOCUS_CLASS = cn(GHOST_FOCUS_CLASS, 'focus-visible:outline-solid')

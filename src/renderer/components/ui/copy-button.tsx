@@ -2,6 +2,7 @@ import * as React from "react"
 import { CheckIcon, CopyIcon, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { COMPOSER_BUTTON_FOCUS_CLASS } from "@/components/ui/composerFocus"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useClearedAnnouncement } from "@/lib/use-cleared-announcement"
 import { sanitiseForClipboard } from "@/lib/clipboard-sanitise"
@@ -123,7 +124,7 @@ export function CopyButton({ getText, onCopy, label, announcement, className, ta
               tabIndex={tabIndex}
               disabled={disabled}
               onClick={(event) => void handleCopy(event)}
-              className={cn("shrink-0", className)}
+              className={cn("shrink-0", COMPOSER_BUTTON_FOCUS_CLASS, className)}
             >
               {icon}
             </Button>
