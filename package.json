@@ -25,6 +25,7 @@
     "check:spacing": "node scripts/check-spacing.mjs",
     "check:alpha-modifiers": "node scripts/check-alpha-modifiers.mjs",
     "check:icon-only-controls": "node scripts/check-icon-only-controls.mjs",
+    "check:literal-colours": "node scripts/check-literal-colours.mjs",
     "check:hit-targets": "node scripts/check-hit-targets.mjs",
     "check:advisor-roster": "node scripts/check-advisor-roster.mjs",
     "worktrees:reap": "node scripts/worktrees-reap.mjs",
