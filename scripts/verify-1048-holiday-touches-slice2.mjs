@@ -104,7 +104,7 @@ async function runCase(c, exeDir, launcherExe, shimDir, repoDir) {
       cdp.evaluate(`(() => ({
         watermark: document.querySelector('.watermark-mark-holiday svg')?.getAttribute('class') ?? null,
         plainWatermark: !!document.querySelector('.watermark-mark:not(.watermark-mark-holiday)'),
-        sidebar: Array.from(document.querySelectorAll('.drag-region svg')).map((s) => s.getAttribute('class')).filter((k) => /lucide-/.test(k ?? '')),
+        sidebar: Array.from(document.querySelectorAll('svg')).map((s) => s.getAttribute('class')).filter((k) => /lucide-/.test(k ?? '')),
         loop: !!document.querySelector('.holiday-ambient-loop')
       }))()`);
     const p = await presence();
