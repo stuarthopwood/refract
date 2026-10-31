@@ -125,7 +125,7 @@ async function main() {
     await waitFor(`!!document.querySelector('[role="alertdialog"], [role="dialog"]')`, 'Remove dialog');
     await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button, [role="dialog"] button')).find((el) => el.textContent.trim() === 'Remove')`);
     await waitFor(`!${radio('Per Element')}`, 'custom theme row gone', 20_000);
-    const fallback = await cdp.evaluate(`Array.from(${radio('Dark')}.closest('[role="radiogroup"]').querySelectorAll('[role="radio"][aria-checked="true"]')).length`);
+    const fallback = await cdp.evaluate(`Array.from((${radio('Dark')}.closest('[role="radiogroup"]') ?? ${radio('Dark')}.parentElement).querySelectorAll('[role="radio"][aria-checked="true"]')).length`);
     check(fallback === 1, 'removing the active custom theme leaves exactly one built-in selected', fallback);
     check(!existsSync(path.join(dirs.data, 'themes', 'per-element.json')), 'the theme file is deleted from the scratch themes folder');
     await shot('appearance-after-remove.png');
