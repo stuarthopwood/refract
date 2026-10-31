@@ -321,7 +321,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
 
   if (request.kind === 'approval') {
     return (
-      <Card size="sm">
+      <Card size="sm" className="bg-approval-card-bg text-approval-card-fg ring-approval-card-border">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><ToolIcon icon={resolveToolDisplay(request.tool).icon} />Allow tool: {request.tool}</CardTitle>
           <CardDescription className="truncate" title={request.target}>

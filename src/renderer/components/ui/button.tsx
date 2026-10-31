@@ -13,13 +13,13 @@ const buttonVariants = cva(
         // (no token exists for this mix).
         invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-field-bg dark:hover:bg-field-hover-bg",
+          "border-button-outline-border bg-button-outline-bg hover:bg-button-outline-hover-bg hover:text-foreground aria-expanded:bg-button-outline-hover-bg aria-expanded:text-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-button-secondary-bg text-button-secondary-fg hover:bg-button-secondary-hover-bg aria-expanded:bg-button-secondary-bg aria-expanded:text-button-secondary-fg",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-row-hover-bg font-normal",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive-hover-bg focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
+          "bg-button-destructive-bg text-button-destructive-fg hover:bg-button-destructive-hover-bg focus-visible:border-destructive/40 focus-visible:ring-destructive/80",
         // Outlined at rest so the surface's one filled button stays the primary action; confirm dialogs use filled `destructive`.
         "destructive-outline":
           "border-destructive bg-background text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:bg-field-bg dark:hover:bg-muted",

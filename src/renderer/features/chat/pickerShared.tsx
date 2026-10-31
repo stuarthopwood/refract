@@ -30,14 +30,14 @@ export const COMPOSER_DISABLED_CLASS = cn(COMPOSER_DISABLED_OPACITY_CLASS, COMPO
 
 export const PICKER_TRIGGER_CLASS = cn(
   badgeVariants({ variant: 'ghost' }),
-  'h-6 shrink-0 gap-2 px-2 border border-composer-control-border cursor-pointer aria-disabled:cursor-not-allowed text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:aria-disabled:hover:bg-transparent',
+  'h-6 shrink-0 gap-2 px-2 border border-composer-control-border cursor-pointer aria-disabled:cursor-not-allowed text-composer-control-fg hover:bg-composer-control-hover-bg hover:text-composer-control-hover-fg aria-expanded:bg-composer-control-hover-bg aria-expanded:text-composer-control-hover-fg dark:aria-disabled:hover:bg-transparent',
   COMPOSER_DISABLED_CLASS,
   GHOST_FOCUS_CLASS
 )
 
 /** The keyboard-active option highlight. */
 export const PICKER_OPTION_CLASS = 'flex cursor-default items-center gap-2 border-l-2 border-transparent px-2 py-1 text-sm'
-export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-accent text-accent-foreground'
+export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-composer-control-open-bg text-composer-control-open-fg'
 
 /** The composer's own surface/border/focus treatment. */
 export const COMPOSER_INPUT_SURFACE_CLASS =

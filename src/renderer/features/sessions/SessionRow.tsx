@@ -143,7 +143,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
           <div
             className={cn(
               'relative flex w-full min-h-11 items-start gap-1 pl-6 pr-2 py-1',
-              isVisible ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent'
+              isVisible ? 'bg-session-row-selected-bg text-session-row-selected-fg' : 'hover:bg-session-row-hover-bg'
             )}
           >
             {renaming ? (
@@ -193,17 +193,17 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     ) : (
                       <StateIcon status={displayStatus(session)} />
                     )}
-                    <span className={cn('truncate text-sm font-normal', session.hiddenAt ? 'text-muted-foreground' : 'text-sidebar-foreground')}>{session.name}</span>
+                    <span className={cn('truncate text-sm font-normal', session.hiddenAt ? 'text-session-row-meta-fg' : 'text-session-row-fg')}>{session.name}</span>
                     {session.hiddenAt && <HiddenMarker compact />}
                   </span>
                   {lineTwo === 'start-progress' && session.startProgress ? (
-                    <span className="truncate pl-6 text-xs text-muted-foreground" aria-hidden>
+                    <span className="truncate pl-6 text-xs text-session-row-meta-fg" aria-hidden>
                       {describeStartProgress(session.startProgress)}
                     </span>
                   ) : lineTwo === 'terminated' ? (
                     <span className="truncate pl-6 text-xs text-destructive">Terminated unexpectedly</span>
                   ) : lineTwo === 'archived' ? (
-                    <span className="flex min-w-0 items-center gap-1 pl-6 text-xs text-muted-foreground">
+                    <span className="flex min-w-0 items-center gap-1 pl-6 text-xs text-session-row-meta-fg">
                       <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
                       <span className="truncate">{repository.name}</span>
                     </span>
@@ -212,13 +212,13 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                       data-testid="session-activity-line"
                       className={cn(
                         'truncate pl-6 text-xs',
-                        session.status === 'needs-you' ? 'text-sidebar-foreground' : 'text-muted-foreground'
+                        session.status === 'needs-you' ? 'text-session-row-fg' : 'text-session-row-meta-fg'
                       )}
                     >
                       {activityText}
                     </span>
                   ) : (
-                    <span className="truncate pl-6 font-code text-xs text-muted-foreground">{session.branch}</span>
+                    <span className="truncate pl-6 font-code text-xs text-session-row-meta-fg">{session.branch}</span>
                   )}
                 </button>
               </SessionDetailsCard>
