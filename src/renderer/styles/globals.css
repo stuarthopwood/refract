@@ -343,7 +343,7 @@ samp {
   --chat-user-bubble-border: transparent;
 }
 
-/* #1472 per-element tokens default to a role; #1474 `--mermaid-*` hold each built-in theme's literal colours (numbering is 1-based: palette-N feeds cScale(N-1)). Declared per theme class so the contrast probe resolves them. */
+/* #1472 per-element tokens default to a role; #1474 `--mermaid-*` hold each built-in theme's literal colours (palette-N feeds cScale(N-1)). Declared per theme class so the contrast probe resolves them. */
 :is(:root, .theme-dark, .theme-obsidian, .theme-dark-high-contrast, .theme-nordic-frost, .theme-cyber-amber) {
   --mermaid-bg: #0a0a0a;
   --mermaid-node-fill: #1f1f1f;

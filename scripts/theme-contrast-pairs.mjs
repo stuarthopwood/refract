@@ -143,7 +143,6 @@ export const PAIRS = [
   // `CheckRow` hint text sits directly on `--background`, so both need a real 4.5:1 text pair there.
   { fg: 'destructive', bg: 'background', min: 4.5 },
   { fg: 'state-needs-you', bg: 'background', min: 4.5 },
-  // Scoped to Dark high contrast: elsewhere the composer is transparent (#927).
   // `--composer-placeholder` (~40% white) on `--background` is an accepted departure: below 4.5:1 text, above 3:1
   // non-text (docs/design/accessibility.md "Accepted departures"). Dark high contrast keeps `--muted-foreground`.
   { fg: 'composer-placeholder', bg: 'background', min: 3.5, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
@@ -160,7 +159,6 @@ export const PAIRS = [
   { fg: 'composer-border', bg: 'background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
-  // Dark high contrast keeps an enforced resting border on the composer triggers.
   // The agent-working spinner renders on the session list, that row selected/hovered (icon is the only status cue),
   // the chat header, and the hover card (`--popover`). `--card` is kept as a cheap fourth check.
   { fg: 'agent-spinner-core', bg: 'sidebar', min: 3 },

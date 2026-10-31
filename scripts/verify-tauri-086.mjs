@@ -107,12 +107,8 @@ async function main() {
         await waitFor(`!document.querySelector('[role="menu"]')`, 'menu closed');
         const focused = await cdp.evaluate(`document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName`);
         check(focused === 'Actions for build', 'closing the menu returns focus to the row actions button', focused);
-        await rightClick(cdp, CHECK_ROW('lint (no link)'));
-        await waitFor(`!!document.querySelector('[role="menu"]')`, 'menu for a check without a link');
-        const disabled = await cdp.evaluate(`(() => { const m = Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]')); return m.length > 0 && m.every((i) => i.getAttribute('aria-disabled') === 'true' || i.hasAttribute('data-disabled')); })()`);
-        check(disabled === true, 'a check without a link shows only a disabled entry', disabled);
-        await pressEscape(cdp);
-        await waitFor(`!document.querySelector('[role="menu"]')`, 'menu closed again');
+        const noLink = await cdp.evaluate(`(() => { const li = ${CHECK_ROW('lint (no link)')}; return !!li && li.textContent.includes('No details link') && !li.querySelector('[aria-label^="Actions for "]'); })()`);
+        check(noLink === true, 'a check without a link shows "No details link" inline and no actions menu', noLink);
       }
     }
 
@@ -125,7 +121,7 @@ async function main() {
     await waitFor(`!!document.querySelector('[role="alertdialog"], [role="dialog"]')`, 'Remove dialog');
     await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button, [role="dialog"] button')).find((el) => el.textContent.trim() === 'Remove')`);
     await waitFor(`!${radio('Per Element')}`, 'custom theme row gone', 20_000);
-    const fallback = await cdp.evaluate(`Array.from((${radio('Dark')}.closest('[role="radiogroup"]') ?? ${radio('Dark')}.parentElement).querySelectorAll('[role="radio"][aria-checked="true"]')).length`);
+    const fallback = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="radio"][aria-checked="true"]')).filter((el) => el.parentElement.querySelector('[aria-label^="Actions for "]')).length`);
     check(fallback === 1, 'removing the active custom theme leaves exactly one built-in selected', fallback);
     check(!existsSync(path.join(dirs.data, 'themes', 'per-element.json')), 'the theme file is deleted from the scratch themes folder');
     await shot('appearance-after-remove.png');

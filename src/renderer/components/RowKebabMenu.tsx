@@ -2,7 +2,7 @@ import { Fragment, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { EllipsisVerticalIcon } from 'lucide-react'
 import { IconButton } from '@/components/IconButton'
-import { MenuItemIcon } from '@/components/ui/menu-item-icon'
+import { ExternalLink } from '@/components/ExternalLink'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 export interface RowMenuEntry {
@@ -11,7 +11,7 @@ export interface RowMenuEntry {
   icon?: LucideIcon
   destructive?: boolean
   disabled?: boolean
-  /** Renders the entry as a new-tab link (http/https only is the caller's job) instead of calling `onSelect`. */
+/** Renders the entry as a new-tab link (`ExternalLink` opens https only) instead of calling `onSelect`; its own icon replaces `icon`. */
   href?: string
   onSelect?(): void
 }
@@ -45,9 +45,7 @@ export function RowKebabMenu({ entries, label, children, below }: { entries: rea
             {i === firstDestructive && i > 0 && <DropdownMenuSeparator />}
             {e.href && !e.disabled ? (
               <DropdownMenuItem asChild variant={e.destructive ? 'destructive' : undefined}>
-                <a href={e.href} target="_blank" rel="noreferrer noopener">
-                  {e.icon && <MenuItemIcon icon={e.icon} />}{e.label}<span className="sr-only"> (opens in browser)</span>
-                </a>
+                <ExternalLink href={e.href}>{e.label}</ExternalLink>
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem icon={e.icon} disabled={e.disabled} variant={e.destructive ? 'destructive' : undefined} onSelect={e.onSelect}>

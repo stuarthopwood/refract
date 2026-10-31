@@ -2,7 +2,7 @@
 // grouped by outcome -- only Action required and Failing expanded; Pending, Successful, Neutral
 // and Skipped collapsed. Every row pairs its status icon with the outcome word (never colour
 // alone) and offers "Open details" through a plain http(s) anchor, as ChangesTab does (no IPC).
-import { ChevronRightIcon, CircleAlertIcon, ExternalLinkIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
+import { ChevronRightIcon, CircleAlertIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { RowKebabMenu } from '@/components/RowKebabMenu'
@@ -47,28 +47,38 @@ export function formatCheckDuration(startedAt: string | null, completedAt: strin
   return `${hours}h ${minutes % 60}m`
 }
 
-function isHttpUrl(url: string | null): url is string {
-  return url !== null && /^https?:\/\//i.test(url)
+function isHttpsUrl(url: string | null): url is string {
+  return url !== null && url.startsWith('https://')
 }
 
 function CheckRow({ check }: { check: PullRequestCheck }) {
   const display = CHECK_OUTCOME_DISPLAY[check.outcome]
   const Icon = display.icon
   const duration = formatCheckDuration(check.startedAt, check.completedAt)
-  const entries: RowMenuEntry[] = isHttpUrl(check.detailsUrl)
-    ? [{ id: 'details', label: 'Open details', icon: ExternalLinkIcon, href: check.detailsUrl }]
-    : [{ id: 'details', label: 'Open details (no link available)', icon: ExternalLinkIcon, disabled: true }]
+  const summary = (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <span className={cn('flex shrink-0 items-center gap-1 text-xs', display.colorClass)}>
+        <Icon aria-hidden className={cn('size-4', check.outcome === 'pending' && 'animate-spin')} />
+        {display.label}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{check.name}</span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
+    </div>
+  )
+  // A menu with nothing to choose is a dead end, so a check without a link shows the reason inline instead.
+  if (!isHttpsUrl(check.detailsUrl)) {
+    return (
+      <li className="flex items-center gap-1 py-1 pl-6 text-sm">
+        {summary}
+        <span className="shrink-0 text-xs text-muted-foreground">No details link</span>
+      </li>
+    )
+  }
+  const entries: RowMenuEntry[] = [{ id: 'details', label: 'Open details', href: check.detailsUrl }]
   return (
     <li className="py-1 pl-6 text-sm">
       <RowKebabMenu entries={entries} label={`Actions for ${check.name}`}>
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className={cn('flex shrink-0 items-center gap-1 text-xs', display.colorClass)}>
-            <Icon aria-hidden className={cn('size-4', check.outcome === 'pending' && 'animate-spin')} />
-            {display.label}
-          </span>
-          <span className="min-w-0 flex-1 truncate">{check.name}</span>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
-        </div>
+        {summary}
       </RowKebabMenu>
     </li>
   )

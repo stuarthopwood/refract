@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { useThemeStore, useActiveThemeId } from '@/state'
 import { THEMES } from '../../shared/themes'
 import type { ThemeId } from '../../shared/themes'
@@ -29,8 +30,14 @@ export function useThemeEntries() {
   async function choose(e: ThemeEntry): Promise<boolean> {
     if (isActive(e)) return false
     const { save, saveCustom } = useThemeStore.getState()
-    if (e.customId !== null) return saveCustom(e.customId)
-    return e.builtin ? save(e.builtin) : false
+    try {
+      if (e.customId !== null) return await saveCustom(e.customId)
+      return e.builtin ? await save(e.builtin) : false
+    } catch (err: unknown) {
+      console.error('theme choose threw', err)
+      toast.error('Could not change theme.')
+      return false
+    }
   }
 
   return { builtins: BUILTINS, customs, customThemes, customId, isActive, choose }
