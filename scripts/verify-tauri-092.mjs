@@ -127,7 +127,7 @@ async function checkSecretInput(cdp) {
   const typedValue = await cdp.evaluate(`${SECRET_FIELD}.value`);
   assert(typedValue === SECRET, 'Typing and paste reach the masked field unchanged');
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Send' && b.closest('[role="group"]'))`);
-  await cdp.waitFor(`document.body.innerText.includes('Secret entered')`, { timeoutMs: 20_000, label: 'Secret entered summary' });
+  await cdp.waitFor(`document.body.innerText.includes('t1295-done')`, { timeoutMs: 20_000, label: 'Agent received the secret and finished' });
   const page = await cdp.evaluate(`({ text: document.body.innerText, values: Array.from(document.querySelectorAll('input,textarea')).map((i) => i.value) })`);
   assert(!page.text.includes(SECRET) && !page.values.some((v) => v.includes(SECRET)), 'The answered state never shows the secret value');
   await shot(cdp, '04-secret-entered.png');

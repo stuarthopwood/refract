@@ -15,7 +15,7 @@ When a turn ends stopped, the composer disables while it holds focus and focus f
 - FR-003 (#1285) Dark (high contrast) composer outline is measured against 3:1 and reported; no token change if it passes (15.42:1 focus, 9.54:1 resting border, 5.27:1 control border).
 - FR-004 (#1295) Rust `classify_dialog` reads `secret` on `input` requests only and carries it on `PendingRequest::Question`; the TypeScript model mirrors it (`secret?: boolean`).
 - FR-005 (#1295) The shared `SecretInput` (`components/SecretInput.tsx`, built on `Input` and `IconButton`) starts masked, has a labelled reveal toggle with `aria-pressed`, sets autocomplete, correction and spellcheck off, and does not block paste.
-- FR-006 (#1295) After answering a secret request the card shows "Secret entered", never the value or its length; the field is cleared on submit.
+- FR-006 (#1295) After answering a secret request the bridge row's detail reads "Secret entered" and the persisted row reads "Answered"; neither shows the value or its length, and the field is cleared on submit.
 - FR-007 (#1295) The answer value is never logged, persisted to the transcript or registry, or echoed in an event.
 - FR-008 Live check `scripts/verify-tauri-092.mjs` exercises each changed path with screenshots and writes `report.json` with the code `gitHead`. Secret prompts are driven through the recorded-frame fake omp (no OMP 18.13.2 extension is assumed installed).
 
