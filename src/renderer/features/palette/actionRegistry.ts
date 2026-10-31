@@ -25,18 +25,22 @@ export interface PaletteAction {
 }
 
 const registry = new Map<string, PaletteAction>()
+let visibleCache: PaletteAction[] | null = null
 
 /** Adds actions (replacing any with the same id) and returns an unregister function. */
 export function registerActions(actions: readonly PaletteAction[]): () => void {
   for (const action of actions) registry.set(action.id, action)
+  visibleCache = null
   return () => {
     for (const action of actions) if (registry.get(action.id) === action) registry.delete(action.id)
+    visibleCache = null
   }
 }
 
-/** Every palette-visible action in registration order (menu-only actions are left out). */
+/** Every palette-visible action in registration order (menu-only actions are left out). Cached until the registry changes; do not mutate. */
 export function getActions(): PaletteAction[] {
-  return [...registry.values()].filter((action) => !action.menuOnly)
+  visibleCache ??= [...registry.values()].filter((action) => !action.menuOnly)
+  return visibleCache
 }
 
 /** Looks an action up by id. */
@@ -61,8 +65,8 @@ export function spokenChord(chord: Chord): string {
 
 const PUNCTUATION_CODES: Record<string, string> = { '\\': 'Backslash', ',': 'Comma', '0': 'Digit0' }
 
-// Letters and comma match on `event.key` with an `event.code` fallback for non-Latin layouts; Backslash matches on code
-// alone because Shift changes `event.key` to '|'.
+// Letters match on `event.key` with an `event.code` fallback for non-Latin layouts. Backslash also accepts '|' and
+// IntlBackslash (ISO keyboards); comma tries the key first, then the physical code (Shift turns the key into '<').
 function keyMatches(event: KeyboardEvent, token: string): boolean {
   const code = PUNCTUATION_CODES[token]
   if (code === undefined) {
@@ -70,9 +74,13 @@ function keyMatches(event: KeyboardEvent, token: string): boolean {
     if (latin) return event.key.toLowerCase() === token.toLowerCase()
     return /^[A-Za-z]$/.test(token) && event.code === `Key${token.toUpperCase()}`
   }
-  if (token === '\\' || token === '0') return event.code === code
-  const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
-  return latin ? event.key === token : event.code === code
+  if (token === '\\') {
+    return (
+      event.code === 'Backslash' || event.code === 'IntlBackslash' || event.key === '\\' || event.key === '|'
+    )
+  }
+  if (token === '0') return event.code === code
+  return event.key === token || event.code === code
 }
 
 /** True when the keydown is exactly this chord: same modifiers, same final key. */
