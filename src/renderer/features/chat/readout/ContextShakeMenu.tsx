@@ -60,6 +60,7 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
   // Right-click, Shift+F10 and the Menu key open the same menu as a left click.
   const openOnContextMenu = (event: ReactMouseEvent): void => {
     event.preventDefault()
+    clickedOutsideRef.current = false
     setMenuOpen(true)
   }
 
