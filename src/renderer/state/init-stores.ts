@@ -15,6 +15,7 @@ import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { initHolidayOverrides } from './holiday-store'
 import { notifyAlarm } from './notify'
+import { useAlarmFiredStore } from './alarm-fired-store'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
@@ -114,6 +115,7 @@ export function initStores(): void {
     useChatWidthStore.getState().setChatWidth(settings.chatWidth)
   })
   window.refract.onAlarmFired((alarm) => {
+    useAlarmFiredStore.getState().markFired(alarm.id, useSettingsStore.getState().settings.alarms ?? [])
     if (document.hasFocus()) notifyAlarm(alarm.label)
   })
   window.refract.onReadoutUpdate(({ sessionId, readout }) => {

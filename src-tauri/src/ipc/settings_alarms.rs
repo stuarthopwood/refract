@@ -59,6 +59,7 @@ pub fn settings_delete_alarm(state: AppState, args: Vec<Value>) -> HandlerFuture
     Box::pin(async move {
         let id = arg_str(&args, 0)
             .ok_or_else(|| invalid_argument("settings.deleteAlarm: id must be a string"))?
+            .trim()
             .to_string();
         if !Alarm::is_valid_id(&id) {
             return Err(invalid_argument(

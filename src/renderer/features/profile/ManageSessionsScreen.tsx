@@ -117,76 +117,77 @@ export function ManageSessionsScreen() {
         headingRef={headingRef}
         backLabel="Back to chat"
         onBack={handleBackToChat}
+        contained
         count={sessionCountLabel(sessions.length, distinctRepositoryCount(sessions))}
       />
 
       <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
-      {sessions.length > 0 && (
-        <ManageSessionsToolbar
-          filters={filters}
-          repositories={repositories}
-          searchInputRef={searchInputRef}
-          onFiltersChange={setFilters}
-          shownCount={visible.length}
-          totalCount={sessions.length}
-        />
-      )}
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
-        {sessions.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <FolderKanbanIcon aria-hidden />
-              </EmptyMedia>
-              <EmptyTitle>No sessions yet</EmptyTitle>
-              <EmptyDescription>Go back to chat and start a session from a project.</EmptyDescription>
-              <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
-            </EmptyHeader>
-            <EmptyContent>
-              <Button variant="outline" onClick={handleBackToChat}>
-                Back to chat
-              </Button>
-            </EmptyContent>
-          </Empty>
-        ) : visible.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <SearchXIcon aria-hidden />
-              </EmptyMedia>
-              <EmptyTitle>No matching sessions</EmptyTitle>
-              <EmptyDescription>No session's name or branch matches your search, or none fit the selected tab and project.</EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button variant="outline" onClick={handleClearFilters}>
-                Clear filters
-              </Button>
-            </EmptyContent>
-          </Empty>
-        ) : (
-          <ul
-            ref={listRef}
-            role="list"
-            aria-label="All sessions across projects"
-            className="flex flex-col gap-1"
-            onFocusCapture={(event) => {
-              lastFocusedRef.current = event.target as HTMLElement
-            }}
-          >
-            {visible.map((session) => (
-              <ManageSessionRow
-                key={session.id}
-                session={session}
-                repository={repositoryById.get(session.repositoryId)}
-                repositoryName={repositoryNameById.get(session.repositoryId) ?? 'Unknown project'}
-                searchInputRef={searchInputRef}
-                onAnnounce={announce}
-              />
-            ))}
-          </ul>
+        {sessions.length > 0 && (
+          <ManageSessionsToolbar
+            filters={filters}
+            repositories={repositories}
+            searchInputRef={searchInputRef}
+            onFiltersChange={setFilters}
+            shownCount={visible.length}
+            totalCount={sessions.length}
+          />
         )}
-      </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+          {sessions.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FolderKanbanIcon aria-hidden />
+                </EmptyMedia>
+                <EmptyTitle>No sessions yet</EmptyTitle>
+                <EmptyDescription>Go back to chat and start a session from a project.</EmptyDescription>
+                <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" onClick={handleBackToChat}>
+                  Back to chat
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : visible.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <SearchXIcon aria-hidden />
+                </EmptyMedia>
+                <EmptyTitle>No matching sessions</EmptyTitle>
+                <EmptyDescription>No session's name or branch matches your search, or none fit the selected tab and project.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" onClick={handleClearFilters}>
+                  Clear filters
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <ul
+              ref={listRef}
+              role="list"
+              aria-label="All sessions across projects"
+              className="flex flex-col gap-1"
+              onFocusCapture={(event) => {
+                lastFocusedRef.current = event.target as HTMLElement
+              }}
+            >
+              {visible.map((session) => (
+                <ManageSessionRow
+                  key={session.id}
+                  session={session}
+                  repository={repositoryById.get(session.repositoryId)}
+                  repositoryName={repositoryNameById.get(session.repositoryId) ?? 'Unknown project'}
+                  searchInputRef={searchInputRef}
+                  onAnnounce={announce}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">

@@ -20,23 +20,29 @@ export interface ScreenHeaderProps {
   children?: ReactNode
   /** Reserves the native window-controls overlay width at the right end (the screen spans the title bar). */
   reservesWindowControls?: boolean
+  /** Caps the content at the same max-w-5xl column as the screen body; the band itself stays full width. */
+  contained?: boolean
 }
 
-export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children, reservesWindowControls = false }: ScreenHeaderProps) {
+export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children, reservesWindowControls = false, contained = false }: ScreenHeaderProps) {
   return (
     <PanelHeader
-      actions={children}
+      className={contained ? 'px-0' : undefined}
+      actions={contained ? undefined : children}
       windowControlsSpacerStyle={reservesWindowControls ? WINDOW_CONTROLS_OVERLAY_STYLE : undefined}
     >
-      {backLabel && onBack && (
-        <IconButton label={backLabel} side="bottom" className="no-drag-region" onClick={onBack}>
-          <ArrowLeftIcon aria-hidden />
-        </IconButton>
-      )}
-      <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
-        {title}
-      </h1>
-      {count && <span className="truncate text-xs text-muted-foreground">{count}</span>}
+      <div className={contained ? 'mx-auto flex h-full min-w-0 max-w-5xl flex-1 items-center gap-2 px-4' : 'contents'}>
+        {backLabel && onBack && (
+          <IconButton label={backLabel} side="bottom" className="no-drag-region" onClick={onBack}>
+            <ArrowLeftIcon aria-hidden />
+          </IconButton>
+        )}
+        <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
+          {title}
+        </h1>
+        {count && <span className="truncate text-xs text-muted-foreground">{count}</span>}
+        {contained && children && <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">{children}</div>}
+      </div>
     </PanelHeader>
   )
 }

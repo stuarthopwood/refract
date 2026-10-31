@@ -1,6 +1,6 @@
 // IPC handler bodies for `accounts.*` and `app.openReleaseNotes`; wire shapes and logic live in `types.rs`.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
 
@@ -12,6 +12,32 @@ use super::{
     acquire_broadcast_ticket, broadcast_add_progress, finish_completed_add, map_gh_error,
     now_epoch_millis, run_github_account_mutation, MutationKind, ACTIVE_ADD_FLOWS, ADD_FLOW_SEQ,
 };
+
+static ADD_START_BUSY: AtomicBool = AtomicBool::new(false);
+
+struct AddStartGuard;
+
+impl AddStartGuard {
+    fn acquire() -> Option<Self> {
+        ADD_START_BUSY
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for AddStartGuard {
+    fn drop(&mut self) {
+        ADD_START_BUSY.store(false, Ordering::SeqCst);
+    }
+}
+
+fn add_in_progress() -> crate::ipc::IpcError {
+    crate::ipc::IpcError::new(
+        "add-in-progress",
+        "A GitHub sign-in is already in progress. Finish or cancel it first.",
+    )
+}
 
 pub(super) fn accounts_github_list(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
@@ -25,7 +51,7 @@ pub(super) fn accounts_github_list(state: AppState, _args: Vec<Value>) -> Handle
             super::types::to_github_accounts(&hosts, &cache)
         };
 
-        // The background refresh may update names/avatars, so re-read and push them.
+        // The background refresh may update names/avatars; push only when a write actually happened.
         // Never awaited: `list()` must not block on it.
         let data_dir = state.data_dir.clone();
         let app_handle = state.app_handle.clone();
@@ -33,16 +59,20 @@ pub(super) fn accounts_github_list(state: AppState, _args: Vec<Value>) -> Handle
             let Ok(cache_cell) = super::get_profile_cache(&data_dir).await else {
                 return;
             };
+            let mut changed = false;
             for entry in &hosts {
-                super::refresh_profile_cache(cache_cell, &entry.host, &entry.login, false).await;
+                changed |=
+                    super::refresh_profile_cache(cache_cell, &entry.host, &entry.login, false)
+                        .await;
             }
-            match super::read_github_accounts(&data_dir).await {
-                Ok(refreshed) => super::broadcast_github_changed_if_current(ticket, &app_handle, &refreshed),
-                Err(err) => log::error!(
-                    "accounts: failed to re-read the GitHub account list after a background cache refresh: {}",
-                    err.message
-                ),
+            if !changed {
+                return;
             }
+            let refreshed = {
+                let cache = cache_cell.lock().await;
+                super::types::to_github_accounts(&hosts, &cache)
+            };
+            super::broadcast_github_changed_if_current(ticket, &app_handle, &refreshed);
         });
 
         Ok(serde_json::to_value(accounts).expect("GitHubAccount list is always JSON-serialisable"))
@@ -51,6 +81,15 @@ pub(super) fn accounts_github_list(state: AppState, _args: Vec<Value>) -> Handle
 
 pub(super) fn accounts_github_add_start(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
+        // Held until the flow is registered, so two concurrent starts cannot both pass the check.
+        let _start_guard = AddStartGuard::acquire().ok_or_else(add_in_progress)?;
+        if !ACTIVE_ADD_FLOWS
+            .lock()
+            .expect("ACTIVE_ADD_FLOWS mutex poisoned")
+            .is_empty()
+        {
+            return Err(add_in_progress());
+        }
         // Always github.com: only switch/signOut take an explicit host.
         // The pre-start snapshot lets the completed add find the new login.
         let hosts_before_start = cli::auth_status().await.map_err(map_gh_error)?;

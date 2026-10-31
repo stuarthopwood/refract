@@ -20,6 +20,7 @@ export interface AddAccountPanelProps {
   reauthLogin?: string | null
   onCancel(flowId: string): void
   onRetry(): void
+  onDismiss(): void
 }
 
 /** The code spelled out character by character for a screen reader; hyphens are only visual grouping. */
@@ -27,7 +28,7 @@ function spellOutCode(code: string): string {
   return code.replace(/-/g, '').split('').join(' ')
 }
 
-export function AddAccountPanel({ flow, starting, cancelling = false, reauthLogin = null, onCancel, onRetry }: AddAccountPanelProps) {
+export function AddAccountPanel({ flow, starting, cancelling = false, reauthLogin = null, onCancel, onRetry, onDismiss }: AddAccountPanelProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const copyRef = useRef<HTMLDivElement>(null)
   const retryRef = useRef<HTMLButtonElement>(null)
@@ -49,9 +50,14 @@ export function AddAccountPanel({ flow, starting, cancelling = false, reauthLogi
         <CardTitle>{reauthLogin ? `Sign in again as @${reauthLogin}` : 'Add GitHub account'}</CardTitle>
         <CardAction>
           {status === 'failed' ? (
-            <Button ref={retryRef} variant="outline" size="sm" onClick={onRetry}>
-              Retry
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button ref={retryRef} variant="outline" size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onDismiss}>
+                Dismiss
+              </Button>
+            </div>
           ) : (
             // `aria-disabled`, not `disabled`: a disabled focused button drops focus to <body>.
             <Button
@@ -59,7 +65,6 @@ export function AddAccountPanel({ flow, starting, cancelling = false, reauthLogi
               variant="ghost"
               size="sm"
               aria-disabled={!flow || cancelling || undefined}
-              className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               onClick={() => flow && !cancelling && onCancel(flow.flowId)}
             >
               {cancelling ? 'Cancelling…' : 'Cancel'}

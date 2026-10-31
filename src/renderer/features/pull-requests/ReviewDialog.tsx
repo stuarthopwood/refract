@@ -165,8 +165,11 @@ export function ReviewDialog({
                 type="button"
                 variant={verdict === option.value ? 'secondary' : 'outline'}
                 aria-pressed={verdict === option.value}
+                aria-disabled={submitting}
                 size="sm"
+                className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
                 onClick={() => {
+                  if (submitting) return
                   setVerdict(option.value)
                   setError(null)
                 }}
@@ -229,7 +232,10 @@ export function ReviewDialog({
         confirmLabel={error ? 'Retry' : actionLabel}
         busyLabel="Submitting…"
         error={error}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => {
+          setConfirming(false)
+          setError(null)
+        }}
         onConfirm={() => void submit()}
         onCloseAutoFocus={restoreTriggerFocus}
       />

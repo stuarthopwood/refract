@@ -57,7 +57,7 @@ async function main() {
     await cdp.clickByLabel('Send message');
 
     await cdp.waitFor(`!!(${CHAIN_TRIGGER})`, { timeoutMs: 30_000, label: 'Subagents chain row mounted' });
-    await cdp.waitFor(`document.querySelectorAll('[role="group"][data-status]').length === 0 || !!(${CHAIN_TRIGGER})?.innerText.includes('Finished')`, { timeoutMs: 30_000, label: 'chain settled' });
+    await cdp.waitFor(`!!(${CHAIN_TRIGGER})?.innerText.includes('Finished')`, { timeoutMs: 30_000, label: 'chain settled' });
     const state = await cdp.evaluate(`(() => {
       const t = ${CHAIN_TRIGGER};
       const root = t.closest('[data-slot="collapsible"]');

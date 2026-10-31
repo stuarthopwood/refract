@@ -130,6 +130,7 @@ async function runChecks(cdp, { repoDir }) {
   // Create: one tomorrow-ish (a time a minute ago) and one due in about a minute.
   const now = Date.now();
   await addAlarm(cdp, hhmm(now - 120_000), 'Stand-up');
+  await cdp.waitFor(`${DIALOG}.textContent.includes('Tomorrow')`, { timeoutMs: 5_000, label: 'Tomorrow hint' }).catch(() => {});
   assert(await cdp.evaluate(`${DIALOG}.textContent.includes('Tomorrow')`), '#1426: a passed time shows the "Tomorrow" hint');
   await shot(cdp, '05-add-form.png');
   await saveAlarm(cdp);
@@ -146,12 +147,16 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.send('Input.insertText', { text: ' edited' });
   await saveAlarm(cdp);
   await cdp.waitFor(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')?.getAttribute('aria-label').includes('edited')`, { timeoutMs: 10_000, label: 'edit saved' });
-  assert(await cdp.evaluate(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]').getAttribute('aria-label').includes('edited')`), '#1426: editing an alarm updates its row');
 
   // Add one due at the next minute boundary, then wait for it to fire.
   const dueAt = Math.ceil((Date.now() + 5_000) / 60_000) * 60_000;
   await addAlarm(cdp, hhmm(dueAt), 'Fires soon');
   await saveAlarm(cdp);
+  await cdp.waitFor(`!${DIALOG} || !${DIALOG}.querySelector('input[type="time"]')`, { timeoutMs: 20_000, label: 'second alarm form closed' });
+  await sleep(1200);
+  log(`pre-second-listed: ${await cdp.evaluate(`JSON.stringify({ dialog: !!document.querySelector('[role="dialog"]'), text: document.querySelector('[role="dialog"]')?.textContent?.slice(0, 160), focus: document.hasFocus(), rows: document.querySelectorAll('button[aria-label^="Edit alarm"]').length })`)}`);
+  // Focus loss from other desktop activity can close the popover; reopen it so the listing check is not environmental.
+  if (!(await cdp.evaluate(`!!${DIALOG}`))) await cdp.click(clockButton);
   await cdp.waitFor(`${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]').length === 2`, { timeoutMs: 10_000, label: 'second alarm listed' });
   await shot(cdp, '07-popover-two-alarms.png');
   await cdp.waitFor(`Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).some((el) => /Fires soon, Fired/.test(el.getAttribute('aria-label')))`, {
@@ -167,6 +172,25 @@ async function runChecks(cdp, { repoDir }) {
     await cdp.evaluate(`/Fires soon, Fired/.test(Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).map((el) => el.getAttribute('aria-label')).join('|'))`),
     '#1426: a due alarm fires and stays listed as "Fired"'
   );
+
+  const probe = (verb) => `(() => {
+    const el = ${DIALOG}.querySelector('[aria-label^="${verb} alarm"][aria-label*="Fires soon"]');
+    if (!el) return JSON.stringify({ exists: false });
+    el.scrollIntoView({ block: 'nearest' });
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return JSON.stringify({ exists: true, rect: [r.left, r.top, r.width, r.height], hitIsSelf: !!hit && (hit === el || el.contains(hit)), inViewport: r.top >= 0 && r.bottom <= innerHeight });
+  })()`;
+  const dismissProbe = JSON.parse(await cdp.evaluate(probe('Dismiss')));
+  const rearmProbe = JSON.parse(await cdp.evaluate(probe('Re-arm')));
+  log(`fired actions: dismiss ${JSON.stringify(dismissProbe)} rearm ${JSON.stringify(rearmProbe)}`);
+  await shot(cdp, '08a-fired-actions.png');
+  assert(dismissProbe.exists && dismissProbe.hitIsSelf && dismissProbe.inViewport, '#1463: Dismiss is present, unclipped and clickable on the fired row');
+  assert(rearmProbe.exists && rearmProbe.hitIsSelf && rearmProbe.inViewport, '#1463: Re-arm is present, unclipped and clickable on the fired row');
+  await cdp.click(`${DIALOG}.querySelector('[aria-label^="Re-arm alarm"][aria-label*="Fires soon"]')`);
+  await sleep(600);
+  await shot(cdp, '08c-after-rearm.png');
+  log(`after re-arm: ${await cdp.evaluate(`Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).map((el) => el.getAttribute('aria-label')).join('|')`)}`);
 
   // Delete the fired one, then the other.
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Delete alarm"][aria-label*="Fires soon"]')`);
