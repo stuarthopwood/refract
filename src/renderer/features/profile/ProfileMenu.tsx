@@ -156,7 +156,7 @@ function UpdateMenuItem() {
       <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
         <RefreshCwIcon aria-hidden />
         <span className="flex min-w-0 flex-1 flex-col leading-tight">
-          <span>Update downloaded</span>
+          <span>Restart to update</span>
           <span className="text-xs text-muted-foreground">Installs when you quit</span>
         </span>
         {updateState?.availableVersion && (
