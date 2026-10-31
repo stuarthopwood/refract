@@ -305,6 +305,9 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {
+    const active = document.activeElement
+    // The busy state disables the focused control and the card then swaps to the summary row, so hand focus on.
+    if (active && active !== document.body) markAskFocusPendingWithFallback(`${sessionId}:${request.requestId}`, sessionId)
     setBusy(true)
     setError(null)
     const result = await window.refract.chat.answer(sessionId, request.requestId, value)
@@ -350,6 +353,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   const trimmedText = text.trim()
+  const answerValue = request.secret ? text : trimmedText
   const answerSummary = request.secret ? 'Secret entered' : trimmedText
   const textFieldProps = {
     value: text,
@@ -357,7 +361,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
     placeholder: request.secret ? 'Enter the secret' : 'Type an answer',
     onChange: (event: React.ChangeEvent<HTMLInputElement>) => setText(event.target.value),
     onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === 'Enter' && trimmedText) void answer({ value: trimmedText }, 'answered', answerSummary)
+      if (event.key === 'Enter' && trimmedText)       void answer({ value: answerValue }, 'answered', answerSummary)
     }
   }
   const { heading, body } = splitQuestionHeading(request.title)
@@ -441,11 +445,11 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {request.inputKind === 'text' && (
           <div className="flex gap-2">
-            {request.secret ? <SecretInput {...textFieldProps} aria-label="Secret" /> : <Input {...textFieldProps} />}
+            {request.secret ? <SecretInput {...textFieldProps} aria-label="Secret" aria-describedby={groupAriaLabelledBy} /> : <Input {...textFieldProps} />}
             <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
               Cancel
             </Button>
-            <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: trimmedText }, 'answered', answerSummary)}>
+            <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: answerValue }, 'answered', answerSummary)}>
               Send
             </Button>
           </div>

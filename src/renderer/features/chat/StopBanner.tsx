@@ -68,7 +68,7 @@ export function StopBanner(p: StopBannerProps) {
       role="group"
       tabIndex={-1}
       aria-label={text.title}
-      className="shrink-0 px-4 pt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      className="shrink-0 px-4 pt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:-outline-offset-2"
     >
       <PaneBanner title={text.title} detail={text.detail} detailMono={!text.prose}>
         {p.canResume && (
