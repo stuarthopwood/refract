@@ -46,7 +46,7 @@ async function checkLabels(cdp, repoName) {
 }
 
 async function checkStrip(cdp) {
-  const strip = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('[data-session-open]')).map((o) => o.parentElement).find(Boolean); const s = b && Array.from(b.querySelectorAll('button')).find((x) => /^More actions for /.test(x.getAttribute('aria-label') || ''))?.parentElement; return s ? { h: s.getBoundingClientRect().height, btn: s.querySelector('button').getBoundingClientRect().height } : null; })()`);
+  const strip = await cdp.evaluate(`(() => { const btn = Array.from(document.querySelectorAll('[data-repository-id] li button')).find((x) => /^More actions for /.test(x.getAttribute('aria-label') || '')); const s = btn?.closest('span.absolute'); return s ? { h: s.getBoundingClientRect().height, btn: btn.getBoundingClientRect().height } : null; })()`);
   assert(strip && Math.round(strip.h) === 24 && Math.round(strip.btn) === 24, `session row action strip is 24 px (${JSON.stringify(strip)})`);
 }
 
@@ -64,6 +64,7 @@ async function checkAttachment(cdp) {
   })()`);
   await cdp.waitFor(`document.querySelectorAll('button[aria-label^="Remove image"]').length >= 2`, { timeoutMs: 15_000, label: 'two pending images' });
   const geo = await cdp.evaluate(`(() => { const [a, b] = Array.from(document.querySelectorAll('button[aria-label^="Remove image"]')); const ra = a.getBoundingClientRect(); const rb = b.getBoundingClientRect(); const ta = a.parentElement.getBoundingClientRect(); const tb = b.parentElement.getBoundingClientRect(); const ov = (r, t) => Math.max(0, Math.min(r.right, t.right) - Math.max(r.left, t.left)) * Math.max(0, Math.min(r.bottom, t.bottom) - Math.max(r.top, t.top)); return { ownCover: ov(ra, ta) / (ta.width * ta.height), crossA: ov(ra, tb), crossB: ov(rb, ta), size: ra.width }; })()`);
+  await cdp.evaluate(`document.querySelector('button[aria-label^="Remove image"]').focus()`);
   await shot(cdp, '03-attachments.png');
   assert(geo.crossA === 0 && geo.crossB === 0, `Remove button does not overlap the neighbouring thumbnail (${JSON.stringify(geo)})`);
   assert(geo.ownCover < 0.2, `Remove button covers under 20% of its own thumbnail (${geo.ownCover.toFixed(2)})`);
