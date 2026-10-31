@@ -6,26 +6,44 @@ import { create } from 'zustand'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
+import { HOME_PROJECTS_MAX } from '../../shared/ipc-home'
 import type { PullRequestAcrossItem } from '../../shared/ipc-pull-requests'
 
 export const PAGE_SIZE = 50
 export const MAX_ROWS = 200
 /** The smallest page the list IPC accepts; the badge shows "30+" from 30 rows. */
 export const ACTIVE_COUNT_LIMIT = 50
-/** The IPC rejects more than 40 Projects, so the badge covers the first 40. */
-export const ACTIVE_COUNT_PROJECTS = 40
+/** From this many rows the badge reads "30+". */
+export const ACTIVE_COUNT_CAP_AT = 30
 
 export interface PullRequestsActiveCount {
   count: number | null
+  /** More Projects than one call covers, or some Projects were skipped: the count is a lower bound. */
+  partial: boolean
   loading: boolean
   fetchedAt: string | null
 }
 
 function emptyActiveCount(): PullRequestsActiveCount {
-  return { count: null, loading: false, fetchedAt: null }
+  return { count: null, partial: false, loading: false, fetchedAt: null }
 }
 
-export const EMPTY_PULL_REQUESTS_ACTIVE_COUNT: PullRequestsActiveCount = emptyActiveCount()
+const EMPTY_PULL_REQUESTS_ACTIVE_COUNT: PullRequestsActiveCount = emptyActiveCount()
+
+/** Whether the list's own search is the badge's search, so one fetch can serve both. */
+export function sharesActiveCountSearch(
+  s: { tab: FilterTab; state: PullRequestStateFilter; repositoryIds: string[]; query: string; limit: number },
+  allRepositoryIds: string[]
+): boolean {
+  return (
+    s.tab === 'all' &&
+    s.state === 'open' &&
+    s.repositoryIds.length === 0 &&
+    s.query.trim() === '' &&
+    s.limit === ACTIVE_COUNT_LIMIT &&
+    allRepositoryIds.length <= HOME_PROJECTS_MAX
+  )
+}
 
 export interface SelectedPullRequest {
   repositoryId: string
@@ -71,6 +89,20 @@ interface PullRequestsState {
 let refreshSequence = 0
 // So a stale count fetch never overwrites a newer one.
 let activeCountSequence = 0
+// Callers racing at startup (account load, sidebar mount) share one in-flight fetch per Project set.
+let activeCountInFlight: { key: string; promise: Promise<void> } | null = null
+
+function activeCountFrom(
+  value: { items: PullRequestAcrossItem[]; skipped?: IssueSkippedProject[]; fetchedAt: string },
+  projectCount: number
+): PullRequestsActiveCount {
+  return {
+    count: value.items.length,
+    partial: projectCount > HOME_PROJECTS_MAX || (value.skipped?.length ?? 0) > 0,
+    loading: false,
+    fetchedAt: value.fetchedAt
+  }
+}
 
 export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   tab: 'all',
@@ -149,32 +181,43 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       hasMore: result.value.hasMore,
       fetchedAt: result.value.fetchedAt
     })
+    // On default filters this search is the badge's search; reuse it and drop any badge fetch in flight.
+    if (!more && sharesActiveCountSearch({ tab, state, repositoryIds, query, limit }, allRepositoryIds)) {
+      activeCountSequence += 1
+      activeCountInFlight = null
+      set({ activeCount: activeCountFrom(result.value, allRepositoryIds.length) })
+    }
   },
   loadMore: (allRepositoryIds) => get().refresh(allRepositoryIds, true),
   activeCount: EMPTY_PULL_REQUESTS_ACTIVE_COUNT,
-  refreshActiveCount: async (allRepositoryIds) => {
+  refreshActiveCount: (allRepositoryIds) => {
+    const key = allRepositoryIds.join('|')
+    if (activeCountInFlight?.key === key) return activeCountInFlight.promise
     activeCountSequence += 1
     const sequence = activeCountSequence
     set({ activeCount: { ...get().activeCount, loading: true } })
-    // A rejected IPC call must not leave `loading: true` stuck, which would silently disable the
-    // window-focus refresh and the mount effect (both skip while loading).
-    let result: Result<{ items: PullRequestAcrossItem[]; fetchedAt: string }>
-    try {
-      result = await window.refract.pullRequests.listAcross('all', 'open', allRepositoryIds.slice(0, ACTIVE_COUNT_PROJECTS), '', ACTIVE_COUNT_LIMIT)
-    } catch {
-      if (activeCountSequence === sequence) set({ activeCount: emptyActiveCount() })
-      return
-    }
-    if (activeCountSequence !== sequence) return
-    // A failed fetch clears to `null` (renders as nothing), never a stale number.
-    set({
-      activeCount: result.ok
-        ? { count: result.value.items.length, loading: false, fetchedAt: result.value.fetchedAt }
-        : emptyActiveCount()
-    })
+    const promise = (async () => {
+      // A rejected IPC call must not leave `loading: true` stuck, which would silently disable the
+      // window-focus refresh and the mount effect (both skip while loading).
+      let result: Result<{ items: PullRequestAcrossItem[]; skipped: IssueSkippedProject[]; fetchedAt: string }>
+      try {
+        result = await window.refract.pullRequests.listAcross('all', 'open', allRepositoryIds.slice(0, HOME_PROJECTS_MAX), '', ACTIVE_COUNT_LIMIT)
+      } catch {
+        if (activeCountSequence === sequence) set({ activeCount: emptyActiveCount() })
+        return
+      } finally {
+        if (activeCountInFlight?.key === key && activeCountSequence === sequence) activeCountInFlight = null
+      }
+      if (activeCountSequence !== sequence) return
+      // A failed fetch clears to `null` (renders as nothing), never a stale number.
+      set({ activeCount: result.ok ? activeCountFrom(result.value, allRepositoryIds.length) : emptyActiveCount() })
+    })()
+    activeCountInFlight = { key, promise }
+    return promise
   },
   clearActiveCounts: () => {
     activeCountSequence += 1
+    activeCountInFlight = null
     set({ activeCount: EMPTY_PULL_REQUESTS_ACTIVE_COUNT })
   }
 }))

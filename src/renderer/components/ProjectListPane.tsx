@@ -22,6 +22,10 @@ import type { IssueSkippedProject } from '../../shared/ipc-issues'
 
 export type ListStateFilter = 'open' | 'closed' | 'all'
 
+const FOCUSABLE = 'button, a[href], [tabindex]:not([tabindex="-1"])'
+// A removed Project is echoed by raw id, so a long one must not blow out the disclosure.
+const SKIPPED_NAME_MAX = 80
+
 const STATE_OPTIONS: Array<{ value: ListStateFilter; label: string }> = [
   { value: 'open', label: 'Open' },
   { value: 'closed', label: 'Closed' },
@@ -88,24 +92,27 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   const moreRef = useRef<HTMLButtonElement>(null)
   const capNoteRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const askedForMore = useRef(false)
+  const askedForMore = useRef<number | null>(null)
 
   // A Refresh replaces the rows, so a pending Show more focus hand-off no longer applies.
   const refresh = () => {
-    askedForMore.current = false
+    askedForMore.current = null
     props.onRefresh()
   }
 
   const showCapNote = Boolean(paging?.atCap) && !loading
-  // "Show more" keeps its focus while loading (aria-disabled). When the button then vanishes
-  // (cap reached or list exhausted), move focus to the footer note or the list so it is not lost.
+  // After "Show more", focus the first newly loaded row; if none arrived, fall back to the cap
+  // note or the list so focus is not lost with the button.
   useEffect(() => {
     if (loading) return
-    const asked = askedForMore.current
-    askedForMore.current = false
-    if (!asked || paging?.hasMore) return
-    ;(capNoteRef.current ?? listRef.current)?.focus({ preventScroll: true })
-  }, [loading, paging?.hasMore, showCapNote])
+    const previousCount = askedForMore.current
+    askedForMore.current = null
+    if (previousCount === null) return
+    const row = listRef.current?.children[previousCount]
+    const target = row?.matches(FOCUSABLE) ? row : row?.querySelector<HTMLElement>(FOCUSABLE)
+    if (target instanceof HTMLElement) target.focus()
+    else if (!paging?.hasMore) (capNoteRef.current ?? listRef.current)?.focus({ preventScroll: true })
+  }, [loading, itemCount, paging?.hasMore, showCapNote])
 
   const activeFilterCount =
     (props.appliedQuery.trim() !== '' ? 1 : 0) +
@@ -220,7 +227,8 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             <ul className="mt-1 flex flex-col gap-1 pl-4">
               {skipped.map((project) => (
                 <li key={project.repositoryId}>
-                  {project.repositoryName}: {ERROR_MESSAGES[project.code] ?? project.message}
+                  {project.repositoryName.length > SKIPPED_NAME_MAX ? `${project.repositoryName.slice(0, SKIPPED_NAME_MAX)}…` : project.repositoryName}:{' '}
+                  {ERROR_MESSAGES[project.code] ?? project.message}
                 </li>
               ))}
             </ul>
@@ -284,7 +292,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
                   className="aria-disabled:opacity-50"
                   onClick={() => {
                     if (loading) return
-                    askedForMore.current = true
+                    askedForMore.current = itemCount
                     paging.onLoadMore()
                   }}
                 >

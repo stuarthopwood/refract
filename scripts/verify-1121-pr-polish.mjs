@@ -178,7 +178,7 @@ async function main() {
     assertExeMatchesProcess(targetPid, exePath, exeHash);
     log(`verify-1121-pr-polish: launched, pid ${targetPid}, exe sha256 ${exeHash} (asserted against the process's own exe path)`);
 
-    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`, { timeoutMs: 45_000, label: 'app ready for Add repository' });
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project' && !el.disabled)`, { timeoutMs: 45_000, label: 'app ready for Add project' });
 
     await addRepository(cdp, repoDir);
     checkPass('Added fake scratch repository as a Project');
